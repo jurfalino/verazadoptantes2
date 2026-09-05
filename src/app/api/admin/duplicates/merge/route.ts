@@ -40,10 +40,10 @@ export async function POST(request: Request) {
         // Sequential: an earlier merge may resolve a later selected pair (a
         // record shared between them) — processing in order turns that into a
         // clean skip instead of a race.
-        const results: Array<{ candidateId: string; success: boolean; skipped?: boolean; error?: string; auditId?: string }> = [];
+        const results: Array<{ candidateId: string; success: boolean; skipped?: boolean; error?: string; auditId?: string; primaryId?: string }> = [];
         for (const candidateId of candidateIds) {
             const r = await mergeCandidatePair(candidateId, session.user.email);
-            results.push({ candidateId, success: r.success, skipped: r.skipped, error: r.error, auditId: r.auditId });
+            results.push({ candidateId, success: r.success, skipped: r.skipped, error: r.error, auditId: r.auditId, primaryId: r.primaryId });
         }
         const failed = results.filter(r => !r.success);
         const merged = results.filter(r => r.success && !r.skipped);

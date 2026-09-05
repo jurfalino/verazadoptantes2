@@ -141,10 +141,21 @@ export default function DuplicatesPanel() {
     const [selectedPairs, setSelectedPairs] = useState<Set<string>>(new Set());
     const selectedRecordCache = useRef(new Map<string, ClusterRecord[]>());
     // The last merge action's audit ids (one per absorbed profile), newest
-    // last — the handle for the Deshacer banner. Cleared by the next merge,
-    // an undo, or dismissing the banner; surviving a refetch is intentional.
-    const [lastMerge, setLastMerge] = useState<{ auditIds: string[]; label: string } | null>(null);
+    // last — the handle for undo — plus the survivor ids for the "open
+    // profile" link. Cleared by the next merge, an undo, or dismissing the
+    // toast; surviving a refetch is intentional.
+    const [lastMerge, setLastMerge] = useState<{ auditIds: string[]; label: string; primaryIds: string[] } | null>(null);
     const [undoing, setUndoing] = useState(false);
+    // The success toast auto-hides after 15s, but lastMerge (and with it the
+    // Deshacer affordance) outlives it as a compact header chip — the undo
+    // safety net must not expire with a toast.
+    const [toastVisible, setToastVisible] = useState(false);
+    useEffect(() => {
+        if (!lastMerge) { setToastVisible(false); return; }
+        setToastVisible(true);
+        const t = setTimeout(() => setToastVisible(false), 15000);
+        return () => clearTimeout(t);
+    }, [lastMerge]);
     // Batch pair-merge progress ('' = not running); disables the bar while set.
     const [bulkProgress, setBulkProgress] = useState('');
 
@@ -240,6 +251,7 @@ export default function DuplicatesPanel() {
         let skipped = 0;
         const failures: string[] = [];
         const auditIds: string[] = [];
+        const survivorIds = new Set<string>();
         try {
             for (let i = 0; i < candidateIds.length; i += MERGE_CHUNK) {
                 setBulkProgress(`Fusionando… ${merged + skipped}/${candidateIds.length}`);
@@ -249,7 +261,7 @@ export default function DuplicatesPanel() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ candidateIds: batch }),
                 });
-                const data = await res.json() as { error?: string; results?: Array<{ candidateId: string; success: boolean; skipped?: boolean; error?: string; auditId?: string }> };
+                const data = await res.json() as { error?: string; results?: Array<{ candidateId: string; success: boolean; skipped?: boolean; error?: string; auditId?: string; primaryId?: string }> };
                 if (!res.ok) {
                     failures.push(data.error ?? `HTTP ${res.status}`);
                     break;
@@ -260,6 +272,7 @@ export default function DuplicatesPanel() {
                     else {
                         merged++;
                         if (r.auditId) auditIds.push(r.auditId);
+                        if (r.primaryId) survivorIds.add(r.primaryId);
                     }
                 }
             }
@@ -269,7 +282,7 @@ export default function DuplicatesPanel() {
         if (failures.length > 0) {
             alert(`Se fusionaron ${merged} pares, pero hubo fallas:\n${failures.map(f => `• ${f}`).join('\n')}`);
         }
-        setLastMerge(auditIds.length > 0 ? { auditIds, label: `${merged} par${merged === 1 ? '' : 'es'} fusionado${merged === 1 ? '' : 's'}${skipped ? ` (${skipped} ya resueltos)` : ''}` } : null);
+        setLastMerge(auditIds.length > 0 ? { auditIds, label: `${merged} par${merged === 1 ? '' : 'es'} fusionado${merged === 1 ? '' : 's'}${skipped ? ` (${skipped} ya resueltos)` : ''}`, primaryIds: [...survivorIds] } : null);
         clearSelection();
         fetchData();
     }
@@ -371,7 +384,7 @@ export default function DuplicatesPanel() {
         const data = await res.json() as { error?: string; results?: Array<{ success: boolean; auditId?: string }> };
         if (res.ok) {
             const auditIds = (data.results || []).filter(r => r.success && r.auditId).map(r => r.auditId!);
-            setLastMerge(auditIds.length > 0 ? { auditIds, label: '1 perfil fusionado' } : null);
+            setLastMerge(auditIds.length > 0 ? { auditIds, label: '1 perfil fusionado', primaryIds: [primaryId] } : null);
             setMergeTarget(null);
             clearSelection();
             fetchData();
@@ -415,7 +428,7 @@ export default function DuplicatesPanel() {
             alert(`Se fusionaron ${okResults.length} perfiles, pero ${failed.length || 'algunos'} fallaron:\n${failed.map(f => `• ${f.error}`).join('\n')}${transportError ? `\n• ${transportError}` : ''}`);
         }
         const auditIds = okResults.filter(r => r.auditId).map(r => r.auditId!);
-        setLastMerge(auditIds.length > 0 ? { auditIds, label: `${auditIds.length} perfil${auditIds.length === 1 ? '' : 'es'} fusionado${auditIds.length === 1 ? '' : 's'}` } : null);
+        setLastMerge(auditIds.length > 0 ? { auditIds, label: `${auditIds.length} perfil${auditIds.length === 1 ? '' : 'es'} fusionado${auditIds.length === 1 ? '' : 's'}`, primaryIds: [primaryId] } : null);
         setMassMergeCluster(null);
         clearSelection();
         fetchData();
@@ -529,11 +542,24 @@ export default function DuplicatesPanel() {
                 </button>
             </div>
 
-            {/* Post-merge undo banner — the safety net that replaced the
-                per-merge confirm() dialog. */}
-            {lastMerge && (
+            {/* Post-merge success toast (auto-hides after 15s) — carries the
+                link to the surviving profile and the Deshacer safety net that
+                replaced the per-merge confirm() dialog. After the toast hides,
+                undo stays reachable via the compact header chip below. */}
+            {lastMerge && toastVisible && (
                 <div className="text-sm px-4 py-3 rounded-xl bg-teal-50 text-teal-800 border border-teal-200 flex items-center justify-between gap-3 flex-wrap">
-                    <span>✅ {lastMerge.label}.</span>
+                    <span className="flex items-center gap-3 flex-wrap">
+                        ✅ {lastMerge.label}.
+                        {lastMerge.primaryIds.length === 1 && (
+                            <a
+                                href={`/adopter/${lastMerge.primaryIds[0]}`}
+                                target="_blank"
+                                className="font-semibold underline hover:text-teal-900"
+                            >
+                                Abrir el perfil resultante →
+                            </a>
+                        )}
+                    </span>
                     <div className="flex items-center gap-2">
                         <button
                             onClick={handleUndo}
@@ -550,6 +576,19 @@ export default function DuplicatesPanel() {
                             ✕
                         </button>
                     </div>
+                </div>
+            )}
+            {/* Undo outlives the toast: compact chip until the next action. */}
+            {lastMerge && !toastVisible && (
+                <div className="flex justify-end">
+                    <button
+                        onClick={handleUndo}
+                        disabled={undoing}
+                        className="px-3 py-1.5 text-xs font-medium text-stone-500 bg-stone-100 rounded-lg hover:bg-stone-200 hover:text-stone-700 disabled:opacity-50"
+                        title={lastMerge.label}
+                    >
+                        {undoing ? 'Deshaciendo…' : '↩︎ Deshacer última fusión'}
+                    </button>
                 </div>
             )}
 

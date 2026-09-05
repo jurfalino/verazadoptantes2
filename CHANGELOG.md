@@ -2,6 +2,46 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.13] - 2026-09-05
+
+### Added — inline re-rating from "Calificaciones vs. notas"
+
+Admins can now fix ratings right from the audit tab: each row's rating is a dropdown
+(★1–★5 or "Sin calificación"), changed rows highlight, and a sticky save bar batches
+them into one "Guardar (n)". Writes route to the normalized tables behind the
+`adoptions` view (event ids → `adopter_events.rating`; animal ids → the active
+placement's rating), every change lands in `adopter_history` with from/to values,
+and the report re-reads after saving so corrected rows drop off. Admin-only writes
+(`saveRatingsAuditChanges`, capped at 100 per batch, sequential to spare D1);
+moderators keep the read-only view.
+
+## [2.55.12] - 2026-09-05
+
+### Added — "Calificaciones vs. notas" tab in Calidad de datos
+
+New ratings-audit report: every activity record whose 1–5 rating disagrees with — or
+was never supported by — the sentiment of its own note, in five mutually exclusive
+queues (subir calificación, bajar a ★1, alta con nota negativa, sin evidencia,
+evidencia neutra). Sentiment comes from a domain-pure Spanish lexicon scorer
+(`src/domain/sentiment.ts`) tuned to the vetting vocabulary, with negation handling
+and note cleaning (source lines, contact blocks, URLs stripped before scoring — the
+score is a review aid, never an auto-rater). Each queue shows its exact filter rule;
+an "Importados" switch filters by real record provenance (`adopters.source`), never
+by matching source text. Live and self-clearing like the sibling tabs: fixing the
+rating or the note drops the row. Moderators + admins.
+
+## [2.55.11] - 2026-09-05
+
+### Added — post-merge success toast with a link to the resulting profile
+
+After any merge (pair, mass, or batch) the panel shows a success toast for 15 seconds
+with "Abrir el perfil resultante →" (shown when the action has a single surviving
+profile — pair/mass merges and single-pair batches; multi-survivor batches show the
+count only). Deshacer deliberately outlives the toast: when it auto-hides, a compact
+"↩︎ Deshacer última fusión" chip remains until the next action — the undo safety net
+that replaced the confirm() dialogs must not expire on a timer. Batch results now carry
+each pair's surviving profile id to power the link.
+
 ## [2.55.10] - 2026-09-05
 
 ### Fixed — merges silently re-protected publicly-known profiles

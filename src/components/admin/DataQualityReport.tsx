@@ -5,11 +5,15 @@ import type { DataQualityReport as ReportData } from '@/app/actions/dataQuality'
 import PiiNotesPanel from './PiiNotesPanel';
 import DuplicatesPanel from './DuplicatesPanel';
 import ReportedContentPanel from './ReportedContentPanel';
+import RatingsAuditPanel from './RatingsAuditPanel';
+
+type TabId = 'pii' | 'dup' | 'flags' | 'ratings';
 
 export default function DataQualityReport({ data }: { data: ReportData }) {
-    const [tab, setTab] = useState<'pii' | 'dup' | 'flags'>('pii');
+    const [tab, setTab] = useState<TabId>('pii');
     const [visitedDup, setVisitedDup] = useState(false);
     const [visitedFlags, setVisitedFlags] = useState(false);
+    const [visitedRatings, setVisitedRatings] = useState(false);
 
     if (data.error) {
         return (
@@ -19,13 +23,14 @@ export default function DataQualityReport({ data }: { data: ReportData }) {
         );
     }
 
-    const selectTab = (id: 'pii' | 'dup' | 'flags') => {
+    const selectTab = (id: TabId) => {
         setTab(id);
         if (id === 'dup') setVisitedDup(true);
         if (id === 'flags') setVisitedFlags(true);
+        if (id === 'ratings') setVisitedRatings(true);
     };
 
-    const TabBtn = ({ id, label, n }: { id: 'pii' | 'dup' | 'flags'; label: string; n?: number }) => (
+    const TabBtn = ({ id, label, n }: { id: TabId; label: string; n?: number }) => (
         <button
             onClick={() => selectTab(id)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-sm font-semibold border-b-2 -mb-px transition-colors ${
@@ -46,6 +51,7 @@ export default function DataQualityReport({ data }: { data: ReportData }) {
                 <TabBtn id="pii" label="Contacto en notas" n={data.pii.length} />
                 <TabBtn id="dup" label="Duplicados" />
                 <TabBtn id="flags" label="Contenido reportado" />
+                <TabBtn id="ratings" label="Calificaciones vs. notas" />
             </div>
 
             {/* ── Tab 1: PII in notes (editable) ── */}
@@ -62,6 +68,13 @@ export default function DataQualityReport({ data }: { data: ReportData }) {
             {visitedFlags && (
                 <div className={tab === 'flags' ? '' : 'hidden'}>
                     <ReportedContentPanel />
+                </div>
+            )}
+
+            {/* ── Tab 4: ratings vs. note sentiment (lazy) ── */}
+            {visitedRatings && (
+                <div className={tab === 'ratings' ? '' : 'hidden'}>
+                    <RatingsAuditPanel />
                 </div>
             )}
         </div>
