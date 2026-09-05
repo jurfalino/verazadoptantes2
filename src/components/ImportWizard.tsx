@@ -21,12 +21,26 @@ import { buildContactEntries, contactEntriesToBlob, type ContactEntry } from '@/
 import { humanMatchSentence } from '@/lib/importMatch';
 import { IMPORT_FLAGS } from '@/domain/constants';
 import { dedupeImages } from '@/domain/facebookExtraction';
+import { WarningIcon, CloseIcon, CheckIcon, AttachIcon, UploadIcon, VideoIcon, SparkIcon, SaveIcon } from '@/components/ui/Glyph';
 
 /**
  * How many scraped images the review step keeps. The grid renders all of them
  * and the selection is built from the same list, so the two cannot drift.
  */
 const MAX_FETCHED_IMAGES = 12;
+
+/**
+ * Style guide §2.1, Standard × Primary — kept as a constant so the wizard's step
+ * CTAs cannot drift apart again. `min-h-[44px]` is the §1.5 tap-target floor,
+ * which these buttons sat 4px under at `py-2.5`.
+ * The component form lives in `components/ui/Button.tsx`; see the 2026-09-04
+ * audit for the plan to migrate the remaining inline buttons onto it.
+ */
+const BTN_PRIMARY =
+    'inline-flex items-center justify-center gap-2 min-h-[44px] py-3 px-6 rounded-xl ' +
+    'font-bold text-sm bg-teal-600 text-white shadow-sm transition-all duration-200 ' +
+    'hover:bg-teal-700 hover:shadow-md focus:outline-none focus-visible:ring-2 ' +
+    'focus-visible:ring-teal-500 disabled:opacity-40 disabled:cursor-not-allowed';
 import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
 
@@ -257,6 +271,17 @@ export default function ImportWizard() {
     const [extractedData, setExtractedData] = useState<ExtractedAdopterData | null>(null);
     const [contactEntries, setContactEntries] = useState<ContactEntry[]>([]);
     const [processedImages, setProcessedImages] = useState<Array<{ data: string; mimeType: string; originalUrl?: string }>>([]);
+    // Media the rescuer has de-selected in the review step so it is NOT imported.
+    // Keys: `p:<i>` a processed (scraped) image, `m:<i>` a manual/uploaded item
+    // (image or video, indexed into manualImages), `fv:<i>` a fetched video.
+    // Empty by default — everything imports unless explicitly excluded here.
+    const [excludedMedia, setExcludedMedia] = useState<Set<string>>(new Set());
+    const isMediaExcluded = (key: string) => excludedMedia.has(key);
+    const toggleMediaExcluded = (key: string) => setExcludedMedia(prev => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key); else next.add(key);
+        return next;
+    });
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [selectedModel, setSelectedModel] = useState<string>('');
     // v2.19.52: `unknownAnimal` state removed alongside the step-3 checkbox.
@@ -862,7 +887,7 @@ export default function ImportWizard() {
 
             // Generate thumbnails for fetched videos (via proxy for CORS)
             const videoPayloads = await Promise.all(
-                fetchedVideos.map(async (videoUrl) => {
+                fetchedVideos.filter((_, i) => !isMediaExcluded(`fv:${i}`)).map(async (videoUrl) => {
                     let thumbnail: string | undefined;
                     try {
                         thumbnail = await extractVideoThumbnailFromUrl(`/api/proxy-image?url=${encodeURIComponent(videoUrl)}`);
@@ -890,7 +915,11 @@ export default function ImportWizard() {
                 ...(sourceUrl && !fromContacts ? { isPublic: isPublicProfile } : {}),
                 flags,
                 images: [
-                    ...(processedImages.length > 0 ? processedImages : manualImages.filter(img => !img.file).map(img => ({ data: img.data, mimeType: img.mimeType }))),
+                    // Honor the review-step de-selection: a processed image is
+                    // excluded by `p:<i>`, a manual image by `m:<i>`.
+                    ...(processedImages.length > 0
+                        ? processedImages.filter((_, i) => !isMediaExcluded(`p:${i}`))
+                        : manualImages.filter((img, i) => !img.file && !isMediaExcluded(`m:${i}`)).map(img => ({ data: img.data, mimeType: img.mimeType }))),
                     ...videoPayloads,
                 ],
                 // v2.19.17: contacts-import path no longer auto-stamps an
@@ -933,7 +962,7 @@ export default function ImportWizard() {
             const adopterId = result.id;
 
             // Upload any pending video files via FormData (they were excluded from JSON body)
-            const pendingVideoFiles = manualImages.filter(img => img.file);
+            const pendingVideoFiles = manualImages.filter((img, i) => img.file && !isMediaExcluded(`m:${i}`));
             for (const vid of pendingVideoFiles) {
                 if (!vid.file) continue;
                 const fd = new FormData();
@@ -1041,7 +1070,7 @@ export default function ImportWizard() {
 
             // Generate thumbnails for fetched videos (via proxy for CORS)
             const videoPayloads = await Promise.all(
-                fetchedVideos.map(async (videoUrl) => {
+                fetchedVideos.filter((_, i) => !isMediaExcluded(`fv:${i}`)).map(async (videoUrl) => {
                     let thumbnail: string | undefined;
                     try {
                         thumbnail = await extractVideoThumbnailFromUrl(`/api/proxy-image?url=${encodeURIComponent(videoUrl)}`);
@@ -1068,7 +1097,11 @@ export default function ImportWizard() {
                     date: extractedData.adoptionDate || new Date().toISOString().split('T')[0],
                 },
                 images: [
-                    ...(processedImages.length > 0 ? processedImages : manualImages.filter(img => !img.file).map(img => ({ data: img.data, mimeType: img.mimeType }))),
+                    // Honor the review-step de-selection: a processed image is
+                    // excluded by `p:<i>`, a manual image by `m:<i>`.
+                    ...(processedImages.length > 0
+                        ? processedImages.filter((_, i) => !isMediaExcluded(`p:${i}`))
+                        : manualImages.filter((img, i) => !img.file && !isMediaExcluded(`m:${i}`)).map(img => ({ data: img.data, mimeType: img.mimeType }))),
                     ...videoPayloads,
                 ],
             };
@@ -1109,7 +1142,7 @@ export default function ImportWizard() {
             }
 
             // Upload any pending video files via FormData (they were excluded from JSON body)
-            const pendingVideoFiles = manualImages.filter(img => img.file);
+            const pendingVideoFiles = manualImages.filter((img, i) => img.file && !isMediaExcluded(`m:${i}`));
             for (const vid of pendingVideoFiles) {
                 if (!vid.file) continue;
                 const fd = new FormData();
@@ -1193,7 +1226,7 @@ export default function ImportWizard() {
             {error && (
                 <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-sm">
                     <div className="flex items-start gap-3">
-                        <span className="text-red-500 text-lg flex-shrink-0">⚠️</span>
+                        <WarningIcon className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
                         <div className="flex-1">
                             <p className="text-red-700 font-medium">{error}</p>
                             {retryCountdown > 0 && (
@@ -1221,7 +1254,7 @@ export default function ImportWizard() {
                                 </button>
                             ) : null}
                             <button onClick={() => { setError(null); setRetryCountdown(0); }} className="text-red-400 hover:text-red-600">
-                                ✕
+                                <CloseIcon className="w-4 h-4" />
                             </button>
                         </div>
                     </div>
@@ -1240,7 +1273,7 @@ export default function ImportWizard() {
                             value={inputContent}
                             onChange={e => setInputContent(e.target.value)}
                             placeholder={t('import.smartPlaceholder') || 'Paste a URL, Instagram post, WhatsApp message, or any text with adopter info...'}
-                            className="w-full px-4 py-3 border border-stone-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm min-h-[120px] resize-y"
+                            className="w-full px-4 py-3 border border-stone-300 rounded-xl outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100 text-base min-h-[120px] resize-y"
                             autoFocus
                         />
                         <p className="text-xs text-stone-500 mt-1">
@@ -1251,11 +1284,11 @@ export default function ImportWizard() {
                     {/* Photo upload - always visible */}
                     <div>
                         <label className="block text-sm font-medium text-stone-700 mb-2">
-                            {t('import.photoUploadLabel') || '📎 Add photos (optional)'}
+                            <AttachIcon className="w-4 h-4 shrink-0" />{t('import.photoUploadLabel') || 'Add photos (optional)'}
                         </label>
                         <div
                             onClick={() => fileInputRef.current?.click()}
-                            className="border-2 border-dashed border-stone-300 rounded-xl p-6 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                            className="border-2 border-dashed border-stone-300 rounded-xl p-6 text-center cursor-pointer hover:border-teal-400 hover:bg-blue-50 transition-colors"
                         >
                             <svg className="w-8 h-8 mx-auto text-stone-500 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -1290,7 +1323,7 @@ export default function ImportWizard() {
                                             onClick={() => removeImage(i)}
                                             className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                                         >
-                                            ✕
+                                            <CloseIcon className="w-4 h-4" />
                                         </button>
                                     </div>
                                 ))}
@@ -1302,11 +1335,11 @@ export default function ImportWizard() {
                     <button
                         onClick={handleSmartSubmit}
                         disabled={(!inputContent.trim() && manualImages.length === 0) || loading}
-                        className="w-full py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                        className="w-full py-3 bg-teal-600 text-white rounded-xl font-medium hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                     >
                         {loading ? (
                             <>
-                                <span className="animate-spin">⏳</span>
+                                <svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
                                 {t('import.fetching') || 'Fetching content...'} {fetchProgress > 0 && <span className="tabular-nums">{fetchProgress}%</span>}
                             </>
                         ) : (
@@ -1324,7 +1357,7 @@ export default function ImportWizard() {
                     {/* Shared from badge */}
                     {sharedFrom && sharedFrom !== 'shared' && (
                         <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
-                            <span>📤</span>
+                            <UploadIcon className="w-5 h-5" />
                             <span className="font-medium">{t('import.sharedFrom') || 'Shared from'}:</span>
                             <span className="truncate text-blue-600">{(() => { try { return new URL(sharedFrom).hostname; } catch { return sharedFrom; } })()}</span>
                         </div>
@@ -1333,14 +1366,14 @@ export default function ImportWizard() {
                     {/* Loading state for share intent auto-fetch */}
                     {loading && !editableText && (
                         <div className="flex flex-col items-center gap-3 py-8 text-stone-500">
-                            <span className="animate-spin text-2xl">⏳</span>
+                            <svg className="w-7 h-7 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
                             <p className="text-sm">
                                 {t('import.fetchingShared') || 'Fetching shared content...'} {fetchProgress > 0 && <span className="tabular-nums font-medium">{fetchProgress}%</span>}
                             </p>
                             {/* Progress bar */}
                             <div className="w-48 h-1.5 bg-stone-200 rounded-full overflow-hidden">
                                 <div
-                                    className="h-full bg-blue-500 rounded-full transition-all duration-500 ease-out"
+                                    className="h-full bg-teal-600 rounded-full transition-all duration-500 ease-out"
                                     style={{ width: `${fetchProgress}%` }}
                                 />
                             </div>
@@ -1352,7 +1385,7 @@ export default function ImportWizard() {
                     {/* Video post warning */}
                     {isVideoPost && (
                         <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-                            <span className="text-lg flex-shrink-0">📹</span>
+                            <VideoIcon className="w-5 h-5 shrink-0" />
                             <div>
                                 <p className="font-medium">{locale !== 'en' ? 'Este enlace contiene un video' : 'This link contains a video'}</p>
                                 <p className="mt-0.5 text-amber-700">
@@ -1372,7 +1405,7 @@ export default function ImportWizard() {
                         <textarea
                             value={editableText}
                             onChange={e => setEditableText(e.target.value)}
-                            className="w-full px-4 py-3 border border-stone-300 rounded-xl text-sm min-h-[150px] resize-y focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-4 py-3 border border-stone-300 rounded-xl text-base min-h-[150px] resize-y outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
                         />
                     </div>
 
@@ -1413,7 +1446,7 @@ export default function ImportWizard() {
                                                 });
                                             }}
                                             className={`relative group rounded-lg overflow-hidden border-2 transition-all ${isSelected
-                                                ? 'border-blue-500 shadow-sm'
+                                                ? 'border-teal-400 shadow-sm'
                                                 : 'border-transparent opacity-50 hover:opacity-75'
                                                 }`}
                                         >
@@ -1424,10 +1457,10 @@ export default function ImportWizard() {
                                             />
                                             {/* Checkmark overlay */}
                                             <div className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs transition-all ${isSelected
-                                                ? 'bg-blue-500 text-white'
+                                                ? 'bg-teal-600 text-white'
                                                 : 'bg-white/80 text-stone-500 border border-stone-300'
                                                 }`}>
-                                                {isSelected ? '✓' : ''}
+                                                {isSelected ? <CheckIcon className="w-3 h-3" /> : null}
                                             </div>
                                             {/* Expand button */}
                                             <div
@@ -1476,7 +1509,7 @@ export default function ImportWizard() {
                     {fetchedVideos.length > 0 && (
                         <div>
                             <label className="block text-sm font-medium text-stone-600 mb-2">
-                                🎬 {fetchedVideos.length} {fetchedVideos.length !== 1 ? 'videos' : 'video'} {locale !== 'en' ? 'encontrados' : 'found'}
+                                <VideoIcon className="w-4 h-4 inline-block mr-1 -mt-0.5" />{fetchedVideos.length} {fetchedVideos.length !== 1 ? 'videos' : 'video'} {locale !== 'en' ? 'encontrados' : 'found'}
                             </label>
                             <div className="grid grid-cols-2 gap-3">
                                 {fetchedVideos.map((url, i) => (
@@ -1510,7 +1543,7 @@ export default function ImportWizard() {
                             accept="image/*,video/*"
                             multiple
                             onChange={handleImageUpload}
-                            className="text-sm"
+                            className=""
                         />
                         {manualImages.length > 0 && (
                             <div className="grid grid-cols-4 gap-2 mt-2">
@@ -1521,7 +1554,7 @@ export default function ImportWizard() {
                                             onClick={() => removeImage(i)}
                                             className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                                         >
-                                            ✕
+                                            <CloseIcon className="w-4 h-4" />
                                         </button>
                                     </div>
                                 ))}
@@ -1539,16 +1572,16 @@ export default function ImportWizard() {
                         <button
                             onClick={handleExtract}
                             disabled={loading || (!editableText.trim() && manualImages.length === 0 && selectedFetchedImages.size === 0)}
-                            className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                            className={`${BTN_PRIMARY} flex-1`}
                         >
                             {loading ? (
                                 <>
-                                    <span className="animate-spin">⏳</span>
+                                    <svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
                                     {t('import.aiAnalyzing') || 'AI is analyzing...'}
                                 </>
                             ) : (
                                 <>
-                                    {t('import.extractWithAi') || '🤖 Extract with AI'}
+                                    <SparkIcon className="w-4 h-4 shrink-0" />{t('import.extractWithAi') || 'Extract with AI'}
                                 </>
                             )}
                         </button>
@@ -1595,7 +1628,7 @@ export default function ImportWizard() {
                         warning would be inaccurate. */}
                     {!fromContacts && (
                         <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-                            <span className="mt-0.5">⚠️</span>
+                            <WarningIcon className="w-4 h-4 shrink-0 mt-0.5" />
                             <span>{t('import.aiValidationWarning') || 'AI-extracted data may contain errors. Please verify all fields before saving.'}</span>
                         </div>
                     )}
@@ -1635,17 +1668,18 @@ export default function ImportWizard() {
 
                     {/* Name */}
                     <div>
-                        <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.name') || 'Name'}</label>
+                        <h3 id="import-name-heading" className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.name')}</h3>
                         <input
+                            aria-labelledby="import-name-heading"
                             value={extractedData.name || ''}
                             onChange={e => setExtractedData({ ...extractedData, name: e.target.value })}
-                            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
                         />
                     </div>
 
                     {/* Contact Info — typed entries, AI-categorized and editable */}
                     <div>
-                        <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.contactInfo') || 'Contact Info'}</label>
+                        <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
                         <ContactEntriesInput entries={contactEntries} onChange={setContactEntries} />
                         {/* Field-overlap preview (v2.16.0-43 — Option B).
                             Step 3 previously surfaced every duplicate as its
@@ -1678,11 +1712,12 @@ export default function ImportWizard() {
                         prompted VisitIntentCard on the destination profile (v2.19.18). */}
                     {!fromContacts && (
                         <div>
-                            <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.initial_observation') || 'Initial observation'}</label>
+                            <h3 id="import-observation-heading" className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('import.initial_observation')}</h3>
                             <textarea
+                                aria-labelledby="import-observation-heading"
                                 value={extractedData.notes || ''}
                                 onChange={e => setExtractedData({ ...extractedData, notes: e.target.value })}
-                                className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm min-h-[80px] resize-y focus:ring-2 focus:ring-blue-500"
+                                className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base min-h-[80px] resize-y outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
                                 placeholder={t('import.initial_observation_placeholder') || 'Saved as an observation record on the new profile.'}
                             />
                         </div>
@@ -1746,7 +1781,7 @@ export default function ImportWizard() {
                                     <input
                                         value={extractedData.animalName || ''}
                                         onChange={e => setExtractedData({ ...extractedData, animalName: e.target.value })}
-                                        className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm"
+                                        className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
                                     />
                                 </div>
                                 <div>
@@ -1754,7 +1789,7 @@ export default function ImportWizard() {
                                     <select
                                         value={extractedData.animalSpecies || ''}
                                         onChange={e => setExtractedData({ ...extractedData, animalSpecies: e.target.value as any })}
-                                        className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm"
+                                        className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
                                     >
                                         <option value="dog">{t('import.speciesDog') || '🐕 Dog'}</option>
                                         <option value="cat">{t('import.speciesCat') || '🐱 Cat'}</option>
@@ -1781,7 +1816,7 @@ export default function ImportWizard() {
                                     type="date"
                                     value={extractedData.adoptionDate || new Date().toISOString().split('T')[0]}
                                     onChange={e => setExtractedData({ ...extractedData, adoptionDate: e.target.value })}
-                                    className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500"
+                                    className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
                                 />
                             </div>
 
@@ -1791,46 +1826,81 @@ export default function ImportWizard() {
                         </div>
                     )}
 
-                    {/* Media preview — show all images and videos that will be saved */}
+                    {/* Media preview — every image and video that WILL be saved,
+                        each de-selectable so the rescuer drops what they don't want
+                        imported. Keys match the save-payload filters (`p:` processed,
+                        `m:` manual, `fv:` fetched video). */}
                     {(() => {
-                        const allImages: { src: string; label?: string }[] = [];
+                        type MediaTile = { key: string; src: string; mediaType: 'image' | 'video'; label?: string };
+                        const media: MediaTile[] = [];
                         // Processed images from fetch (base64)
-                        processedImages.forEach((img, _i) => allImages.push({ src: `data:${img.mimeType};base64,${img.data}`, label: img.originalUrl ? new URL(img.originalUrl).pathname.split('/').pop() : undefined }));
-                        // Manually uploaded images (not video files)
-                        manualImages.filter(img => !img.file).forEach((img) => allImages.push({ src: img.preview }));
-                        // Count manual videos separately
-                        const manualVideoCount = manualImages.filter(img => img.file).length;
-                        const totalMedia = allImages.length + fetchedVideos.length + manualVideoCount;
-                        if (totalMedia === 0) return null;
+                        processedImages.forEach((img, i) => media.push({
+                            key: `p:${i}`,
+                            src: `data:${img.mimeType};base64,${img.data}`,
+                            mediaType: 'image',
+                            label: img.originalUrl ? new URL(img.originalUrl).pathname.split('/').pop() : undefined,
+                        }));
+                        // Manual uploads — images and video files, keyed by their
+                        // real index in manualImages so the key survives filtering.
+                        manualImages.forEach((img, i) => media.push(
+                            img.file
+                                ? { key: `m:${i}`, src: img.thumbnail || img.preview, mediaType: 'video' }
+                                : { key: `m:${i}`, src: img.preview, mediaType: 'image' },
+                        ));
+                        // Fetched (scraped) videos
+                        fetchedVideos.forEach((url, i) => media.push({ key: `fv:${i}`, src: url, mediaType: 'video' }));
+
+                        if (media.length === 0) return null;
+                        const keptCount = media.filter(m => !isMediaExcluded(m.key)).length;
                         return (
                             <div>
                                 <label className="block text-xs font-medium text-stone-500 mb-1.5">
-                                    {t('import.attachedImages') || 'Attached Media'} ({totalMedia})
+                                    {t('import.attachedImages') || 'Attached Media'} ({keptCount}/{media.length})
                                 </label>
                                 <div className="flex flex-wrap gap-2">
-                                    {allImages.map((img, i) => (
-                                        <div key={`img-${i}`} className="relative group">
-                                            <img
-                                                src={img.src}
-                                                alt={img.label || `Image ${i + 1}`}
-                                                className="w-20 h-20 object-cover rounded-lg border border-stone-200 cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all"
-                                                onClick={() => setLightboxItem({ url: img.src, mediaType: 'image' })}
-                                            />
-                                        </div>
-                                    ))}
-                                    {fetchedVideos.map((url: string, i: number) => (
-                                        <div key={`vid-${i}`} className="relative group w-20 h-20 rounded-lg overflow-hidden border border-teal-300 bg-gradient-to-br from-teal-600 to-teal-800 cursor-pointer"
-                                            onClick={() => setLightboxItem({ url, mediaType: 'video' })}
-                                        >
-                                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                                <div className="w-6 h-6 rounded-full bg-white/25 flex items-center justify-center shadow">
-                                                    <svg className="w-3 h-3 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                                                        <path d="M8 5v14l11-7z" />
-                                                    </svg>
-                                                </div>
+                                    {media.map((m) => {
+                                        const excluded = isMediaExcluded(m.key);
+                                        const isVideo = m.mediaType === 'video';
+                                        return (
+                                            <div key={m.key} className="relative group">
+                                                {isVideo ? (
+                                                    <div
+                                                        className={`w-20 h-20 rounded-lg overflow-hidden border cursor-pointer transition-all ${excluded ? 'opacity-40 grayscale border-stone-200' : 'border-teal-300'} bg-gradient-to-br from-teal-600 to-teal-800`}
+                                                        onClick={() => setLightboxItem({ url: m.src, mediaType: 'video' })}
+                                                    >
+                                                        {m.src && m.src !== '' && (
+                                                            <img src={m.src} alt="" className="w-full h-full object-cover" />
+                                                        )}
+                                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                            <div className="w-6 h-6 rounded-full bg-white/25 flex items-center justify-center shadow">
+                                                                <svg className="w-3 h-3 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <img
+                                                        src={m.src}
+                                                        alt={m.label || 'Image'}
+                                                        className={`w-20 h-20 object-cover rounded-lg border transition-all cursor-pointer ${excluded ? 'opacity-40 grayscale border-stone-200' : 'border-stone-200 hover:ring-2 hover:ring-teal-300'}`}
+                                                        onClick={() => setLightboxItem({ url: m.src, mediaType: 'image' })}
+                                                    />
+                                                )}
+                                                {/* Include / exclude toggle. Excluded tiles dim and
+                                                    the control flips to a re-add affordance. */}
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); toggleMediaExcluded(m.key); }}
+                                                    aria-label={excluded ? (t('import.mediaInclude') || 'Include') : (t('import.mediaExclude') || 'Exclude')}
+                                                    title={excluded ? (t('import.mediaInclude') || 'Include') : (t('import.mediaExclude') || 'Exclude')}
+                                                    className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center shadow transition-all ${excluded ? 'bg-white text-teal-700 border border-teal-300 hover:bg-teal-50' : 'bg-black/60 text-white hover:bg-black/80'}`}
+                                                >
+                                                    {excluded
+                                                        ? <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                                                        : <CloseIcon className="w-3 h-3" />}
+                                                </button>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         );
@@ -1854,12 +1924,12 @@ export default function ImportWizard() {
                         <button
                             onClick={handlePreSave}
                             disabled={!extractedData.name?.trim() || isSaving}
-                            className="btn-primary flex-1 py-2.5 rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                            className={`${BTN_PRIMARY} flex-1`}
                         >
                             {isSaving ? (
-                                <><span className="animate-spin">⏳</span> {t('import.checking') || 'Checking...'}</>
+                                <><svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg> {t('import.checking') || 'Checking...'}</>
                             ) : (
-                                <>{t('import.saveAdopter') || '💾 Save Adopter'}</>
+                                <><SaveIcon className="w-4 h-4 shrink-0" />{t('import.saveAdopter') || 'Save Adopter'}</>
                             )}
                         </button>
                     </div>
@@ -1919,7 +1989,7 @@ export default function ImportWizard() {
 
                         <h3 className="text-xl font-semibold text-stone-900 mb-2">
                             {duplicateAdopter
-                                ? (t('import.duplicateWarning') || '⚠️ Duplicate Post Detected')
+                                ? (<span className="inline-flex items-center gap-1.5"><WarningIcon className="w-4 h-4 shrink-0" />{t('import.duplicateWarning') || 'Duplicate Post Detected'}</span>)
                                 : personMatches.length > 0
                                     ? (t('import.personMatchTitle') || 'Existing Profiles Found')
                                     : (t('import.confirmCreate') || 'Create New Profile?')}
@@ -1936,8 +2006,8 @@ export default function ImportWizard() {
 
                         {/* Warning when duplicate check failed */}
                         {duplicateCheckFailed && !duplicateAdopter && personMatches.length === 0 && (
-                            <div className="w-full px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 text-left flex items-start gap-2 mb-2">
-                                <span className="mt-0.5">⚠️</span>
+                            <div className="w-full px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 text-left flex items-start gap-2 mb-2 outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100">
+                                <WarningIcon className="w-4 h-4 shrink-0 mt-0.5" />
                                 <span>{t('import.duplicateCheckFailed') || 'Could not verify if this person already exists. Please check manually before saving.'}</span>
                             </div>
                         )}
@@ -1961,7 +2031,7 @@ export default function ImportWizard() {
                                                 <div className="flex items-center gap-3">
                                                     <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-purple-500 bg-purple-500' : 'border-stone-300'
                                                         }`}>
-                                                        {isSelected && <span className="text-white text-xs">✓</span>}
+                                                        {isSelected && <CheckIcon className="w-3 h-3 text-white" />}
                                                     </div>
                                                     <div className="min-w-0 flex-1">
                                                         <p className="font-semibold text-stone-900 line-clamp-2 break-words" title={match.name}>{match.name}</p>
@@ -1979,7 +2049,7 @@ export default function ImportWizard() {
                                                         href={`/adopter/${match.id}`}
                                                         target="_blank"
                                                         onClick={(e) => e.stopPropagation()}
-                                                        className="text-blue-500 hover:text-blue-700 text-xs underline"
+                                                        className="text-teal-600 hover:text-blue-700 text-xs underline"
                                                     >{t('import.viewProfile') || 'View'}</a>
                                                 </div>
                                             </div>
@@ -2001,11 +2071,11 @@ export default function ImportWizard() {
                                     disabled={isSaving}
                                     className="py-2.5 px-4 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                 >
-                                    {isSaving ? <><span className="animate-spin">⏳</span> {t('import.addingRecord') || 'Adding...'}</> : <>{t('import.addInteraction') || '➕ Add New Interaction to This Profile'}</>}
+                                    {isSaving ? <><svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg> {t('import.addingRecord') || 'Adding...'}</> : <>{t('import.addInteraction') || '➕ Add New Interaction to This Profile'}</>}
                                 </button>
                                 <a
                                     href={`/adopter/${duplicateAdopter.id}`}
-                                    className="py-2.5 px-4 bg-blue-600 text-white rounded-xl font-medium text-center hover:bg-blue-700"
+                                    className={BTN_PRIMARY}
                                 >
                                     {t('import.viewExisting') || '→ View Existing Profile'}
                                 </a>
@@ -2023,12 +2093,12 @@ export default function ImportWizard() {
                                     disabled={isSaving || !selectedMatch}
                                     className="py-2.5 px-4 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                 >
-                                    {isSaving ? <><span className="animate-spin">⏳</span> {t('import.addingRecord') || 'Adding record...'}</> : <>{t('import.addToExisting') || 'Add Record to Selected Profile'}</>}
+                                    {isSaving ? <><svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg> {t('import.addingRecord') || 'Adding record...'}</> : <>{t('import.addToExisting') || 'Add Record to Selected Profile'}</>}
                                 </button>
                                 <button
                                     onClick={handleConfirmSave}
                                     disabled={isSaving}
-                                    className="py-2.5 px-4 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 disabled:opacity-50"
+                                    className={BTN_PRIMARY}
                                 >
                                     {t('import.createNewAnyway') || 'Create New Profile Instead'}
                                 </button>
@@ -2044,9 +2114,9 @@ export default function ImportWizard() {
                                 <button
                                     onClick={handleConfirmSave}
                                     disabled={isSaving}
-                                    className="py-2.5 px-4 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                                    className={BTN_PRIMARY}
                                 >
-                                    {isSaving ? <><span className="animate-spin">⏳</span> {t('import.creating') || 'Creating...'}</> : <>{t('import.createProfile') || '✓ Create Profile'}</>}
+                                    {isSaving ? <><svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg> {t('import.creating') || 'Creating...'}</> : <><CheckIcon className="w-4 h-4 shrink-0" />{t('import.createProfile') || 'Create Profile'}</>}
                                 </button>
                                 <button
                                     onClick={() => setShowConfirmModal(false)}

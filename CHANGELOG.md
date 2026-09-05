@@ -2,6 +2,372 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.1] - 2026-09-05
+
+### Changed — merge is 2 clicks, guarded by undo instead of a confirm dialog
+
+Merging cost 3 clicks (4 with a survivor change): pair card → modal button → native
+`confirm()` re-asking what the modal already showed. The `confirm()` is gone from both the
+pair modal and the mass-merge modal — the modal is the confirmation — replaced by a real
+safety net: every merge now records an undo payload in its audit_log row (survivor's
+pre-merge fields, moved row ids per table, touched candidates' prior statuses), and the
+panel shows a "Deshacer" banner after each merge. Undo restores the absorbed profile,
+re-points its records back, reverts the survivor (including the auto-alias), un-resolves the
+candidates, and re-tokenizes both. Guarded: refused if the absorbed profile changed since,
+if a newer merge into the same survivor stands (undo newest-first; the mass-undo path sends
+them in that order), or on double-undo. Dismiss keeps its confirm — it has no modal.
+
+## [2.55.0] - 2026-09-05
+
+### Added — duplicate queue: pagination, cluster mass-merge, low-confidence filter
+
+The admin duplicates panel fetched only page 1 of the candidates API (top 20 by score, no
+pager), silently presenting "top 20" as "all duplicates" — 779 pending pairs in prod looked
+like 20, so whole clusters (e.g. four "Sebastián Vázquez" spelling variants) never surfaced.
+The panel now pages through the queue, hides the low-confidence tier by default (~75% of the
+queue, mostly two people sharing one name word — a checkbox re-shows it), and groups the
+visible pairs into connected clusters (A↔B + B↔C ⇒ one group): a cluster card opens a
+mass-merge modal — pick the survivor, tick which of the rest to absorb — served by the merge
+endpoint's new `secondaryIds[]` batch mode (sequential merges, capped at 10 per request).
+
+### Fixed — merge leftovers: ghost pairs, lost name evidence, stale tokens
+
+Merging B into A left every other pending pair naming B (e.g. B↔C) in the queue as a
+"ghost": it rendered like a live duplicate but its merge was refused by the already-deleted
+guard. `mergeAdopters` now resolves all pending candidates referencing the absorbed record,
+and the pending list/count exclude pairs whose sides are soft-deleted (18 such ghosts in
+prod). Two adjacent gaps closed in the same path: the absorbed record's name is carried onto
+the survivor as an alias contact entry (it's abuse-detection name evidence; merge doesn't
+merge `name`, so it previously stopped matching entirely), its structured contactEntries are
+merged in, and the survivor is re-tokenized immediately instead of sitting stale until the
+next scan. Also: the batch scan's stale-record query omitted `contactEntries`, silently
+tokenizing every record as if it had no aliases and no platform-tagged socials — the
+per-save path read them correctly, so the two paths disagreed.
+
+## [2.54.7] - 2026-09-05
+
+### Added — de-select media in the import review step
+
+The review step's "Attached Media" gallery was display-only; every scraped and uploaded image
+and video was imported unconditionally. Each tile now carries an include/exclude toggle — a
+de-selected tile dims to grayscale and its control flips to a re-add "+", and the label counts
+what will be imported ("Attached Media (4/5)"). Covers all three sources (scraped images,
+uploaded images/videos, scraped videos), keyed to match the save-payload filters so a
+de-selected item never reaches the record. Extraction already ran in the previous step, so this
+only affects what is saved, not what the AI sees.
+
+## [2.54.6] - 2026-09-05
+
+### Fixed — Facebook's error page leaked into the wizard as post content
+
+Field report on staging, all three symptoms from one source: Facebook's bot-flagged error
+page. Its GraphQL banner ("A server error field_exception occured. Check server logs for
+details." — typo is Facebook's, 71 chars) is rendered as visible DOM text, so the scraper's
+text harvest scooped it past every "meaningful content" length bar into the extracted-text
+box; the error page's own rendered images became the two black thumbnails; and its fabricated
+`og:type: video.other` produced a "contains a video" note on an image post.
+
+One hole was self-inflicted in v2.54.5: parking the crawler stub into `crawlerThumbnailUrl`
+for reel OCR removed it from `images` — the very field `hasExtractableContent` inspects for
+wall evidence — silently re-arming the og:type video leniency the previous release had
+disabled. The unit tests passed the stub in `images`; the route no longer did.
+
+- `domain/facebookExtraction.ts`: `isWallOrErrorText` / `sanitizePostText` (the error banner
+  condemns at any length; login boilerplate only condemns short text, so real captions that
+  mention logging in survive); `hasExtractableContent` treats wall text as no text and counts
+  a parked `crawlerThumbnailUrl` as wall evidence. 7 new tests.
+- `api/facebook/fetch-post`: sanitizes text at both ingresses (scraper result, OG fallback);
+  no longer reports `isVideo` when og:type's claim comes with the wall's signature and no
+  caption — only the rescuer's own URL shape may vouch for video-ness.
+- scraper v2.0.1: same sanitation where the DOM harvest runs; when Layer 1 confirmed the wall
+  and the browser's text was boilerplate, the error page's rendered images are discarded too.
+
+## [2.54.5] - 2026-09-04
+
+### Fixed — login-walled Facebook posts no longer come back as empty "successes"
+
+Root cause traced end-to-end on `facebook.com/share/19EN1HpufE/`: Facebook serves a login
+wall to unauthenticated requests for personal-profile posts, and that wall carries og:title
+(the poster's name), a `lookaside.fbsbx.com/lookaside/crawler/` URL as og:image — an endpoint
+that answers a browser with text/html, never image bytes — and a fabricated
+`og:type: video.other`. The phantom "image" satisfied every `images.length > 0` check in the
+chain, so the wall sailed through the scraper AND the app as a success with no text, one
+broken image, and a manufactured `[Author]` caption. To the rescuer this read as "the import
+is not scraping".
+
+Truth layer, both sides:
+- `domain/facebookExtraction.ts`: new `isPlaceholderAssetUrl` / `realImages`;
+  `hasExtractableContent` no longer counts crawler stubs, and no longer honors og:type's
+  video leniency when a stub betrays a wall (a rescuer-typed reel URL keeps it).
+- `api/facebook/fetch-post`: the scraper-success gate counts REAL images only; the crawler
+  stub is parked as `crawlerThumbnailUrl` for the server-side video-thumbnail fetch (where a
+  crawler UA legitimately gets image bytes for genuine reels), now gated on an `image/*`
+  content-type so a wall page can never be base64'd as a "thumbnail".
+
+### Changed — scraper v2.0.0: layered resolver, honest failures, telemetry
+
+`scraper/` (deployed separately to Fly.io — `cd scraper && fly deploy`; tag `scraper-v1`
+holds the previous code for rollback):
+- **Layer 1 first:** a crawler-UA OG fetch before any browser. Public Page posts return
+  caption + real photos in ~1s with no Playwright at all, and the fetch resolves
+  `/share/<id>/` stubs (which answer 400 to browser UAs) to the canonical `/posts/` URL —
+  previously Playwright navigated straight into that 400 by construction.
+- **Honest endings:** when nothing real was extracted the scraper returns
+  `success:false` with `reason: 'login_walled' | 'no_content'` (200 — an outcome, not a
+  server error), keeping the author so the app can mark the source not-public and route the
+  rescuer to paste/screenshots with an explanation.
+- **Outcome telemetry:** one structured `scrape_outcome` log line per request (platform,
+  layer, reason, sizes, ms) so per-platform success rates are measurable instead of guessed.
+
+Verified locally: the failing post returns `login_walled` with zero phantom images; a public
+page short-circuits through Layer 1 in ~4.6s; the Twitter proxy path is untouched. Local
+runs use a residential IP, so production (datacenter) coverage still needs verifying after
+`fly deploy`.
+
+## [2.54.4] - 2026-09-04
+
+### Fixed — the type-selection stage was still a dark box
+
+v2.54.3 unboxed the composer's *editing* stage but left the *pick-type* stage in its
+`border border-stone-200 rounded-md p-3 bg-stone-50` card. `bg-stone-50` maps to
+`--surface-base`, so choosing a type happened inside a dark panel while filling one in
+happened on the row — the same split the previous release was meant to close, one stage
+earlier. It now uses the same row treatment: no card, just the list's separator. Verified in
+both themes: computed `background-color: rgba(0, 0, 0, 0)`, `border-width: 1px 0 0`.
+
+### Changed — one add-contact button instead of two
+
+The trigger rendered as a bordered button when the list was empty and a bare text link once it
+had entries — the same control changing shape based on how many rows happened to sit above it.
+The intent was to emphasise it as the primary affordance in the empty state, but the empty
+state already carries its own hint line, so the emphasis was doing work twice and paying for it
+with an inconsistency.
+
+Both now use the style guide's **Secondary** variant (§2.1: `--accent-subtle-bg`, accent text,
+`--border-accent`). The bare link was not one of the four documented variants, and was also the
+smaller touch target of the two.
+
+## [2.54.3] - 2026-09-04
+
+### Fixed — four rendering bugs in the contact type control
+
+Found by actually rendering the component rather than reasoning about it. The previous three
+releases shipped this surface verified only by type-check and code reading; a throwaway harness
+page mounting `ContactEntriesSection` with fake entries — no DB — made all four visible in a
+minute.
+
+**The type icon rendered as a black box.** `globals.css:258` maps `.bg-white` to
+`var(--surface-card)` unconditionally and with `!important`. `ContactTypePicker` carried
+`bg-white`, which was fine while it lived inside the composer's `bg-stone-50` card — a
+deliberate `--surface-card` on `--surface-base` pairing — but v2.54.2 moved it onto the row
+itself, where it painted a card-coloured block on the row's own background. In the dark theme
+that reads as a black box. The button is now unfilled; its themed teal border still marks it as
+the one control in the row. Verified: computed `background-color: rgba(0, 0, 0, 0)` in both
+themes.
+
+**Type-specific fields did not line up with the input.** The network picker and the
+WhatsApp/Telegram toggles were siblings of the picker+input row, so they started at the type
+icon's left edge while the input started 44px further in. They now live inside the input's
+column in both the composer and the edit form. Verified: picker at x=16, input at x=60,
+dependent fields at x=60.
+
+**Choosing "Teléfono" surfaced no messaging-app toggles.** Both surfaces gated them on
+`value.trim().length > 0`, so selecting the type — or correcting a row to it — showed nothing
+until something was typed, which read as the option not existing. They now key off the type
+alone.
+
+**The required asterisk stayed lit after a network was chosen.** The marker keyed off whether
+the platform was auto-detected rather than whether one was set, so "¿Qué red social es? *"
+kept claiming an unmet requirement over an already-selected Instagram.
+
+Also confirmed while looking: the type menu popover is **not** clipped by its container — the
+open question carried since v2.54.1.
+
+## [2.54.2] - 2026-09-04
+
+### Changed — adding a contact detail is now the same surface as editing one
+
+The composer sat in its own bordered `bg-stone-50` card below the list, with a header naming
+the chosen type and a `↺ Cambiar tipo` link. Editing a row happens inline, in the row. Two
+surfaces answering the same question looked like two different features.
+
+Adding a detail is editing a row that does not exist yet, so it now gets the row treatment:
+no card, no grey panel, just the list's own separator, with `ContactTypePicker` beside the
+input exactly as v2.54.1 put it in the edit form. The pills stay as the way in — a new detail
+still starts by choosing a type from nothing — but once one is chosen, add and edit are the
+same layout.
+
+**Behaviour change:** correcting the type mid-compose no longer discards what you typed.
+`returnToPickType` used to clear the inputs and send you back to the pick-type stage; that was
+defensible while changing type meant leaving the form, but the control now sits beside the
+input and there is no stage to return to. Picking the wrong type first is the common case, not
+a reset. The switch delegates to the same `retypeDraft` the edit form uses, so `value` carries
+across while type-specific fields are dropped — a structured address's street and locality
+still do not survive becoming a phone number, because they are not one.
+
+`tests/adopter.spec.ts` covered the old discard behaviour directly and was rewritten to assert
+the new contract: the form re-shapes in place rather than returning to the pills, and the
+address parts still do not carry. Removed `ce_compose_adding_label` and
+`ce_compose_change_type` from all three locales — the header they belonged to is gone.
+
+## [2.54.1] - 2026-09-04
+
+### Fixed — extracted contact details could not be edited or deleted
+
+v2.53.0 moved the import wizard onto `ContactEntriesSection`, the profile's contact
+component. That component gates every per-entry mutation on `entry.id`: the edit and delete
+buttons render only when one is set, and `startEdit`/`saveEdit`/`remove` all bail early
+without it. But the extraction producers never assigned ids — `buildContactEntries` and
+`categorizeContactText` pushed bare `{ type, value }`. The old `ContactEntriesInput` had
+been keyed by array index, so it never needed them.
+
+The result was a clean split by origin: details typed into the composer got a
+`crypto.randomUUID()` and stayed editable, while every detail the AI extracted rendered
+permanently read-only. It reached `parseBlobToContactEntries` too, so `AdopterForm`'s
+legacy-blob path had the same hole.
+
+Both producers now stamp a stable id via the existing `deriveStableLegacyId` — deterministic
+rather than random, so client and server derive the same id for the same entry.
+
+Also fixed a latent id collision the above would have made reachable: `dedupe` keys social
+entries on `type|value|platform`, so one handle on two networks is a legitimate pair, but the
+id derivation used only `type|value`. Both entries got the SAME id — and since edit is
+`map(e => e.id === entry.id ? … )` and delete is `filter(e => e.id !== entryId)`, editing one
+would have silently rewritten both. Platform now participates in the derivation for socials;
+non-social types and platform-less socials keep their previous ids.
+
+### Changed — correcting a mis-detected type now happens in one pass
+
+Re-filing a detail under the right type used to commit the change straight to the parent and
+then close the edit form, dropping the rescuer outside the only place the new type's fields
+live. A row corrected to `phone` could not reach its WhatsApp/Telegram toggles; one corrected
+to `social` could not reach its network picker — and for socials that picker's absence then
+disabled Save, so the correction could not be completed at all. Six clicks, ending in a dead
+end.
+
+The type is now part of the edit draft: picking one re-shapes the form in place and commits
+only on Guardar, with Cancelar reverting it like any other field. The control is
+`ContactTypePicker` — restored from before v2.53.0, where its own docstring records why it
+replaced a `<select>` (a native select is sized by its longest option, which on a 360px screen
+left the value input around 50px). Using the row's existing type icon as the control means
+correcting a type costs no vertical space, so Guardar stays on screen on a phone; the static
+icon and label stand down while it is open so two indicators never disagree. It matches the
+idiom the component already uses in `SocialPlatformPicker` and `PhoneAppsToggle`, and offers
+the same six types the add composer does.
+
+Four clicks now, all inside one form. The draft transition moved to `lib/contactEntries` as
+the pure `retypeDraft()` so the field-carry rules are unit-tested: `value` always survives,
+type-specific fields are dropped on the way across, and platform detection re-runs so
+retyping a profile URL to `social` lands on its network automatically.
+
+## [2.54.0] - 2026-09-04
+
+### Changed — import wizard audited against the design docs and brought back into line
+
+Full findings in `.agents/audits/2026-09-04-import-wizard-ui-audit.md`. The drift had a
+single root cause: changes were being reasoned from general UI principles instead of from
+`docs/ux-ui-guidelines.md`, which already answers most of them — including two of these as
+anti-patterns the project had explicitly walked back and this surface had reintroduced.
+
+**Emoji as functional icons** (§5 row 8, removed project-wide in v36 — emoji render per-OS
+and cannot inherit `currentColor`, so they can never follow the theme). 17 functional uses
+replaced with stroke SVG in a new `ui/Glyph.tsx`: status warnings, close controls, selection
+checks, seven loading spinners, and the attach/upload/video/AI/save affordances. Several
+lived inside the i18n strings themselves, so the copy was corrected in all three locales.
+
+The species picker (🐕/🐱/🐦) and record-type chips (🏠/📝/📞/👁️/🐾) are untouched — §1.3
+permits emoji as decorative subject markers beside a text label, and that is what they are.
+
+**`bg-blue-*` as a primary surface** (§5 row 6, fixed in `DisclaimerToast` at v32). Verified
+against `globals.css`: `bg-blue-500/600/700`, `border-blue-400/500`, `ring-blue-400` and
+`text-blue-500` are **not** in the `[data-theme]` remap, so those surfaces rendered raw in
+Azul Noche. All moved to themed teal. The blues that *are* remapped (`bg-blue-50/100`,
+`border-blue-200`, `text-blue-600/700`) stay as the info palette. An off-palette
+`bg-green-600` submit button went with them.
+
+**Inputs auto-zoomed on iOS** (§1.5, §2.3). Every full-width text control was 14px against
+the documented 16px minimum, so iOS Safari zoomed on focus. `SearchSection` carries a comment
+about having been bitten by exactly this; the wizard never got the fix. All now 16px, and the
+stray `focus:ring-green-500` uses the app's teal focus treatment.
+
+**Tap targets** (§1.5). Five step CTAs computed to ~40px against the 44px floor.
+
+**The button matrix now exists as code.** `ui/Button.tsx` implements §2.1 — two sizes, four
+variants, five states, a 44px floor and themed utilities only. The matrix had been a table
+nothing enforced, which is why the wizard had accumulated **eight distinct padding pairs**
+across ~22 buttons while using neither of the two sizes the matrix defines. The step CTAs
+now share one constant; migrating the remaining inline buttons is tracked in the audit.
+
+**Not fixed, recorded instead:** the type scale says section labels are 16px/700 while
+`AdopterForm` — the consistency reference — uses 14px/600. Conforming to the guide and
+matching the code currently disagree, and which one moves is a product decision.
+
+## [2.53.4] - 2026-09-04
+
+### Fixed — the import wizard's review step now has one heading style, not two
+
+v2.53.3 changed only the contact heading to match the profile, leaving the name and observation blocks as small grey labels. The result was worse than either consistent option: a teal uppercase heading sitting between two faint grey ones. The reasoning behind it — that a `<label>` labels an input while a heading titles a section — is true in general and irrelevant here, because these three are peer blocks in one step and the eye reads them as a set.
+
+All three now use `AdopterForm`'s section heading, which is the house pattern for a titled block in these forms (`Contacto` and `Familiares` already use it). The name heading also takes the profile's own `adopter.name` string.
+
+**Accessibility improved rather than lost.** The old `<label>` elements carried no `htmlFor` and did not wrap their inputs, so they associated nothing — they were styled text. The inputs now reference their headings with `aria-labelledby`, which does the job the markup was only pretending to do.
+
+**Off-brand focus rings.** The step's inputs used `focus:ring-blue-500 focus:border-blue-500` on a teal-accented product. Neither appears in the `[data-theme]` remap in `globals.css`, so they also rendered raw in dark mode. All four now use the same teal focus treatment as the rest of the app.
+
+## [2.53.3] - 2026-09-04
+
+### Fixed — three consistency slips in the wizard's contact step
+
+**A stray visibility line.** *"Este perfil es público y visible para todos."* appeared above the contact list. The shared section prints that line for the profile, where it is the only statement about visibility — but the wizard has its own labelled toggle with an explainer a few lines below, so this was a second statement about one setting. Suppressed there via a new `hideVisibilityMicrocopy`, the same reasoning that `hidePublicMicrocopy` already encodes for the profile header.
+
+This replaces the approach taken in 2.53.0, which forwarded the wizard's toggle into `adopterIsPublic` so the two would agree. Agreeing was the wrong goal — one signal is better than two that match.
+
+**The section heading did not match the profile.** The wizard used a small grey field label reading *"Info de Contacto"*; `AdopterForm` uses `<h3 class="text-sm font-semibold text-teal-800 uppercase tracking-wider">` reading *"Datos de Contacto"*. Different element, size, weight, colour, casing **and** wording for the same section. It now uses the profile's heading and the profile's own `adopter.contact` string, so the two cannot drift apart again.
+
+The name and observation labels beside it are left as `<label>` elements: they label single inputs, which is what a label is for. Only the contact block is a section — it introduces a whole sub-component.
+
+**The empty state read as "not yet".** *"Aún no hay datos de contacto"* is right on a profile someone is filling in, and wrong in a review step where the extraction has already run and found nothing. The wizard now says *"No se extrajeron datos de contacto. Agregalos vos."* through a new `emptyMessage` override, leaving the profile's copy untouched.
+
+## [2.53.2] - 2026-09-04
+
+### Fixed — the real reason production deploys were being skipped
+
+The E2E job had `timeout-minutes: 15` while the suite takes 10–15 minutes, so it intermittently ran over. A GitHub job timeout surfaces as `##[error]The operation was canceled` and a conclusion of **cancelled** — not *failed* — which reads exactly like a concurrency cancellation and nothing like a test failure. Both deploy jobs list `e2e` in `needs`, so the deploy was skipped and production stayed on the previous version after a green merge.
+
+Measured: 15m15s (timed out) against 11m25s and 10m05s on the runs either side. Raised to 30 minutes.
+
+**Correcting v2.53.1:** that release attributed these skipped deploys to the deploy jobs' concurrency groups cancelling sibling runs across branches. The timestamps disprove it — production's E2E was cancelled at 02:24:37 while the staging run supposedly responsible was not created until 02:24:55, eighteen seconds later. It was a timeout, roughly fifteen minutes after that E2E began.
+
+The concurrency change in 2.53.1 still stands on its own merits — a workflow-level group keyed to `github.ref` is the conventional shape and stops redundant parallel runs on a branch — but it did not fix this, and the changelog should not have said it did.
+
+## [2.53.1] - 2026-09-03
+
+### Changed — CI concurrency moved to the workflow level
+
+The deploy jobs each carried their own `concurrency` group with `cancel-in-progress: true`, and there was no workflow-level group. Concurrency now sits at the workflow level keyed to `github.ref`, so a newer push supersedes an older run on the same branch and cannot reach across to the other one. `cancel-in-progress` is deliberately **false on master**: a newer staging push should replace an older one, but a production deploy already under way should finish rather than be interrupted part-way through `wrangler pages deploy`.
+
+This was originally written up as the fix for production deploys being skipped. It was not — see 2.53.2.
+
+## [2.53.0] - 2026-09-03
+
+### Changed — the import wizard now uses the same contact component as the profile
+
+The wizard had a parallel implementation of contact details: always-editable rows, each carrying its own type control, where you typed a value into a generic box and the row reclassified itself around what you had written. The adopter profile asks **which kind of detail first**, then shows the input for that kind.
+
+Type-first is the better shape, and not only for consistency: it is what lets the input arrive correct. An address opens with street and locality. A social asks which network *before* the handle, so the placeholder can nudge toward a profile link — whose numeric id is the stable dedup key. A phone offers WhatsApp/Telegram. A value-first box can only offer any of that *after* the rescuer has already typed into the wrong-shaped field.
+
+`ContactEntriesSection` has supported a local mode (`onChange` instead of server actions) since new-adopter creation needed it — `AdopterForm` has used it that way all along, with a comment stating the intent: *"Either way the add UX, edit UX and chip rendering are identical."* The wizard had simply never been migrated onto it. It now is, and `ContactEntriesInput` is a thin wrapper carrying only the paste box, which is genuinely import-specific.
+
+The wizard inherits what it silently lacked: branded social logos, messaging-app badges, structured two-field addresses, the duplicate hint, and the read-only row with hover-to-edit.
+
+**One capability is wizard-only.** Reviewing what the AI guessed is that surface's job, and it guesses types wrong — a document number read as a phone, a note read as an address. An entry's type can be corrected in place there, using the composer's own pills, so the affordance for "which kind of detail is this" is identical wherever the question is asked. The profile keeps its existing behaviour: a saved entry's type is fixed, delete and re-add.
+
+**A contradiction caught in the port:** the section's visibility microcopy defaults to *"Datos protegidos…"*, which would have sat directly above the wizard's own toggle reading *"Este perfil será visible para todos"* — two statements about one setting, disagreeing. The toggle is now forwarded so the microcopy tracks it.
+
+This removes the icon type-picker added in v2.50.0. That change fixed a real bug — the type `<select>` was sized by its longest option and squeezed the value input to ~50px at 360px — but fixed it by inventing a third pattern instead of adopting the profile's, which had neither problem. The mobile win survives: the composer is a full-width panel, so nothing competes for the row's width, and rows are now read-only summaries, which is narrower still.
+
+Net −189 lines.
+
 ## [2.52.0] - 2026-09-03
 
 ### Fixed — searching one name returned a different name as an equal match

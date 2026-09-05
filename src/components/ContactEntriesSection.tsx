@@ -9,7 +9,8 @@ import {
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
-import { deriveStreet, deriveLocality, detectSocialPlatform, socialUrl, phoneAppUrl, SOCIAL_PLATFORMS, type ContactEntry, type ContactEntryType, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
+import { deriveStreet, deriveLocality, detectSocialPlatform, socialUrl, phoneAppUrl, retypeDraft, SOCIAL_PLATFORMS, type ContactEntry, type ContactEntryType, type ContactDraft, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
+import { ContactTypePicker } from '@/components/ContactTypePicker';
 import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
 import { SocialLogo } from '@/components/SocialLogo';
 import { PhoneAppsToggle } from '@/components/PhoneAppsToggle';
@@ -71,6 +72,33 @@ interface Props {
      */
     adopterId?: string;
     onChange?: (next: ContactEntry[]) => void;
+    /**
+     * Let an existing entry's TYPE be corrected in place (local mode only).
+     *
+     * Off by default, and deliberately so: on a saved profile the type was
+     * chosen on purpose a moment ago, and changing it would have to move the
+     * value across server-side validation — delete and re-add is the honest
+     * path there. The import wizard is the exception. Its whole job is
+     * reviewing what the AI guessed, and it guesses types wrong — a document
+     * number read as a phone, a note read as an address — so correcting one
+     * in place is the point of the review step rather than an edge case.
+     *
+     * It reuses the composer's own pills, so the affordance is identical to
+     * choosing the type in the first place.
+     */
+    allowTypeChange?: boolean;
+    /**
+     * Suppress the visibility line entirely.
+     *
+     * For a surface that owns the visibility decision itself — the import
+     * wizard has its own labelled toggle with an explainer — this line is a
+     * second statement about one setting sitting above the list. One signal,
+     * not two (Nielsen #8), which is the same reason `hidePublicMicrocopy`
+     * exists for the profile header.
+     */
+    hideVisibilityMicrocopy?: boolean;
+    /** Override the "no entries yet" copy for contexts where "yet" is wrong. */
+    emptyMessage?: string;
     /** True if the viewer can edit/remove ANY entry (owner/admin). In local
      *  mode always true (you're creating it). Per-entry contributor-self
      *  edit is computed in addition to this — see `currentUser` below. */
@@ -97,13 +125,18 @@ interface Props {
     hidePublicMicrocopy?: boolean;
 }
 
-interface EditDraft {
-    value: string;
-    streetAndNumber: string;
-    locality: string;
-    platform?: SocialPlatform | null;
-    apps?: MessagingApp[];
-}
+/**
+ * The open row's draft. `type` is provisional: picking a new type in the edit
+ * form only moves this, so the form can re-shape around it (a phone gains the
+ * WhatsApp/Telegram toggle, a social gains the network picker) BEFORE anything
+ * is committed. Cancelar reverts it with the rest of the draft. Only meaningful
+ * in local mode with `allowTypeChange`; server mode has no way to move a value
+ * across type validation, so it stays pinned to the entry's own type.
+ *
+ * The shape and its type transition live in `lib/contactEntries` so the
+ * field-carry rules are unit-testable without rendering the component.
+ */
+type EditDraft = ContactDraft;
 
 function socialHref(value: string): string | null {
     const v = value.trim();
@@ -113,11 +146,13 @@ function socialHref(value: string): string | null {
     return null;
 }
 
-export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick, adopterIsPublic = false, hidePublicMicrocopy = false }: Props) {
+export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick, adopterIsPublic = false, hidePublicMicrocopy = false, allowTypeChange = false, hideVisibilityMicrocopy = false, emptyMessage }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
     const isLocalMode = !!onChange;
+    /** Correcting a mis-extracted type is a local-mode affordance only. */
+    const typeChangeEnabled = allowTypeChange && isLocalMode;
 
     // Per-entry edit gate: owner/admin can edit anything; everyone else can
     // edit entries they themselves contributed (matches the server-side
@@ -174,7 +209,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
 
     // Edit state — the id of the entry currently being edited (one at a time).
     const [editingId, setEditingId] = useState<string | null>(null);
-    const [editDraft, setEditDraft] = useState<EditDraft>({ value: '', streetAndNumber: '', locality: '', platform: null, apps: [] });
+    const [editDraft, setEditDraft] = useState<EditDraft>({ type: 'other', value: '', streetAndNumber: '', locality: '', platform: null, apps: [] });
     const [editBusy, setEditBusy] = useState(false);
 
     // Deletion is gated by a confirmation dialog. `deletingId` hides the row
@@ -219,13 +254,35 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         setComposerStage('closed');
     }
 
-    /** Discard in-progress input + return to the pick-type stage so the
-     *  user can choose a different type. Triggered by the "↺ cambiar"
-     *  link in the editing stage. Per v2.18.4 design, this is a
-     *  deliberate user-action discard — no auto-commit fallback. */
-    function returnToPickType() {
-        clearComposerInputs();
-        setComposerStage('pick-type');
+    /**
+     * Re-file the in-progress entry under a different type, KEEPING what has
+     * been typed.
+     *
+     * This replaces `returnToPickType`, which sent the user back to the
+     * pick-type stage and discarded the input on the way. That discard was
+     * defensible while changing type meant leaving the form — but the type
+     * control now sits beside the input, so there is no stage to return to and
+     * nothing to justify throwing the value away. Choosing the wrong type first
+     * is the common case, not a reset.
+     *
+     * Delegates to the same `retypeDraft` the edit form uses, so the rules for
+     * which fields survive a type change live in one tested place rather than
+     * being re-derived per surface.
+     */
+    function changeComposerType(next: ContactEntryType) {
+        const moved = retypeDraft({
+            type: composerType,
+            value: composerValue,
+            streetAndNumber: composerStreet,
+            locality: composerLocality,
+            platform: composerPlatform,
+            apps: composerApps,
+        }, next);
+        setComposerType(moved.type);
+        setComposerStreet(moved.streetAndNumber);
+        setComposerLocality(moved.locality);
+        setComposerPlatform(moved.platform ?? null);
+        setComposerApps(moved.apps ?? []);
     }
 
     // Social platform: deduced from a URL (locked) or picked by the user.
@@ -376,6 +433,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         // (split on first comma) so the form pre-fills with the existing
         // text instead of empty inputs. v2.16.0-13 fix.
         setEditDraft({
+            type: entry.type,
             value: entry.value,
             streetAndNumber: entry.type === 'address' ? deriveStreet(entry) : (entry.streetAndNumber ?? ''),
             locality: entry.type === 'address' ? deriveLocality(entry) : (entry.locality ?? ''),
@@ -384,38 +442,66 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         });
     }
 
+    /**
+     * Re-file the row under a different type WITHOUT leaving the form.
+     *
+     * The old `changeEntryType` committed straight to the parent and then closed
+     * edit mode, which left the rescuer outside the only form where the new
+     * type's fields live — a phone could not get its WhatsApp/Telegram toggles
+     * and a social could not get its network, so the corrected row was saved
+     * incomplete (and for a social, Save was disabled by a picker that had just
+     * been taken off screen). Moving the type into the draft keeps the form open
+     * and lets it re-shape in place.
+     *
+     * Type-specific fields are dropped on the way across rather than carried: a
+     * phone's messaging apps mean nothing once it is a document, and a
+     * structured address's parts mean nothing once it is a note. `value`
+     * survives — correcting the LABEL the AI guessed is the whole point.
+     */
+    function changeDraftType(next: ContactEntryType) {
+        setEditDraft(d => retypeDraft(d, next));
+    }
+
     function cancelEdit() {
         setEditingId(null);
-        setEditDraft({ value: '', streetAndNumber: '', locality: '', platform: null, apps: [] });
+        setEditDraft({ type: 'other', value: '', streetAndNumber: '', locality: '', platform: null, apps: [] });
     }
 
     async function commitEdit(entry: ContactEntry) {
         if (!entry.id || editBusy) return;
-        const hasContent = entry.type === 'address'
+        // The type being saved. Only the local + allowTypeChange combination can
+        // move it; server mode has no way to carry a value across type-specific
+        // validation, so it stays pinned to the entry's own type there.
+        const effType = typeChangeEnabled ? editDraft.type : entry.type;
+        const hasContent = effType === 'address'
             ? (editDraft.streetAndNumber.trim().length > 0 || editDraft.locality.trim().length > 0)
             : editDraft.value.trim().length > 0;
         if (!hasContent) return;
-        const editPlatform: SocialPlatform | null = entry.type === 'social'
+        const editPlatform: SocialPlatform | null = effType === 'social'
             ? (detectSocialPlatform(editDraft.value) ?? editDraft.platform ?? null) : null;
-        const editApps: MessagingApp[] = entry.type === 'phone' ? (editDraft.apps ?? []) : [];
+        const editApps: MessagingApp[] = effType === 'phone' ? (editDraft.apps ?? []) : [];
         // A social must have a network before it can be saved.
-        if (entry.type === 'social' && editDraft.value.trim().length > 0 && !editPlatform) return;
+        if (effType === 'social' && editDraft.value.trim().length > 0 && !editPlatform) return;
 
         // Local mode: build the updated entry in place, emit.
         if (isLocalMode) {
-            const updated: ContactEntry = entry.type === 'address'
+            const updated: ContactEntry = effType === 'address'
                 ? {
                     id: entry.id,
                     type: 'address',
                     value: [editDraft.streetAndNumber.trim(), editDraft.locality.trim()].filter(Boolean).join(', '),
                     streetAndNumber: editDraft.streetAndNumber.trim() || undefined,
                     locality: editDraft.locality.trim() || undefined,
+                    ...(entry.addedBy ? { addedBy: entry.addedBy } : {}),
                 }
                 : {
                     id: entry.id,
-                    type: entry.type,
+                    type: effType,
                     value: editDraft.value.trim(),
-                    ...(entry.label ? { label: entry.label } : {}),
+                    // The `id` label belongs to the document type; carrying it
+                    // onto a phone or address would mislabel the new row.
+                    ...(entry.label && effType === 'id' ? { label: entry.label } : {}),
+                    ...(entry.addedBy ? { addedBy: entry.addedBy } : {}),
                     ...(editPlatform ? { platform: editPlatform } : {}),
                     ...(editApps.length ? { apps: editApps } : {}),
                 };
@@ -600,7 +686,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
     // padlock line ("solo visible para vos") is owner-facing and always stays.
     const showPublicLine = profileEffectivelyPublic && !hidePublicMicrocopy;
     const showPrivateLine = !profileEffectivelyPublic && viewerIsPrivileged;
-    const showMicrocopy = showPublicLine || showPrivateLine;
+    const showMicrocopy = (showPublicLine || showPrivateLine) && !hideVisibilityMicrocopy;
     const microcopyKey = showPublicLine
         ? 'adopter.ce_visibility_profile_public'
         : 'adopter.ce_visibility_microcopy';
@@ -634,6 +720,23 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                         const branded = brandedSocialPlatform(entry);
                         const Icon = TYPE_ICON[entry.type];
                         const isEditing = editingId === entry.id;
+                        /**
+                         * The type the FORM is currently shaped around. While editing with
+                         * type-change enabled that's the draft's provisional type, so
+                         * picking "Red social" swaps the messaging-app toggles for the
+                         * network picker immediately, before anything is saved. Everywhere
+                         * else it is simply the entry's own type.
+                         */
+                        const formType = isEditing && typeChangeEnabled ? editDraft.type : entry.type;
+                        /**
+                         * While the picker is on screen it IS the row's type indicator, so
+                         * the static icon and label step aside rather than sitting beside
+                         * it showing the pre-change type — two indicators disagreeing while
+                         * the rescuer re-files the row. Standing down also hands the input
+                         * back the label's fixed 96px, which is the width that motivated
+                         * hiding the label below `sm:` in the first place.
+                         */
+                        const pickerOwnsType = isEditing && typeChangeEnabled;
                         return (
                             <li
                                 key={entry.id || `${entry.type}:${entry.value}`}
@@ -641,66 +744,102 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 data-testid="ce-chip"
                                 data-entry-type={entry.type}
                             >
-                                {branded
+                                {!pickerOwnsType && (branded
                                     ? <SocialLogo platform={branded} size={16} className="mt-0.5 shrink-0" />
-                                    : <Icon className="w-4 h-4 mt-0.5 shrink-0 text-teal-600" aria-hidden="true" />}
+                                    : <Icon className="w-4 h-4 mt-0.5 shrink-0 text-teal-600" aria-hidden="true" />)}
                                 {/* The icon already states the type, so this label is a
                                     second copy of it costing a fixed 96px — the width the
                                     value (and, while editing, the input) has to give up on
                                     a phone. Kept from `sm:` up, where it genuinely helps
                                     scanning a list, and sr-only below so the type is still
                                     announced: the icon beside it is aria-hidden. */}
-                                <span className="sr-only sm:not-sr-only sm:w-24 sm:shrink-0 text-stone-500">{branded ? SOCIAL_LABEL[branded] : labelFor(entry)}</span>
+                                {!pickerOwnsType && (
+                                    <span className="sr-only sm:not-sr-only sm:w-24 sm:shrink-0 text-stone-500">{branded ? SOCIAL_LABEL[branded] : labelFor(entry)}</span>
+                                )}
                                 <div className="flex-1 min-w-0">
                                     {isEditing ? (
                                         <div className="space-y-2">
-                                            {entry.type === 'address' ? (
-                                                <>
-                                                    <input
-                                                        type="text"
-                                                        value={editDraft.streetAndNumber}
-                                                        onChange={e => setEditDraft({ ...editDraft, streetAndNumber: e.target.value })}
-                                                        placeholder={t('adopter.ce_input_ph_address')}
-                                                        className="w-full px-2 py-1 border border-stone-300 rounded text-sm"
-                                                        autoFocus
+                                            {/* The type control sits INLINE with the value, as the
+                                                row's own icon rather than a block beneath it — so
+                                                correcting a mis-extracted type costs no vertical
+                                                space and Guardar stays on screen on a phone. Same
+                                                idiom as SocialPlatformPicker / PhoneAppsToggle. */}
+                                            <div className="flex gap-2 items-start">
+                                                {typeChangeEnabled && (
+                                                    <ContactTypePicker
+                                                        compact
+                                                        value={formType}
+                                                        onChange={changeDraftType}
+                                                        types={COMPOSABLE_TYPES}
                                                     />
-                                                    <input
-                                                        type="text"
-                                                        value={editDraft.locality}
-                                                        onChange={e => setEditDraft({ ...editDraft, locality: e.target.value })}
-                                                        placeholder={t('adopter.ce_input_ph_locality')}
-                                                        className="w-full px-2 py-1 border border-stone-300 rounded text-sm"
-                                                    />
-                                                </>
-                                            ) : (
-                                                <input
-                                                    type="text"
-                                                    value={editDraft.value}
-                                                    onChange={e => setEditDraft({ ...editDraft, value: e.target.value })}
-                                                    placeholder={placeholderFor(entry.type)}
-                                                    onKeyDown={e => {
-                                                        if (e.key === 'Enter') { e.preventDefault(); commitEdit(entry); }
-                                                        if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
-                                                    }}
-                                                    className="w-full px-2 py-1 border border-stone-300 rounded text-sm"
-                                                    autoFocus
-                                                />
-                                            )}
-                                            {entry.type === 'social' && editDraft.value.trim().length > 0 && (() => {
-                                                const det = detectSocialPlatform(editDraft.value);
-                                                return (
-                                                    <div>
-                                                        {!det && <div className="text-xs font-semibold text-stone-700 mb-1.5">{t('adopter.ce_social_which')} <span className="text-red-600">*</span></div>}
-                                                        <SocialPlatformPicker value={det ?? editDraft.platform ?? null} locked={!!det} onChange={(pl) => setEditDraft({ ...editDraft, platform: pl })} />
-                                                    </div>
-                                                );
-                                            })()}
-                                            {entry.type === 'phone' && editDraft.value.trim().length > 0 && (
-                                                <div className="flex items-center gap-2 flex-wrap">
-                                                    <span className="text-xs font-semibold text-stone-500">{t('adopter.ce_phone_apps')}</span>
-                                                    <PhoneAppsToggle value={editDraft.apps ?? []} onChange={(apps) => setEditDraft({ ...editDraft, apps })} />
+                                                )}
+                                                <div className="flex-1 min-w-0 space-y-2">
+                                                    {formType === 'address' ? (
+                                                        <>
+                                                            <input
+                                                                type="text"
+                                                                value={editDraft.streetAndNumber}
+                                                                onChange={e => setEditDraft({ ...editDraft, streetAndNumber: e.target.value })}
+                                                                placeholder={t('adopter.ce_input_ph_address')}
+                                                                className="w-full px-2 py-1 border border-stone-300 rounded text-sm"
+                                                                autoFocus
+                                                            />
+                                                            <input
+                                                                type="text"
+                                                                value={editDraft.locality}
+                                                                onChange={e => setEditDraft({ ...editDraft, locality: e.target.value })}
+                                                                placeholder={t('adopter.ce_input_ph_locality')}
+                                                                className="w-full px-2 py-1 border border-stone-300 rounded text-sm"
+                                                            />
+                                                        </>
+                                                    ) : (
+                                                        <input
+                                                            type="text"
+                                                            value={editDraft.value}
+                                                            onChange={e => setEditDraft({ ...editDraft, value: e.target.value })}
+                                                            placeholder={placeholderFor(formType)}
+                                                            onKeyDown={e => {
+                                                                if (e.key === 'Enter') { e.preventDefault(); commitEdit(entry); }
+                                                                if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+                                                            }}
+                                                            className="w-full px-2 py-1 border border-stone-300 rounded text-sm"
+                                                            autoFocus
+                                                        />
+                                                    )}
+                                                    {/* Type-specific fields sit INSIDE the input's
+                                                        column so they line up with it rather than
+                                                        starting back at the type picker's left edge.
+                                                        They also key off the type alone, not off a
+                                                        non-empty value: re-filing a row as a phone
+                                                        has to surface its app toggles immediately,
+                                                        or the option looks like it does not exist. */}
+                                                    {formType === 'social' && (() => {
+                                                        const det = detectSocialPlatform(editDraft.value);
+                                                        return (
+                                                            <div>
+                                                                {/* The asterisk marks an UNMET requirement, so it
+                                                                    tracks whether a network is actually set — not
+                                                                    whether one was auto-detected. Keying it to `det`
+                                                                    alone left "required" showing over an already
+                                                                    chosen network. */}
+                                                                {!det && (
+                                                                    <div className="text-xs font-semibold text-stone-700 mb-1.5">
+                                                                        {t('adopter.ce_social_which')}
+                                                                        {!editDraft.platform && <span className="text-red-600"> *</span>}
+                                                                    </div>
+                                                                )}
+                                                                <SocialPlatformPicker value={det ?? editDraft.platform ?? null} locked={!!det} onChange={(pl) => setEditDraft({ ...editDraft, platform: pl })} />
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                    {formType === 'phone' && (
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="text-xs font-semibold text-stone-500">{t('adopter.ce_phone_apps')}</span>
+                                                            <PhoneAppsToggle value={editDraft.apps ?? []} onChange={(apps) => setEditDraft({ ...editDraft, apps })} />
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            )}
+                                            </div>
                                             <div className="flex items-center gap-2 justify-end">
                                                 <button
                                                     type="button"
@@ -713,7 +852,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                 <button
                                                     type="button"
                                                     onClick={() => commitEdit(entry)}
-                                                    disabled={editBusy || (entry.type === 'social' && editDraft.value.trim().length > 0 && !(detectSocialPlatform(editDraft.value) ?? editDraft.platform))}
+                                                    disabled={editBusy || (formType === 'social' && editDraft.value.trim().length > 0 && !(detectSocialPlatform(editDraft.value) ?? editDraft.platform))}
                                                     className="inline-flex items-center gap-1 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
                                                     data-testid="ce-edit-save"
                                                 >
@@ -765,7 +904,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 bottom. Suppressed when an undo bar is up (the deleted entry's
                 temporary absence isn't an empty state). */}
             {sorted.length === 0 && !deletingId && composerStage === 'closed' && (
-                <p className="text-sm text-stone-500 italic">{t('adopter.ce_empty')}</p>
+                <p className="text-sm text-stone-500 italic">{emptyMessage ?? t('adopter.ce_empty')}</p>
             )}
 
             {/* Inline three-stage composer (v2.18.4 — see composerStage docs above):
@@ -782,11 +921,27 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                         ref={triggerRef}
                         onClick={() => setComposerStage('pick-type')}
                         data-testid="ce-add-trigger"
-                        className={
-                            sorted.length === 0
-                                ? 'inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-md transition-colors'
-                                : 'inline-flex items-center gap-1 text-sm font-medium text-teal-700 hover:text-teal-900 transition-colors'
-                        }
+                        /* One treatment in BOTH states — deliberate, and it must stay
+                         * that way. Until v2.54.4 this was a Secondary button on an empty
+                         * list and a bare text link once entries existed.
+                         *
+                         * The deciding evidence is `HouseholdSection`, the sibling
+                         * list-section on the same profile: its section-level "add a
+                         * member" is this exact Secondary button, rendered unconditionally
+                         * (HouseholdSection.tsx:274), while its NESTED per-member "add a
+                         * contact" is a bare text link (:266). The link is not a lighter
+                         * button — it marks an action one level down. Swapping to it
+                         * whenever this list happened to be non-empty dressed a
+                         * section-level action as a nested one, and made two sibling
+                         * sections answer "add a record to this list" differently.
+                         *
+                         * Emphasis for the empty state is carried by its own hint line
+                         * above ("Aún no hay datos de contacto…"), not by changing what
+                         * the button is. If this ever reads too loud beside a populated
+                         * list, quiet the Secondary variant globally — do not special-case
+                         * one state back into a different component.
+                         */
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-md transition-colors"
                     >
                         <Plus className="w-4 h-4" />
                         {t('adopter.contrib_cta')}
@@ -794,7 +949,11 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 )}
 
                 {composerStage === 'pick-type' && (
-                    <div className="space-y-3 border border-stone-200 rounded-md p-3 bg-stone-50">
+                    /* Same row treatment as the editing stage below it — the card
+                       this used to sit in painted `bg-stone-50` (→ --surface-base),
+                       which reads as a dark box in the dark theme and made choosing a
+                       type look like a different surface from filling one in. */
+                    <div className="space-y-3 pt-3 border-t border-stone-100">
                         <p className="text-sm font-medium text-stone-700">
                             {t('adopter.ce_compose_prompt')}
                         </p>
@@ -836,83 +995,95 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 )}
 
                 {composerStage === 'editing' && (
-                    <div className="space-y-2 border border-stone-200 rounded-md p-3 bg-stone-50">
-                        {/* Header — names the type the user picked and offers
-                            an explicit "↺ cambiar" link to return to the
-                            pick-type stage (discards any in-progress input;
-                            this is a user-initiated action so the discard is
-                            never a surprise). */}
-                        <div className="flex items-center justify-between gap-2">
-                            <p className="text-xs text-stone-600">
-                                <span className="font-medium">{t('adopter.ce_compose_adding_label')}:</span>{' '}
-                                <span className="text-stone-900">{t(`adopter.ce_type_${composerType}`)}</span>
-                            </p>
-                            <button
-                                type="button"
-                                onClick={returnToPickType}
+                    /* Adding a detail is editing a row that does not exist yet, so it
+                       gets the row treatment rather than a card: no border, no grey
+                       panel, just the list's own separator. The card used to carry the
+                       "Añadiendo: X / ↺ Cambiar tipo" header; with the type control now
+                       beside the input — exactly as in the inline edit form — there is
+                       no header left for it to hold, and two surfaces answering the same
+                       question stop looking like different features. */
+                    <div className="space-y-2 pt-3 border-t border-stone-100">
+                        {/* Type control inline with the value — the same shape the edit
+                            form uses, so "which kind of detail is this" is asked the same
+                            way whether the row already exists or not.
+
+                            Every type-specific field lives INSIDE the right-hand column
+                            rather than beside it, so the network picker and the app
+                            toggles line up with the input instead of starting back at the
+                            picker's left edge. */}
+                        <div className="flex gap-2 items-start">
+                            <ContactTypePicker
+                                compact
+                                value={composerType}
+                                onChange={changeComposerType}
                                 disabled={composerBusy}
-                                className="text-xs text-teal-700 hover:text-teal-900 hover:underline transition-colors disabled:opacity-50"
-                                data-testid="ce-compose-change-type"
-                            >
-                                ↺ {t('adopter.ce_compose_change_type')}
-                            </button>
-                        </div>
-                        {/* Network-first: pick the social network before typing so the
-                            input can show a per-network placeholder (Facebook nudges the
-                            profile link → captures the numeric id). Locked to "auto" when
-                            a pasted URL already reveals the platform. */}
-                        {composerType === 'social' && (
-                            <div className="mb-1">
-                                <div className="text-xs font-semibold text-stone-700 mb-1.5">
-                                    {t('adopter.ce_social_which')}{!socialDetected && <span className="text-red-600"> *</span>}
-                                </div>
-                                <SocialPlatformPicker
-                                    value={effectiveSocialPlatform}
-                                    locked={!!socialDetected}
-                                    onChange={setComposerPlatform}
-                                />
-                            </div>
-                        )}
-                        {composerType === 'address' ? (
-                            <div className="space-y-2">
-                                <input
-                                    type="text"
-                                    value={composerStreet}
-                                    onChange={e => setComposerStreet(e.target.value)}
-                                    placeholder={t('adopter.ce_input_ph_address')}
-                                    className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
-                                    autoFocus
-                                />
-                                <input
-                                    type="text"
-                                    value={composerLocality}
-                                    onChange={e => setComposerLocality(e.target.value)}
-                                    placeholder={t('adopter.ce_input_ph_locality')}
-                                    className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
-                                />
-                            </div>
-                        ) : (
-                            <input
-                                type="text"
-                                value={composerValue}
-                                onChange={e => setComposerValue(e.target.value)}
-                                placeholder={composerType === 'social'
-                                    ? (effectiveSocialPlatform ? t(`adopter.ce_input_ph_social_${effectiveSocialPlatform}`) : t('adopter.ce_input_ph_social'))
-                                    : placeholderFor(composerType)}
-                                onKeyDown={e => {
-                                    if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }
-                                    if (e.key === 'Escape') { e.preventDefault(); resetComposer(); }
-                                }}
-                                className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
-                                autoFocus
+                                types={COMPOSABLE_TYPES}
                             />
-                        )}
-                        {composerType === 'phone' && composerValue.trim().length > 0 && (
-                            <div className="mt-2 flex items-center gap-2 flex-wrap">
-                                <span className="text-xs font-semibold text-stone-500">{t('adopter.ce_phone_apps')}</span>
-                                <PhoneAppsToggle value={composerApps} onChange={setComposerApps} />
+                            <div className="flex-1 min-w-0 space-y-2">
+                                {/* Network-first: pick the social network before typing so the
+                                    input can show a per-network placeholder (Facebook nudges the
+                                    profile link → captures the numeric id). Locked to "auto" when
+                                    a pasted URL already reveals the platform. */}
+                                {composerType === 'social' && (
+                                    <div>
+                                        <div className="text-xs font-semibold text-stone-700 mb-1.5">
+                                            {/* Asterisk = still unmet, not "not auto-detected". */}
+                                            {t('adopter.ce_social_which')}{!effectiveSocialPlatform && <span className="text-red-600"> *</span>}
+                                        </div>
+                                        <SocialPlatformPicker
+                                            value={effectiveSocialPlatform}
+                                            locked={!!socialDetected}
+                                            onChange={setComposerPlatform}
+                                        />
+                                    </div>
+                                )}
+                                {composerType === 'address' ? (
+                                    <>
+                                        <input
+                                            type="text"
+                                            value={composerStreet}
+                                            onChange={e => setComposerStreet(e.target.value)}
+                                            placeholder={t('adopter.ce_input_ph_address')}
+                                            className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
+                                            autoFocus
+                                        />
+                                        <input
+                                            type="text"
+                                            value={composerLocality}
+                                            onChange={e => setComposerLocality(e.target.value)}
+                                            placeholder={t('adopter.ce_input_ph_locality')}
+                                            className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
+                                        />
+                                    </>
+                                ) : (
+                                    <input
+                                        type="text"
+                                        value={composerValue}
+                                        onChange={e => setComposerValue(e.target.value)}
+                                        placeholder={composerType === 'social'
+                                            ? (effectiveSocialPlatform ? t(`adopter.ce_input_ph_social_${effectiveSocialPlatform}`) : t('adopter.ce_input_ph_social'))
+                                            : placeholderFor(composerType)}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }
+                                            if (e.key === 'Escape') { e.preventDefault(); resetComposer(); }
+                                        }}
+                                        className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
+                                        autoFocus
+                                    />
+                                )}
+                                {/* Shown as soon as the type is phone, not once a value has
+                                    been typed. Gating on a non-empty value meant choosing
+                                    "Teléfono" — or correcting a row to it — surfaced no
+                                    WhatsApp/Telegram toggles at all, which read as the
+                                    option simply not existing. */}
+                                {composerType === 'phone' && (
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-xs font-semibold text-stone-500">{t('adopter.ce_phone_apps')}</span>
+                                        <PhoneAppsToggle value={composerApps} onChange={setComposerApps} />
+                                    </div>
+                                )}
                             </div>
-                        )}
+                        </div>
                         {/* Cross-record duplicate warning. Renders nothing for
                             local mode, non-strong types, empty values, or
                             when no high-confidence match exists on another

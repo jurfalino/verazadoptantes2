@@ -9,6 +9,8 @@ import {
     deriveStableLegacyId,
     deriveStreet,
     deriveLocality,
+    retypeDraft,
+    type ContactDraft,
     type ContactEntry,
 } from './contactEntries';
 
@@ -122,7 +124,131 @@ describe('buildContactEntries', () => {
         expect(valuesOf(entries, 'email')).toEqual(['a@b.com']);
         expect(valuesOf(entries, 'social')).toEqual(['@x']);
         expect(valuesOf(entries, 'address')).toEqual(['Calle Falsa 123']);
-        expect(entries.find(e => e.type === 'id')).toEqual({ type: 'id', value: '30123456', label: 'DNI' });
+        expect(entries.find(e => e.type === 'id')).toMatchObject({ type: 'id', value: '30123456', label: 'DNI' });
+    });
+});
+
+/**
+ * Regression (v2.53.0): the import wizard was migrated onto ContactEntriesSection,
+ * which gates edit/delete on `entry.id` (renders the action buttons only when it is
+ * set, and both startEdit/remove bail early without one). The producer functions
+ * never assigned an id, so every EXTRACTED contact detail rendered read-only — it
+ * could not be corrected or removed — while composer-added entries (which get a
+ * crypto.randomUUID()) stayed editable. Ids must be stable, not random: the same
+ * entry has to derive the same id on every call, or the per-entry update/remove
+ * round-trip breaks the same way deriveStableLegacyId already documents.
+ */
+describe('every produced entry carries a stable id', () => {
+    it('buildContactEntries assigns an id to every entry', () => {
+        const entries = buildContactEntries({
+            phones: ['1123456789'],
+            emails: ['a@b.com'],
+            socials: ['@x'],
+            ids: [{ value: '30123456', label: 'DNI' }],
+            addresses: ['Calle Falsa 123'],
+        });
+        expect(entries.length).toBeGreaterThan(0);
+        for (const e of entries) expect(e.id, `${e.type}:${e.value} has no id`).toBeTruthy();
+    });
+
+    it('categorizeContactText assigns an id to every entry', () => {
+        const entries = categorizeContactText('Tel: 1123456789\na@b.com\nCalle Falsa 123');
+        expect(entries.length).toBeGreaterThan(0);
+        for (const e of entries) expect(e.id, `${e.type}:${e.value} has no id`).toBeTruthy();
+    });
+
+    it('derives the SAME id for the same entry across separate calls', () => {
+        const a = buildContactEntries({ phones: ['1123456789'] })[0];
+        const b = buildContactEntries({ phones: ['1123456789'] })[0];
+        expect(a.id).toBe(b.id);
+        expect(a.id).toBe(deriveStableLegacyId('phone', '1123456789'));
+    });
+
+    /**
+     * `dedupe` keys social entries on type|value|PLATFORM, so the same handle on
+     * two networks legitimately survives as two entries — Gemini extracting
+     * `@dario.fernandez` for both Instagram and Facebook is a real wizard case.
+     * The id must therefore separate them too: ContactEntriesSection edits with
+     * `entries.map(e => e.id === entry.id ? updated : e)` and deletes with
+     * `filter(e => e.id !== entryId)`, so two entries sharing an id means editing
+     * one silently rewrites both and deleting one removes both.
+     */
+    it('gives same-handle-different-network social entries distinct ids', () => {
+        const entries = buildContactEntries({
+            socials: [
+                { value: '@dario.fernandez', platform: 'instagram' },
+                { value: '@dario.fernandez', platform: 'facebook' },
+            ],
+        });
+        expect(entries).toHaveLength(2);
+        expect(new Set(entries.map(e => e.id)).size).toBe(entries.length);
+    });
+
+    it('does not overwrite an id an entry already has', () => {
+        const existing: ContactEntry[] = [{ id: 'real-uuid-1', type: 'phone', value: '1123456789' }];
+        const merged = mergeContactEntries(existing, categorizeContactText('a@b.com'));
+        expect(merged.find(e => e.value === '1123456789')?.id).toBe('real-uuid-1');
+        for (const e of merged) expect(e.id).toBeTruthy();
+    });
+});
+
+/**
+ * Regression (v2.53.x): correcting a mis-extracted type used to commit the new
+ * type straight to the parent and then CLOSE the edit form, which stranded the
+ * rescuer outside the only place the new type's fields live — a re-filed phone
+ * could not get its WhatsApp/Telegram toggles, and a re-filed social could not
+ * get its network (whose absence then disabled Save). Keeping the transition a
+ * pure draft→draft move is what lets the form stay open across the change.
+ */
+describe('retypeDraft', () => {
+    const base: ContactDraft = { type: 'phone', value: '1123456789', streetAndNumber: '', locality: '', platform: null, apps: ['whatsapp'] };
+
+    it('keeps the value — the label was wrong, not the data', () => {
+        expect(retypeDraft(base, 'id').value).toBe('1123456789');
+    });
+
+    it('returns the same draft when the type has not changed', () => {
+        expect(retypeDraft(base, 'phone')).toBe(base);
+    });
+
+    it('drops messaging apps when leaving phone', () => {
+        expect(retypeDraft(base, 'id').apps).toEqual([]);
+    });
+
+    it('keeps messaging apps addressable when arriving at phone', () => {
+        const asId: ContactDraft = { ...base, type: 'id', apps: [] };
+        expect(retypeDraft(asId, 'phone').apps).toEqual([]);
+        // the toggle is now reachable — the field exists rather than being undefined
+        expect(retypeDraft(asId, 'phone')).toHaveProperty('apps');
+    });
+
+    it('auto-detects the network when retyping a profile URL to social', () => {
+        const d: ContactDraft = { ...base, value: 'https://instagram.com/juan.perez' };
+        expect(retypeDraft(d, 'social').platform).toBe('instagram');
+    });
+
+    it('leaves platform null for an undetectable social so the picker demands one', () => {
+        const d: ContactDraft = { ...base, value: 'juan.perez.1985' };
+        expect(retypeDraft(d, 'social').platform).toBeNull();
+    });
+
+    it('clears the platform when leaving social', () => {
+        const social: ContactDraft = { ...base, type: 'social', platform: 'facebook', apps: [] };
+        expect(retypeDraft(social, 'id').platform).toBeNull();
+    });
+
+    it('drops address parts when leaving address and preserves them when staying', () => {
+        const addr: ContactDraft = { type: 'address', value: 'Calle Falsa 123, Quilmes', streetAndNumber: 'Calle Falsa 123', locality: 'Quilmes', platform: null, apps: [] };
+        const asOther = retypeDraft(addr, 'id');
+        expect(asOther.streetAndNumber).toBe('');
+        expect(asOther.locality).toBe('');
+        expect(retypeDraft(addr, 'address')).toBe(addr);
+    });
+
+    it('does not mutate the draft it was given', () => {
+        const before = JSON.stringify(base);
+        retypeDraft(base, 'social');
+        expect(JSON.stringify(base)).toBe(before);
     });
 });
 
@@ -265,7 +391,12 @@ describe('alias contact entries', () => {
 describe('legacy contactInfo → structured contactEntries (lazy migration)', () => {
     function migrate(blob: string) {
         const parsed = parseBlobToContactEntries(blob);
-        // Mirrors the id-assignment in addContactEntry's lazy branch.
+        // Mirrors the id-assignment in addContactEntry's lazy branch, spread
+        // order included: `{ id: <placeholder>, ...e }` means an id the entry
+        // ALREADY carries wins over the placeholder. Since the parser now stamps
+        // a deterministic id (see withStableId), that derived id is what survives
+        // here — and in production — rather than the placeholder. Deterministic
+        // beats random for exactly the reason deriveStableLegacyId documents.
         return parsed.map(e => ({ id: `id-${e.type}-${e.value}`, ...e }));
     }
 
@@ -311,8 +442,10 @@ describe('legacy contactInfo → structured contactEntries (lazy migration)', ()
         const newEntry: ContactEntry = { id: 'new-1', type: 'phone', value: '555-1234' };
         const merged = mergeContactEntries(seeded, [newEntry]);
         expect(merged).toHaveLength(1);
-        // The original (seeded) entry's id wins per the older-entry-id rule.
-        expect(merged[0].id).toBe('id-phone-555-1234');
+        // The original (seeded) entry wins per the older-entry-id rule — the
+        // load-bearing claim is that the NEW entry's id does not replace it.
+        expect(merged[0].id).not.toBe('new-1');
+        expect(merged[0].id).toBe(deriveStableLegacyId('phone', '555-1234'));
     });
 });
 

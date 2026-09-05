@@ -37,12 +37,19 @@ export const CONTACT_TYPE_ICON: Record<ContactEntryType, LucideIcon> = {
  * was 24px, which is a small target for a destructive action sitting beside a
  * text field.
  */
-export function ContactTypePicker({ value, onChange, disabled, compact }: {
+export function ContactTypePicker({ value, onChange, disabled, compact, types }: {
     value: ContactEntryType;
     onChange: (type: ContactEntryType) => void;
     disabled?: boolean;
     /** 36px, for the header line of a stacked row where the label is visible. */
     compact?: boolean;
+    /**
+     * Restrict the offered types. Defaults to all of them. The import wizard
+     * passes the composer's own list so that correcting a type offers exactly
+     * what adding one offers — `other` is excluded there because notes belong on
+     * the activity record, not on a contact detail.
+     */
+    types?: readonly ContactEntryType[];
 }) {
     const { t } = useLanguage();
     const [open, setOpen] = useState(false);
@@ -78,7 +85,14 @@ export function ContactTypePicker({ value, onChange, disabled, compact }: {
                 aria-label={`${t('adopter.ce_type_label')}: ${t(`adopter.ce_type_${value}`)}`}
                 title={t(`adopter.ce_type_${value}`)}
                 data-testid="ce-type-picker"
-                className={`${size} relative grid place-items-center rounded-lg border border-teal-200 bg-white text-teal-600 transition-colors hover:border-teal-400 hover:bg-teal-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:bg-stone-100 disabled:text-stone-400 disabled:cursor-not-allowed`}
+                // No background fill. `globals.css` maps `.bg-white` to
+                // `var(--surface-card)` unconditionally and with `!important`, so a
+                // filled button paints a card-coloured block wherever it sits — which
+                // read as a black box once this moved out of the composer's old
+                // `bg-stone-50` card and onto the row itself. Transparent lets it sit
+                // flush with the inputs beside it; the themed teal border still marks
+                // it as the one control in that row.
+                className={`${size} relative grid place-items-center rounded-lg border border-teal-200 text-teal-600 transition-colors hover:border-teal-400 hover:bg-teal-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:text-stone-400 disabled:cursor-not-allowed`}
             >
                 <Icon className="w-[18px] h-[18px] -translate-x-px -translate-y-px" aria-hidden="true" />
                 {!disabled && (
@@ -94,7 +108,7 @@ export function ContactTypePicker({ value, onChange, disabled, compact }: {
                     role="menu"
                     className="absolute z-30 top-full left-0 mt-1.5 min-w-[13rem] rounded-xl border border-stone-200 bg-white p-1.5 shadow-lg"
                 >
-                    {CONTACT_TYPE_ORDER.map(type => {
+                    {(types ?? CONTACT_TYPE_ORDER).map(type => {
                         const OptIcon = CONTACT_TYPE_ICON[type];
                         const active = type === value;
                         return (

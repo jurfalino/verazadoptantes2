@@ -24,6 +24,81 @@ interface ScrapeResult {
     videos: string[];
     platform: string;
     error?: string;
+    /** Which layer of the resolver chain produced this result. */
+    layer?: 'http-og' | 'playwright' | 'proxy' | 'none';
+    /**
+     * Why there is no content, when there is none. `login_walled` = the
+     * platform identified the poster but withheld the post (personal-profile
+     * posts, private groups); `no_content` = nothing usable at all. A reason
+     * is an OUTCOME, not a server error — the envelope stays 200/success:false
+     * so the app can route the rescuer to manual input with an explanation.
+     */
+    reason?: 'login_walled' | 'no_content';
+}
+
+// ─── Content Truth Helpers ──────────────────────────────────────────────────
+// Mirrors src/domain/facebookExtraction.ts in the main app: a login-walled
+// post's HTML still carries an og:image, but it points at
+// lookaside.fbsbx.com/lookaside/crawler/ — an endpoint that answers a browser
+// with text/html, never image bytes. Counting it as an image is how walled
+// posts used to come back as empty "successes".
+
+function isPlaceholderAsset(url: string): boolean {
+    return /lookaside\.fbsbx\.com\/lookaside\/crawler\//i.test(url);
+}
+
+function realImagesOf(urls: string[]): string[] {
+    return urls.filter(u => !isPlaceholderAsset(u));
+}
+
+// Text Facebook renders on its wall/error pages, which the DOM harvest scoops
+// up as if it were the caption. The GraphQL banner ("A server error
+// field_exception occured. Check server logs for details." — typo is
+// Facebook's) is 71 chars, over every length bar. Boilerplate only condemns
+// short text; a long real caption may legitimately mention logging in.
+// Mirrors src/domain/facebookExtraction.ts in the main app.
+const FB_ERROR_BANNER = /a server error \w+ occured\.? check server logs/i;
+const FB_WALL_BOILERPLATE = [
+    /^see more of .{1,80} on facebook/i,
+    /^ver más de .{1,80} en facebook/i,
+    /log in (or sign up )?to (see|view|continue)/i,
+    /^log in to see/i,
+    /^inicia sesión para/i,
+    /^iniciar sesión/i,
+    /you must log in/i,
+    /this content isn'?t available/i,
+    /este contenido no está disponible/i,
+];
+
+function isWallOrErrorText(text: string): boolean {
+    const t = text.trim();
+    if (!t) return false;
+    if (FB_ERROR_BANNER.test(t)) return true;
+    if (t.length > 200) return false;
+    return FB_WALL_BOILERPLATE.some(re => re.test(t));
+}
+
+function sanitizeText(text: string): string {
+    const t = text.trim();
+    return isWallOrErrorText(t) ? '' : t;
+}
+
+function hasRealContent(text: string, images: string[]): boolean {
+    return Boolean(sanitizeText(text)) || realImagesOf(images).length > 0;
+}
+
+/** One structured line per scrape for outcome telemetry (Fly logs → grep-able). */
+function logOutcome(platform: string, url: string, r: ScrapeResult, startedAt: number): void {
+    console.log(JSON.stringify({
+        evt: 'scrape_outcome',
+        platform,
+        url,
+        layer: r.layer ?? 'none',
+        reason: r.reason ?? (r.error ? 'error' : 'ok'),
+        textLen: r.text.length,
+        images: realImagesOf(r.images).length,
+        ms: Date.now() - startedAt,
+    }));
 }
 
 // ─── Platform Detection ─────────────────────────────────────────────────────
@@ -47,7 +122,7 @@ const SUPPORTED_PLATFORMS: Platform[] = ['facebook', 'instagram', 'twitter', 'ti
 async function launchBrowser(): Promise<Browser> {
     return chromium.launch({
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
 }
 
@@ -154,7 +229,26 @@ function harvestInstagramImages(html: string, out: string[]): void {
     for (const m of html.matchAll(/"display_url":"([^"]+)"/g)) consider(m[1]);
 }
 
-async function fetchOgTagsHttp(url: string, userAgent: string): Promise<{ title?: string; description?: string; images: string[]; videos: string[]; text?: string }> {
+interface OgFetchResult {
+    title?: string;
+    description?: string;
+    images: string[];
+    videos: string[];
+    text?: string;
+    /**
+     * The post's real URL from og:url. Share links (`/share/<id>/`) are opaque
+     * redirect stubs that 400 for browser UAs — the crawler fetch is the one
+     * reliable way to resolve them, and the canonical URL is what Playwright
+     * should navigate to.
+     */
+    canonicalUrl?: string;
+    /** Raw og:type. Untrustworthy on walled pages, which fabricate `video.other`. */
+    ogType?: string;
+    /** A crawler placeholder appeared as og:image — the login wall's signature. */
+    sawPlaceholder: boolean;
+}
+
+async function fetchOgTagsHttp(url: string, userAgent: string): Promise<OgFetchResult> {
     try {
         const response = await fetch(url, {
             headers: {
@@ -164,12 +258,14 @@ async function fetchOgTagsHttp(url: string, userAgent: string): Promise<{ title?
             },
             redirect: 'follow',
         });
-        if (!response.ok) return { images: [], videos: [] };
+        if (!response.ok) return { images: [], videos: [], sawPlaceholder: false };
 
         const html = await response.text();
 
         const titleMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
         const descMatch = html.match(/<meta\s+property="og:description"\s+content="([^"]+)"/i);
+        const urlMatch = html.match(/<meta\s+property="og:url"\s+content="([^"]+)"/i);
+        const typeMatch = html.match(/<meta\s+property="og:type"\s+content="([^"]+)"/i);
         const imageMatches = [...html.matchAll(/<meta\s+property="og:image"\s+content="([^"]+)"/gi)];
         const videoMatches = [...html.matchAll(/<meta\s+property="og:video(?::url)?"\s+content="([^"]+)"/gi)];
 
@@ -194,7 +290,9 @@ async function fetchOgTagsHttp(url: string, userAgent: string): Promise<{ title?
             .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
             .replace(/&#x([0-9a-fA-F]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
 
-        const images = imageMatches.map(m => decodeEntities(m[1]));
+        const rawImages = imageMatches.map(m => decodeEntities(m[1]));
+        const sawPlaceholder = rawImages.some(isPlaceholderAsset);
+        const images = realImagesOf(rawImages);
         // Instagram carousels: og:image is just the cover — harvest the rest of
         // the slides from the embedded JSON so multi-image posts return them all.
         if (/instagram\.com|instagr\.am/.test(url)) harvestInstagramImages(html, images);
@@ -205,10 +303,13 @@ async function fetchOgTagsHttp(url: string, userAgent: string): Promise<{ title?
             text: jsonLdText || undefined,
             images,
             videos: videoMatches.map(m => decodeEntities(m[1])),
+            canonicalUrl: urlMatch ? decodeEntities(urlMatch[1]) : undefined,
+            ogType: typeMatch ? typeMatch[1] : undefined,
+            sawPlaceholder,
         };
     } catch (e) {
         console.error(`[Scraper] HTTP OG fetch failed for ${url}:`, e instanceof Error ? e.message : e);
-        return { images: [], videos: [] };
+        return { images: [], videos: [], sawPlaceholder: false };
     }
 }
 
@@ -223,22 +324,40 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
     // Detect video/reel URLs — these need different extraction strategy
     const isVideoUrl = /\/(reel|r|share\/r)\//.test(url) || /\/videos\//.test(url);
 
+    // ── LAYER 1: crawler-UA OG fetch — no browser ───────────────────────────
+    // Three jobs: resolve a `/share/<id>/` stub (which answers 400 to browser
+    // UAs) into the canonical `/posts/<id>/` URL for Playwright; detect the
+    // login wall's signature early; and supply merge data for the tail.
+    //
+    // It deliberately does NOT short-circuit on success. og:image typically
+    // exposes ONE photo where the browser harvest collects a whole album, and
+    // og:description can truncate long captions — an early return here traded
+    // album completeness for speed, regressing the always-run-the-browser
+    // baseline that had been handling public posts correctly. Speed
+    // optimizations can come back when the scrape_outcome telemetry shows
+    // which posts Layer 1 alone serves completely.
+    const og = await fetchOgTagsHttp(url, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)');
+    const canonicalUrl = og.canonicalUrl || url;
+    console.log(`[Scraper] Layer 1: text=${og.description?.length ?? 0}, images=${og.images.length}, walled-signature=${og.sawPlaceholder}; continuing to Playwright on ${canonicalUrl}`);
+
     try {
-        console.log(`[Scraper] Starting Facebook scrape for: ${url} (isVideo: ${isVideoUrl})`);
+        console.log(`[Scraper] Starting Facebook scrape for: ${canonicalUrl} (isVideo: ${isVideoUrl})`);
 
         browser = await launchBrowser();
 
         const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            viewport: { width: 1280, height: 800 },
+            viewport: { width: 1366, height: 900 },
             locale: 'es-AR',
             timezoneId: 'America/Argentina/Buenos_Aires',
         });
 
         const page: Page = await context.newPage();
 
-        // Navigate to the URL
-        await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+        // Navigate to the CANONICAL URL — a /share/ stub 400s for browser UAs,
+        // and until Layer 1 resolved it, Playwright was navigating into that
+        // wall by construction.
+        await page.goto(canonicalUrl, { waitUntil: 'networkidle', timeout: 30000 });
 
         // Dismiss cookie consent dialog if present
         try {
@@ -360,22 +479,25 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
             }
         } catch { /* no OG images */ }
 
-        // Method 2: scontent img elements from the rendered page
-        const imgElements = await page.$$('img');
-
-        for (const img of imgElements) {
-            const src = await img.getAttribute('src');
-            if (src && src.includes('scontent')) {
-                const width = await img.getAttribute('width');
-                const height = await img.getAttribute('height');
-                if (width && parseInt(width) < 50) continue;
-                if (height && parseInt(height) < 50) continue;
-                if (src.includes('_s.') || src.includes('_t.') || src.includes('emoji')) continue;
-                if (!images.includes(src)) {
-                    images.push(src);
-                }
-            }
-        }
+        // Method 2: scontent img elements from the RENDERED page, sized by
+        // naturalWidth (the decoded pixel size), not the `width` HTML attribute
+        // — Facebook rarely sets that attribute, so the old check silently
+        // skipped real photos. This is how a post whose entire message is text
+        // burned into the image (no DOM caption at all) still yields content:
+        // the image goes to Gemini OCR downstream. Validated against
+        // share/19EN1HpufE, a 589x1280 flyer with no caption.
+        const domPhotos = await page.evaluate(() => {
+            // A real post photo is served from a `scontent[...].fbcdn.net` or
+            // `cdninstagram` host. Facebook's UI chrome (sprites, icons) lives
+            // on `static.xx.fbcdn.net/rsrc.php` — same `fbcdn` root, NOT a photo.
+            const isPhotoHost = (u: string) => /\/\/scontent[^/]*\.fbcdn\.net\//.test(u) || /cdninstagram/.test(u);
+            return Array.from(document.querySelectorAll('img'))
+                .filter(i => isPhotoHost(i.src)
+                    && i.naturalWidth >= 150 && i.naturalHeight >= 150
+                    && !/_s\.|_t\.|emoji|\/profile|s150x150/.test(i.src))
+                .map(i => i.src);
+        }).catch(() => [] as string[]);
+        for (const src of domPhotos) if (!images.includes(src)) images.push(src);
 
         // For video posts: also look for video poster/thumbnail images
         if (isVideoUrl || images.length === 0) {
@@ -396,34 +518,57 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
             }
         }
 
-        // Fallback: fetch raw HTML with facebookexternalhit UA
-        if (!text || images.length === 0) {
-            console.log('[Scraper] DOM extraction sparse, trying HTTP fetch with facebookexternalhit UA...');
-            const ogData = await fetchOgTagsHttp(url, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)');
-            if (!author && ogData.title) {
-                author = ogData.title.replace(/&amp;/g, '&');
-            }
-            if (!text && ogData.description) {
-                text = ogData.description;
-            }
-            if (images.length === 0) {
-                for (const img of ogData.images) {
-                    if (!images.includes(img)) images.push(img);
-                }
-            }
-            console.log(`[Scraper] OG fallback: author="${author}", text="${text.substring(0, 50)}", images=${images.length}`);
-        }
 
-        console.log(`[Scraper] Found ${images.length} images, text length: ${text.length}, author: "${author}"`);
+        // Merge anything Layer 1 did manage to read (author is common even on
+        // walled pages). The old code re-fetched OG here as its own fallback;
+        // Layer 1 already made that request, so reuse its result.
+        if (!author && og.title) author = og.title;
+        if (!text && og.description) text = og.description;
+        for (const img of og.images) if (!images.includes(img)) images.push(img);
 
         await browser.close();
+
+        // ── Honest ending ────────────────────────────────────────────────────
+        // A crawler placeholder is not an image and an author is not a post.
+        // Returning them as a success is what made walled posts look like the
+        // scraper "did nothing" — the app received an empty result labeled ok
+        // and never offered the manual path with an explanation.
+        //
+        // Wall/error banners the DOM harvest scooped are not the caption
+        // either. And when Layer 1 already saw the wall's signature (crawler
+        // placeholder, no description) AND the browser's text was that
+        // boilerplate, the scontent images the error page rendered are its own
+        // chrome, not the post — they reached the wizard as black thumbnails.
+        if (isWallOrErrorText(text)) {
+            console.log(`[Scraper] Discarding wall/error boilerplate scooped as text: "${text.slice(0, 60)}..."`);
+            text = '';
+            if (og.sawPlaceholder && !og.description) {
+                console.log(`[Scraper] Layer 1 confirmed wall — discarding ${images.length} error-page image(s)`);
+                images.length = 0;
+            }
+        }
+        const cleanImages = realImagesOf(images);
+        console.log(`[Scraper] Playwright result: images=${cleanImages.length}, text=${text.length}, author="${author}"`);
+
+        if (!hasRealContent(text, cleanImages)) {
+            return {
+                text: '',
+                author: author.trim() || og.title?.trim() || undefined,
+                images: [],
+                videos: [],
+                platform: 'facebook',
+                layer: 'playwright',
+                reason: (author || og.title) ? 'login_walled' : 'no_content',
+            };
+        }
 
         return {
             text: text.trim(),
             author: author.trim() || undefined,
-            images,
+            images: cleanImages,
             videos: [],
             platform: 'facebook',
+            layer: 'playwright',
         };
 
     } catch (error) {
@@ -479,6 +624,7 @@ async function scrapeInstagramPost(url: string): Promise<ScrapeResult> {
                 images: images.slice(0, 20),
                 videos: videos.slice(0, 5),
                 platform: 'instagram',
+                layer: 'http-og',
             };
         }
 
@@ -586,16 +732,34 @@ async function scrapeInstagramPost(url: string): Promise<ScrapeResult> {
             if (!videos.includes(vid)) videos.push(vid);
         }
 
-        console.log(`[Scraper] Instagram result: text=${text.length}, author="${author}", images=${images.length}`);
-
         await browser.close();
+
+        // Honest ending — same contract as Facebook: an author alone means the
+        // wall identified the poster and withheld the post, and wall
+        // boilerplate scooped as text is not a caption.
+        text = sanitizeText(text);
+        const cleanImages = realImagesOf(images);
+        console.log(`[Scraper] Instagram result: text=${text.length}, author="${author}", images=${cleanImages.length}`);
+
+        if (!hasRealContent(text, cleanImages) && videos.length === 0) {
+            return {
+                text: '',
+                author: author.trim() || undefined,
+                images: [],
+                videos: [],
+                platform: 'instagram',
+                layer: 'playwright',
+                reason: author ? 'login_walled' : 'no_content',
+            };
+        }
 
         return {
             text: text.trim(),
             author: author.trim() || undefined,
-            images: images.slice(0, 10),
+            images: cleanImages.slice(0, 10),
             videos: videos.slice(0, 5),
             platform: 'instagram',
+            layer: 'playwright',
         };
 
     } catch (error) {
@@ -950,10 +1114,13 @@ async function scrapePost(url: string): Promise<ScrapeResult> {
 // EXPRESS ENDPOINTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+const SCRAPER_VERSION = '2.4.0-lean';
+
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
     res.json({
         status: 'ok',
+        version: SCRAPER_VERSION,
         timestamp: new Date().toISOString(),
         supportedPlatforms: SUPPORTED_PLATFORMS,
     });
@@ -977,14 +1144,29 @@ app.post('/scrape', async (req: Request, res: Response) => {
         });
     }
 
+    const startedAt = Date.now();
     try {
         const result = await scrapePost(url);
+        logOutcome(platform, url, result, startedAt);
 
         if (result.error) {
             return res.status(500).json({
                 success: false,
                 error: result.error,
                 platform,
+            });
+        }
+
+        // An honest miss: the platform withheld the post (or served nothing).
+        // 200 + success:false — this is an outcome, not a server error. The
+        // author still travels so the app can mark the source as not public.
+        if (result.reason) {
+            return res.json({
+                success: false,
+                reason: result.reason,
+                data: { text: '', author: result.author, images: [], videos: [] },
+                platform,
+                layer: result.layer,
             });
         }
 
@@ -997,6 +1179,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
                 videos: result.videos,
             },
             platform,
+            layer: result.layer,
         });
     } catch (error) {
         console.error('[API] Error:', error);
