@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.54.7] - 2026-09-05
+
+### Added — de-select media in the import review step
+
+The review step's "Attached Media" gallery was display-only; every scraped and uploaded image
+and video was imported unconditionally. Each tile now carries an include/exclude toggle — a
+de-selected tile dims to grayscale and its control flips to a re-add "+", and the label counts
+what will be imported ("Attached Media (4/5)"). Covers all three sources (scraped images,
+uploaded images/videos, scraped videos), keyed to match the save-payload filters so a
+de-selected item never reaches the record. Extraction already ran in the previous step, so this
+only affects what is saved, not what the AI sees.
+
 ## [2.54.6] - 2026-09-05
 
 ### Fixed — Facebook's error page leaked into the wizard as post content

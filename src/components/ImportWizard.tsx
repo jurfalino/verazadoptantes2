@@ -271,6 +271,17 @@ export default function ImportWizard() {
     const [extractedData, setExtractedData] = useState<ExtractedAdopterData | null>(null);
     const [contactEntries, setContactEntries] = useState<ContactEntry[]>([]);
     const [processedImages, setProcessedImages] = useState<Array<{ data: string; mimeType: string; originalUrl?: string }>>([]);
+    // Media the rescuer has de-selected in the review step so it is NOT imported.
+    // Keys: `p:<i>` a processed (scraped) image, `m:<i>` a manual/uploaded item
+    // (image or video, indexed into manualImages), `fv:<i>` a fetched video.
+    // Empty by default — everything imports unless explicitly excluded here.
+    const [excludedMedia, setExcludedMedia] = useState<Set<string>>(new Set());
+    const isMediaExcluded = (key: string) => excludedMedia.has(key);
+    const toggleMediaExcluded = (key: string) => setExcludedMedia(prev => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key); else next.add(key);
+        return next;
+    });
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [selectedModel, setSelectedModel] = useState<string>('');
     // v2.19.52: `unknownAnimal` state removed alongside the step-3 checkbox.
@@ -876,7 +887,7 @@ export default function ImportWizard() {
 
             // Generate thumbnails for fetched videos (via proxy for CORS)
             const videoPayloads = await Promise.all(
-                fetchedVideos.map(async (videoUrl) => {
+                fetchedVideos.filter((_, i) => !isMediaExcluded(`fv:${i}`)).map(async (videoUrl) => {
                     let thumbnail: string | undefined;
                     try {
                         thumbnail = await extractVideoThumbnailFromUrl(`/api/proxy-image?url=${encodeURIComponent(videoUrl)}`);
@@ -904,7 +915,11 @@ export default function ImportWizard() {
                 ...(sourceUrl && !fromContacts ? { isPublic: isPublicProfile } : {}),
                 flags,
                 images: [
-                    ...(processedImages.length > 0 ? processedImages : manualImages.filter(img => !img.file).map(img => ({ data: img.data, mimeType: img.mimeType }))),
+                    // Honor the review-step de-selection: a processed image is
+                    // excluded by `p:<i>`, a manual image by `m:<i>`.
+                    ...(processedImages.length > 0
+                        ? processedImages.filter((_, i) => !isMediaExcluded(`p:${i}`))
+                        : manualImages.filter((img, i) => !img.file && !isMediaExcluded(`m:${i}`)).map(img => ({ data: img.data, mimeType: img.mimeType }))),
                     ...videoPayloads,
                 ],
                 // v2.19.17: contacts-import path no longer auto-stamps an
@@ -947,7 +962,7 @@ export default function ImportWizard() {
             const adopterId = result.id;
 
             // Upload any pending video files via FormData (they were excluded from JSON body)
-            const pendingVideoFiles = manualImages.filter(img => img.file);
+            const pendingVideoFiles = manualImages.filter((img, i) => img.file && !isMediaExcluded(`m:${i}`));
             for (const vid of pendingVideoFiles) {
                 if (!vid.file) continue;
                 const fd = new FormData();
@@ -1055,7 +1070,7 @@ export default function ImportWizard() {
 
             // Generate thumbnails for fetched videos (via proxy for CORS)
             const videoPayloads = await Promise.all(
-                fetchedVideos.map(async (videoUrl) => {
+                fetchedVideos.filter((_, i) => !isMediaExcluded(`fv:${i}`)).map(async (videoUrl) => {
                     let thumbnail: string | undefined;
                     try {
                         thumbnail = await extractVideoThumbnailFromUrl(`/api/proxy-image?url=${encodeURIComponent(videoUrl)}`);
@@ -1082,7 +1097,11 @@ export default function ImportWizard() {
                     date: extractedData.adoptionDate || new Date().toISOString().split('T')[0],
                 },
                 images: [
-                    ...(processedImages.length > 0 ? processedImages : manualImages.filter(img => !img.file).map(img => ({ data: img.data, mimeType: img.mimeType }))),
+                    // Honor the review-step de-selection: a processed image is
+                    // excluded by `p:<i>`, a manual image by `m:<i>`.
+                    ...(processedImages.length > 0
+                        ? processedImages.filter((_, i) => !isMediaExcluded(`p:${i}`))
+                        : manualImages.filter((img, i) => !img.file && !isMediaExcluded(`m:${i}`)).map(img => ({ data: img.data, mimeType: img.mimeType }))),
                     ...videoPayloads,
                 ],
             };
@@ -1123,7 +1142,7 @@ export default function ImportWizard() {
             }
 
             // Upload any pending video files via FormData (they were excluded from JSON body)
-            const pendingVideoFiles = manualImages.filter(img => img.file);
+            const pendingVideoFiles = manualImages.filter((img, i) => img.file && !isMediaExcluded(`m:${i}`));
             for (const vid of pendingVideoFiles) {
                 if (!vid.file) continue;
                 const fd = new FormData();
@@ -1807,46 +1826,81 @@ export default function ImportWizard() {
                         </div>
                     )}
 
-                    {/* Media preview — show all images and videos that will be saved */}
+                    {/* Media preview — every image and video that WILL be saved,
+                        each de-selectable so the rescuer drops what they don't want
+                        imported. Keys match the save-payload filters (`p:` processed,
+                        `m:` manual, `fv:` fetched video). */}
                     {(() => {
-                        const allImages: { src: string; label?: string }[] = [];
+                        type MediaTile = { key: string; src: string; mediaType: 'image' | 'video'; label?: string };
+                        const media: MediaTile[] = [];
                         // Processed images from fetch (base64)
-                        processedImages.forEach((img, _i) => allImages.push({ src: `data:${img.mimeType};base64,${img.data}`, label: img.originalUrl ? new URL(img.originalUrl).pathname.split('/').pop() : undefined }));
-                        // Manually uploaded images (not video files)
-                        manualImages.filter(img => !img.file).forEach((img) => allImages.push({ src: img.preview }));
-                        // Count manual videos separately
-                        const manualVideoCount = manualImages.filter(img => img.file).length;
-                        const totalMedia = allImages.length + fetchedVideos.length + manualVideoCount;
-                        if (totalMedia === 0) return null;
+                        processedImages.forEach((img, i) => media.push({
+                            key: `p:${i}`,
+                            src: `data:${img.mimeType};base64,${img.data}`,
+                            mediaType: 'image',
+                            label: img.originalUrl ? new URL(img.originalUrl).pathname.split('/').pop() : undefined,
+                        }));
+                        // Manual uploads — images and video files, keyed by their
+                        // real index in manualImages so the key survives filtering.
+                        manualImages.forEach((img, i) => media.push(
+                            img.file
+                                ? { key: `m:${i}`, src: img.thumbnail || img.preview, mediaType: 'video' }
+                                : { key: `m:${i}`, src: img.preview, mediaType: 'image' },
+                        ));
+                        // Fetched (scraped) videos
+                        fetchedVideos.forEach((url, i) => media.push({ key: `fv:${i}`, src: url, mediaType: 'video' }));
+
+                        if (media.length === 0) return null;
+                        const keptCount = media.filter(m => !isMediaExcluded(m.key)).length;
                         return (
                             <div>
                                 <label className="block text-xs font-medium text-stone-500 mb-1.5">
-                                    {t('import.attachedImages') || 'Attached Media'} ({totalMedia})
+                                    {t('import.attachedImages') || 'Attached Media'} ({keptCount}/{media.length})
                                 </label>
                                 <div className="flex flex-wrap gap-2">
-                                    {allImages.map((img, i) => (
-                                        <div key={`img-${i}`} className="relative group">
-                                            <img
-                                                src={img.src}
-                                                alt={img.label || `Image ${i + 1}`}
-                                                className="w-20 h-20 object-cover rounded-lg border border-stone-200 cursor-pointer hover:ring-2 hover:ring-teal-300 transition-all"
-                                                onClick={() => setLightboxItem({ url: img.src, mediaType: 'image' })}
-                                            />
-                                        </div>
-                                    ))}
-                                    {fetchedVideos.map((url: string, i: number) => (
-                                        <div key={`vid-${i}`} className="relative group w-20 h-20 rounded-lg overflow-hidden border border-teal-300 bg-gradient-to-br from-teal-600 to-teal-800 cursor-pointer"
-                                            onClick={() => setLightboxItem({ url, mediaType: 'video' })}
-                                        >
-                                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                                <div className="w-6 h-6 rounded-full bg-white/25 flex items-center justify-center shadow">
-                                                    <svg className="w-3 h-3 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                                                        <path d="M8 5v14l11-7z" />
-                                                    </svg>
-                                                </div>
+                                    {media.map((m) => {
+                                        const excluded = isMediaExcluded(m.key);
+                                        const isVideo = m.mediaType === 'video';
+                                        return (
+                                            <div key={m.key} className="relative group">
+                                                {isVideo ? (
+                                                    <div
+                                                        className={`w-20 h-20 rounded-lg overflow-hidden border cursor-pointer transition-all ${excluded ? 'opacity-40 grayscale border-stone-200' : 'border-teal-300'} bg-gradient-to-br from-teal-600 to-teal-800`}
+                                                        onClick={() => setLightboxItem({ url: m.src, mediaType: 'video' })}
+                                                    >
+                                                        {m.src && m.src !== '' && (
+                                                            <img src={m.src} alt="" className="w-full h-full object-cover" />
+                                                        )}
+                                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                            <div className="w-6 h-6 rounded-full bg-white/25 flex items-center justify-center shadow">
+                                                                <svg className="w-3 h-3 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <img
+                                                        src={m.src}
+                                                        alt={m.label || 'Image'}
+                                                        className={`w-20 h-20 object-cover rounded-lg border transition-all cursor-pointer ${excluded ? 'opacity-40 grayscale border-stone-200' : 'border-stone-200 hover:ring-2 hover:ring-teal-300'}`}
+                                                        onClick={() => setLightboxItem({ url: m.src, mediaType: 'image' })}
+                                                    />
+                                                )}
+                                                {/* Include / exclude toggle. Excluded tiles dim and
+                                                    the control flips to a re-add affordance. */}
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); toggleMediaExcluded(m.key); }}
+                                                    aria-label={excluded ? (t('import.mediaInclude') || 'Include') : (t('import.mediaExclude') || 'Exclude')}
+                                                    title={excluded ? (t('import.mediaInclude') || 'Include') : (t('import.mediaExclude') || 'Exclude')}
+                                                    className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center shadow transition-all ${excluded ? 'bg-white text-teal-700 border border-teal-300 hover:bg-teal-50' : 'bg-black/60 text-white hover:bg-black/80'}`}
+                                                >
+                                                    {excluded
+                                                        ? <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                                                        : <CloseIcon className="w-3 h-3" />}
+                                                </button>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         );

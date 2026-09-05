@@ -1721,7 +1721,7 @@ export const en = {
         contactInfo: 'Contact Info',
         contact_none_extracted: 'No contact details were extracted. Add them yourself.',
         contactPlaceholder: 'Phones, emails, addresses, social profiles...',
-        attachedImages: 'Attached Images',
+        attachedImages: 'Attached Images',        mediaExclude: 'Remove',        mediaInclude: 'Include',
         notes: 'Notes',
         initial_observation: 'Initial observation',
         initial_observation_placeholder: 'Saved as an observation record on the new profile.',

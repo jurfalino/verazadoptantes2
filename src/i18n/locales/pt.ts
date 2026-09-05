@@ -1726,7 +1726,7 @@ export const pt = {
         contactInfo: 'Info de Contato',
         contact_none_extracted: 'Não foram extraídos dados de contato. Adicione você mesmo.',
         contactPlaceholder: 'Telefones, e-mails, endereços, redes sociais...',
-        attachedImages: 'Imagens anexadas',
+        attachedImages: 'Imagens anexadas',        mediaExclude: 'Remover',        mediaInclude: 'Incluir',
         notes: 'Notas',
         initial_observation: 'Observação inicial',
         initial_observation_placeholder: 'É salva como um registro de observação no novo perfil.',
