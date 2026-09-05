@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.3] - 2026-09-05
+
+### Fixed — undo hardening: crash-retryable, subrequest-safe, and now tested
+
+Three gaps from the v2.55.1 undo, found in review before any prod incident:
+
+- **A crashed undo could strand a half-reversed merge.** If the reversal died after
+  reviving the absorbed profile, retrying hit the "profile changed since the merge" safety
+  guard — the guard's own first step had tripped it, leaving the state fixable only by
+  hand. The undo now writes an `undoStartedAt` marker to the audit row before mutating
+  anything; a retry sees the marker, skips the pristine-secondary check, and re-runs the
+  reversal (every step writes fixed values, so re-running converges).
+- **Unbounded subrequest fan-out.** Re-pointing rows back ran one query per row; a
+  long-lived profile's history could blow the Workers subrequest ceiling mid-undo. All
+  re-points and candidate restores now go in chunked OR-batches (40 ids/statement, under
+  D1's bound-parameter cap).
+- **Zero test coverage on the most destructive path.** New `merge-undo.authed.spec.ts`
+  drives mass-merge (A←[B,C]) and undo through the real authed endpoints with isolated
+  fixtures, asserting DB state between steps: soft-deletes, alias carry-over, ghost-pair
+  (B↔C) resolution, full restoration on undo, and double-undo refusal.
+
 ## [2.55.2] - 2026-09-05
 
 ### Changed — mass-merge is now checkbox selection, not auto-detected groups
