@@ -87,26 +87,42 @@ export async function GET(request: Request) {
             // uncapped this could exceed the Workers subrequest limit and 500.
             .limit(100);
 
+        // D1-fallback logger for the enrichment fan-out below. A swallowed
+        // error here used to render as the name "Deleted"/"Unknown" — a lie
+        // on a vetting tool. Log per the fallback convention and return the
+        // fallback so one bad sub-query still doesn't sink the panel.
+        const logFallback = <T,>(op: string, ctx: Record<string, unknown>, fallback: T) => (e: unknown): T => {
+            logger.warn(`Duplicate list: ${op} fallback hit`, { ...ctx, error: e instanceof Error ? e.message : String(e) });
+            return fallback;
+        };
+        // Name semantics for the panel: row missing (hard-deleted or fetch
+        // failure, both logged) → null; row present with empty name → '' —
+        // a legitimate NAMELESS profile (see adopterDisplay.ts), never to be
+        // labeled deleted. The old `?.name || 'Deleted'` collapsed the two.
+        const nameOf = (row: { name: string } | null | undefined): string | null => (row ? row.name : null);
+
         // Enrich user-flagged with adopter names + computed avgRating.
         const userFlaggedEnriched = await Promise.all(
             userFlagged.map(async (flag: typeof userFlagged[number]) => {
                 const [adopter1, adopter2, avg1, avg2] = await Promise.all([
                     db.select({ name: adopters.name, contactInfo: adopters.contactInfo })
-                        .from(adopters).where(eq(adopters.id, flag.adopterId)).get().catch(() => undefined),
+                        .from(adopters).where(eq(adopters.id, flag.adopterId)).get()
+                        .catch(logFallback('flag adopter fetch', { flagId: flag.flagId, adopterId: flag.adopterId }, undefined)),
                     flag.targetAdopterId
                         ? db.select({ name: adopters.name, contactInfo: adopters.contactInfo })
-                            .from(adopters).where(eq(adopters.id, flag.targetAdopterId)).get().catch(() => undefined)
+                            .from(adopters).where(eq(adopters.id, flag.targetAdopterId)).get()
+                            .catch(logFallback('flag target fetch', { flagId: flag.flagId, adopterId: flag.targetAdopterId }, undefined))
                         : null,
-                    avgRatingFor(db, flag.adopterId).catch(() => null),
-                    avgRatingFor(db, flag.targetAdopterId).catch(() => null),
+                    avgRatingFor(db, flag.adopterId).catch(logFallback('flag avgRating', { flagId: flag.flagId, adopterId: flag.adopterId }, null)),
+                    avgRatingFor(db, flag.targetAdopterId).catch(logFallback('flag target avgRating', { flagId: flag.flagId, adopterId: flag.targetAdopterId }, null)),
                 ]);
                 return {
                     ...flag,
                     source: 'user' as const,
-                    adopter1Name: adopter1?.name || 'Unknown',
+                    adopter1Name: nameOf(adopter1),
                     adopter1Contact: adopter1?.contactInfo,
                     adopter1AvgRating: avg1,
-                    adopter2Name: adopter2?.name || null,
+                    adopter2Name: nameOf(adopter2),
                     adopter2Contact: adopter2?.contactInfo,
                     adopter2AvgRating: avg2,
                 };
@@ -134,19 +150,21 @@ export async function GET(request: Request) {
             candidates.map(async (c: typeof candidates[number]) => {
                 const [adopter1, adopter2, avg1, avg2] = await Promise.all([
                     db.select({ name: adopters.name, contactInfo: adopters.contactInfo })
-                        .from(adopters).where(eq(adopters.id, c.adopter1Id)).get().catch(() => undefined),
+                        .from(adopters).where(eq(adopters.id, c.adopter1Id)).get()
+                        .catch(logFallback('candidate adopter1 fetch', { candidateId: c.id, adopterId: c.adopter1Id }, undefined)),
                     db.select({ name: adopters.name, contactInfo: adopters.contactInfo })
-                        .from(adopters).where(eq(adopters.id, c.adopter2Id)).get().catch(() => undefined),
-                    avgRatingFor(db, c.adopter1Id).catch(() => null),
-                    avgRatingFor(db, c.adopter2Id).catch(() => null),
+                        .from(adopters).where(eq(adopters.id, c.adopter2Id)).get()
+                        .catch(logFallback('candidate adopter2 fetch', { candidateId: c.id, adopterId: c.adopter2Id }, undefined)),
+                    avgRatingFor(db, c.adopter1Id).catch(logFallback('candidate avgRating1', { candidateId: c.id, adopterId: c.adopter1Id }, null)),
+                    avgRatingFor(db, c.adopter2Id).catch(logFallback('candidate avgRating2', { candidateId: c.id, adopterId: c.adopter2Id }, null)),
                 ]);
                 return {
                     ...c,
                     source: 'system' as const,
-                    adopter1Name: adopter1?.name || 'Deleted',
+                    adopter1Name: nameOf(adopter1),
                     adopter1Contact: adopter1?.contactInfo,
                     adopter1AvgRating: avg1,
-                    adopter2Name: adopter2?.name || 'Deleted',
+                    adopter2Name: nameOf(adopter2),
                     adopter2Contact: adopter2?.contactInfo,
                     adopter2AvgRating: avg2,
                 };

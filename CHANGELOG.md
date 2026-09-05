@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.7] - 2026-09-05
+
+### Fixed — nameless profiles were labeled "Deleted" in the dedup screen
+
+44 prod profiles legitimately have no name (nameless-profiles design: identified by
+contact only), and the duplicates API's `adopter?.name || 'Deleted'` collapsed the empty
+string into the missing-row fallback — telling admins a live record was deleted. The API
+now encodes the states separately (null = row missing, '' = nameless) and the panel
+renders them with the app-wide convention: "Sin nombre" (adopter.nameless) for nameless,
+"Eliminado" only for a genuinely missing row. Also closed the adjacent landmine: the
+enrichment fan-out's eight `.catch(() => …)` sites swallowed D1 errors silently (a failed
+fetch also rendered as "Deleted"); they now log through the standard D1-fallback warn with
+candidate/adopter ids.
+
 ## [2.55.6] - 2026-09-05
 
 ### Changed — batch merge is now PAIR-WISE: the queue-clearing tool it should have been
