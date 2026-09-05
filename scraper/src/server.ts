@@ -122,7 +122,7 @@ const SUPPORTED_PLATFORMS: Platform[] = ['facebook', 'instagram', 'twitter', 'ti
 async function launchBrowser(): Promise<Browser> {
     return chromium.launch({
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
 }
 
@@ -325,26 +325,20 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
     const isVideoUrl = /\/(reel|r|share\/r)\//.test(url) || /\/videos\//.test(url);
 
     // ── LAYER 1: crawler-UA OG fetch — no browser ───────────────────────────
-    // Public Page posts serve their full caption in og:description and real
-    // scontent photos in og:image to facebookexternalhit; that covers them in
-    // under a second instead of ~10s of Playwright. Just as important, this is
-    // the only reliable way to resolve a `/share/<id>/` stub (which answers
-    // 400 to browser UAs) into the canonical `/posts/<id>/` URL — so even when
-    // this layer comes back walled, it hands Layer 2 the right address.
+    // Three jobs: resolve a `/share/<id>/` stub (which answers 400 to browser
+    // UAs) into the canonical `/posts/<id>/` URL for Playwright; detect the
+    // login wall's signature early; and supply merge data for the tail.
+    //
+    // It deliberately does NOT short-circuit on success. og:image typically
+    // exposes ONE photo where the browser harvest collects a whole album, and
+    // og:description can truncate long captions — an early return here traded
+    // album completeness for speed, regressing the always-run-the-browser
+    // baseline that had been handling public posts correctly. Speed
+    // optimizations can come back when the scrape_outcome telemetry shows
+    // which posts Layer 1 alone serves completely.
     const og = await fetchOgTagsHttp(url, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)');
     const canonicalUrl = og.canonicalUrl || url;
-    if (og.description || og.images.length > 0) {
-        console.log(`[Scraper] Layer 1 (http-og) succeeded: text=${og.description?.length ?? 0}, images=${og.images.length}`);
-        return {
-            text: (og.description || og.text || '').trim(),
-            author: og.title?.trim() || undefined,
-            images: og.images,
-            videos: og.videos,
-            platform: 'facebook',
-            layer: 'http-og',
-        };
-    }
-    console.log(`[Scraper] Layer 1 walled or empty (placeholder=${og.sawPlaceholder}, ogType=${og.ogType ?? 'none'}); trying Playwright on ${canonicalUrl}`);
+    console.log(`[Scraper] Layer 1: text=${og.description?.length ?? 0}, images=${og.images.length}, walled-signature=${og.sawPlaceholder}; continuing to Playwright on ${canonicalUrl}`);
 
     try {
         console.log(`[Scraper] Starting Facebook scrape for: ${canonicalUrl} (isVideo: ${isVideoUrl})`);
@@ -353,7 +347,7 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
 
         const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            viewport: { width: 1280, height: 800 },
+            viewport: { width: 1366, height: 900 },
             locale: 'es-AR',
             timezoneId: 'America/Argentina/Buenos_Aires',
         });
@@ -485,22 +479,25 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
             }
         } catch { /* no OG images */ }
 
-        // Method 2: scontent img elements from the rendered page
-        const imgElements = await page.$$('img');
-
-        for (const img of imgElements) {
-            const src = await img.getAttribute('src');
-            if (src && src.includes('scontent')) {
-                const width = await img.getAttribute('width');
-                const height = await img.getAttribute('height');
-                if (width && parseInt(width) < 50) continue;
-                if (height && parseInt(height) < 50) continue;
-                if (src.includes('_s.') || src.includes('_t.') || src.includes('emoji')) continue;
-                if (!images.includes(src)) {
-                    images.push(src);
-                }
-            }
-        }
+        // Method 2: scontent img elements from the RENDERED page, sized by
+        // naturalWidth (the decoded pixel size), not the `width` HTML attribute
+        // — Facebook rarely sets that attribute, so the old check silently
+        // skipped real photos. This is how a post whose entire message is text
+        // burned into the image (no DOM caption at all) still yields content:
+        // the image goes to Gemini OCR downstream. Validated against
+        // share/19EN1HpufE, a 589x1280 flyer with no caption.
+        const domPhotos = await page.evaluate(() => {
+            // A real post photo is served from a `scontent[...].fbcdn.net` or
+            // `cdninstagram` host. Facebook's UI chrome (sprites, icons) lives
+            // on `static.xx.fbcdn.net/rsrc.php` — same `fbcdn` root, NOT a photo.
+            const isPhotoHost = (u: string) => /\/\/scontent[^/]*\.fbcdn\.net\//.test(u) || /cdninstagram/.test(u);
+            return Array.from(document.querySelectorAll('img'))
+                .filter(i => isPhotoHost(i.src)
+                    && i.naturalWidth >= 150 && i.naturalHeight >= 150
+                    && !/_s\.|_t\.|emoji|\/profile|s150x150/.test(i.src))
+                .map(i => i.src);
+        }).catch(() => [] as string[]);
+        for (const src of domPhotos) if (!images.includes(src)) images.push(src);
 
         // For video posts: also look for video poster/thumbnail images
         if (isVideoUrl || images.length === 0) {
@@ -520,6 +517,7 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
                 }
             }
         }
+
 
         // Merge anything Layer 1 did manage to read (author is common even on
         // walled pages). The old code re-fetched OG here as its own fallback;
@@ -1116,7 +1114,7 @@ async function scrapePost(url: string): Promise<ScrapeResult> {
 // EXPRESS ENDPOINTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const SCRAPER_VERSION = '2.0.1';
+const SCRAPER_VERSION = '2.4.0-lean';
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
