@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
+import { dismissCountryBanner } from './helpers';
 
 /**
  * Mass-merge + undo round-trip (v2.55.x). Exercises the dangerous server path
@@ -72,6 +73,10 @@ test.describe('Duplicate mass-merge and undo', () => {
         seedAdopter(C, NAME_C, 'gamma-contact 3333-4444');
         seedCandidate(CAND_AB, A, B);
         seedCandidate(CAND_BC, B, C);
+        // B is marked publicly known — the merge must carry the flag onto the
+        // survivor (public status travels with the absorbed evidence), and
+        // undo must take it back off.
+        execD1(`UPDATE adopters SET is_public = 1 WHERE id = '${B}'`);
 
         // ── Mass-merge B and C into A through the real endpoint (admin session).
         const mergeRes = await page.request.post('/api/admin/duplicates/merge', {
@@ -98,9 +103,10 @@ test.describe('Duplicate mass-merge and undo', () => {
         }
 
         const survivor = parseD1Rows(execD1(
-            `SELECT contact_info, contact_entries, deleted_at FROM adopters WHERE id = '${A}'`,
+            `SELECT contact_info, contact_entries, deleted_at, is_public FROM adopters WHERE id = '${A}'`,
         ))[0];
         expect(isDbNull(survivor.deleted_at), 'survivor must stay live').toBe(true);
+        expect(Number(survivor.is_public), 'public flag travels with absorbed B').toBe(1);
         // Absorbed contact blobs appended; absorbed names carried as aliases.
         expect(String(survivor.contact_info)).toContain('beta-contact');
         expect(String(survivor.contact_info)).toContain('gamma-contact');
@@ -136,9 +142,10 @@ test.describe('Duplicate mass-merge and undo', () => {
         }
 
         const restored = parseD1Rows(execD1(
-            `SELECT contact_info, contact_entries FROM adopters WHERE id = '${A}'`,
+            `SELECT contact_info, contact_entries, is_public FROM adopters WHERE id = '${A}'`,
         ))[0];
         expect(restored.contact_info).toBe('alpha-contact-original');
+        expect(Number(restored.is_public), 'undo reverts the inherited public flag').toBe(0);
         // The auto-aliases came with the merge; undo must take them back out.
         expect(String(restored.contact_entries ?? '')).not.toContain(NAME_B);
         expect(String(restored.contact_entries ?? '')).not.toContain(NAME_C);
@@ -209,5 +216,67 @@ test.describe('Duplicate mass-merge and undo', () => {
             `SELECT status FROM duplicate_candidates WHERE id = '${CAND_QE}'`,
         ))[0];
         expect(qe.status).toBe('merged');
+    });
+
+    test('search is accent-insensitive end-to-end: unaccented query puts the accented record in the MAIN list', async ({ page }) => {
+        // Regression for the v2.55.8 normalization boundary: recall (token
+        // index) was accent-insensitive but the coverage demotion compared raw
+        // text, so "sebastian vazquez" recalled "Sebastián Vázquez" and then
+        // buried it under "Ampliar la búsqueda". Main-list visibility WITHOUT
+        // expanding the weak tier is the assertion.
+        const ACC = 'test-accent-fixture-1';
+        const ACC_NAME = 'AccentFixture Vázquez Ramírez';
+        seedAdopter(ACC, ACC_NAME, 'accent-fixture-contact');
+        // Name tokens exactly as tokenizeAdopter writes them (NFD-stripped) —
+        // SQL-seeded fixtures never pass through the app's tokenizer.
+        const toks: Array<[string, string, string]> = [
+            ['test-tok-accent-1', 'name_word', 'accentfixture'],
+            ['test-tok-accent-2', 'name_word', 'vazquez'],
+            ['test-tok-accent-3', 'name_word', 'ramirez'],
+            ['test-tok-accent-4', 'name_full', 'accentfixture vazquez ramirez'],
+        ];
+        for (const [id, type, value] of toks) {
+            execD1(`INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES ('${id}', '${ACC}', '${type}', '${value}')`);
+        }
+
+        await page.goto('/');
+        await dismissCountryBanner(page);
+        await page.fill('input#search', 'accentfixture vazquez');
+        await page.getByRole('button', { name: /search records|buscar registros/i }).click();
+        await expect(page.getByText(/found \d+ match|resultados encontrados/i)).toBeVisible({ timeout: 30000 });
+        // Visible WITHOUT clicking "Ampliar la búsqueda" ⇒ main list, full coverage.
+        await expect(page.getByText(ACC_NAME).first()).toBeVisible({ timeout: 30000 });
+    });
+
+    test('searching a household member name surfaces the titular record in the MAIN list', async ({ page }) => {
+        // Regression for the recall/score source mismatch (v2.55.9): household
+        // member and onBehalfOf names emit recall tokens, but the scorer never
+        // read those fields — the record surfaced with no score, no match chip
+        // and no snippet, demoted to the weak tier. A perfect relative-name
+        // match must land in the main list, scored via the family branch.
+        const HH = 'test-household-fixture-1';
+        const HH_NAME = 'HouseholdFixture Titular';
+        seedAdopter(HH, HH_NAME, 'household-fixture-contact');
+        execD1(
+            `UPDATE adopters SET household_members = '[{"id":"hm-test-0001","name":"RelativeFixture Ondina","relationship":"partner","contactEntries":[]}]' WHERE id = '${HH}'`,
+        );
+        // Tokens as extractTokens writes them: household names → name_words.
+        const toks: Array<[string, string]> = [
+            ['test-tok-hh-1', 'relativefixture'],
+            ['test-tok-hh-2', 'ondina'],
+        ];
+        for (const [id, value] of toks) {
+            execD1(`INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES ('${id}', '${HH}', 'name_word', '${value}')`);
+        }
+
+        await page.goto('/');
+        await dismissCountryBanner(page);
+        await page.fill('input#search', 'relativefixture ondina');
+        await page.getByRole('button', { name: /search records|buscar registros/i }).click();
+        await expect(page.getByText(/found \d+ match|resultados encontrados/i)).toBeVisible({ timeout: 30000 });
+        // The titular's card in the MAIN list (no expander click) ...
+        await expect(page.getByText(HH_NAME).first()).toBeVisible({ timeout: 30000 });
+        // ... and the card explains WHY: family-circle match, relative visible.
+        await expect(page.getByText(/RelativeFixture Ondina/).first()).toBeVisible({ timeout: 30000 });
     });
 });

@@ -2,6 +2,74 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.10] - 2026-09-05
+
+### Fixed — merges silently re-protected publicly-known profiles
+
+`mergeAdopters` never considered `is_public`: absorbing a record marked publicly known
+(public-source links) into a private survivor dropped the flag — the first batch-merge
+session re-protected 4 prod profiles this way (Sebastián Vazquez among them). The merge
+now carries the flag: if EITHER side was public, the survivor stays public (public status
+travels with the absorbed evidence). Undo snapshots and restores the survivor's original
+flag (pre-v2.55.10 payloads leave it untouched). E2E extended: public flag propagates on
+merge and reverts on undo. The 4 affected prod profiles need a one-time backfill (or the
+existing Admin → Adopters visibility toggle, which was always the manual path).
+
+## [2.55.9] - 2026-09-05
+
+### Fixed — relative-name searches now score, rank and explain themselves
+
+Searching a relative's name recalled the record (household member and onBehalfOf names
+tokenize as name_words — an abuser may adopt under a relative's name) but the scorer
+never read those fields: the result arrived with no score, no match chip and no snippet,
+and got demoted to the weak tier — a perfect match that looked like noise. Same disease
+as the accent bug one level up: recall and scoring disagreed on which TEXT SOURCES exist.
+
+The family branch now scores a "family circle" built from every token-emitting source:
+the legacy familyMembers blob, structured household members (names + their contacts),
+and adoptions' onBehalfOf names — snippeted so the card shows the relative that matched
+(the existing "Coincide con miembros de la familia" chip). A full-phrase family-circle
+hit is weighted identity-grade (45, just under name_contains) instead of 20 — on a
+vetting tool a perfect relative-name match is a lead, not an incidental. Coverage now
+sees the same text, so these results qualify for the main list. E2E pins it: household
+member name search → titular in the MAIN list with the relative visible on the card.
+
+## [2.55.8] - 2026-09-05
+
+### Fixed — search now has ONE accent-normalized comparison space
+
+Third accent bug in findAdopters (recall v2.26.7, anchor v2.27.12, now coverage): the
+token index correctly recalled "Sebastián Vázquez" for a "sebastian vazquez" query, but
+the multi-token coverage rule compared raw text — the record scored "partial coverage of
+its own name" and was demoted under "Ampliar la búsqueda", so 3 of 5 live Sebastián
+records looked missing from search while all their dedup pairs showed. Root cause was
+architectural: raw and normalized comparisons were mixed per call site, so every new
+scoring feature re-decided accent handling and some forgot.
+
+Replaced with a normalization boundary: every match/coverage/anchor decision runs on
+`normalizeText`'d strings — query side and record side (name, contact, address, family,
+adoption/history deep matches, cross-field coverage). The v2.26.7 note that contact
+fields could stay raw ("mostly digits") was wrong — normalizeText passes digits, '@' and
+handles through untouched, so the fold is safe everywhere. Raw text survives only for
+display: snippets/highlights use a new length-guarded `foldForIndex` (accent-folded
+matching with indices valid against the raw string; falls back to plain lowercase rather
+than ever misplacing a highlight). E2E regression pins the flagship case: an unaccented
+query must put the accented record in the MAIN list, not the weak tier.
+
+## [2.55.7] - 2026-09-05
+
+### Fixed — nameless profiles were labeled "Deleted" in the dedup screen
+
+44 prod profiles legitimately have no name (nameless-profiles design: identified by
+contact only), and the duplicates API's `adopter?.name || 'Deleted'` collapsed the empty
+string into the missing-row fallback — telling admins a live record was deleted. The API
+now encodes the states separately (null = row missing, '' = nameless) and the panel
+renders them with the app-wide convention: "Sin nombre" (adopter.nameless) for nameless,
+"Eliminado" only for a genuinely missing row. Also closed the adjacent landmine: the
+enrichment fan-out's eight `.catch(() => …)` sites swallowed D1 errors silently (a failed
+fetch also rendered as "Deleted"); they now log through the standard D1-fallback warn with
+candidate/adopter ids.
+
 ## [2.55.6] - 2026-09-05
 
 ### Changed — batch merge is now PAIR-WISE: the queue-clearing tool it should have been

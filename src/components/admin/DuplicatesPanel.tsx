@@ -21,10 +21,12 @@ interface DuplicateCandidate {
     confidence: string;
     status: string;
     source: 'system';
-    adopter1Name: string;
+    /** null = profile row missing (or fetch failed, logged server-side);
+     *  '' = legitimate nameless profile. Render via AdopterNameLabel. */
+    adopter1Name: string | null;
     adopter1Contact?: string | null;
     adopter1AvgRating?: number | null;
-    adopter2Name: string;
+    adopter2Name: string | null;
     adopter2Contact?: string | null;
     adopter2AvgRating?: number | null;
 }
@@ -37,7 +39,7 @@ interface UserFlagged {
     details: string | null;
     createdAt: Date | null;
     source: 'user';
-    adopter1Name: string;
+    adopter1Name: string | null;
     adopter1Contact?: string | null;
     adopter1AvgRating?: number | null;
     adopter2Name: string | null;
@@ -63,9 +65,22 @@ const MASS_MERGE_SELECTION_MAX = 50;
 /** One profile inside a connected duplicate cluster. */
 interface ClusterRecord {
     id: string;
-    name: string;
+    name: string | null;
     contact?: string | null;
     avgRating?: number | null;
+}
+
+/**
+ * Adopter-name renderer for the dedup screens. Distinguishes the two states
+ * the API encodes (see route.ts): null = profile missing → "Eliminado";
+ * empty = legitimate NAMELESS profile → the app-wide `adopter.nameless`
+ * label (never "Deleted" — that mislabeled 44 real prod profiles).
+ */
+function AdopterNameLabel({ name }: { name: string | null }) {
+    const { t } = useLanguage();
+    if (name === null) return <span className="italic text-stone-400">Eliminado</span>;
+    if (!name.trim()) return <span className="italic text-stone-500">{t('adopter.nameless')}</span>;
+    return <>{name}</>;
 }
 
 /** The two records of a pair, shaped for the mass-merge modal. */
@@ -453,8 +468,8 @@ export default function DuplicatesPanel() {
                 return;
             }
             setMergeTarget({
-                a1: { id: flag.adopterId, name: flag.adopter1Name, contact: flag.adopter1Contact, avgRating: flag.adopter1AvgRating },
-                a2: { id: flag.targetAdopterId, name: flag.adopter2Name || 'Unknown', contact: flag.adopter2Contact, avgRating: flag.adopter2AvgRating },
+                a1: { id: flag.adopterId, name: flag.adopter1Name ?? '', contact: flag.adopter1Contact, avgRating: flag.adopter1AvgRating },
+                a2: { id: flag.targetAdopterId, name: flag.adopter2Name ?? '', contact: flag.adopter2Contact, avgRating: flag.adopter2AvgRating },
                 matchTypes: ['user_flagged'],
                 flagId: flag.flagId,
             });
@@ -462,8 +477,8 @@ export default function DuplicatesPanel() {
             const c = item as DuplicateCandidate;
             const types = JSON.parse(c.matchTypes || '[]');
             setMergeTarget({
-                a1: { id: c.adopter1Id, name: c.adopter1Name, contact: c.adopter1Contact, avgRating: c.adopter1AvgRating },
-                a2: { id: c.adopter2Id, name: c.adopter2Name, contact: c.adopter2Contact, avgRating: c.adopter2AvgRating },
+                a1: { id: c.adopter1Id, name: c.adopter1Name ?? '', contact: c.adopter1Contact, avgRating: c.adopter1AvgRating },
+                a2: { id: c.adopter2Id, name: c.adopter2Name ?? '', contact: c.adopter2Contact, avgRating: c.adopter2AvgRating },
                 matchTypes: types,
                 candidateId: c.id,
             });
@@ -569,7 +584,7 @@ export default function DuplicatesPanel() {
                                     <CandidateCard
                                         key={flag.flagId}
                                         name1={flag.adopter1Name}
-                                        name2={flag.adopter2Name || '(no target)'}
+                                        name2={flag.targetAdopterId ? flag.adopter2Name : '(sin perfil destino)'}
                                         contact1={flag.adopter1Contact}
                                         contact2={flag.adopter2Contact}
                                         id1={flag.adopterId}
@@ -830,7 +845,7 @@ function MassMergeModal({ records, onMerge, onClose }: {
                                     </span>
                                 </label>
                                 <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-semibold text-stone-900 truncate">{rec.name}</p>
+                                    <p className="text-sm font-semibold text-stone-900 truncate"><AdopterNameLabel name={rec.name} /></p>
                                     {rec.contact && <p className="text-xs text-stone-500 line-clamp-1">{rec.contact}</p>}
                                 </div>
                                 {!isPrimary && (
@@ -850,7 +865,7 @@ function MassMergeModal({ records, onMerge, onClose }: {
 
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm mt-4">
                         <p className="text-amber-700">
-                            Se fusionarán <strong>{secondaryIds.length}</strong> perfil{secondaryIds.length === 1 ? '' : 'es'} en <strong>{primary?.name}</strong>. Sus actividades y contactos se mueven al perfil conservado y sus nombres quedan como alias (siguen encontrándose al buscar).
+                            Se fusionarán <strong>{secondaryIds.length}</strong> perfil{secondaryIds.length === 1 ? '' : 'es'} en <strong><AdopterNameLabel name={primary?.name ?? null} /></strong>. Sus actividades y contactos se mueven al perfil conservado y sus nombres quedan como alias (siguen encontrándose al buscar).
                         </p>
                         {secondaryIds.length > MASS_MERGE_SELECTION_MAX && (
                             <p className="text-red-700 font-medium mt-2">
@@ -887,7 +902,7 @@ function CandidateCard({
     matchTypes, confidence, score, details, flaggedBy,
     onMerge, onDismiss, selected, onToggleSelect,
 }: {
-    name1: string; name2: string;
+    name1: string | null; name2: string | null;
     contact1?: string | null; contact2?: string | null;
     id1: string; id2?: string | null;
     matchTypes: string[]; confidence: string; score: number | null;
@@ -930,14 +945,14 @@ function CandidateCard({
                 <div className="flex-1 min-w-0">
                     <div className="grid grid-cols-2 gap-3 mb-3">
                         <div>
-                            <p className="text-sm font-semibold text-stone-900 truncate">{name1}</p>
+                            <p className="text-sm font-semibold text-stone-900 truncate"><AdopterNameLabel name={name1} /></p>
                             {contact1 && <p className="text-xs text-stone-500 mt-0.5 line-clamp-2">{contact1}</p>}
                             <a href={`/adopter/${id1}`} target="_blank" className="text-xs text-teal-700 hover:underline mt-1 inline-block">
                                 View →
                             </a>
                         </div>
                         <div>
-                            <p className="text-sm font-semibold text-stone-900 truncate">{name2}</p>
+                            <p className="text-sm font-semibold text-stone-900 truncate"><AdopterNameLabel name={name2} /></p>
                             {contact2 && <p className="text-xs text-stone-500 mt-0.5 line-clamp-2">{contact2}</p>}
                             {id2 && (
                                 <a href={`/adopter/${id2}`} target="_blank" className="text-xs text-teal-700 hover:underline mt-1 inline-block">
