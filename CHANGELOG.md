@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.8] - 2026-09-05
+
+### Fixed — search now has ONE accent-normalized comparison space
+
+Third accent bug in findAdopters (recall v2.26.7, anchor v2.27.12, now coverage): the
+token index correctly recalled "Sebastián Vázquez" for a "sebastian vazquez" query, but
+the multi-token coverage rule compared raw text — the record scored "partial coverage of
+its own name" and was demoted under "Ampliar la búsqueda", so 3 of 5 live Sebastián
+records looked missing from search while all their dedup pairs showed. Root cause was
+architectural: raw and normalized comparisons were mixed per call site, so every new
+scoring feature re-decided accent handling and some forgot.
+
+Replaced with a normalization boundary: every match/coverage/anchor decision runs on
+`normalizeText`'d strings — query side and record side (name, contact, address, family,
+adoption/history deep matches, cross-field coverage). The v2.26.7 note that contact
+fields could stay raw ("mostly digits") was wrong — normalizeText passes digits, '@' and
+handles through untouched, so the fold is safe everywhere. Raw text survives only for
+display: snippets/highlights use a new length-guarded `foldForIndex` (accent-folded
+matching with indices valid against the raw string; falls back to plain lowercase rather
+than ever misplacing a highlight). E2E regression pins the flagship case: an unaccented
+query must put the accented record in the MAIN list, not the weak tier.
+
 ## [2.55.7] - 2026-09-05
 
 ### Fixed — nameless profiles were labeled "Deleted" in the dedup screen

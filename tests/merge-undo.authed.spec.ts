@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
+import { dismissCountryBanner } from './helpers';
 
 /**
  * Mass-merge + undo round-trip (v2.55.x). Exercises the dangerous server path
@@ -209,5 +210,35 @@ test.describe('Duplicate mass-merge and undo', () => {
             `SELECT status FROM duplicate_candidates WHERE id = '${CAND_QE}'`,
         ))[0];
         expect(qe.status).toBe('merged');
+    });
+
+    test('search is accent-insensitive end-to-end: unaccented query puts the accented record in the MAIN list', async ({ page }) => {
+        // Regression for the v2.55.8 normalization boundary: recall (token
+        // index) was accent-insensitive but the coverage demotion compared raw
+        // text, so "sebastian vazquez" recalled "Sebastián Vázquez" and then
+        // buried it under "Ampliar la búsqueda". Main-list visibility WITHOUT
+        // expanding the weak tier is the assertion.
+        const ACC = 'test-accent-fixture-1';
+        const ACC_NAME = 'AccentFixture Vázquez Ramírez';
+        seedAdopter(ACC, ACC_NAME, 'accent-fixture-contact');
+        // Name tokens exactly as tokenizeAdopter writes them (NFD-stripped) —
+        // SQL-seeded fixtures never pass through the app's tokenizer.
+        const toks: Array<[string, string, string]> = [
+            ['test-tok-accent-1', 'name_word', 'accentfixture'],
+            ['test-tok-accent-2', 'name_word', 'vazquez'],
+            ['test-tok-accent-3', 'name_word', 'ramirez'],
+            ['test-tok-accent-4', 'name_full', 'accentfixture vazquez ramirez'],
+        ];
+        for (const [id, type, value] of toks) {
+            execD1(`INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES ('${id}', '${ACC}', '${type}', '${value}')`);
+        }
+
+        await page.goto('/');
+        await dismissCountryBanner(page);
+        await page.fill('input#search', 'accentfixture vazquez');
+        await page.getByRole('button', { name: /search records|buscar registros/i }).click();
+        await expect(page.getByText(/found \d+ match|resultados encontrados/i)).toBeVisible({ timeout: 30000 });
+        // Visible WITHOUT clicking "Ampliar la búsqueda" ⇒ main list, full coverage.
+        await expect(page.getByText(ACC_NAME).first()).toBeVisible({ timeout: 30000 });
     });
 });

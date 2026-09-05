@@ -120,13 +120,27 @@ function countNameTokenMatches(text: string | null | undefined, tokens: string[]
 
 // ── Snippet extraction ────────────────────────────────────────────────────────
 
+/**
+ * Length-preserving accent fold for offset-safe matching: lowercased,
+ * diacritics stripped, but ONLY when the fold keeps the exact code-unit
+ * length (true for composed Spanish text, 'é' → 'e'). If NFD expansion
+ * changes the length (already-decomposed input, exotic scripts), fall back
+ * to plain lowercase — a missed highlight is fine, a misplaced one is not.
+ * This is the DISPLAY-side twin of normalizeText: same fold, but indices
+ * stay valid against the raw string so snippets/highlights can be cut from it.
+ */
+function foldForIndex(text: string): string {
+    const folded = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return folded.length === text.length ? folded.toLowerCase() : text.toLowerCase();
+}
+
 function extractSnippet(text: string, query: string, tokens: string[], maxLen = 80): { snippet: string; highlights: { start: number; end: number }[] } | null {
-    const lt = text.toLowerCase();
-    let anchorIdx = lt.indexOf(query.toLowerCase());
+    const lt = foldForIndex(text);
+    let anchorIdx = lt.indexOf(foldForIndex(query));
     let anchorLen = query.length;
     if (anchorIdx === -1) {
         for (const t of tokens) {
-            const idx = lt.indexOf(t.toLowerCase());
+            const idx = lt.indexOf(foldForIndex(t));
             if (idx !== -1) { anchorIdx = idx; anchorLen = t.length; break; }
         }
     }
@@ -139,10 +153,10 @@ function extractSnippet(text: string, query: string, tokens: string[], maxLen = 
     if (end === text.length) start = Math.max(0, text.length - maxLen);
     let snippet = text.slice(start, end).trim();
     snippet = (start > 0 ? '...' : '') + snippet + (end < text.length ? '...' : '');
-    const sl = snippet.toLowerCase();
+    const sl = foldForIndex(snippet);
     const rawH: { start: number; end: number }[] = [];
     for (const t of tokens) {
-        const tl = t.toLowerCase(); let from = 0;
+        const tl = foldForIndex(t); let from = 0;
         while (from < sl.length) {
             const idx = sl.indexOf(tl, from);
             if (idx === -1) break;
@@ -951,11 +965,15 @@ async function runDiscoveryMode(
         } catch (e) { logger.warn('Failed to log search hits', { error: e instanceof Error ? e.message : String(e) }); }
     })();
 
-    const qLower = normalizedQuery.toLowerCase();
-    // v2.26.7: accent-normalized query for the NAME cascade so "jose" scores as a
-    // name match against a stored "José" (the record is now fetched via the
-    // name-token recall path above). Contact/address stay on qLower — they're
-    // mostly digits/handles and address accent-folding can wait.
+    // v2.55.8: ONE comparison space. Every match/coverage decision below runs
+    // on normalizeText'd strings — both the query side (qNorm/tokensNorm) and
+    // the record side (per-field *Norm below). normalizeText only lowercases
+    // and strips diacritics (digits, '@', dots, handles pass through intact),
+    // so this is safe for contact/address fields too — the v2.26.7 note that
+    // "contact stays raw because it's mostly digits" was mistaken, and the
+    // raw/normalized mix it left behind produced three accent bugs in this
+    // file (recall v2.26.7, anchor v2.27.12, coverage v2.55.8). Raw text is
+    // for DISPLAY only (snippets — see foldForIndex).
     const qNorm = normalizeText(normalizedQuery);
     const tokensNorm = tokens.map(t => normalizeText(t));
     // v2.27.12 anchor rule: a token of ≤2 chars ("av") is too short to identify
@@ -1020,12 +1038,13 @@ async function runDiscoveryMode(
         }
 
         // Contact
-        if (a.contactInfo?.toLowerCase().includes(qLower)) {
+        const contactNorm = normalizeText(a.contactInfo || '');
+        if (qNorm && contactNorm.includes(qNorm)) {
             score += WEIGHTS.contact; matchTypes.push('contact');
             const s = buildSnippet('contact', a.contactInfo, normalizedQuery, tokens);
             if (s && WEIGHTS.contact > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.contact; }
-        } else if (isMultiToken && anyTokenMatch(a.contactInfo, tokens)) {
-            const m = countTokenMatches(a.contactInfo, tokens);
+        } else if (isMultiToken && anyTokenMatch(contactNorm, tokensNorm)) {
+            const m = countTokenMatches(contactNorm, tokensNorm);
             const w = Math.round(WEIGHTS.contact_partial * (m / tokens.length));
             score += w; matchTypes.push('contact_partial');
             const s = buildSnippet('contact', a.contactInfo, normalizedQuery, tokens);
@@ -1035,12 +1054,13 @@ async function runDiscoveryMode(
         }
 
         // Address
-        if (a.addressInfo?.toLowerCase().includes(qLower)) {
+        const addressNorm = normalizeText(a.addressInfo || '');
+        if (qNorm && addressNorm.includes(qNorm)) {
             score += WEIGHTS.address; matchTypes.push('address');
             const s = buildSnippet('address', a.addressInfo, normalizedQuery, tokens);
             if (s && WEIGHTS.address > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.address; }
-        } else if (isMultiToken && anyTokenMatch(a.addressInfo, tokens)) {
-            const m = countTokenMatches(a.addressInfo, tokens);
+        } else if (isMultiToken && anyTokenMatch(addressNorm, tokensNorm)) {
+            const m = countTokenMatches(addressNorm, tokensNorm);
             const w = Math.round(WEIGHTS.address_partial * (m / tokens.length));
             score += w; matchTypes.push('address_partial');
             const s = buildSnippet('address', a.addressInfo, normalizedQuery, tokens);
@@ -1050,12 +1070,13 @@ async function runDiscoveryMode(
         }
 
         // Family
-        if (a.familyMembers?.toLowerCase().includes(qLower)) {
+        const familyNorm = normalizeText(a.familyMembers || '');
+        if (qNorm && familyNorm.includes(qNorm)) {
             score += WEIGHTS.family; matchTypes.push('family');
             const s = buildSnippet('family', a.familyMembers, normalizedQuery, tokens);
             if (s && WEIGHTS.family > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = WEIGHTS.family; }
-        } else if (isMultiToken && anyTokenMatch(a.familyMembers, tokens)) {
-            const m = countTokenMatches(a.familyMembers, tokens);
+        } else if (isMultiToken && anyTokenMatch(familyNorm, tokensNorm)) {
+            const m = countTokenMatches(familyNorm, tokensNorm);
             const w = Math.round(WEIGHTS.family_partial * (m / tokens.length));
             score += w; matchTypes.push('family_partial');
             const s = buildSnippet('family', a.familyMembers, normalizedQuery, tokens);
@@ -1068,7 +1089,7 @@ async function runDiscoveryMode(
         // so a mid-word substring (e.g. "av" inside "por favor" in an adoption's notes)
         // doesn't earn deep-match credit and leak a spurious record into results.
         const adoptionText = adoptionTextMap.get(a.id);
-        if (adoptionIds.includes(a.id) && anyTokenMatch(adoptionText, tokens)) {
+        if (adoptionIds.includes(a.id) && anyTokenMatch(normalizeText(adoptionText || ''), tokensNorm)) {
             score += WEIGHTS.adoption; matchTypes.push('adoption');
             if (adoptionText && WEIGHTS.adoption > bestSnippetWeight) {
                 const s = buildSnippet('adoption', adoptionText, normalizedQuery, tokens);
@@ -1076,7 +1097,7 @@ async function runDiscoveryMode(
             }
         }
         const historyText = historyTextMap.get(a.id);
-        if (historyIds.includes(a.id) && anyTokenMatch(historyText, tokens)) {
+        if (historyIds.includes(a.id) && anyTokenMatch(normalizeText(historyText || ''), tokensNorm)) {
             score += WEIGHTS.history; matchTypes.push('history');
             if (WEIGHTS.history > bestSnippetWeight) {
                 bestSnippet = { field: 'history', snippet: '', highlights: [] };
@@ -1085,15 +1106,21 @@ async function runDiscoveryMode(
         }
 
         // Cross-field text, reused for the anchor gate and the coverage bonus.
-        const allText = [a.name, a.contactInfo, a.addressInfo, a.familyMembers, adoptionTextMap.get(a.id), historyTextMap.get(a.id)].filter(Boolean).join(' ');
-        // Anchor gate (v2.27.12): did any ≥3-char token match this record? Normalized
-        // so an accent-name anchor ("josé") counts. false when the query has no anchor
-        // tokens at all (e.g. bare "av") — such a query surfaces nothing. Enforced in
-        // the post-loop filter; supporting (≤2-char) tokens still add to coverage below.
-        anchorHitById.set(a.id, anchorTokensNorm.length > 0 && anyTokenMatch(normalizeText(allText), anchorTokensNorm));
+        // Normalized ONCE per record — the anchor gate and coverage MUST agree
+        // on accent handling (the v2.55.8 bug: anchor normalized, coverage
+        // didn't, so "sebastian vazquez" recalled "Sebastián Vázquez" but then
+        // demoted it to the weak tier for "partial coverage" of its own name).
+        const allTextNorm = normalizeText(
+            [a.name, a.contactInfo, a.addressInfo, a.familyMembers, adoptionTextMap.get(a.id), historyTextMap.get(a.id)].filter(Boolean).join(' '),
+        );
+        // Anchor gate (v2.27.12): did any ≥3-char token match this record?
+        // false when the query has no anchor tokens at all (e.g. bare "av") —
+        // such a query surfaces nothing. Enforced in the post-loop filter;
+        // supporting (≤2-char) tokens still add to coverage below.
+        anchorHitById.set(a.id, anchorTokensNorm.length > 0 && anyTokenMatch(allTextNorm, anchorTokensNorm));
         // Cross-field coverage bonus
         if (isMultiToken) {
-            const covered = countTokenMatches(allText, tokens) / tokens.length;
+            const covered = countTokenMatches(allTextNorm, tokensNorm) / tokens.length;
             coverageById.set(a.id, covered); // v2.27.0: drives partial-match demotion below
             score += covered >= 1 ? WEIGHTS.query_coverage_full : Math.round(WEIGHTS.query_coverage_full * covered * 0.5);
         }
