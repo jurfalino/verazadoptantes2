@@ -1,12 +1,13 @@
 'use server';
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
-import { sql, eq, desc } from 'drizzle-orm';
-import { adopterFlags, adopters, adopterEvents } from '@/db/schema';
+import { sql, eq, desc, and, isNull } from 'drizzle-orm';
+import { revalidatePath } from 'next/cache';
+import { adopterFlags, adopters, adopterEvents, adopterHistory, placements } from '@/db/schema';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
-import { getDb, checkIsModeratorOrAdminAsync } from './_db';
+import { getDb, checkIsModeratorOrAdminAsync, checkIsAdminAsync } from './_db';
 import { detectNotePii, noteHash, type NotePiiFlags } from '@/domain/notePii';
 import { scoreNoteSentiment, classifyRatingsAudit, type RatingsAuditQueue } from '@/domain/sentiment';
 
@@ -163,6 +164,8 @@ export interface RatingsAuditRow {
 
 export interface RatingsAuditReport {
     rows: RatingsAuditRow[];
+    /** true when the viewer may save rating changes (admins; moderators view only). */
+    canEdit: boolean;
     error?: string;
 }
 
@@ -192,8 +195,9 @@ export async function getRatingsAudit(): Promise<RatingsAuditReport> {
     try {
         if (!email || !(await checkIsModeratorOrAdminAsync(email))) {
             logger.warn('getRatingsAudit: unauthorized', { user: email });
-            return { rows: [], error: 'Unauthorized' };
+            return { rows: [], canEdit: false, error: 'Unauthorized' };
         }
+        const canEdit = await checkIsAdminAsync(email);
 
         const t0 = Date.now();
         const { rows: raw, rowsRead, dbMs } = await runReadonly(RATINGS_AUDIT_SQL);
@@ -225,10 +229,97 @@ export async function getRatingsAudit(): Promise<RatingsAuditReport> {
             dbMs,
             durationMs: Date.now() - t0,
         });
-        return { rows };
+        return { rows, canEdit };
     } catch (e) {
         const errorId = logger.error('getRatingsAudit: failed', { user: email, error: e instanceof Error ? e.message : String(e) });
-        return { rows: [], error: errorId };
+        return { rows: [], canEdit: false, error: errorId };
+    }
+}
+
+export interface RatingsAuditChange {
+    recordId: string;
+    /** New rating 1–5, or null to clear ("sin calificación"). */
+    rating: number | null;
+}
+
+const RATINGS_AUDIT_BATCH_LIMIT = 100;
+
+/**
+ * Batch-save rating changes from the "Calificaciones vs. notas" tab. Admin-only
+ * (moderators can view the report but not re-rate — record-wide mutations are
+ * owner/admin in the collaborative model). Routes each write to the normalized
+ * table behind the `adoptions` view: event ids update `adopter_events.rating`;
+ * animal ids update the ACTIVE placement's rating (same routing as
+ * _recordWrite.updateRecord for a no-transition patch). Every change lands in
+ * `adopter_history` so the profile's audit trail shows who re-rated and from what.
+ */
+export async function saveRatingsAuditChanges(changes: RatingsAuditChange[]): Promise<{ updated: number; failed: number; error?: string }> {
+    const session = await auth();
+    const email = session?.user?.email;
+    try {
+        if (!email || !(await checkIsAdminAsync(email))) {
+            logger.warn('saveRatingsAuditChanges: unauthorized', { user: email, count: changes?.length });
+            return { updated: 0, failed: changes?.length ?? 0, error: 'Unauthorized' };
+        }
+        if (!Array.isArray(changes) || changes.length === 0) return { updated: 0, failed: 0 };
+        if (changes.length > RATINGS_AUDIT_BATCH_LIMIT) {
+            return { updated: 0, failed: changes.length, error: `Máximo ${RATINGS_AUDIT_BATCH_LIMIT} cambios por guardado.` };
+        }
+        const db = await getDb();
+        if (!db) return { updated: 0, failed: changes.length, error: 'Database unavailable' };
+
+        let updated = 0;
+        let failed = 0;
+        const touchedAdopters = new Set<string>();
+        // Sequential on purpose: each change is 2–3 statements and batches are
+        // small; avoids hammering D1 with a parallel burst (findAdopters lesson).
+        for (const c of changes) {
+            try {
+                const rating = c.rating === null ? null : Math.round(Number(c.rating));
+                if (rating !== null && (rating < 1 || rating > 5)) { failed++; continue; }
+
+                // Event row? (view exposes adopter_events ids for the 4 event types)
+                const ev = await db.select({ id: adopterEvents.id, adopterId: adopterEvents.adopterId, rating: adopterEvents.rating })
+                    .from(adopterEvents).where(eq(adopterEvents.id, c.recordId)).get();
+                let adopterId: string | null = null;
+                let from: number | null = null;
+                if (ev) {
+                    await db.update(adopterEvents).set({ rating }).where(eq(adopterEvents.id, ev.id));
+                    adopterId = ev.adopterId;
+                    from = ev.rating;
+                } else {
+                    // Animal row → the rating lives on the ACTIVE placement.
+                    const pl = await db.select({ id: placements.id, adopterId: placements.adopterId, rating: placements.rating })
+                        .from(placements).where(and(eq(placements.animalId, c.recordId), isNull(placements.endedAt))).get();
+                    if (!pl) { failed++; logger.warn('saveRatingsAuditChanges: record not found', { user: email, recordId: c.recordId }); continue; }
+                    await db.update(placements).set({ rating }).where(eq(placements.id, pl.id));
+                    adopterId = pl.adopterId;
+                    from = pl.rating;
+                }
+
+                if (adopterId) {
+                    await db.insert(adopterHistory).values({
+                        id: crypto.randomUUID(),
+                        adopterId,
+                        changedBy: email,
+                        changes: JSON.stringify({ adoption_updated: { rating: { from, to: rating }, reason: 'ratings_audit' } }),
+                        changedAt: new Date(),
+                    });
+                    touchedAdopters.add(adopterId);
+                }
+                logAudit({ userEmail: email, action: 'data_quality_rating_updated', target: c.recordId, details: { from, to: rating } });
+                updated++;
+            } catch (e) {
+                failed++;
+                logger.error('saveRatingsAuditChanges: change failed', { user: email, recordId: c.recordId, error: e instanceof Error ? e.message : String(e) });
+            }
+        }
+        for (const id of touchedAdopters) revalidatePath(`/adopter/${id}`);
+        logger.info('saveRatingsAuditChanges: done', { user: email, updated, failed, adopters: touchedAdopters.size });
+        return { updated, failed };
+    } catch (e) {
+        const errorId = logger.error('saveRatingsAuditChanges: failed', { user: email, count: changes?.length, error: e instanceof Error ? e.message : String(e) });
+        return { updated: 0, failed: changes?.length ?? 0, error: errorId };
     }
 }
 

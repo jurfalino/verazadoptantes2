@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.13] - 2026-09-05
+
+### Added — inline re-rating from "Calificaciones vs. notas"
+
+Admins can now fix ratings right from the audit tab: each row's rating is a dropdown
+(★1–★5 or "Sin calificación"), changed rows highlight, and a sticky save bar batches
+them into one "Guardar (n)". Writes route to the normalized tables behind the
+`adoptions` view (event ids → `adopter_events.rating`; animal ids → the active
+placement's rating), every change lands in `adopter_history` with from/to values,
+and the report re-reads after saving so corrected rows drop off. Admin-only writes
+(`saveRatingsAuditChanges`, capped at 100 per batch, sequential to spare D1);
+moderators keep the read-only view.
+
 ## [2.55.12] - 2026-09-05
 
 ### Added — "Calificaciones vs. notas" tab in Calidad de datos

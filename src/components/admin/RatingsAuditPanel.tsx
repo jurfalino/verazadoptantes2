@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
-import { getRatingsAudit, type RatingsAuditRow } from '@/app/actions/dataQuality';
+import { getRatingsAudit, saveRatingsAuditChanges, type RatingsAuditRow } from '@/app/actions/dataQuality';
 import type { RatingsAuditQueue } from '@/domain/sentiment';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 
@@ -60,23 +60,63 @@ const TYPE_LABEL: Record<string, string> = {
     available: 'disponible',
 };
 
+// Dropdown value for "no rating"; '' is the untouched sentinel elsewhere.
+const NONE = 'none';
+
 export default function RatingsAuditPanel() {
     const [rows, setRows] = useState<RatingsAuditRow[] | null>(null);
+    const [canEdit, setCanEdit] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [queue, setQueue] = useState<RatingsAuditQueue>('upgrade');
     const [showImported, setShowImported] = useState(true);
+    /** recordId → new rating (null = clear). Only rows that differ from current. */
+    const [pending, setPending] = useState<Map<string, number | null>>(new Map());
+    const [saving, setSaving] = useState(false);
+    const [saveMsg, setSaveMsg] = useState<string | null>(null);
     const [, start] = useTransition();
 
-    useEffect(() => {
-        let alive = true;
+    const load = () => {
         start(async () => {
             const res = await getRatingsAudit();
-            if (!alive) return;
             if (res.error) setError(res.error);
-            else setRows(res.rows);
+            else {
+                setRows(res.rows);
+                setCanEdit(res.canEdit);
+            }
         });
-        return () => { alive = false; };
-    }, []);
+    };
+    useEffect(() => { load(); }, []);
+
+    const setRowRating = (recordId: string, current: number, value: string) => {
+        setPending(prev => {
+            const next = new Map(prev);
+            const parsed = value === NONE ? null : Number(value);
+            if (parsed === current) next.delete(recordId);
+            else next.set(recordId, parsed);
+            return next;
+        });
+    };
+
+    async function handleSave() {
+        if (pending.size === 0 || saving) return;
+        setSaving(true);
+        setSaveMsg(null);
+        try {
+            const changes = Array.from(pending, ([recordId, rating]) => ({ recordId, rating }));
+            const res = await saveRatingsAuditChanges(changes);
+            if (!res || res.error) {
+                setSaveMsg(`No se pudieron guardar los cambios. Código: ${res?.error ?? 'sin respuesta'}`);
+            } else {
+                setSaveMsg(res.failed > 0
+                    ? `${res.updated} guardados, ${res.failed} fallaron — revisá y reintentá.`
+                    : `${res.updated} ${res.updated === 1 ? 'registro actualizado' : 'registros actualizados'}. ✓`);
+                setPending(new Map());
+                load(); // authoritative re-read: fixed rows drop off, partial failures stay
+            }
+        } finally {
+            setSaving(false);
+        }
+    }
 
     const pool = useMemo(
         () => (rows ?? []).filter(r => showImported || !r.imported),
@@ -201,7 +241,24 @@ export default function RatingsAuditPanel() {
                                         </span>
                                     </td>
                                     <td className="p-3 text-xs text-stone-500 whitespace-nowrap">{TYPE_LABEL[r.recordType ?? ''] ?? r.recordType}</td>
-                                    <td className="p-3 text-sm font-semibold text-stone-700 whitespace-nowrap">★{r.rating}</td>
+                                    <td className="p-3 whitespace-nowrap">
+                                        {canEdit ? (
+                                            <select
+                                                value={pending.has(r.recordId)
+                                                    ? (pending.get(r.recordId) === null ? NONE : String(pending.get(r.recordId)))
+                                                    : String(r.rating)}
+                                                onChange={e => setRowRating(r.recordId, r.rating, e.target.value)}
+                                                className={`text-sm font-semibold rounded-lg border px-2 py-1 bg-white text-stone-700 ${
+                                                    pending.has(r.recordId) ? 'border-teal-600 ring-1 ring-teal-600' : 'border-stone-200'
+                                                }`}
+                                            >
+                                                {[1, 2, 3, 4, 5].map(v => <option key={v} value={v}>★{v}</option>)}
+                                                <option value={NONE}>Sin calificación</option>
+                                            </select>
+                                        ) : (
+                                            <span className="text-sm font-semibold text-stone-700">★{r.rating}</span>
+                                        )}
+                                    </td>
                                     {showSentiment && (
                                         <td className="p-3">
                                             <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${(r.sentiment ?? 0) < 0 ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'}`}>
@@ -219,6 +276,39 @@ export default function RatingsAuditPanel() {
                     </table>
                     <div className="p-3 text-xs text-stone-400 border-t border-stone-100">
                         {visible.length} registros{!showImported && hiddenCount > 0 ? ` · ${hiddenCount} importados ocultos por el interruptor` : ''}
+                    </div>
+                </div>
+            )}
+
+            {/* Save bar — sticky while there are unsaved rating changes */}
+            {canEdit && (pending.size > 0 || saveMsg) && (
+                <div className="sticky bottom-4 z-10">
+                    <div className="bg-white rounded-2xl shadow-lg border border-stone-200 p-3 flex items-center gap-3 flex-wrap">
+                        {pending.size > 0 ? (
+                            <>
+                                <span className="text-sm text-stone-600">
+                                    {pending.size} {pending.size === 1 ? 'cambio sin guardar' : 'cambios sin guardar'}
+                                </span>
+                                <div className="ml-auto flex gap-2">
+                                    <button
+                                        onClick={() => { setPending(new Map()); setSaveMsg(null); }}
+                                        disabled={saving}
+                                        className="px-3 py-1.5 text-xs font-semibold text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200 disabled:opacity-50"
+                                    >
+                                        Descartar
+                                    </button>
+                                    <button
+                                        onClick={handleSave}
+                                        disabled={saving}
+                                        className="px-4 py-1.5 text-xs font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-sm disabled:opacity-50"
+                                    >
+                                        {saving ? 'Guardando…' : `Guardar (${pending.size})`}
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <span className={`text-sm ${saveMsg?.includes('Código') || saveMsg?.includes('fallaron') ? 'text-red-700' : 'text-teal-700'}`}>{saveMsg}</span>
+                        )}
                     </div>
                 </div>
             )}
