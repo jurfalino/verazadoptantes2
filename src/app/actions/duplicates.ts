@@ -1,7 +1,7 @@
 'use server';
 
 import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, duplicateTokens, duplicateCandidates, auditLog, placements, adopterEvents } from '@/db/schema';
-import { eq, or, and, inArray, sql } from 'drizzle-orm';
+import { eq, or, and, gt, ne, inArray, sql } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
 import { reassignAdopterRecords } from './_recordWrite';
@@ -430,12 +430,17 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
 
         // A later not-yet-undone merge into the same survivor means our
         // snapshot is stale — restoring it would erase that merge's data.
+        // gt() (not a raw sql fragment) so the Date is mapped to the column's
+        // epoch-seconds driver value — D1 cannot bind a raw Date object.
+        // If createdAt is somehow missing, fall back to treating EVERY other
+        // merge into this survivor as potentially later (conservative).
         const laterMerges = await db.select({ id: auditLog.id, details: auditLog.details })
             .from(auditLog)
             .where(and(
                 eq(auditLog.action, 'adopter_merge'),
                 eq(auditLog.target, primaryId),
-                sql`${auditLog.createdAt} > ${auditRow.createdAt}`,
+                ne(auditLog.id, auditId),
+                ...(auditRow.createdAt ? [gt(auditLog.createdAt, auditRow.createdAt)] : []),
             )) as Array<{ id: string; details: string | null }>;
         for (const later of laterMerges) {
             try {

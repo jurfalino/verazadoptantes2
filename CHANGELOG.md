@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.5] - 2026-09-05
+
+### Fixed — undo was broken end-to-end: D1 can't bind a raw Date
+
+The merge-undo e2e's first honest run caught a real bug the type system couldn't: the
+undo's later-merge guard compared timestamps via a raw ``sql`created_at > ${date}` ``
+fragment, and D1 refuses a bound JS Date object — so EVERY undo failed at that query.
+v2.55.1–v2.55.4 shipped an undo that never once worked; the banner would have alerted
+"Undo failed" on first prod use. Replaced with drizzle's typed `gt()` (which maps the Date
+to the column's epoch-seconds driver value) plus a `ne(id)` self-exclusion and a
+conservative fallback when the audit row lacks a timestamp.
+
 ## [2.55.4] - 2026-09-05
 
 ### Changed — 50 pairs per page, mass-merge up to 50
