@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.1] - 2026-09-05
+
+### Changed — merge is 2 clicks, guarded by undo instead of a confirm dialog
+
+Merging cost 3 clicks (4 with a survivor change): pair card → modal button → native
+`confirm()` re-asking what the modal already showed. The `confirm()` is gone from both the
+pair modal and the mass-merge modal — the modal is the confirmation — replaced by a real
+safety net: every merge now records an undo payload in its audit_log row (survivor's
+pre-merge fields, moved row ids per table, touched candidates' prior statuses), and the
+panel shows a "Deshacer" banner after each merge. Undo restores the absorbed profile,
+re-points its records back, reverts the survivor (including the auto-alias), un-resolves the
+candidates, and re-tokenizes both. Guarded: refused if the absorbed profile changed since,
+if a newer merge into the same survivor stands (undo newest-first; the mass-undo path sends
+them in that order), or on double-undo. Dismiss keeps its confirm — it has no modal.
+
 ## [2.55.0] - 2026-09-05
 
 ### Added — duplicate queue: pagination, cluster mass-merge, low-confidence filter

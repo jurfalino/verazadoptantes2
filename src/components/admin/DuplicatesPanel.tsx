@@ -118,6 +118,11 @@ export default function DuplicatesPanel() {
     // share one name word — hidden by default so real signal isn't drowned.
     const [showLow, setShowLow] = useState(false);
     const [massMergeCluster, setMassMergeCluster] = useState<ClusterRecord[] | null>(null);
+    // The last merge action's audit ids (one per absorbed profile), newest
+    // last — the handle for the Deshacer banner. Cleared by the next merge,
+    // an undo, or dismissing the banner; surviving a refetch is intentional.
+    const [lastMerge, setLastMerge] = useState<{ auditIds: string[]; label: string } | null>(null);
+    const [undoing, setUndoing] = useState(false);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -243,11 +248,13 @@ export default function DuplicatesPanel() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ primaryId, secondaryId }),
         });
+        const data = await res.json() as { error?: string; results?: Array<{ success: boolean; auditId?: string }> };
         if (res.ok) {
+            const auditIds = (data.results || []).filter(r => r.success && r.auditId).map(r => r.auditId!);
+            setLastMerge(auditIds.length > 0 ? { auditIds, label: '1 perfil fusionado' } : null);
             setMergeTarget(null);
             fetchData();
         } else {
-            const data = await res.json() as { error?: string };
             alert(`Merge failed: ${data.error}`);
         }
     }
@@ -258,16 +265,45 @@ export default function DuplicatesPanel() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ primaryId, secondaryIds }),
         });
-        const data = await res.json() as { mergedCount?: number; error?: string; results?: Array<{ secondaryId: string; success: boolean; error?: string }> };
+        const data = await res.json() as { mergedCount?: number; error?: string; results?: Array<{ secondaryId: string; success: boolean; error?: string; auditId?: string }> };
         if (res.ok) {
             const failed = (data.results || []).filter(r => !r.success);
             if (failed.length > 0) {
                 alert(`Se fusionaron ${data.mergedCount ?? 0} perfiles, pero ${failed.length} fallaron:\n${failed.map(f => `• ${f.error}`).join('\n')}`);
             }
+            const auditIds = (data.results || []).filter(r => r.success && r.auditId).map(r => r.auditId!);
+            setLastMerge(auditIds.length > 0 ? { auditIds, label: `${auditIds.length} perfil${auditIds.length === 1 ? '' : 'es'} fusionado${auditIds.length === 1 ? '' : 's'}` } : null);
             setMassMergeCluster(null);
             fetchData();
         } else {
             alert(`Merge failed: ${data.error}`);
+        }
+    }
+
+    async function handleUndo() {
+        if (!lastMerge || undoing) return;
+        setUndoing(true);
+        try {
+            // Newest-first: a later merge into the same survivor must be
+            // reversed before an earlier one (the server enforces this too).
+            const res = await fetch('/api/admin/duplicates/unmerge', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ auditIds: [...lastMerge.auditIds].reverse() }),
+            });
+            const data = await res.json() as { undoneCount?: number; error?: string; results?: Array<{ success: boolean; error?: string }> };
+            if (res.ok) {
+                const failed = (data.results || []).filter(r => !r.success);
+                if (failed.length > 0) {
+                    alert(`Se deshicieron ${data.undoneCount ?? 0} fusiones, pero ${failed.length} fallaron:\n${failed.map(f => `• ${f.error}`).join('\n')}`);
+                }
+                setLastMerge(null);
+                fetchData();
+            } else {
+                alert(`No se pudo deshacer: ${data.error}`);
+            }
+        } finally {
+            setUndoing(false);
         }
     }
 
@@ -339,6 +375,30 @@ export default function DuplicatesPanel() {
                     {scanning ? '⏳ Scanning...' : '🔄 Scan Now'}
                 </button>
             </div>
+
+            {/* Post-merge undo banner — the safety net that replaced the
+                per-merge confirm() dialog. */}
+            {lastMerge && (
+                <div className="text-sm px-4 py-3 rounded-xl bg-teal-50 text-teal-800 border border-teal-200 flex items-center justify-between gap-3 flex-wrap">
+                    <span>✅ {lastMerge.label}.</span>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={handleUndo}
+                            disabled={undoing}
+                            className="px-3 py-1.5 text-xs font-semibold text-teal-800 bg-white border border-teal-300 rounded-lg hover:bg-teal-100 disabled:opacity-50"
+                        >
+                            {undoing ? 'Deshaciendo…' : '↩︎ Deshacer'}
+                        </button>
+                        <button
+                            onClick={() => setLastMerge(null)}
+                            className="px-2 py-1.5 text-xs font-medium text-teal-700 hover:text-teal-900"
+                            aria-label="Cerrar"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Scan result */}
             {scanResult && (
@@ -566,7 +626,8 @@ function MassMergeModal({ records, onMerge, onClose }: {
 
     async function handleConfirm() {
         if (!primary || secondaryIds.length === 0) return;
-        if (!confirm(`¿Fusionar ${secondaryIds.length} perfil${secondaryIds.length === 1 ? '' : 'es'} en "${primary.name}"?\n\nLos perfiles fusionados quedarán eliminados; sus registros, contactos y nombres (como alias) pasan al perfil conservado.`)) return;
+        // No confirm() dialog: the modal itself is the confirmation, and the
+        // merge is undoable from the panel's post-merge banner.
         setMerging(true);
         try {
             await onMerge(primaryId, secondaryIds);

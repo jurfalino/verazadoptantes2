@@ -60,12 +60,9 @@ export default function DuplicateMergeModal({
     const secondary = primaryId === adopter1.id ? adopter2 : adopter1;
 
     async function handleMerge() {
-        const confirmMsg = t('dialogs.confirm_merge')
-            .replace('{secondary}', adopterDisplayName(secondary, t('adopter.nameless')))
-            .replace('{primary}', adopterDisplayName(primary, t('adopter.nameless')));
-        if (!confirm(confirmMsg)) {
-            return;
-        }
+        // No confirm() dialog: this modal IS the confirmation (both profiles,
+        // the "what will happen" warning, an explicit destructive button), and
+        // the merge is undoable from the panel's post-merge banner.
         setMerging(true);
         try {
             await onMerge(primary.id, secondary.id);

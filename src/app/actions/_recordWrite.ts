@@ -207,9 +207,12 @@ export async function deleteAdopterRecords(db: Db, adopterId: string): Promise<v
     await db.delete(adopterEvents).where(eq(adopterEvents.adopterId, adopterId));
 }
 
-/** Reassign an adopter's records to another adopter (duplicate merge). */
-export async function reassignAdopterRecords(db: Db, fromAdopterId: string, toAdopterId: string): Promise<number> {
+/** Reassign an adopter's records to another adopter (duplicate merge).
+ *  Returns the moved row ids so the merge can record an undo payload. */
+export async function reassignAdopterRecords(db: Db, fromAdopterId: string, toAdopterId: string): Promise<{ count: number; placementIds: string[]; adopterEventIds: string[] }> {
     const moved = await db.update(placements).set({ adopterId: toAdopterId }).where(eq(placements.adopterId, fromAdopterId)).returning({ id: placements.id });
-    await db.update(adopterEvents).set({ adopterId: toAdopterId }).where(eq(adopterEvents.adopterId, fromAdopterId));
-    return Array.isArray(moved) ? moved.length : 0;
+    const movedEvents = await db.update(adopterEvents).set({ adopterId: toAdopterId }).where(eq(adopterEvents.adopterId, fromAdopterId)).returning({ id: adopterEvents.id });
+    const placementIds = Array.isArray(moved) ? moved.map((r: { id: string }) => r.id) : [];
+    const adopterEventIds = Array.isArray(movedEvents) ? movedEvents.map((r: { id: string }) => r.id) : [];
+    return { count: placementIds.length, placementIds, adopterEventIds };
 }

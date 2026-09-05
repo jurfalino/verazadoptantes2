@@ -43,10 +43,10 @@ export async function POST(request: Request) {
     // Sequential on purpose: every merge rewrites the same primary row
     // (contact info, entries, token refresh), so parallel merges would race
     // on read-modify-write and drop each other's absorbed data.
-    const results: Array<{ secondaryId: string; success: boolean; error?: string }> = [];
+    const results: Array<{ secondaryId: string; success: boolean; error?: string; auditId?: string }> = [];
     for (const secondaryId of secondaryIds) {
         const result = await mergeAdopters(primaryId, secondaryId, session.user.email);
-        results.push({ secondaryId, success: result.success, error: result.error });
+        results.push({ secondaryId, success: result.success, error: result.error, auditId: result.auditId });
     }
 
     const failed = results.filter(r => !r.success);
