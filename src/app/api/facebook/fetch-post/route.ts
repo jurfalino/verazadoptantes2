@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { arrayBufferToBase64 } from '@/lib/base64';
-import { hasExtractableContent, hasPostText, imageIdentity, isPlaceholderAssetUrl, isSourceNotPublic, realImages } from '@/domain/facebookExtraction';
+import { hasExtractableContent, hasPostText, imageIdentity, isPlaceholderAssetUrl, isSourceNotPublic, realImages, sanitizePostText } from '@/domain/facebookExtraction';
 
 interface FacebookPostData {
     text: string;
@@ -95,11 +95,17 @@ export async function POST(request: NextRequest) {
                         // success — no text, one broken image — instead of falling
                         // through to the manual-input path (share/19EN1HpufE).
                         const scraperImages = realImages(scraperData.data.images);
-                        if (scraperImages.length > 0 || scraperData.data.text.length > 50) {
+                        // Sanitized: Facebook's wall/error pages render text the
+                        // scraper's DOM harvest can scoop — the field_exception
+                        // GraphQL banner is 71 chars and sailed over this very
+                        // length bar into the wizard's text box (v2.54.5 report).
+                        const scraperText = sanitizePostText(scraperData.data.text);
+                        if (scraperImages.length > 0 || scraperText.length > 50) {
                             return NextResponse.json({
                                 success: true,
                                 data: {
                                     ...scraperData.data,
+                                    text: scraperText,
                                     images: scraperImages,
                                     ...(isVideoUrl ? { isVideo: true as const } : {}),
                                 },
@@ -167,6 +173,16 @@ export async function POST(request: NextRequest) {
         const html = await response.text();
 
         const postData = extractPostData(html);
+        // Wall/error boilerplate scraped as "text" is not the post's caption.
+        postData.text = sanitizePostText(postData.text);
+        // og:type is the walled page's claim, and walled pages fabricate
+        // `video.other` on posts that are not videos (field report: an IMAGE
+        // post announced as a video in the wizard). When the same HTML parked a
+        // crawler stub — the wall's signature — only the rescuer's own URL
+        // shape may vouch for video-ness.
+        if (postData.isVideo && postData.crawlerThumbnailUrl && !isVideoUrl && !hasPostText(postData)) {
+            postData.isVideo = false;
+        }
 
         // For video posts, try to fetch the thumbnail and convert to base64 for OCR.
         // The lookaside crawler URL is a valid source HERE (crawler UA, server

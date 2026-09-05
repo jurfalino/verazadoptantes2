@@ -20,6 +20,51 @@ export interface ExtractedPost {
     images?: string[];
     /** From `og:type` in the fetched HTML. */
     isVideo?: boolean;
+    /**
+     * A crawler placeholder seen in og:image, parked outside `images` for the
+     * reel-thumbnail fetch. Its presence is wall evidence and MUST count as
+     * such here — moving the stub out of `images` without this field silently
+     * disarmed the wall check (v2.54.5 field report).
+     */
+    crawlerThumbnailUrl?: string;
+}
+
+/**
+ * Text Facebook renders on its wall and error pages, which the DOM/OG harvest
+ * can scoop up as if it were the post's caption. The GraphQL error banner
+ * ("A server error field_exception occured. Check server logs for details." —
+ * typo is Facebook's) is 71 characters, comfortably over every
+ * "meaningful content" length bar, and reached the wizard verbatim.
+ *
+ * Boilerplate phrases only condemn SHORT text: a real caption can legitimately
+ * tell an adopter to log in somewhere, so anything long enough to be a caption
+ * is left alone. The error banner is damning at any length.
+ */
+const FB_ERROR_BANNER = /a server error \w+ occured\.? check server logs/i;
+const FB_WALL_BOILERPLATE = [
+    /^see more of .{1,80} on facebook/i,
+    /^ver más de .{1,80} en facebook/i,
+    /log in (or sign up )?to (see|view|continue)/i,
+    /^log in to see/i,
+    /^inicia sesión para/i,
+    /^iniciar sesión/i,
+    /you must log in/i,
+    /this content isn'?t available/i,
+    /este contenido no está disponible/i,
+];
+
+export function isWallOrErrorText(text: string): boolean {
+    const t = text.trim();
+    if (!t) return false;
+    if (FB_ERROR_BANNER.test(t)) return true;
+    if (t.length > 200) return false;
+    return FB_WALL_BOILERPLATE.some(re => re.test(t));
+}
+
+/** Trimmed post text, with wall/error boilerplate blanked to nothing. */
+export function sanitizePostText(text: string | undefined | null): string {
+    const t = (text ?? '').trim();
+    return isWallOrErrorText(t) ? '' : t;
 }
 
 /**
@@ -71,9 +116,10 @@ export function realImages(urls: string[] | undefined): string[] {
  * post unlucky enough to be walled still passes via its URL shape.
  */
 export function hasExtractableContent(post: ExtractedPost, isVideoUrl = false): boolean {
-    if (post.text) return true;
+    if (sanitizePostText(post.text)) return true;
     if (realImages(post.images).length > 0) return true;
-    const sawWallPlaceholder = (post.images ?? []).some(isPlaceholderAssetUrl);
+    const sawWallPlaceholder = (post.images ?? []).some(isPlaceholderAssetUrl)
+        || Boolean(post.crawlerThumbnailUrl);
     const videoSignal = isVideoUrl || (Boolean(post.isVideo) && !sawWallPlaceholder);
     return videoSignal && Boolean(post.author);
 }

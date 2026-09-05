@@ -51,8 +51,40 @@ function realImagesOf(urls: string[]): string[] {
     return urls.filter(u => !isPlaceholderAsset(u));
 }
 
+// Text Facebook renders on its wall/error pages, which the DOM harvest scoops
+// up as if it were the caption. The GraphQL banner ("A server error
+// field_exception occured. Check server logs for details." — typo is
+// Facebook's) is 71 chars, over every length bar. Boilerplate only condemns
+// short text; a long real caption may legitimately mention logging in.
+// Mirrors src/domain/facebookExtraction.ts in the main app.
+const FB_ERROR_BANNER = /a server error \w+ occured\.? check server logs/i;
+const FB_WALL_BOILERPLATE = [
+    /^see more of .{1,80} on facebook/i,
+    /^ver más de .{1,80} en facebook/i,
+    /log in (or sign up )?to (see|view|continue)/i,
+    /^log in to see/i,
+    /^inicia sesión para/i,
+    /^iniciar sesión/i,
+    /you must log in/i,
+    /this content isn'?t available/i,
+    /este contenido no está disponible/i,
+];
+
+function isWallOrErrorText(text: string): boolean {
+    const t = text.trim();
+    if (!t) return false;
+    if (FB_ERROR_BANNER.test(t)) return true;
+    if (t.length > 200) return false;
+    return FB_WALL_BOILERPLATE.some(re => re.test(t));
+}
+
+function sanitizeText(text: string): string {
+    const t = text.trim();
+    return isWallOrErrorText(t) ? '' : t;
+}
+
 function hasRealContent(text: string, images: string[]): boolean {
-    return Boolean(text.trim()) || realImagesOf(images).length > 0;
+    return Boolean(sanitizeText(text)) || realImagesOf(images).length > 0;
 }
 
 /** One structured line per scrape for outcome telemetry (Fly logs → grep-able). */
@@ -503,6 +535,20 @@ async function scrapeFacebookPost(url: string): Promise<ScrapeResult> {
         // Returning them as a success is what made walled posts look like the
         // scraper "did nothing" — the app received an empty result labeled ok
         // and never offered the manual path with an explanation.
+        //
+        // Wall/error banners the DOM harvest scooped are not the caption
+        // either. And when Layer 1 already saw the wall's signature (crawler
+        // placeholder, no description) AND the browser's text was that
+        // boilerplate, the scontent images the error page rendered are its own
+        // chrome, not the post — they reached the wizard as black thumbnails.
+        if (isWallOrErrorText(text)) {
+            console.log(`[Scraper] Discarding wall/error boilerplate scooped as text: "${text.slice(0, 60)}..."`);
+            text = '';
+            if (og.sawPlaceholder && !og.description) {
+                console.log(`[Scraper] Layer 1 confirmed wall — discarding ${images.length} error-page image(s)`);
+                images.length = 0;
+            }
+        }
         const cleanImages = realImagesOf(images);
         console.log(`[Scraper] Playwright result: images=${cleanImages.length}, text=${text.length}, author="${author}"`);
 
@@ -691,7 +737,9 @@ async function scrapeInstagramPost(url: string): Promise<ScrapeResult> {
         await browser.close();
 
         // Honest ending — same contract as Facebook: an author alone means the
-        // wall identified the poster and withheld the post.
+        // wall identified the poster and withheld the post, and wall
+        // boilerplate scooped as text is not a caption.
+        text = sanitizeText(text);
         const cleanImages = realImagesOf(images);
         console.log(`[Scraper] Instagram result: text=${text.length}, author="${author}", images=${cleanImages.length}`);
 
@@ -1068,7 +1116,7 @@ async function scrapePost(url: string): Promise<ScrapeResult> {
 // EXPRESS ENDPOINTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const SCRAPER_VERSION = '2.0.0';
+const SCRAPER_VERSION = '2.0.1';
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {

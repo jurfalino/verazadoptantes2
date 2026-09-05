@@ -2,6 +2,32 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.54.6] - 2026-09-05
+
+### Fixed — Facebook's error page leaked into the wizard as post content
+
+Field report on staging, all three symptoms from one source: Facebook's bot-flagged error
+page. Its GraphQL banner ("A server error field_exception occured. Check server logs for
+details." — typo is Facebook's, 71 chars) is rendered as visible DOM text, so the scraper's
+text harvest scooped it past every "meaningful content" length bar into the extracted-text
+box; the error page's own rendered images became the two black thumbnails; and its fabricated
+`og:type: video.other` produced a "contains a video" note on an image post.
+
+One hole was self-inflicted in v2.54.5: parking the crawler stub into `crawlerThumbnailUrl`
+for reel OCR removed it from `images` — the very field `hasExtractableContent` inspects for
+wall evidence — silently re-arming the og:type video leniency the previous release had
+disabled. The unit tests passed the stub in `images`; the route no longer did.
+
+- `domain/facebookExtraction.ts`: `isWallOrErrorText` / `sanitizePostText` (the error banner
+  condemns at any length; login boilerplate only condemns short text, so real captions that
+  mention logging in survive); `hasExtractableContent` treats wall text as no text and counts
+  a parked `crawlerThumbnailUrl` as wall evidence. 7 new tests.
+- `api/facebook/fetch-post`: sanitizes text at both ingresses (scraper result, OG fallback);
+  no longer reports `isVideo` when og:type's claim comes with the wall's signature and no
+  caption — only the rescuer's own URL shape may vouch for video-ness.
+- scraper v2.0.1: same sanitation where the DOM harvest runs; when Layer 1 confirmed the wall
+  and the browser's text was boilerplate, the error page's rendered images are discarded too.
+
 ## [2.54.5] - 2026-09-04
 
 ### Fixed — login-walled Facebook posts no longer come back as empty "successes"
