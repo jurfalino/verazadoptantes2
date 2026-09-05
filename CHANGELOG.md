@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.12] - 2026-09-05
+
+### Added — "Calificaciones vs. notas" tab in Calidad de datos
+
+New ratings-audit report: every activity record whose 1–5 rating disagrees with — or
+was never supported by — the sentiment of its own note, in five mutually exclusive
+queues (subir calificación, bajar a ★1, alta con nota negativa, sin evidencia,
+evidencia neutra). Sentiment comes from a domain-pure Spanish lexicon scorer
+(`src/domain/sentiment.ts`) tuned to the vetting vocabulary, with negation handling
+and note cleaning (source lines, contact blocks, URLs stripped before scoring — the
+score is a review aid, never an auto-rater). Each queue shows its exact filter rule;
+an "Importados" switch filters by real record provenance (`adopters.source`), never
+by matching source text. Live and self-clearing like the sibling tabs: fixing the
+rating or the note drops the row. Moderators + admins.
+
 ## [2.55.11] - 2026-09-05
 
 ### Added — post-merge success toast with a link to the resulting profile

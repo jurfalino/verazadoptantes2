@@ -8,6 +8,7 @@ import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, checkIsModeratorOrAdminAsync } from './_db';
 import { detectNotePii, noteHash, type NotePiiFlags } from '@/domain/notePii';
+import { scoreNoteSentiment, classifyRatingsAudit, type RatingsAuditQueue } from '@/domain/sentiment';
 
 /**
  * "Calidad de datos" moderation report.
@@ -141,6 +142,93 @@ export async function getDataQualityReport(): Promise<DataQualityReport> {
     } catch (e) {
         const errorId = logger.error('getDataQualityReport: failed', { user: email, error: e instanceof Error ? e.message : String(e) });
         return { pii: [], error: errorId };
+    }
+}
+
+export interface RatingsAuditRow {
+    /** The activity record (adoptions-view id: an adopter_events or animals id). */
+    recordId: string;
+    adopterId: string;
+    adopterName: string | null;
+    recordType: string | null;
+    rating: number;
+    /** Lexicon sentiment −4…+4; null for the evidence queues (no signal). */
+    sentiment: number | null;
+    /** Cleaned-note excerpt (source lines / contact blocks / URLs stripped). */
+    excerpt: string;
+    /** true when the adopter row came from the ImportWizard (adopters.source). */
+    imported: boolean;
+    queue: RatingsAuditQueue;
+}
+
+export interface RatingsAuditReport {
+    rows: RatingsAuditRow[];
+    error?: string;
+}
+
+// All rated-or-rating-2 activity for live (non-deleted, non-demo) adopters.
+// Text fields feed the JS sentiment scorer; the AUTHORITY for queue membership
+// is classifyRatingsAudit (src/domain/sentiment.ts). `adoptions` is the view
+// unifying placements + adopter_events, so one query covers every record type.
+const RATINGS_AUDIT_SQL = `
+SELECT ao.id AS recordId, ao.adopter_id AS adopterId, ao.record_type AS recordType,
+  ao.rating AS rating, ao.details AS details, ao.comments AS comments,
+  a.name AS adopterName, a.source AS adopterSource
+FROM adoptions ao
+JOIN adopters a ON a.id = ao.adopter_id AND a.deleted_at IS NULL AND a.is_demo = 0
+WHERE ao.rating IS NOT NULL
+`.trim();
+
+/**
+ * "Calificaciones vs. notas" report: every activity record whose 1–5 rating
+ * disagrees with — or was never supported by — the sentiment of its own note.
+ * Live and self-clearing: fixing the rating (or the note) drops the row on the
+ * next load. The sentiment score is a review aid, never an auto-rater.
+ * Moderators + admins.
+ */
+export async function getRatingsAudit(): Promise<RatingsAuditReport> {
+    const session = await auth();
+    const email = session?.user?.email;
+    try {
+        if (!email || !(await checkIsModeratorOrAdminAsync(email))) {
+            logger.warn('getRatingsAudit: unauthorized', { user: email });
+            return { rows: [], error: 'Unauthorized' };
+        }
+
+        const t0 = Date.now();
+        const { rows: raw, rowsRead, dbMs } = await runReadonly(RATINGS_AUDIT_SQL);
+        const rows: RatingsAuditRow[] = [];
+        for (const r of raw) {
+            const rating = Number(r.rating);
+            const text = [r.details, r.comments].filter(Boolean).join(' ');
+            const sentiment = scoreNoteSentiment(text);
+            const queue = classifyRatingsAudit(rating, sentiment);
+            if (!queue) continue;
+            rows.push({
+                recordId: String(r.recordId ?? ''),
+                adopterId: String(r.adopterId ?? ''),
+                adopterName: (r.adopterName as string) ?? null,
+                recordType: (r.recordType as string) ?? null,
+                rating,
+                sentiment: sentiment.hasSignal ? sentiment.score : null,
+                excerpt: sentiment.cleaned.replace(/\s+/g, ' ').slice(0, 180),
+                imported: r.adopterSource === 'imported',
+                queue,
+            });
+        }
+
+        logger.info('getRatingsAudit: served', {
+            user: email,
+            rowCount: rows.length,
+            scannedRecords: raw.length,
+            rowsRead,
+            dbMs,
+            durationMs: Date.now() - t0,
+        });
+        return { rows };
+    } catch (e) {
+        const errorId = logger.error('getRatingsAudit: failed', { user: email, error: e instanceof Error ? e.message : String(e) });
+        return { rows: [], error: errorId };
     }
 }
 
