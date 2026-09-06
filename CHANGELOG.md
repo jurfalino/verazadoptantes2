@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.2] - 2026-09-06
+
+### Fixed — the service worker's API cache TTL was never applied
+
+- `networkFirst` in `public/sw.js` accepted a `ttlSeconds` argument — the
+  `/api/` route passes `60 * 60`, and a comment promised a "1 hour TTL" — but
+  the function body never read it. Cache Storage has no expiry of its own, so
+  offline clients could be served an arbitrarily old API response; entries
+  effectively lived until the cache version changed.
+- Entries are now stamped with `x-sw-cached-at` on write and checked on read;
+  anything past its TTL is evicted instead of served. An unstamped entry counts
+  as expired — its age is unknowable. The fallback still ignores age when no
+  TTL is passed (page navigations), so offline browsing is unchanged.
+- **`CACHE_VERSION` bumped to `buenaadoptante-v4`**, which forces every client
+  to drop its old caches: v3 entries carry no stamp and would otherwise cause a
+  miss-then-evict pass on first read. The constant now also documents what the
+  bump does and one line per bump explaining why.
+- Covered by `src/lib/swCache.test.ts`, which evaluates the real `sw.js` in a
+  `vm` context with stubbed `caches`/`fetch` (a classic worker script can't be
+  imported). All four TTL cases failed before this change.
+
 ## [2.56.1] - 2026-09-06
 
 ### Fixed — version numbers can no longer move backwards
