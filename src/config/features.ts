@@ -85,6 +85,11 @@ export const FEATURE_FLAGS = {
     // Structured household/family members (name+relationship+own contacts) —
     // replaces the free-text family section. Household redesign (2026-08).
     ENABLE_HOUSEHOLD_MEMBERS: false,
+    // Email OTP login (6-digit code) as an alternative to Google OAuth.
+    // Requires Resend to be configured (RESEND_API_KEY secret + verified
+    // sending domain) before enabling anywhere real. Client-visible (login
+    // modal) → also in PUBLIC_FLAG_KEYS. Default off.
+    ENABLE_EMAIL_OTP: false,
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
@@ -165,6 +170,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_CONTENT_IMPORT: false,
         ENABLE_ANIMALS_FOR_ADOPTION: false,
         ENABLE_FOLLOWUPS: false,
+        ENABLE_EMAIL_OTP: false,
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
         ENABLE_POSTHOG: false,

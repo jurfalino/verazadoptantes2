@@ -158,6 +158,8 @@ export const pt = {
         flag_desc_guided_walkthrough: 'Lança uma vez um tour guiado para usuários novos que os orienta a buscar um adotante por nome e ler o resultado. Também mostra um botão "Mostre-me como buscar" na home. Desativado por padrão.',
         flag_label_household_members: 'Familiares / conviventes estruturados',
         flag_desc_household_members: 'Substitui o campo de texto livre de familiares por pessoas estruturadas (nome, parentesco e dados de contato próprios), protegidas e detectadas como duplicados como o adotante. Desligado por padrão.',
+        flag_label_email_otp: 'Acesso com código por e-mail',
+        flag_desc_email_otp: 'Adiciona uma opção de "entrar com e-mail" ao modal de acesso: um código de 6 dígitos é enviado por e-mail e digitado, sem necessidade de conta Google. Requer Resend configurado (API key + domínio verificado). Desligado por padrão.',
         instagram_section_title: 'URL do Instagram (público)',
         instagram_section_desc: 'Link para o perfil do Instagram que aparece no estado vazio do catálogo público e no detalhe de cada animal. Deixe vazio para não mostrar.',
         gemini_model_section_title: 'Modelo do Gemini padrão',
