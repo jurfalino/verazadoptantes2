@@ -462,11 +462,16 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
             // create a NEW row for the event (never UPDATE the parent adoption).
             const idForSubmit = isFollowUpOrReturn ? undefined : (formData.animalId || undefined);
 
+            // v2.55.14: the event row links to its animal via a separate field —
+            // `formData.animalId` (a prior adoption's row id == the animal id)
+            // must never flow into `data.id`, which pre-seeds the EVENT row id.
+            let linkedAnimalId = isFollowUpOrReturn ? (formData.animalId || undefined) : undefined;
+
             // Dual-record path: create the parent adoption first, then the event.
             if (showDualDate) {
                 const adoptionLocalDate = parseLocalDate(formData.adoptionDate);
-                 
-                await saveAdoption({
+
+                const parentRes = await saveAdoption({
                     // v2.19.52: empty animalName persists as NULL (was 'Unknown').
                     animalName: formData.animalName.trim() || null,
                     species: formData.species,
@@ -481,6 +486,10 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                     verifiedAddress: null,
                     identityVerified: 0,
                 } as any);
+                // The freshly created adoption's id IS the animal id — link the event to it.
+                if (parentRes && typeof parentRes === 'object' && 'id' in parentRes && parentRes.id) {
+                    linkedAnimalId = String(parentRes.id);
+                }
             }
 
             // v2.19.40: compose the legacy `verifiedAddress` string from the
@@ -494,6 +503,9 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
             const submitData = {
                 ...formData,
                 id: idForSubmit,
+                // Events carry their animal in a dedicated field; non-event types
+                // reference the animal via `id`, so the extra field is dropped.
+                animalId: linkedAnimalId,
                 rating: Number(formData.rating),
                 date: localDate,
                 // Adoption requests don't reference a specific animal — drop the

@@ -7,7 +7,7 @@
  */
 
 import { animals, placements, adopterEvents, adopterImages } from '@/db/schema';
-import { eq, and, isNull } from 'drizzle-orm';
+import { eq, and, isNull, desc } from 'drizzle-orm';
 import { deriveEndedPlacement } from '@/domain/placements';
 
 const PLACEMENT_TYPES = ['foster', 'adoption'];
@@ -66,12 +66,24 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
 
     if (isEventType(recordType)) {
         const id = data.id || newId();
+        // v2.55.14: events know their animal. The wizard sends the picked animal id
+        // as a separate `animalId` field (never as `data.id`, which pre-seeds the
+        // EVENT row id); the placement is resolved here — active span for the
+        // (animal, adopter) pair, else the most recent ended one.
+        const animalId: string | null = data.animalId || null;
+        let placementId: string | null = null;
+        if (animalId && data.adopterId) {
+            const pair = and(eq(placements.animalId, animalId), eq(placements.adopterId, data.adopterId));
+            const active = await db.select().from(placements).where(and(pair, isNull(placements.endedAt))).get();
+            const last = active ?? await db.select().from(placements).where(pair).orderBy(desc(placements.startedAt)).limit(1).get();
+            placementId = last?.id ?? null;
+        }
         await db.insert(adopterEvents).values({
             id,
             adopterId: data.adopterId ?? null,
             eventType: recordType,
-            animalId: null,
-            placementId: null,
+            animalId,
+            placementId,
             animalName: data.animalName ?? null,
             species: data.species ?? null,
             status: data.status ?? null,
@@ -130,6 +142,7 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
         if (data.details !== undefined) patch.details = data.details;
         if (data.date !== undefined) patch.date = data.date;
         if (data.onBehalfOf !== undefined) patch.onBehalfOf = data.onBehalfOf;
+        if (data.animalId !== undefined) patch.animalId = data.animalId || null;
         if (data.recordType !== undefined && isEventType(data.recordType)) patch.eventType = data.recordType;
         if (Object.keys(patch).length) await db.update(adopterEvents).set(patch).where(eq(adopterEvents.id, id));
         return;

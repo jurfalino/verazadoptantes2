@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.14] - 2026-09-06
+
+### Fixed — follow-up and return events now link to their animal
+
+`adopter_events.animal_id` / `placement_id` existed since the normalization split but
+were always written NULL: the wizard deliberately discarded the picked animal id
+(it would have collided with the event row id) and only copied the animal's name as
+free text. First step of the animal-timeline feature (PR1 of 4):
+
+- The wizard now sends the picked animal id as a dedicated `animalId` field for
+  follow-up/returned records — including the dual-record flow, where the event links
+  to the parent adoption it just created.
+- `insertRecord` stores `animal_id` and resolves `placement_id` server-side (the
+  active placement for the animal+adopter pair, else the most recent ended one);
+  `updateRecord` accepts `animalId` patches; the add-record API accepts an optional
+  `adoption.animalId`.
+- Migration `0062` backfills history best-effort: an event links only when exactly
+  one animal matches by (a placement with the event's adopter) + case/trim-insensitive
+  name equality; ambiguous rows stay NULL. Verified against a copy of the local DB.
+
 ## [2.55.13] - 2026-09-05
 
 ### Added — inline re-rating from "Calificaciones vs. notas"
