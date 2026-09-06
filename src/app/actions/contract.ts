@@ -58,7 +58,9 @@ export async function createContractInvitation(
             adopterId: adoptions.adopterId,
         }).from(adoptions).where(eq(adoptions.id, animalId)).get();
         if (!animal) return { success: false, error: 'Animal not found' };
-        if (animal.addedBy !== userEmail) return { success: false, error: 'Not authorized for this animal' };
+        // v2.55.18: org-mates get full parity on team animals.
+        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+        if (!(await isOwnerOrOrgMate(userEmail, animal.addedBy))) return { success: false, error: 'Not authorized for this animal' };
         if (animal.adopterId) return { success: false, error: 'Animal already adopted' };
 
         // Confirm the adopter exists and is not soft-deleted.

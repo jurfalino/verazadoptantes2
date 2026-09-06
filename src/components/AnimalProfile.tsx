@@ -19,6 +19,7 @@ import { extractErrorId } from '@/lib/errorUtils';
 import { formatAge } from '@/lib/ageUtils';
 import { formatRelativeTime, formatShortDate } from '@/lib/dates';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
+import { emailHandle } from '@/lib/userDisplay';
 import { saveAdoption, deleteAnimalForAdoption } from '@/app/actions';
 import AnimalTimeline from '@/components/AnimalTimeline';
 import AddAnimalEventModal from '@/components/AddAnimalEventModal';
@@ -36,18 +37,16 @@ function placeholderFor(species: string | null): string {
     return '/placeholders/paw.png';
 }
 
-export default function AnimalProfile({ profile, applicants, userId, currentUser }: {
+export default function AnimalProfile({ profile, applicants, userId }: {
     profile: AnimalProfileData;
     applicants: ApplicantSummary[];
     /** session user id (ShareFormMenu links). */
     userId: string;
-    /** session email (timeline attribution suppression). */
-    currentUser: string;
 }) {
     const { t, locale } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
-    const { animal, activePlacement, items, images, projected } = profile;
+    const { animal, activePlacement, items, images, projected, addedByName, orgName, userNameMap } = profile;
 
     const [editing, setEditing] = useState(false);
     const [eventModal, setEventModal] = useState<{ type?: string; followupKey?: string } | null>(null);
@@ -213,16 +212,14 @@ export default function AnimalProfile({ profile, applicants, userId, currentUser
 
                             {animal.details && <p className="mt-3 text-sm text-stone-700 max-w-prose">{animal.details}</p>}
 
-                            {(animal.microchip || (seeking && animal.createdAt)) && (
-                                <p className="mt-2 text-xs text-stone-500">
-                                    {[
-                                        animal.microchip ? `${t('animalProfile.microchip') || 'Microchip'} ${animal.microchip}` : null,
-                                        seeking && animal.createdAt
-                                            ? `${(fem ? t('animalProfile.rescued_f') : t('animalProfile.rescued_m')) || 'Rescatado'} ${formatRelativeTime(animal.createdAt, locale as 'es' | 'en') || `${t('animalProfile.on_date') || 'el'} ${formatShortDate(animal.createdAt)}`}`
-                                            : null,
-                                    ].filter(Boolean).join(' · ')}
-                                </p>
-                            )}
+                            {/* Audit identity ALWAYS visible: who added the animal (+ team).
+                                The rescue DATE moved to the timeline's origin event. */}
+                            <p className="mt-2 text-xs text-stone-500" data-testid="animal-added-by">
+                                {[
+                                    `${t('common.added_by') || 'Agregado por'} ${addedByName || emailHandle(animal.addedBy)}${orgName ? ` · ${t('animalProfile.team') || 'equipo'} ${orgName}` : ''}`,
+                                    animal.microchip ? `${t('animalProfile.microchip') || 'Microchip'} ${animal.microchip}` : null,
+                                ].filter(Boolean).join(' · ')}
+                            </p>
 
                             {/* ── action row: one primary + state transition + share + ✎/🗑 ── */}
                             <div className="flex flex-wrap items-center gap-2 mt-4">
@@ -385,7 +382,7 @@ export default function AnimalProfile({ profile, applicants, userId, currentUser
                 </div>
             )}
 
-            <AnimalTimeline items={items} currentUser={currentUser} animalSex={animal.sex} />
+            <AnimalTimeline items={items} animalSex={animal.sex} userNameMap={userNameMap} orgName={orgName} />
 
             {/* modals */}
             {eventModal && (

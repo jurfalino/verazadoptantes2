@@ -156,3 +156,23 @@ INSERT OR REPLACE INTO adopter_events (id, adopter_id, event_type, animal_id, pl
 -- A care event (vaccination) during the foster span.
 INSERT OR REPLACE INTO animal_events (id, animal_id, event_type, date, details, recorded_by) VALUES
 ('test-aevent-fixture-tl1', 'test-animal-fixture-1', 'vaccination', strftime('%s','now','-100 days'), 'Quíntuple, primera dosis', 'gatitosolivos@gmail.com');
+
+-- ============================================================
+-- TEAM VISIBILITY FIXTURES (v2.55.18 — animal-timeline PR5)
+-- The admin session shares an org with a teammate; the teammate's animal
+-- must be visible (and actionable) to the admin, with attribution.
+-- ============================================================
+
+INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES
+('test-teammate-id', 'Vero E2E', 'e2e-teammate@example.com', strftime('%s','now'), NULL);
+
+INSERT OR REPLACE INTO organizations (id, name, created_by, created_at, slug) VALUES
+('test-org-fixture-1', 'Refugio E2E', 'gatitosolivos@gmail.com', strftime('%s','now'), 'refugio-e2e');
+
+INSERT OR REPLACE INTO org_members (id, org_id, user_email, role, joined_at) VALUES
+('test-orgm-fixture-1', 'test-org-fixture-1', 'gatitosolivos@gmail.com', 'owner', strftime('%s','now')),
+('test-orgm-fixture-2', 'test-org-fixture-1', 'e2e-teammate@example.com', 'member', strftime('%s','now'));
+
+-- An AVAILABLE animal owned by the teammate — appears in the admin's list.
+INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered, added_by, created_at, updated_at) VALUES
+('test-animal-fixture-2', 'Nube', 'cat', 'Gata fixture del equipo', 'hembra', 'blanca', 0, 'e2e-teammate@example.com', strftime('%s','now','-20 days'), strftime('%s','now'));

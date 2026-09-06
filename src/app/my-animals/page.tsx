@@ -44,6 +44,9 @@ interface Animal {
     applicants?: Applicant[];
     /** v2.55.16: due follow-ups (ENABLE_FOLLOWUPS; 0 when off/none). */
     dueFollowups?: number;
+    /** v2.55.18: team visibility — who added this animal. */
+    addedBy?: string | null;
+    addedByName?: string | null;
 }
 
 export default function MyAnimalsPage() {
@@ -327,6 +330,12 @@ export default function MyAnimalsPage() {
                                         </h3>
                                     </Link>
 
+                                    {/* v2.55.18: teammates' animals carry their owner's name. */}
+                                    {animal.addedBy && session?.user?.email && animal.addedBy !== session.user.email && (
+                                        <p className="text-xs font-medium text-teal-700 mb-1">
+                                            {t('animalProfile.of_teammate') || 'de'} {(animal.addedByName || animal.addedBy.split('@')[0]).split(' ')[0]}
+                                        </p>
+                                    )}
                                     {animal.details && (
                                         <p className="text-sm text-stone-500 mb-2 line-clamp-2">{animal.details}</p>
                                     )}

@@ -22,13 +22,40 @@ test.describe('Animal detail page', () => {
         await expect(chip).toBeVisible();
         await expect(chip).toHaveAttribute('href', '/adopter/test-adopter-fixture-tl1');
 
-        // Timeline: adoption start + ended foster (start+end) + follow_up + vaccination = 5 items.
+        // Timeline: origin (v2.55.18) + adoption start + ended foster (start+end)
+        // + follow_up + vaccination = 6 items.
         const items = page.getByTestId('timeline-item');
-        await expect(items).toHaveCount(5);
+        await expect(items).toHaveCount(6);
 
         // The follow-up's note and the care event's note are both on the page.
         await expect(page.getByText('Muy bien adaptado a la casa nueva')).toBeVisible();
         await expect(page.getByText('Quíntuple, primera dosis')).toBeVisible();
+
+        // v2.55.18: attribution + origin — who added the animal (and the team),
+        // and the registration date as the timeline's first event.
+        await expect(page.getByTestId('animal-added-by')).toContainText('Test Admin');
+        await expect(page.getByTestId('animal-added-by')).toContainText('Refugio E2E');
+        await expect(page.getByText(/Rescued and registered|Rescatado y registrado/)).toBeVisible();
+    });
+
+    test('a teammate\'s animal is visible, attributed, and actionable (full parity)', async ({ page }) => {
+        // test-animal-fixture-2 belongs to e2e-teammate@example.com — same org.
+        await page.goto('/my-animals/test-animal-fixture-2');
+        await expect(page.getByTestId('animal-name')).toHaveText('Nube', { timeout: 30000 });
+        await expect(page.getByTestId('animal-added-by')).toContainText('Vero E2E');
+
+        // Full parity: the admin records a care event on the teammate's animal.
+        const before = await page.getByTestId('timeline-item').count();
+        await page.getByTestId('add-animal-event').click();
+        await page.getByTestId('animal-event-type').selectOption('vet_visit');
+        await page.getByTestId('animal-event-details').fill(`E2E control veterinario ${Date.now()}`);
+        await page.getByTestId('animal-event-save').click();
+        await expect(page.getByTestId('timeline-item')).toHaveCount(before + 1, { timeout: 30000 });
+
+        // And the teammate's card shows up in the admin's available list, attributed.
+        await page.goto('/my-animals?view=available');
+        await expect(page.getByTestId('animal-card-test-animal-fixture-2')).toBeVisible({ timeout: 30000 });
+        await expect(page.getByText(/de Vero|by Vero/)).toBeVisible();
     });
 
     test('records a care event through the modal', async ({ page }) => {

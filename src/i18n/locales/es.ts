@@ -1377,6 +1377,11 @@ export const es = {
         profile_pending_dup_other_tooltip: 'El sistema detectó otro registro similar. Solo el responsable del registro puede revisarlo.',
     },
     animalProfile: {
+        team: 'equipo',
+        of_teammate: 'de',
+        origin_m: 'Rescatado y registrado',
+        origin_f: 'Rescatada y registrada',
+        origin_in: 'en',
         back: 'Mis animales',
         share: 'Compartir',
         share_title: 'Compartir',

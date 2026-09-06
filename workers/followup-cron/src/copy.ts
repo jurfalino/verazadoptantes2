@@ -6,9 +6,11 @@
 
 import type { ProjectedFollowup } from '../../../src/domain/followups';
 
-/** Stable per-(placement, slot) dedup key stored in notifications.metadata. */
-export function dedupKey(placementId: string, slotKey: string): string {
-    return `followup:${placementId}:${slotKey}`;
+/** Stable per-(placement, slot, recipient) dedup key stored in
+ *  notifications.metadata — v2.55.18 notifies the WHOLE team, each member
+ *  deduped independently. */
+export function dedupKey(placementId: string, slotKey: string, recipientEmail: string): string {
+    return `followup:${placementId}:${slotKey}:${recipientEmail.toLowerCase()}`;
 }
 
 export function slotLabel(slot: Pick<ProjectedFollowup, 'copyKey' | 'offsetDays'>): string {

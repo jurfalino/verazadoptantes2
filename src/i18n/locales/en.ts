@@ -1372,6 +1372,11 @@ export const en = {
         profile_pending_dup_other_tooltip: 'The system detected another similar record. Only the responsible rescuer can review.',
     },
     animalProfile: {
+        team: 'team',
+        of_teammate: 'by',
+        origin_m: 'Rescued and registered',
+        origin_f: 'Rescued and registered',
+        origin_in: 'at',
         back: 'My animals',
         share: 'Share',
         share_title: 'Share',

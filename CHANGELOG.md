@@ -2,6 +2,32 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.18] - 2026-09-06
+
+### Added — animals are team resources + full attribution (animal-timeline PR5)
+
+- **Org-shared visibility with FULL parity**: every animal read and write now
+  accepts the owner's org-mates — the `/my-animals` list and single-fetch, the
+  animal page, the wizard's animal picker, applicants (fulfilling the code's own
+  "org-wide is v2" note), contract invitations, care events, image/animal
+  deletes (OR fan-out per member email — never `IN ${array}`, per the D1 quirk;
+  `getTeamEmails` fails open to solo visibility). New `isOwnerOrOrgMate` +
+  `getTeamEmails` in `src/lib/orgMembership.ts` — the org plumbing finally
+  reaches the one surface that never used it.
+- **Attribution always visible** as the accountability counterweight: the ficha
+  shows «Agregado por {nombre} · equipo {org}», every timeline event shows its
+  recorder (resolved display names, including your own records), and teammates'
+  cards on the list carry a «de {nombre}» marker.
+- **The registration date is the timeline's first event**: a teal paw «Rescatado
+  y registrado en {org}» item from `animals.createdAt` + `addedBy` opens every
+  línea de vida — even a fresh available animal has one. The header's redundant
+  "Rescatado hace X" line is gone.
+- **Reminders go to the whole team**: the cron worker resolves the owner's org
+  members and notifies each one, deduped per (placement, slot, recipient). The
+  owner's schedule still decides the slots. Solo rescuers behave as before.
+- E2E: org fixture + a teammate-owned animal — visibility, attribution, origin
+  event, and an admin recording a care event on a teammate's animal.
+
 ## [2.55.17-2] - 2026-09-06
 
 ### Fixed — e2e: card-navigation assert outlives next dev's on-demand compile

@@ -29,9 +29,9 @@ import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
 import { z } from 'zod';
 
 export type AnimalTimelineItem = {
-    /** Stable per-item id (placement id, `${placement.id}-end`, or event id). */
+    /** Stable per-item id (placement id, `${placement.id}-end`, event id, or `${animalId}-created`). */
     id: string;
-    kind: 'placement_start' | 'placement_end' | 'adopter_event' | 'animal_event';
+    kind: 'placement_start' | 'placement_end' | 'adopter_event' | 'animal_event' | 'created';
     /** placement recordType ('foster'|'adoption'), adopter_events.eventType, or animal_events.eventType. */
     type: string;
     date: number | null; // epoch ms for the client
@@ -86,6 +86,12 @@ export type AnimalProfileData = {
     followupsEnabled: boolean;
     /** Projected follow-up slots for the ACTIVE placement (empty when none/flag off). */
     projected: ProjectedSlot[];
+    /** v2.55.18: attribution — resolved display name of the animal's owner, the
+     *  shared org's name (null for solo rescuers), and a name map for every
+     *  recordedBy email on the timeline. Always displayed (audit identity). */
+    addedByName: string | null;
+    orgName: string | null;
+    userNameMap: Record<string, string>;
 };
 
 const toMs = (d: unknown): number | null => (d instanceof Date ? d.getTime() : typeof d === 'number' ? d * 1000 : null);
@@ -105,7 +111,11 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
     if (!db) return null;
 
     const animal = await db.select().from(animals).where(eq(animals.id, animalId)).get();
-    if (!animal || animal.deletedAt || animal.addedBy !== userEmail) return null;
+    if (!animal || animal.deletedAt) return null;
+    // v2.55.18: animals are TEAM resources — visible to the owner and every
+    // org-mate (full parity, user decision; attribution is the counterweight).
+    const { isOwnerOrOrgMate, getOrgsForEmail } = await import('@/lib/orgMembership');
+    if (!(await isOwnerOrOrgMate(userEmail, animal.addedBy))) return null;
 
     // Parallel fail-open wave: one D1 hiccup degrades a section, never the page.
     const fallback = <T,>(op: string) => (e: unknown): T[] => {
@@ -159,6 +169,15 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
     }));
 
     const items: AnimalTimelineItem[] = [];
+    // The origin of the line of life: when (and by whom) the animal was
+    // registered. Even a fresh available animal has a first event.
+    if (animal.createdAt) {
+        items.push({
+            id: `${animal.id}-created`, kind: 'created', type: 'created', date: toMs(animal.createdAt),
+            adopterId: null, adopterName: null, placementId: null, rating: null,
+            details: null, comments: null, recordedBy: animal.addedBy ?? null, spanDays: null, images: [],
+        });
+    }
     for (const p of spans as any[]) {
         items.push({
             id: p.id, kind: 'placement_start', type: p.recordType, date: toMs(p.startedAt),
@@ -198,6 +217,31 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
     items.sort((a, b) => (b.date ?? 0) - (a.date ?? 0));
 
     const active = (spans as any[]).find(p => !p.endedAt) ?? null;
+
+    // ── attribution (always displayed): owner + every recorder, resolved once ──
+    let addedByName: string | null = null;
+    let orgName: string | null = null;
+    let userNameMap: Record<string, string> = {};
+    try {
+        const { resolveUserNames } = await import('@/app/actions/userNames');
+        const recorderEmails = Array.from(new Set([
+            animal.addedBy,
+            ...(spans as any[]).map(p => p.recordedBy),
+            ...(events as any[]).map(e => e.recordedBy),
+            ...(careEvents as any[]).map(e => e.recordedBy),
+        ].filter((v): v is string => !!v && v !== 'anonymous')));
+        const [names, ownerOrgs] = await Promise.all([
+            resolveUserNames(recorderEmails),
+            getOrgsForEmail(animal.addedBy),
+        ]);
+        userNameMap = names;
+        addedByName = (animal.addedBy && names[animal.addedBy]) || null;
+        orgName = ownerOrgs[0]?.name ?? null;
+    } catch (e) {
+        logger.warn('getAnimalProfile: attribution fallback', {
+            animalId, userEmail, error: e instanceof Error ? e.message : String(e),
+        });
+    }
 
     // ── projected follow-ups (flag-gated; computed, never materialized) ──
     let followupsEnabled = false;
@@ -242,6 +286,9 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
         images: mapImages(animalImages as any[]),
         followupsEnabled,
         projected,
+        addedByName,
+        orgName,
+        userNameMap,
     };
 }
 
@@ -384,7 +431,11 @@ export async function addAnimalEvent(input: {
 
         const animal = await db.select({ id: animals.id, addedBy: animals.addedBy })
             .from(animals).where(eq(animals.id, parsed.data.animalId)).get();
-        if (!animal || animal.addedBy !== userEmail) return { error: 'Not found' };
+        if (!animal) return { error: 'Not found' };
+        // v2.55.18: org-mates get full parity on team animals (admin too).
+        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+        const { checkIsAdminAsync } = await import('@/app/actions/_db');
+        if (!(await isOwnerOrOrgMate(userEmail, animal.addedBy)) && !(await checkIsAdminAsync(userEmail))) return { error: 'Not found' };
 
         const id = crypto.randomUUID();
         await db.insert(animalEvents).values({
@@ -423,7 +474,11 @@ export async function deleteAnimalEvent(eventId: string): Promise<{ success: tru
         if (!row) return { error: 'Not found' };
         const animal = await db.select({ addedBy: animals.addedBy })
             .from(animals).where(eq(animals.id, row.animalId)).get();
-        if (!animal || animal.addedBy !== userEmail) return { error: 'Not found' };
+        if (!animal) return { error: 'Not found' };
+        // v2.55.18: org-mates get full parity on team animals (admin too).
+        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+        const { checkIsAdminAsync } = await import('@/app/actions/_db');
+        if (!(await isOwnerOrOrgMate(userEmail, animal.addedBy)) && !(await checkIsAdminAsync(userEmail))) return { error: 'Not found' };
 
         await db.delete(animalEvents).where(eq(animalEvents.id, eventId));
         logAudit({ userEmail, action: 'animal_event_deleted', target: row.animalId, details: { eventId } });

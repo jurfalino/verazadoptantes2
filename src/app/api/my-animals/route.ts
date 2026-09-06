@@ -42,25 +42,32 @@ export async function GET(request: NextRequest) {
         // one request → past Cloudflare's Workers subrequest limit → 500.
         const idParam = searchParams.get('id');
 
+        // v2.55.18: animals are TEAM resources — the list spans the org (self +
+        // org-mates). OR fan-out per email, never `IN ${array}` (D1 quirk).
+        // Fails open to [self] inside getTeamEmails.
+        const { getTeamEmails } = await import('@/lib/orgMembership');
+        const teamEmails = await getTeamEmails(userEmail);
+        const teamMatch = or(...teamEmails.map((e: string) => eq(adoptions.addedBy, e)));
+
         let results;
         if (idParam) {
             results = await db.select().from(adoptions)
-                .where(and(eq(adoptions.addedBy, userEmail), eq(adoptions.id, idParam)))
+                .where(and(teamMatch, eq(adoptions.id, idParam)))
                 .all();
         } else if (view === 'adopted') {
             // Animals that have been adopted (recordType = 'adoption', linked to an adopter)
             results = await db.select().from(adoptions)
                 .where(and(
-                    eq(adoptions.addedBy, userEmail),
+                    teamMatch,
                     isNotNull(adoptions.adopterId),
                     eq(adoptions.recordType, 'adoption')
                 ))
                 .orderBy(sql`${adoptions.date} DESC`)
                 .all();
         } else if (view === 'all') {
-            // All animals by this user (for edit mode lookups)
+            // All animals by this user's team (for edit mode lookups)
             results = await db.select().from(adoptions)
-                .where(eq(adoptions.addedBy, userEmail))
+                .where(teamMatch)
                 .orderBy(sql`${adoptions.date} DESC`)
                 .all();
         } else {
@@ -71,7 +78,7 @@ export async function GET(request: NextRequest) {
             // through both /my-animals tabs and vanishes.
             results = await db.select().from(adoptions)
                 .where(and(
-                    eq(adoptions.addedBy, userEmail),
+                    teamMatch,
                     or(
                         and(isNull(adoptions.adopterId), eq(adoptions.recordType, 'available')),
                         eq(adoptions.recordType, 'foster')
@@ -79,6 +86,15 @@ export async function GET(request: NextRequest) {
                 ))
                 .orderBy(sql`${adoptions.date} DESC`)
                 .all();
+        }
+
+        // Attribution for the "de {name}" marker on teammates' cards.
+        let teamNameMap: Record<string, string> = {};
+        try {
+            const { resolveUserNames } = await import('@/app/actions/userNames');
+            teamNameMap = await resolveUserNames(Array.from(new Set(results.map((r: any) => r.addedBy).filter(Boolean))));
+        } catch (e) {
+            logger.warn('my-animals: name resolution fallback', { userEmail, view, error: e instanceof Error ? e.message : String(e) });
         }
 
         // Check for duplicates at query level
@@ -201,7 +217,11 @@ export async function GET(request: NextRequest) {
                     }
                 }
 
-                return { ...animal, images, adopterName, applicants, dueFollowups };
+                return {
+                    ...animal, images, adopterName, applicants, dueFollowups,
+                    // v2.55.18: who added this animal, resolved for display.
+                    addedByName: (animal.addedBy && teamNameMap[animal.addedBy]) || null,
+                };
             })
         );
 

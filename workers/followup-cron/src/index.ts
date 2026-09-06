@@ -76,9 +76,12 @@ export default {
             });
             summary.scanned = rows.length;
 
-            // ── per-owner settings, fetched once (user_profiles keys on user id) ──
+            // ── per-owner settings + team recipients, fetched once per owner ──
+            // The OWNER's schedule decides the slots; the whole org receives the
+            // reminder (v2.55.18, user decision), each member deduped on their own.
             const owners = Array.from(new Set(rows.map(r => r.added_by)));
             const settingsByOwner = new Map<string, FollowupSettings | null>();
+            const recipientsByOwner = new Map<string, string[]>();
             for (const email of owners) {
                 try {
                     const row = await env.DB.prepare(
@@ -88,6 +91,19 @@ export default {
                 } catch (e) {
                     console.log(JSON.stringify({ op: 'followup-cron', warn: 'settings fallback', email, error: String(e) }));
                     settingsByOwner.set(email, null);
+                }
+                try {
+                    const mates = await env.DB.prepare(
+                        `SELECT DISTINCT m2.user_email AS e
+                         FROM org_members m1 JOIN org_members m2 ON m2.org_id = m1.org_id
+                         WHERE m1.user_email = ?`
+                    ).bind(email).all<{ e: string }>();
+                    const set = new Set<string>([email]);
+                    for (const m of mates.results || []) if (m.e && m.e.includes('@')) set.add(m.e);
+                    recipientsByOwner.set(email, [...set].slice(0, 30));
+                } catch (e) {
+                    console.log(JSON.stringify({ op: 'followup-cron', warn: 'team fallback (owner only)', email, error: String(e) }));
+                    recipientsByOwner.set(email, [email]);
                 }
             }
 
@@ -126,29 +142,32 @@ export default {
                         }).filter(s => s.status === 'due'); // NEVER missed — storm guard #1
                         summary.due += slots.length;
 
+                        const recipients = recipientsByOwner.get(p.added_by) ?? [p.added_by];
                         for (const s of slots) {
-                            const key = dedupKey(p.id, s.key);
-                            // Dedup layer 2: one notification per (placement, slot), ever.
-                            const existing = await env.DB.prepare(
-                                `SELECT 1 AS x FROM notifications
-                                 WHERE type = 'follow_up_due' AND user_id = ?
-                                   AND json_extract(metadata, '$.dedupKey') = ? LIMIT 1`
-                            ).bind(p.added_by, key).first();
-                            if (existing) { summary.deduped++; continue; }
+                            for (const recipient of recipients) {
+                                const key = dedupKey(p.id, s.key, recipient);
+                                // Dedup layer 2: one notification per (placement, slot, recipient), ever.
+                                const existing = await env.DB.prepare(
+                                    `SELECT 1 AS x FROM notifications
+                                     WHERE type = 'follow_up_due' AND user_id = ?
+                                       AND json_extract(metadata, '$.dedupKey') = ? LIMIT 1`
+                                ).bind(recipient, key).first();
+                                if (existing) { summary.deduped++; continue; }
 
-                            await env.DB.prepare(
-                                `INSERT INTO notifications (id, user_id, type, title, body, url, icon, read, dismissed, metadata, created_at, expires_at)
-                                 VALUES (?, ?, 'follow_up_due', ?, ?, ?, '🔔', 0, 0, ?, strftime('%s','now'), ?)`
-                            ).bind(
-                                crypto.randomUUID(),
-                                p.added_by,
-                                notificationTitle(p.name),
-                                notificationBody(s, p.adopter_name, p.record_type === 'foster'),
-                                `/my-animals/${p.animal_id}#next-action`,
-                                JSON.stringify({ dedupKey: key, placementId: p.id, animalId: p.animal_id, followupKey: s.key }),
-                                Math.floor(s.windowEndsAt.getTime() / 1000),
-                            ).run();
-                            summary.notified++;
+                                await env.DB.prepare(
+                                    `INSERT INTO notifications (id, user_id, type, title, body, url, icon, read, dismissed, metadata, created_at, expires_at)
+                                     VALUES (?, ?, 'follow_up_due', ?, ?, ?, '🔔', 0, 0, ?, strftime('%s','now'), ?)`
+                                ).bind(
+                                    crypto.randomUUID(),
+                                    recipient,
+                                    notificationTitle(p.name),
+                                    notificationBody(s, p.adopter_name, p.record_type === 'foster'),
+                                    `/my-animals/${p.animal_id}#next-action`,
+                                    JSON.stringify({ dedupKey: key, placementId: p.id, animalId: p.animal_id, followupKey: s.key }),
+                                    Math.floor(s.windowEndsAt.getTime() / 1000),
+                                ).run();
+                                summary.notified++;
+                            }
                         }
                     } catch (e) {
                         summary.errors++;

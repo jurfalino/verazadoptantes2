@@ -52,7 +52,6 @@ export default async function AnimalPage({ params }: { params: Promise<{ id: str
                 profile={profile}
                 applicants={applicants}
                 userId={session.user.id || ''}
-                currentUser={session.user.email}
             />
         </div>
     );

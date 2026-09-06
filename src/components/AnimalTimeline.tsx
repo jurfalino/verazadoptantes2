@@ -29,6 +29,7 @@ const STRIPE: Record<string, string> = {
     neuter: 'border-l-fuchsia-500',
     note: 'border-l-stone-400',
     end: 'border-l-stone-300',
+    created: 'border-l-teal-500',
 };
 const DOT: Record<string, string> = {
     adoption: 'bg-teal-500 ring-teal-200',
@@ -41,6 +42,7 @@ const DOT: Record<string, string> = {
     neuter: 'bg-fuchsia-500 ring-fuchsia-200',
     note: 'bg-stone-400 ring-stone-200',
     end: 'bg-stone-300 ring-stone-200',
+    created: 'bg-teal-500 ring-teal-200',
 };
 
 function ItemIcon({ type }: { type: string }) {
@@ -55,6 +57,8 @@ function ItemIcon({ type }: { type: string }) {
         neuter: 'M8.5 8.5L20 20M8.5 15.5L20 4M8 6a2 2 0 11-4 0 2 2 0 014 0zM8 18a2 2 0 11-4 0 2 2 0 014 0z',
         note: 'M5 4h14v16H5zM9 9h6M9 13h6',
         end: 'M5 12h14',
+        // paw — the origin of the line of life
+        created: 'M7 7.5a1.5 1.5 0 100 .01M12 5.5a1.5 1.5 0 100 .01M17 7.5a1.5 1.5 0 100 .01M12 11c-3 0-5.5 2.2-5.5 4.5 0 1.4 1.1 2.5 2.5 2.5 1 0 1.9-.4 3-.4s2 .4 3 .4c1.4 0 2.5-1.1 2.5-2.5C17.5 13.2 15 11 12 11z',
     };
     return (
         <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
@@ -63,10 +67,13 @@ function ItemIcon({ type }: { type: string }) {
     );
 }
 
-export default function AnimalTimeline({ items, currentUser, animalSex }: {
+export default function AnimalTimeline({ items, animalSex, userNameMap = {}, orgName = null }: {
     items: AnimalTimelineItem[];
-    currentUser: string;
     animalSex: string | null;
+    /** v2.55.18: resolved display names for every recordedBy email. */
+    userNameMap?: Record<string, string>;
+    /** The owner's org name, for the origin event's copy. */
+    orgName?: string | null;
 }) {
     const { t } = useLanguage();
     const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
@@ -88,6 +95,11 @@ export default function AnimalTimeline({ items, currentUser, animalSex }: {
             </Link>
         ) : null;
         switch (item.kind) {
+            case 'created':
+                return <span className="font-semibold">
+                    {(fem ? t('animalProfile.origin_f') : t('animalProfile.origin_m')) || 'Rescatado y registrado'}
+                    {orgName ? ` ${t('animalProfile.origin_in') || 'en'} ${orgName}` : ''}
+                </span>;
             case 'placement_start':
                 return item.type === 'foster'
                     ? <>{t('animalProfile.verb_foster_start') || 'Entró en tránsito con'} {adopter}</>
@@ -179,10 +191,11 @@ export default function AnimalTimeline({ items, currentUser, animalSex }: {
                                         )}
                                     </div>
                                 )}
-                                {/* Audit identity stays always-visible on a vetting tool. */}
-                                {item.recordedBy && item.recordedBy !== 'anonymous' && item.recordedBy !== currentUser && (
+                                {/* Audit identity ALWAYS visible (v2.55.18: incl. the viewer's
+                                    own records — team parity makes authorship the ledger). */}
+                                {item.recordedBy && item.recordedBy !== 'anonymous' && (
                                     <div className="mt-2 text-[11px] text-stone-500">
-                                        {t('common.added_by') || 'Agregado por'} {emailHandle(item.recordedBy)}
+                                        {t('common.added_by') || 'Agregado por'} {userNameMap[item.recordedBy] || emailHandle(item.recordedBy)}
                                     </div>
                                 )}
                             </div>

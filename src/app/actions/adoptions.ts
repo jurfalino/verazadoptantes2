@@ -1,7 +1,7 @@
 'use server';
 
 import { adopters, adoptions, adopterHistory, adopterFlags, adopterImages } from '@/db/schema';
-import { eq, sql, and } from 'drizzle-orm';
+import { eq, sql, and, or } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
@@ -293,8 +293,15 @@ export async function getAvailableAnimals() {
         // they can still be given for adoption or moved to another foster home —
         // so the wizard picker must list them for the animalId prefill match to
         // resolve on a foster→adoption / foster→foster save.
+        // v2.55.18: animals are team resources — the picker spans the org.
+        // OR fan-out per email, NEVER `IN ${array}` (documented-broken on D1).
+        const { getTeamEmails } = await import('@/lib/orgMembership');
+        const teamEmails = await getTeamEmails(session.user.email);
         const rows = await db.select().from(adoptions)
-            .where(sql`${adoptions.addedBy} = ${session.user.email} AND (${adoptions.adopterId} IS NULL OR ${adoptions.recordType} = 'foster')`);
+            .where(and(
+                or(...teamEmails.map(e => eq(adoptions.addedBy, e))),
+                sql`(${adoptions.adopterId} IS NULL OR ${adoptions.recordType} = 'foster')`,
+            ));
         return await attachAdoptionThumbnails(db, rows);
     } catch (error) {
         logger.error('getAvailableAnimals failed', error);
@@ -316,8 +323,10 @@ export async function deleteAnimalForAdoption(adoptionId: string) {
         const existing = await db.select().from(adoptions).where(eq(adoptions.id, adoptionId)).get();
         if (!existing) throw new Error("Animal not found");
         // v2.19.66: admins may delete any record, not just the owner.
+        // v2.55.18: org-mates get full parity (attribution is the counterweight).
         const { isAdminAsync } = await import('@/config/admins');
-        if (existing.addedBy !== changedBy && !await isAdminAsync(changedBy)) throw new Error("Not authorized to delete this animal");
+        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+        if (!(await isOwnerOrOrgMate(changedBy, existing.addedBy)) && !await isAdminAsync(changedBy)) throw new Error("Not authorized to delete this animal");
 
         // Delete the animal record + its placements + adoption-linked images.
         await deleteRecordById(db, adoptionId);
@@ -347,8 +356,10 @@ export async function deleteAnimalImage(imageId: string, adoptionId: string) {
         const adoption = await db.select().from(adoptions).where(eq(adoptions.id, adoptionId)).get();
         if (!adoption) throw new Error("Animal not found");
         // v2.19.66: admins may delete any record, not just the owner.
+        // v2.55.18: org-mates get full parity (attribution is the counterweight).
         const { isAdminAsync } = await import('@/config/admins');
-        if (adoption.addedBy !== changedBy && !await isAdminAsync(changedBy)) throw new Error("Not authorized to delete this image");
+        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+        if (!(await isOwnerOrOrgMate(changedBy, adoption.addedBy)) && !await isAdminAsync(changedBy)) throw new Error("Not authorized to delete this image");
 
         const { adopterImages } = await import('@/db/schema');
 

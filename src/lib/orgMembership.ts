@@ -198,3 +198,41 @@ export async function pickAttributionOrg(
         return null;
     }
 }
+
+/**
+ * v2.55.18 (animal-timeline PR5): animals are TEAM resources — org members get
+ * full parity with the owner (read AND write, including destructive ops; the
+ * always-visible attribution is the accountability counterweight). Convenience
+ * predicate for the animal gates: owner or org-mate. Admin is checked by the
+ * callers that already do.
+ */
+export async function isOwnerOrOrgMate(
+    viewerEmail: string | null | undefined,
+    ownerEmail: string | null | undefined,
+): Promise<boolean> {
+    const v = normEmail(viewerEmail);
+    const o = normEmail(ownerEmail);
+    if (!v || !o) return false;
+    if (v === o) return true;
+    return isOrgMate(v, o);
+}
+
+/**
+ * v2.55.18: the emails whose animals the viewer can see — self + every
+ * org-mate (deduped, capped defensively; orgs are small in practice). Fails
+ * open to [self] so a transient D1 hiccup degrades to solo visibility, never
+ * to a broken page.
+ */
+export async function getTeamEmails(email: string | null | undefined): Promise<string[]> {
+    const e = normEmail(email);
+    if (!e) return [];
+    try {
+        const mates = await getOrgMatesOf(e);
+        return [e, ...mates.map(m => m.email)].slice(0, 30);
+    } catch (err) {
+        logger.warn('getTeamEmails failed — solo visibility fallback', {
+            email: e, error: err instanceof Error ? err.message : String(err),
+        });
+        return [e];
+    }
+}
