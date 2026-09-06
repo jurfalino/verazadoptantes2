@@ -97,7 +97,11 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
     env: {
-      NODE_OPTIONS: '--max-old-space-size=4096 --expose-gc'
+      NODE_OPTIONS: '--max-old-space-size=4096 --expose-gc',
+      // Email OTP specs must never hit the real Resend API (a developer's
+      // .env.local may carry a real key): with no key, requestEmailOtp's dev
+      // fallback records the code row without sending.
+      RESEND_API_KEY: ''
     }
   },
 });

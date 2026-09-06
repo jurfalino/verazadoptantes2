@@ -2,6 +2,41 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.0] - 2026-09-06
+
+### Added — email OTP login (6-digit code), behind `ENABLE_EMAIL_OTP` (default off)
+
+- **Sign in without Google**: the login modal gains an email field — a 6-digit
+  code is emailed (Resend HTTP API) and typed in. Open sign-up: a new email
+  creates an account on first sign-in and links automatically with Google
+  sign-ins for the same address. Two-step UI in `EmailOtpForm` with resend
+  countdown, i18n'd in es/en/pt (repurposing the dead magic-link `login.*`
+  block).
+- **Verification is a second Credentials provider** (`email-otp`) so it flows
+  through the same `callbacks.signIn` as Google — adopter-login gate,
+  blocked-login recording, profile upsert, audit. Codes live in the new
+  `email_otp_codes` table (migration 0065) as HMAC-SHA-256(AUTH_SECRET)
+  hashes: single-use, 10-min TTL, 5 attempts, retired when replaced, purged
+  after 24h. Issuance (`requestEmailOtp` server action) is D1-rate-limited:
+  60s min gap + 5/hour per email, 15/hour per IP. Successful OTP sign-ins
+  stamp `user.emailVerified`.
+- **`user.email` is now UNIQUE** (migration 0066): both login methods resolve
+  accounts by email with LIMIT 1, so a duplicate row would silently split one
+  person across providers. Pre-flight duplicate check ran clean on staging and
+  prod.
+- **`ensureUserProfile` works outside Cloudflare** (Drizzle fallback): local
+  dev / Playwright sign-ins previously never created user rows.
+- New leaf modules: `lib/email.ts` (Resend send + trilingual OTP template),
+  `lib/otp.ts` (WebCrypto code gen/HMAC), `lib/otpStore.ts` (D1 access).
+- E2E: full modal flow with a seeded known-hash code, wrong-code rejection.
+  Playwright's webServer now blanks `RESEND_API_KEY` so tests never hit the
+  real API.
+- Fix: admin config page never hydrated the `ENABLE_HOUSEHOLD_MEMBERS` toggle
+  from the API (third instance of the missed-echo bug).
+- **Not enabled anywhere yet**: flipping `ENABLE_EMAIL_OTP` requires
+  `RESEND_API_KEY` (Pages secret or `app_config` row) and a verified sending
+  domain for `noreply@buenadoptante.org` in Resend.
+
 ## [2.55.18] - 2026-09-06
 
 ### Added — animals are team resources + full attribution (animal-timeline PR5)

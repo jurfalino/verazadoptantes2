@@ -86,6 +86,12 @@ INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
 INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
 ('ENABLE_FOLLOWUPS', 'true', strftime('%s','now'), 'test-seed');
 
+-- Email OTP login: flag on so the login modal renders the email option.
+-- No RESEND_API_KEY in test env → requestEmailOtp's dev fallback skips the
+-- actual send; the spec overwrites the stored code_hash with a known value.
+INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
+('ENABLE_EMAIL_OTP', 'true', strftime('%s','now'), 'test-seed');
+
 -- ============================================================
 -- USER (admin account for authenticated tests)
 -- ============================================================
