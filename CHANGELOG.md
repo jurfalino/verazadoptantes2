@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.7] - 2026-09-06
+
+### Fixed — two defects found in the post-implementation review
+
+- **Team scoping failed OPEN.** `/api/my-animals` and `getAvailableAnimals`
+  build their owner filter as `or(...emails.map(...))`; `or()` of an empty array
+  is `undefined`, and `and(undefined, …)` silently drops the condition — an
+  empty team list would have returned EVERY animal in the database to any
+  authenticated user. Unreachable today (the session email is validated first,
+  and `getTeamEmails` always includes self), but one refactor away from a data
+  leak with no test covering it. Both call sites now fall back to `[self]`.
+- **Admins got a 404 on animals they can modify.** `getAnimalProfile` allowed
+  only owner ∨ org-mate, while `addAnimalEvent`, `deleteAnimalEvent`,
+  `deleteAnimalForAdoption` and `deleteAnimalImage` all accept admins — so an
+  admin could delete an animal or its events but not open its page. Admin
+  access added to the read path (and the stale "no admin bypass" doc comment
+  corrected).
+
 ## [2.56.6] - 2026-09-06
 
 ### Fixed — ENABLE_FOLLOWUPS was invisible (and unflippable) in the admin panel

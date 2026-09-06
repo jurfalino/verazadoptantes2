@@ -301,9 +301,12 @@ export async function getAvailableAnimals() {
         // OR fan-out per email, NEVER `IN ${array}` (documented-broken on D1).
         const { getTeamEmails } = await import('@/lib/orgMembership');
         const teamEmails = await getTeamEmails(session.user.email);
+        // Fail closed — see the note in /api/my-animals: an empty list would
+        // otherwise drop the owner filter entirely.
+        const scopeEmails = teamEmails.length > 0 ? teamEmails : [session.user.email];
         const rows = await db.select().from(adoptions)
             .where(and(
-                or(...teamEmails.map(e => eq(adoptions.addedBy, e))),
+                or(...scopeEmails.map(e => eq(adoptions.addedBy, e))),
                 sql`(${adoptions.adopterId} IS NULL OR ${adoptions.recordType} = 'foster')`,
             ));
         return await attachAdoptionThumbnails(db, rows);

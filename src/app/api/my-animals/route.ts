@@ -47,7 +47,12 @@ export async function GET(request: NextRequest) {
         // Fails open to [self] inside getTeamEmails.
         const { getTeamEmails } = await import('@/lib/orgMembership');
         const teamEmails = await getTeamEmails(userEmail);
-        const teamMatch = or(...teamEmails.map((e: string) => eq(adoptions.addedBy, e)));
+        // Fail CLOSED: `or()` of an empty array is `undefined`, and `and(undefined, …)`
+        // silently drops it — an empty team list would return EVERY animal to any
+        // authenticated user. getTeamEmails always includes self today, so this is
+        // defense in depth against a future refactor, not a live hole.
+        const scopeEmails = teamEmails.length > 0 ? teamEmails : [userEmail];
+        const teamMatch = or(...scopeEmails.map((e: string) => eq(adoptions.addedBy, e)));
 
         let results;
         if (idParam) {
@@ -137,7 +142,7 @@ export async function GET(request: NextRequest) {
                 const settings = parseFollowupSettings(row?.settings);
 
                 // Owner-scoped bulk reads: 4 queries TOTAL, independent of N.
-                const ownerMatch = or(...teamEmails.map((e: string) => eq(animals.addedBy, e)));
+                const ownerMatch = or(...scopeEmails.map((e: string) => eq(animals.addedBy, e)));
                 const [activeRows, evRows, careRows, animalRows] = await Promise.all([
                     db.select({ id: placements.id, animalId: placements.animalId, startedAt: placements.startedAt, recordType: placements.recordType })
                         .from(placements).innerJoin(animals, eq(animals.id, placements.animalId))

@@ -98,9 +98,9 @@ const toMs = (d: unknown): number | null => (d instanceof Date ? d.getTime() : t
 
 /**
  * Full profile for one OWNED animal: identity + custody trail + care log +
- * server-fetched images (no client-side N+1). Strict ownership — same policy
- * as /api/my-animals: addedBy === session email, no admin bypass.
- * Returns null when missing, deleted, or not owned (page renders notFound).
+ * server-fetched images (no client-side N+1). Access: the owner, their
+ * org-mates (animals are team resources) or an admin.
+ * Returns null when missing, deleted, or not permitted (page renders notFound).
  */
 export async function getAnimalProfile(animalId: string): Promise<AnimalProfileData | null> {
     const { getUser } = await import('@/app/actions/_db');
@@ -115,7 +115,11 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
     // v2.55.18: animals are TEAM resources — visible to the owner and every
     // org-mate (full parity, user decision; attribution is the counterweight).
     const { isOwnerOrOrgMate, getOrgsForEmail } = await import('@/lib/orgMembership');
-    if (!(await isOwnerOrOrgMate(userEmail, animal.addedBy))) return null;
+    const { checkIsAdminAsync } = await import('@/app/actions/_db');
+    // Admins included: they can already delete the animal and add/remove its
+    // events (and moderate everywhere else), so 404-ing the page they may
+    // modify was an inconsistency, not a policy.
+    if (!(await isOwnerOrOrgMate(userEmail, animal.addedBy)) && !(await checkIsAdminAsync(userEmail))) return null;
 
     // Parallel fail-open wave: one D1 hiccup degrades a section, never the page.
     const fallback = <T,>(op: string) => (e: unknown): T[] => {
