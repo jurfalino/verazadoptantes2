@@ -1,15 +1,30 @@
 'use client';
 
 import { signIn } from 'next-auth/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useAuthContext } from '@/context/AuthContext';
+import EmailOtpForm from '@/components/EmailOtpForm';
 
 export default function LoginModal() {
     const { isLoginOpen, closeLogin, redirectPath } = useAuthContext();
     const { t } = useLanguage();
     const [loading, setLoading] = useState(false);
     const [devEmail, setDevEmail] = useState('');
+    const [emailOtpEnabled, setEmailOtpEnabled] = useState(false);
+
+    // Public flag read — the email option only renders when an admin has
+    // switched ENABLE_EMAIL_OTP on (Resend must be configured first).
+    useEffect(() => {
+        if (!isLoginOpen) return;
+        fetch('/api/config')
+            .then(res => res.json())
+            .then((data) => {
+                const cfg = data as { config?: Record<string, string> };
+                setEmailOtpEnabled(cfg.config?.ENABLE_EMAIL_OTP === 'true');
+            })
+            .catch(() => { });
+    }, [isLoginOpen]);
 
     if (!isLoginOpen) return null;
 
@@ -51,6 +66,18 @@ export default function LoginModal() {
                             {loading ? t('auth.signing_in') || 'Signing in...' : t('auth.continue_google')}
                         </span>
                     </button>
+
+                    {/* Email OTP login — feature-flagged */}
+                    {emailOtpEnabled && (
+                        <>
+                            <div className="flex items-center gap-3 my-2">
+                                <div className="flex-1 h-px bg-stone-200" />
+                                <span className="text-xs text-stone-500">{t('login.email_label')}</span>
+                                <div className="flex-1 h-px bg-stone-200" />
+                            </div>
+                            <EmailOtpForm redirectPath={redirectPath || undefined} />
+                        </>
+                    )}
 
                     {/* Dev Login — only in development */}
                     {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
