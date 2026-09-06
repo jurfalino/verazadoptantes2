@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 export const adopters = sqliteTable("adopters", {
@@ -381,7 +381,12 @@ export const users = sqliteTable("user", {
     // name" when they differ. See lib/audit.ts:ensureUserProfile and
     // migration 0047.
     googleName: text("google_name"),
-});
+}, (table) => ({
+    // Both login methods (Google OAuth, email OTP) resolve accounts by
+    // email with LIMIT 1 — a duplicate row would split one person across
+    // providers (migration 0066).
+    emailUnique: uniqueIndex("idx_user_email_unique").on(table.email),
+}));
 
 export const accounts = sqliteTable(
     "account",
@@ -426,6 +431,28 @@ export const verificationTokens = sqliteTable(
         compoundKey: primaryKey({ columns: [vt.identifier, vt.token] }),
     })
 );
+
+// Email OTP login codes (migration 0065). Single-use 6-digit codes for the
+// `email-otp` Credentials provider; codeHash is HMAC-SHA-256 keyed with
+// AUTH_SECRET (never the plaintext code). Rows are short-lived: retired
+// (consumedAt set) on success or when a newer code is requested, and purged
+// after 24h opportunistically by requestEmailOtp. requestIp exists only for
+// per-IP rate limiting and leaves with the row. NOT the Auth.js
+// verificationToken table above — that one has no attempts counter and stays
+// unused.
+export const emailOtpCodes = sqliteTable("email_otp_codes", {
+    id: text("id").primaryKey(),
+    email: text("email").notNull(), // normalized: trim + lowercase
+    codeHash: text("code_hash").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    consumedAt: integer("consumed_at", { mode: "timestamp_ms" }),
+    requestIp: text("request_ip"),
+}, (table) => ({
+    emailCreatedIdx: index("idx_email_otp_email_created").on(table.email, table.createdAt),
+    ipCreatedIdx: index("idx_email_otp_ip_created").on(table.requestIp, table.createdAt),
+}));
 
 export const userProfiles = sqliteTable("user_profiles", {
     userId: text("user_id").primaryKey(),
