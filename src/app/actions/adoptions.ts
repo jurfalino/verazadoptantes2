@@ -31,7 +31,13 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
             const changes: Record<string, any> = {};
             let hasChanges = false;
 
-            const fields = ['animalName', 'species', 'status', 'rating', 'details', 'adopterId', 'date', 'onBehalfOf', 'recordType', 'deliveredToHome', 'verifiedAddress', 'identityVerified', 'estimatedBirthDate', 'neutered'] as const;
+            // v2.55.17-1: sex/color/microchip/age/sourceUrl/comments were missing
+            // from this list — updateRecord persists them, but a payload that
+            // changed ONLY one of them (and sent no fresh `date`, whose object
+            // comparison is always "changed") computed hasChanges=false and
+            // silently dropped the edit. Bitten by the animal page's in-place
+            // identity form; latent for any caller that stops sending `date`.
+            const fields = ['animalName', 'species', 'status', 'rating', 'details', 'adopterId', 'date', 'onBehalfOf', 'recordType', 'deliveredToHome', 'verifiedAddress', 'identityVerified', 'estimatedBirthDate', 'neutered', 'sex', 'color', 'microchip', 'age', 'sourceUrl', 'comments'] as const;
             for (const field of fields) {
                 // @ts-ignore
                 if (data[field] !== undefined && data[field] !== existing[field]) {

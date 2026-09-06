@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.17-1] - 2026-09-06
+
+### Fixed — saveAdoption change detection dropped identity-only edits
+
+The update branch's `fields` list omitted `sex`, `color`, `microchip`, `age`,
+`sourceUrl` and `comments`: a payload changing only one of those (and sending no
+fresh `date`, whose object comparison is always "changed") computed
+`hasChanges=false` and silently dropped the edit. Caught by the v2.55.15 e2e for
+the in-place identity form (a color-only edit never persisted); latent for any
+caller that stops sending `date`. All identity fields are now compared.
+
 ## [2.55.17] - 2026-09-06
 
 ### Added — follow-up reminders in the bell (animal-timeline PR4)
