@@ -23,6 +23,9 @@ export const PUBLIC_FLAG_KEYS = [
     'ENABLE_CONTACT_IMPORT',
     'ENABLE_GOOGLE_CONTACTS_IMPORT',
     'ENABLE_ANIMALS_FOR_ADOPTION',
+    // v2.55.16: projected follow-ups (animal page future timeline + settings
+    // section + list badges are client-rendered).
+    'ENABLE_FOLLOWUPS',
     'ENABLE_SEARCH_CARD_METADATA',
     'ENABLE_MILESTONE_BADGE',
     'ENABLE_QUICK_ACCESS_STRIP',

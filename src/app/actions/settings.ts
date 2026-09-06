@@ -282,3 +282,73 @@ export async function updateUserName(name: string): Promise<{ success: boolean; 
         return { success: false, errorId };
     }
 }
+
+// ── Follow-up schedule + message templates (v2.55.16, animal-timeline PR3) ──
+
+import { getDb } from '@/lib/db';
+import { users, userProfiles } from '@/db/schema';
+import { eq } from 'drizzle-orm';
+import { z } from 'zod';
+import { parseFollowupSettings, FOLLOWUP_SUBTYPES, type FollowupSettings } from '@/domain/followups';
+
+const followupSettingsSchema = z.object({
+    version: z.literal(1),
+    disabledKeys: z.array(z.string().max(100)).max(20).optional(),
+    checkins: z.array(z.object({
+        offsetDays: z.number().int().min(1).max(720),
+        windowDays: z.number().int().min(1).max(365).optional(),
+    })).max(12).optional(),
+    fosterIntervalDays: z.number().int().min(7).max(120).optional(),
+    messages: z.record(z.enum(FOLLOWUP_SUBTYPES), z.string().max(1000)).optional(),
+}).nullable();
+
+/** The viewer's follow-up overrides (null = defaults). */
+export async function getFollowupSettings(): Promise<FollowupSettings | null> {
+    let userEmail: string | undefined;
+    try {
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') return null;
+        const db = await getDb();
+        if (!db) return null;
+        const row = await db.select({ settings: userProfiles.followupSettings })
+            .from(userProfiles)
+            .innerJoin(users, eq(users.id, userProfiles.userId))
+            .where(eq(users.email, userEmail)).get();
+        return parseFollowupSettings(row?.settings);
+    } catch (error) {
+        logger.error('getFollowupSettings failed', error, { userEmail });
+        return null;
+    }
+}
+
+/** Save the viewer's overrides; pass null to restore the defaults. */
+export async function saveFollowupSettings(input: FollowupSettings | null): Promise<{ success: boolean; errorId?: string }> {
+    let userEmail: string | undefined;
+    try {
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') return { success: false };
+        const parsed = followupSettingsSchema.safeParse(input);
+        if (!parsed.success) {
+            throw new Error(`Invalid followup settings: ${parsed.error.issues.map(i => i.message).join(', ')}`);
+        }
+        const db = await getDb();
+        if (!db) return { success: false };
+
+        const user = await db.select({ id: users.id }).from(users).where(eq(users.email, userEmail)).get();
+        if (!user) return { success: false };
+
+        const value = parsed.data === null ? null : JSON.stringify(parsed.data);
+        const existing = await db.select({ userId: userProfiles.userId })
+            .from(userProfiles).where(eq(userProfiles.userId, user.id)).get();
+        if (existing) {
+            await db.update(userProfiles).set({ followupSettings: value }).where(eq(userProfiles.userId, user.id));
+        } else {
+            await db.insert(userProfiles).values({ userId: user.id, followupSettings: value });
+        }
+        logAudit({ userEmail, action: 'followup_settings_saved', details: { reset: parsed.data === null } });
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('saveFollowupSettings failed', error, { userEmail });
+        return { success: false, errorId };
+    }
+}

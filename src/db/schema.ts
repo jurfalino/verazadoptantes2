@@ -213,6 +213,12 @@ export const adopterEvents = sqliteTable("adopter_events", {
     sourceUrl: text("source_url"),
     recordedBy: text("recorded_by").default("anonymous"),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    // v2.55.16 (followups): the projected slot this event satisfies (exact-match
+    // pass) + the follow-up's classification (adaptation | vaccination | neuter |
+    // vet_visit — FOLLOWUP_SUBTYPES; same set for adoption and transit; NULL on
+    // legacy rows and non-follow_up events).
+    followupKey: text("followup_key"),
+    followupSubtype: text("followup_subtype"),
     // Moderation: when set, this note was reviewed as a FALSE POSITIVE in the
     // "Contacto en notas" data-quality report and is excluded from it. Cleared
     // when the note is edited so a materially changed note is re-reviewed. See
@@ -438,6 +444,10 @@ export const userProfiles = sqliteTable("user_profiles", {
     timezone: text("timezone"), // IANA timezone (e.g. "America/Argentina/Buenos_Aires") — via cf-timezone
     lastActiveAt: integer("last_active_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    // v2.55.16 (followups): per-user schedule + message-template overrides —
+    // FollowupSettings JSON (src/domain/followups.ts), NULL = defaults. Read
+    // whole, never queried by field (the reminder Worker joins user→profile).
+    followupSettings: text("followup_settings"),
     // Legal
     termsAcceptedAt: integer("terms_accepted_at", { mode: "timestamp" }), // Unix timestamp when T&C were accepted
     termsVersion: integer("terms_version"), // Version of T&C accepted (matches CURRENT_TERMS_VERSION)

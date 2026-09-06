@@ -10,12 +10,22 @@
  */
 
 import { getDb } from '@/lib/db';
-import { animals, placements, adopterEvents, animalEvents, adopters, adopterImages } from '@/db/schema';
+import { animals, placements, adopterEvents, animalEvents, adopters, adopterImages, users, userProfiles } from '@/db/schema';
 import { eq, desc, sql } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { revalidatePath } from 'next/cache';
 import { ANIMAL_EVENT_TYPES, type AnimalEventType } from '@/domain/constants';
+import {
+    computeFollowups, mergeSchedule, mergeFosterRule, parseFollowupSettings,
+    getMessageTemplate, DEFAULT_SCHEDULE,
+    type FollowupSettings, type FollowupStatus, type FollowupSubtype, type RecordedFollowup,
+} from '@/domain/followups';
+import { getFeatureFlag } from '@/config/features';
+import { interpolate } from '@/lib/interpolate';
+import { buildWaMeUrl, buildTelegramUrl } from '@/lib/whatsapp';
+import { deserializeContactEntries } from '@/lib/contactEntries';
+import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
 import { z } from 'zod';
 
 export type AnimalTimelineItem = {
@@ -38,6 +48,21 @@ export type AnimalTimelineItem = {
     images: { id: string; url: string; mediaType: string | null; thumbnailUrl: string | null; caption: string | null }[];
 };
 
+/** A projected follow-up slot, serialized for the client (dates as epoch ms). */
+export type ProjectedSlot = {
+    key: string;
+    subtype: FollowupSubtype;
+    copyKey: string;
+    offsetDays?: number;
+    dueDate: number;
+    windowEndsAt: number;
+    status: FollowupStatus;
+    /** One-click contact deep link — present only when the viewer has FULL PII
+     *  access to the adopter and a usable phone exists. Telegram links carry
+     *  the message separately (t.me can't prefill): the UI copies it. */
+    contact: { channel: 'whatsapp' | 'telegram'; url: string; message: string } | null;
+};
+
 export type AnimalProfileData = {
     animal: {
         id: string;
@@ -57,6 +82,10 @@ export type AnimalProfileData = {
     activePlacement: { id: string; recordType: string; adopterId: string; adopterName: string | null; startedAt: number | null } | null;
     items: AnimalTimelineItem[];
     images: { id: string; url: string; mediaType: string | null; thumbnailUrl: string | null; caption: string | null }[];
+    /** ENABLE_FOLLOWUPS is on for this deployment/user. */
+    followupsEnabled: boolean;
+    /** Projected follow-up slots for the ACTIVE placement (empty when none/flag off). */
+    projected: ProjectedSlot[];
 };
 
 const toMs = (d: unknown): number | null => (d instanceof Date ? d.getTime() : typeof d === 'number' ? d * 1000 : null);
@@ -170,6 +199,33 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
 
     const active = (spans as any[]).find(p => !p.endedAt) ?? null;
 
+    // ── projected follow-ups (flag-gated; computed, never materialized) ──
+    let followupsEnabled = false;
+    let projected: ProjectedSlot[] = [];
+    if (active) {
+        try {
+            followupsEnabled = await getFeatureFlag('ENABLE_FOLLOWUPS');
+        } catch (e) {
+            logger.warn('getAnimalProfile: followups flag fallback', {
+                animalId, userEmail, error: e instanceof Error ? e.message : String(e),
+            });
+        }
+        if (followupsEnabled) {
+            projected = await buildProjectedSlots(db, {
+                animalId, userEmail,
+                placement: active,
+                animal: { name: animal.name ?? null, estimatedBirthDate: animal.estimatedBirthDate ?? null, neutered: animal.neutered ?? null },
+                events: events as any[],
+                careEvents: careEvents as any[],
+            }).catch((e) => {
+                logger.warn('getAnimalProfile: projected fallback', {
+                    animalId, userEmail, error: e instanceof Error ? e.message : String(e),
+                });
+                return [];
+            });
+        }
+    }
+
     return {
         animal: {
             id: animal.id, name: animal.name ?? null, species: animal.species ?? null,
@@ -184,7 +240,121 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
         } : null,
         items,
         images: mapImages(animalImages as any[]),
+        followupsEnabled,
+        projected,
     };
+}
+
+/** The owner's FollowupSettings (user_profiles is keyed by NextAuth user id,
+ *  so the lookup joins through `user` by email). Null = defaults. */
+async function getSettingsForEmail(db: any, email: string): Promise<FollowupSettings | null> {
+    const row = await db.select({ settings: userProfiles.followupSettings })
+        .from(userProfiles)
+        .innerJoin(users, eq(users.id, userProfiles.userId))
+        .where(eq(users.email, email)).get()
+        .catch((e: unknown) => {
+            logger.warn('followups: settings lookup fallback', {
+                userEmail: email, error: e instanceof Error ? e.message : String(e),
+            });
+            return null;
+        });
+    return parseFollowupSettings(row?.settings);
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+async function buildProjectedSlots(db: any, input: {
+    animalId: string;
+    userEmail: string;
+    placement: any;
+    animal: { name: string | null; estimatedBirthDate: Date | number | null; neutered: number | null };
+    events: any[];
+    careEvents: any[];
+}): Promise<ProjectedSlot[]> {
+    const { placement, animal } = input;
+    const settings = await getSettingsForEmail(db, input.userEmail);
+
+    const asDate = (v: unknown): Date | null =>
+        v instanceof Date ? v : typeof v === 'number' ? new Date(v < 1e12 ? v * 1000 : v) : null;
+
+    const recorded: RecordedFollowup[] = [
+        // Only THIS placement's events (or legacy unlinked ones) — a keyed
+        // follow-up from a previous adoption must not satisfy the new one.
+        ...input.events
+            .filter(e => e.placementId === placement.id || !e.placementId)
+            .map(e => ({
+                id: e.id, date: asDate(e.date), followupKey: e.followupKey ?? null,
+                subtype: e.followupSubtype ?? null, eventType: e.eventType,
+            })),
+        ...input.careEvents.map(e => ({
+            id: e.id, date: asDate(e.date), followupKey: e.followupKey ?? null,
+            subtype: null, eventType: e.eventType,
+        })),
+    ];
+
+    const startedAt = asDate(placement.startedAt);
+    if (!startedAt) return [];
+
+    const slots = computeFollowups({
+        placementStartedAt: startedAt,
+        placementType: placement.recordType,
+        animal: { estimatedBirthDate: asDate(animal.estimatedBirthDate), neutered: animal.neutered },
+        schedule: mergeSchedule(DEFAULT_SCHEDULE, settings),
+        fosterRule: mergeFosterRule(settings),
+        recorded,
+        now: new Date(),
+    });
+
+    // One-click contact: ONLY when the viewer has full PII access to the
+    // adopter (owner/org/admin/moderator or an approved all-contact grant) —
+    // resolveAdopterVisibility is the single authority; fail-closed.
+    let contactPhone: string | null = null;
+    let contactChannel: 'whatsapp' | 'telegram' = 'whatsapp';
+    let familia = '';
+    try {
+        const adopter = await db.select({
+            id: adopters.id, name: adopters.name, addedBy: adopters.addedBy,
+            contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo,
+        }).from(adopters).where(eq(adopters.id, placement.adopterId)).get();
+        if (adopter) {
+            familia = (adopter.name || '').trim().split(/\s+/)[0] || '';
+            const visibility = await resolveAdopterVisibility(input.userEmail, { id: adopter.id, addedBy: adopter.addedBy });
+            if (visibility.nothingMasked) {
+                const entries = deserializeContactEntries(adopter.contactEntries);
+                const phones = entries.filter(en => en.type === 'phone' && en.value);
+                const tg = phones.find(en => en.apps?.includes('telegram') && !en.apps?.includes('whatsapp'));
+                const wa = phones.find(en => en.apps?.includes('whatsapp')) || phones[0];
+                if (wa) { contactPhone = wa.value; contactChannel = 'whatsapp'; }
+                else if (tg) { contactPhone = tg.value; contactChannel = 'telegram'; }
+                if (!contactPhone && adopter.contactInfo) {
+                    const m = String(adopter.contactInfo).match(/\+?[\d][\d\s\-().]{7,}/);
+                    if (m) contactPhone = m[0];
+                }
+            }
+        }
+    } catch (e) {
+        logger.warn('followups: contact resolution fallback', {
+            animalId: input.animalId, adopterId: placement.adopterId, userEmail: input.userEmail,
+            error: e instanceof Error ? e.message : String(e),
+        });
+    }
+
+    const now = Date.now();
+    return slots.map(s => {
+        let contact: ProjectedSlot['contact'] = null;
+        if (contactPhone && (s.status === 'due' || s.status === 'upcoming')) {
+            const dias = Math.max(0, Math.round((now - startedAt.getTime()) / 86400000));
+            const message = interpolate(getMessageTemplate(s.subtype, settings), {
+                animal: animal.name || '', familia, dias,
+            });
+            const url = contactChannel === 'telegram' ? buildTelegramUrl(contactPhone) : buildWaMeUrl(contactPhone, message);
+            if (url) contact = { channel: contactChannel, url, message };
+        }
+        return {
+            key: s.key, subtype: s.subtype, copyKey: s.copyKey, offsetDays: s.offsetDays,
+            dueDate: s.dueDate.getTime(), windowEndsAt: s.windowEndsAt.getTime(),
+            status: s.status, contact,
+        };
+    });
 }
 
 const addAnimalEventSchema = z.object({

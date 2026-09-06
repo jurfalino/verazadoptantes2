@@ -93,6 +93,30 @@ export async function GET(request: NextRequest) {
         // Loaded once via getApplicantsForAnimal (D1-safe per-row enrichment).
         const { getApplicantsForAnimal } = await import('@/app/actions/applicants');
 
+        // v2.55.16: «N pendientes» badge — due follow-ups per placed animal, so
+        // the list works as the follow-through triage board. Flag-gated; the
+        // owner's schedule is loaded ONCE; per-row computation fails open.
+        let followupCtx: null | {
+            schedule: import('@/domain/followups').ScheduleEntry[];
+            fosterRule: import('@/domain/followups').FosterRule;
+            compute: typeof import('@/domain/followups').computeFollowups;
+        } = null;
+        const followupsOn = await getFeatureFlag('ENABLE_FOLLOWUPS').catch(() => false);
+        if (followupsOn && !idParam) {
+            try {
+                const { computeFollowups, mergeSchedule, mergeFosterRule, parseFollowupSettings, DEFAULT_SCHEDULE } = await import('@/domain/followups');
+                const { users, userProfiles } = await import('@/db/schema');
+                const row = await db.select({ settings: userProfiles.followupSettings })
+                    .from(userProfiles)
+                    .innerJoin(users, eq(users.id, userProfiles.userId))
+                    .where(eq(users.email, userEmail)).get();
+                const settings = parseFollowupSettings(row?.settings);
+                followupCtx = { schedule: mergeSchedule(DEFAULT_SCHEDULE, settings), fosterRule: mergeFosterRule(settings), compute: computeFollowups };
+            } catch (e) {
+                logger.warn('my-animals: followup settings fallback', { userEmail, view, error: e instanceof Error ? e.message : String(e) });
+            }
+        }
+
         // Enrich with images, adopter name, and (for available animals) the
         // list of people who applied via the customized form.
         const enriched = await Promise.all(
@@ -134,7 +158,50 @@ export async function GET(request: NextRequest) {
                     return [];
                 });
 
-                return { ...animal, images, adopterName, applicants };
+                // Due follow-up count for the badge — only animals with an
+                // active placement (the view row's adopterId marks it).
+                let dueFollowups = 0;
+                if (followupCtx && animal.adopterId && animal.date) {
+                    try {
+                        const { placements, adopterEvents, animalEvents, animals } = await import('@/db/schema');
+                        const { isNull: isNullOp } = await import('drizzle-orm');
+                        const [activeRows, evRows, careRows, animalRow] = await Promise.all([
+                            db.select({ id: placements.id, startedAt: placements.startedAt, recordType: placements.recordType })
+                                .from(placements)
+                                .where(and(eq(placements.animalId, animal.id), isNullOp(placements.endedAt))).all(),
+                            db.select({ id: adopterEvents.id, date: adopterEvents.date, followupKey: adopterEvents.followupKey, followupSubtype: adopterEvents.followupSubtype, eventType: adopterEvents.eventType, placementId: adopterEvents.placementId })
+                                .from(adopterEvents).where(eq(adopterEvents.animalId, animal.id)).all(),
+                            db.select({ id: animalEvents.id, date: animalEvents.date, followupKey: animalEvents.followupKey, eventType: animalEvents.eventType })
+                                .from(animalEvents).where(eq(animalEvents.animalId, animal.id)).all(),
+                            db.select({ estimatedBirthDate: animals.estimatedBirthDate, neutered: animals.neutered })
+                                .from(animals).where(eq(animals.id, animal.id)).get(),
+                        ]);
+                        const active = activeRows[0];
+                        if (active?.startedAt) {
+                            const asDate = (v: unknown): Date | null => v instanceof Date ? v : typeof v === 'number' ? new Date(v < 1e12 ? v * 1000 : v) : null;
+                            const slots = followupCtx.compute({
+                                placementStartedAt: asDate(active.startedAt)!,
+                                placementType: active.recordType,
+                                animal: { estimatedBirthDate: asDate(animalRow?.estimatedBirthDate ?? null), neutered: animalRow?.neutered ?? null },
+                                schedule: followupCtx.schedule,
+                                fosterRule: followupCtx.fosterRule,
+                                recorded: [
+                                    ...evRows.filter((e: { placementId: string | null }) => e.placementId === active.id || !e.placementId)
+                                        .map((e: { id: string; date: unknown; followupKey: string | null; followupSubtype: string | null; eventType: string }) =>
+                                            ({ id: e.id, date: asDate(e.date), followupKey: e.followupKey, subtype: e.followupSubtype, eventType: e.eventType })),
+                                    ...careRows.map((e: { id: string; date: unknown; followupKey: string | null; eventType: string }) =>
+                                        ({ id: e.id, date: asDate(e.date), followupKey: e.followupKey, subtype: null, eventType: e.eventType })),
+                                ],
+                                now: new Date(),
+                            });
+                            dueFollowups = slots.filter(s => s.status === 'due').length;
+                        }
+                    } catch (e) {
+                        logger.warn('my-animals: due-followups fallback', { animalId: animal.id, userEmail, view, error: e instanceof Error ? e.message : String(e) });
+                    }
+                }
+
+                return { ...animal, images, adopterName, applicants, dueFollowups };
             })
         );
 

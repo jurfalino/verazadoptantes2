@@ -6,6 +6,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { CountrySelector } from '@/components/CountrySelector';
 import { getUserSettings, updateUserCountry, updateUserName } from '@/app/actions/settings';
 import { useShowToast } from '@/components/ui/Toast';
+import FollowupSettingsSection from '@/components/FollowupSettingsSection';
 
 export default function SettingsPage() {
     const { data: session, status } = useSession();
@@ -178,6 +179,10 @@ export default function SettingsPage() {
                         </div>
                     )}
                 </section>
+
+                {/* v2.55.16: follow-up schedule + message templates (renders only
+                    when the public ENABLE_FOLLOWUPS flag is on). */}
+                <FollowupSettingsSection />
             </div>
         </main>
     );

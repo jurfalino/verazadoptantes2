@@ -25,8 +25,9 @@ import AddAnimalEventModal from '@/components/AddAnimalEventModal';
 import AnimalShareSheet from '@/components/AnimalShareSheet';
 import PickAdopterForAnimalModal from '@/components/PickAdopterForAnimalModal';
 import AnimalApplicants from '@/components/AnimalApplicants';
-import type { AnimalProfileData } from '@/app/actions/animalTimeline';
+import type { AnimalProfileData, ProjectedSlot } from '@/app/actions/animalTimeline';
 import type { ApplicantSummary } from '@/app/actions/applicants';
+import { interpolate } from '@/lib/interpolate';
 
 function placeholderFor(species: string | null): string {
     const s = (species || '').toLowerCase();
@@ -46,10 +47,11 @@ export default function AnimalProfile({ profile, applicants, userId, currentUser
     const { t, locale } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
-    const { animal, activePlacement, items, images } = profile;
+    const { animal, activePlacement, items, images, projected } = profile;
 
     const [editing, setEditing] = useState(false);
-    const [eventModalOpen, setEventModalOpen] = useState(false);
+    const [eventModal, setEventModal] = useState<{ type?: string; followupKey?: string } | null>(null);
+    const [showMissed, setShowMissed] = useState(false);
     const [pickOpen, setPickOpen] = useState<null | 'adoption' | 'foster'>(null);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -76,6 +78,48 @@ export default function AnimalProfile({ profile, applicants, userId, currentUser
             : null;
 
     const heroUrl = images[0]?.thumbnailUrl || images[0]?.url || null;
+
+    // ── projected follow-ups (flag-gated server-side; [] when off) ──
+    const dueSlots = projected.filter(s => s.status === 'due');
+    const upcomingSlots = projected.filter(s => s.status === 'upcoming');
+    const missedSlots = projected.filter(s => s.status === 'missed');
+    const slotLabel = (s: ProjectedSlot) =>
+        (s.copyKey === 'checkin_custom' || s.copyKey === 'foster_checkin')
+            ? interpolate(t(`followups.${s.copyKey}`) || '{days}', { days: s.offsetDays ?? '' })
+            : (t(`followups.${s.copyKey}`) || s.key);
+
+    /** A slot's Registrar CTA: check-ins route to the adopter wizard (rating +
+     *  notes captured there); health slots open the event modal prefilled. */
+    const registerSlot = (s: ProjectedSlot) => {
+        if (!activePlacement) return;
+        if (s.subtype === 'adaptation') {
+            router.push(`/adopter/${activePlacement.adopterId}?newAdoption=follow_up&animalId=${animal.id}&followupKey=${encodeURIComponent(s.key)}&followupSubtype=adaptation`);
+        } else {
+            setEventModal({ type: s.subtype === 'neuter' ? 'neuter' : 'vaccination', followupKey: s.key });
+        }
+    };
+
+    /** Telegram can't prefill text — copy the message alongside opening the chat. */
+    const onContactClick = (s: ProjectedSlot) => {
+        if (s.contact?.channel === 'telegram') {
+            navigator.clipboard?.writeText(s.contact.message).catch(() => { /* clipboard blocked: the chat still opens */ });
+            toast.success(t('followups.tg_copied_title') || 'Mensaje copiado', t('followups.tg_copied') || 'Pegalo en el chat de Telegram.');
+        }
+    };
+
+    const contactButton = (s: ProjectedSlot) => s.contact ? (
+        <a
+            href={s.contact.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => onContactClick(s)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors whitespace-nowrap"
+            data-testid={`contact-${s.key}`}
+        >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" /></svg>
+            {s.contact.channel === 'telegram' ? 'Telegram' : 'WhatsApp'}
+        </a>
+    ) : null;
 
     const handleDelete = async () => {
         setBusy(true);
@@ -160,6 +204,11 @@ export default function AnimalProfile({ profile, applicants, userId, currentUser
                                         {t('animalProfile.status_available') || 'Disponible'}
                                     </span>
                                 )}
+                                {dueSlots.length > 0 && (
+                                    <a href="#next-action" className="inline-flex px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors" data-testid="pending-pill">
+                                        {dueSlots.length} {dueSlots.length === 1 ? (t('followups.pending_one') || 'pendiente') : (t('followups.pending_many') || 'pendientes')}
+                                    </a>
+                                )}
                             </div>
 
                             {animal.details && <p className="mt-3 text-sm text-stone-700 max-w-prose">{animal.details}</p>}
@@ -232,6 +281,35 @@ export default function AnimalProfile({ profile, applicants, userId, currentUser
                 </div>
             </div>
 
+            {/* «Para hacer ahora»: due follow-ups directly under the header — the
+                rescuer arriving from a notification must not scroll to act. */}
+            {dueSlots.length > 0 && (
+                <div className="mt-4 bg-white rounded-2xl border border-stone-200 border-l-[3px] border-l-amber-500 shadow-sm p-4" id="next-action" data-testid="due-banner">
+                    <p className="text-xs font-bold uppercase tracking-wide text-stone-500 mb-2">{t('followups.para_hacer') || 'Para hacer ahora'}</p>
+                    <div className="space-y-3">
+                        {dueSlots.map(s => (
+                            <div key={s.key} id={`followup-${activePlacement?.id}-${s.key}`} className="flex flex-wrap items-center gap-2" data-testid={`due-slot-${s.key}`}>
+                                <div className="flex-1 min-w-[180px]">
+                                    <p className="text-sm font-semibold text-stone-800">{slotLabel(s)}</p>
+                                    <p className="text-xs text-stone-500">
+                                        {(t('followups.vencia') || 'vencía el')} {formatShortDate(s.dueDate)} · {(t('followups.registrable_hasta') || 'podés registrarlo hasta el')} {formatShortDate(s.windowEndsAt)}
+                                    </p>
+                                </div>
+                                {contactButton(s)}
+                                <button
+                                    type="button"
+                                    onClick={() => registerSlot(s)}
+                                    className="inline-flex px-3 py-2 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors"
+                                    data-testid={`register-${s.key}`}
+                                >
+                                    {t('followups.register') || 'Registrar'}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* applicants — only while the animal still needs a home */}
             {seeking && applicants.length > 0 && (
                 <div className="mt-4 bg-white rounded-2xl border border-stone-200 shadow-sm p-3" id="applicants">
@@ -244,22 +322,80 @@ export default function AnimalProfile({ profile, applicants, userId, currentUser
                 <h2 className="text-base font-bold text-stone-900">{t('animalProfile.timeline_title') || 'Línea de vida'}</h2>
                 <button
                     type="button"
-                    onClick={() => setEventModalOpen(true)}
+                    onClick={() => setEventModal({})}
                     className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-100 hover:border-teal-400 transition-colors"
                     data-testid="add-animal-event"
                 >
                     + {t('animalProfile.add_event') || 'Agregar evento'}
                 </button>
             </div>
+
+            {/* projected future — nearest first, structurally distinct (dashed) */}
+            {(upcomingSlots.length > 0 || dueSlots.length > 0 || missedSlots.length > 0) && (
+                <div className="mb-4" data-testid="projected-section">
+                    <div className="space-y-2">
+                        {[...dueSlots, ...upcomingSlots].map(s => (
+                            <div key={s.key} className={`rounded-xl border-2 border-dashed px-4 py-3 ${s.status === 'due' ? 'border-amber-300 bg-amber-50/50' : 'border-stone-200 bg-stone-50/50'}`}>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <p className="text-sm font-semibold text-stone-700 flex-1 min-w-[160px]">{slotLabel(s)}</p>
+                                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${s.status === 'due' ? 'bg-amber-100 text-amber-700' : 'bg-stone-100 text-stone-500'}`}>
+                                        {s.status === 'due' ? (t('followups.status_due') || 'Pendiente') : (t('followups.status_upcoming') || 'Programado')}
+                                    </span>
+                                    <span className="text-xs text-stone-500 tabular-nums">{formatShortDate(s.dueDate)}</span>
+                                </div>
+                                {s.status === 'due' && (
+                                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                                        <button type="button" onClick={() => registerSlot(s)} className="inline-flex px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors">
+                                            {t('followups.register') || 'Registrar'}
+                                        </button>
+                                        {contactButton(s)}
+                                        <span className="text-[11px] text-stone-500">{(t('followups.registrable_hasta') || 'podés registrarlo hasta el')} {formatShortDate(s.windowEndsAt)}</span>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                        {missedSlots.length > 0 && (
+                            <div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowMissed(v => !v)}
+                                    aria-expanded={showMissed}
+                                    className="w-full text-left px-4 py-2 rounded-xl border border-dashed border-stone-300 text-xs font-semibold text-stone-500 hover:bg-stone-100 transition-colors"
+                                >
+                                    {showMissed ? '▾' : '▸'} {missedSlots.length} {missedSlots.length === 1 ? (t('followups.missed_one') || 'recordatorio vencido') : (t('followups.missed_many') || 'recordatorios vencidos')}
+                                </button>
+                                {showMissed && (
+                                    <div className="mt-2 space-y-1.5">
+                                        {missedSlots.map(s => (
+                                            <div key={s.key} className="flex items-baseline justify-between gap-2 px-4 py-1.5 rounded-lg border border-dashed border-stone-200 text-xs text-stone-500">
+                                                <span className="font-semibold">{slotLabel(s)}</span>
+                                                <span className="tabular-nums">{formatShortDate(s.dueDate)}</span>
+                                            </div>
+                                        ))}
+                                        <p className="text-[11px] text-stone-500 px-1">{t('followups.missed_hint') || 'Vencieron hace tiempo, así que no te los recordamos. Podés registrar el evento igual desde «Agregar evento».'}</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2 mt-4">
+                        <span className="text-[11px] font-bold uppercase tracking-widest text-teal-700">{t('followups.today') || 'Hoy'}</span>
+                        <div className="flex-1 h-px bg-stone-200" />
+                    </div>
+                </div>
+            )}
+
             <AnimalTimeline items={items} currentUser={currentUser} animalSex={animal.sex} />
 
             {/* modals */}
-            {eventModalOpen && (
+            {eventModal && (
                 <AddAnimalEventModal
                     animal={{ id: animal.id, name: animal.name }}
                     activePlacement={activePlacement}
-                    open={eventModalOpen}
-                    onClose={() => setEventModalOpen(false)}
+                    open={!!eventModal}
+                    onClose={() => setEventModal(null)}
+                    initialType={eventModal.type}
+                    initialFollowupKey={eventModal.followupKey ?? null}
                 />
             )}
             {pickOpen && (

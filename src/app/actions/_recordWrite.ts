@@ -93,6 +93,8 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
             onBehalfOf: data.onBehalfOf ?? null,
             sourceUrl: data.sourceUrl ?? null,
             recordedBy: actor,
+            followupKey: data.followupKey ?? null,
+            followupSubtype: data.followupSubtype ?? null,
         }).onConflictDoNothing();
         return id;
     }
@@ -143,6 +145,8 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
         if (data.date !== undefined) patch.date = data.date;
         if (data.onBehalfOf !== undefined) patch.onBehalfOf = data.onBehalfOf;
         if (data.animalId !== undefined) patch.animalId = data.animalId || null;
+        if (data.followupKey !== undefined) patch.followupKey = data.followupKey || null;
+        if (data.followupSubtype !== undefined) patch.followupSubtype = data.followupSubtype || null;
         if (data.recordType !== undefined && isEventType(data.recordType)) patch.eventType = data.recordType;
         if (Object.keys(patch).length) await db.update(adopterEvents).set(patch).where(eq(adopterEvents.id, id));
         return;

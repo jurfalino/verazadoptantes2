@@ -16,6 +16,11 @@ import { eq } from 'drizzle-orm';
 export const FEATURE_FLAGS = {
     ENABLE_CONTENT_IMPORT: false,
     ENABLE_ANIMALS_FOR_ADOPTION: false,
+    // v2.55.16 (animal-timeline PR3): projected follow-ups — the future
+    // timeline + banner on the animal page, the per-user schedule section in
+    // /settings, the /my-animals pendientes badges, and (PR4) the reminder
+    // cron Worker's run gate. Client-visible → also in PUBLIC_FLAG_KEYS.
+    ENABLE_FOLLOWUPS: false,
     ENABLE_SEARCH_CARD_METADATA: true,
     ENABLE_CHAT_WIDGET: false,
     // PostHog session replay + product analytics (v2.49.0). Runs in PARALLEL
@@ -159,6 +164,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
     const result: Record<FeatureFlag, boolean> = {
         ENABLE_CONTENT_IMPORT: false,
         ENABLE_ANIMALS_FOR_ADOPTION: false,
+        ENABLE_FOLLOWUPS: false,
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
         ENABLE_POSTHOG: false,

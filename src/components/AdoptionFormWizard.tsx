@@ -199,6 +199,12 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     const prefillRating = searchParams.get('rating');
     const prefillDetails = searchParams.get('details') || '';
     const prefillDate = searchParams.get('date') || '';
+    // v2.55.16: a projected follow-up slot's CTA routes here carrying the slot
+    // key + subtype so the saved record satisfies the slot by exact match.
+    const prefillFollowupKey = searchParams.get('followupKey') || '';
+    const rawFollowupSubtype = searchParams.get('followupSubtype') || '';
+    const prefillFollowupSubtype = ['adaptation', 'vaccination', 'neuter', 'vet_visit'].includes(rawFollowupSubtype)
+        ? rawFollowupSubtype : '';
 
     // v40b: hydrate from localStorage draft if one exists (and is < 7 days old).
     // Falls back to the prefill defaults when there's no draft. Resolved once at
@@ -506,6 +512,8 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 // Events carry their animal in a dedicated field; non-event types
                 // reference the animal via `id`, so the extra field is dropped.
                 animalId: linkedAnimalId,
+                followupKey: (isFollowUpOrReturn && prefillFollowupKey) ? prefillFollowupKey : undefined,
+                followupSubtype: (isFollowUpOrReturn && prefillFollowupSubtype) ? prefillFollowupSubtype : undefined,
                 rating: Number(formData.rating),
                 date: localDate,
                 // Adoption requests don't reference a specific animal — drop the

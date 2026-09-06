@@ -17,6 +17,7 @@ import { extractErrorId } from '@/lib/errorUtils';
 import { addAnimalEvent } from '@/app/actions/animalTimeline';
 import { saveAdoption } from '@/app/actions';
 import { ANIMAL_EVENT_TYPES, type AnimalEventType } from '@/domain/constants';
+import { FOLLOWUP_SUBTYPES, type FollowupSubtype } from '@/domain/followups';
 
 function todayISO(): string {
     const d = new Date();
@@ -41,6 +42,7 @@ export default function AddAnimalEventModal({ animal, activePlacement, open, onC
     const toast = useShowToast();
     const router = useRouter();
     const [type, setType] = useState<string>(initialType || (activePlacement ? 'follow_up' : 'vaccination'));
+    const [subtype, setSubtype] = useState<FollowupSubtype>('adaptation');
     const [date, setDate] = useState(todayISO());
     const [details, setDetails] = useState('');
     const [saving, setSaving] = useState(false);
@@ -64,6 +66,8 @@ export default function AddAnimalEventModal({ animal, activePlacement, open, onC
                     animalName: animal.name,
                     details: details.trim() || null,
                     date: parseLocalNoon(date),
+                    followupKey: initialFollowupKey ?? undefined,
+                    followupSubtype: subtype,
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 } as any);
                 if (!res || !('success' in res)) throw new Error('No response');
@@ -110,6 +114,23 @@ export default function AddAnimalEventModal({ animal, activePlacement, open, onC
                 >
                     {types.map(v => <option key={v} value={v}>{typeLabel(v)}</option>)}
                 </select>
+
+                {type === 'follow_up' && (
+                    <>
+                        <label className="block text-xs font-semibold uppercase tracking-wide text-stone-500 mb-1" htmlFor="animal-event-subtype">
+                            {t('followups.subtype') || 'Subtipo'}
+                        </label>
+                        <select
+                            id="animal-event-subtype"
+                            value={subtype}
+                            onChange={(e) => setSubtype(e.target.value as FollowupSubtype)}
+                            className="w-full mb-3 px-3 py-2 rounded-xl border border-stone-200 bg-white text-stone-900 text-base focus:border-teal-400 outline-none"
+                            data-testid="animal-event-subtype"
+                        >
+                            {FOLLOWUP_SUBTYPES.map(st => <option key={st} value={st}>{t(`followups.subtype_${st}`) || st}</option>)}
+                        </select>
+                    </>
+                )}
 
                 <label className="block text-xs font-semibold uppercase tracking-wide text-stone-500 mb-1" htmlFor="animal-event-date">
                     {t('animalProfile.event_date') || 'Fecha'}

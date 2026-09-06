@@ -2,6 +2,43 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.16] - 2026-09-06
+
+### Added — projected follow-ups: the future timeline (animal-timeline PR3)
+
+Behind the new `ENABLE_FOLLOWUPS` flag (default off):
+
+- **Pure rule engine** `src/domain/followups.ts` (21 vitest cases): check-ins at
+  7/30/180 days from the adoption, vaccine plan for animals adopted under ~8
+  months, neuter suggested at ~5 months of AGE, and a light recurring transit
+  check-in (every 30 days) for foster homes. Every slot has an actionable
+  window — past it, it turns «vencido» and is never notified (anti-storm and
+  anti-clutter by design). Recorded events satisfy slots by exact `followup_key`
+  or by a date-window heuristic (with a 33-day look-back for vaccines: a dose
+  given in rescue/transit counts); re-timing the schedule can never un-complete
+  done work.
+- **Animal page**: «Para hacer ahora» banner with the due slots right under the
+  header (the amber pending pill anchors to it), the future timeline
+  nearest-first above a «Hoy» divider, expired reminders collapsed. Each due
+  slot has «Registrar» (check-ins route to the adopter wizard carrying
+  key+subtype; health slots open the event modal prefilled) and a **one-click
+  WhatsApp/Telegram button** with the per-subtype message prefilled
+  (`{animal}/{familia}/{dias}`) — shown only when the viewer has FULL PII access
+  to the adopter (resolveAdopterVisibility, fail-closed). Telegram can't prefill,
+  so the message is copied to the clipboard.
+- **Follow-up subtype** (`adaptation | vaccination | neuter | vet_visit`, same
+  set for adoption and transit) on `adopter_events`, auto-set from slots and
+  pickable in the unified event modal; migration `0064` also adds
+  `followup_key` and `user_profiles.followup_settings`.
+- **/settings → «Seguimientos de adopción»**: per-user schedule (check-in
+  offsets, health toggles, transit cadence) and editable message templates;
+  staged edits, restore-defaults writes NULL.
+- **/my-animals**: amber «N pendientes» badge per card (computed fail-open in
+  the API enrichment, owner settings loaded once) — the list becomes the
+  follow-through triage board. New libs `interpolate.ts` + `whatsapp.ts`
+  (AR-mobile `9` insertion, double-prefix guard; 10 vitest cases). i18n
+  namespace `followups` (es/en/pt).
+
 ## [2.55.15] - 2026-09-06
 
 ### Added — the animal's page: line of life + care log (animal-timeline PR2)

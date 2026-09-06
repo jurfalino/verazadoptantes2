@@ -55,6 +55,23 @@ test.describe('Animal detail page', () => {
         await expect(page.getByTestId('animal-name')).toHaveText('Timon');
     });
 
+    test('projected follow-ups render with the flag on', async ({ page }) => {
+        await page.goto(`/my-animals/${ANIMAL_ID}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+
+        // Timon was adopted ~80 days ago with no birthdate (health omitted):
+        // the 7d check-in is expired, the seeded follow-up satisfies the 30d one
+        // via the date heuristic, and the 6-month check-in is scheduled.
+        const section = page.getByTestId('projected-section');
+        await expect(section).toBeVisible();
+        await expect(section.getByText(/Six-month check-in|Control de los 6 meses/)).toBeVisible();
+        // No due slot → no banner, no pending pill.
+        await expect(page.getByTestId('due-banner')).not.toBeVisible();
+        await expect(page.getByTestId('pending-pill')).not.toBeVisible();
+        // The expired 7d reminder sits collapsed under the disclosure.
+        await expect(section.getByRole('button', { name: /1 (expired reminder|recordatorio vencido)/ })).toBeVisible();
+    });
+
     test('in-place edit updates identity without touching custody', async ({ page }) => {
         await page.goto(`/my-animals/${ANIMAL_ID}`);
         await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });

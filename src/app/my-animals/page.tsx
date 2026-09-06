@@ -42,6 +42,8 @@ interface Animal {
     images: AnimalImage[];
     /** v2.14.10-21: form-submission applicants targeted at this animal. */
     applicants?: Applicant[];
+    /** v2.55.16: due follow-ups (ENABLE_FOLLOWUPS; 0 when off/none). */
+    dueFollowups?: number;
 }
 
 export default function MyAnimalsPage() {
@@ -425,6 +427,17 @@ export default function MyAnimalsPage() {
                                                     <span>📅 {formatShortDate(animal.date)}</span>
                                                 )}
                                             </div>
+                                            {!!animal.dueFollowups && (
+                                                <Link
+                                                    href={`/my-animals/${animal.id}#next-action`}
+                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors whitespace-nowrap"
+                                                    data-testid={`due-badge-${animal.id}`}
+                                                >
+                                                    {animal.dueFollowups} {animal.dueFollowups === 1
+                                                        ? (t('followups.pending_one') || 'pendiente')
+                                                        : (t('followups.pending_many') || 'pendientes')}
+                                                </Link>
+                                            )}
                                             {!animal.adopterId && animal.applicants && animal.applicants.length > 0 && (
                                                 <Link
                                                     href={`/my-animals/${animal.id}#applicants`}
