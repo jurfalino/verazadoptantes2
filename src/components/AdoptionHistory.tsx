@@ -329,6 +329,20 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-semibold text-stone-800 leading-snug">
                                                 {summary}
+                                                {/* v2.55.15: placement rows link back to the animal's own
+                                                    page (the record id IS the animal id for these types).
+                                                    Owner-only — the page itself is strictly owner-gated. */}
+                                                {(recordType === 'adoption' || recordType === 'foster') && adoption.addedBy === currentUser && (
+                                                    <a
+                                                        href={`/my-animals/${adoption.id}`}
+                                                        onClick={e => e.stopPropagation()}
+                                                        className="ml-2 inline-flex items-center gap-0.5 text-xs font-semibold text-teal-700 hover:underline align-middle"
+                                                        title={t('animalProfile.view_animal') || 'Ver ficha del animal'}
+                                                    >
+                                                        {t('animalProfile.view_animal') || 'Ver ficha del animal'}
+                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                                                    </a>
+                                                )}
                                                 {/* Active-foster pill: foster records default to status='active' on
                                                     create; once the rescuer marks the foster ended (status='completed')
                                                     the pill goes away. Only relevant for foster type. */}

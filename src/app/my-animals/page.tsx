@@ -8,10 +8,8 @@ import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { formatShortDate } from '@/lib/dates';
 import { formatAge } from '@/lib/ageUtils';
-import ShareMenu from '@/components/ShareMenu';
 import ShareFormMenu from '@/components/ShareFormMenu';
-import PickAdopterForAnimalModal from '@/components/PickAdopterForAnimalModal';
-import AnimalApplicants from '@/components/AnimalApplicants';
+import AnimalShareSheet from '@/components/AnimalShareSheet';
 import ShowcaseUrlChips from '@/components/ShowcaseUrlChips';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
@@ -59,14 +57,6 @@ export default function MyAnimalsPage() {
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [speciesFilter, setSpeciesFilter] = useState<string>('all');
-    // v2.19.0: which animal (if any) is currently in the "find adopter"
-    // modal. Null = closed. Holding the whole animal so the modal can show
-    // the name in its header without an extra prop dance.
-    const [adoptingAnimal, setAdoptingAnimal] = useState<Animal | null>(null);
-    // Which record the pick-adopter flow should pre-select. 'adoption' for a plain
-    // available animal; a foster card offers both 'adoption' (give for adoption)
-    // and 'foster' (move to another foster home).
-    const [adoptingType, setAdoptingType] = useState<'adoption' | 'foster'>('adoption');
 
     useEffect(() => {
         async function fetchAnimals() {
@@ -293,8 +283,9 @@ export default function MyAnimalsPage() {
                                 key={animal.id}
                                 className="bg-white rounded-xl shadow-sm border border-stone-200 hover:shadow-md hover:border-teal-200 transition-all relative"
                             >
-                                {/* Image — overflow-hidden only here so ShareMenu can overflow the card */}
-                                <Link href={(animal.adopterId && !isFoster) ? `/adopter/${animal.adopterId}` : `/my-animals/new?edit=${animal.id}`} className="block">
+                                {/* v2.55.15: the card is signals + navigation — the whole
+                                    surface opens the animal's page, where every action lives. */}
+                                <Link href={`/my-animals/${animal.id}`} className="block" data-testid={`animal-card-${animal.id}`}>
                                     <div className="aspect-video bg-stone-100 relative overflow-hidden rounded-t-xl">
                                         {animal.images && animal.images.length > 0 ? (
                                             <img
@@ -328,7 +319,7 @@ export default function MyAnimalsPage() {
 
                                 {/* Content */}
                                 <div className="p-4">
-                                    <Link href={(animal.adopterId && !isFoster) ? `/adopter/${animal.adopterId}` : `/my-animals/new?edit=${animal.id}`} className="block">
+                                    <Link href={`/my-animals/${animal.id}`} className="block">
                                         <h3 className="font-semibold text-stone-900 text-lg mb-1 hover:text-teal-700 transition-colors cursor-pointer">
                                             {animal.animalName || t('adoption.unnamed') || 'Unnamed'}
                                         </h3>
@@ -423,84 +414,38 @@ export default function MyAnimalsPage() {
                                         return null;
                                     })()}
 
-                                    {/* Per-animal applicants disclosure (v2.14.10-21 / Phase 4).
-                                        Only renders when this animal is still available AND has
-                                        form-submission applicants targeting it. */}
-                                    {!animal.adopterId && animal.applicants && animal.applicants.length > 0 && (
-                                        <AnimalApplicants
-                                            animalId={animal.id}
-                                            animalName={animal.animalName || 'Animal'}
-                                            applicants={animal.applicants}
-                                        />
-                                    )}
-
-                                    {/* Actions */}
+                                    {/* v2.55.15: cards are signals + ONE quick action. The
+                                        applicants disclosure, adopt/foster transitions and
+                                        per-card contract flows moved to the animal's page —
+                                        here only a count that deep-links to that section. */}
                                     <div className="pt-3 border-t border-stone-100 space-y-2">
-                                        <div className="flex items-center justify-between gap-2">
-                                            <div className="text-xs text-stone-500 flex-shrink-0">
+                                        <div className="flex items-center gap-2">
+                                            <div className="text-xs text-stone-500 flex-1 min-w-0">
                                                 {animal.date && (
                                                     <span>📅 {formatShortDate(animal.date)}</span>
                                                 )}
                                             </div>
-                                            {(!animal.adopterId || isFoster) && (
-                                                <div className="flex items-center gap-1.5 flex-shrink-0">
-                                                    {userId && (
-                                                        <ShareFormMenu
-                                                            userId={userId}
-                                                            animalId={animal.id}
-                                                            animalName={animal.animalName || 'Animal'}
-                                                            compact
-                                                        />
-                                                    )}
-                                                    <ShareMenu
-                                                        contractUrl={`/contract/${animal.id}`}
-                                                        animalName={animal.animalName || 'Animal'}
-                                                        compact
-                                                    />
-                                                </div>
+                                            {!animal.adopterId && animal.applicants && animal.applicants.length > 0 && (
+                                                <Link
+                                                    href={`/my-animals/${animal.id}#applicants`}
+                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-50 text-teal-700 hover:bg-teal-100 transition-colors whitespace-nowrap"
+                                                    data-testid={`applicants-count-${animal.id}`}
+                                                >
+                                                    {animal.applicants.length} {animal.applicants.length === 1
+                                                        ? (t('animalProfile.applicant_one') || 'interesada')
+                                                        : (t('animalProfile.applicant_many') || 'interesadas')}
+                                                </Link>
+                                            )}
+                                            {userId && (
+                                                <AnimalShareSheet
+                                                    userId={userId}
+                                                    animalId={animal.id}
+                                                    animalName={animal.animalName || 'Animal'}
+                                                    adopted={!!animal.adopterId && !isFoster}
+                                                    compact
+                                                />
                                             )}
                                         </div>
-                                        {/* v2.19.0: primary action for an
-                                            available animal — find the adopter
-                                            and record the adoption. The share
-                                            actions above are precursors; this
-                                            is the destination. */}
-                                        {!animal.adopterId && !isFoster && (
-                                            <button
-                                                type="button"
-                                                onClick={() => { setAdoptingType('adoption'); setAdoptingAnimal(animal); }}
-                                                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 active:scale-[0.98] shadow-sm transition-all"
-                                                data-testid={`record-adoption-${animal.id}`}
-                                            >
-                                                <span aria-hidden>🏠</span>
-                                                {t('myAnimals.record_adoption') || 'Registrar adopción'}
-                                            </button>
-                                        )}
-                                        {/* A fostered animal can go two ways next:
-                                            given for adoption, or moved to another
-                                            foster home. Offer both explicitly. */}
-                                        {isFoster && (
-                                            <div className="flex gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => { setAdoptingType('adoption'); setAdoptingAnimal(animal); }}
-                                                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 active:scale-[0.98] shadow-sm transition-all"
-                                                    data-testid={`record-adoption-${animal.id}`}
-                                                >
-                                                    <span aria-hidden>🏠</span>
-                                                    {t('myAnimals.record_adoption') || 'Registrar adopción'}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => { setAdoptingType('foster'); setAdoptingAnimal(animal); }}
-                                                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-indigo-800 bg-indigo-100 hover:bg-indigo-200 active:scale-[0.98] shadow-sm transition-all"
-                                                    data-testid={`move-foster-${animal.id}`}
-                                                >
-                                                    <span aria-hidden>🤝</span>
-                                                    {t('myAnimals.move_to_foster') || 'Mover a otro tránsito'}
-                                                </button>
-                                            </div>
-                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -509,20 +454,6 @@ export default function MyAnimalsPage() {
                     </div>
                 )}
             </div>
-
-            {/* v2.19.0: pick-adopter modal for the "Registrar adopción" flow.
-                Rendered once at the page level so opening/closing doesn't
-                re-mount it per animal. Closes itself before routing so the
-                overlay doesn't briefly stack on the destination page. */}
-            {adoptingAnimal && (
-                <PickAdopterForAnimalModal
-                    animalId={adoptingAnimal.id}
-                    animalName={adoptingAnimal.animalName || ''}
-                    recordType={adoptingType}
-                    open={!!adoptingAnimal}
-                    onClose={() => setAdoptingAnimal(null)}
-                />
-            )}
         </div>
     );
 }

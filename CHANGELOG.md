@@ -2,6 +2,37 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.15] - 2026-09-06
+
+### Added — the animal's page: line of life + care log (animal-timeline PR2)
+
+Every animal now has its own page at `/my-animals/[id]` (owner-gated like the rest
+of the surface, behind `ENABLE_ANIMALS_FOR_ADOPTION`):
+
+- **Photo-first header** (2:1 hero with the name + an unlabeled descriptor —
+  "Gata gris · 4 meses · sin castrar" — on a scrim; gallery thumbnails top-right),
+  status chip linking to the adopter/foster, description, microchip/rescue meta.
+- **Línea de vida**: custody trail read directly from the normalized tables
+  (transit spans incl. ENDED ones — previously invisible through the compat view),
+  animal-linked follow-ups/returns, and the new **`animal_events` care log**
+  (vacunación, desparasitación, veterinario, castración — which also flips
+  `animals.neutered` —, notas) via migration `0063`. Contract evidence renders on
+  the adoption item. Images are fetched server-side (no client N+1).
+- **«+ Agregar evento»** on the timeline header: one entry point for care events
+  and (with an active placement) «Seguimiento a la familia», date editable.
+- **In-place edit** (✎): the header turns into a compact identity form; saving
+  patches ONLY `animals` fields — structurally immune to the old edit form's
+  silent foster-ending bug. 🗑 delete with confirmation. One «Compartir» sheet
+  (form + contract) in every state. Applicants mount while seeking.
+
+### Changed — `/my-animals` cards are now signals + one action
+
+Whole-card tap opens the animal's page; adopt/transit buttons, per-card contract
+flows and the applicants disclosure moved there (single-homed). Cards keep photo,
+pills, status blocks, an «N interesadas» chip deep-linking to the applicants
+section, and one «Compartir» sheet. Adopter-profile placement records link back
+via «Ver ficha del animal». New i18n namespace `animalProfile` (es/en/pt).
+
 ## [2.55.14] - 2026-09-06
 
 ### Fixed — follow-up and return events now link to their animal

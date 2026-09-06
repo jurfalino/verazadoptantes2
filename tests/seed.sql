@@ -124,3 +124,32 @@ INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value
 ('test-token-3', 'test-adopter-1', 'name_word', 'garcia');
 INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES
 ('test-token-4', 'test-adopter-3', 'name_word', 'martinez');
+
+-- ============================================================
+-- ANIMAL TIMELINE FIXTURES (v2.55.15 — animal-profile.authed.spec.ts)
+-- Fully isolated: dedicated fixture adopters so no shared-seed counts change.
+-- Owned by the admin session email so the strictly owner-gated
+-- /my-animals/[id] page can render them.
+-- ============================================================
+
+INSERT OR REPLACE INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES
+('test-adopter-fixture-tl1', 'Fátima Timeline', 'Tel: 555-0201', '5', 'test-seed', strftime('%s','now'), strftime('%s','now')),
+('test-adopter-fixture-tl2', 'Tránsito Timeline', 'Tel: 555-0202', '5', 'test-seed', strftime('%s','now'), strftime('%s','now'));
+UPDATE adopters SET country = 'AR' WHERE id IN ('test-adopter-fixture-tl1','test-adopter-fixture-tl2');
+
+INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered, added_by, created_at, updated_at) VALUES
+('test-animal-fixture-1', 'Timon', 'dog', 'Perro fixture para la línea de vida', 'macho', 'marrón', 0, 'gatitosolivos@gmail.com', strftime('%s','now','-120 days'), strftime('%s','now'));
+
+-- Custody trail: an ENDED foster span + the ACTIVE adoption.
+INSERT OR REPLACE INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by) VALUES
+('test-plc-fixture-1f', 'test-animal-fixture-1', 'test-adopter-fixture-tl2', 'foster', strftime('%s','now','-120 days'), strftime('%s','now','-80 days'), 'completed', NULL, 'gatitosolivos@gmail.com'),
+('test-plc-fixture-1a', 'test-animal-fixture-1', 'test-adopter-fixture-tl1', 'adoption', strftime('%s','now','-80 days'), NULL, 'completed', 5, 'gatitosolivos@gmail.com');
+
+-- A follow-up LINKED to the animal (the 0062 backfill is a no-op on the empty
+-- CI database, so the linkage is seeded directly).
+INSERT OR REPLACE INTO adopter_events (id, adopter_id, event_type, animal_id, placement_id, animal_name, species, rating, details, date, recorded_by) VALUES
+('test-event-fixture-tl1', 'test-adopter-fixture-tl1', 'follow_up', 'test-animal-fixture-1', 'test-plc-fixture-1a', 'Timon', 'dog', 5, 'Muy bien adaptado a la casa nueva', strftime('%s','now','-50 days'), 'gatitosolivos@gmail.com');
+
+-- A care event (vaccination) during the foster span.
+INSERT OR REPLACE INTO animal_events (id, animal_id, event_type, date, details, recorded_by) VALUES
+('test-aevent-fixture-tl1', 'test-animal-fixture-1', 'vaccination', strftime('%s','now','-100 days'), 'Quíntuple, primera dosis', 'gatitosolivos@gmail.com');

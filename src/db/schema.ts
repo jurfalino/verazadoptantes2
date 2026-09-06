@@ -228,6 +228,26 @@ export const adopterEvents = sqliteTable("adopter_events", {
     animalIdx: index("idx_events_animal").on(table.animalId),
 }));
 
+// Animal-scoped care log (v2.55.15): vaccinations, dewormings, vet visits,
+// neuter, free notes. Adopter-less by design — care happens in rescue, transit
+// AND adoption, so these can't live in adopter_events (adopterId NOT NULL and
+// every read path assumes adopter scope). The animal timeline unions these with
+// placements + animal-linked adopter_events. `followup_key` links a record to
+// the projected follow-up slot it satisfies (populated from v2.55.16).
+export const animalEvents = sqliteTable("animal_events", {
+    id: text("id").primaryKey(),
+    animalId: text("animal_id").notNull(), // → animals.id
+    eventType: text("event_type").notNull(), // ANIMAL_EVENT_TYPES: 'vaccination' | 'deworming' | 'vet_visit' | 'neuter' | 'note'
+    date: integer("date", { mode: "timestamp" }),
+    details: text("details"),
+    followupKey: text("followup_key"), // projected-slot key this satisfies (nullable)
+    placementId: text("placement_id"), // optional placement context when logged from a slot
+    recordedBy: text("recorded_by").default("anonymous"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    animalIdx: index("idx_animal_events_animal").on(table.animalId, table.date),
+}));
+
 // Adopter Stats - Track analytics events (search hits, profile views)
 // Note: adoption/request counts come from the adoptions table, not from stats events
 export const adopterStats = sqliteTable("adopter_stats", {
