@@ -2,6 +2,30 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.1] - 2026-09-06
+
+### Fixed — version numbers can no longer move backwards
+
+- **The regression this closes**: 2.56.0 (email OTP) shipped, then a parallel
+  session continuing the 2.55.x follow-up series from its own older base
+  bumped 2.55.18 → 2.55.19 → .20 → .21 on top of it. `package.json` — the only
+  reliable deploy identity here, since `/api/health` is hardcoded — spent three
+  releases *below* a version already deployed. This release restores order at
+  **2.56.1** (above the 2.56.0 high-water mark; deliberately a patch, since a
+  minor bump needs user authorization).
+- **`scripts/check-version-bump.mjs`** fails when the version at HEAD is lower
+  than any of the last 50 ancestors', naming the offending commit and the
+  version to use instead. It allows an *equal* version so release merges and
+  the post-squash "merge master back into staging" step still pass — catching
+  decreases is what prevents the bug.
+- **Enforced in two places**: a `Version Guard` CI job (which `build-and-lint`
+  now depends on, so a regression blocks migrations and deploys and fails in
+  ~30s instead of after a full build), and a `.githooks/pre-push` hook that
+  catches it locally before a CI cycle is spent. `npm run prepare` points
+  `core.hooksPath` at `.githooks`, so any clone picks the hook up on install.
+- `deploy.md` now tells agents to derive the new version from
+  `origin/staging`, never from the base they started on.
+
 ## [2.56.0] - 2026-09-06
 
 ### Added — email OTP login (6-digit code), behind `ENABLE_EMAIL_OTP` (default off)

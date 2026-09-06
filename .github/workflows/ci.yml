@@ -26,10 +26,33 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
+  # Blocks a package.json version that moves BACKWARDS relative to its own
+  # history. package.json is the only reliable deploy identity here, and on
+  # 2026-09-06 two parallel sessions produced 2.56.0 followed by 2.55.19.
+  # Its own job (not a build-and-lint step) so the failure names the problem
+  # instead of hiding inside a build log — and it needs git history, which the
+  # default fetch-depth: 1 checkout does not provide.
+  version-guard:
+    name: Version Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 100
+
+      - name: Check version does not regress
+        run: node scripts/check-version-bump.mjs
+
   build-and-lint:
     name: Build & Lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Every other job descends from this one, so gating it here stops a
+    # regressed version reaching migrations or a deploy — and fails in ~30s
+    # rather than after a full build.
+    needs: [version-guard]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

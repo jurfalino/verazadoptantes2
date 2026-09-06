@@ -1,0 +1,14 @@
+#!/bin/sh
+# Blocks a push whose package.json version regresses against its own history.
+# Same check CI runs (Version Guard) — this just fails in one second instead of
+# after a pipeline cycle.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+# Bypass in a real emergency:  git push --no-verify
+#
+# NOTE for agent sessions: `git push --no-verify` is NOT the fix for a version
+# regression. Bump package.json to the number the failure message suggests.
+
+if command -v node >/dev/null 2>&1; then
+    node "$(git rev-parse --show-toplevel)/scripts/check-version-bump.mjs" || exit 1
+fi

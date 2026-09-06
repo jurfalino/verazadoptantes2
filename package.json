@@ -1,13 +1,15 @@
 {
   "name": "buenadoptante",
-  "version": "2.55.21",
+  "version": "2.56.1",
   "private": true,
   "scripts": {
     "dev": "set NODE_OPTIONS=--max-old-space-size=2048 --expose-gc&& next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:version": "node scripts/check-version-bump.mjs",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "dependencies": {
     "@auth/core": "^0.41.0",
