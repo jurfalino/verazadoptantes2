@@ -1,11 +1,18 @@
 import type { NextAuthConfig } from "next-auth"
 import Google from "next-auth/providers/google"
 import Credentials from "next-auth/providers/credentials"
+import { eq } from "drizzle-orm"
 import { logger } from "@/lib/logger"
 import { logAudit, ensureUserProfile } from "@/lib/audit"
 import { isAdminAsync } from "@/config/admins"
 import { checkAdopterLoginGate } from "@/lib/adopterLoginGate"
 import { recordBlockedLogin } from "@/lib/blockedLoginRecorder"
+import { getDb } from "@/lib/db"
+import { users } from "@/db/schema"
+import { getFeatureFlag } from "@/config/features"
+import { maskEmail } from "@/lib/dates"
+import { normalizeOtpEmail, hashOtpCode, resolveAuthSecret } from "@/lib/otp"
+import { findActiveOtp, tryConsumeAttempt, retireOtp, consumeOtp } from "@/lib/otpStore"
 
 // Bump this number and deploy to force all users to re-authenticate.
 // Exported so auth.ts can use the same value.
@@ -51,6 +58,73 @@ export const authConfig = {
                 },
             })
         ] : []),
+        // Email OTP login (ENABLE_EMAIL_OTP): verifies a 6-digit code issued
+        // by the requestEmailOtp server action against the email_otp_codes
+        // table. A Credentials provider (NOT a custom cookie-setting route) so
+        // the sign-in flows through callbacks.signIn below — adopter-login
+        // gate, blocked-login recording, ensureUserProfile, audit — exactly
+        // like Google. Everything here must stay edge-safe: this file lands in
+        // the middleware bundle via middleware.ts's dynamic import of @/auth.
+        Credentials({
+            id: 'email-otp',
+            name: 'Email code',
+            credentials: {
+                email: { label: "Email", type: "email" },
+                code: { label: "Code", type: "text" },
+            },
+            async authorize(credentials) {
+                const email = normalizeOtpEmail((credentials?.email as string | undefined) || '');
+                const code = (credentials?.code as string | undefined) || '';
+                if (!email || !/^\d{6}$/.test(code)) return null;
+                try {
+                    // Defense in depth — the request action is the primary
+                    // flag gate, but a stale outstanding code must not keep
+                    // working after the feature is switched off.
+                    if (!(await getFeatureFlag('ENABLE_EMAIL_OTP'))) return null;
+
+                    const db = await getDb();
+                    if (!db) {
+                        logger.error('email-otp authorize: DB unavailable', undefined, { email: maskEmail(email) });
+                        return null;
+                    }
+
+                    const now = new Date();
+                    const active = await findActiveOtp(db, email);
+                    if (!active || active.expiresAt.getTime() < now.getTime()) return null;
+
+                    // Count the attempt BEFORE comparing — a wrong guess must
+                    // spend budget even if the caller races parallel requests.
+                    // The atomic `attempts < max` guard makes over-budget
+                    // attempts fail here; retire the row so it stops matching
+                    // findActiveOtp.
+                    if (!await tryConsumeAttempt(db, active.id)) {
+                        await retireOtp(db, active.id, now);
+                        return null;
+                    }
+
+                    const hash = await hashOtpCode(code, resolveAuthSecret());
+                    if (hash !== active.codeHash) return null;
+
+                    // Single-use: losing the conditional consume means another
+                    // request already used this code.
+                    if (!await consumeOtp(db, active.id, now)) return null;
+
+                    // Reuse the existing account for this email if there is
+                    // one; otherwise mint an id for ensureUserProfile to
+                    // insert. The jwt callback re-resolves the canonical id by
+                    // email on every request either way.
+                    const existing = await db
+                        .select({ id: users.id })
+                        .from(users)
+                        .where(eq(users.email, email))
+                        .limit(1);
+                    return { id: existing[0]?.id ?? crypto.randomUUID(), email };
+                } catch (e) {
+                    logger.error('email-otp authorize failed', e, { email: maskEmail(email) });
+                    return null;
+                }
+            },
+        }),
     ],
     callbacks: {
         authorized: async ({ auth }) => {
@@ -105,9 +179,10 @@ export const authConfig = {
                 email: user.email,
                 provider: account?.provider
             });
-            // Track user profile (first sign date + last activity)
+            // Track user profile (first sign date + last activity). An OTP
+            // sign-in is proof of inbox ownership — record emailVerified.
             if (user.id) {
-                await ensureUserProfile(user.id, user.email || undefined, user.name || undefined, user.image || undefined);
+                await ensureUserProfile(user.id, user.email || undefined, user.name || undefined, user.image || undefined, account?.provider === 'email-otp');
             }
             // Audit log
             await logAudit({
