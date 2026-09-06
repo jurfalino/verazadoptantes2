@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.6] - 2026-09-06
+
+### Fixed — ENABLE_FOLLOWUPS was invisible (and unflippable) in the admin panel
+
+The follow-up flag was registered in `FEATURE_FLAGS`, `getAllFeatureFlags` and
+`PUBLIC_FLAG_KEYS`, but the admin config surface is a documented FOUR-place
+duplication that no code iterates: the toggle list, the page's config type, its
+useState initializer, its GET hydration, and the config API's echoed response.
+Missing from all of them, the flag never appeared in /admin/config — so nothing
+in Configuración → Seguimientos, no pending badges and no projected timeline
+could be switched on without a manual D1 write. Registered in every site, with
+label + description in es/en/pt. (The plumbing is now SIX places for a
+client-visible, admin-togglable flag; the duplication itself remains a known
+wart flagged in that route since v2.14.3.)
+
 ## [2.56.3] - 2026-09-06
 
 ### Fixed — restore the e2e database and local-state files committed by mistake

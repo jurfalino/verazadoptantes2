@@ -158,6 +158,8 @@ export const en = {
         flag_desc_guided_walkthrough: 'Auto-launch a one-time spotlight tour for new users that guides them to search an adopter by name and read the result. Also shows a "Show me how to search" button on the homepage. Default off.',
         flag_label_household_members: 'Structured household members',
         flag_desc_household_members: 'Replaces the free-text family field with structured people (name, relationship, and their own contact details), PII-protected and deduplicated like the adopter. Off by default.',
+        flag_label_followups: 'Adoption follow-ups',
+        flag_desc_followups: 'Turns on the projected line of life: post-adoption and foster check-in reminders, the «Seguimientos» section in Settings, the pending badges on My Animals, and the daily reminder job.',
         flag_label_email_otp: 'Email code login',
         flag_desc_email_otp: 'Adds a "sign in with email" option to the login modal: a 6-digit code is emailed and typed in, no Google account needed. Requires Resend (API key + verified domain) to be configured. Off by default.',
         instagram_section_title: 'Instagram URL (public)',
