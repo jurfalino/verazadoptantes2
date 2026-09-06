@@ -37,6 +37,25 @@ All notable changes to BuenAdoptante are documented here.
   `RESEND_API_KEY` (Pages secret or `app_config` row) and a verified sending
   domain for `noreply@buenadoptante.org` in Resend.
 
+## [2.55.21] - 2026-09-06
+
+### Changed — follow-up emails are digested (one message, same template)
+
+A rescuer with several reminders due on the same day now gets ONE email instead
+of one per slot — the mailbox stops competing with the bell, which stays
+per-slot because each notification is individually actionable. No second
+template: `buildFollowupEmail` takes a list and adapts — a single item renders
+exactly the message it always did (title, body, button to that animal), several
+render the same shell with one line per reminder, each row deep-linking to its
+animal and the button pointing at /my-animals (whose «N pendientes» badges are
+the list form of the same information). Capped at 25 items with a "…y N más"
+line. Items are queued only for slots that actually inserted a notification, so
+the digest inherits the once-ever (placement, slot, recipient) dedup unchanged;
+the run summary gains `emailedItems` alongside `emailed`. First unit tests for
+the Worker's pure copy builders (`src/lib/followupEmailCopy.test.ts` — the
+worker directory is outside vitest's scope), including HTML escaping of animal
+names.
+
 ## [2.55.20] - 2026-09-06
 
 ### Fixed — EM review of the animal-timeline feature (blocking + significant)

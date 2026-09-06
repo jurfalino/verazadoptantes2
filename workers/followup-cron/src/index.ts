@@ -20,7 +20,7 @@ import {
     computeFollowups, mergeSchedule, mergeFosterRule, parseFollowupSettings,
     DEFAULT_SCHEDULE, type FollowupSettings, type RecordedFollowup,
 } from '../../../src/domain/followups';
-import { dedupKey, notificationTitle, notificationBody, buildFollowupEmail } from './copy';
+import { dedupKey, notificationTitle, notificationBody, buildFollowupEmail, type FollowupEmailItem } from './copy';
 
 interface Env {
     DB: D1Database;
@@ -61,7 +61,7 @@ type PlacementRow = {
 
 export default {
     async scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
-        const summary = { scanned: 0, due: 0, notified: 0, deduped: 0, emailed: 0, emailFailed: 0, skippedOwners: 0, errors: 0 };
+        const summary = { scanned: 0, due: 0, notified: 0, deduped: 0, emailed: 0, emailedItems: 0, emailFailed: 0, skippedOwners: 0, errors: 0 };
         try {
             // ── gates: mirror createNotification's kill switch + the feature flag ──
             // (+ email config, env-first then app_config — the emailOtp convention)
@@ -136,6 +136,13 @@ export default {
                 }
             }
 
+            // v2.55.21: email is DIGESTED — one message per recipient per run,
+            // however many reminders fired. Bells stay per-slot (each is
+            // individually actionable); only the mailbox gets batched. Items are
+            // queued ONLY for slots that actually inserted a notification, so
+            // the digest inherits the same once-ever dedup.
+            const emailQueue = new Map<string, FollowupEmailItem[]>();
+
             const now = new Date();
             for (let i = 0; i < rows.length; i += CHUNK) {
                 const chunk = rows.slice(i, i + CHUNK);
@@ -203,32 +210,18 @@ export default {
                                 ).run();
                                 summary.notified++;
 
-                                // v2.55.19: opt-in email delivery — the RECIPIENT's own
-                                // setting decides. Rides the insert above, so it inherits
-                                // the exact same once-ever dedup; a send failure never
-                                // fails the bell notification.
+                                // v2.55.19/21: opt-in email — the RECIPIENT's own setting
+                                // decides. Queued here (inside the post-insert branch) so
+                                // the digest covers exactly the slots that were newly
+                                // notified, then sent once per recipient after the scan.
                                 if (resendKey && settingsByEmail.get(recipient)?.emailReminders === true) {
-                                    try {
-                                        const mail = buildFollowupEmail(
-                                            p.name,
-                                            notificationBody(s, p.adopter_name, p.record_type === 'foster'),
-                                            `${baseUrl}/my-animals/${p.animal_id}#next-action`,
-                                        );
-                                        const res = await fetch('https://api.resend.com/emails', {
-                                            method: 'POST',
-                                            headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ from: emailFrom, to: recipient, subject: mail.subject, html: mail.html, text: mail.text }),
-                                        });
-                                        if (res.ok) summary.emailed++;
-                                        else {
-                                            summary.emailFailed++;
-                                            const apiError = await res.text().catch(() => '');
-                                            console.log(JSON.stringify({ op: 'followup-cron', warn: 'email send rejected', status: res.status, apiError: apiError.slice(0, 200), placementId: p.id, slot: s.key }));
-                                        }
-                                    } catch (e) {
-                                        summary.emailFailed++;
-                                        console.log(JSON.stringify({ op: 'followup-cron', warn: 'email send threw', placementId: p.id, slot: s.key, error: String(e) }));
-                                    }
+                                    const queue = emailQueue.get(recipient) || [];
+                                    queue.push({
+                                        animalName: p.name,
+                                        body: notificationBody(s, p.adopter_name, p.record_type === 'foster'),
+                                        url: `${baseUrl}/my-animals/${p.animal_id}#next-action`,
+                                    });
+                                    emailQueue.set(recipient, queue);
                                 }
                             }
                         }
@@ -238,6 +231,28 @@ export default {
                     }
                 }));
             }
+            // ── one digest email per recipient (same template, N items) ──
+            for (const [recipient, queueItems] of emailQueue) {
+                if (queueItems.length === 0) continue;
+                try {
+                    const mail = buildFollowupEmail(queueItems, `${baseUrl}/my-animals`);
+                    const res = await fetch('https://api.resend.com/emails', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ from: emailFrom, to: recipient, subject: mail.subject, html: mail.html, text: mail.text }),
+                    });
+                    if (res.ok) { summary.emailed++; summary.emailedItems += queueItems.length; }
+                    else {
+                        summary.emailFailed++;
+                        const apiError = await res.text().catch(() => '');
+                        console.log(JSON.stringify({ op: 'followup-cron', warn: 'email send rejected', status: res.status, apiError: apiError.slice(0, 200), items: queueItems.length }));
+                    }
+                } catch (e) {
+                    summary.emailFailed++;
+                    console.log(JSON.stringify({ op: 'followup-cron', warn: 'email send threw', items: queueItems.length, error: String(e) }));
+                }
+            }
+
             // ── retention: prune this cron's own expired notifications ──
             // v2.55.20: `notifications` had no cleanup path, and team fan-out
             // multiplies growth by team size. Only OUR type is touched, and only

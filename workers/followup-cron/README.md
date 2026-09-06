@@ -35,9 +35,17 @@ Manual deploy (if CI is down):
 
 When a recipient has «Recibir recordatorios también por e-mail» enabled in
 Configuración → Seguimientos (`followup_settings.emailReminders`), the Worker
-also sends the reminder via Resend at the moment it inserts the bell row — so
-emails inherit the same once-ever (placement, slot, recipient) dedup, and a
+also emails them. Bells stay per-slot (each is individually actionable); email
+is **digested**: one message per recipient per run, listing every reminder that
+fired. Items are queued only for slots that actually inserted a notification, so
+the digest inherits the same once-ever (placement, slot, recipient) dedup, and a
 send failure never blocks the bell.
+
+`buildFollowupEmail` is ONE template that adapts to the count — a single item
+renders the per-animal message with a button to that animal; several render a
+list with per-row links and a button to /my-animals. Capped at
+`EMAIL_DIGEST_MAX_ITEMS` with a "…y N más" line. Covered by
+`src/lib/followupEmailCopy.test.ts` (the worker dir isn't in vitest's scope).
 
 Config resolution (same convention as the email-OTP feature): env first, then
 `app_config` rows — `RESEND_API_KEY` (required for sends; absent → emails are
