@@ -1467,6 +1467,9 @@ export const es = {
         read_more: 'leer más',
     },
     followups: {
+        delivery_title: 'Cómo recibir los recordatorios',
+        delivery_hint: 'La campanita de la app avisa siempre. Además, podés recibirlos por e-mail.',
+        toggle_email: 'Recibir recordatorios también por e-mail',
         checkin_7d: 'Control de la primera semana',
         checkin_30d: 'Control del primer mes',
         checkin_180d: 'Control de los 6 meses',

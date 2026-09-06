@@ -24,6 +24,8 @@ type Draft = {
     foster: boolean;
     fosterIntervalDays: number;
     messages: Record<FollowupSubtype, string>;
+    /** v2.55.19: opt-in email delivery of the reminders (bell always fires). */
+    emailReminders: boolean;
 };
 
 function draftFrom(settings: FollowupSettings | null): Draft {
@@ -37,12 +39,13 @@ function draftFrom(settings: FollowupSettings | null): Draft {
         foster: !disabled.has('foster_checkin'),
         fosterIntervalDays: settings?.fosterIntervalDays ?? DEFAULT_FOSTER_RULE.intervalDays,
         messages: { ...DEFAULT_MESSAGES, ...(settings?.messages || {}) },
+        emailReminders: settings?.emailReminders === true,
     };
 }
 
 function isDefaultDraft(d: Draft): boolean {
     const defOffsets = DEFAULT_SCHEDULE.filter(e => e.kind === 'checkin').map(e => e.offsetDays);
-    return d.vaccines && d.neuter && d.foster
+    return d.vaccines && d.neuter && d.foster && !d.emailReminders
         && d.fosterIntervalDays === DEFAULT_FOSTER_RULE.intervalDays
         && JSON.stringify([...d.checkins.map(c => c.offsetDays)].sort((a, b) => a - b)) === JSON.stringify(defOffsets)
         && FOLLOWUP_SUBTYPES.every(st => d.messages[st] === DEFAULT_MESSAGES[st]);
@@ -63,6 +66,7 @@ function settingsFrom(d: Draft): FollowupSettings {
         ...(disabledKeys.length ? { disabledKeys } : {}),
         fosterIntervalDays: Math.max(7, Math.min(120, Math.round(d.fosterIntervalDays) || DEFAULT_FOSTER_RULE.intervalDays)),
         ...(Object.keys(messages).length ? { messages } : {}),
+        ...(d.emailReminders ? { emailReminders: true } : {}),
     };
 }
 
@@ -165,6 +169,20 @@ export default function FollowupSettingsSection() {
                     <span>{t('animalProfile.days') || 'días'}</span>
                 </div>
             </div>
+
+            {/* delivery channel */}
+            <h3 className="text-sm font-bold text-stone-900 mt-6">{t('followups.delivery_title') || 'Cómo recibir los recordatorios'}</h3>
+            <p className="text-xs text-stone-500 mt-1 mb-2 max-w-prose">{t('followups.delivery_hint') || 'La campanita de la app avisa siempre. Además, podés recibirlos por e-mail.'}</p>
+            <label className="flex items-center gap-2 text-sm text-stone-700 cursor-pointer">
+                <input
+                    type="checkbox"
+                    checked={draft.emailReminders}
+                    onChange={e => set({ emailReminders: e.target.checked })}
+                    className="w-4 h-4 rounded accent-teal-600"
+                    data-testid="followup-email-toggle"
+                />
+                {t('followups.toggle_email') || 'Recibir recordatorios también por e-mail'}
+            </label>
 
             {/* message templates */}
             <h3 className="text-sm font-bold text-stone-900 mt-6">{t('followups.messages_title') || 'Mensajes de seguimiento'}</h3>

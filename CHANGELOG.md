@@ -37,6 +37,22 @@ All notable changes to BuenAdoptante are documented here.
   `RESEND_API_KEY` (Pages secret or `app_config` row) and a verified sending
   domain for `noreply@buenadoptante.org` in Resend.
 
+## [2.55.19] - 2026-09-06
+
+### Added — follow-up reminders by email (opt-in)
+
+New «Cómo recibir los recordatorios» group in Configuración → Seguimientos: the
+in-app bell always fires; a per-user opt-in toggle (`followup_settings.
+emailReminders`) additionally delivers each reminder by email — a personal
+preference, so on teams every member chooses their own channel. The cron Worker
+sends via Resend at the exact moment it inserts the bell row (same once-ever
+per-(placement, slot, recipient) dedup; a send failure never blocks the bell),
+reusing the email-OTP leaf conventions: `RESEND_API_KEY`/`EMAIL_FROM` resolved
+env-first then from `app_config` (no key → emails silently skipped, bell only).
+Spanish email with a deep-link button to the animal's «Para hacer ahora»
+(`APP_BASE_URL` per env in wrangler vars). Run summary gains `emailed`/
+`emailFailed`. i18n ×3; prototype config screen updated to match.
+
 ## [2.55.18] - 2026-09-06
 
 ### Added — animals are team resources + full attribution (animal-timeline PR5)

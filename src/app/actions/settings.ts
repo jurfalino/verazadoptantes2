@@ -300,6 +300,7 @@ const followupSettingsSchema = z.object({
     })).max(12).optional(),
     fosterIntervalDays: z.number().int().min(7).max(120).optional(),
     messages: z.record(z.enum(FOLLOWUP_SUBTYPES), z.string().max(1000)).optional(),
+    emailReminders: z.boolean().optional(),
 }).nullable();
 
 /** The viewer's follow-up overrides (null = defaults). */

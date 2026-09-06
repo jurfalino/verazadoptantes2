@@ -20,10 +20,16 @@ import {
     computeFollowups, mergeSchedule, mergeFosterRule, parseFollowupSettings,
     DEFAULT_SCHEDULE, type FollowupSettings, type RecordedFollowup,
 } from '../../../src/domain/followups';
-import { dedupKey, notificationTitle, notificationBody } from './copy';
+import { dedupKey, notificationTitle, notificationBody, buildFollowupEmail } from './copy';
 
 interface Env {
     DB: D1Database;
+    /** Deep-link base for notification/email URLs (wrangler [vars]). */
+    APP_BASE_URL?: string;
+    /** Optional overrides; app_config rows RESEND_API_KEY / EMAIL_FROM are the
+     *  fallback (same env-first-then-appConfig convention as emailOtp.ts). */
+    RESEND_API_KEY?: string;
+    EMAIL_FROM?: string;
 }
 
 /** Adoption candidates are bounded (180d slot + window + margin); FOSTERS ARE
@@ -40,13 +46,17 @@ type PlacementRow = {
 
 export default {
     async scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
-        const summary = { scanned: 0, due: 0, notified: 0, deduped: 0, skippedOwners: 0, errors: 0 };
+        const summary = { scanned: 0, due: 0, notified: 0, deduped: 0, emailed: 0, emailFailed: 0, skippedOwners: 0, errors: 0 };
         try {
             // ── gates: mirror createNotification's kill switch + the feature flag ──
+            // (+ email config, env-first then app_config — the emailOtp convention)
             const flags = await env.DB.prepare(
-                `SELECT key, value FROM app_config WHERE key IN ('ENABLE_FOLLOWUPS', 'NOTIF_ENABLED_follow_up_due')`
+                `SELECT key, value FROM app_config WHERE key IN ('ENABLE_FOLLOWUPS', 'NOTIF_ENABLED_follow_up_due', 'RESEND_API_KEY', 'EMAIL_FROM')`
             ).all<{ key: string; value: string }>();
             const flagMap = new Map((flags.results || []).map(r => [r.key, r.value]));
+            const resendKey = env.RESEND_API_KEY || flagMap.get('RESEND_API_KEY') || '';
+            const emailFrom = env.EMAIL_FROM || flagMap.get('EMAIL_FROM') || 'noreply@buenadoptante.org';
+            const baseUrl = (env.APP_BASE_URL || 'https://buenadoptante.org').replace(/\/$/, '');
             if (flagMap.get('ENABLE_FOLLOWUPS') !== 'true') {
                 console.log(JSON.stringify({ op: 'followup-cron', skipped: 'ENABLE_FOLLOWUPS off' }));
                 return;
@@ -76,22 +86,13 @@ export default {
             });
             summary.scanned = rows.length;
 
-            // ── per-owner settings + team recipients, fetched once per owner ──
+            // ── team recipients per owner, then settings for EVERY email involved ──
             // The OWNER's schedule decides the slots; the whole org receives the
-            // reminder (v2.55.18, user decision), each member deduped on their own.
+            // reminder (v2.55.18), each member deduped on their own — and each
+            // RECIPIENT's own settings decide their email opt-in (v2.55.19).
             const owners = Array.from(new Set(rows.map(r => r.added_by)));
-            const settingsByOwner = new Map<string, FollowupSettings | null>();
             const recipientsByOwner = new Map<string, string[]>();
             for (const email of owners) {
-                try {
-                    const row = await env.DB.prepare(
-                        `SELECT up.followup_settings AS s FROM user_profiles up JOIN user u ON u.id = up.user_id WHERE u.email = ? LIMIT 1`
-                    ).bind(email).first<{ s: string | null }>();
-                    settingsByOwner.set(email, parseFollowupSettings(row?.s));
-                } catch (e) {
-                    console.log(JSON.stringify({ op: 'followup-cron', warn: 'settings fallback', email, error: String(e) }));
-                    settingsByOwner.set(email, null);
-                }
                 try {
                     const mates = await env.DB.prepare(
                         `SELECT DISTINCT m2.user_email AS e
@@ -106,13 +107,26 @@ export default {
                     recipientsByOwner.set(email, [email]);
                 }
             }
+            const everyEmail = Array.from(new Set([...owners, ...[...recipientsByOwner.values()].flat()]));
+            const settingsByEmail = new Map<string, FollowupSettings | null>();
+            for (const email of everyEmail) {
+                try {
+                    const row = await env.DB.prepare(
+                        `SELECT up.followup_settings AS s FROM user_profiles up JOIN user u ON u.id = up.user_id WHERE u.email = ? LIMIT 1`
+                    ).bind(email).first<{ s: string | null }>();
+                    settingsByEmail.set(email, parseFollowupSettings(row?.s));
+                } catch (e) {
+                    console.log(JSON.stringify({ op: 'followup-cron', warn: 'settings fallback', email, error: String(e) }));
+                    settingsByEmail.set(email, null);
+                }
+            }
 
             const now = new Date();
             for (let i = 0; i < rows.length; i += CHUNK) {
                 const chunk = rows.slice(i, i + CHUNK);
                 await Promise.all(chunk.map(async (p) => {
                     try {
-                        const settings = settingsByOwner.get(p.added_by) ?? null;
+                        const settings = settingsByEmail.get(p.added_by) ?? null;
                         const [events, careEvents] = await Promise.all([
                             env.DB.prepare(
                                 `SELECT id, date, followup_key, followup_subtype, event_type, placement_id
@@ -167,6 +181,34 @@ export default {
                                     Math.floor(s.windowEndsAt.getTime() / 1000),
                                 ).run();
                                 summary.notified++;
+
+                                // v2.55.19: opt-in email delivery — the RECIPIENT's own
+                                // setting decides. Rides the insert above, so it inherits
+                                // the exact same once-ever dedup; a send failure never
+                                // fails the bell notification.
+                                if (resendKey && settingsByEmail.get(recipient)?.emailReminders === true) {
+                                    try {
+                                        const mail = buildFollowupEmail(
+                                            p.name,
+                                            notificationBody(s, p.adopter_name, p.record_type === 'foster'),
+                                            `${baseUrl}/my-animals/${p.animal_id}#next-action`,
+                                        );
+                                        const res = await fetch('https://api.resend.com/emails', {
+                                            method: 'POST',
+                                            headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ from: emailFrom, to: recipient, subject: mail.subject, html: mail.html, text: mail.text }),
+                                        });
+                                        if (res.ok) summary.emailed++;
+                                        else {
+                                            summary.emailFailed++;
+                                            const apiError = await res.text().catch(() => '');
+                                            console.log(JSON.stringify({ op: 'followup-cron', warn: 'email send rejected', status: res.status, apiError: apiError.slice(0, 200), placementId: p.id, slot: s.key }));
+                                        }
+                                    } catch (e) {
+                                        summary.emailFailed++;
+                                        console.log(JSON.stringify({ op: 'followup-cron', warn: 'email send threw', placementId: p.id, slot: s.key, error: String(e) }));
+                                    }
+                                }
                             }
                         }
                     } catch (e) {

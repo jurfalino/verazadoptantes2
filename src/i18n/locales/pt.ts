@@ -1467,6 +1467,9 @@ export const pt = {
         read_more: 'ler mais',
     },
     followups: {
+        delivery_title: 'Como receber os lembretes',
+        delivery_hint: 'O sininho do app sempre avisa. Além disso, você pode recebê-los por e-mail.',
+        toggle_email: 'Receber lembretes também por e-mail',
         checkin_7d: 'Controle da primeira semana',
         checkin_30d: 'Controle do primeiro mês',
         checkin_180d: 'Controle dos 6 meses',

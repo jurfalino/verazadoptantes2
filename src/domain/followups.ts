@@ -85,6 +85,10 @@ export interface FollowupSettings {
     checkins?: { offsetDays: number; windowDays?: number }[];
     fosterIntervalDays?: number;
     messages?: Partial<Record<FollowupSubtype, string>>;
+    /** v2.55.19: ALSO deliver this user's follow-up reminders by email
+     *  (opt-in; the bell always fires). Per-recipient — with team reminders,
+     *  each member chooses their own channel. */
+    emailReminders?: boolean;
 }
 
 /** Tolerant parse: garbage/legacy JSON → null (defaults). Never throws. */
@@ -105,6 +109,7 @@ export function parseFollowupSettings(json: string | null | undefined): Followup
             if (checkins.length) out.checkins = checkins;
         }
         if (Number.isFinite(parsed.fosterIntervalDays)) out.fosterIntervalDays = Math.max(7, Math.round(parsed.fosterIntervalDays));
+        if (parsed.emailReminders === true) out.emailReminders = true;
         if (parsed.messages && typeof parsed.messages === 'object') {
             const messages: Partial<Record<FollowupSubtype, string>> = {};
             for (const st of FOLLOWUP_SUBTYPES) {

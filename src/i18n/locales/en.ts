@@ -1462,6 +1462,9 @@ export const en = {
         read_more: 'read more',
     },
     followups: {
+        delivery_title: 'How to receive reminders',
+        delivery_hint: 'The in-app bell always notifies you. You can also get them by email.',
+        toggle_email: 'Also receive reminders by email',
         checkin_7d: 'First-week check-in',
         checkin_30d: 'First-month check-in',
         checkin_180d: 'Six-month check-in',

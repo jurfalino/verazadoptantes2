@@ -30,3 +30,17 @@ on the app's D1 and inserts `follow_up_due` rows into `notifications`.
 
 Manual deploy (if CI is down):
 `npx wrangler deploy --config workers/followup-cron/wrangler.toml [--env staging]`
+
+## Email delivery (v2.55.19, opt-in)
+
+When a recipient has «Recibir recordatorios también por e-mail» enabled in
+Configuración → Seguimientos (`followup_settings.emailReminders`), the Worker
+also sends the reminder via Resend at the moment it inserts the bell row — so
+emails inherit the same once-ever (placement, slot, recipient) dedup, and a
+send failure never blocks the bell.
+
+Config resolution (same convention as the email-OTP feature): env first, then
+`app_config` rows — `RESEND_API_KEY` (required for sends; absent → emails are
+silently skipped, bell only) and `EMAIL_FROM` (default
+`noreply@buenadoptante.org`, requires the domain verified in Resend).
+`APP_BASE_URL` in wrangler `[vars]` builds the email's deep link per env.

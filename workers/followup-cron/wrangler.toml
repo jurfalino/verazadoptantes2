@@ -10,6 +10,10 @@ compatibility_date = "2025-01-27"
 [triggers]
 crons = ["0 12 * * *"] # 09:00 America/Argentina/Buenos_Aires
 
+[vars]
+# Deep-link base for notification/email URLs.
+APP_BASE_URL = "https://buenadoptante.org"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "pet-adoption-db"
@@ -17,6 +21,9 @@ database_id = "62ec01e7-deae-4536-be62-7c0a0064b45c"
 
 [env.staging]
 name = "buenadoptante-followup-cron-staging"
+
+[env.staging.vars]
+APP_BASE_URL = "https://staging.verazadoptantes2.pages.dev"
 
 [env.staging.triggers]
 crons = ["0 12 * * *"]
