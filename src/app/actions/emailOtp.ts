@@ -39,7 +39,10 @@ export type RequestEmailOtpResult =
         errorId?: string;
     };
 
-const DEFAULT_EMAIL_FROM = 'noreply@buenadoptante.org';
+// "Name <address>" so inboxes show the brand rather than a bare address, which
+// reads as automated spam. Mirrored in wrangler.toml [vars] and the
+// followup-cron worker's own default — all three must agree.
+const DEFAULT_EMAIL_FROM = 'BuenAdoptante <noreply@buenadoptante.org>';
 const HOUR_MS = 60 * 60_000;
 const PURGE_AFTER_MS = 24 * HOUR_MS;
 

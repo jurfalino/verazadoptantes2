@@ -50,5 +50,7 @@ list with per-row links and a button to /my-animals. Capped at
 Config resolution (same convention as the email-OTP feature): env first, then
 `app_config` rows — `RESEND_API_KEY` (required for sends; absent → emails are
 silently skipped, bell only) and `EMAIL_FROM` (default
-`noreply@buenadoptante.org`, requires the domain verified in Resend).
+`BuenAdoptante <noreply@buenadoptante.org>` — the display-name form, so inboxes
+show the brand rather than a bare address; requires the domain verified in
+Resend).
 `APP_BASE_URL` in wrangler `[vars]` builds the email's deep link per env.

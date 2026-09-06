@@ -18,6 +18,27 @@ committed content; no application code changes.
 > Staging note: `git add -A` / `-u` is unsafe in this repo precisely because
 > those runtime databases are tracked. Stage explicit paths.
 
+## [2.56.4] - 2026-09-06
+
+### Fixed — emails now come from "BuenAdoptante", not a bare address
+
+- The first real OTP email arrived showing `noreply@buenadoptante.org` as the
+  sender, which reads as automated spam. `EMAIL_FROM` is now the display-name
+  form, `BuenAdoptante <noreply@buenadoptante.org>` (the spelling the manifest
+  and site metadata already use), in all three places that resolve it:
+  `wrangler.toml` `[vars]` (both default and preview), the OTP action's
+  fallback, and the followup-cron worker's own fallback — so follow-up
+  reminder emails get the same treatment. Verified against the live Resend API
+  before shipping.
+- No `EMAIL_FROM` row exists in `app_config`, so the wrangler `[vars]` value is
+  what was actually in effect; a DB row still overrides both if one is ever set.
+- **Version guard fix**: `check-version-bump.mjs` started its scan at `HEAD~1`
+  unconditionally. That is correct when the bump is already committed (CI, the
+  pre-push hook), but when run by hand after `npm version` the candidate is the
+  working tree — so HEAD was skipped, leaving the guard blind to precisely the
+  parallel-session case it was written for. The start ref now depends on
+  whether the working tree's version differs from HEAD's.
+
 ## [2.56.2] - 2026-09-06
 
 ### Fixed — the service worker's API cache TTL was never applied

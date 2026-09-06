@@ -70,7 +70,7 @@ export default {
             ).all<{ key: string; value: string }>();
             const flagMap = new Map((flags.results || []).map(r => [r.key, r.value]));
             const resendKey = env.RESEND_API_KEY || flagMap.get('RESEND_API_KEY') || '';
-            const emailFrom = env.EMAIL_FROM || flagMap.get('EMAIL_FROM') || 'noreply@buenadoptante.org';
+            const emailFrom = env.EMAIL_FROM || flagMap.get('EMAIL_FROM') || 'BuenAdoptante <noreply@buenadoptante.org>';
             const baseUrl = (env.APP_BASE_URL || 'https://buenadoptante.org').replace(/\/$/, '');
             if (flagMap.get('ENABLE_FOLLOWUPS') !== 'true') {
                 console.log(JSON.stringify({ op: 'followup-cron', skipped: 'ENABLE_FOLLOWUPS off' }));
