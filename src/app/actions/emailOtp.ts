@@ -134,7 +134,7 @@ export async function requestEmailOtp(emailRaw: string, locale: string): Promise
         }
 
         const emailLocale: EmailLocale = locale === 'en' || locale === 'pt' ? locale : 'es';
-        const message = buildOtpEmail(code, emailLocale);
+        const message = buildOtpEmail(code, emailLocale, Math.round(OTP_TTL_MS / 60_000));
         const sent = await sendEmailViaResend({ apiKey, from, to: email, ...message });
         if (!sent.ok) {
             // The user must know the code isn't coming — retire it and be honest.

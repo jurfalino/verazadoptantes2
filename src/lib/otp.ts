@@ -14,10 +14,17 @@
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
 
-export const OTP_TTL_MS = 10 * 60_000; // code lifetime
+// Code lifetime. Raised from 10 minutes to an hour (v2.56.5) so a slow inbox
+// or a user who steps away mid-sign-in doesn't have to start over. This costs
+// little: guessing is bounded by OTP_MAX_ATTEMPTS per code and by the issuance
+// limits below, not by the window — a longer TTL buys an attacker no extra
+// tries. What it widens is how long a working code sits in an inbox.
+// The email states this duration; it is passed to buildOtpEmail rather than
+// written into the copy, so the two cannot drift apart.
+export const OTP_TTL_MS = 60 * 60_000;
 export const OTP_MAX_ATTEMPTS = 5; // failed verifies before the code is retired
 export const OTP_MIN_GAP_MS = 60_000; // min gap between sends per email
-export const OTP_HOURLY_MAX = 5; // sends per email per hour
+export const OTP_HOURLY_MAX = 10; // sends per email per hour
 export const OTP_IP_HOURLY_MAX = 15; // sends per IP per hour
 
 // Deliberately minimal: real validation is the code arriving in the inbox.

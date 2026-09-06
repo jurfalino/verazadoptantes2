@@ -18,6 +18,26 @@ committed content; no application code changes.
 > Staging note: `git add -A` / `-u` is unsafe in this repo precisely because
 > those runtime databases are tracked. Stage explicit paths.
 
+## [2.56.5] - 2026-09-06
+
+### Changed — login codes last an hour, and the email says so on its own
+
+- **`OTP_TTL_MS` 10 minutes → 60 minutes.** A slow inbox or a user who steps
+  away mid-sign-in no longer has to start over. The security cost is small:
+  guessing is bounded by the 5-attempts-per-code cap and by the issuance
+  limits, not by the window, so a longer TTL buys an attacker no extra tries —
+  what it widens is how long a working code sits in an inbox. Expiry is stamped
+  per row, so this affects newly issued codes only; nothing to backfill.
+- **`OTP_HOURLY_MAX` 5 → 10** sends per email per hour, so someone fighting a
+  slow inbox isn't locked out mid-retry. The per-IP cap (15/hour) and the 60s
+  minimum gap between sends are unchanged.
+- **The stated expiry can no longer drift from the enforced one.** The email
+  copy hardcoded "10 minutes" in three locale strings, so raising the TTL alone
+  would have left the email lying. `buildOtpEmail` now takes the duration and
+  renders it per locale — and whole hours read as "1 hora" / "1 hour", not
+  "60 minutos". Covered by `src/lib/email.test.ts`, including a test that
+  builds the email from the real `OTP_TTL_MS`.
+
 ## [2.56.4] - 2026-09-06
 
 ### Fixed — emails now come from "BuenAdoptante", not a bare address
