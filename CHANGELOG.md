@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.8] - 2026-09-06
+
+### Changed — follow-ups are ON by default, and flag registration is now tested
+
+`ENABLE_FOLLOWUPS` defaults to **true** in every place a default is expressed
+(features.ts const, getAllFeatureFlags, the admin page's initial state and
+hydration, the config API's echo, and the settings section, which now hides only
+on an explicit `false`). The flag stays as a one-click kill switch — it is no
+longer the thing standing between the feature and the user. The cron keeps its
+own `NOTIF_ENABLED_follow_up_due` switch, and email still requires a Resend key.
+
+New `src/config/featureFlagRegistration.test.ts` asserts every flag in
+`FEATURE_FLAGS` appears in the admin toggle list, the page's hydration and the
+config API's response, plus that client-visible flags are in `PUBLIC_FLAG_KEYS`.
+This is the test that would have caught v2.55.16 shipping a flag no admin could
+switch on; it was verified to fail (with a remediation message naming the file)
+when the registration is removed.
+
 ## [2.56.7] - 2026-09-06
 
 ### Fixed — two defects found in the post-implementation review

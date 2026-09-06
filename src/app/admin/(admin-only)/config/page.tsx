@@ -117,7 +117,7 @@ export default function AdminConfigPage() {
         ENABLE_GUIDED_WALKTHROUGH: false,
         ENABLE_HOUSEHOLD_MEMBERS: false,
         ENABLE_EMAIL_OTP: false,
-        ENABLE_FOLLOWUPS: false,
+        ENABLE_FOLLOWUPS: true,
     });
     const [instagramUrl, setInstagramUrl] = useState('');
     const [savingInstagram, setSavingInstagram] = useState(false);
@@ -180,7 +180,8 @@ export default function AdminConfigPage() {
                         ENABLE_GUIDED_WALKTHROUGH: data.config?.ENABLE_GUIDED_WALKTHROUGH === 'true',
                         ENABLE_HOUSEHOLD_MEMBERS: data.config?.ENABLE_HOUSEHOLD_MEMBERS === 'true',
                         ENABLE_EMAIL_OTP: data.config?.ENABLE_EMAIL_OTP === 'true',
-                        ENABLE_FOLLOWUPS: data.config?.ENABLE_FOLLOWUPS === 'true',
+                        // default ON: an absent row means enabled (features.ts default)
+                        ENABLE_FOLLOWUPS: data.config?.ENABLE_FOLLOWUPS !== 'false',
                     });
                     setInstagramUrl(data.config?.INSTAGRAM_URL || '');
                     setGeminiDefaultModel(data.config?.GEMINI_DEFAULT_MODEL || '');

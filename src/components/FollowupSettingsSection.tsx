@@ -87,7 +87,9 @@ export default function FollowupSettingsSection() {
                 const cfgRes = await fetch('/api/config');
                 if (cfgRes.ok) {
                     const cfg = await cfgRes.json() as { config?: Record<string, unknown> };
-                    if (cfg.config?.ENABLE_FOLLOWUPS !== true && cfg.config?.ENABLE_FOLLOWUPS !== 'true') return;
+                    // Default ON: only an explicit 'false' hides the section, so a
+                    // deployment that never set the row still shows the settings.
+                    if (cfg.config?.ENABLE_FOLLOWUPS === false || cfg.config?.ENABLE_FOLLOWUPS === 'false') return;
                     setEnabled(true);
                     const settings = await getFollowupSettings();
                     setDraft(draftFrom(settings));

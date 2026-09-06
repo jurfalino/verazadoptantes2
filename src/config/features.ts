@@ -20,7 +20,10 @@ export const FEATURE_FLAGS = {
     // timeline + banner on the animal page, the per-user schedule section in
     // /settings, the /my-animals pendientes badges, and (PR4) the reminder
     // cron Worker's run gate. Client-visible → also in PUBLIC_FLAG_KEYS.
-    ENABLE_FOLLOWUPS: false,
+    // v2.56.8: defaults ON — the feature is the product, not an experiment.
+    // This stays a flag only as a one-click kill switch if reminders misbehave;
+    // the cron additionally honors NOTIF_ENABLED_follow_up_due.
+    ENABLE_FOLLOWUPS: true,
     ENABLE_SEARCH_CARD_METADATA: true,
     ENABLE_CHAT_WIDGET: false,
     // PostHog session replay + product analytics (v2.49.0). Runs in PARALLEL
@@ -169,7 +172,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
     const result: Record<FeatureFlag, boolean> = {
         ENABLE_CONTENT_IMPORT: false,
         ENABLE_ANIMALS_FOR_ADOPTION: false,
-        ENABLE_FOLLOWUPS: false,
+        ENABLE_FOLLOWUPS: true,
         ENABLE_EMAIL_OTP: false,
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,

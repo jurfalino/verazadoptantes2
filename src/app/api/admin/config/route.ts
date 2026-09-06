@@ -87,7 +87,7 @@ export async function GET() {
             // instance of this bug; see the v2.19.48 note above.
             ENABLE_HOUSEHOLD_MEMBERS: config['ENABLE_HOUSEHOLD_MEMBERS'] || 'false',
             ENABLE_EMAIL_OTP: config['ENABLE_EMAIL_OTP'] || 'false',
-            ENABLE_FOLLOWUPS: config['ENABLE_FOLLOWUPS'] || 'false',
+            ENABLE_FOLLOWUPS: config['ENABLE_FOLLOWUPS'] || 'true',
             // Telegram support chat — chat_id is non-sensitive and returned
             // verbatim. The bot token and webhook secret are sensitive: never
             // returned to the client. Instead we expose a *_SET indicator so
