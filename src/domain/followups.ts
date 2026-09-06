@@ -89,6 +89,11 @@ export interface FollowupSettings {
      *  (opt-in; the bell always fires). Per-recipient — with team reminders,
      *  each member chooses their own channel. */
     emailReminders?: boolean;
+    /** v2.55.20: only be reminded about animals I added. Team reminders are
+     *  the default ("everyone is responsible"), but on a big team that becomes
+     *  "nobody is" — this opts the member out of teammates' reminders without
+     *  touching visibility (they still see and can act on every team animal). */
+    onlyMyAnimals?: boolean;
 }
 
 /** Tolerant parse: garbage/legacy JSON → null (defaults). Never throws. */
@@ -110,6 +115,7 @@ export function parseFollowupSettings(json: string | null | undefined): Followup
         }
         if (Number.isFinite(parsed.fosterIntervalDays)) out.fosterIntervalDays = Math.max(7, Math.round(parsed.fosterIntervalDays));
         if (parsed.emailReminders === true) out.emailReminders = true;
+        if (parsed.onlyMyAnimals === true) out.onlyMyAnimals = true;
         if (parsed.messages && typeof parsed.messages === 'object') {
             const messages: Partial<Record<FollowupSubtype, string>> = {};
             for (const st of FOLLOWUP_SUBTYPES) {

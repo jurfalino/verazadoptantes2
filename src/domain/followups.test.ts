@@ -170,3 +170,18 @@ describe('mergeSchedule / mergeFosterRule / settings parse', () => {
         expect(getMessageTemplate('adaptation', { version: 1, messages: { neuter: 'custom' } })).toBe(DEFAULT_MESSAGES.adaptation);
     });
 });
+
+describe('v2.55.20 preferences', () => {
+    it('parses onlyMyAnimals + emailReminders, ignoring non-true values', () => {
+        expect(parseFollowupSettings('{"version":1,"onlyMyAnimals":true,"emailReminders":true}'))
+            .toEqual({ version: 1, onlyMyAnimals: true, emailReminders: true });
+        // Only a literal `true` opts in — "false"/1/"yes" must not enable it.
+        expect(parseFollowupSettings('{"version":1,"onlyMyAnimals":"true","emailReminders":1}'))
+            .toEqual({ version: 1 });
+    });
+
+    it('the scan bound still covers the longest DEFAULT slot (worker guard invariant)', () => {
+        const longest = DEFAULT_SCHEDULE.reduce((max, e) => Math.max(max, (e.offsetDays ?? 0) + e.windowDays), 0);
+        expect(longest).toBeLessThan(400); // ADOPTION_SCAN_DAYS in workers/followup-cron
+    });
+});

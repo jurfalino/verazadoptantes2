@@ -1467,6 +1467,7 @@ export const es = {
         read_more: 'leer más',
     },
     followups: {
+        toggle_only_mine: 'Recordarme solo los animales que cargué yo',
         delivery_title: 'Cómo recibir los recordatorios',
         delivery_hint: 'La campanita de la app avisa siempre. Además, podés recibirlos por e-mail.',
         toggle_email: 'Recibir recordatorios también por e-mail',

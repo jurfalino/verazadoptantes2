@@ -145,11 +145,9 @@ export default function AnimalProfile({ profile, applicants, userId }: {
             <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden" data-testid="animal-header">
                 <div className="relative" style={{ aspectRatio: '2 / 1' }}>
                     {heroUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
                         <img src={heroUrl} alt={animal.name || 'Animal'} className="absolute inset-0 w-full h-full object-cover" />
                     ) : (
                         <div className="absolute inset-0 bg-stone-100 flex items-center justify-center">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={placeholderFor(animal.species)} alt={animal.species || 'Animal'} className="w-full h-full object-contain p-10 opacity-40" />
                         </div>
                     )}
@@ -164,7 +162,6 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                     {images.length > 1 && (
                         <div className="absolute top-3 right-3 flex gap-1.5">
                             {images.slice(1, 3).map(im => (
-                                // eslint-disable-next-line @next/next/no-img-element
                                 <img key={im.id} src={im.thumbnailUrl || im.url} alt="" className="w-12 h-12 rounded-xl object-cover border border-white/40" />
                             ))}
                             {images.length > 3 && (

@@ -301,6 +301,7 @@ const followupSettingsSchema = z.object({
     fosterIntervalDays: z.number().int().min(7).max(120).optional(),
     messages: z.record(z.enum(FOLLOWUP_SUBTYPES), z.string().max(1000)).optional(),
     emailReminders: z.boolean().optional(),
+    onlyMyAnimals: z.boolean().optional(),
 }).nullable();
 
 /** The viewer's follow-up overrides (null = defaults). */

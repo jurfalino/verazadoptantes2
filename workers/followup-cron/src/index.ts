@@ -33,8 +33,23 @@ interface Env {
 }
 
 /** Adoption candidates are bounded (180d slot + window + margin); FOSTERS ARE
- *  NOT — a long-lived transit still gets its monthly check-in. */
+ *  NOT — a long-lived transit still gets its monthly check-in.
+ *
+ *  ⚠️ This bound must always exceed the LONGEST schedulable slot + its window,
+ *  or placements would be skipped SILENTLY. `assertScanBoundCovers()` below
+ *  logs loudly if a schedule (default or user-customized) ever outgrows it —
+ *  e.g. if someone adds a 1-year check-in. */
 const ADOPTION_SCAN_DAYS = 400;
+
+function assertScanBoundCovers(schedule: { offsetDays?: number; windowDays: number }[]): void {
+    const longest = schedule.reduce((max, e) => Math.max(max, (e.offsetDays ?? 0) + e.windowDays), 0);
+    if (longest > ADOPTION_SCAN_DAYS) {
+        console.log(JSON.stringify({
+            op: 'followup-cron', warn: 'SCAN BOUND TOO SMALL — older placements are being skipped',
+            longestSlotDays: longest, scanBoundDays: ADOPTION_SCAN_DAYS,
+        }));
+    }
+}
 const CHUNK = 20;
 
 type PlacementRow = {
@@ -127,6 +142,7 @@ export default {
                 await Promise.all(chunk.map(async (p) => {
                     try {
                         const settings = settingsByEmail.get(p.added_by) ?? null;
+                        if (p.record_type === 'adoption') assertScanBoundCovers(mergeSchedule(DEFAULT_SCHEDULE, settings));
                         const [events, careEvents] = await Promise.all([
                             env.DB.prepare(
                                 `SELECT id, date, followup_key, followup_subtype, event_type, placement_id
@@ -156,7 +172,12 @@ export default {
                         }).filter(s => s.status === 'due'); // NEVER missed — storm guard #1
                         summary.due += slots.length;
 
-                        const recipients = recipientsByOwner.get(p.added_by) ?? [p.added_by];
+                        // v2.55.20: a member who chose «solo los animales que
+                        // cargué yo» is dropped from OTHER people's animals
+                        // (the owner always keeps their own). Visibility is
+                        // unaffected — this is purely about being pinged.
+                        const recipients = (recipientsByOwner.get(p.added_by) ?? [p.added_by])
+                            .filter(r => r === p.added_by || settingsByEmail.get(r)?.onlyMyAnimals !== true);
                         for (const s of slots) {
                             for (const recipient of recipients) {
                                 const key = dedupKey(p.id, s.key, recipient);
@@ -216,6 +237,24 @@ export default {
                         console.log(JSON.stringify({ op: 'followup-cron', warn: 'placement fallback', placementId: p.id, animalId: p.animal_id, owner: p.added_by, error: String(e) }));
                     }
                 }));
+            }
+            // ── retention: prune this cron's own expired notifications ──
+            // v2.55.20: `notifications` had no cleanup path, and team fan-out
+            // multiplies growth by team size. Only OUR type is touched, and only
+            // rows whose actionable window closed 90+ days ago — the dedup keys
+            // they carry are moot by then (the slot is long 'missed', which the
+            // Worker never notifies). Best-effort: a failure never fails the run.
+            try {
+                const pruned = await env.DB.prepare(
+                    `DELETE FROM notifications
+                     WHERE type = 'follow_up_due'
+                       AND expires_at IS NOT NULL
+                       AND expires_at < strftime('%s','now') - 90 * 86400`
+                ).run();
+                const n = pruned.meta?.changes ?? 0;
+                if (n > 0) console.log(JSON.stringify({ op: 'followup-cron', pruned: n }));
+            } catch (e) {
+                console.log(JSON.stringify({ op: 'followup-cron', warn: 'retention prune failed', error: String(e) }));
             }
         } catch (e) {
             summary.errors++;

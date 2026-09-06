@@ -26,6 +26,8 @@ type Draft = {
     messages: Record<FollowupSubtype, string>;
     /** v2.55.19: opt-in email delivery of the reminders (bell always fires). */
     emailReminders: boolean;
+    /** v2.55.20: only be reminded about animals I added. */
+    onlyMyAnimals: boolean;
 };
 
 function draftFrom(settings: FollowupSettings | null): Draft {
@@ -40,12 +42,13 @@ function draftFrom(settings: FollowupSettings | null): Draft {
         fosterIntervalDays: settings?.fosterIntervalDays ?? DEFAULT_FOSTER_RULE.intervalDays,
         messages: { ...DEFAULT_MESSAGES, ...(settings?.messages || {}) },
         emailReminders: settings?.emailReminders === true,
+        onlyMyAnimals: settings?.onlyMyAnimals === true,
     };
 }
 
 function isDefaultDraft(d: Draft): boolean {
     const defOffsets = DEFAULT_SCHEDULE.filter(e => e.kind === 'checkin').map(e => e.offsetDays);
-    return d.vaccines && d.neuter && d.foster && !d.emailReminders
+    return d.vaccines && d.neuter && d.foster && !d.emailReminders && !d.onlyMyAnimals
         && d.fosterIntervalDays === DEFAULT_FOSTER_RULE.intervalDays
         && JSON.stringify([...d.checkins.map(c => c.offsetDays)].sort((a, b) => a - b)) === JSON.stringify(defOffsets)
         && FOLLOWUP_SUBTYPES.every(st => d.messages[st] === DEFAULT_MESSAGES[st]);
@@ -67,6 +70,7 @@ function settingsFrom(d: Draft): FollowupSettings {
         fosterIntervalDays: Math.max(7, Math.min(120, Math.round(d.fosterIntervalDays) || DEFAULT_FOSTER_RULE.intervalDays)),
         ...(Object.keys(messages).length ? { messages } : {}),
         ...(d.emailReminders ? { emailReminders: true } : {}),
+        ...(d.onlyMyAnimals ? { onlyMyAnimals: true } : {}),
     };
 }
 
@@ -182,6 +186,16 @@ export default function FollowupSettingsSection() {
                     data-testid="followup-email-toggle"
                 />
                 {t('followups.toggle_email') || 'Recibir recordatorios también por e-mail'}
+            </label>
+            <label className="flex items-center gap-2 mt-2 text-sm text-stone-700 cursor-pointer">
+                <input
+                    type="checkbox"
+                    checked={draft.onlyMyAnimals}
+                    onChange={e => set({ onlyMyAnimals: e.target.checked })}
+                    className="w-4 h-4 rounded accent-teal-600"
+                    data-testid="followup-only-mine-toggle"
+                />
+                {t('followups.toggle_only_mine') || 'Recordarme solo los animales que cargué yo'}
             </label>
 
             {/* message templates */}

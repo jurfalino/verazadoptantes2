@@ -37,6 +37,45 @@ All notable changes to BuenAdoptante are documented here.
   `RESEND_API_KEY` (Pages secret or `app_config` row) and a verified sending
   domain for `noreply@buenadoptante.org` in Resend.
 
+## [2.55.20] - 2026-09-06
+
+### Fixed — EM review of the animal-timeline feature (blocking + significant)
+
+- **Animal delete is now a SOFT delete.** Team parity lets any org member delete
+  a teammate's animal, and the old path hard-deleted the animal, its placements,
+  images and whole documented history with no undo. It now stamps
+  `animals.deletedAt` (the column the normalization plan always intended for
+  this) and closes any active span; the `adoptions` compat view already filters
+  it, so every list hides it immediately and an admin can restore it.
+- **`/my-animals/new?edit=` no longer honors edit mode.** That form submits a
+  hardcoded `recordType:'available', adopterId:null` envelope, so saving it for
+  an existing animal ends its foster/adoption span. v2.55.15 moved editing
+  in-place and removed every UI link, but the URL stayed reachable — and since
+  v2.55.18 its lookup is team-scoped, so a stale bookmark could silently
+  un-place a *teammate's* animal. It now redirects to the animal's page.
+- **`/api/my-animals` follow-up badges no longer fan out per row.** The four
+  per-animal queries are bulk-loaded once per request (N×4 → 4), keeping a large
+  rescuer's list far from the Workers subrequest limit this route has hit before.
+- **The cron's dedup lookup is indexed** (`0067`, expression index on
+  `json_extract(metadata,'$.dedupKey')` filtered to `follow_up_due`; query plan
+  verified as an index SEARCH, not a scan).
+- **Notification retention**: each run prunes its own `follow_up_due` rows whose
+  window closed 90+ days ago — the table had no cleanup path and team fan-out
+  multiplies growth.
+- **Adopter-page parity**: org-mates can edit/delete a teammate's activity records
+  there too (`AdoptionHistory` canEdit + the `deleteAdoption` server gate), so the
+  same record isn't editable on the animal page and read-only on the adopter page.
+- **The worker's 400-day scan bound now asserts itself** — it logs loudly if a
+  schedule ever outgrows it instead of silently skipping placements.
+
+### Added — «Recordarme solo los animales que cargué yo»
+
+Per-user preference (`followup_settings.onlyMyAnimals`) so a member of a large
+team can opt out of teammates' reminders without losing visibility — they still
+see and can act on every team animal. Owners always keep their own animals'
+reminders. Prevents the "everyone is notified, so nobody acts" failure mode and
+cuts email volume. i18n ×3, plus tests for the parse and the scan-bound invariant.
+
 ## [2.55.19] - 2026-09-06
 
 ### Added — follow-up reminders by email (opt-in)

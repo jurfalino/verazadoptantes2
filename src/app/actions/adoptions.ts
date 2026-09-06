@@ -8,7 +8,7 @@ import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { tokenizeAdopter } from './duplicates';
 import { saveAdoptionSchema } from './validation';
-import { insertRecord, updateRecord, deleteRecordById } from './_recordWrite';
+import { insertRecord, updateRecord, deleteRecordById, softDeleteAnimal } from './_recordWrite';
 
 export async function saveAdoption(data: typeof adoptions.$inferInsert) {
     // Validate input
@@ -192,8 +192,12 @@ export async function deleteAdoption(adoptionId: string, adopterId: string) {
         // v2.19.68: previously UNGUARDED — any authenticated user could delete
         // any activity record. Gate to the record's creator OR an admin, matching
         // the UI (AdoptionHistory: canEdit = isAdmin || addedBy === currentUser).
+        // v2.55.20: org-mates too — the UI now offers edit/delete on a
+        // teammate's records (AdoptionHistory canEdit), so the server gate must
+        // agree or the affordance fails on save.
         const { isAdminAsync } = await import('@/config/admins');
-        if (existing.addedBy !== changedBy && !await isAdminAsync(changedBy)) {
+        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+        if (!(await isOwnerOrOrgMate(changedBy, existing.addedBy)) && !await isAdminAsync(changedBy)) {
             throw new Error("Not authorized to delete this record");
         }
 
@@ -328,10 +332,14 @@ export async function deleteAnimalForAdoption(adoptionId: string) {
         const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
         if (!(await isOwnerOrOrgMate(changedBy, existing.addedBy)) && !await isAdminAsync(changedBy)) throw new Error("Not authorized to delete this animal");
 
-        // Delete the animal record + its placements + adoption-linked images.
-        await deleteRecordById(db, adoptionId);
+        // v2.55.20: SOFT delete — team parity (any org member can delete a
+        // teammate's animal) makes an unrecoverable wipe of a documented
+        // history unacceptable. Falls back to the hard delete only if the id
+        // isn't an animal row (defensive; this action is animal-only).
+        const soft = await softDeleteAnimal(db, adoptionId, changedBy);
+        if (!soft) await deleteRecordById(db, adoptionId);
 
-        logAudit({ userEmail: changedBy, action: 'animal_for_adoption_deleted', target: adoptionId, details: { animalName: existing.animalName } });
+        logAudit({ userEmail: changedBy, action: 'animal_for_adoption_deleted', target: adoptionId, details: { animalName: existing.animalName, soft } });
         revalidatePath('/my-animals');
         logger.info('Animal for adoption deleted', { adoptionId, animalName: existing.animalName, changedBy });
 

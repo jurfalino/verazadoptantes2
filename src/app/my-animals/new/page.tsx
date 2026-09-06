@@ -44,11 +44,36 @@ interface ExistingImage {
     caption: string | null;
 }
 
+/**
+ * v2.55.20: this route is CREATE-ONLY.
+ *
+ * The form below submits a hardcoded envelope (`recordType:'available'`,
+ * `adopterId:null`), so saving it for an EXISTING animal ends any active
+ * foster/adoption span — the long-standing "editing a foster silently
+ * un-places it" bug. v2.55.15 moved identity editing in-place onto
+ * /my-animals/[id] (which patches only `animals` fields) and removed every UI
+ * link here, but `?edit=<id>` stayed reachable by URL — and since v2.55.18 the
+ * lookup is team-scoped, so a stale bookmark could silently un-place a
+ * TEAMMATE's animal. So `?edit=` is no longer honored: it redirects to the
+ * animal's page, where editing is safe.
+ */
 export default function NewAnimalPage() {
-    const router = useRouter();
     const searchParams = useSearchParams();
-    const editId = searchParams.get('edit');
-    const isEditMode = !!editId;
+    const legacyEditId = searchParams.get('edit');
+    const router = useRouter();
+
+    useEffect(() => {
+        if (legacyEditId) router.replace(`/my-animals/${legacyEditId}`);
+    }, [legacyEditId, router]);
+
+    if (legacyEditId) return null;
+    return <CreateAnimalForm />;
+}
+
+function CreateAnimalForm() {
+    const router = useRouter();
+    const editId: string | null = null;
+    const isEditMode = false;
 
     const { t, locale } = useLanguage();
     const { data: session } = useSession();

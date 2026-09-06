@@ -183,7 +183,6 @@ export default function AnimalTimeline({ items, animalSex, userNameMap = {}, org
                                 {item.images.length > 0 && (
                                     <div className="flex gap-1.5 mt-2">
                                         {item.images.slice(0, 4).map(im => (
-                                            // eslint-disable-next-line @next/next/no-img-element
                                             <img key={im.id} src={im.thumbnailUrl || im.url} alt={im.caption || ''} className="w-12 h-12 rounded-lg object-cover border border-stone-200" />
                                         ))}
                                         {item.images.length > 4 && (

@@ -116,18 +116,64 @@ export async function GET(request: NextRequest) {
             schedule: import('@/domain/followups').ScheduleEntry[];
             fosterRule: import('@/domain/followups').FosterRule;
             compute: typeof import('@/domain/followups').computeFollowups;
+            /** v2.55.20: bulk-loaded ONCE for the whole page — the per-row
+             *  fan-out (4 queries × N animals) pushed large rescuers toward the
+             *  Workers subrequest limit this route has already hit historically. */
+            activeByAnimal: Map<string, { id: string; startedAt: unknown; recordType: string }>;
+            eventsByAnimal: Map<string, { id: string; date: unknown; followupKey: string | null; followupSubtype: string | null; eventType: string; placementId: string | null }[]>;
+            careByAnimal: Map<string, { id: string; date: unknown; followupKey: string | null; eventType: string }[]>;
+            animalById: Map<string, { estimatedBirthDate: unknown; neutered: number | null }>;
         } = null;
         const followupsOn = await getFeatureFlag('ENABLE_FOLLOWUPS').catch(() => false);
         if (followupsOn && !idParam) {
             try {
                 const { computeFollowups, mergeSchedule, mergeFosterRule, parseFollowupSettings, DEFAULT_SCHEDULE } = await import('@/domain/followups');
-                const { users, userProfiles } = await import('@/db/schema');
+                const { users, userProfiles, placements, adopterEvents, animalEvents, animals } = await import('@/db/schema');
+                const { isNull: isNullOp } = await import('drizzle-orm');
                 const row = await db.select({ settings: userProfiles.followupSettings })
                     .from(userProfiles)
                     .innerJoin(users, eq(users.id, userProfiles.userId))
                     .where(eq(users.email, userEmail)).get();
                 const settings = parseFollowupSettings(row?.settings);
-                followupCtx = { schedule: mergeSchedule(DEFAULT_SCHEDULE, settings), fosterRule: mergeFosterRule(settings), compute: computeFollowups };
+
+                // Owner-scoped bulk reads: 4 queries TOTAL, independent of N.
+                const ownerMatch = or(...teamEmails.map((e: string) => eq(animals.addedBy, e)));
+                const [activeRows, evRows, careRows, animalRows] = await Promise.all([
+                    db.select({ id: placements.id, animalId: placements.animalId, startedAt: placements.startedAt, recordType: placements.recordType })
+                        .from(placements).innerJoin(animals, eq(animals.id, placements.animalId))
+                        .where(and(isNullOp(placements.endedAt), ownerMatch)).all(),
+                    db.select({ id: adopterEvents.id, animalId: adopterEvents.animalId, date: adopterEvents.date, followupKey: adopterEvents.followupKey, followupSubtype: adopterEvents.followupSubtype, eventType: adopterEvents.eventType, placementId: adopterEvents.placementId })
+                        .from(adopterEvents).innerJoin(animals, eq(animals.id, adopterEvents.animalId))
+                        .where(ownerMatch).all(),
+                    db.select({ id: animalEvents.id, animalId: animalEvents.animalId, date: animalEvents.date, followupKey: animalEvents.followupKey, eventType: animalEvents.eventType })
+                        .from(animalEvents).innerJoin(animals, eq(animals.id, animalEvents.animalId))
+                        .where(ownerMatch).all(),
+                    db.select({ id: animals.id, estimatedBirthDate: animals.estimatedBirthDate, neutered: animals.neutered })
+                        .from(animals).where(ownerMatch).all(),
+                ]);
+                type ActiveRow = { id: string; animalId: string; startedAt: unknown; recordType: string };
+                type EvRow = { id: string; animalId: string | null; date: unknown; followupKey: string | null; followupSubtype: string | null; eventType: string; placementId: string | null };
+                type CareRow = { id: string; animalId: string; date: unknown; followupKey: string | null; eventType: string };
+                type AnimalRow = { id: string; estimatedBirthDate: unknown; neutered: number | null };
+
+                const activeByAnimal = new Map<string, ActiveRow>();
+                for (const r of activeRows as ActiveRow[]) activeByAnimal.set(r.animalId, r);
+                const eventsByAnimal = new Map<string, EvRow[]>();
+                for (const r of evRows as EvRow[]) {
+                    if (!r.animalId) continue;
+                    const list = eventsByAnimal.get(r.animalId) || []; list.push(r); eventsByAnimal.set(r.animalId, list);
+                }
+                const careByAnimal = new Map<string, CareRow[]>();
+                for (const r of careRows as CareRow[]) {
+                    const list = careByAnimal.get(r.animalId) || []; list.push(r); careByAnimal.set(r.animalId, list);
+                }
+                const animalById = new Map<string, AnimalRow>();
+                for (const r of animalRows as AnimalRow[]) animalById.set(r.id, r);
+
+                followupCtx = {
+                    schedule: mergeSchedule(DEFAULT_SCHEDULE, settings), fosterRule: mergeFosterRule(settings), compute: computeFollowups,
+                    activeByAnimal, eventsByAnimal, careByAnimal, animalById,
+                };
             } catch (e) {
                 logger.warn('my-animals: followup settings fallback', { userEmail, view, error: e instanceof Error ? e.message : String(e) });
             }
@@ -179,22 +225,13 @@ export async function GET(request: NextRequest) {
                 let dueFollowups = 0;
                 if (followupCtx && animal.adopterId && animal.date) {
                     try {
-                        const { placements, adopterEvents, animalEvents, animals } = await import('@/db/schema');
-                        const { isNull: isNullOp } = await import('drizzle-orm');
-                        const [activeRows, evRows, careRows, animalRow] = await Promise.all([
-                            db.select({ id: placements.id, startedAt: placements.startedAt, recordType: placements.recordType })
-                                .from(placements)
-                                .where(and(eq(placements.animalId, animal.id), isNullOp(placements.endedAt))).all(),
-                            db.select({ id: adopterEvents.id, date: adopterEvents.date, followupKey: adopterEvents.followupKey, followupSubtype: adopterEvents.followupSubtype, eventType: adopterEvents.eventType, placementId: adopterEvents.placementId })
-                                .from(adopterEvents).where(eq(adopterEvents.animalId, animal.id)).all(),
-                            db.select({ id: animalEvents.id, date: animalEvents.date, followupKey: animalEvents.followupKey, eventType: animalEvents.eventType })
-                                .from(animalEvents).where(eq(animalEvents.animalId, animal.id)).all(),
-                            db.select({ estimatedBirthDate: animals.estimatedBirthDate, neutered: animals.neutered })
-                                .from(animals).where(eq(animals.id, animal.id)).get(),
-                        ]);
-                        const active = activeRows[0];
+                        // v2.55.20: pure map lookups — zero extra subrequests per row.
+                        const active = followupCtx.activeByAnimal.get(animal.id);
                         if (active?.startedAt) {
                             const asDate = (v: unknown): Date | null => v instanceof Date ? v : typeof v === 'number' ? new Date(v < 1e12 ? v * 1000 : v) : null;
+                            const evRows = followupCtx.eventsByAnimal.get(animal.id) || [];
+                            const careRows = followupCtx.careByAnimal.get(animal.id) || [];
+                            const animalRow = followupCtx.animalById.get(animal.id);
                             const slots = followupCtx.compute({
                                 placementStartedAt: asDate(active.startedAt)!,
                                 placementType: active.recordType,
@@ -202,11 +239,9 @@ export async function GET(request: NextRequest) {
                                 schedule: followupCtx.schedule,
                                 fosterRule: followupCtx.fosterRule,
                                 recorded: [
-                                    ...evRows.filter((e: { placementId: string | null }) => e.placementId === active.id || !e.placementId)
-                                        .map((e: { id: string; date: unknown; followupKey: string | null; followupSubtype: string | null; eventType: string }) =>
-                                            ({ id: e.id, date: asDate(e.date), followupKey: e.followupKey, subtype: e.followupSubtype, eventType: e.eventType })),
-                                    ...careRows.map((e: { id: string; date: unknown; followupKey: string | null; eventType: string }) =>
-                                        ({ id: e.id, date: asDate(e.date), followupKey: e.followupKey, subtype: null, eventType: e.eventType })),
+                                    ...evRows.filter(e => e.placementId === active.id || !e.placementId)
+                                        .map(e => ({ id: e.id, date: asDate(e.date), followupKey: e.followupKey, subtype: e.followupSubtype, eventType: e.eventType })),
+                                    ...careRows.map(e => ({ id: e.id, date: asDate(e.date), followupKey: e.followupKey, subtype: null, eventType: e.eventType })),
                                 ],
                                 now: new Date(),
                             });

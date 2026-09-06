@@ -1462,6 +1462,7 @@ export const en = {
         read_more: 'read more',
     },
     followups: {
+        toggle_only_mine: 'Only remind me about animals I added',
         delivery_title: 'How to receive reminders',
         delivery_hint: 'The in-app bell always notifies you. You can also get them by email.',
         toggle_email: 'Also receive reminders by email',

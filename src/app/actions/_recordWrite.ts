@@ -216,6 +216,29 @@ export async function deleteRecordById(db: Db, id: string): Promise<void> {
     await db.delete(adopterEvents).where(eq(adopterEvents.id, id));
 }
 
+/**
+ * SOFT-delete an animal (v2.55.20). Team parity means any org member can
+ * delete a teammate's animal, so this must be recoverable: we stamp
+ * `animals.deletedAt` (the column the normalization plan always intended for
+ * this) and leave placements, events and images intact. The `adoptions`
+ * compat view already filters `deleted_at IS NULL`, so every list/read hides
+ * it immediately; an admin can restore by clearing the column.
+ * Returns false when the id isn't an animal (caller falls back to hard delete
+ * for event rows, which are individually re-creatable).
+ */
+export async function softDeleteAnimal(db: Db, id: string, actor: string): Promise<boolean> {
+    const animal = await db.select({ id: animals.id }).from(animals).where(eq(animals.id, id)).get();
+    if (!animal) return false;
+    const now = new Date();
+    await db.update(animals).set({ deletedAt: now as any, updatedAt: now as any }).where(eq(animals.id, id));
+    // Close any active custody span so the animal doesn't stay "placed" while
+    // hidden — a later restore shows an accurate, ended history.
+    await db.update(placements).set({ endedAt: now as any })
+        .where(and(eq(placements.animalId, id), isNull(placements.endedAt)));
+    void actor;
+    return true;
+}
+
 /** Remove an adopter's custody + events (used when deleting an adopter). Animals
  *  stay (they are the rescuer's inventory) — their placements are cut, so they
  *  revert to available. */

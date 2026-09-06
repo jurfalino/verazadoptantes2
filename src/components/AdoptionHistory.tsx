@@ -90,7 +90,7 @@ function RecordTypeIcon({ type, className }: { type: string; className?: string 
     }
 }
 
-export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, adopterAddress = '', userNameMap = {}, editFormComponent: EditComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string; adopterAdoptions?: Adoption[] }> }) {
+export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, isOrgMate = false, adopterAddress = '', userNameMap = {}, editFormComponent: EditComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, isOrgMate?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string; adopterAdoptions?: Adoption[] }> }) {
     const { t, locale } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
@@ -248,7 +248,8 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                         );
                     }
 
-                    const canEdit = isAdmin || adoption.addedBy === currentUser;
+                    // v2.55.20: org-mates too (parity with the animal page).
+                    const canEdit = isAdmin || isOrgMate || adoption.addedBy === currentUser;
                     const images = adoptionImages[adoption.id] || [];
                     const recordType = adoption.recordType || 'adoption';
                     const colors = getRecordTypeColors(recordType);

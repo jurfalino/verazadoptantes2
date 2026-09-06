@@ -85,7 +85,19 @@
       "mcp__cloudflare-observability__query_worker_observability",
       "Bash(grep -nA20 \"export async function isAdminAsync\" src/config/admins.ts)",
       "Bash(grep -nA14 'sqliteTable\\(\"error_reports\"' src/db/schema.ts)",
-      "Bash(bash /private/tmp/claude-501/-Users-jurfalino-Developer-Personal-verazadoptantes2/fd0ca035-b3f5-4add-919c-b78537970ccf/scratchpad/promote-2403.sh)"
+      "Bash(bash /private/tmp/claude-501/-Users-jurfalino-Developer-Personal-verazadoptantes2/fd0ca035-b3f5-4add-919c-b78537970ccf/scratchpad/promote-2403.sh)",
+      "WebFetch(domain:github.com)",
+      "Bash(sed -i '' '1,30s/#262626/#2b2b2b/g; 1,30s/\"#1f1f1f\"/\"#242424\"/g' .vscode/settings.json && sed -n '1,32p' .vscode/settings.json)",
+      "Bash(sed -i '' '1,30s/\"#2b2b2b\"/\"#262f30\"/g; 1,30s/\"#242424\"/\"#1f2829\"/g' .vscode/settings.json && sed -n '7,27p' .vscode/settings.json)",
+      "WebSearch",
+      "WebFetch(domain:posthog.com)",
+      "WebFetch(domain:docs.openreplay.com)",
+      "Bash(cp /Users/jurfalino/.claude-personal/plugins/cache/claude-plugins-official/mattpocock-skills/1.2.3/skills/engineering/wizard/template.sh /private/tmp/claude-501/-Users-jurfalino-Developer-Personal-verazadoptantes2/097ad72f-969e-4fec-bd52-156cb43882f5/scratchpad/posthog-setup.sh && grep -n \"^# STAGES\" -A2 /private/tmp/claude-501/-Users-jurfalino-Developer-Personal-verazadoptantes2/097ad72f-969e-4fec-bd52-156cb43882f5/scratchpad/posthog-setup.sh | head -3; wc -l < /private/tmp/claude-501/-Users-jurfalino-Developer-Personal-verazadoptantes2/097ad72f-969e-4fec-bd52-156cb43882f5/scratchpad/posthog-setup.sh)",
+      "WebFetch(domain:developers.cloudflare.com)"
+    ],
+    "additionalDirectories": [
+      "/Users/jurfalino/Developer/Personal/verazadoptantes2/.vscode",
+      "/Users/jurfalino/.claude-personal/plugins/cache/claude-plugins-official/mattpocock-skills/1.2.3/skills/engineering/wizard"
     ]
   }
 }
