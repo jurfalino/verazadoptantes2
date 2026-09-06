@@ -1,0 +1,49 @@
+name: Followup Cron Worker
+
+on:
+  push:
+    branches: [master, staging]
+    paths:
+      - 'workers/followup-cron/**'
+      - 'src/domain/followups.ts'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Deploy target'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  deploy:
+    name: 🔔 Deploy Followup Cron
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      IS_PROD: ${{ github.ref == 'refs/heads/master' || inputs.target == 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.18'
+          cache: 'npm'
+
+      # Root install: wrangler lives in the root devDependencies and the Worker
+      # bundles src/domain/followups.ts from the main app by relative path.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ "$IS_PROD" = "true" ]; then
+            npx wrangler deploy --config workers/followup-cron/wrangler.toml
+          else
+            npx wrangler deploy --config workers/followup-cron/wrangler.toml --env staging
+          fi

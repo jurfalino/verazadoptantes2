@@ -1,0 +1,27 @@
+# v2.55.17 (animal-timeline PR4): daily follow-up reminder cron.
+# Cloudflare PAGES has no cron — this standalone Worker runs on the same D1
+# and writes `follow_up_due` rows into the app's `notifications` table.
+# Deployed by .github/workflows/followup-worker.yml (staging: --env staging).
+
+name = "buenadoptante-followup-cron"
+main = "src/index.ts"
+compatibility_date = "2025-01-27"
+
+[triggers]
+crons = ["0 12 * * *"] # 09:00 America/Argentina/Buenos_Aires
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pet-adoption-db"
+database_id = "62ec01e7-deae-4536-be62-7c0a0064b45c"
+
+[env.staging]
+name = "buenadoptante-followup-cron-staging"
+
+[env.staging.triggers]
+crons = ["0 12 * * *"]
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "pet-adoption-db-staging"
+database_id = "1b3b21c3-38ef-45ee-af86-d1f08adfb834"

@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.17] - 2026-09-06
+
+### Added — follow-up reminders in the bell (animal-timeline PR4)
+
+New standalone Worker `workers/followup-cron` (Pages has no cron): daily at
+09:00 AR it recomputes the DUE follow-up slots per active placement with the
+same `src/domain/followups.ts` the app uses (bundled by relative import — pure
+domain only) and inserts `follow_up_due` notifications deep-linking to
+`/my-animals/{id}#next-action`. Double-gated (`ENABLE_FOLLOWUPS` +
+`NOTIF_ENABLED_follow_up_due` kill switch, now listed in the admin panel) and
+double-deduped (due-only statuses + a per-(placement, slot) `dedupKey` in
+`notifications.metadata` — one notification per slot, ever). Adoption scan
+bounded to 400 days; active transit homes are scanned regardless of age so a
+long foster keeps its monthly check-in. Deployed by
+`.github/workflows/followup-worker.yml` (staging → `--env staging`); rollout
+runbook in the worker README. `follow_up_due` registered in the notification
+type labels. `.agents/plans/followup_reminders_and_push.md` marked SUPERSEDED.
+
 ## [2.55.16] - 2026-09-06
 
 ### Added — projected follow-ups: the future timeline (animal-timeline PR3)
