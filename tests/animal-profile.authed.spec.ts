@@ -51,8 +51,11 @@ test.describe('Animal detail page', () => {
         const card = page.getByTestId(`animal-card-${ANIMAL_ID}`);
         await expect(card).toBeVisible({ timeout: 30000 });
         await card.click();
-        await expect(page).toHaveURL(new RegExp(`/my-animals/${ANIMAL_ID}$`));
-        await expect(page.getByTestId('animal-name')).toHaveText('Timon');
+        // Generous timeout: under fullyParallel this can be the FIRST request to
+        // /my-animals/[id], and next dev compiles the route on demand while the
+        // soft-navigation's RSC fetch waits (the 5s default expired mid-compile).
+        await expect(page).toHaveURL(new RegExp(`/my-animals/${ANIMAL_ID}$`), { timeout: 45000 });
+        await expect(page.getByTestId('animal-name')).toHaveText('Timon', { timeout: 30000 });
     });
 
     test('projected follow-ups render with the flag on', async ({ page }) => {

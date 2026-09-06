@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.55.17-2] - 2026-09-06
+
+### Fixed — e2e: card-navigation assert outlives next dev's on-demand compile
+
+Under `fullyParallel` the card-click test can be the first request to
+`/my-animals/[id]`; the soft navigation's RSC fetch then waits for the dev
+server to compile the route, and the 5s default `toHaveURL` timeout expired
+mid-compile (all three attempts inside one long compile). Now 45s.
+
 ## [2.55.17-1] - 2026-09-06
 
 ### Fixed — saveAdoption change detection dropped identity-only edits
