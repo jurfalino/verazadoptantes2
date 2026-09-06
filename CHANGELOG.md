@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.3] - 2026-09-06
+
+### Fixed — restore the e2e database and local-state files committed by mistake
+
+v2.55.20 was staged with `git add -u`, which swept four tracked local-state
+files into the commit: `.wrangler/state/.../miniflare-D1DatabaseObject/*.sqlite`,
+`local.db`, `.vscode/settings.json` and `.claude/settings.local.json`.
+`scripts/setup-test-db.js` seeds e2e from that committed miniflare sqlite rather
+than an empty DB, so CI's test database silently became a copy of a dev machine's
+— which is why `duplicates.spec.ts` began failing on two stray near-identical
+records the fixtures never define. All four files are restored to their prior
+committed content; no application code changes.
+
+> Staging note: `git add -A` / `-u` is unsafe in this repo precisely because
+> those runtime databases are tracked. Stage explicit paths.
+
 ## [2.56.2] - 2026-09-06
 
 ### Fixed — the service worker's API cache TTL was never applied
