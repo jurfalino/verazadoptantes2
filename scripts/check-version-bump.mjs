@@ -74,9 +74,19 @@ function main() {
         process.exit(1);
     }
 
+    // Which commit starts the comparison depends on where the version being
+    // checked lives. In CI and in the pre-push hook the bump is already
+    // committed, so HEAD *is* the candidate and the baseline starts at HEAD~1.
+    // Run by hand after `npm version` but before committing, the candidate is
+    // the working tree and HEAD is a baseline like any other — starting at
+    // HEAD~1 there would skip HEAD entirely, which is exactly the
+    // parallel-session case this guard exists to catch (pull someone's 2.60.0,
+    // bump your stale 2.55.x, and the regression sails through).
+    const startRef = versionAt('HEAD') === currentRaw ? 'HEAD~1' : 'HEAD';
+
     let ancestors = [];
     try {
-        const out = git(['rev-list', `--max-count=${DEPTH}`, 'HEAD~1']);
+        const out = git(['rev-list', `--max-count=${DEPTH}`, startRef]);
         ancestors = out ? out.split('\n') : [];
     } catch {
         // Root commit, or a shallow clone with no parent — nothing to compare.
