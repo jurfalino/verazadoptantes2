@@ -464,6 +464,7 @@ export default function MyAnimalsPage() {
                                                     animalId={animal.id}
                                                     animalName={animal.animalName || 'Animal'}
                                                     adopted={!!animal.adopterId && !isFoster}
+                                                    publicFiche={animal.recordType === 'available' && !animal.adopterId && animal.images.length > 0}
                                                     compact
                                                 />
                                             )}

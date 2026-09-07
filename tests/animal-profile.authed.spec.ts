@@ -95,6 +95,23 @@ test.describe('Animal detail page', () => {
         await expect(page.getByRole('button', { name: /^[1-5] stars?$/ })).toHaveCount(0);
     });
 
+    test('share sheet is intent-keyed and offers recording an adoption', async ({ page }) => {
+        // v2.56.15: rows lead with the situation, and the funnel now ends with
+        // "an adoption that already happened" — the only door on a list card.
+        await page.goto('/my-animals/test-animal-fixture-2'); // available, not adopted
+        await expect(page.getByTestId('animal-name')).toHaveText('Nube', { timeout: 30000 });
+
+        await page.getByTestId('share-sheet-test-animal-fixture-2').click();
+        await expect(page.getByText(/If you want to vet adopters|Si querés evaluar adoptantes/)).toBeVisible();
+        await expect(page.getByTestId('share-record-adoption-test-animal-fixture-2')).toBeVisible();
+
+        // On an already-adopted animal that row is gone — nothing to record.
+        await page.goto(`/my-animals/${ANIMAL_ID}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+        await page.getByTestId(`share-sheet-${ANIMAL_ID}`).click();
+        await expect(page.getByTestId(`share-record-adoption-${ANIMAL_ID}`)).toHaveCount(0);
+    });
+
     test('list card navigates to the detail page', async ({ page }) => {
         await page.goto('/my-animals?view=adopted');
         const card = page.getByTestId(`animal-card-${ANIMAL_ID}`);

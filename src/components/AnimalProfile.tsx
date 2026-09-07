@@ -248,7 +248,13 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                                         {activePlacement ? (t('myAnimals.move_to_foster') || 'Mover a otro tránsito') : (t('animalProfile.record_foster') || 'Registrar tránsito')}
                                     </button>
                                 )}
-                                <AnimalShareSheet userId={userId} animalId={animal.id} animalName={animal.name || 'Animal'} adopted={adopted} />
+                                <AnimalShareSheet
+                                    userId={userId} animalId={animal.id}
+                                    animalName={animal.name || 'Animal'} adopted={adopted}
+                                    /* /api/showcase/animal/[id] serves only photo-bearing
+                                       animals with no active placement — anything else 404s. */
+                                    publicFiche={!activePlacement && images.length > 0}
+                                />
                                 {adopted && activePlacement && (
                                     <button
                                         type="button"

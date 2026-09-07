@@ -2,6 +2,39 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.15] - 2026-09-06
+
+### Changed — the share sheet is cut by intent, and covers the whole funnel
+
+The rows were named after the artifacts they produce ("formulario",
+"contrato"), with one summary sentence above trying to explain when each
+applies: *«El formulario suma personas interesadas; el contrato se firma con
+quien elijas.»* But a rescuer opening this sheet isn't choosing an artifact —
+they're in a situation. Each row now leads with the situation and puts the
+control underneath:
+
+1. «Si querés compartir su ficha con un adoptante interesado» → the animal's
+   public page on the adoption site (copy link / open) — **new**
+2. «Si querés evaluar adoptantes» → the vetting form (unchanged control)
+3. «Si ya tenés un adoptante y querés que firme un contrato digital» → the
+   digital contract (unchanged control; post-adoption it reads resend/receipt)
+4. «Si querés registrar una adopción ya concretada» → the adopter picker —
+   **new**, and on a list card it is the only door to that flow
+
+The summary sentence is gone; the lead-ins replace it.
+
+**Row 1 is gated on data, not on a flag.** `/api/showcase/animal/[id]` serves
+only animals that are still `available` with no adopter AND have at least one
+photo — anything else 404s by design, so an ungated row would hand out a dead
+public link. The row renders only when the animal actually resolves. Its base
+URL is fetched at runtime from `/api/my-showcase-info` (a `NEXT_PUBLIC_*` value
+would bake staging's host into the production artifact) and carries `?lang=`,
+matching `ShowcaseUrlChips`.
+
+**Row 4 is hidden once the animal is adopted** — there is nothing left to
+record. The picker is mounted by the sheet itself, so the card gets the same
+one-click path the animal page's primary button offers.
+
 ## [2.56.14] - 2026-09-06
 
 ### Fixed — an animal registered as already adopted showed the two backwards
