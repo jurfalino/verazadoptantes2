@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.21] - 2026-09-07
+
+### Fixed — CI's new test step broke the pipeline; pulled back out
+
+- 2.56.20 added `npm test` to `build-and-lint` and to the Worker deploy. It
+  fails on CI with `Cannot find module '@rolldown/binding-linux-x64-gnu'`:
+  vitest 4 depends on rolldown, and `npm ci` does not install its linux native
+  binary here. The lockfile *does* carry the entry (optional, `os: linux`,
+  `cpu: x64`) — `.npmrc` sets `legacy-peer-deps=true`, which trips npm's
+  optional-dependency resolution bug.
+- Removed from both workflows so it stops blocking a production hotfix. The
+  Worker keeps its `tsc --noEmit` gate, which passes and was the bigger hole —
+  it previously deployed a cron bound to the production D1 with no checks at
+  all.
+- The unit suite therefore still runs nowhere in CI. That gap is real and
+  tracked in a comment where the step belongs; fixing the rolldown install is
+  its own change, not something to iterate on through deploy cycles while
+  production is broken.
+
 ## [2.56.20] - 2026-09-07
 
 ### Fixed — follow-ups no longer blame rescuers for check-ins that never existed

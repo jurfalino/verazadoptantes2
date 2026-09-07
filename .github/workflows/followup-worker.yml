@@ -51,9 +51,6 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
-      - name: Unit tests
-        run: npm test
-
       - name: Deploy Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
