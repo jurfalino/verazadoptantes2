@@ -1472,6 +1472,13 @@ export const pt = {
         read_more: 'ler mais',
     },
     followups: {
+        reminder_explain: 'Quando vou ser avisado?',
+        reminder_when: 'Avisamos você em {date}.',
+        reminder_until: 'Você vai poder registrar até {date}.',
+        reminder_channel_bell: 'O aviso chega no sininho do app.',
+        reminder_channel_both: 'O aviso chega no sininho e no seu e-mail.',
+        reminder_enable_email: 'Receber também por e-mail',
+        reminder_not_you: 'Este aviso vai para quem cadastrou o animal: você pediu lembretes só dos seus.',
         days_left: 'faltam {days} dias para registrar',
         last_day: 'último dia para registrar',
         register_late: 'Registrar mesmo assim',

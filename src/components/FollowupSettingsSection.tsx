@@ -128,8 +128,10 @@ export default function FollowupSettingsSection() {
     const label = 'text-xs font-semibold uppercase tracking-wide text-stone-500';
     const input = 'px-3 py-2 rounded-xl border border-stone-200 bg-white text-stone-900 text-base focus:border-teal-400 outline-none';
 
+    // `id` is the deep-link target of the timeline's "recibirlo también por
+    // correo" link (v2.56.14) — /settings#followups must land here.
     return (
-        <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-5 mt-6" data-testid="followup-settings">
+        <div id="followups" className="bg-white rounded-2xl border border-stone-200 shadow-sm p-5 mt-6 scroll-mt-20" data-testid="followup-settings">
             <h2 className="text-base font-bold text-stone-900">{t('followups.settings_title') || 'Seguimientos de adopción'}</h2>
             <p className="text-xs text-stone-500 mt-1 mb-4 max-w-prose">{t('followups.settings_hint') || 'Vale para todas tus adopciones: definís cuántos controles hacés y cuándo. Los cambios se aplican al guardar.'}</p>
 

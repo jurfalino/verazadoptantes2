@@ -21,6 +21,7 @@ import {
     getMessageTemplate, DEFAULT_SCHEDULE,
     type FollowupSettings, type FollowupStatus, type FollowupSubtype, type RecordedFollowup,
 } from '@/domain/followups';
+import { compareTimelineItems } from '@/domain/animalTimelineOrder';
 import { getFeatureFlag } from '@/config/features';
 import { interpolate } from '@/lib/interpolate';
 import { buildWaMeUrl, buildTelegramUrl } from '@/lib/whatsapp';
@@ -86,6 +87,10 @@ export type AnimalProfileData = {
     followupsEnabled: boolean;
     /** Projected follow-up slots for the ACTIVE placement (empty when none/flag off). */
     projected: ProjectedSlot[];
+    /** v2.56.14: what actually happens when a slot comes due, so the page can
+     *  say it instead of leaving the user to guess. Reflects the VIEWER's own
+     *  notification settings. */
+    reminder: { email: boolean; toYou: boolean };
     /** v2.55.18: attribution — resolved display name of the animal's owner, the
      *  shared org's name (null for solo rescuers), and a name map for every
      *  recordedBy email on the timeline. Always displayed (audit identity). */
@@ -224,7 +229,7 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
             images: mapImages(eventImages.get(e.id) ?? []),
         });
     }
-    items.sort((a, b) => (b.date ?? 0) - (a.date ?? 0));
+    items.sort(compareTimelineItems);
 
     const active = (spans as any[]).find(p => !p.endedAt) ?? null;
 
@@ -256,6 +261,7 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
     // ── projected follow-ups (flag-gated; computed, never materialized) ──
     let followupsEnabled = false;
     let projected: ProjectedSlot[] = [];
+    let reminder = { email: false, toYou: true };
     if (active) {
         try {
             followupsEnabled = await getFeatureFlag('ENABLE_FOLLOWUPS');
@@ -265,18 +271,23 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
             });
         }
         if (followupsEnabled) {
-            projected = await buildProjectedSlots(db, {
+            const built = await buildProjectedSlots(db, {
                 animalId, userEmail,
                 placement: active,
-                animal: { name: animal.name ?? null, estimatedBirthDate: animal.estimatedBirthDate ?? null, neutered: animal.neutered ?? null },
+                animal: {
+                    name: animal.name ?? null, estimatedBirthDate: animal.estimatedBirthDate ?? null,
+                    neutered: animal.neutered ?? null, addedBy: animal.addedBy ?? null,
+                },
                 events: events as any[],
                 careEvents: careEvents as any[],
             }).catch((e) => {
                 logger.warn('getAnimalProfile: projected fallback', {
                     animalId, userEmail, error: e instanceof Error ? e.message : String(e),
                 });
-                return [];
+                return { slots: [] as ProjectedSlot[], reminder: { email: false, toYou: true } };
             });
+            projected = built.slots;
+            reminder = built.reminder;
         }
     }
 
@@ -296,6 +307,7 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
         images: mapImages(animalImages as any[]),
         followupsEnabled,
         projected,
+        reminder,
         addedByName,
         orgName,
         userNameMap,
@@ -323,10 +335,10 @@ async function buildProjectedSlots(db: any, input: {
     animalId: string;
     userEmail: string;
     placement: any;
-    animal: { name: string | null; estimatedBirthDate: Date | number | null; neutered: number | null };
+    animal: { name: string | null; estimatedBirthDate: Date | number | null; neutered: number | null; addedBy: string | null };
     events: any[];
     careEvents: any[];
-}): Promise<ProjectedSlot[]> {
+}): Promise<{ slots: ProjectedSlot[]; reminder: { email: boolean; toYou: boolean } }> {
     const { placement, animal } = input;
     const settings = await getSettingsForEmail(db, input.userEmail);
 
@@ -348,8 +360,16 @@ async function buildProjectedSlots(db: any, input: {
         })),
     ];
 
+    // The cron sends to the whole team, EXCEPT to members who asked for only
+    // their own animals — so on a teammate's animal the honest answer is "the
+    // person who registered it gets this one", not "we'll tell you".
+    const reminder = {
+        email: settings?.emailReminders === true,
+        toYou: settings?.onlyMyAnimals !== true || animal.addedBy === input.userEmail,
+    };
+
     const startedAt = asDate(placement.startedAt);
-    if (!startedAt) return [];
+    if (!startedAt) return { slots: [], reminder };
 
     const slots = computeFollowups({
         placementStartedAt: startedAt,
@@ -396,7 +416,7 @@ async function buildProjectedSlots(db: any, input: {
     }
 
     const now = Date.now();
-    return slots.map(s => {
+    const mapped = slots.map(s => {
         let contact: ProjectedSlot['contact'] = null;
         if (contactPhone && (s.status === 'due' || s.status === 'upcoming')) {
             const dias = Math.max(0, Math.round((now - startedAt.getTime()) / 86400000));
@@ -412,6 +432,7 @@ async function buildProjectedSlots(db: any, input: {
             status: s.status, contact,
         };
     });
+    return { slots: mapped, reminder };
 }
 
 const addAnimalEventSchema = z.object({

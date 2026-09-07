@@ -2,6 +2,40 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.14] - 2026-09-06
+
+### Fixed — an animal registered as already adopted showed the two backwards
+
+Reported on staging for `luni3`: «Rescatado y registrado» sat *above* «Adoptado
+por …», i.e. the page claimed the animal was registered after it was adopted.
+
+The cause is not a date bug — the two dates are **identical**. Registering an
+animal that already has a home writes `animals.created_at` and
+`placements.started_at` from the same clock read (both `1778310159` for that
+row). The rail sorted on `b.date - a.date`, `Array.sort` is stable, and the
+origin item happened to be pushed first, so the tie fell to insertion order.
+
+Same-instant items now order by **cause** instead, in a pure, unit-tested
+comparator (`src/domain/animalTimelineOrder.ts`): an animal is registered, then
+placed, then things happen to it during that placement. Two cases the naive
+rank would get wrong are handled explicitly — a same-day handoff shows the new
+placement starting above the old one ending, while a zero-day span still ends
+after it starts.
+
+### Added — a scheduled follow-up says when the reminder actually arrives
+
+«Programado» plus a date left the user to guess whether anything would reach
+them. Upcoming items now carry a «¿Cuándo me avisan?» disclosure (bell icon,
+collapsed by default) that answers it in place:
+
+- the day the reminder is sent, and the last day the follow-up can be logged;
+- where it lands — the bell alone, or the bell **and** email, read from the
+  viewer's own settings, with a deep link to `/settings#followups` (a new
+  anchor) when email is off;
+- on a teammate's animal, when the viewer has «solo los animales que cargué
+  yo» on, it says plainly that this reminder goes to whoever registered it —
+  rather than promising a notification that will not be sent.
+
 ## [2.56.13] - 2026-09-06
 
 ### Fixed — the merged rail ran time in two directions

@@ -46,7 +46,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
     const { t, locale } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
-    const { animal, activePlacement, items, images, projected, addedByName, orgName, userNameMap } = profile;
+    const { animal, activePlacement, items, images, projected, reminder, addedByName, orgName, userNameMap } = profile;
 
     const [editing, setEditing] = useState(false);
     const [eventModal, setEventModal] = useState<{ type?: string; followupKey?: string; subtype?: ProjectedSlot['subtype'] } | null>(null);
@@ -334,6 +334,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                     status: s.status === 'due' ? 'due' as const : 'upcoming' as const,
                     dueDate: s.dueDate,
                     windowCopy: windowCopy(s),
+                    windowEndsAt: s.windowEndsAt,
                     iconType: s.subtype === 'neuter' ? 'neuter' : s.subtype === 'vaccination' ? 'vaccination' : 'follow_up',
                     onRegister: () => registerSlot(s),
                     contact: contactButton(s),
@@ -345,6 +346,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                     onRegister: () => registerSlot(s),
                 }))}
                 onAddEvent={() => setEventModal({})}
+                reminder={reminder}
             />
 
             {/* modals */}

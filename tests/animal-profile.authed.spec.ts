@@ -131,6 +131,21 @@ test.describe('Animal detail page', () => {
         await expect(page.getByTestId('register-missed-checkin_7d')).toBeVisible();
     });
 
+    test('a scheduled follow-up explains when the reminder arrives', async ({ page }) => {
+        await page.goto(`/my-animals/${ANIMAL_ID}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+
+        // v2.56.14: "Programado" on its own leaves the user guessing whether
+        // anything will actually reach them. The 6-month check-in is upcoming.
+        const body = page.getByTestId('explain-body-checkin_180d');
+        await expect(body).toHaveCount(0);
+        await page.getByTestId('explain-checkin_180d').click();
+        await expect(body).toBeVisible();
+        await expect(body).toContainText(/remind you on|Te avisamos el/);
+        // Email is off by default → the section offers the settings deep link.
+        await expect(body.getByRole('link')).toHaveAttribute('href', '/settings#followups');
+    });
+
     test('in-place edit updates identity without touching custody', async ({ page }) => {
         await page.goto(`/my-animals/${ANIMAL_ID}`);
         await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });

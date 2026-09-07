@@ -13,6 +13,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '@/context/LanguageContext';
 import { formatShortDate } from '@/lib/dates';
+import { interpolate } from '@/lib/interpolate';
 import { emailHandle } from '@/lib/userDisplay';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import type { AnimalTimelineItem } from '@/app/actions/animalTimeline';
@@ -79,10 +80,12 @@ export type TimelineProjected = {
     iconType: string;
     onRegister: () => void;
     contact?: React.ReactNode;
+    /** v2.56.14: the window's last day, for "podés registrarlo hasta el …". */
+    windowEndsAt?: number;
 };
 export type TimelineMissed = { key: string; label: string; dueDate: number; onRegister: () => void };
 
-export default function AnimalTimeline({ items, animalSex, userNameMap = {}, orgName = null, projected = [], missed = [], onAddEvent }: {
+export default function AnimalTimeline({ items, animalSex, userNameMap = {}, orgName = null, projected = [], missed = [], onAddEvent, reminder }: {
     items: AnimalTimelineItem[];
     animalSex: string | null;
     /** v2.55.18: resolved display names for every recordedBy email. */
@@ -94,10 +97,13 @@ export default function AnimalTimeline({ items, animalSex, userNameMap = {}, org
     projected?: TimelineProjected[];
     missed?: TimelineMissed[];
     onAddEvent?: () => void;
+    /** How the reminder for an upcoming slot will actually be delivered. */
+    reminder?: { email: boolean; toYou: boolean };
 }) {
     const { t } = useLanguage();
     const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
     const [showMissed, setShowMissed] = useState(false);
+    const [explained, setExplained] = useState<string | null>(null);
 
     const fem = animalSex === 'hembra' || animalSex === 'female' || animalSex === 'Hembra';
 
@@ -184,6 +190,48 @@ export default function AnimalTimeline({ items, animalSex, userNameMap = {}, org
                                         {p.contact}
                                         <span className="text-[11px] text-stone-500">{p.windowCopy}</span>
                                     </div>
+                                )}
+
+                                {/* A scheduled item raises one question — "will I
+                                    actually be told?" — so answer it in place
+                                    rather than leaving a date to be inferred. */}
+                                {p.status === 'upcoming' && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={() => setExplained(prev => prev === p.key ? null : p.key)}
+                                            aria-expanded={explained === p.key}
+                                            className="inline-flex items-center gap-1 mt-2 -mb-1 py-1.5 text-[11px] font-semibold text-teal-700 hover:underline"
+                                            data-testid={`explain-${p.key}`}
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                                                <path d="M18 8a6 6 0 10-12 0c0 7-3 8-3 8h18s-3-1-3-8M13.7 21a2 2 0 01-3.4 0" />
+                                            </svg>
+                                            {t('followups.reminder_explain') || '¿Cuándo me avisan?'}
+                                        </button>
+                                        {explained === p.key && (
+                                            <div className="mt-1.5 text-[11px] leading-relaxed text-stone-600 space-y-0.5" data-testid={`explain-body-${p.key}`}>
+                                                <p>{interpolate(t('followups.reminder_when') || 'Te avisamos el {date}.', { date: formatShortDate(p.dueDate) })}</p>
+                                                {p.windowEndsAt != null && (
+                                                    <p>{interpolate(t('followups.reminder_until') || 'Vas a poder registrarlo hasta el {date}.', { date: formatShortDate(p.windowEndsAt) })}</p>
+                                                )}
+                                                {reminder?.toYou === false ? (
+                                                    <p>{t('followups.reminder_not_you') || 'Este aviso le llega a quien cargó el animal.'}</p>
+                                                ) : (
+                                                    <p>
+                                                        {reminder?.email
+                                                            ? (t('followups.reminder_channel_both') || 'El aviso llega a la campanita y a tu correo.')
+                                                            : (t('followups.reminder_channel_bell') || 'El aviso llega a la campanita de la app.')}
+                                                        {!reminder?.email && (
+                                                            <> <Link href="/settings#followups" className="font-semibold text-teal-700 hover:underline">
+                                                                {t('followups.reminder_enable_email') || 'Recibirlo también por correo'}
+                                                            </Link></>
+                                                        )}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </>
                                 )}
                             </div>
                         </div>

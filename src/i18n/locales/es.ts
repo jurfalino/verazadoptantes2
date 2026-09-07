@@ -1472,6 +1472,13 @@ export const es = {
         read_more: 'leer más',
     },
     followups: {
+        reminder_explain: '¿Cuándo me avisan?',
+        reminder_when: 'Te avisamos el {date}.',
+        reminder_until: 'Vas a poder registrarlo hasta el {date}.',
+        reminder_channel_bell: 'El aviso llega a la campanita de la app.',
+        reminder_channel_both: 'El aviso llega a la campanita y a tu correo.',
+        reminder_enable_email: 'Recibirlo también por correo',
+        reminder_not_you: 'Este aviso le llega a quien cargó el animal: pediste que te recordemos solo los tuyos.',
         days_left: 'te quedan {days} días para registrarlo',
         last_day: 'último día para registrarlo',
         register_late: 'Registrar igual',

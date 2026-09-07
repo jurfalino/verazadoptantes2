@@ -1467,6 +1467,13 @@ export const en = {
         read_more: 'read more',
     },
     followups: {
+        reminder_explain: 'When will I be reminded?',
+        reminder_when: "We'll remind you on {date}.",
+        reminder_until: "You'll be able to log it until {date}.",
+        reminder_channel_bell: 'The reminder arrives in the app bell.',
+        reminder_channel_both: 'The reminder arrives in the app bell and in your inbox.',
+        reminder_enable_email: 'Also get it by email',
+        reminder_not_you: 'This one goes to whoever registered the animal — you asked to be reminded only about your own.',
         days_left: 'you have {days} days left to log it',
         last_day: 'last day to log it',
         register_late: 'Log it anyway',
