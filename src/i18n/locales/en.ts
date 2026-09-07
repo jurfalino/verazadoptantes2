@@ -3,6 +3,8 @@ export const en = {
         created_by: 'Created by',
     },
     common: {
+        previous: 'Previous',
+        next: 'Next',
         save: 'Save',
         cancel: 'Cancel',
         error: 'Error',
@@ -1195,7 +1197,6 @@ export const en = {
         new_adopter_redirect: 'You will be redirected to create a new adopter profile with observation details.',
         continue: 'Continue',
         next: 'Next',
-        previous: 'Previous',
         back: 'Back',
         save_record: 'Save Record',
         observation_details_placeholder: 'What did you observe about this adopter?',
@@ -1363,6 +1364,8 @@ export const en = {
         created_by_unknown_hint: 'No identified creator',
         // v2.14.10-20: pending-dedup section on /my-adopters
         pending_dedup_title: 'Pending review',
+        pending_dedup_show_low: 'Show {count} weak matches',
+        pending_dedup_hide_low: 'Hide weak matches',
         pending_dedup_subtitle: 'We found profiles that might be the same person. Choose whether to merge them.',
         pending_dedup_side_new: 'New',
         pending_dedup_side_existing: 'Existing',

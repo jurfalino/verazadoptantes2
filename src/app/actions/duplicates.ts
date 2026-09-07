@@ -932,13 +932,14 @@ export interface PendingDedupPair {
 export async function getPendingDuplicatesForUser(
     page = 1,
     pageSize = 10,
-): Promise<{ pairs: PendingDedupPair[]; total: number }> {
+    includeLow = false,
+): Promise<{ pairs: PendingDedupPair[]; total: number; lowHidden: number }> {
     try {
         const { getUser } = await import('./_db');
         const actorEmail = await getUser();
 
         const db = await getDb();
-        if (!db) return { pairs: [], total: 0 };
+        if (!db) return { pairs: [], total: 0, lowHidden: 0 };
 
         const a1 = adopters;
         const candidates = await db.select({
@@ -954,7 +955,7 @@ export async function getPendingDuplicatesForUser(
             .where(eq(duplicateCandidates.status, 'pending'))
             .all() as Array<{ candidateId: string; adopter1Id: string; adopter2Id: string; matchTypes: string; score: number; confidence: string; detectedAt: Date | null }>;
 
-        if (candidates.length === 0) return { pairs: [], total: 0 };
+        if (candidates.length === 0) return { pairs: [], total: 0, lowHidden: 0 };
 
         // Per CLAUDE.md: D1 has no inArray. Fan out per adopter id.
         const allIds = new Set<string>();
@@ -1067,21 +1068,30 @@ export async function getPendingDuplicatesForUser(
             });
         }
 
-        // Most recently detected first. Previously a `break` at 20 ran BEFORE
-        // this sort, so the cap took whatever order D1 happened to return and
-        // the sort only reordered that arbitrary subset — new duplicates could
-        // never surface, and the list changed between loads for no visible
-        // reason. Sort the whole set, then page.
-        pairs.sort((p, q) => (q.newAdopter.createdAt ?? 0) - (p.newAdopter.createdAt ?? 0));
+        // `low` is 80% of the queue and mostly weak name overlap, so it is
+        // hidden by default rather than dropped — the caller can opt in, and
+        // `lowHidden` lets the UI say how many are being withheld instead of
+        // silently shrinking the count.
+        const lowHidden = pairs.filter(p => p.confidence === 'low').length;
+        const visible = includeLow ? pairs : pairs.filter(p => p.confidence !== 'low');
 
-        const total = pairs.length;
+        // Strongest match first. Ties break on recency so a page is stable.
+        // Previously a `break` at 20 ran BEFORE any sort, so the cap took
+        // whatever order D1 happened to return and the sort only reordered that
+        // arbitrary subset — new duplicates could never surface, and the list
+        // changed between loads for no visible reason.
+        visible.sort((p, q) =>
+            (q.confidencePercent - p.confidencePercent)
+            || ((q.newAdopter.createdAt ?? 0) - (p.newAdopter.createdAt ?? 0)));
+
+        const total = visible.length;
         const start = Math.max(0, (page - 1) * pageSize);
-        return { pairs: pairs.slice(start, start + pageSize), total };
+        return { pairs: visible.slice(start, start + pageSize), total, lowHidden };
     } catch (error) {
         logger.warn('getPendingDuplicatesForUser failed', {
             error: error instanceof Error ? error.message : String(error),
         });
-        return { pairs: [], total: 0 };
+        return { pairs: [], total: 0, lowHidden: 0 };
     }
 }
 

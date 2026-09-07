@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.28] - 2026-09-07
+
+### Fixed — the pagination buttons rendered their i18n key
+
+2.56.27 added `previous` to the `wizard` block instead of `common`, and
+`common.next` never existed. `t()` returns the raw key path when a key is
+missing — a truthy string — so the `|| 'Anterior'` fallback never fired and the
+buttons showed `common.previous` / `common.next`. Both keys now live in
+`common`, in all three locales.
+
+### Changed — strongest matches first, weak ones hidden
+
+- The pending list sorts by match percentage (ties break on recency, so a page
+  is stable) instead of purely by date.
+- `low` pairs — about 80% of the queue, mostly weak name overlap — are hidden
+  behind a "Ver N coincidencias débiles" toggle rather than dropped, so the
+  count stays honest and the user can still reach them.
+
 ## [2.56.27] - 2026-09-07
 
 ### Fixed — every duplicate said "100% coincidencia"

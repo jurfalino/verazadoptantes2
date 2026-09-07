@@ -3,6 +3,8 @@ export const pt = {
         created_by: 'Criada por',
     },
     common: {
+        previous: 'Anterior',
+        next: 'Próximo',
         save: 'Salvar',
         cancel: 'Cancelar',
         error: 'Erro',
@@ -1200,7 +1202,6 @@ export const pt = {
         new_adopter_redirect: 'Você será redirecionado para criar um novo perfil de adotante com os detalhes da observação.',
         continue: 'Continuar',
         next: 'Avançar',
-        previous: 'Anterior',
         back: 'Voltar',
         save_record: 'Salvar Registro',
         observation_details_placeholder: 'O que você observou sobre este adotante?',
@@ -1368,6 +1369,8 @@ export const pt = {
         created_by_unknown_hint: 'Sem criador identificado',
         // v2.14.10-20: pending-dedup section on /my-adopters
         pending_dedup_title: 'Pendentes de revisão',
+        pending_dedup_show_low: 'Ver {count} correspondências fracas',
+        pending_dedup_hide_low: 'Ocultar correspondências fracas',
         pending_dedup_subtitle: 'Encontramos perfis que podem ser a mesma pessoa. Decida se quer combiná-los.',
         pending_dedup_side_new: 'Novo',
         pending_dedup_side_existing: 'Existente',

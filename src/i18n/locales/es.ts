@@ -3,6 +3,8 @@ export const es = {
         created_by: 'Creada por',
     },
     common: {
+        previous: 'Anterior',
+        next: 'Siguiente',
         save: 'Guardar',
         cancel: 'Cancelar',
         error: 'Error',
@@ -1200,7 +1202,6 @@ export const es = {
         new_adopter_redirect: 'Serás redirigido para crear un nuevo perfil de adoptante con los detalles de la observación.',
         continue: 'Continuar',
         next: 'Siguiente',
-        previous: 'Anterior',
         back: 'Atrás',
         save_record: 'Guardar Registro',
         observation_details_placeholder: '¿Qué observaste sobre este adoptante?',
@@ -1368,6 +1369,8 @@ export const es = {
         created_by_unknown_hint: 'Sin creador identificado',
         // v2.14.10-20: pending-dedup section on /my-adopters
         pending_dedup_title: 'Pendientes de revisar',
+        pending_dedup_show_low: 'Ver {count} coincidencias débiles',
+        pending_dedup_hide_low: 'Ocultar coincidencias débiles',
         pending_dedup_subtitle: 'Encontramos perfiles que podrían ser la misma persona. Decidí si combinarlos.',
         pending_dedup_side_new: 'Nuevo',
         pending_dedup_side_existing: 'Existente',
