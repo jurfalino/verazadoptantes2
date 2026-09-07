@@ -14,7 +14,7 @@
 //     passed. Entries cached by v3 carry no x-sw-cached-at stamp and would be
 //     treated as expired on every read; dropping the old caches outright
 //     avoids that pointless miss-then-evict pass.
-const CACHE_VERSION = 'buenaadoptante-v4';
+const CACHE_VERSION = 'buenaadoptante-v5';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const SHARE_CACHE = 'share-target-media';

@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.24] - 2026-09-07
+
+### Fixed — admin feature-flag toggles took up to 10 minutes to appear
+
+`ENABLE_EMAIL_OTP` was switched on in production and the email login option
+stayed invisible. The flag was correct at every layer — the `app_config` row,
+`PUBLIC_FLAG_KEYS`, the live `/api/config` response and `LoginModal`'s read of
+it. The staleness was purely client-side caching.
+
+- `/api/config` was served `max-age=60, stale-while-revalidate=600`, so a
+  browser could answer from cache for ten minutes without a network request.
+  It is a control-plane endpoint; an admin flipping a flag expects it to take
+  effect. Now `max-age=0, must-revalidate` — still cacheable, but revalidated
+  every time. A 304 on this small JSON is cheap, and the homepage reads flags
+  server-side via `getPublicConfig()`, so this is not on the LCP path.
+- The service worker gave no protection despite using `networkFirst`: its
+  "network" attempt is a `fetch()`, which is itself served by the same HTTP
+  cache. Network-first only helps when the request actually leaves the device.
+- `CACHE_VERSION` bumped to v5 so any already-stored copy is dropped on the
+  next visit.
+
 ## [2.56.23] - 2026-09-07
 
 ### Added — the follow-up cron finally logs somewhere durable

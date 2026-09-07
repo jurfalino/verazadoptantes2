@@ -21,7 +21,21 @@ export async function GET() {
         { config },
         {
             headers: {
-                'Cache-Control': 'public, max-age=60, stale-while-revalidate=600',
+                // Control-plane endpoint: an admin flipping a flag in /admin
+                // expects it to take effect, not in ten minutes. The previous
+                // `max-age=60, stale-while-revalidate=600` meant the browser
+                // could answer for 60s as fresh and 600s as stale WITHOUT a
+                // network request — and because the service worker's
+                // networkFirst uses fetch(), its "network" attempt was served
+                // from that same HTTP cache, so the SW gave no protection
+                // either. That is why ENABLE_EMAIL_OTP stayed invisible in prod
+                // after being switched on (2026-09-07).
+                //
+                // must-revalidate keeps the response cacheable but forces a
+                // conditional request every time; a 304 on this small JSON is
+                // cheap, and the homepage reads the flags server-side via
+                // getPublicConfig() so this is not on the LCP path.
+                'Cache-Control': 'public, max-age=0, must-revalidate',
             },
         }
     );
