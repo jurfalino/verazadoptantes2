@@ -285,12 +285,16 @@ export async function updateUserName(name: string): Promise<{ success: boolean; 
 
 // ── Follow-up schedule + message templates (v2.55.16, animal-timeline PR3) ──
 
-import { getDb } from '@/lib/db';
-import { users, userProfiles } from '@/db/schema';
-import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { parseFollowupSettings, FOLLOWUP_SUBTYPES, type FollowupSettings } from '@/domain/followups';
+import { parseFollowupSettings, FOLLOWUP_SUBTYPES, type FollowupSettings, type FollowupSubtype } from '@/domain/followups';
 
+/**
+ * v2.56.11: `messages` is a record with a STRING key, not `z.enum`. In zod v4 an
+ * enum-keyed record is exhaustive — `{ neuter: '…' }` alone failed validation
+ * with "expected string, received undefined" for the three absent subtypes,
+ * which is exactly what the settings screen sends when one template is edited.
+ * Unknown keys are dropped below instead.
+ */
 const followupSettingsSchema = z.object({
     version: z.literal(1),
     disabledKeys: z.array(z.string().max(100)).max(20).optional(),
@@ -299,54 +303,86 @@ const followupSettingsSchema = z.object({
         windowDays: z.number().int().min(1).max(365).optional(),
     })).max(12).optional(),
     fosterIntervalDays: z.number().int().min(7).max(120).optional(),
-    messages: z.record(z.enum(FOLLOWUP_SUBTYPES), z.string().max(1000)).optional(),
+    messages: z.record(z.string().max(40), z.string().max(1000)).optional(),
     emailReminders: z.boolean().optional(),
     onlyMyAnimals: z.boolean().optional(),
 }).nullable();
 
-/** The viewer's follow-up overrides (null = defaults). */
+/** Keep only known subtypes, so an unknown key can never reach the DB. */
+function pickKnownMessages(messages: Record<string, string> | undefined): Partial<Record<FollowupSubtype, string>> | undefined {
+    if (!messages) return undefined;
+    const out: Partial<Record<FollowupSubtype, string>> = {};
+    for (const st of FOLLOWUP_SUBTYPES) {
+        const v = messages[st];
+        if (typeof v === 'string' && v.trim()) out[st] = v;
+    }
+    return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * The viewer's follow-up overrides (null = defaults).
+ *
+ * Uses the raw `env.DB` JOIN the rest of this file uses: `user_profiles` keys on
+ * the NextAuth user id while `getUser()` returns an email.
+ */
 export async function getFollowupSettings(): Promise<FollowupSettings | null> {
     let userEmail: string | undefined;
     try {
         userEmail = await getUser();
         if (!userEmail || userEmail === 'unknown') return null;
-        const db = await getDb();
-        if (!db) return null;
-        const row = await db.select({ settings: userProfiles.followupSettings })
-            .from(userProfiles)
-            .innerJoin(users, eq(users.id, userProfiles.userId))
-            .where(eq(users.email, userEmail)).get();
-        return parseFollowupSettings(row?.settings);
+
+        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        if (!env?.DB) return null;
+
+        const row = await env.DB.prepare(
+            `SELECT up.followup_settings AS settings
+             FROM user_profiles up JOIN user u ON u.id = up.user_id
+             WHERE u.email = ? LIMIT 1`
+        ).bind(userEmail).first<{ settings: string | null }>();
+
+        return parseFollowupSettings(row?.settings ?? null);
     } catch (error) {
         logger.error('getFollowupSettings failed', error, { userEmail });
         return null;
     }
 }
 
-/** Save the viewer's overrides; pass null to restore the defaults. */
+/**
+ * Save the viewer's overrides; pass null to restore the defaults.
+ *
+ * Every failure THROWS so the catch assigns an errorId — a toast without one is
+ * untriageable, and the first version of this action returned bare
+ * `{ success: false }` from three separate paths.
+ */
 export async function saveFollowupSettings(input: FollowupSettings | null): Promise<{ success: boolean; errorId?: string }> {
     let userEmail: string | undefined;
     try {
         userEmail = await getUser();
-        if (!userEmail || userEmail === 'unknown') return { success: false };
+        if (!userEmail || userEmail === 'unknown') throw new Error('No authenticated user');
+
         const parsed = followupSettingsSchema.safeParse(input);
         if (!parsed.success) {
-            throw new Error(`Invalid followup settings: ${parsed.error.issues.map(i => i.message).join(', ')}`);
+            throw new Error(`Invalid followup settings: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join(', ')}`);
         }
-        const db = await getDb();
-        if (!db) return { success: false };
 
-        const user = await db.select({ id: users.id }).from(users).where(eq(users.email, userEmail)).get();
-        if (!user) return { success: false };
+        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        if (!env?.DB) throw new Error('Database not available');
 
-        const value = parsed.data === null ? null : JSON.stringify(parsed.data);
-        const existing = await db.select({ userId: userProfiles.userId })
-            .from(userProfiles).where(eq(userProfiles.userId, user.id)).get();
-        if (existing) {
-            await db.update(userProfiles).set({ followupSettings: value }).where(eq(userProfiles.userId, user.id));
-        } else {
-            await db.insert(userProfiles).values({ userId: user.id, followupSettings: value });
-        }
+        const user = await env.DB.prepare(`SELECT id FROM user WHERE email = ? LIMIT 1`)
+            .bind(userEmail).first<{ id: string }>();
+        if (!user?.id) throw new Error('No user row for the session email');
+
+        const value = parsed.data === null ? null : JSON.stringify({
+            ...parsed.data,
+            ...(parsed.data.messages ? { messages: pickKnownMessages(parsed.data.messages as Record<string, string>) } : {}),
+        });
+
+        // Single atomic upsert — the profile row may not exist yet.
+        await env.DB.prepare(
+            `INSERT INTO user_profiles (user_id, followup_settings) VALUES (?, ?)
+             ON CONFLICT(user_id) DO UPDATE SET followup_settings = excluded.followup_settings`
+        ).bind(user.id, value).run();
+
         logAudit({ userEmail, action: 'followup_settings_saved', details: { reset: parsed.data === null } });
         return { success: true };
     } catch (error) {

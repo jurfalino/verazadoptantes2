@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.11] - 2026-09-06
+
+### Fixed — saving the follow-up schedule failed, with an untriageable toast
+
+- **The save failed.** `saveFollowupSettings` used Drizzle + `getDb()` and
+  returned bare `{ success: false }` from three separate paths, unlike every
+  other action in `settings.ts`, which uses the raw `env.DB` JOIN (the file even
+  documents why: `user_profiles` keys on the NextAuth user id while `getUser()`
+  returns an email). Rewritten on that proven pattern, with a single atomic
+  `INSERT … ON CONFLICT(user_id) DO UPDATE` upsert.
+- **The toast had no error id.** Every failure now THROWS so the catch assigns
+  one — a toast without an id is untriageable, which is the rule this repo has
+  everywhere else. The client also gained a try/catch: a *thrown* action
+  previously produced no toast at all and left the button spinning.
+- **zod v4 exhaustive records.** `messages` was `z.record(z.enum(...), …)`, and
+  in zod v4 an enum-keyed record requires EVERY key — so editing a single
+  message template failed validation with "expected string, received undefined"
+  for the three absent subtypes. Now a string-keyed record filtered to known
+  subtypes, with `followupSettingsSchema.test.ts` covering the exact payloads
+  the screen sends (schedule-only, one template, all templates, null, and
+  out-of-range rejection).
+
 ## [2.56.10] - 2026-09-06
 
 ### Fixed — «Programado» slots rendered with unthemed colors
