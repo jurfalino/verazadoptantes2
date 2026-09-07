@@ -430,7 +430,7 @@ export default function MyAnimalsPage() {
                                         <div className="flex items-center gap-2">
                                             <div className="text-xs text-stone-500 flex-1 min-w-0 space-y-0.5">
                                                 {animal.date && (
-                                                    <p className="truncate">
+                                                    <p className="truncate" data-testid={`card-date-${animal.id}`}>
                                                         {animal.adopterId && !isFoster
                                                             ? (t('myAnimals.date_adopted') || 'Adoptado el')
                                                             : isFoster

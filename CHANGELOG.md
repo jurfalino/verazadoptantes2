@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.17] - 2026-09-07
+
+### Fixed — 2.56.16's e2e (the deploy it blocked)
+
+Two selector failures, both caused by 2.56.16's own UI change; the feature code
+is unchanged.
+
+- **A test asserted the marker I removed.** `de Vero|by Vero` was the teammate
+  attribution that «Actualizado por» replaces. It now asserts the new line —
+  and asserts it names **Test Admin**, not Vero, because that same test records
+  a vet visit on the teammate's animal as the admin a few lines earlier. That
+  is the feature behaving correctly, and it proves the value is derived from
+  the event just created rather than from the owner field.
+- **`animal-card-{id}` is on the photo link, not the card body**, so scoping a
+  text assertion to it could only ever see the species placeholder. The date
+  line carries its own `card-date-{id}` testid now.
+
 ## [2.56.16] - 2026-09-07
 
 ### Changed — the card's meta line now says what it means

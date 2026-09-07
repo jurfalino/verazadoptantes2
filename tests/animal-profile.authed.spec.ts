@@ -55,7 +55,14 @@ test.describe('Animal detail page', () => {
         // And the teammate's card shows up in the admin's available list, attributed.
         await page.goto('/my-animals?view=available');
         await expect(page.getByTestId('animal-card-test-animal-fixture-2')).toBeVisible({ timeout: 30000 });
-        await expect(page.getByText(/de Vero|by Vero/)).toBeVisible();
+        // v2.56.16: the old "de Vero" owner marker is replaced by the
+        // always-visible attribution line — and since THIS test just recorded a
+        // vet visit on Vero's animal as the admin, the line must now name the
+        // admin, not the owner. That is the whole point of «Actualizado por»,
+        // and it proves the value is derived from the event just created.
+        const attribution = page.getByTestId('last-update-test-animal-fixture-2');
+        await expect(attribution).toContainText(/Updated by|Actualizado por/);
+        await expect(attribution).toContainText('Test Admin');
     });
 
     test('records a care event through the modal', async ({ page }) => {
@@ -120,7 +127,7 @@ test.describe('Animal detail page', () => {
         // v2.56.16: the bare 📅 meant three different things (the compat view's
         // date is COALESCE(placement.started_at, animal.created_at)). Timon is
         // adopted, so his date is the adoption's.
-        await expect(card).toContainText(/Adopted on|Adoptado el/);
+        await expect(page.getByTestId(`card-date-${ANIMAL_ID}`)).toContainText(/Adopted on|Adoptado el/);
 
         // Attribution is always visible — «Actualizado por» when someone has
         // touched it since, «Agregado por» when nobody has.
