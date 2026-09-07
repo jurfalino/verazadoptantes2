@@ -17,6 +17,19 @@ export function getRecordTypeColors(recordType: string): RecordTypeColors {
     return colors[recordType] || colors['adoption'];
 }
 
+// Animal care events (animal_events.event_type) — a SEPARATE map so the
+// RecordType union above doesn't widen (that union is mirrored in ~6 places).
+export function getAnimalEventColors(eventType: string): RecordTypeColors {
+    const colors: Record<string, RecordTypeColors> = {
+        vaccination: { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500', ring: 'ring-emerald-200', iconBg: 'bg-emerald-100' },
+        deworming: { bg: 'bg-lime-100', text: 'text-lime-700', border: 'border-lime-200', dot: 'bg-lime-500', ring: 'ring-lime-200', iconBg: 'bg-lime-100' },
+        vet_visit: { bg: 'bg-cyan-100', text: 'text-cyan-700', border: 'border-cyan-200', dot: 'bg-cyan-500', ring: 'ring-cyan-200', iconBg: 'bg-cyan-100' },
+        neuter: { bg: 'bg-fuchsia-100', text: 'text-fuchsia-700', border: 'border-fuchsia-200', dot: 'bg-fuchsia-500', ring: 'ring-fuchsia-200', iconBg: 'bg-fuchsia-100' },
+        note: { bg: 'bg-stone-100', text: 'text-stone-600', border: 'border-stone-200', dot: 'bg-stone-400', ring: 'ring-stone-200', iconBg: 'bg-stone-100' },
+    };
+    return colors[eventType] || colors['note'];
+}
+
 // Get the emoji icon for each record type
 export function getRecordTypeIcon(recordType: string): string {
     const icons: Record<string, string> = {

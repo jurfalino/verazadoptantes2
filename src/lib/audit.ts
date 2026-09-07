@@ -99,8 +99,13 @@ export async function logAudit(entry: AuditEntry) {
  * cf-ipcity, cf-timezone headers on first sign-in and stores them.
  * Does NOT overwrite on subsequent sign-ins so user changes via
  * settings are preserved.
+ *
+ * markEmailVerified: set by the email-otp provider — entering a mailed code
+ * proves inbox ownership, so stamp user.emailVerified (only when currently
+ * NULL, same conditional-backfill policy as `name`). Google sign-ins leave
+ * it untouched.
  */
-export async function ensureUserProfile(userId: string, email?: string, name?: string, image?: string) {
+export async function ensureUserProfile(userId: string, email?: string, name?: string, image?: string, markEmailVerified?: boolean) {
     // Read Cloudflare geo headers before waitUntil
     let detectedCountry: string | null = null;
     let detectedProvince: string | null = null;
@@ -118,17 +123,63 @@ export async function ensureUserProfile(userId: string, email?: string, name?: s
         }
     } catch { /* headers() unavailable outside server request context */ }
 
+    // Local-dev / Playwright fallback: outside a Cloudflare request context
+    // there is no env.DB, and the raw path below used to silently no-op — so
+    // dev-login/email-otp sign-ins never created user rows locally and the
+    // jwt callback found nothing. Minimal mirror of the upsert (user +
+    // user_profiles); geo capture and handle assignment are CF-bound and
+    // intentionally skipped.
+    const doUpsertLocal = async () => {
+        try {
+            if (!email) return; // email-keyed upsert only; CF path handles the id-only edge
+            const { getDb } = await import('@/lib/db');
+            const db = await getDb();
+            if (!db) return;
+            const { users, userProfiles } = await import('@/db/schema');
+            const { eq } = await import('drizzle-orm');
+            let resolvedId = userId;
+            const existing = (await db.select().from(users).where(eq(users.email, email)).limit(1))[0];
+            if (existing) {
+                resolvedId = existing.id;
+                await db.update(users).set({
+                    name: existing.name ?? name ?? null,
+                    image: image ?? existing.image,
+                    googleName: name ?? existing.googleName,
+                    emailVerified: existing.emailVerified ?? (markEmailVerified ? new Date() : null),
+                }).where(eq(users.id, resolvedId));
+            } else {
+                await db.insert(users).values({
+                    id: resolvedId,
+                    email,
+                    name: name ?? null,
+                    image: image ?? null,
+                    googleName: name ?? null,
+                    emailVerified: markEmailVerified ? new Date() : null,
+                });
+            }
+            await db.insert(userProfiles).values({ userId: resolvedId }).onConflictDoNothing();
+            await db.update(userProfiles).set({ lastActiveAt: new Date() }).where(eq(userProfiles.userId, resolvedId));
+        } catch (e) {
+            logger.error('[Audit] Local user profile upsert failed', e, { userId, email });
+        }
+    };
+
     const doUpsert = async () => {
+        let d1: D1Database | null = null;
         try {
             const { env } = getRequestContext();
-            if (!env?.DB) return;
-
-
+            if (env?.DB) d1 = env.DB;
+        } catch { /* not in Cloudflare context */ }
+        if (!d1) {
+            await doUpsertLocal();
+            return;
+        }
+        try {
             // Resolve the canonical user ID by looking up email first
             let resolvedId = userId;
 
             if (email) {
-                const existing = await env.DB.prepare(
+                const existing = await d1.prepare(
                     `SELECT id FROM user WHERE email = ? LIMIT 1`
                 ).bind(email).first<{ id: string }>();
 
@@ -156,27 +207,27 @@ export async function ensureUserProfile(userId: string, email?: string, name?: s
                     // already in use below for geo fields (province / city /
                     // timezone) at the user_profiles UPDATE.
                     resolvedId = existing.id;
-                    await env.DB.prepare(
-                        `UPDATE user SET name = COALESCE(name, ?), image = COALESCE(?, image), google_name = COALESCE(?, google_name) WHERE id = ?`
-                    ).bind(name || null, image || null, name || null, resolvedId).run();
+                    await d1.prepare(
+                        `UPDATE user SET name = COALESCE(name, ?), image = COALESCE(?, image), google_name = COALESCE(?, google_name), emailVerified = COALESCE(emailVerified, ?) WHERE id = ?`
+                    ).bind(name || null, image || null, name || null, markEmailVerified ? Date.now() : null, resolvedId).run();
                 } else {
                     // First time — insert new row. Both `name` (display) and
                     // `google_name` (oauth) start equal to Google's value;
                     // they diverge later if the user customizes via /settings.
-                    await env.DB.prepare(
-                        `INSERT INTO user (id, email, name, image, google_name) VALUES (?, ?, ?, ?, ?)`
-                    ).bind(resolvedId, email, name || null, image || null, name || null).run();
+                    await d1.prepare(
+                        `INSERT INTO user (id, email, name, image, google_name, emailVerified) VALUES (?, ?, ?, ?, ?, ?)`
+                    ).bind(resolvedId, email, name || null, image || null, name || null, markEmailVerified ? Date.now() : null).run();
                 }
             } else {
                 // No email (shouldn't happen with Google) — fallback to INSERT OR IGNORE by id
-                await env.DB.prepare(
+                await d1.prepare(
                     `INSERT OR IGNORE INTO user (id, email, name, image, google_name) VALUES (?, ?, ?, ?, ?)`
                 ).bind(resolvedId, email || null, name || null, image || null, name || null).run();
             }
 
             // 2. Ensure user_profiles row (INSERT OR IGNORE keeps original created_at)
             //    On first sign-in, also store detected geo data
-            await env.DB.prepare(
+            await d1.prepare(
                 `INSERT OR IGNORE INTO user_profiles (user_id, country, province, province_code, city, timezone, created_at) VALUES (?, ?, ?, ?, ?, ?, strftime('%s','now'))`
             ).bind(resolvedId, detectedCountry, detectedProvince, detectedProvinceCode, detectedCity, detectedTimezone).run();
 
@@ -194,7 +245,7 @@ export async function ensureUserProfile(userId: string, email?: string, name?: s
             // ready). One real-world repro: mirella.hualde@gmail.com in
             // prod, signed in once Feb 9 2026 with no CF header, stuck null
             // through six subsequent sign-ins.
-            await env.DB.prepare(
+            await d1.prepare(
                 `UPDATE user_profiles SET
                     last_active_at = strftime('%s','now'),
                     country = COALESCE(country, ?),
@@ -211,19 +262,19 @@ export async function ensureUserProfile(userId: string, email?: string, name?: s
             //    (or email local-part if name absent) via generateUniqueSlug with
             //    integer-suffix-on-collision logic.
             try {
-                const profile = await env.DB.prepare(
+                const profile = await d1.prepare(
                     `SELECT handle FROM user_profiles WHERE user_id = ?`
                 ).bind(resolvedId).first<{ handle: string | null }>();
                 if (profile && !profile.handle) {
                     const { generateUniqueSlug } = await import('@/lib/slugify');
                     const rawName = name || (email ? email.split('@')[0] : '') || 'rescuer';
                     const handle = await generateUniqueSlug(rawName, async (candidate) => {
-                        const taken = await env.DB.prepare(
+                        const taken = await d1.prepare(
                             `SELECT user_id FROM user_profiles WHERE handle = ? LIMIT 1`
                         ).bind(candidate).first<{ user_id: string }>();
                         return taken != null;
                     });
-                    await env.DB.prepare(
+                    await d1.prepare(
                         `UPDATE user_profiles SET handle = ? WHERE user_id = ? AND handle IS NULL`
                     ).bind(handle, resolvedId).run();
                 }

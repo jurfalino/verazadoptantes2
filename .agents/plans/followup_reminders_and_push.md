@@ -1,3 +1,9 @@
+> **Status: SUPERSEDED (2026-09-06)** — replaced by the animal-timeline feature
+> (v2.55.14–v2.55.17): projected follow-ups live in src/domain/followups.ts, the
+> reminder cron in workers/followup-cron, and delivery via the notifications bell.
+> This plan's schedule and comments-JSON mechanism are obsolete. See
+> ~/.claude-personal/plans/let-s-start-a-new-snoopy-stearns.md and CHANGELOG.
+
 # Follow-Up Reminders + Web Push Notifications
 
 ## Goal

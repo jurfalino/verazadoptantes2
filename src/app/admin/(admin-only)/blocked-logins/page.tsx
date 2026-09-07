@@ -1,9 +1,10 @@
 export const runtime = 'edge';
 import Link from 'next/link';
-import { getDb } from '@/app/actions';
+import { getDb, getUser } from '@/app/actions';
 import { blockedLogins, errorReports } from '@/db/schema';
 import { desc } from 'drizzle-orm';
 import { formatDateTime } from '@/lib/dates';
+import { resolveViewerTimezone } from '@/lib/viewerTimezone';
 import { StarIcon } from '@/components/StarIcon';
 import { getRatingColors } from '@/lib/ratingColors';
 
@@ -36,6 +37,10 @@ function renderReason(reason: string): string {
  * vouched for that adopter historically.
  */
 export default async function BlockedLoginsPage() {
+    // Server Components render only on the server, so there is no hydration
+    // pass to disagree with — but the viewer should still read timestamps in
+    // their own zone rather than the Worker's UTC. See src/lib/dates.ts.
+    const timeZone = await resolveViewerTimezone(await getUser());
     const db = await getDb();
     if (!db) {
         return (
@@ -90,7 +95,7 @@ export default async function BlockedLoginsPage() {
                                 {reports.map((r: typeof errorReports.$inferSelect) => (
                                     <tr key={r.id} className="hover:bg-stone-50 align-top">
                                         <td className="px-4 py-3 text-stone-600 text-xs whitespace-nowrap">
-                                            {r.createdAt ? formatDateTime(r.createdAt) : '—'}
+                                            {r.createdAt ? formatDateTime(r.createdAt, timeZone) : '—'}
                                         </td>
                                         <td className="px-4 py-3 text-stone-900 font-mono text-xs break-all">
                                             {r.email || <span className="text-stone-400">—</span>}
@@ -137,7 +142,7 @@ export default async function BlockedLoginsPage() {
                                 return (
                                     <tr key={row.id} className="hover:bg-stone-50">
                                         <td className="px-4 py-3 text-stone-600 text-xs whitespace-nowrap align-top">
-                                            {row.attemptedAt ? formatDateTime(row.attemptedAt) : '—'}
+                                            {row.attemptedAt ? formatDateTime(row.attemptedAt, timeZone) : '—'}
                                         </td>
                                         <td className="px-4 py-3 text-stone-900 font-mono text-xs break-all align-top">
                                             {row.email}

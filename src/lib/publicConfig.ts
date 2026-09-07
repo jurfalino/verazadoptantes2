@@ -23,6 +23,9 @@ export const PUBLIC_FLAG_KEYS = [
     'ENABLE_CONTACT_IMPORT',
     'ENABLE_GOOGLE_CONTACTS_IMPORT',
     'ENABLE_ANIMALS_FOR_ADOPTION',
+    // v2.55.16: projected follow-ups (animal page future timeline + settings
+    // section + list badges are client-rendered).
+    'ENABLE_FOLLOWUPS',
     'ENABLE_SEARCH_CARD_METADATA',
     'ENABLE_MILESTONE_BADGE',
     'ENABLE_QUICK_ACCESS_STRIP',
@@ -41,6 +44,8 @@ export const PUBLIC_FLAG_KEYS = [
     'SHOWCASE_USER_VISIBLE',
     'INSTAGRAM_URL',
     'ENABLE_GUIDED_WALKTHROUGH',
+    // Email OTP login — the login modal renders the email option only when on.
+    'ENABLE_EMAIL_OTP',
 ] as const;
 
 export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
@@ -60,6 +65,7 @@ export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
     SHOWCASE_USER_VISIBLE: 'false',
     INSTAGRAM_URL: '',
     ENABLE_GUIDED_WALKTHROUGH: 'false',
+    ENABLE_EMAIL_OTP: 'false',
 };
 
 const CACHE_TTL_MS = 30 * 1000;

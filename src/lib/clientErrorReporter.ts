@@ -16,6 +16,8 @@ interface ReportInput {
     digest?: string;
     componentStack?: string;
     extra?: Record<string, unknown>;
+    /** 'warn' for self-recovered conditions that get logged but not surfaced. */
+    level?: 'warn' | 'error';
 }
 
 const dedupCache = new Map<string, { id: string; ts: number }>();
@@ -51,6 +53,7 @@ export async function reportClientError(input: ReportInput): Promise<string | un
                 url: window.location.href,
                 userAgent: navigator.userAgent,
                 extra: input.extra,
+                level: input.level,
             }),
         });
         if (!res.ok) return undefined;

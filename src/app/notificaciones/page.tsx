@@ -53,6 +53,8 @@ const TYPE_LABELS: Record<string, { es: string; en: string; icon: string }> = {
     pii_access_denied: { es: 'Acceso no aprobado', en: 'Access denied', icon: '🔒' },
     pii_access_revoked: { es: 'Acceso removido', en: 'Access removed', icon: '🔒' },
     contact_entry_added: { es: 'Dato de contacto agregado', en: 'Contact detail added', icon: '+' },
+    // v2.55.17: written by workers/followup-cron for due follow-up slots.
+    follow_up_due: { es: 'Seguimiento pendiente', en: 'Follow-up due', icon: '🔔' },
 };
 
 export default function NotificacionesPage() {

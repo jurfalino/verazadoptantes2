@@ -4,6 +4,7 @@ import { getUser } from './_db';
 import { logger } from '@/lib/logger';
 import { acceptTermsAndCountrySchema } from './validation';
 import { logAudit } from '@/lib/audit';
+import { isValidTimezone } from '@/domain/timezones';
 
 export interface UserSettings {
     name: string | null;
@@ -114,6 +115,63 @@ export async function updateUserCountry(country: string): Promise<{ success: boo
         return { success: true };
     } catch (error) {
         const errorId = logger.error('updateUserCountry failed', error, { userEmail, country });
+        return { success: false, errorId };
+    }
+}
+
+
+/**
+ * Update the display timezone from the Settings page.
+ *
+ * `user_profiles.timezone` is seeded once from the `cf-timezone` header at
+ * first sign-in (`src/auth.ts` writes it with `COALESCE`, so it is never
+ * refreshed afterwards). Without this action a user who moves — or who signed
+ * in through a VPN, see `.agents/audits/2026-09-04-vpn-stale-data.md` — has no
+ * way to correct the zone their dates are rendered in.
+ *
+ * Validates against `Intl` rather than against the curated picker list: an
+ * auto-detected zone we do not list is still legitimate, and must survive a
+ * save from the settings page.
+ */
+export async function updateUserTimezone(timezone: string): Promise<{ success: boolean; errorId?: string }> {
+    let userEmail: string | undefined;
+    try {
+        if (!isValidTimezone(timezone)) {
+            // Guarded here rather than only in the UI: an invalid zone reaches
+            // Intl.DateTimeFormat during SSR and throws, so it must never land
+            // in the column.
+            logger.warn('updateUserTimezone: rejected invalid zone', { timezone });
+            return { success: false };
+        }
+
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') throw new Error('Not authenticated');
+
+        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        if (!env?.DB) throw new Error('Database not available');
+
+        const user = await env.DB.prepare(
+            `SELECT id FROM user WHERE email = ? LIMIT 1`
+        ).bind(userEmail).first<{ id: string }>();
+
+        if (!user) throw new Error('User not found');
+
+        await env.DB.prepare(
+            `INSERT INTO user_profiles (user_id, timezone)
+             VALUES (?, ?)
+             ON CONFLICT(user_id) DO UPDATE SET timezone = excluded.timezone`
+        ).bind(user.id, timezone).run();
+
+        logger.info('Timezone updated from settings', { userEmail, timezone });
+        logAudit({
+            userEmail,
+            action: 'settings_timezone_update',
+            target: userEmail,
+            details: { timezone },
+        });
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('updateUserTimezone failed', error, { userEmail, timezone });
         return { success: false, errorId };
     }
 }
@@ -279,6 +337,114 @@ export async function updateUserName(name: string): Promise<{ success: boolean; 
         return { success: true };
     } catch (error) {
         const errorId = logger.error('updateUserName failed', error, { userEmail });
+        return { success: false, errorId };
+    }
+}
+
+// ── Follow-up schedule + message templates (v2.55.16, animal-timeline PR3) ──
+
+import { z } from 'zod';
+import { parseFollowupSettings, FOLLOWUP_SUBTYPES, type FollowupSettings, type FollowupSubtype } from '@/domain/followups';
+
+/**
+ * v2.56.11: `messages` is a record with a STRING key, not `z.enum`. In zod v4 an
+ * enum-keyed record is exhaustive — `{ neuter: '…' }` alone failed validation
+ * with "expected string, received undefined" for the three absent subtypes,
+ * which is exactly what the settings screen sends when one template is edited.
+ * Unknown keys are dropped below instead.
+ */
+const followupSettingsSchema = z.object({
+    version: z.literal(1),
+    disabledKeys: z.array(z.string().max(100)).max(20).optional(),
+    checkins: z.array(z.object({
+        offsetDays: z.number().int().min(1).max(720),
+        windowDays: z.number().int().min(1).max(365).optional(),
+    })).max(12).optional(),
+    fosterIntervalDays: z.number().int().min(7).max(120).optional(),
+    messages: z.record(z.string().max(40), z.string().max(1000)).optional(),
+    emailReminders: z.boolean().optional(),
+    onlyMyAnimals: z.boolean().optional(),
+}).nullable();
+
+/** Keep only known subtypes, so an unknown key can never reach the DB. */
+function pickKnownMessages(messages: Record<string, string> | undefined): Partial<Record<FollowupSubtype, string>> | undefined {
+    if (!messages) return undefined;
+    const out: Partial<Record<FollowupSubtype, string>> = {};
+    for (const st of FOLLOWUP_SUBTYPES) {
+        const v = messages[st];
+        if (typeof v === 'string' && v.trim()) out[st] = v;
+    }
+    return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * The viewer's follow-up overrides (null = defaults).
+ *
+ * Uses the raw `env.DB` JOIN the rest of this file uses: `user_profiles` keys on
+ * the NextAuth user id while `getUser()` returns an email.
+ */
+export async function getFollowupSettings(): Promise<FollowupSettings | null> {
+    let userEmail: string | undefined;
+    try {
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') return null;
+
+        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        if (!env?.DB) return null;
+
+        const row = await env.DB.prepare(
+            `SELECT up.followup_settings AS settings
+             FROM user_profiles up JOIN user u ON u.id = up.user_id
+             WHERE u.email = ? LIMIT 1`
+        ).bind(userEmail).first<{ settings: string | null }>();
+
+        return parseFollowupSettings(row?.settings ?? null);
+    } catch (error) {
+        logger.error('getFollowupSettings failed', error, { userEmail });
+        return null;
+    }
+}
+
+/**
+ * Save the viewer's overrides; pass null to restore the defaults.
+ *
+ * Every failure THROWS so the catch assigns an errorId — a toast without one is
+ * untriageable, and the first version of this action returned bare
+ * `{ success: false }` from three separate paths.
+ */
+export async function saveFollowupSettings(input: FollowupSettings | null): Promise<{ success: boolean; errorId?: string }> {
+    let userEmail: string | undefined;
+    try {
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') throw new Error('No authenticated user');
+
+        const parsed = followupSettingsSchema.safeParse(input);
+        if (!parsed.success) {
+            throw new Error(`Invalid followup settings: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join(', ')}`);
+        }
+
+        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        if (!env?.DB) throw new Error('Database not available');
+
+        const user = await env.DB.prepare(`SELECT id FROM user WHERE email = ? LIMIT 1`)
+            .bind(userEmail).first<{ id: string }>();
+        if (!user?.id) throw new Error('No user row for the session email');
+
+        const value = parsed.data === null ? null : JSON.stringify({
+            ...parsed.data,
+            ...(parsed.data.messages ? { messages: pickKnownMessages(parsed.data.messages as Record<string, string>) } : {}),
+        });
+
+        // Single atomic upsert — the profile row may not exist yet.
+        await env.DB.prepare(
+            `INSERT INTO user_profiles (user_id, followup_settings) VALUES (?, ?)
+             ON CONFLICT(user_id) DO UPDATE SET followup_settings = excluded.followup_settings`
+        ).bind(user.id, value).run();
+
+        logAudit({ userEmail, action: 'followup_settings_saved', details: { reset: parsed.data === null } });
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('saveFollowupSettings failed', error, { userEmail });
         return { success: false, errorId };
     }
 }

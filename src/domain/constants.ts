@@ -27,6 +27,11 @@ export const EVENT_TYPES = {
     PROFILE_VIEW: 'profile_view',
 } as const;
 
+// Animal-scoped care events (animal_events.event_type). NOT named EVENT_TYPES —
+// that name is taken above for adopter_stats analytics.
+export const ANIMAL_EVENT_TYPES = ['vaccination', 'deworming', 'vet_visit', 'neuter', 'note'] as const;
+export type AnimalEventType = typeof ANIMAL_EVENT_TYPES[number];
+
 // User roles (user_profiles.role). Source of truth for the /admin/users role
 // selects + the PUT validation. Order is ascending privilege.
 export const USER_ROLES = ['viewer', 'contributor', 'moderator', 'admin'] as const;

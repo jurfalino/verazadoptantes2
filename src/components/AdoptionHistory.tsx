@@ -11,7 +11,7 @@ import { getRecordTypeColors } from '@/lib/recordTypeColors';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { getSourceIcon, getSourceName } from '@/lib/sourceIcons';
-import { formatShortDate, formatRelativeTime } from '@/lib/dates';
+import { useDateFormat, useRelativeTime } from '@/context/TimezoneContext';
 import { emailHandle } from '@/lib/userDisplay';
 import { formatAge } from '@/lib/ageUtils';
 import { isAdmin as isAdminEmail } from '@/config/admins-shared';
@@ -90,7 +90,9 @@ function RecordTypeIcon({ type, className }: { type: string; className?: string 
     }
 }
 
-export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, adopterAddress = '', userNameMap = {}, editFormComponent: EditComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string; adopterAdoptions?: Adoption[] }> }) {
+export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, isOrgMate = false, adopterAddress = '', userNameMap = {}, editFormComponent: EditComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, isOrgMate?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string; adopterAdoptions?: Adoption[] }> }) {
+    const { formatShortDate } = useDateFormat();
+    const formatRelativeTime = useRelativeTime();
     const { t, locale } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
@@ -248,7 +250,8 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                         );
                     }
 
-                    const canEdit = isAdmin || adoption.addedBy === currentUser;
+                    // v2.55.20: org-mates too (parity with the animal page).
+                    const canEdit = isAdmin || isOrgMate || adoption.addedBy === currentUser;
                     const images = adoptionImages[adoption.id] || [];
                     const recordType = adoption.recordType || 'adoption';
                     const colors = getRecordTypeColors(recordType);
@@ -329,6 +332,20 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-semibold text-stone-800 leading-snug">
                                                 {summary}
+                                                {/* v2.55.15: placement rows link back to the animal's own
+                                                    page (the record id IS the animal id for these types).
+                                                    Owner-only — the page itself is strictly owner-gated. */}
+                                                {(recordType === 'adoption' || recordType === 'foster') && adoption.addedBy === currentUser && (
+                                                    <a
+                                                        href={`/my-animals/${adoption.id}`}
+                                                        onClick={e => e.stopPropagation()}
+                                                        className="ml-2 inline-flex items-center gap-0.5 text-xs font-semibold text-teal-700 hover:underline align-middle"
+                                                        title={t('animalProfile.view_animal') || 'Ver ficha del animal'}
+                                                    >
+                                                        {t('animalProfile.view_animal') || 'Ver ficha del animal'}
+                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                                                    </a>
+                                                )}
                                                 {/* Active-foster pill: foster records default to status='active' on
                                                     create; once the rescuer marks the foster ended (status='completed')
                                                     the pill goes away. Only relevant for foster type. */}

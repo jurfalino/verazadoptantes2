@@ -23,7 +23,7 @@ import { extractErrorId } from '@/lib/errorUtils';
 import { DisclaimerToast } from '@/components/DisclaimerToast';
 import { RatingBadge } from '@/components/RatingBadge';
 import { useShowToast } from '@/components/ui/Toast';
-import { formatDateTime, formatShortDate } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import { emailHandle } from '@/lib/userDisplay';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdopterStats, AdoptionConfig, DuplicateCandidateInfo } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
@@ -73,6 +73,7 @@ interface AdopterProfileV2Props {
 }
 
 export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false }: AdopterProfileV2Props) {
+    const { formatDateTime, formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const toast = useShowToast();
@@ -501,6 +502,11 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                 adopterId={id}
                                 currentUser={currentUser}
                                 isAdmin={isAdmin}
+                                // v2.55.20: org-mates edit teammates' records here
+                                // too — the animal page already grants that parity,
+                                // and the same record must not be editable on one
+                                // surface and read-only on the other.
+                                isOrgMate={isOrgMateOfOwner}
                                 userNameMap={userNameMap}
                                 adopterAddress={adopter?.contactInfo || ''}
                                 editFormComponent={AdoptionFormEditV2}

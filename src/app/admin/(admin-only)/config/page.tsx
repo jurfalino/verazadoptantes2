@@ -4,7 +4,7 @@ export const runtime = 'edge';
 import { useState, useEffect } from 'react';
 import { useShowToast } from '@/components/ui/Toast';
 import { useLanguage } from '@/context/LanguageContext';
-import { formatShortDate } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import { extractErrorId } from '@/lib/errorUtils';
 
 async function readErrorBody(res: Response): Promise<{ error?: string; errorId?: string }> {
@@ -47,6 +47,8 @@ interface ConfigData {
         INSTAGRAM_URL?: string;
         ENABLE_GUIDED_WALKTHROUGH?: string;
         ENABLE_HOUSEHOLD_MEMBERS?: string;
+        ENABLE_EMAIL_OTP?: string;
+        ENABLE_FOLLOWUPS?: string;
         TELEGRAM_ADMIN_CHAT_ID?: string;
         TELEGRAM_BOT_TOKEN_SET?: string;
         TELEGRAM_WEBHOOK_SECRET_SET?: string;
@@ -82,9 +84,12 @@ const FEATURE_FLAGS = [
     { key: 'SHOWCASE_USER_VISIBLE', labelKey: 'flag_label_showcase_user', descKey: 'flag_desc_showcase_user' },
     { key: 'ENABLE_GUIDED_WALKTHROUGH', labelKey: 'flag_label_guided_walkthrough', descKey: 'flag_desc_guided_walkthrough' },
     { key: 'ENABLE_HOUSEHOLD_MEMBERS', labelKey: 'flag_label_household_members', descKey: 'flag_desc_household_members' },
+    { key: 'ENABLE_EMAIL_OTP', labelKey: 'flag_label_email_otp', descKey: 'flag_desc_email_otp' },
+    { key: 'ENABLE_FOLLOWUPS', labelKey: 'flag_label_followups', descKey: 'flag_desc_followups' },
 ];
 
 export default function AdminConfigPage() {
+    const { formatShortDate } = useDateFormat();
     const toast = useShowToast();
     const { t } = useLanguage();
     const [config, setConfig] = useState({
@@ -112,6 +117,8 @@ export default function AdminConfigPage() {
         SHOWCASE_USER_VISIBLE: false,
         ENABLE_GUIDED_WALKTHROUGH: false,
         ENABLE_HOUSEHOLD_MEMBERS: false,
+        ENABLE_EMAIL_OTP: false,
+        ENABLE_FOLLOWUPS: true,
     });
     const [instagramUrl, setInstagramUrl] = useState('');
     const [savingInstagram, setSavingInstagram] = useState(false);
@@ -172,6 +179,10 @@ export default function AdminConfigPage() {
                         SHOWCASE_ORG_VISIBLE: data.config?.SHOWCASE_ORG_VISIBLE === 'true',
                         SHOWCASE_USER_VISIBLE: data.config?.SHOWCASE_USER_VISIBLE === 'true',
                         ENABLE_GUIDED_WALKTHROUGH: data.config?.ENABLE_GUIDED_WALKTHROUGH === 'true',
+                        ENABLE_HOUSEHOLD_MEMBERS: data.config?.ENABLE_HOUSEHOLD_MEMBERS === 'true',
+                        ENABLE_EMAIL_OTP: data.config?.ENABLE_EMAIL_OTP === 'true',
+                        // default ON: an absent row means enabled (features.ts default)
+                        ENABLE_FOLLOWUPS: data.config?.ENABLE_FOLLOWUPS !== 'false',
                     });
                     setInstagramUrl(data.config?.INSTAGRAM_URL || '');
                     setGeminiDefaultModel(data.config?.GEMINI_DEFAULT_MODEL || '');

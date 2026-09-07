@@ -91,6 +91,11 @@ export const saveAdopterSchema = z.object({
 export const saveAdoptionSchema = z.object({
     id: id.optional(),
     adopterId: id.optional().nullable(),
+    // v2.55.14: for follow_up/returned_pet events — the animal the event is about.
+    animalId: id.optional().nullable(),
+    // v2.55.16: projected-slot key this follow-up satisfies + its subtype.
+    followupKey: z.string().max(100).optional().nullable(),
+    followupSubtype: z.enum(['adaptation', 'vaccination', 'neuter', 'vet_visit']).optional().nullable(),
     animalName: z.string().max(500).optional().nullable(),
     species: z.string().max(100).optional().nullable(),
     details: optionalText,

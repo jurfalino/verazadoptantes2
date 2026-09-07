@@ -1,15 +1,38 @@
 'use client';
 
 import { signIn } from 'next-auth/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useAuthContext } from '@/context/AuthContext';
+import EmailOtpForm from '@/components/EmailOtpForm';
 
 export default function LoginModal() {
     const { isLoginOpen, closeLogin, redirectPath } = useAuthContext();
     const { t } = useLanguage();
     const [loading, setLoading] = useState(false);
     const [devEmail, setDevEmail] = useState('');
+    const [emailOtpEnabled, setEmailOtpEnabled] = useState(false);
+    // Google stays the single visible choice; the email fields appear only
+    // after the user asks for them (progressive disclosure —
+    // docs/ux-ui-guidelines.md §4.4, and the pattern users already know from
+    // Slack/Notion, §4.6 Jakob's Law).
+    const [emailOtpOpen, setEmailOtpOpen] = useState(false);
+
+    // Public flag read — the email option only renders when an admin has
+    // switched ENABLE_EMAIL_OTP on (Resend must be configured first).
+    useEffect(() => {
+        if (!isLoginOpen) return;
+        // Each opening starts collapsed: the modal stays mounted while closed
+        // (it renders null), so without this it would reopen mid-flow.
+        setEmailOtpOpen(false);
+        fetch('/api/config')
+            .then(res => res.json())
+            .then((data) => {
+                const cfg = data as { config?: Record<string, string> };
+                setEmailOtpEnabled(cfg.config?.ENABLE_EMAIL_OTP === 'true');
+            })
+            .catch(() => { });
+    }, [isLoginOpen]);
 
     if (!isLoginOpen) return null;
 
@@ -51,6 +74,37 @@ export default function LoginModal() {
                             {loading ? t('auth.signing_in') || 'Signing in...' : t('auth.continue_google')}
                         </span>
                     </button>
+
+                    {/* Email OTP login — feature-flagged, collapsed until asked for */}
+                    {emailOtpEnabled && (
+                        <>
+                            <div className="flex items-center gap-3 my-2">
+                                <div className="flex-1 h-px bg-stone-200" />
+                                <button
+                                    type="button"
+                                    onClick={() => setEmailOtpOpen(v => !v)}
+                                    aria-expanded={emailOtpOpen}
+                                    aria-controls="email-otp-panel"
+                                    data-testid="otp-reveal-btn"
+                                    className="flex items-center gap-1 text-xs font-medium text-teal-700 hover:text-teal-900 transition-colors rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+                                >
+                                    {t('login.email_label')}
+                                    <svg
+                                        className={`w-3.5 h-3.5 transition-transform duration-200 ${emailOtpOpen ? 'rotate-180' : ''}`}
+                                        fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"
+                                    >
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </button>
+                                <div className="flex-1 h-px bg-stone-200" />
+                            </div>
+                            {emailOtpOpen && (
+                                <div id="email-otp-panel">
+                                    <EmailOtpForm redirectPath={redirectPath || undefined} autoFocusEmail />
+                                </div>
+                            )}
+                        </>
+                    )}
 
                     {/* Dev Login — only in development */}
                     {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (

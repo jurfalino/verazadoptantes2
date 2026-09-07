@@ -1,11 +1,20 @@
 // BuenAdoptante Service Worker
 // Strategy: Cache-first for static assets, Network-first for pages/API with offline fallback
 
-// Bumped to v3 in v2.16.0-33 to force installed PWAs to pick up the
-// vCard branch of handleShareTarget below — otherwise the SW intercepts the
-// /api/share-target POST with the old code path and the new manifest's vcard
-// files entry has no client-side handler.
-const CACHE_VERSION = 'buenaadoptante-v3';
+// Bumping this string is how a refresh is forced on EVERY client: the changed
+// file registers as a new worker, `skipWaiting` activates it without waiting
+// for old tabs to close, `activate` deletes every cache not named below, and
+// `clients.claim` takes over already-open pages. Note it clears Cache Storage
+// only — not the browser's HTTP cache and not Cloudflare's edge cache.
+// Record the reason for each bump here:
+//   v3 (v2.16.0-33) — force installed PWAs onto the vCard branch of
+//     handleShareTarget below; the old worker intercepted the
+//     /api/share-target POST with code that had no vcard handler.
+//   v4 (v2.56.2) — networkFirst now enforces the TTL it was already being
+//     passed. Entries cached by v3 carry no x-sw-cached-at stamp and would be
+//     treated as expired on every read; dropping the old caches outright
+//     avoids that pointless miss-then-evict pass.
+const CACHE_VERSION = 'buenaadoptante-v4';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const SHARE_CACHE = 'share-target-media';
@@ -194,17 +203,60 @@ async function cacheFirst(request) {
     }
 }
 
-// Network-first: try network, fall back to cache
+// Header carrying the write time of a cached entry. Cache Storage has no
+// expiry of its own, so freshness has to be stamped on the entry itself.
+const CACHED_AT_HEADER = 'x-sw-cached-at';
+
+// Store a response with a write timestamp. Response headers are immutable, so
+// the entry is rebuilt from the body. Callers pass a clone and DON'T await
+// this — the response reaches the page without waiting on the cache write.
+async function cachePutStamped(cache, request, response) {
+    const headers = new Headers(response.headers);
+    headers.set(CACHED_AT_HEADER, Date.now().toString());
+    const body = await response.blob();
+    await cache.put(request, new Response(body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+    }));
+}
+
+// Cached entry for `request`, or null when it's missing or past ttlSeconds.
+// Expired entries are evicted so a later lookup can't resurrect them.
+async function matchFresh(request, cacheName, ttlSeconds) {
+    const cache = await caches.open(cacheName);
+    const cached = await cache.match(request);
+    if (!cached) return null;
+    if (!ttlSeconds) return cached; // no TTL requested — any age will do
+
+    const cachedAt = Number(cached.headers.get(CACHED_AT_HEADER));
+    // An unstamped entry was written before this logic existed, so its age is
+    // unknowable — treat it as expired rather than serving unbounded
+    // staleness. The CACHE_VERSION bump that shipped with this clears them out
+    // anyway, so this only guards against a stray leftover.
+    const expired = !cachedAt || (Date.now() - cachedAt) / 1000 > ttlSeconds;
+    if (expired) {
+        await cache.delete(request);
+        return null;
+    }
+    return cached;
+}
+
+// Network-first: try network, fall back to a cached copy that is still fresh.
+// ttlSeconds is optional; when given, a stale fallback is dropped rather than
+// served. Before v2.56.2 this parameter was accepted and never read, so the
+// "1 hour TTL" the /api/ route asks for below did nothing and an offline
+// client could be handed an arbitrarily old API response.
 async function networkFirst(request, cacheName, ttlSeconds) {
     try {
         const response = await fetch(request);
         if (response.ok) {
             const cache = await caches.open(cacheName);
-            cache.put(request, response.clone());
+            cachePutStamped(cache, request, response.clone()).catch(() => { });
         }
         return response;
     } catch {
-        const cached = await caches.match(request);
+        const cached = await matchFresh(request, cacheName, ttlSeconds);
         if (cached) return cached;
         return new Response(JSON.stringify({ error: 'Offline' }), {
             status: 503,

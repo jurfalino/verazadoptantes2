@@ -1,14 +1,14 @@
 'use server';
 
 import { adopters, adoptions, adopterHistory, adopterFlags, adopterImages } from '@/db/schema';
-import { eq, sql, and } from 'drizzle-orm';
+import { eq, sql, and, or } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { tokenizeAdopter } from './duplicates';
 import { saveAdoptionSchema } from './validation';
-import { insertRecord, updateRecord, deleteRecordById } from './_recordWrite';
+import { insertRecord, updateRecord, deleteRecordById, softDeleteAnimal } from './_recordWrite';
 
 export async function saveAdoption(data: typeof adoptions.$inferInsert) {
     // Validate input
@@ -31,7 +31,13 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
             const changes: Record<string, any> = {};
             let hasChanges = false;
 
-            const fields = ['animalName', 'species', 'status', 'rating', 'details', 'adopterId', 'date', 'onBehalfOf', 'recordType', 'deliveredToHome', 'verifiedAddress', 'identityVerified', 'estimatedBirthDate', 'neutered'] as const;
+            // v2.55.17-1: sex/color/microchip/age/sourceUrl/comments were missing
+            // from this list — updateRecord persists them, but a payload that
+            // changed ONLY one of them (and sent no fresh `date`, whose object
+            // comparison is always "changed") computed hasChanges=false and
+            // silently dropped the edit. Bitten by the animal page's in-place
+            // identity form; latent for any caller that stops sending `date`.
+            const fields = ['animalName', 'species', 'status', 'rating', 'details', 'adopterId', 'date', 'onBehalfOf', 'recordType', 'deliveredToHome', 'verifiedAddress', 'identityVerified', 'estimatedBirthDate', 'neutered', 'sex', 'color', 'microchip', 'age', 'sourceUrl', 'comments'] as const;
             for (const field of fields) {
                 // @ts-ignore
                 if (data[field] !== undefined && data[field] !== existing[field]) {
@@ -186,8 +192,12 @@ export async function deleteAdoption(adoptionId: string, adopterId: string) {
         // v2.19.68: previously UNGUARDED — any authenticated user could delete
         // any activity record. Gate to the record's creator OR an admin, matching
         // the UI (AdoptionHistory: canEdit = isAdmin || addedBy === currentUser).
+        // v2.55.20: org-mates too — the UI now offers edit/delete on a
+        // teammate's records (AdoptionHistory canEdit), so the server gate must
+        // agree or the affordance fails on save.
         const { isAdminAsync } = await import('@/config/admins');
-        if (existing.addedBy !== changedBy && !await isAdminAsync(changedBy)) {
+        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+        if (!(await isOwnerOrOrgMate(changedBy, existing.addedBy)) && !await isAdminAsync(changedBy)) {
             throw new Error("Not authorized to delete this record");
         }
 
@@ -287,8 +297,18 @@ export async function getAvailableAnimals() {
         // they can still be given for adoption or moved to another foster home —
         // so the wizard picker must list them for the animalId prefill match to
         // resolve on a foster→adoption / foster→foster save.
+        // v2.55.18: animals are team resources — the picker spans the org.
+        // OR fan-out per email, NEVER `IN ${array}` (documented-broken on D1).
+        const { getTeamEmails } = await import('@/lib/orgMembership');
+        const teamEmails = await getTeamEmails(session.user.email);
+        // Fail closed — see the note in /api/my-animals: an empty list would
+        // otherwise drop the owner filter entirely.
+        const scopeEmails = teamEmails.length > 0 ? teamEmails : [session.user.email];
         const rows = await db.select().from(adoptions)
-            .where(sql`${adoptions.addedBy} = ${session.user.email} AND (${adoptions.adopterId} IS NULL OR ${adoptions.recordType} = 'foster')`);
+            .where(and(
+                or(...scopeEmails.map(e => eq(adoptions.addedBy, e))),
+                sql`(${adoptions.adopterId} IS NULL OR ${adoptions.recordType} = 'foster')`,
+            ));
         return await attachAdoptionThumbnails(db, rows);
     } catch (error) {
         logger.error('getAvailableAnimals failed', error);
@@ -310,13 +330,19 @@ export async function deleteAnimalForAdoption(adoptionId: string) {
         const existing = await db.select().from(adoptions).where(eq(adoptions.id, adoptionId)).get();
         if (!existing) throw new Error("Animal not found");
         // v2.19.66: admins may delete any record, not just the owner.
+        // v2.55.18: org-mates get full parity (attribution is the counterweight).
         const { isAdminAsync } = await import('@/config/admins');
-        if (existing.addedBy !== changedBy && !await isAdminAsync(changedBy)) throw new Error("Not authorized to delete this animal");
+        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+        if (!(await isOwnerOrOrgMate(changedBy, existing.addedBy)) && !await isAdminAsync(changedBy)) throw new Error("Not authorized to delete this animal");
 
-        // Delete the animal record + its placements + adoption-linked images.
-        await deleteRecordById(db, adoptionId);
+        // v2.55.20: SOFT delete — team parity (any org member can delete a
+        // teammate's animal) makes an unrecoverable wipe of a documented
+        // history unacceptable. Falls back to the hard delete only if the id
+        // isn't an animal row (defensive; this action is animal-only).
+        const soft = await softDeleteAnimal(db, adoptionId, changedBy);
+        if (!soft) await deleteRecordById(db, adoptionId);
 
-        logAudit({ userEmail: changedBy, action: 'animal_for_adoption_deleted', target: adoptionId, details: { animalName: existing.animalName } });
+        logAudit({ userEmail: changedBy, action: 'animal_for_adoption_deleted', target: adoptionId, details: { animalName: existing.animalName, soft } });
         revalidatePath('/my-animals');
         logger.info('Animal for adoption deleted', { adoptionId, animalName: existing.animalName, changedBy });
 
@@ -341,8 +367,10 @@ export async function deleteAnimalImage(imageId: string, adoptionId: string) {
         const adoption = await db.select().from(adoptions).where(eq(adoptions.id, adoptionId)).get();
         if (!adoption) throw new Error("Animal not found");
         // v2.19.66: admins may delete any record, not just the owner.
+        // v2.55.18: org-mates get full parity (attribution is the counterweight).
         const { isAdminAsync } = await import('@/config/admins');
-        if (adoption.addedBy !== changedBy && !await isAdminAsync(changedBy)) throw new Error("Not authorized to delete this image");
+        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+        if (!(await isOwnerOrOrgMate(changedBy, adoption.addedBy)) && !await isAdminAsync(changedBy)) throw new Error("Not authorized to delete this image");
 
         const { adopterImages } = await import('@/db/schema');
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { formatDateTimeFull } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import { useLanguage } from '@/context/LanguageContext';
 import type { AuditSeverity, AuditSummary, AuditCategory } from '@/lib/auditRow';
 
@@ -111,6 +111,7 @@ function dateInputToEpoch(s: string, endOfDay = false): number {
 }
 
 export default function AdminAuditPage() {
+    const { formatDateTimeFull } = useDateFormat();
     const { locale, t } = useLanguage();
     const isEs = locale !== 'en';
 

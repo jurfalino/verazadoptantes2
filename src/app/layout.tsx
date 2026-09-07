@@ -5,6 +5,8 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { LanguageProvider } from "@/context/LanguageContext";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { TimezoneProvider } from "@/context/TimezoneContext";
+import { resolveViewerTimezone } from "@/lib/viewerTimezone";
 import { NavBar } from "@/components/NavBar";
 import { EditActionsProvider } from "@/context/EditActionsContext";
 import { SessionProvider } from 'next-auth/react';
@@ -93,6 +95,13 @@ export default async function RootLayout({
     logger.warn('Layout auth check failed', { error: e instanceof Error ? e.message : String(e) });
   }
 
+  // The zone every date on the page is formatted in — resolved here, once, so
+  // the SSR pass and the hydration pass format from the same value. Reading the
+  // browser's own zone on the client instead is what produced React #418
+  // (errorId 43d67f9e). Anonymous visitors cost no query; the helper never
+  // throws and falls back to DEFAULT_TIMEZONE.
+  const viewerTimezone = await resolveViewerTimezone(session?.user?.email);
+
   // Feature flag for the floating support chat. Reads DB → env → default.
   // Falls open to false if the flag lookup fails so the widget can't
   // accidentally appear on misconfigured deployments.
@@ -158,6 +167,7 @@ export default async function RootLayout({
             projectKey={process.env.POSTHOG_PROJECT_KEY ?? null}
           />
           <LanguageProvider>
+            <TimezoneProvider timezone={viewerTimezone}>
             <ThemeProvider>
               <ToastProvider>
                 <ClientErrorReporter />
@@ -178,6 +188,7 @@ export default async function RootLayout({
                 </AuthProvider>
               </ToastProvider>
             </ThemeProvider>
+            </TimezoneProvider>
           </LanguageProvider>
         </SessionProvider>
         {/* Service Worker Registration.

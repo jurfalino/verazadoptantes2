@@ -30,6 +30,7 @@ export async function POST(
             recordType?: 'adoption' | 'returned_pet' | 'follow_up' | 'observation' | 'request';
             rating?: number;
             date?: string;
+            animalId?: string; // v2.55.14: link follow_up/returned_pet events to their animal
         };
         images?: Array<{ data: string; mimeType: string; originalUrl?: string; thumbnail?: string }>;
     };
@@ -86,6 +87,7 @@ export async function POST(
             status: 'completed',
             rating: adoption.rating || 2,
             recordType: adoption.recordType || 'observation',
+            animalId: adoption.animalId || null,
             date: adoption.date ? new Date(adoption.date) : new Date(),
             sourceUrl: sourceUrl || null,
             details: detailsParts.length > 0 ? detailsParts.join('\n') : null

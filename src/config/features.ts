@@ -16,6 +16,14 @@ import { eq } from 'drizzle-orm';
 export const FEATURE_FLAGS = {
     ENABLE_CONTENT_IMPORT: false,
     ENABLE_ANIMALS_FOR_ADOPTION: false,
+    // v2.55.16 (animal-timeline PR3): projected follow-ups — the future
+    // timeline + banner on the animal page, the per-user schedule section in
+    // /settings, the /my-animals pendientes badges, and (PR4) the reminder
+    // cron Worker's run gate. Client-visible → also in PUBLIC_FLAG_KEYS.
+    // v2.56.8: defaults ON — the feature is the product, not an experiment.
+    // This stays a flag only as a one-click kill switch if reminders misbehave;
+    // the cron additionally honors NOTIF_ENABLED_follow_up_due.
+    ENABLE_FOLLOWUPS: true,
     ENABLE_SEARCH_CARD_METADATA: true,
     ENABLE_CHAT_WIDGET: false,
     // PostHog session replay + product analytics (v2.49.0). Runs in PARALLEL
@@ -80,6 +88,11 @@ export const FEATURE_FLAGS = {
     // Structured household/family members (name+relationship+own contacts) —
     // replaces the free-text family section. Household redesign (2026-08).
     ENABLE_HOUSEHOLD_MEMBERS: false,
+    // Email OTP login (6-digit code) as an alternative to Google OAuth.
+    // Requires Resend to be configured (RESEND_API_KEY secret + verified
+    // sending domain) before enabling anywhere real. Client-visible (login
+    // modal) → also in PUBLIC_FLAG_KEYS. Default off.
+    ENABLE_EMAIL_OTP: false,
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
@@ -159,6 +172,8 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
     const result: Record<FeatureFlag, boolean> = {
         ENABLE_CONTENT_IMPORT: false,
         ENABLE_ANIMALS_FOR_ADOPTION: false,
+        ENABLE_FOLLOWUPS: true,
+        ENABLE_EMAIL_OTP: false,
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
         ENABLE_POSTHOG: false,

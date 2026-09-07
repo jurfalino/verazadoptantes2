@@ -97,7 +97,18 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
     env: {
-      NODE_OPTIONS: '--max-old-space-size=4096 --expose-gc'
+      NODE_OPTIONS: '--max-old-space-size=4096 --expose-gc',
+      // Email OTP specs must never hit the real Resend API (a developer's
+      // .env.local may carry a real key): with no key, requestEmailOtp's dev
+      // fallback records the code row without sending.
+      RESEND_API_KEY: '',
+      // v2.56.22: FOLLOWUPS_EPOCH suppresses follow-up slots that went 'missed'
+      // before the feature launched. Seeded placements are necessarily older
+      // than the real epoch, so with it in force NO slot can ever be 'missed'
+      // and the expired-reminder UI becomes untestable. Pinning it to the past
+      // here restores the pre-cutoff projection so the UI specs exercise real
+      // slots; the cutoff itself is covered by src/domain/followups.test.ts.
+      FOLLOWUPS_EPOCH: '2020-01-01T00:00:00Z'
     }
   },
 });

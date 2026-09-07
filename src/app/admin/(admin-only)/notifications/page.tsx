@@ -27,7 +27,10 @@ const KNOWN_TYPES: Record<string, { label: string; description: string }> = {
     'contract_result': { label: 'Contract Results', description: 'Triggered when a PetShield adoption contract completes.' },
     'form_result': { label: 'Form Submissions', description: 'Triggered when a potential adopter fills out an adoption request.' },
     'duplicate_candidate': { label: 'Duplicate Candidates', description: 'Created when the AI engine flags a potential duplicate record.' },
-    'import_result': { label: 'Scraper Imports', description: 'Status updates from background social media import jobs.' }
+    'import_result': { label: 'Scraper Imports', description: 'Status updates from background social media import jobs.' },
+    // v2.55.17: the followup-cron Worker checks NOTIF_ENABLED_follow_up_due
+    // before inserting — this row is its kill switch.
+    'follow_up_due': { label: 'Follow-up Reminders', description: 'Daily cron reminder when an adoption/transit follow-up slot is due.' }
 };
 
 export default function AdminNotificationsPage() {

@@ -12,7 +12,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { MediaLightbox, isVideo as isVideoItem } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
-import { formatShortDate } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import { formatAge } from '@/lib/ageUtils';
 import DatePicker from '@/components/ui/DatePicker';
 import { extractVideoThumbnail } from '@/lib/videoThumbnail';
@@ -54,6 +54,7 @@ function extractAddressFromContact(contactText: string): string {
 }
 
 export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, onSuccess, onDelete, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '' }: { adopterId: string,   initialData?: any, onCancel?: () => void, onSuccess?: () => void, onDelete?: () => void,   availableAnimals?: any[],   adopterAdoptions?: any[], currentUser?: string, adopterAddress?: string }) {
+    const { formatShortDate } = useDateFormat();
     const router = useRouter();
     const searchParams = useSearchParams();
     const { t, locale } = useLanguage();

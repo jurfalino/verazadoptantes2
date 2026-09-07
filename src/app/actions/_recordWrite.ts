@@ -7,7 +7,7 @@
  */
 
 import { animals, placements, adopterEvents, adopterImages } from '@/db/schema';
-import { eq, and, isNull } from 'drizzle-orm';
+import { eq, and, isNull, desc } from 'drizzle-orm';
 import { deriveEndedPlacement } from '@/domain/placements';
 
 const PLACEMENT_TYPES = ['foster', 'adoption'];
@@ -66,12 +66,24 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
 
     if (isEventType(recordType)) {
         const id = data.id || newId();
+        // v2.55.14: events know their animal. The wizard sends the picked animal id
+        // as a separate `animalId` field (never as `data.id`, which pre-seeds the
+        // EVENT row id); the placement is resolved here — active span for the
+        // (animal, adopter) pair, else the most recent ended one.
+        const animalId: string | null = data.animalId || null;
+        let placementId: string | null = null;
+        if (animalId && data.adopterId) {
+            const pair = and(eq(placements.animalId, animalId), eq(placements.adopterId, data.adopterId));
+            const active = await db.select().from(placements).where(and(pair, isNull(placements.endedAt))).get();
+            const last = active ?? await db.select().from(placements).where(pair).orderBy(desc(placements.startedAt)).limit(1).get();
+            placementId = last?.id ?? null;
+        }
         await db.insert(adopterEvents).values({
             id,
             adopterId: data.adopterId ?? null,
             eventType: recordType,
-            animalId: null,
-            placementId: null,
+            animalId,
+            placementId,
             animalName: data.animalName ?? null,
             species: data.species ?? null,
             status: data.status ?? null,
@@ -81,6 +93,8 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
             onBehalfOf: data.onBehalfOf ?? null,
             sourceUrl: data.sourceUrl ?? null,
             recordedBy: actor,
+            followupKey: data.followupKey ?? null,
+            followupSubtype: data.followupSubtype ?? null,
         }).onConflictDoNothing();
         return id;
     }
@@ -130,13 +144,18 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
         if (data.details !== undefined) patch.details = data.details;
         if (data.date !== undefined) patch.date = data.date;
         if (data.onBehalfOf !== undefined) patch.onBehalfOf = data.onBehalfOf;
+        if (data.animalId !== undefined) patch.animalId = data.animalId || null;
+        if (data.followupKey !== undefined) patch.followupKey = data.followupKey || null;
+        if (data.followupSubtype !== undefined) patch.followupSubtype = data.followupSubtype || null;
         if (data.recordType !== undefined && isEventType(data.recordType)) patch.eventType = data.recordType;
         if (Object.keys(patch).length) await db.update(adopterEvents).set(patch).where(eq(adopterEvents.id, id));
         return;
     }
 
     // Animal-bearing rows: update identity on `animals`.
-    const animalPatch: RecordData = { updatedAt: now };
+    // `updatedBy` is what makes a pure identity edit (name/color/microchip)
+    // visible to the card's «Actualizado por» — no activity row records it.
+    const animalPatch: RecordData = { updatedAt: now, updatedBy: actor };
     if (data.animalName !== undefined) animalPatch.name = data.animalName;
     if (data.species !== undefined) animalPatch.species = data.species;
     if (data.details !== undefined) animalPatch.details = data.details;
@@ -197,6 +216,29 @@ export async function deleteRecordById(db: Db, id: string): Promise<void> {
     await db.delete(adopterImages).where(eq(adopterImages.adoptionId, id));
     await db.delete(animals).where(eq(animals.id, id));
     await db.delete(adopterEvents).where(eq(adopterEvents.id, id));
+}
+
+/**
+ * SOFT-delete an animal (v2.55.20). Team parity means any org member can
+ * delete a teammate's animal, so this must be recoverable: we stamp
+ * `animals.deletedAt` (the column the normalization plan always intended for
+ * this) and leave placements, events and images intact. The `adoptions`
+ * compat view already filters `deleted_at IS NULL`, so every list/read hides
+ * it immediately; an admin can restore by clearing the column.
+ * Returns false when the id isn't an animal (caller falls back to hard delete
+ * for event rows, which are individually re-creatable).
+ */
+export async function softDeleteAnimal(db: Db, id: string, actor: string): Promise<boolean> {
+    const animal = await db.select({ id: animals.id }).from(animals).where(eq(animals.id, id)).get();
+    if (!animal) return false;
+    const now = new Date();
+    await db.update(animals).set({ deletedAt: now as any, updatedAt: now as any }).where(eq(animals.id, id));
+    // Close any active custody span so the animal doesn't stay "placed" while
+    // hidden — a later restore shows an accurate, ended history.
+    await db.update(placements).set({ endedAt: now as any })
+        .where(and(eq(placements.animalId, id), isNull(placements.endedAt)));
+    void actor;
+    return true;
 }
 
 /** Remove an adopter's custody + events (used when deleting an adopter). Animals

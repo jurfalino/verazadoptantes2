@@ -17,7 +17,7 @@ database_id = "1b3b21c3-38ef-45ee-af86-d1f08adfb834"
 migrations_dir = "drizzle"
 
 [vars]
-EMAIL_FROM = "noreply@buenadoptante.org"
+EMAIL_FROM = "BuenAdoptante <noreply@buenadoptante.org>"
 R2_PUBLIC_URL = "https://pub-bb28dd8b1e674fc189252b0000a7b573.r2.dev"
 # AUTH_URL must be set in Cloudflare Dashboard per environment (Production/Preview)
 # Note: AXIOM_DATASET and AXIOM_TOKEN are also configured in Cloudflare Pages dashboard
@@ -42,7 +42,7 @@ bucket_name = "buenadoptante-images"
 # Preview environment - uses staging database
 [env.preview]
 [env.preview.vars]
-EMAIL_FROM = "noreply@buenadoptante.org"
+EMAIL_FROM = "BuenAdoptante <noreply@buenadoptante.org>"
 
 [[env.preview.d1_databases]]
 binding = "DB"

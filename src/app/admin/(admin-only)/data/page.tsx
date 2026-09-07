@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useMemo } from 'react';
-import { formatDateTime } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import {
     TABLE_GROUPS,
     TABLE_MANIFEST,
@@ -28,6 +28,7 @@ interface ExportPreview {
 }
 
 export default function DataMigrationPage() {
+    const { formatDateTime } = useDateFormat();
     // ─── Export state ──────────────────────────────────
     const [exporting, setExporting] = useState(false);
     const [exportError, setExportError] = useState('');

@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react';
 import Link from 'next/link';
+import { useTimezone } from '@/context/TimezoneContext';
 import { useLanguage } from '@/context/LanguageContext';
 import FormAnswersPanel, { renderFormAnswerValue } from '@/components/FormAnswersPanel';
 import FormResultMatchCard from '@/components/FormResultMatchCard';
@@ -11,11 +12,18 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 // Single source of truth: fallbacks come from English locale so labels always render
 const formResultsFallbacks = en.formResults as Record<string, string>;
 
-function formatSubmissionDate(date: Date | null | undefined): string {
+/**
+ * `submission.createdAt` arrives as a server prop and renders on first paint,
+ * so this runs once on the Worker and once in the browser. It used to pass
+ * `undefined` as the locale and no `timeZone`, meaning *both* varied between
+ * the two passes — a React #418 waiting to happen (see src/lib/dates.ts).
+ * Locale and zone are both explicit now.
+ */
+function formatSubmissionDate(date: Date | null | undefined, timeZone: string): string {
     if (!date) return '';
     const d = date instanceof Date ? date : new Date(date as unknown as string | number);
     if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleDateString(undefined, { dateStyle: 'medium' });
+    return d.toLocaleDateString('es-AR', { dateStyle: 'medium', timeZone });
 }
 
 function CollapsibleSection({
@@ -97,6 +105,7 @@ interface FormResultsContentProps {
 }
 
 export default function FormResultsContent(props: FormResultsContentProps) {
+    const timeZone = useTimezone();
     const { t } = useLanguage();
     const L = (key: string) => (t(`formResults.${key}`) || '').trim() || formResultsFallbacks[key] || key;
     const {
@@ -145,7 +154,7 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                     )}
                     {submission?.createdAt && (
                         <p>
-                            {L('submitted_on')} {formatSubmissionDate(submission.createdAt)}
+                            {L('submitted_on')} {formatSubmissionDate(submission.createdAt, timeZone)}
                         </p>
                     )}
                 </div>

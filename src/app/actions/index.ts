@@ -76,3 +76,6 @@ export { matchFingerprints } from './importIdentical';
 // Presence-only match context for the import "por qué" panel (PII-safe)
 export { getMatchContext } from './matchContext';
 export type { MatchContext } from './matchContext';
+
+export { getAnimalProfile, addAnimalEvent, deleteAnimalEvent } from './animalTimeline';
+export type { AnimalProfileData, AnimalTimelineItem } from './animalTimeline';

@@ -60,10 +60,34 @@ End-to-end pipeline takes **~8–15 minutes**. Watch progress at:
 > ⚠️ **NEVER bump minor or major version without explicit user authorization.**
 > When in doubt, use **patch** for improvements or **build suffix** for fixes.
 
+### Derive the new version from the branch, never from your memory of it
+
+> **🚨 The base you started from is NOT the current version.** Another session
+> may have shipped while you worked. On 2026-09-06 one session shipped `2.56.0`
+> while a parallel session — continuing the `2.55.x` series from its own older
+> base — bumped `2.55.18` → `2.55.19` on top of it, so `package.json` moved
+> BACKWARDS across three releases.
+
+Always read the real current version first, then increment THAT:
+// turbo
+```
+git fetch origin && git show origin/staging:package.json | grep '"version"'
+```
+
 Run this BEFORE committing (step 4):
 ```
 npm version <version> --no-git-tag-version
 ```
+
+Then confirm you didn't regress (same check CI's **Version Guard** job runs;
+a `pre-push` hook runs it too when `git config core.hooksPath .githooks` is set):
+// turbo
+```
+node scripts/check-version-bump.mjs
+```
+
+If it reports a regression, bump to the number it suggests — **never** push with
+`--no-verify` to get around it.
 
 ## Steps
 

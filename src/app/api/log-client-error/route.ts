@@ -14,6 +14,13 @@ interface ClientErrorPayload {
     digest?: string;            // Next.js error digest if available
     componentStack?: string;
     extra?: Record<string, unknown>;
+    /**
+     * 'warn' for conditions the app recovered from on its own (React hydration
+     * mismatches — see src/domain/clientErrors.ts). Those are real defects we
+     * want in Axiom, but they get no errorId because nothing is shown to the
+     * user to quote back at us. Anything else defaults to 'error'.
+     */
+    level?: 'warn' | 'error';
 }
 
 function isValidErrorId(id: unknown): id is string {
@@ -36,6 +43,21 @@ export async function POST(request: NextRequest) {
     if (payload.stack) reconstructedError.stack = payload.stack;
 
     const suppliedErrorId = isValidErrorId(payload.errorId) ? payload.errorId : undefined;
+
+    const context = {
+        source: payload.source || 'unknown',
+        url: payload.url,
+        userAgent: payload.userAgent,
+        digest: payload.digest,
+        componentStack: payload.componentStack,
+        userEmail,
+        ...(payload.extra || {}),
+    };
+
+    if (payload.level === 'warn') {
+        logger.warn(`client: ${message}`, { ...context, stack: payload.stack });
+        return NextResponse.json({ errorId: null });
+    }
 
     const errorId = logger.error(`client: ${message}`, reconstructedError, {
         errorId: suppliedErrorId,

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 export const adopters = sqliteTable("adopters", {
@@ -162,6 +162,7 @@ export const animals = sqliteTable("animals", {
     addedBy: text("added_by").default("anonymous"), // Rescuer who owns it
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    updatedBy: text("updated_by"), // v2.56.16: actor of the last ficha edit (NULL = never edited)
     deletedAt: integer("deleted_at", { mode: "timestamp" }), // Soft delete
 }, (table) => ({
     addedByIdx: index("idx_animals_added_by").on(table.addedBy),
@@ -213,6 +214,12 @@ export const adopterEvents = sqliteTable("adopter_events", {
     sourceUrl: text("source_url"),
     recordedBy: text("recorded_by").default("anonymous"),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    // v2.55.16 (followups): the projected slot this event satisfies (exact-match
+    // pass) + the follow-up's classification (adaptation | vaccination | neuter |
+    // vet_visit — FOLLOWUP_SUBTYPES; same set for adoption and transit; NULL on
+    // legacy rows and non-follow_up events).
+    followupKey: text("followup_key"),
+    followupSubtype: text("followup_subtype"),
     // Moderation: when set, this note was reviewed as a FALSE POSITIVE in the
     // "Contacto en notas" data-quality report and is excluded from it. Cleared
     // when the note is edited so a materially changed note is re-reviewed. See
@@ -226,6 +233,26 @@ export const adopterEvents = sqliteTable("adopter_events", {
 }, (table) => ({
     adopterIdx: index("idx_events_adopter").on(table.adopterId),
     animalIdx: index("idx_events_animal").on(table.animalId),
+}));
+
+// Animal-scoped care log (v2.55.15): vaccinations, dewormings, vet visits,
+// neuter, free notes. Adopter-less by design — care happens in rescue, transit
+// AND adoption, so these can't live in adopter_events (adopterId NOT NULL and
+// every read path assumes adopter scope). The animal timeline unions these with
+// placements + animal-linked adopter_events. `followup_key` links a record to
+// the projected follow-up slot it satisfies (populated from v2.55.16).
+export const animalEvents = sqliteTable("animal_events", {
+    id: text("id").primaryKey(),
+    animalId: text("animal_id").notNull(), // → animals.id
+    eventType: text("event_type").notNull(), // ANIMAL_EVENT_TYPES: 'vaccination' | 'deworming' | 'vet_visit' | 'neuter' | 'note'
+    date: integer("date", { mode: "timestamp" }),
+    details: text("details"),
+    followupKey: text("followup_key"), // projected-slot key this satisfies (nullable)
+    placementId: text("placement_id"), // optional placement context when logged from a slot
+    recordedBy: text("recorded_by").default("anonymous"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    animalIdx: index("idx_animal_events_animal").on(table.animalId, table.date),
 }));
 
 // Adopter Stats - Track analytics events (search hits, profile views)
@@ -355,7 +382,12 @@ export const users = sqliteTable("user", {
     // name" when they differ. See lib/audit.ts:ensureUserProfile and
     // migration 0047.
     googleName: text("google_name"),
-});
+}, (table) => ({
+    // Both login methods (Google OAuth, email OTP) resolve accounts by
+    // email with LIMIT 1 — a duplicate row would split one person across
+    // providers (migration 0066).
+    emailUnique: uniqueIndex("idx_user_email_unique").on(table.email),
+}));
 
 export const accounts = sqliteTable(
     "account",
@@ -401,6 +433,28 @@ export const verificationTokens = sqliteTable(
     })
 );
 
+// Email OTP login codes (migration 0065). Single-use 6-digit codes for the
+// `email-otp` Credentials provider; codeHash is HMAC-SHA-256 keyed with
+// AUTH_SECRET (never the plaintext code). Rows are short-lived: retired
+// (consumedAt set) on success or when a newer code is requested, and purged
+// after 24h opportunistically by requestEmailOtp. requestIp exists only for
+// per-IP rate limiting and leaves with the row. NOT the Auth.js
+// verificationToken table above — that one has no attempts counter and stays
+// unused.
+export const emailOtpCodes = sqliteTable("email_otp_codes", {
+    id: text("id").primaryKey(),
+    email: text("email").notNull(), // normalized: trim + lowercase
+    codeHash: text("code_hash").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    consumedAt: integer("consumed_at", { mode: "timestamp_ms" }),
+    requestIp: text("request_ip"),
+}, (table) => ({
+    emailCreatedIdx: index("idx_email_otp_email_created").on(table.email, table.createdAt),
+    ipCreatedIdx: index("idx_email_otp_ip_created").on(table.requestIp, table.createdAt),
+}));
+
 export const userProfiles = sqliteTable("user_profiles", {
     userId: text("user_id").primaryKey(),
     // organization: text("organization") — DEPRECATED & DROPPED in v2.12.1-34 (migration 0037).
@@ -418,6 +472,10 @@ export const userProfiles = sqliteTable("user_profiles", {
     timezone: text("timezone"), // IANA timezone (e.g. "America/Argentina/Buenos_Aires") — via cf-timezone
     lastActiveAt: integer("last_active_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    // v2.55.16 (followups): per-user schedule + message-template overrides —
+    // FollowupSettings JSON (src/domain/followups.ts), NULL = defaults. Read
+    // whole, never queried by field (the reminder Worker joins user→profile).
+    followupSettings: text("followup_settings"),
     // Legal
     termsAcceptedAt: integer("terms_accepted_at", { mode: "timestamp" }), // Unix timestamp when T&C were accepted
     termsVersion: integer("terms_version"), // Version of T&C accepted (matches CURRENT_TERMS_VERSION)

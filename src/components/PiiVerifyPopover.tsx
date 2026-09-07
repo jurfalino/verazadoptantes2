@@ -6,7 +6,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { verifyKnownInfo } from '@/app/actions/piiAccess';
 import { useOneTimeNotice } from '@/hooks/useOneTimeNotice';
-import { formatShortDate } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import type { ContactEntryType } from '@/lib/contactEntries';
 
 /** Footer state for the request-access secondary action. */
@@ -50,6 +50,7 @@ export default function PiiVerifyPopover({
     onRequestAccess,
     previewMode = false,
 }: Props) {
+    const { formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();

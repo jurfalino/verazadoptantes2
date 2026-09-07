@@ -15,7 +15,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useShowToast } from '@/components/ui/Toast';
-import { formatShortDate } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 
 interface Orphan {
     id: string;
@@ -31,6 +31,7 @@ interface Orphan {
 }
 
 export default function OrphanSubmissionsSection() {
+    const { formatShortDate } = useDateFormat();
     const toast = useShowToast();
     const [rows, setRows] = useState<Orphan[]>([]);
     const [loading, setLoading] = useState(true);

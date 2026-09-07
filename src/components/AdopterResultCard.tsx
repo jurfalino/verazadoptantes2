@@ -12,7 +12,7 @@ import { RatingBadge } from './RatingBadge';
 import { RatingExplainer } from './RatingExplainer';
 import { AdopterName } from './AdopterName';
 import { useLanguage } from '@/context/LanguageContext';
-import { formatShortDate } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
 
 const SNIPPET_ICONS: Record<SnippetField, string> = {
@@ -99,6 +99,7 @@ export interface AdopterResultCardProps {
 }
 
 export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = true, href, onClick, query = '', weakMatch = false }: AdopterResultCardProps) {
+    const { formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const nameRanges = tokenHighlightRanges(res.adopter.name, query);
     const contactRanges = tokenHighlightRanges(res.adopter.contactInfo || '', query);

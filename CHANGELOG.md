@@ -2,6 +2,819 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.22] - 2026-09-07
+
+### Fixed — the launch cutoff broke the follow-up e2e
+
+- 2.56.20's `FOLLOWUPS_EPOCH` suppressed the expired 7-day reminder that
+  `animal-profile.authed.spec.ts` asserts on, so E2E failed and the deploy was
+  skipped. The behaviour change is intended; the spec encoded the old one.
+- Structural, not incidental: seeded placements are necessarily older than the
+  epoch, so with the cutoff in force NO slot can ever reach `missed` and the
+  expired-reminder UI is untestable at all — not just today.
+- `notBefore` now resolves through `FOLLOWUPS_EPOCH` with a `FOLLOWUPS_EPOCH`
+  env override that Playwright pins to 2020, restoring the pre-cutoff
+  projection for UI specs. An unparseable value falls back to the real epoch
+  rather than disabling the cutoff, so a typo can't quietly restore the
+  retroactive "missed" wall. The cutoff itself stays covered by
+  `src/domain/followups.test.ts`.
+
+## [2.56.21] - 2026-09-07
+
+### Fixed — CI's new test step broke the pipeline; pulled back out
+
+- 2.56.20 added `npm test` to `build-and-lint` and to the Worker deploy. It
+  fails on CI with `Cannot find module '@rolldown/binding-linux-x64-gnu'`:
+  vitest 4 depends on rolldown, and `npm ci` does not install its linux native
+  binary here. The lockfile *does* carry the entry (optional, `os: linux`,
+  `cpu: x64`) — `.npmrc` sets `legacy-peer-deps=true`, which trips npm's
+  optional-dependency resolution bug.
+- Removed from both workflows so it stops blocking a production hotfix. The
+  Worker keeps its `tsc --noEmit` gate, which passes and was the bigger hole —
+  it previously deployed a cron bound to the production D1 with no checks at
+  all.
+- The unit suite therefore still runs nowhere in CI. That gap is real and
+  tracked in a comment where the step belongs; fixing the rolldown install is
+  its own change, not something to iterate on through deploy cycles while
+  production is broken.
+
+## [2.56.20] - 2026-09-07
+
+### Fixed — follow-ups no longer blame rescuers for check-ins that never existed
+
+- Slot status is pure `now` vs due/window math, so enabling follow-ups would
+  have marked every slot on every pre-existing placement as `missed` — in
+  production, 92 of 104 placements. A rescuer opening a year-old adoption would
+  be told they failed five check-ins the product never offered them.
+- `computeFollowups` now takes `notBefore` (`FOLLOWUPS_EPOCH`, set to the
+  production launch date) and drops slots that are **unsatisfied and whose
+  window closed before it**. Anything actually recorded stays `done`, so this
+  removes unearned blame without erasing history, and slots still open at
+  launch remain actionable. Both callers pass it — the animal page and the cron
+  Worker — so reminders and UI agree on what exists.
+- This also bounds the long-running foster case: a foster span opened long ago
+  no longer renders its whole back-catalogue of monthly slots.
+
+### Added — CI actually runs the tests now
+
+- **`npm test` ran nowhere in CI.** `build-and-lint` gated a deploy on `tsc`,
+  lint and build only, so 555 unit tests never executed — including guardrails
+  written specifically to stop a regression from shipping (the timezone pinning
+  behind errorId 43d67f9e). Added to `build-and-lint`, before lint.
+- **The follow-up cron Worker deployed to production ungated.** Its workflow ran
+  checkout → `npm ci` → `wrangler deploy`, so any commit touching
+  `src/domain/followups.ts` shipped a new cron bound to the production D1,
+  firing daily, with no type check and no tests — while the app sharing that
+  file could not deploy without build, lint, migrations and e2e. It now runs
+  `tsc --noEmit` and `npm test` first.
+
+## [2.56.19] - 2026-09-07
+
+### Fixed — dates rendered in two timezones at once (React #418, errorId 43d67f9e)
+
+A user on Android opened an adopter profile in production and got an "Algo salió
+mal" toast. The page was fine; the toast was not.
+
+- **Root cause.** The date formatters built their output from `getDate()`,
+  `getFullYear()` and bare `toLocaleDateString()` — all of which read the
+  *runtime's* timezone. The Cloudflare Worker runs in UTC and the browser runs in
+  the viewer's zone, so the SSR HTML and the hydration pass rendered different
+  days for the same value and React threw the server tree away. The reported
+  record's date was `2026-09-07T00:00:00Z` — Sep 7 on the Worker, Sep 6 in
+  Buenos Aires.
+- **The fix.** Every formatter in `src/lib/dates.ts` now takes an explicit IANA
+  `timeZone` and formats through `Intl.DateTimeFormat`/`formatToParts`, making
+  output a pure function of (value, zone) so both passes agree by construction.
+  The rendered format is unchanged.
+- **Civil dates vs instants.** `adoptions.date` conflates a picked calendar date
+  (`<input type="date">` → UTC midnight, 48 rows in prod) with an auto-stamped
+  instant (1291 rows). A picked date is a wall-calendar day, so rendering it in
+  the viewer's zone shows the wrong day to anyone west of UTC. `formatShortDate`
+  now detects the midnight-UTC marker and renders those in UTC. Splitting the
+  column is the real fix and remains open.
+- **Two more live instances**, both rendering server props on first paint with a
+  bare `toLocaleDateString()` (host locale *and* host zone):
+  `FormResultsContent` and `AnimalApplicants`. The other raw `toLocale*` sites
+  are fetch-populated (empty during SSR) or number formatting.
+- **Relative time can't be made hydration-safe** by pinning a zone — it reads the
+  wall clock, and the two passes run at different instants. `formatRelativeTime`
+  now takes an injectable `now`, and `useRelativeTime` renders it client-side
+  only.
+
+### Added — the viewer's timezone, and a control for it
+
+- Dates now render in the viewer's own zone, resolved once per request from
+  `user_profiles.timezone` and handed down by `TimezoneProvider`
+  (`useDateFormat`/`useRelativeTime`). Resolution reads the stored profile value,
+  **not** the live `cf-timezone` header: Cloudflare reports the egress location,
+  so a VPN user gets someone else's zone (see
+  `.agents/audits/2026-09-04-vpn-stale-data.md`). Anonymous visitors cost no
+  query and fall back to the app default.
+- Configuración gets an editable timezone selector (`updateUserTimezone`,
+  12 curated zones). The column was seeded once from `cf-timezone` at first
+  sign-in with `COALESCE` and never refreshed, so a user who moved had no way to
+  correct it. The list always includes the stored zone, so an auto-detected zone
+  outside the curated set can't be silently overwritten by saving the form.
+
+### Changed — recoverable hydration errors no longer alarm the user
+
+- React 19's default `onRecoverableError` calls `reportError()`, which fires a
+  window `error` event indistinguishable from a real crash — which is how a
+  mismatch React had already repaired reached a user as an error toast with an
+  ID to quote back at us. Those now log at `warn` (still in Axiom, still a real
+  defect) with no toast. Scoped to codes React recovers from: #419 still alarms.
+
+### Added — the guardrail
+
+- `src/lib/dates.test.ts` plus `TZ=Pacific/Kiritimati` (UTC+14) in the Vitest
+  config. The zone is deliberately neither UTC nor the app default: had it
+  matched either, a formatter that forgot its `timeZone` would still produce the
+  expected string and this bug would have shipped green.
+
+## [2.56.18] - 2026-09-07
+
+### Changed — the email login fields stay hidden until asked for
+
+- The login modal now shows Google as the only visible option; "O ingresá con
+  tu email" became the control that reveals the email field and send button,
+  with a chevron that rotates when open. Progressive disclosure per
+  `docs/ux-ui-guidelines.md` §4.4, and the pattern users already know from
+  other sign-in screens (§4.6, Jakob's Law).
+- Focus moves into the email field on reveal, so the click leads straight into
+  typing. The toggle is a real `button` with `aria-expanded`/`aria-controls`
+  and a visible focus ring, and it collapses again on a second click.
+- Each opening of the modal starts collapsed — it stays mounted while closed
+  (rendering null), so the panel would otherwise reappear mid-flow.
+- E2E updated in the same commit: the spec now clicks the toggle, and asserts
+  the input is absent beforehand. Without that it would have failed on a
+  hidden element and blocked the deploy.
+
+## [2.56.17] - 2026-09-07
+
+### Fixed — 2.56.16's e2e (the deploy it blocked)
+
+Two selector failures, both caused by 2.56.16's own UI change; the feature code
+is unchanged.
+
+- **A test asserted the marker I removed.** `de Vero|by Vero` was the teammate
+  attribution that «Actualizado por» replaces. It now asserts the new line —
+  and asserts it names **Test Admin**, not Vero, because that same test records
+  a vet visit on the teammate's animal as the admin a few lines earlier. That
+  is the feature behaving correctly, and it proves the value is derived from
+  the event just created rather than from the owner field.
+- **`animal-card-{id}` is on the photo link, not the card body**, so scoping a
+  text assertion to it could only ever see the species placeholder. The date
+  line carries its own `card-date-{id}` testid now.
+
+## [2.56.16] - 2026-09-07
+
+### Changed — the card's meta line now says what it means
+
+Two problems in one four-word footer.
+
+**The date meant three different things.** The card rendered a bare
+`📅 12/05/2026` with no label, but the compat view defines
+`date = COALESCE(placement.started_at, animal.created_at)` — so that number is
+the adoption date for an adopted animal, the foster start for one in tránsito,
+and the registration date for one still available. Each state now labels it:
+«Adoptado el», «En tránsito desde el», «Registrado el».
+
+**Attribution was owner-only and conditional.** «de {nombre}» appeared solely on
+teammates' animals, told you who *added* it, and said nothing about who has
+worked on it since. Cards now carry «Actualizado por {nombre} · hace 2 días»,
+always visible — or «Agregado por …» when nobody has touched it since it was
+registered, because calling a registration an update would be a lie. The old
+owner marker is removed rather than stacked: two attribution lines contradict
+each other the moment a teammate updates your animal.
+
+### Added — `animals.updated_by` (migration 0068)
+
+The actor is **derived**, not stamped: `placements`, `adopter_events` and
+`animal_events` all carry `recorded_by`, so no write path has to remember to
+keep a column fresh and the value cannot go stale. The one thing those tables
+cannot see is a pure ficha edit — a rename, a colour fix, a microchip — which
+touches only `animals`. `updated_by` closes that gap (NULL on legacy rows falls
+back to `added_by`).
+
+Two details that decide whether the line is truthful:
+
+- **`created_at`, not `date`/`started_at`.** The latter are real-world dates the
+  rescuer types and can backdate by months; «actualizado» is app-time. A
+  vaccination logged today for a dose given in June must not read as
+  «actualizado hace 3 meses».
+- **`'anonymous'` is not an actor.** It is the DEFAULT on all three tables, so
+  legacy and imported rows carry it literally; it is skipped when picking the
+  most recent toucher, exactly as the timeline already does.
+
+### Internal
+
+The bulk activity read in `/api/my-animals` (4 queries total, independent of N,
+written that way to stay under the Workers subrequest limit) moved out from
+behind `ENABLE_FOLLOWUPS` — «Actualizado por» needs the same rows and must not
+depend on a feature flag. The placements query no longer filters to active
+spans, since an ended one (a devolución) is an update too; `active` is derived
+from `ended_at` in JS, so this costs no extra query.
+
+## [2.56.15] - 2026-09-06
+
+### Changed — the share sheet is cut by intent, and covers the whole funnel
+
+The rows were named after the artifacts they produce ("formulario",
+"contrato"), with one summary sentence above trying to explain when each
+applies: *«El formulario suma personas interesadas; el contrato se firma con
+quien elijas.»* But a rescuer opening this sheet isn't choosing an artifact —
+they're in a situation. Each row now leads with the situation and puts the
+control underneath:
+
+1. «Si querés compartir su ficha con un adoptante interesado» → the animal's
+   public page on the adoption site (copy link / open) — **new**
+2. «Si querés evaluar adoptantes» → the vetting form (unchanged control)
+3. «Si ya tenés un adoptante y querés que firme un contrato digital» → the
+   digital contract (unchanged control; post-adoption it reads resend/receipt)
+4. «Si querés registrar una adopción ya concretada» → the adopter picker —
+   **new**, and on a list card it is the only door to that flow
+
+The summary sentence is gone; the lead-ins replace it.
+
+**Row 1 is gated on data, not on a flag.** `/api/showcase/animal/[id]` serves
+only animals that are still `available` with no adopter AND have at least one
+photo — anything else 404s by design, so an ungated row would hand out a dead
+public link. The row renders only when the animal actually resolves. Its base
+URL is fetched at runtime from `/api/my-showcase-info` (a `NEXT_PUBLIC_*` value
+would bake staging's host into the production artifact) and carries `?lang=`,
+matching `ShowcaseUrlChips`.
+
+**Row 4 is hidden once the animal is adopted** — there is nothing left to
+record. The picker is mounted by the sheet itself, so the card gets the same
+one-click path the animal page's primary button offers.
+
+## [2.56.14] - 2026-09-06
+
+### Fixed — an animal registered as already adopted showed the two backwards
+
+Reported on staging for `luni3`: «Rescatado y registrado» sat *above* «Adoptado
+por …», i.e. the page claimed the animal was registered after it was adopted.
+
+The cause is not a date bug — the two dates are **identical**. Registering an
+animal that already has a home writes `animals.created_at` and
+`placements.started_at` from the same clock read (both `1778310159` for that
+row). The rail sorted on `b.date - a.date`, `Array.sort` is stable, and the
+origin item happened to be pushed first, so the tie fell to insertion order.
+
+Same-instant items now order by **cause** instead, in a pure, unit-tested
+comparator (`src/domain/animalTimelineOrder.ts`): an animal is registered, then
+placed, then things happen to it during that placement. Two cases the naive
+rank would get wrong are handled explicitly — a same-day handoff shows the new
+placement starting above the old one ending, while a zero-day span still ends
+after it starts.
+
+### Added — a scheduled follow-up says when the reminder actually arrives
+
+«Programado» plus a date left the user to guess whether anything would reach
+them. Upcoming items now carry a «¿Cuándo me avisan?» disclosure (bell icon,
+collapsed by default) that answers it in place:
+
+- the day the reminder is sent, and the last day the follow-up can be logged;
+- where it lands — the bell alone, or the bell **and** email, read from the
+  viewer's own settings, with a deep link to `/settings#followups` (a new
+  anchor) when email is off;
+- on a teammate's animal, when the viewer has «solo los animales que cargué
+  yo» on, it says plainly that this reminder goes to whoever registered it —
+  rather than promising a notification that will not be sent.
+
+## [2.56.13] - 2026-09-06
+
+### Fixed — the merged rail ran time in two directions
+
+Follow-ups to 2.56.12, found reviewing the merged rail as a whole:
+
+- **The future ran backwards.** `items` sorts date-DESC (newest at top, the
+  origin event at the bottom), but the projected block listed nearest-first —
+  so above «Hoy» time ran the opposite way from below it. As two separate
+  sections nobody could tell; on one rail it is the first thing you see.
+  Projected slots now sort DESC too: furthest-out at the top, the nearest one
+  touching «Hoy».
+- **Expired reminders sat in the future.** The disclosure rendered above every
+  projected item — the furthest-future position on the rail — for reminders
+  whose whole defining property is that their window already closed. Moved
+  below the «Hoy» divider, where they belong chronologically.
+- **The upcoming card read heavier than the real ones.** `bg-white` remaps to
+  `--surface-card`, so the recorded cards directly beneath it are that colour;
+  a `--surface-muted` (`#d1d1d6`) slab beside them looked like a grey block
+  rather than something that hasn't happened. Upcoming items are now ghost
+  cards — page colour, dashed border — which reads the same way in both themes.
+- **An animal with no events could not get one.** The empty state returned
+  early, before the «Hoy» line — and the origin event only exists when
+  `animals.created_at` is set, so a legacy row with neither had no
+  «+ Agregar evento» button at all. The empty message now renders inside the
+  rail, under the CTA.
+
+## [2.56.12] - 2026-09-06
+
+### Changed — one line of life: past and future share the same rail
+
+- **Future events look like the events they will become.** Projected follow-ups
+  used to live in their own block above the timeline, styled as a card list; now
+  they render as timeline items on the *same* vertical rail with the *same*
+  beacons, drawn dashed because they have not happened yet. Reading the animal's
+  page top to bottom is now one continuous line: what is coming, «Hoy», what
+  happened. The expired-reminder disclosure moved with them.
+- **The rail and the beacons finally line up.** Beacons carried
+  `-left-6 md:-left-8`, but the rail sits at `left-[7px] md:left-[15px]`: on
+  desktop the beacon centred at 8px against a rail centred at 16px — 8px adrift
+  at every item. `md:-left-8` is gone; `-left-6` centres correctly at both
+  breakpoints because the container's own padding already steps 24px → 32px.
+- **«+ Agregar evento» sits on the «Hoy» line** (user request), which is exactly
+  where a new event lands chronologically — instead of floating in a section
+  header above the timeline.
+
+The «Para hacer ahora» banner under the header stays: it is the notification
+deep-link target and the act-without-scrolling surface for due reminders.
+
+## [2.56.11] - 2026-09-06
+
+### Fixed — saving the follow-up schedule failed, with an untriageable toast
+
+- **The save failed.** `saveFollowupSettings` used Drizzle + `getDb()` and
+  returned bare `{ success: false }` from three separate paths, unlike every
+  other action in `settings.ts`, which uses the raw `env.DB` JOIN (the file even
+  documents why: `user_profiles` keys on the NextAuth user id while `getUser()`
+  returns an email). Rewritten on that proven pattern, with a single atomic
+  `INSERT … ON CONFLICT(user_id) DO UPDATE` upsert.
+- **The toast had no error id.** Every failure now THROWS so the catch assigns
+  one — a toast without an id is untriageable, which is the rule this repo has
+  everywhere else. The client also gained a try/catch: a *thrown* action
+  previously produced no toast at all and left the button spinning.
+- **zod v4 exhaustive records.** `messages` was `z.record(z.enum(...), …)`, and
+  in zod v4 an enum-keyed record requires EVERY key — so editing a single
+  message template failed validation with "expected string, received undefined"
+  for the three absent subtypes. Now a string-keyed record filtered to known
+  subtypes, with `followupSettingsSchema.test.ts` covering the exact payloads
+  the screen sends (schedule-only, one template, all templates, null, and
+  out-of-range rejection).
+
+## [2.56.10] - 2026-09-06
+
+### Fixed — «Programado» slots rendered with unthemed colors
+
+`globals.css` remaps opacity variants only for the classes it enumerates
+(`bg-teal-50/50` is listed; `bg-stone-50/50` and `bg-amber-50/50` are not), so
+the projected-slot cards painted raw light backgrounds in Azul Noche — plus
+`border-amber-300` / `border-stone-300`, which aren't remapped either. Those
+surfaces now use the semantic tokens the design guide prescribes
+(`--status-warning-bg/-border` for due, `--surface-muted` + `--border-default`
+for upcoming, `--text-secondary` for the label). A check over every component in
+this feature confirms no unremapped opacity variant remains.
+
+### Added — a countdown, and late logging that actually clears the reminder
+
+- Due reminders now say **how long is left** («te quedan 5 días para
+  registrarlo», «último día para registrarlo») instead of a second date the
+  reader has to subtract from today. Shown in the «Para hacer ahora» banner and
+  on the timeline slot.
+- Expired reminders get a **«Registrar igual»** button. It passes the slot key,
+  and the matcher's exact-key pass ignores dates — so logging a check-in late
+  marks that reminder done instead of leaving it in the vencidos list forever.
+  Previously the only way to clear one was to add an event and remember to
+  backdate it inside the window.
+
+## [2.56.9] - 2026-09-06
+
+### Fixed — three defects in the animal page's «Agregar evento» modal
+
+- **No rating.** A follow-up is a judgement about how the family is doing and it
+  feeds the adopter's average, so it now carries the same 1–5 `StarRating` the
+  wizard uses. Care events deliberately don't: `animal_events` has no rating
+  column, and "how did the vaccination go" isn't a rating.
+- **Types and subtypes repeated.** The subtype dropdown listed
+  vacunación/castración/veterinario one line below the very same words in the
+  type list. It's gone: recording a vaccination IS the «Vacunación» care event
+  (which already satisfies the vaccine milestone through the matcher), and a
+  manual follow-up is an adaptation check-in. Slots that need a specific subtype
+  pass it programmatically, so the data model is unchanged.
+- **No photos.** Images can now be attached, compressed client-side (max 1200px,
+  JPEG q0.8) and linked to the row just created — including care events, whose
+  photos `getAnimalProfile` now fetches so they render on the timeline. A failed
+  upload never discards the saved event; it surfaces with an errorId.
+
+`compressImage` extracted to `src/lib/imageCompress.ts` instead of adding a
+third copy. E2E covers the rating appearing for follow-ups and not for care
+events, the absent subtype select, and the photo input.
+
+## [2.56.8] - 2026-09-06
+
+### Changed — follow-ups are ON by default, and flag registration is now tested
+
+`ENABLE_FOLLOWUPS` defaults to **true** in every place a default is expressed
+(features.ts const, getAllFeatureFlags, the admin page's initial state and
+hydration, the config API's echo, and the settings section, which now hides only
+on an explicit `false`). The flag stays as a one-click kill switch — it is no
+longer the thing standing between the feature and the user. The cron keeps its
+own `NOTIF_ENABLED_follow_up_due` switch, and email still requires a Resend key.
+
+New `src/config/featureFlagRegistration.test.ts` asserts every flag in
+`FEATURE_FLAGS` appears in the admin toggle list, the page's hydration and the
+config API's response, plus that client-visible flags are in `PUBLIC_FLAG_KEYS`.
+This is the test that would have caught v2.55.16 shipping a flag no admin could
+switch on; it was verified to fail (with a remediation message naming the file)
+when the registration is removed.
+
+## [2.56.7] - 2026-09-06
+
+### Fixed — two defects found in the post-implementation review
+
+- **Team scoping failed OPEN.** `/api/my-animals` and `getAvailableAnimals`
+  build their owner filter as `or(...emails.map(...))`; `or()` of an empty array
+  is `undefined`, and `and(undefined, …)` silently drops the condition — an
+  empty team list would have returned EVERY animal in the database to any
+  authenticated user. Unreachable today (the session email is validated first,
+  and `getTeamEmails` always includes self), but one refactor away from a data
+  leak with no test covering it. Both call sites now fall back to `[self]`.
+- **Admins got a 404 on animals they can modify.** `getAnimalProfile` allowed
+  only owner ∨ org-mate, while `addAnimalEvent`, `deleteAnimalEvent`,
+  `deleteAnimalForAdoption` and `deleteAnimalImage` all accept admins — so an
+  admin could delete an animal or its events but not open its page. Admin
+  access added to the read path (and the stale "no admin bypass" doc comment
+  corrected).
+
+## [2.56.6] - 2026-09-06
+
+### Fixed — ENABLE_FOLLOWUPS was invisible (and unflippable) in the admin panel
+
+The follow-up flag was registered in `FEATURE_FLAGS`, `getAllFeatureFlags` and
+`PUBLIC_FLAG_KEYS`, but the admin config surface is a documented FOUR-place
+duplication that no code iterates: the toggle list, the page's config type, its
+useState initializer, its GET hydration, and the config API's echoed response.
+Missing from all of them, the flag never appeared in /admin/config — so nothing
+in Configuración → Seguimientos, no pending badges and no projected timeline
+could be switched on without a manual D1 write. Registered in every site, with
+label + description in es/en/pt. (The plumbing is now SIX places for a
+client-visible, admin-togglable flag; the duplication itself remains a known
+wart flagged in that route since v2.14.3.)
+
+## [2.56.3] - 2026-09-06
+
+### Fixed — restore the e2e database and local-state files committed by mistake
+
+v2.55.20 was staged with `git add -u`, which swept four tracked local-state
+files into the commit: `.wrangler/state/.../miniflare-D1DatabaseObject/*.sqlite`,
+`local.db`, `.vscode/settings.json` and `.claude/settings.local.json`.
+`scripts/setup-test-db.js` seeds e2e from that committed miniflare sqlite rather
+than an empty DB, so CI's test database silently became a copy of a dev machine's
+— which is why `duplicates.spec.ts` began failing on two stray near-identical
+records the fixtures never define. All four files are restored to their prior
+committed content; no application code changes.
+
+> Staging note: `git add -A` / `-u` is unsafe in this repo precisely because
+> those runtime databases are tracked. Stage explicit paths.
+
+## [2.56.5] - 2026-09-06
+
+### Changed — login codes last an hour, and the email says so on its own
+
+- **`OTP_TTL_MS` 10 minutes → 60 minutes.** A slow inbox or a user who steps
+  away mid-sign-in no longer has to start over. The security cost is small:
+  guessing is bounded by the 5-attempts-per-code cap and by the issuance
+  limits, not by the window, so a longer TTL buys an attacker no extra tries —
+  what it widens is how long a working code sits in an inbox. Expiry is stamped
+  per row, so this affects newly issued codes only; nothing to backfill.
+- **`OTP_HOURLY_MAX` 5 → 10** sends per email per hour, so someone fighting a
+  slow inbox isn't locked out mid-retry. The per-IP cap (15/hour) and the 60s
+  minimum gap between sends are unchanged.
+- **The stated expiry can no longer drift from the enforced one.** The email
+  copy hardcoded "10 minutes" in three locale strings, so raising the TTL alone
+  would have left the email lying. `buildOtpEmail` now takes the duration and
+  renders it per locale — and whole hours read as "1 hora" / "1 hour", not
+  "60 minutos". Covered by `src/lib/email.test.ts`, including a test that
+  builds the email from the real `OTP_TTL_MS`.
+
+## [2.56.4] - 2026-09-06
+
+### Fixed — emails now come from "BuenAdoptante", not a bare address
+
+- The first real OTP email arrived showing `noreply@buenadoptante.org` as the
+  sender, which reads as automated spam. `EMAIL_FROM` is now the display-name
+  form, `BuenAdoptante <noreply@buenadoptante.org>` (the spelling the manifest
+  and site metadata already use), in all three places that resolve it:
+  `wrangler.toml` `[vars]` (both default and preview), the OTP action's
+  fallback, and the followup-cron worker's own fallback — so follow-up
+  reminder emails get the same treatment. Verified against the live Resend API
+  before shipping.
+- No `EMAIL_FROM` row exists in `app_config`, so the wrangler `[vars]` value is
+  what was actually in effect; a DB row still overrides both if one is ever set.
+- **Version guard fix**: `check-version-bump.mjs` started its scan at `HEAD~1`
+  unconditionally. That is correct when the bump is already committed (CI, the
+  pre-push hook), but when run by hand after `npm version` the candidate is the
+  working tree — so HEAD was skipped, leaving the guard blind to precisely the
+  parallel-session case it was written for. The start ref now depends on
+  whether the working tree's version differs from HEAD's.
+
+## [2.56.2] - 2026-09-06
+
+### Fixed — the service worker's API cache TTL was never applied
+
+- `networkFirst` in `public/sw.js` accepted a `ttlSeconds` argument — the
+  `/api/` route passes `60 * 60`, and a comment promised a "1 hour TTL" — but
+  the function body never read it. Cache Storage has no expiry of its own, so
+  offline clients could be served an arbitrarily old API response; entries
+  effectively lived until the cache version changed.
+- Entries are now stamped with `x-sw-cached-at` on write and checked on read;
+  anything past its TTL is evicted instead of served. An unstamped entry counts
+  as expired — its age is unknowable. The fallback still ignores age when no
+  TTL is passed (page navigations), so offline browsing is unchanged.
+- **`CACHE_VERSION` bumped to `buenaadoptante-v4`**, which forces every client
+  to drop its old caches: v3 entries carry no stamp and would otherwise cause a
+  miss-then-evict pass on first read. The constant now also documents what the
+  bump does and one line per bump explaining why.
+- Covered by `src/lib/swCache.test.ts`, which evaluates the real `sw.js` in a
+  `vm` context with stubbed `caches`/`fetch` (a classic worker script can't be
+  imported). All four TTL cases failed before this change.
+
+## [2.56.1] - 2026-09-06
+
+### Fixed — version numbers can no longer move backwards
+
+- **The regression this closes**: 2.56.0 (email OTP) shipped, then a parallel
+  session continuing the 2.55.x follow-up series from its own older base
+  bumped 2.55.18 → 2.55.19 → .20 → .21 on top of it. `package.json` — the only
+  reliable deploy identity here, since `/api/health` is hardcoded — spent three
+  releases *below* a version already deployed. This release restores order at
+  **2.56.1** (above the 2.56.0 high-water mark; deliberately a patch, since a
+  minor bump needs user authorization).
+- **`scripts/check-version-bump.mjs`** fails when the version at HEAD is lower
+  than any of the last 50 ancestors', naming the offending commit and the
+  version to use instead. It allows an *equal* version so release merges and
+  the post-squash "merge master back into staging" step still pass — catching
+  decreases is what prevents the bug.
+- **Enforced in two places**: a `Version Guard` CI job (which `build-and-lint`
+  now depends on, so a regression blocks migrations and deploys and fails in
+  ~30s instead of after a full build), and a `.githooks/pre-push` hook that
+  catches it locally before a CI cycle is spent. `npm run prepare` points
+  `core.hooksPath` at `.githooks`, so any clone picks the hook up on install.
+- `deploy.md` now tells agents to derive the new version from
+  `origin/staging`, never from the base they started on.
+
+## [2.56.0] - 2026-09-06
+
+### Added — email OTP login (6-digit code), behind `ENABLE_EMAIL_OTP` (default off)
+
+- **Sign in without Google**: the login modal gains an email field — a 6-digit
+  code is emailed (Resend HTTP API) and typed in. Open sign-up: a new email
+  creates an account on first sign-in and links automatically with Google
+  sign-ins for the same address. Two-step UI in `EmailOtpForm` with resend
+  countdown, i18n'd in es/en/pt (repurposing the dead magic-link `login.*`
+  block).
+- **Verification is a second Credentials provider** (`email-otp`) so it flows
+  through the same `callbacks.signIn` as Google — adopter-login gate,
+  blocked-login recording, profile upsert, audit. Codes live in the new
+  `email_otp_codes` table (migration 0065) as HMAC-SHA-256(AUTH_SECRET)
+  hashes: single-use, 10-min TTL, 5 attempts, retired when replaced, purged
+  after 24h. Issuance (`requestEmailOtp` server action) is D1-rate-limited:
+  60s min gap + 5/hour per email, 15/hour per IP. Successful OTP sign-ins
+  stamp `user.emailVerified`.
+- **`user.email` is now UNIQUE** (migration 0066): both login methods resolve
+  accounts by email with LIMIT 1, so a duplicate row would silently split one
+  person across providers. Pre-flight duplicate check ran clean on staging and
+  prod.
+- **`ensureUserProfile` works outside Cloudflare** (Drizzle fallback): local
+  dev / Playwright sign-ins previously never created user rows.
+- New leaf modules: `lib/email.ts` (Resend send + trilingual OTP template),
+  `lib/otp.ts` (WebCrypto code gen/HMAC), `lib/otpStore.ts` (D1 access).
+- E2E: full modal flow with a seeded known-hash code, wrong-code rejection.
+  Playwright's webServer now blanks `RESEND_API_KEY` so tests never hit the
+  real API.
+- Fix: admin config page never hydrated the `ENABLE_HOUSEHOLD_MEMBERS` toggle
+  from the API (third instance of the missed-echo bug).
+- **Not enabled anywhere yet**: flipping `ENABLE_EMAIL_OTP` requires
+  `RESEND_API_KEY` (Pages secret or `app_config` row) and a verified sending
+  domain for `noreply@buenadoptante.org` in Resend.
+
+## [2.55.21] - 2026-09-06
+
+### Changed — follow-up emails are digested (one message, same template)
+
+A rescuer with several reminders due on the same day now gets ONE email instead
+of one per slot — the mailbox stops competing with the bell, which stays
+per-slot because each notification is individually actionable. No second
+template: `buildFollowupEmail` takes a list and adapts — a single item renders
+exactly the message it always did (title, body, button to that animal), several
+render the same shell with one line per reminder, each row deep-linking to its
+animal and the button pointing at /my-animals (whose «N pendientes» badges are
+the list form of the same information). Capped at 25 items with a "…y N más"
+line. Items are queued only for slots that actually inserted a notification, so
+the digest inherits the once-ever (placement, slot, recipient) dedup unchanged;
+the run summary gains `emailedItems` alongside `emailed`. First unit tests for
+the Worker's pure copy builders (`src/lib/followupEmailCopy.test.ts` — the
+worker directory is outside vitest's scope), including HTML escaping of animal
+names.
+
+## [2.55.20] - 2026-09-06
+
+### Fixed — EM review of the animal-timeline feature (blocking + significant)
+
+- **Animal delete is now a SOFT delete.** Team parity lets any org member delete
+  a teammate's animal, and the old path hard-deleted the animal, its placements,
+  images and whole documented history with no undo. It now stamps
+  `animals.deletedAt` (the column the normalization plan always intended for
+  this) and closes any active span; the `adoptions` compat view already filters
+  it, so every list hides it immediately and an admin can restore it.
+- **`/my-animals/new?edit=` no longer honors edit mode.** That form submits a
+  hardcoded `recordType:'available', adopterId:null` envelope, so saving it for
+  an existing animal ends its foster/adoption span. v2.55.15 moved editing
+  in-place and removed every UI link, but the URL stayed reachable — and since
+  v2.55.18 its lookup is team-scoped, so a stale bookmark could silently
+  un-place a *teammate's* animal. It now redirects to the animal's page.
+- **`/api/my-animals` follow-up badges no longer fan out per row.** The four
+  per-animal queries are bulk-loaded once per request (N×4 → 4), keeping a large
+  rescuer's list far from the Workers subrequest limit this route has hit before.
+- **The cron's dedup lookup is indexed** (`0067`, expression index on
+  `json_extract(metadata,'$.dedupKey')` filtered to `follow_up_due`; query plan
+  verified as an index SEARCH, not a scan).
+- **Notification retention**: each run prunes its own `follow_up_due` rows whose
+  window closed 90+ days ago — the table had no cleanup path and team fan-out
+  multiplies growth.
+- **Adopter-page parity**: org-mates can edit/delete a teammate's activity records
+  there too (`AdoptionHistory` canEdit + the `deleteAdoption` server gate), so the
+  same record isn't editable on the animal page and read-only on the adopter page.
+- **The worker's 400-day scan bound now asserts itself** — it logs loudly if a
+  schedule ever outgrows it instead of silently skipping placements.
+
+### Added — «Recordarme solo los animales que cargué yo»
+
+Per-user preference (`followup_settings.onlyMyAnimals`) so a member of a large
+team can opt out of teammates' reminders without losing visibility — they still
+see and can act on every team animal. Owners always keep their own animals'
+reminders. Prevents the "everyone is notified, so nobody acts" failure mode and
+cuts email volume. i18n ×3, plus tests for the parse and the scan-bound invariant.
+
+## [2.55.19] - 2026-09-06
+
+### Added — follow-up reminders by email (opt-in)
+
+New «Cómo recibir los recordatorios» group in Configuración → Seguimientos: the
+in-app bell always fires; a per-user opt-in toggle (`followup_settings.
+emailReminders`) additionally delivers each reminder by email — a personal
+preference, so on teams every member chooses their own channel. The cron Worker
+sends via Resend at the exact moment it inserts the bell row (same once-ever
+per-(placement, slot, recipient) dedup; a send failure never blocks the bell),
+reusing the email-OTP leaf conventions: `RESEND_API_KEY`/`EMAIL_FROM` resolved
+env-first then from `app_config` (no key → emails silently skipped, bell only).
+Spanish email with a deep-link button to the animal's «Para hacer ahora»
+(`APP_BASE_URL` per env in wrangler vars). Run summary gains `emailed`/
+`emailFailed`. i18n ×3; prototype config screen updated to match.
+
+## [2.55.18] - 2026-09-06
+
+### Added — animals are team resources + full attribution (animal-timeline PR5)
+
+- **Org-shared visibility with FULL parity**: every animal read and write now
+  accepts the owner's org-mates — the `/my-animals` list and single-fetch, the
+  animal page, the wizard's animal picker, applicants (fulfilling the code's own
+  "org-wide is v2" note), contract invitations, care events, image/animal
+  deletes (OR fan-out per member email — never `IN ${array}`, per the D1 quirk;
+  `getTeamEmails` fails open to solo visibility). New `isOwnerOrOrgMate` +
+  `getTeamEmails` in `src/lib/orgMembership.ts` — the org plumbing finally
+  reaches the one surface that never used it.
+- **Attribution always visible** as the accountability counterweight: the ficha
+  shows «Agregado por {nombre} · equipo {org}», every timeline event shows its
+  recorder (resolved display names, including your own records), and teammates'
+  cards on the list carry a «de {nombre}» marker.
+- **The registration date is the timeline's first event**: a teal paw «Rescatado
+  y registrado en {org}» item from `animals.createdAt` + `addedBy` opens every
+  línea de vida — even a fresh available animal has one. The header's redundant
+  "Rescatado hace X" line is gone.
+- **Reminders go to the whole team**: the cron worker resolves the owner's org
+  members and notifies each one, deduped per (placement, slot, recipient). The
+  owner's schedule still decides the slots. Solo rescuers behave as before.
+- E2E: org fixture + a teammate-owned animal — visibility, attribution, origin
+  event, and an admin recording a care event on a teammate's animal.
+
+## [2.55.17-2] - 2026-09-06
+
+### Fixed — e2e: card-navigation assert outlives next dev's on-demand compile
+
+Under `fullyParallel` the card-click test can be the first request to
+`/my-animals/[id]`; the soft navigation's RSC fetch then waits for the dev
+server to compile the route, and the 5s default `toHaveURL` timeout expired
+mid-compile (all three attempts inside one long compile). Now 45s.
+
+## [2.55.17-1] - 2026-09-06
+
+### Fixed — saveAdoption change detection dropped identity-only edits
+
+The update branch's `fields` list omitted `sex`, `color`, `microchip`, `age`,
+`sourceUrl` and `comments`: a payload changing only one of those (and sending no
+fresh `date`, whose object comparison is always "changed") computed
+`hasChanges=false` and silently dropped the edit. Caught by the v2.55.15 e2e for
+the in-place identity form (a color-only edit never persisted); latent for any
+caller that stops sending `date`. All identity fields are now compared.
+
+## [2.55.17] - 2026-09-06
+
+### Added — follow-up reminders in the bell (animal-timeline PR4)
+
+New standalone Worker `workers/followup-cron` (Pages has no cron): daily at
+09:00 AR it recomputes the DUE follow-up slots per active placement with the
+same `src/domain/followups.ts` the app uses (bundled by relative import — pure
+domain only) and inserts `follow_up_due` notifications deep-linking to
+`/my-animals/{id}#next-action`. Double-gated (`ENABLE_FOLLOWUPS` +
+`NOTIF_ENABLED_follow_up_due` kill switch, now listed in the admin panel) and
+double-deduped (due-only statuses + a per-(placement, slot) `dedupKey` in
+`notifications.metadata` — one notification per slot, ever). Adoption scan
+bounded to 400 days; active transit homes are scanned regardless of age so a
+long foster keeps its monthly check-in. Deployed by
+`.github/workflows/followup-worker.yml` (staging → `--env staging`); rollout
+runbook in the worker README. `follow_up_due` registered in the notification
+type labels. `.agents/plans/followup_reminders_and_push.md` marked SUPERSEDED.
+
+## [2.55.16] - 2026-09-06
+
+### Added — projected follow-ups: the future timeline (animal-timeline PR3)
+
+Behind the new `ENABLE_FOLLOWUPS` flag (default off):
+
+- **Pure rule engine** `src/domain/followups.ts` (21 vitest cases): check-ins at
+  7/30/180 days from the adoption, vaccine plan for animals adopted under ~8
+  months, neuter suggested at ~5 months of AGE, and a light recurring transit
+  check-in (every 30 days) for foster homes. Every slot has an actionable
+  window — past it, it turns «vencido» and is never notified (anti-storm and
+  anti-clutter by design). Recorded events satisfy slots by exact `followup_key`
+  or by a date-window heuristic (with a 33-day look-back for vaccines: a dose
+  given in rescue/transit counts); re-timing the schedule can never un-complete
+  done work.
+- **Animal page**: «Para hacer ahora» banner with the due slots right under the
+  header (the amber pending pill anchors to it), the future timeline
+  nearest-first above a «Hoy» divider, expired reminders collapsed. Each due
+  slot has «Registrar» (check-ins route to the adopter wizard carrying
+  key+subtype; health slots open the event modal prefilled) and a **one-click
+  WhatsApp/Telegram button** with the per-subtype message prefilled
+  (`{animal}/{familia}/{dias}`) — shown only when the viewer has FULL PII access
+  to the adopter (resolveAdopterVisibility, fail-closed). Telegram can't prefill,
+  so the message is copied to the clipboard.
+- **Follow-up subtype** (`adaptation | vaccination | neuter | vet_visit`, same
+  set for adoption and transit) on `adopter_events`, auto-set from slots and
+  pickable in the unified event modal; migration `0064` also adds
+  `followup_key` and `user_profiles.followup_settings`.
+- **/settings → «Seguimientos de adopción»**: per-user schedule (check-in
+  offsets, health toggles, transit cadence) and editable message templates;
+  staged edits, restore-defaults writes NULL.
+- **/my-animals**: amber «N pendientes» badge per card (computed fail-open in
+  the API enrichment, owner settings loaded once) — the list becomes the
+  follow-through triage board. New libs `interpolate.ts` + `whatsapp.ts`
+  (AR-mobile `9` insertion, double-prefix guard; 10 vitest cases). i18n
+  namespace `followups` (es/en/pt).
+
+## [2.55.15] - 2026-09-06
+
+### Added — the animal's page: line of life + care log (animal-timeline PR2)
+
+Every animal now has its own page at `/my-animals/[id]` (owner-gated like the rest
+of the surface, behind `ENABLE_ANIMALS_FOR_ADOPTION`):
+
+- **Photo-first header** (2:1 hero with the name + an unlabeled descriptor —
+  "Gata gris · 4 meses · sin castrar" — on a scrim; gallery thumbnails top-right),
+  status chip linking to the adopter/foster, description, microchip/rescue meta.
+- **Línea de vida**: custody trail read directly from the normalized tables
+  (transit spans incl. ENDED ones — previously invisible through the compat view),
+  animal-linked follow-ups/returns, and the new **`animal_events` care log**
+  (vacunación, desparasitación, veterinario, castración — which also flips
+  `animals.neutered` —, notas) via migration `0063`. Contract evidence renders on
+  the adoption item. Images are fetched server-side (no client N+1).
+- **«+ Agregar evento»** on the timeline header: one entry point for care events
+  and (with an active placement) «Seguimiento a la familia», date editable.
+- **In-place edit** (✎): the header turns into a compact identity form; saving
+  patches ONLY `animals` fields — structurally immune to the old edit form's
+  silent foster-ending bug. 🗑 delete with confirmation. One «Compartir» sheet
+  (form + contract) in every state. Applicants mount while seeking.
+
+### Changed — `/my-animals` cards are now signals + one action
+
+Whole-card tap opens the animal's page; adopt/transit buttons, per-card contract
+flows and the applicants disclosure moved there (single-homed). Cards keep photo,
+pills, status blocks, an «N interesadas» chip deep-linking to the applicants
+section, and one «Compartir» sheet. Adopter-profile placement records link back
+via «Ver ficha del animal». New i18n namespace `animalProfile` (es/en/pt).
+
+## [2.55.14] - 2026-09-06
+
+### Fixed — follow-up and return events now link to their animal
+
+`adopter_events.animal_id` / `placement_id` existed since the normalization split but
+were always written NULL: the wizard deliberately discarded the picked animal id
+(it would have collided with the event row id) and only copied the animal's name as
+free text. First step of the animal-timeline feature (PR1 of 4):
+
+- The wizard now sends the picked animal id as a dedicated `animalId` field for
+  follow-up/returned records — including the dual-record flow, where the event links
+  to the parent adoption it just created.
+- `insertRecord` stores `animal_id` and resolves `placement_id` server-side (the
+  active placement for the animal+adopter pair, else the most recent ended one);
+  `updateRecord` accepts `animalId` patches; the add-record API accepts an optional
+  `adoption.animalId`.
+- Migration `0062` backfills history best-effort: an event links only when exactly
+  one animal matches by (a placement with the event's adopter) + case/trim-insensitive
+  name equality; ambiguous rows stay NULL. Verified against a copy of the local DB.
+
 ## [2.55.13] - 2026-09-05
 
 ### Added — inline re-rating from "Calificaciones vs. notas"

@@ -1,0 +1,207 @@
+import { test, expect } from '@playwright/test';
+
+/**
+ * v2.55.15 (animal-timeline PR2): the animal detail page.
+ * Runs under the `authed` project (admin session = gatitosolivos@gmail.com,
+ * the owner of the seeded fixture animal). Selectors are locale-agnostic
+ * (data-testid / roles) — CI Chromium renders English.
+ */
+
+const ANIMAL_ID = 'test-animal-fixture-1';
+
+test.describe('Animal detail page', () => {
+
+    test('renders header, custody trail and care events', async ({ page }) => {
+        await page.goto(`/my-animals/${ANIMAL_ID}`);
+
+        // Header: hero caption with the animal's name.
+        await expect(page.getByTestId('animal-name')).toHaveText('Timon', { timeout: 30000 });
+
+        // Status chip links to the active adopter.
+        const chip = page.getByTestId('animal-status-chip');
+        await expect(chip).toBeVisible();
+        await expect(chip).toHaveAttribute('href', '/adopter/test-adopter-fixture-tl1');
+
+        // Timeline: origin (v2.55.18) + adoption start + ended foster (start+end)
+        // + follow_up + vaccination = 6 items.
+        const items = page.getByTestId('timeline-item');
+        await expect(items).toHaveCount(6);
+
+        // The follow-up's note and the care event's note are both on the page.
+        await expect(page.getByText('Muy bien adaptado a la casa nueva')).toBeVisible();
+        await expect(page.getByText('Quíntuple, primera dosis')).toBeVisible();
+
+        // v2.55.18: attribution + origin — who added the animal (and the team),
+        // and the registration date as the timeline's first event.
+        await expect(page.getByTestId('animal-added-by')).toContainText('Test Admin');
+        await expect(page.getByTestId('animal-added-by')).toContainText('Refugio E2E');
+        await expect(page.getByText(/Rescued and registered|Rescatado y registrado/)).toBeVisible();
+    });
+
+    test('a teammate\'s animal is visible, attributed, and actionable (full parity)', async ({ page }) => {
+        // test-animal-fixture-2 belongs to e2e-teammate@example.com — same org.
+        await page.goto('/my-animals/test-animal-fixture-2');
+        await expect(page.getByTestId('animal-name')).toHaveText('Nube', { timeout: 30000 });
+        await expect(page.getByTestId('animal-added-by')).toContainText('Vero E2E');
+
+        // Full parity: the admin records a care event on the teammate's animal.
+        const before = await page.getByTestId('timeline-item').count();
+        await page.getByTestId('add-animal-event').click();
+        await page.getByTestId('animal-event-type').selectOption('vet_visit');
+        await page.getByTestId('animal-event-details').fill(`E2E control veterinario ${Date.now()}`);
+        await page.getByTestId('animal-event-save').click();
+        await expect(page.getByTestId('timeline-item')).toHaveCount(before + 1, { timeout: 30000 });
+
+        // And the teammate's card shows up in the admin's available list, attributed.
+        await page.goto('/my-animals?view=available');
+        await expect(page.getByTestId('animal-card-test-animal-fixture-2')).toBeVisible({ timeout: 30000 });
+        // v2.56.16: the old "de Vero" owner marker is replaced by the
+        // always-visible attribution line — and since THIS test just recorded a
+        // vet visit on Vero's animal as the admin, the line must now name the
+        // admin, not the owner. That is the whole point of «Actualizado por»,
+        // and it proves the value is derived from the event just created.
+        const attribution = page.getByTestId('last-update-test-animal-fixture-2');
+        await expect(attribution).toContainText(/Updated by|Actualizado por/);
+        await expect(attribution).toContainText('Test Admin');
+    });
+
+    test('records a care event through the modal', async ({ page }) => {
+        await page.goto(`/my-animals/${ANIMAL_ID}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+
+        const before = await page.getByTestId('timeline-item').count();
+
+        await page.getByTestId('add-animal-event').click();
+        await page.getByTestId('animal-event-type').selectOption('deworming');
+        await page.getByTestId('animal-event-details').fill(`E2E desparasitación ${Date.now()}`);
+        await page.getByTestId('animal-event-save').click();
+
+        // router.refresh() re-renders the server component with the new event.
+        await expect(page.getByTestId('timeline-item')).toHaveCount(before + 1, { timeout: 30000 });
+    });
+
+    test('add-event modal: rating for follow-ups, no duplicated subtype list, photo input', async ({ page }) => {
+        await page.goto(`/my-animals/${ANIMAL_ID}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+        await page.getByTestId('add-animal-event').click();
+
+        // Timon has an active adoption → the follow-up option leads the list and
+        // is selected by default, and it carries a rating.
+        const typeSelect = page.getByTestId('animal-event-type');
+        await expect(typeSelect).toHaveValue('follow_up');
+        // StarRating renders one button per star with a hardcoded English aria-label.
+        await expect(page.getByRole('button', { name: /^[1-5] stars?$/ })).toHaveCount(5);
+
+        // v2.56.9: the old second dropdown repeated vacunación/castración/veterinario.
+        await expect(page.getByTestId('animal-event-subtype')).toHaveCount(0);
+        // Photos can be attached.
+        await expect(page.getByTestId('animal-event-photo')).toHaveCount(1);
+
+        // Care events have no rating (animal_events has no such column).
+        await typeSelect.selectOption('vaccination');
+        await expect(page.getByRole('button', { name: /^[1-5] stars?$/ })).toHaveCount(0);
+    });
+
+    test('share sheet is intent-keyed and offers recording an adoption', async ({ page }) => {
+        // v2.56.15: rows lead with the situation, and the funnel now ends with
+        // "an adoption that already happened" — the only door on a list card.
+        await page.goto('/my-animals/test-animal-fixture-2'); // available, not adopted
+        await expect(page.getByTestId('animal-name')).toHaveText('Nube', { timeout: 30000 });
+
+        await page.getByTestId('share-sheet-test-animal-fixture-2').click();
+        await expect(page.getByText(/If you want to vet adopters|Si querés evaluar adoptantes/)).toBeVisible();
+        await expect(page.getByTestId('share-record-adoption-test-animal-fixture-2')).toBeVisible();
+
+        // On an already-adopted animal that row is gone — nothing to record.
+        await page.goto(`/my-animals/${ANIMAL_ID}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+        await page.getByTestId(`share-sheet-${ANIMAL_ID}`).click();
+        await expect(page.getByTestId(`share-record-adoption-${ANIMAL_ID}`)).toHaveCount(0);
+    });
+
+    test('card meta says WHAT the date means and who last touched the animal', async ({ page }) => {
+        await page.goto('/my-animals?view=adopted');
+        const card = page.getByTestId(`animal-card-${ANIMAL_ID}`);
+        await expect(card).toBeVisible({ timeout: 30000 });
+
+        // v2.56.16: the bare 📅 meant three different things (the compat view's
+        // date is COALESCE(placement.started_at, animal.created_at)). Timon is
+        // adopted, so his date is the adoption's.
+        await expect(page.getByTestId(`card-date-${ANIMAL_ID}`)).toContainText(/Adopted on|Adoptado el/);
+
+        // Attribution is always visible — «Actualizado por» when someone has
+        // touched it since, «Agregado por» when nobody has.
+        const meta = page.getByTestId(`last-update-${ANIMAL_ID}`);
+        await expect(meta).toBeVisible();
+        await expect(meta).toContainText(/Updated by|Actualizado por|Added by|Agregado por/);
+    });
+
+    test('list card navigates to the detail page', async ({ page }) => {
+        await page.goto('/my-animals?view=adopted');
+        const card = page.getByTestId(`animal-card-${ANIMAL_ID}`);
+        await expect(card).toBeVisible({ timeout: 30000 });
+        await card.click();
+        // Generous timeout: under fullyParallel this can be the FIRST request to
+        // /my-animals/[id], and next dev compiles the route on demand while the
+        // soft-navigation's RSC fetch waits (the 5s default expired mid-compile).
+        await expect(page).toHaveURL(new RegExp(`/my-animals/${ANIMAL_ID}$`), { timeout: 45000 });
+        await expect(page.getByTestId('animal-name')).toHaveText('Timon', { timeout: 30000 });
+    });
+
+    test('projected follow-ups render with the flag on', async ({ page }) => {
+        await page.goto(`/my-animals/${ANIMAL_ID}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+
+        // Timon was adopted ~80 days ago with no birthdate (health omitted):
+        // the 7d check-in is expired, the seeded follow-up satisfies the 30d one
+        // via the date heuristic, and the 6-month check-in is scheduled.
+        const section = page.getByTestId('projected-section');
+        await expect(section).toBeVisible();
+        await expect(section.getByText(/Six-month check-in|Control de los 6 meses/)).toBeVisible();
+        // No due slot → no banner, no pending pill.
+        await expect(page.getByTestId('due-banner')).not.toBeVisible();
+        await expect(page.getByTestId('pending-pill')).not.toBeVisible();
+        // The expired 7d reminder sits collapsed under the disclosure — which
+        // v2.56.13 moved BELOW the «Hoy» divider (an expired reminder is past,
+        // so it can't sit above the future), hence page- not section-scoped.
+        const disclosure = page.getByRole('button', { name: /1 (expired reminder|recordatorio vencido)/ });
+        await expect(disclosure).toBeVisible();
+        // …and v2.56.10 lets it be logged late: the row carries its own CTA,
+        // which passes the slot key so the matcher clears it whatever the date.
+        await disclosure.click();
+        await expect(page.getByTestId('register-missed-checkin_7d')).toBeVisible();
+    });
+
+    test('a scheduled follow-up explains when the reminder arrives', async ({ page }) => {
+        await page.goto(`/my-animals/${ANIMAL_ID}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+
+        // v2.56.14: "Programado" on its own leaves the user guessing whether
+        // anything will actually reach them. The 6-month check-in is upcoming.
+        const body = page.getByTestId('explain-body-checkin_180d');
+        await expect(body).toHaveCount(0);
+        await page.getByTestId('explain-checkin_180d').click();
+        await expect(body).toBeVisible();
+        await expect(body).toContainText(/remind you on|Te avisamos el/);
+        // Email is off by default → the section offers the settings deep link.
+        await expect(body.getByRole('link')).toHaveAttribute('href', '/settings#followups');
+    });
+
+    test('in-place edit updates identity without touching custody', async ({ page }) => {
+        await page.goto(`/my-animals/${ANIMAL_ID}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+
+        await page.getByTestId('profile-edit').click();
+        const colorInput = page.locator('#ae-color');
+        await expect(colorInput).toBeVisible();
+        const newColor = `caramelo`;
+        await colorInput.fill(newColor);
+        await page.getByTestId('inline-edit-save').click();
+
+        // Back out of edit mode with the new color in the descriptor…
+        await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId('animal-header')).toContainText(newColor);
+        // …and the adoption is still active (the old edit form used to end it).
+        await expect(page.getByTestId('animal-status-chip')).toHaveAttribute('href', '/adopter/test-adopter-fixture-tl1');
+    });
+});

@@ -83,13 +83,15 @@ export async function getApplicantsForAnimal(animalId: string): Promise<Applican
         const { formSubmissions, adopters, adoptions, contractInvitations, adopterFlags } = await import('@/db/schema');
         const { eq, and, isNull } = await import('drizzle-orm');
 
-        // Authorize: caller must be the rescuer who added the animal (org-wide
-        // visibility is a v2 nice-to-have; keep scope tight for now).
+        // Authorize: the rescuer who added the animal or any org-mate
+        // (v2.55.18 — the long-promised org-wide visibility, full parity).
         const animal = await db.select({ addedBy: adoptions.addedBy, adopterId: adoptions.adopterId })
             .from(adoptions)
             .where(eq(adoptions.id, animalId))
             .get();
-        if (!animal || animal.addedBy !== userEmail) return [];
+        if (!animal) return [];
+        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+        if (!(await isOwnerOrOrgMate(userEmail, animal.addedBy))) return [];
 
         const rows = await db.select({
             id: formSubmissions.id,

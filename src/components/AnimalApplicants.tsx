@@ -29,9 +29,23 @@ import { adopterDisplayName } from '@/lib/adopterDisplay';
 // "Procesando..." forever without anything being clicked.
 
 import type { ApplicantSummary } from '@/app/actions/applicants';
+import { formatShortDate } from '@/lib/dates';
+import { useTimezone } from '@/context/TimezoneContext';
 export type ApplicantRow = ApplicantSummary;
 
-function relativeDate(unixSec: number | null, locale: string): string {
+/**
+ * `applicants` is a server prop rendered on first paint, so the >30-day branch
+ * used to call a bare `toLocaleDateString()` — host locale *and* host timezone —
+ * once on the Worker and once in the browser, which is a React #418 (see
+ * src/lib/dates.ts). It now goes through the shared formatter with an explicit
+ * zone.
+ *
+ * The day buckets above it still read `Date.now()`, so they can in principle
+ * drift across a bucket edge between the two passes. Left as-is: fixing it means
+ * making this client-only (see `useRelativeTime`), which is a bigger change than
+ * this fix warrants.
+ */
+function relativeDate(unixSec: number | null, locale: string, timeZone: string): string {
     if (!unixSec) return '';
     const diffMs = Date.now() - unixSec * 1000;
     const days = Math.floor(diffMs / (24 * 3600 * 1000));
@@ -42,7 +56,7 @@ function relativeDate(unixSec: number | null, locale: string): string {
         const w = Math.floor(days / 7);
         return locale === 'en' ? `${w}w ago` : `hace ${w}sem`;
     }
-    return new Date(unixSec * 1000).toLocaleDateString();
+    return formatShortDate(unixSec, timeZone);
 }
 
 /** 1-line summary of the form submission for the disclosure row. */
@@ -193,6 +207,7 @@ export default function AnimalApplicants({
     applicants: ApplicantRow[];
 }) {
     const { t, locale } = useLanguage();
+    const timeZone = useTimezone();
     const toast = useShowToast();
     const [expanded, setExpanded] = useState(false);
     const [busySubmissionId, setBusySubmissionId] = useState<string | null>(null);
@@ -275,7 +290,7 @@ export default function AnimalApplicants({
                                         </div>
                                         <div className="text-xs text-stone-500 flex items-center gap-1.5 flex-wrap">
                                             {a.adopterRating != null && <span className="inline-flex items-center gap-1"><StarIcon className={`w-3 h-3 ${getRatingColors(a.adopterRating).text}`} />{a.adopterRating.toFixed(1)}</span>}
-                                            {a.appliedAt && <span>· {relativeDate(a.appliedAt, locale)}</span>}
+                                            {a.appliedAt && <span>· {relativeDate(a.appliedAt, locale, timeZone)}</span>}
                                         </div>
                                         {summary && (
                                             <div className="text-[11px] text-stone-500 truncate mt-0.5">
