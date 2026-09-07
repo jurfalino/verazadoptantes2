@@ -1,6 +1,6 @@
 'use server';
 
-import { adopters, adoptions, adopterHistory, adopterFlags, adopterImages } from '@/db/schema';
+import { adopters, adoptions, adopterHistory, adopterFlags, adopterImages, animals, placements } from '@/db/schema';
 import { eq, sql, and, or } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { logger } from '@/lib/logger';
@@ -8,7 +8,8 @@ import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { tokenizeAdopter } from './duplicates';
 import { saveAdoptionSchema } from './validation';
-import { insertRecord, updateRecord, deleteRecordById, softDeleteAnimal } from './_recordWrite';
+import { insertRecord, updateRecord, deleteRecordById, softDeleteAnimal, isAnimalBacked, countAnimalLinks, deletePlacementForAdopter } from './_recordWrite';
+import { decideAnimalFate, NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
 
 export async function saveAdoption(data: typeof adoptions.$inferInsert) {
     // Validate input
@@ -179,7 +180,49 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
     }
 }
 
-export async function deleteAdoption(adoptionId: string, adopterId: string) {
+/**
+ * What deleting this record would do, so the UI can warn BEFORE anything is
+ * destroyed rather than reporting afterwards.
+ *
+ * Read-only. Mirrors `deleteAdoption`'s reasoning exactly — if the two ever
+ * diverge, the dialog lies, so any change to one belongs in the other.
+ */
+export async function getAdoptionDeleteImpact(adoptionId: string, adopterId: string): Promise<{
+    kind: 'event' | 'animal';
+    animalName: string | null;
+    /** True when the animal has no other link and would go to the trash. */
+    willDeleteAnimal: boolean;
+    links: AnimalLinks;
+}> {
+    const fallback = { kind: 'event' as const, animalName: null, willDeleteAnimal: false, links: { ...NO_LINKS } };
+    try {
+        const db = await getDb();
+        if (!db) return fallback;
+
+        if (!(await isAnimalBacked(db, adoptionId))) return fallback;
+
+        const animal = await db.select({ name: animals.name }).from(animals).where(eq(animals.id, adoptionId)).get();
+        const active = await db.select({ id: placements.id }).from(placements)
+            .where(and(eq(placements.animalId, adoptionId), eq(placements.adopterId, adopterId))).get();
+        const links = await countAnimalLinks(db, adoptionId, active?.id ?? null);
+
+        return {
+            kind: 'animal',
+            animalName: animal?.name ?? null,
+            willDeleteAnimal: decideAnimalFate({ links }) === 'soft-delete',
+            links,
+        };
+    } catch (error) {
+        // Fail toward the quieter warning: never claim an animal is safe when we
+        // could not check, and never block the delete on a probe failure.
+        logger.warn('getAdoptionDeleteImpact failed; UI will show the generic confirm', {
+            adoptionId, adopterId, error: error instanceof Error ? error.message : String(error),
+        });
+        return fallback;
+    }
+}
+
+export async function deleteAdoption(adoptionId: string, adopterId: string, keepAnimal = false) {
     try {
         const db = await getDb();
         if (!db) throw new Error("No database");
@@ -201,7 +244,35 @@ export async function deleteAdoption(adoptionId: string, adopterId: string) {
             throw new Error("Not authorized to delete this record");
         }
 
-        await deleteRecordById(db, adoptionId);
+        // What this delete will actually do. The `adoptions` view UNIONs
+        // animal-backed rows (id = animals.id) with event-backed rows
+        // (id = adopter_events.id); the old code fired a delete at every table
+        // on that one id, so removing a duplicate adoption destroyed the animal,
+        // its images, and — the placement delete carried no adopter filter —
+        // every OTHER rescuer's custody span for it. Two cats were lost that way
+        // in production on 2026-09-07.
+        const animalBacked = await isAnimalBacked(db, adoptionId);
+
+        let animalOutcome: 'not-applicable' | 'kept' | 'soft-deleted' = 'not-applicable';
+
+        if (!animalBacked) {
+            // Event-backed record (observation / adoption_request / follow_up /
+            // returned_pet): it owns no animal, so this is just the event.
+            await deleteRecordById(db, adoptionId);
+        } else {
+            // Animal-backed. Remove ONLY this adopter's custody span, then let
+            // the animal live or not based on what still refers to it.
+            const removed = await deletePlacementForAdopter(db, adoptionId, adopterId);
+            const links = await countAnimalLinks(db, adoptionId, removed?.id ?? null);
+            const fate = decideAnimalFate({ links, keepAnimal });
+
+            if (fate === 'soft-delete') {
+                await softDeleteAnimal(db, adoptionId, changedBy);
+                animalOutcome = 'soft-deleted';
+            } else {
+                animalOutcome = 'kept';
+            }
+        }
 
         // Log to adopter history
         await db.insert(adopterHistory).values({
@@ -214,9 +285,10 @@ export async function deleteAdoption(adoptionId: string, adopterId: string) {
             changedAt: new Date()
         });
 
-        logAudit({ userEmail: changedBy, action: 'adoption_deleted', target: adoptionId, details: { adopterId } });
+        logAudit({ userEmail: changedBy, action: 'adoption_deleted', target: adoptionId, details: { adopterId, animalOutcome } });
         revalidatePath(`/adopter/${adopterId}`);
-        return { success: true };
+        revalidatePath('/my-animals');
+        return { success: true, animalOutcome };
     } catch (error) {
         const errorId = logger.error('Delete adoption failed', error, { adoptionId, adopterId });
         throw new Error(`Failed to delete adoption (Error ID: ${errorId})`);

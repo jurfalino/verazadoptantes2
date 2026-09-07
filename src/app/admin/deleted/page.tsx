@@ -5,6 +5,15 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { listDeletedAdopters, restoreAdopter, purgeAdopter, purgeDeletedAdopters } from '@/app/actions';
+import { listDeletedAnimals, restoreAnimal, purgeAnimal } from '@/app/actions/admin';
+
+interface DeletedAnimalRow {
+    id: string;
+    name: string | null;
+    species: string | null;
+    addedBy: string | null;
+    deletedAt: Date | number | null;
+}
 
 interface DeletedRow {
     id: string;
@@ -31,11 +40,18 @@ export default function AdminDeletedPage() {
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [busy, setBusy] = useState(false);
 
+    // Soft-deleted ANIMALS. They live in a different table from adopters
+    // (animals.deletedAt, stamped by softDeleteAnimal) and were previously
+    // unreachable from any screen — hidden from the rescuer with no way back.
+    const [animalRows, setAnimalRows] = useState<DeletedAnimalRow[]>([]);
+
     const load = useCallback(async () => {
         setLoading(true);
-        const res = await listDeletedAdopters();
+        const [res, animalRes] = await Promise.all([listDeletedAdopters(), listDeletedAnimals()]);
         if (res.ok) setRows(res.rows as DeletedRow[]);
         else toast.error(isEs ? 'Error' : 'Error', res.error || 'Failed to load', res.errorId);
+        if (animalRes.ok) setAnimalRows(animalRes.rows as DeletedAnimalRow[]);
+        else toast.error(isEs ? 'Error' : 'Error', animalRes.error || 'Failed to load animals', animalRes.errorId);
         setSelected(new Set());
         setLoading(false);
     }, [isEs, toast]);
@@ -86,6 +102,29 @@ export default function AdminDeletedPage() {
         const res = await purgeDeletedAdopters(ids);
         if (res.ok) { toast.success('✓', isEs ? `${res.purged} purgado(s)` : `${res.purged} purged`); await load(); }
         else toast.error(isEs ? 'Error' : 'Error', res.error || 'Failed to purge', res.errorId);
+        setBusy(false);
+    };
+
+
+    const doRestoreAnimal = async (id: string) => {
+        setBusy(true);
+        const res = await restoreAnimal(id);
+        if (res.ok) toast.success(isEs ? 'Animal restaurado' : 'Animal restored');
+        else toast.error(isEs ? 'Error' : 'Error', res.error || 'Failed', res.errorId);
+        await load();
+        setBusy(false);
+    };
+
+    const doPurgeAnimal = async (id: string, name: string | null) => {
+        const label = name?.trim() || (isEs ? 'este animal' : 'this animal');
+        if (!confirm(isEs
+            ? `Purgar ${label} definitivamente? Se borran sus traslados, eventos e imagenes. No se puede deshacer.`
+            : `Permanently purge ${label}? Its placements, events and images go too. This cannot be undone.`)) return;
+        setBusy(true);
+        const res = await purgeAnimal(id);
+        if (res.ok) toast.success(isEs ? 'Animal purgado' : 'Animal purged');
+        else toast.error(isEs ? 'Error' : 'Error', res.error || 'Failed', res.errorId);
+        await load();
         setBusy(false);
     };
 
@@ -149,6 +188,50 @@ export default function AdminDeletedPage() {
                     ))}
                 </div>
             )}
+
+            {/* Soft-deleted animals. Separate table, separate lifecycle: an
+                animal is hidden by animals.deletedAt, and until now nothing in
+                the product could bring it back. */}
+            <div className="pt-2">
+                <h3 className="text-lg font-semibold text-stone-900">
+                    🐾 {isEs ? 'Animales eliminados' : 'Deleted animals'}
+                </h3>
+                <p className="text-stone-500 text-sm mt-1 mb-3">
+                    {isEs
+                        ? 'Ocultos de Mis Animales. Restauralos (vuelven como disponibles, con su historial) o purgalos definitivamente.'
+                        : 'Hidden from My Animals. Restore them (they come back as available, history intact) or purge permanently.'}
+                </p>
+                {animalRows.length === 0 ? (
+                    <div className="bg-white rounded-2xl border border-stone-200 p-8 text-center text-stone-500 text-sm">
+                        {isEs ? 'No hay animales eliminados. ✅' : 'No deleted animals. ✅'}
+                    </div>
+                ) : (
+                    <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden divide-y divide-stone-100">
+                        {animalRows.map(a => (
+                            <div key={a.id} className="flex items-center gap-3 px-4 py-3 hover:bg-stone-50/60">
+                                <div className="min-w-0 flex-1">
+                                    <div className="font-medium text-stone-900 truncate">
+                                        {a.name?.trim() || (isEs ? 'Sin nombre' : 'No name')}
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-2 text-xs text-stone-500 mt-0.5">
+                                        {a.species ? <span className="inline-flex px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 font-medium">{a.species}</span> : null}
+                                        {a.deletedAt ? <span>{formatShortDate(new Date(a.deletedAt))}</span> : null}
+                                        {a.addedBy ? <span className="truncate">· {a.addedBy}</span> : null}
+                                    </div>
+                                </div>
+                                <button onClick={() => doRestoreAnimal(a.id)} disabled={busy}
+                                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-100 disabled:opacity-40 flex-shrink-0">
+                                    ↩ {isEs ? 'Restaurar' : 'Restore'}
+                                </button>
+                                <button onClick={() => doPurgeAnimal(a.id, a.name)} disabled={busy}
+                                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 disabled:opacity-40 flex-shrink-0">
+                                    🗑 {isEs ? 'Purgar' : 'Purge'}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
         </div>
     );
 }

@@ -6,9 +6,10 @@
  * come through here. See .agents/plans/animals-placements-normalization.md.
  */
 
-import { animals, placements, adopterEvents, adopterImages } from '@/db/schema';
-import { eq, and, isNull, desc } from 'drizzle-orm';
+import { animals, placements, adopterEvents, adopterImages, animalEvents, contractInvitations } from '@/db/schema';
+import { eq, and, isNull, desc, ne, sql } from 'drizzle-orm';
 import { deriveEndedPlacement } from '@/domain/placements';
+import { NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
 
 const PLACEMENT_TYPES = ['foster', 'adoption'];
 const EVENT_TYPES = ['observation', 'adoption_request', 'follow_up', 'returned_pet'];
@@ -211,6 +212,70 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
 
 /** Delete a record by its (view) id: an animal (+ its placements + adoption-linked
  *  images) or an adopter event. Mirrors the old hard-delete of an adoptions row. */
+/**
+ * Is this id an animal row? The `adoptions` view UNIONs animal-backed rows
+ * (id = animals.id) with event-backed rows (id = adopter_events.id), so the id
+ * alone does not say which table a record lives in — and that ambiguity is what
+ * made the old blanket delete so destructive.
+ */
+export async function isAnimalBacked(db: Db, id: string): Promise<boolean> {
+    const row = await db.select({ id: animals.id }).from(animals).where(eq(animals.id, id)).get();
+    return !!row;
+}
+
+/**
+ * Count everything that would still refer to `animalId` once the placement
+ * `excludePlacementId` is removed.
+ *
+ * Counts are separate queries rather than one join: D1 has no array-parameter
+ * expansion (see docs/D1_COMPATIBILITY.md) and a fan-out of small indexed counts
+ * is both simpler and cheaper than a five-way outer join here.
+ */
+export async function countAnimalLinks(db: Db, animalId: string, excludePlacementId: string | null): Promise<AnimalLinks> {
+    const count = async (q: Promise<{ n: number }[] | undefined> | any): Promise<number> => {
+        const rows = await q;
+        const n = Array.isArray(rows) ? rows[0]?.n : (rows as { n?: number } | undefined)?.n;
+        return typeof n === 'number' ? n : 0;
+    };
+    const N = { n: sql<number>`count(*)`.as('n') };
+
+    const [otherPlacements, adopterEventsN, animalEventsN, contracts] = await Promise.all([
+        count(db.select(N).from(placements).where(
+            excludePlacementId
+                ? and(eq(placements.animalId, animalId), ne(placements.id, excludePlacementId))
+                : eq(placements.animalId, animalId)
+        )),
+        count(db.select(N).from(adopterEvents).where(eq(adopterEvents.animalId, animalId))),
+        count(db.select(N).from(animalEvents).where(eq(animalEvents.animalId, animalId))),
+        // form_submissions has no animal_id — it links to an adopter
+        // (linked_adopter_id), so it cannot keep an animal alive.
+        count(db.select(N).from(contractInvitations).where(eq(contractInvitations.animalId, animalId))),
+    ]);
+
+    return {
+        ...NO_LINKS,
+        otherPlacements,
+        adopterEvents: adopterEventsN,
+        animalEvents: animalEventsN,
+        formsAndContracts: contracts,
+    };
+}
+
+/**
+ * Delete ONE custody span. Replaces the blanket
+ * `DELETE FROM placements WHERE animal_id = ?`, which had no adopter filter and
+ * so erased every rescuer's history of that animal, not just the one on screen.
+ * Returns the placement row that was removed, or null if there wasn't one.
+ */
+export async function deletePlacementForAdopter(db: Db, animalId: string, adopterId: string): Promise<{ id: string } | null> {
+    const active = await db.select({ id: placements.id }).from(placements)
+        .where(and(eq(placements.animalId, animalId), eq(placements.adopterId, adopterId)))
+        .orderBy(desc(placements.startedAt)).get();
+    if (!active) return null;
+    await db.delete(placements).where(eq(placements.id, active.id));
+    return { id: active.id };
+}
+
 export async function deleteRecordById(db: Db, id: string): Promise<void> {
     await db.delete(placements).where(eq(placements.animalId, id));
     await db.delete(adopterImages).where(eq(adopterImages.adoptionId, id));

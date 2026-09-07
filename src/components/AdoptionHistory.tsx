@@ -6,6 +6,8 @@ import { RatingBadge } from '@/components/RatingBadge';
 import { StarIcon } from '@/components/StarIcon';
 import { getRatingColors } from '@/lib/ratingColors';
 import { deleteAdoption, getAdoptionImages } from '@/app/actions';
+import { getAdoptionDeleteImpact } from '@/app/actions/adoptions';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getRecordTypeColors } from '@/lib/recordTypeColors';
 import { useShowToast } from '@/components/ui/Toast';
@@ -165,12 +167,30 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
         }
     }, [editAdoptionParam, editingId]);
 
-    const handleDelete = async (adoptionId: string) => {
-        if (!confirm(t('dialogs.confirm_delete_record'))) return;
+    // Deleting an animal-backed record (adoption / foster / available) can take
+    // the animal with it — see `getAdoptionDeleteImpact`. Ask the server what
+    // this particular delete would do, then say so BEFORE destroying anything.
+    // A bare confirm() could not offer the "keep the animal" third choice.
+    const [pendingDelete, setPendingDelete] = useState<
+        { id: string; impact: Awaited<ReturnType<typeof getAdoptionDeleteImpact>> } | null
+    >(null);
 
+    const handleDelete = async (adoptionId: string) => {
+        const impact = await getAdoptionDeleteImpact(adoptionId, adopterId)
+            .catch(() => null);
+        // A failed probe must not block the delete; fall back to the generic
+        // confirm rather than silently doing nothing.
+        setPendingDelete({
+            id: adoptionId,
+            impact: impact ?? { kind: 'event', animalName: null, willDeleteAnimal: false, links: { otherPlacements: 0, adopterEvents: 0, animalEvents: 0, formsAndContracts: 0 } },
+        });
+    };
+
+    const runDelete = async (adoptionId: string, keepAnimal: boolean) => {
+        setPendingDelete(null);
         setDeletingId(adoptionId);
         try {
-            await deleteAdoption(adoptionId, adopterId);
+            await deleteAdoption(adoptionId, adopterId, keepAnimal);
             router.refresh();
         } catch (error) {
             console.error('Failed to delete adoption:', error);
@@ -179,6 +199,17 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
             setDeletingId(null);
         }
     };
+
+    const animalLabel = pendingDelete?.impact.animalName?.trim()
+        || t('adopter.nameless')
+        || 'el animal';
+    const deleteMessage = !pendingDelete
+        ? undefined
+        : pendingDelete.impact.kind === 'event'
+            ? t('dialogs.confirm_delete_record')
+            : pendingDelete.impact.willDeleteAnimal
+                ? (t('dialogs.delete_record_last_link') || '').replace('{animal}', animalLabel)
+                : (t('dialogs.delete_record_animal_kept') || '').replace('{animal}', animalLabel);
 
     if (initialAdoptions.length === 0) {
         return (
@@ -538,6 +569,26 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                 })}
                 </div>
             </div>
+
+            {/* Impact-aware delete confirmation. Case A (the animal's last
+                link) offers a third choice so the record can go without the
+                animal; case B just states that the animal survives. */}
+            <ConfirmDialog
+                open={!!pendingDelete}
+                title={t('dialogs.delete_record_title') || t('dialogs.confirm_delete_record')}
+                message={deleteMessage}
+                confirmLabel={pendingDelete?.impact.willDeleteAnimal
+                    ? (t('dialogs.delete_record_delete_both') || undefined)
+                    : undefined}
+                secondary={pendingDelete?.impact.willDeleteAnimal
+                    ? {
+                        label: t('dialogs.delete_record_keep_animal') || 'Keep the animal',
+                        onClick: () => pendingDelete && runDelete(pendingDelete.id, true),
+                    }
+                    : undefined}
+                onConfirm={() => pendingDelete && runDelete(pendingDelete.id, false)}
+                onCancel={() => setPendingDelete(null)}
+            />
         </>
     );
 }

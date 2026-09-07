@@ -2,6 +2,48 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.26] - 2026-09-07
+
+### Fixed — deleting an adoption no longer destroys the animal
+
+Deleting a duplicate adoption from an adopter profile hard-deleted the animal.
+Two cats were lost that way in production on 2026-09-07.
+
+The `adoptions` compat view UNIONs animal-backed rows (`id = animals.id`) with
+event-backed rows (`id = adopter_events.id`), and `deleteRecordById` fired a
+delete at every table on that one id. So for `adoption` / `foster` / `available`
+records it destroyed the animal and its images — and because the placement
+delete carried no adopter filter, **every other rescuer's custody span for that
+animal too**. Event-backed records (observation, adoption_request, follow_up,
+returned_pet) were unaffected, which is why this stayed hidden.
+
+- Deleting a record now removes **that record**: only the placement belonging to
+  the adopter on screen.
+- The animal is soft-deleted only when nothing else refers to it — checked
+  across other placements, adopter events, animal events, and contract
+  invitations. The decision is a pure function (`src/domain/animalDeletion.ts`)
+  that fails safe: a malformed count resolves to "keep", never to deleting.
+- Soft, not hard, matching `deleteAnimalForAdoption`. The two delete paths for
+  the same animal previously had opposite recoverability.
+
+### Added — the delete dialog says what it will actually do
+
+- `getAdoptionDeleteImpact` reports the consequence before anything is
+  destroyed. When the record is an animal's last link the dialog says so and
+  offers **"Eliminar solo el registro"**, which keeps the animal in Mis Animales
+  as available. Otherwise it states the animal will stay.
+- `ConfirmDialog` gained an optional secondary action, so a destructive dialog
+  can offer a safer variant instead of only OK/Cancel.
+
+### Added — /admin/deleted covers animals
+
+`softDeleteAnimal` stamped `animals.deletedAt` and the compat view hid the row,
+but the Papelera was built entirely around adopters: a soft-deleted animal was
+invisible to the rescuer AND the admin, restorable only by hand-editing SQL.
+There is now a Deleted animals section with restore and purge. Purge refuses
+anything not already in the trash, so it cannot become a second route to
+destroying a live animal.
+
 ## [2.56.25] - 2026-09-07
 
 ### Changed — the service worker never caches the feature-flag endpoint
