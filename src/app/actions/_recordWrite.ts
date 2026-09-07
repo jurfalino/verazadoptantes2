@@ -153,7 +153,9 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
     }
 
     // Animal-bearing rows: update identity on `animals`.
-    const animalPatch: RecordData = { updatedAt: now };
+    // `updatedBy` is what makes a pure identity edit (name/color/microchip)
+    // visible to the card's «Actualizado por» — no activity row records it.
+    const animalPatch: RecordData = { updatedAt: now, updatedBy: actor };
     if (data.animalName !== undefined) animalPatch.name = data.animalName;
     if (data.species !== undefined) animalPatch.species = data.species;
     if (data.details !== undefined) animalPatch.details = data.details;

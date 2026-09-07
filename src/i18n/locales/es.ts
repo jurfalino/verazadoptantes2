@@ -1529,6 +1529,10 @@ export const es = {
         restore_defaults: 'Restaurar por defecto',
     },
     myAnimals: {
+        date_registered: 'Registrado el',
+        date_fostered: 'En tránsito desde el',
+        date_adopted: 'Adoptado el',
+        updated_by: 'Actualizado por',
         record_adoption: 'Registrar adopción',
         move_to_foster: 'Mover a otro tránsito',
         pick_adopter_title: 'Registrar adopción',

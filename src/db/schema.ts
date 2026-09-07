@@ -162,6 +162,7 @@ export const animals = sqliteTable("animals", {
     addedBy: text("added_by").default("anonymous"), // Rescuer who owns it
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    updatedBy: text("updated_by"), // v2.56.16: actor of the last ficha edit (NULL = never edited)
     deletedAt: integer("deleted_at", { mode: "timestamp" }), // Soft delete
 }, (table) => ({
     addedByIdx: index("idx_animals_added_by").on(table.addedBy),

@@ -2,6 +2,55 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.16] - 2026-09-07
+
+### Changed — the card's meta line now says what it means
+
+Two problems in one four-word footer.
+
+**The date meant three different things.** The card rendered a bare
+`📅 12/05/2026` with no label, but the compat view defines
+`date = COALESCE(placement.started_at, animal.created_at)` — so that number is
+the adoption date for an adopted animal, the foster start for one in tránsito,
+and the registration date for one still available. Each state now labels it:
+«Adoptado el», «En tránsito desde el», «Registrado el».
+
+**Attribution was owner-only and conditional.** «de {nombre}» appeared solely on
+teammates' animals, told you who *added* it, and said nothing about who has
+worked on it since. Cards now carry «Actualizado por {nombre} · hace 2 días»,
+always visible — or «Agregado por …» when nobody has touched it since it was
+registered, because calling a registration an update would be a lie. The old
+owner marker is removed rather than stacked: two attribution lines contradict
+each other the moment a teammate updates your animal.
+
+### Added — `animals.updated_by` (migration 0068)
+
+The actor is **derived**, not stamped: `placements`, `adopter_events` and
+`animal_events` all carry `recorded_by`, so no write path has to remember to
+keep a column fresh and the value cannot go stale. The one thing those tables
+cannot see is a pure ficha edit — a rename, a colour fix, a microchip — which
+touches only `animals`. `updated_by` closes that gap (NULL on legacy rows falls
+back to `added_by`).
+
+Two details that decide whether the line is truthful:
+
+- **`created_at`, not `date`/`started_at`.** The latter are real-world dates the
+  rescuer types and can backdate by months; «actualizado» is app-time. A
+  vaccination logged today for a dose given in June must not read as
+  «actualizado hace 3 meses».
+- **`'anonymous'` is not an actor.** It is the DEFAULT on all three tables, so
+  legacy and imported rows carry it literally; it is skipped when picking the
+  most recent toucher, exactly as the timeline already does.
+
+### Internal
+
+The bulk activity read in `/api/my-animals` (4 queries total, independent of N,
+written that way to stay under the Workers subrequest limit) moved out from
+behind `ENABLE_FOLLOWUPS` — «Actualizado por» needs the same rows and must not
+depend on a feature flag. The placements query no longer filters to active
+spans, since an ended one (a devolución) is an update too; `active` is derived
+from `ended_at` in JS, so this costs no extra query.
+
 ## [2.56.15] - 2026-09-06
 
 ### Changed — the share sheet is cut by intent, and covers the whole funnel

@@ -1524,6 +1524,10 @@ export const en = {
         restore_defaults: 'Restore defaults',
     },
     myAnimals: {
+        date_registered: 'Registered on',
+        date_fostered: 'In foster since',
+        date_adopted: 'Adopted on',
+        updated_by: 'Updated by',
         record_adoption: 'Record adoption',
         move_to_foster: 'Move to another foster',
         pick_adopter_title: 'Record adoption',

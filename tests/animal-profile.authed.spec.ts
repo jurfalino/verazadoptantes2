@@ -112,6 +112,23 @@ test.describe('Animal detail page', () => {
         await expect(page.getByTestId(`share-record-adoption-${ANIMAL_ID}`)).toHaveCount(0);
     });
 
+    test('card meta says WHAT the date means and who last touched the animal', async ({ page }) => {
+        await page.goto('/my-animals?view=adopted');
+        const card = page.getByTestId(`animal-card-${ANIMAL_ID}`);
+        await expect(card).toBeVisible({ timeout: 30000 });
+
+        // v2.56.16: the bare 📅 meant three different things (the compat view's
+        // date is COALESCE(placement.started_at, animal.created_at)). Timon is
+        // adopted, so his date is the adoption's.
+        await expect(card).toContainText(/Adopted on|Adoptado el/);
+
+        // Attribution is always visible — «Actualizado por» when someone has
+        // touched it since, «Agregado por» when nobody has.
+        const meta = page.getByTestId(`last-update-${ANIMAL_ID}`);
+        await expect(meta).toBeVisible();
+        await expect(meta).toContainText(/Updated by|Actualizado por|Added by|Agregado por/);
+    });
+
     test('list card navigates to the detail page', async ({ page }) => {
         await page.goto('/my-animals?view=adopted');
         const card = page.getByTestId(`animal-card-${ANIMAL_ID}`);

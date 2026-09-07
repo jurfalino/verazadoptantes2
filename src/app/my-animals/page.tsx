@@ -6,7 +6,8 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { formatShortDate } from '@/lib/dates';
+import { formatShortDate, formatRelativeTime } from '@/lib/dates';
+import { emailHandle } from '@/lib/userDisplay';
 import { formatAge } from '@/lib/ageUtils';
 import ShareFormMenu from '@/components/ShareFormMenu';
 import AnimalShareSheet from '@/components/AnimalShareSheet';
@@ -47,6 +48,8 @@ interface Animal {
     /** v2.55.18: team visibility — who added this animal. */
     addedBy?: string | null;
     addedByName?: string | null;
+    /** v2.56.16: last identified touch (ficha edit, placement or event). */
+    lastUpdate?: { by: string; at: number; kind: 'updated' | 'added'; name?: string | null } | null;
 }
 
 export default function MyAnimalsPage() {
@@ -330,12 +333,6 @@ export default function MyAnimalsPage() {
                                         </h3>
                                     </Link>
 
-                                    {/* v2.55.18: teammates' animals carry their owner's name. */}
-                                    {animal.addedBy && session?.user?.email && animal.addedBy !== session.user.email && (
-                                        <p className="text-xs font-medium text-teal-700 mb-1">
-                                            {t('animalProfile.of_teammate') || 'de'} {(animal.addedByName || animal.addedBy.split('@')[0]).split(' ')[0]}
-                                        </p>
-                                    )}
                                     {animal.details && (
                                         <p className="text-sm text-stone-500 mb-2 line-clamp-2">{animal.details}</p>
                                     )}
@@ -431,9 +428,28 @@ export default function MyAnimalsPage() {
                                         here only a count that deep-links to that section. */}
                                     <div className="pt-3 border-t border-stone-100 space-y-2">
                                         <div className="flex items-center gap-2">
-                                            <div className="text-xs text-stone-500 flex-1 min-w-0">
+                                            <div className="text-xs text-stone-500 flex-1 min-w-0 space-y-0.5">
                                                 {animal.date && (
-                                                    <span>📅 {formatShortDate(animal.date)}</span>
+                                                    <p className="truncate">
+                                                        {animal.adopterId && !isFoster
+                                                            ? (t('myAnimals.date_adopted') || 'Adoptado el')
+                                                            : isFoster
+                                                                ? (t('myAnimals.date_fostered') || 'En tránsito desde el')
+                                                                : (t('myAnimals.date_registered') || 'Registrado el')}
+                                                        {' '}{formatShortDate(animal.date)}
+                                                    </p>
+                                                )}
+                                                {animal.lastUpdate && (
+                                                    <p className="truncate" data-testid={`last-update-${animal.id}`}>
+                                                        {animal.lastUpdate.kind === 'updated'
+                                                            ? (t('myAnimals.updated_by') || 'Actualizado por')
+                                                            : (t('common.added_by') || 'Agregado por')}
+                                                        {' '}
+                                                        <span className="font-medium text-stone-600">
+                                                            {animal.lastUpdate.name || emailHandle(animal.lastUpdate.by)}
+                                                        </span>
+                                                        {' · '}{formatRelativeTime(animal.lastUpdate.at, locale === 'en' ? 'en' : 'es')}
+                                                    </p>
                                                 )}
                                             </div>
                                             {!!animal.dueFollowups && (
