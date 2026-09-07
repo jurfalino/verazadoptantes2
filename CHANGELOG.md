@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.18] - 2026-09-07
+
+### Changed — the email login fields stay hidden until asked for
+
+- The login modal now shows Google as the only visible option; "O ingresá con
+  tu email" became the control that reveals the email field and send button,
+  with a chevron that rotates when open. Progressive disclosure per
+  `docs/ux-ui-guidelines.md` §4.4, and the pattern users already know from
+  other sign-in screens (§4.6, Jakob's Law).
+- Focus moves into the email field on reveal, so the click leads straight into
+  typing. The toggle is a real `button` with `aria-expanded`/`aria-controls`
+  and a visible focus ring, and it collapses again on a second click.
+- Each opening of the modal starts collapsed — it stays mounted while closed
+  (rendering null), so the panel would otherwise reappear mid-flow.
+- E2E updated in the same commit: the spec now clicks the toggle, and asserts
+  the input is absent beforehand. Without that it would have failed on a
+  hidden element and blocked the deploy.
+
 ## [2.56.17] - 2026-09-07
 
 ### Fixed — 2.56.16's e2e (the deploy it blocked)

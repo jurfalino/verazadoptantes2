@@ -17,7 +17,14 @@ import { requestEmailOtp } from '@/app/actions/emailOtp';
 
 const RESEND_COOLDOWN_SEC = 60; // matches the server's per-email min gap
 
-export default function EmailOtpForm({ redirectPath }: { redirectPath?: string | null }) {
+export default function EmailOtpForm({
+    redirectPath,
+    autoFocusEmail = false,
+}: {
+    redirectPath?: string | null;
+    /** Set when the form is revealed by a click, so focus follows the action. */
+    autoFocusEmail?: boolean;
+}) {
     const { t, locale } = useLanguage();
     const [step, setStep] = useState<'email' | 'code'>('email');
     const [email, setEmail] = useState('');
@@ -98,6 +105,7 @@ export default function EmailOtpForm({ redirectPath }: { redirectPath?: string |
                         onKeyDown={e => e.key === 'Enter' && sendCode()}
                         placeholder={t('login.email_placeholder')}
                         autoComplete="email"
+                        autoFocus={autoFocusEmail}
                         data-testid="otp-email-input"
                         className="flex-1 min-w-0 px-3 py-2 text-sm border border-stone-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
                     />

@@ -50,6 +50,13 @@ async function openLoginModal(page: Page) {
     await page.goto('/');
     await dismissCountryBanner(page);
     await page.getByRole('button', { name: /sign in|iniciar sesión/i }).first().click();
+
+    // The email fields are collapsed behind the "or sign in with email"
+    // toggle — Google is the only option on show until it's clicked.
+    const reveal = page.getByTestId('otp-reveal-btn');
+    await expect(reveal).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId('otp-email-input')).toHaveCount(0);
+    await reveal.click();
     await expect(page.getByTestId('otp-email-input')).toBeVisible({ timeout: 15000 });
 }
 
