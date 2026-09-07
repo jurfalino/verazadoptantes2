@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.12] - 2026-09-06
+
+### Changed — one line of life: past and future share the same rail
+
+- **Future events look like the events they will become.** Projected follow-ups
+  used to live in their own block above the timeline, styled as a card list; now
+  they render as timeline items on the *same* vertical rail with the *same*
+  beacons, drawn dashed because they have not happened yet. Reading the animal's
+  page top to bottom is now one continuous line: what is coming, «Hoy», what
+  happened. The expired-reminder disclosure moved with them.
+- **The rail and the beacons finally line up.** Beacons carried
+  `-left-6 md:-left-8`, but the rail sits at `left-[7px] md:left-[15px]`: on
+  desktop the beacon centred at 8px against a rail centred at 16px — 8px adrift
+  at every item. `md:-left-8` is gone; `-left-6` centres correctly at both
+  breakpoints because the container's own padding already steps 24px → 32px.
+- **«+ Agregar evento» sits on the «Hoy» line** (user request), which is exactly
+  where a new event lands chronologically — instead of floating in a section
+  header above the timeline.
+
+The «Para hacer ahora» banner under the header stays: it is the notification
+deep-link target and the act-without-scrolling surface for due reminders.
+
 ## [2.56.11] - 2026-09-06
 
 ### Fixed — saving the follow-up schedule failed, with an untriageable toast

@@ -50,7 +50,6 @@ export default function AnimalProfile({ profile, applicants, userId }: {
 
     const [editing, setEditing] = useState(false);
     const [eventModal, setEventModal] = useState<{ type?: string; followupKey?: string; subtype?: ProjectedSlot['subtype'] } | null>(null);
-    const [showMissed, setShowMissed] = useState(false);
     const [pickOpen, setPickOpen] = useState<null | 'adoption' | 'foster'>(null);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -321,98 +320,32 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                 </div>
             )}
 
-            {/* ── line of life ── */}
-            <div className="flex items-center gap-2 mt-8 mb-4">
-                <h2 className="text-base font-bold text-stone-900">{t('animalProfile.timeline_title') || 'Línea de vida'}</h2>
-                <button
-                    type="button"
-                    onClick={() => setEventModal({})}
-                    className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-100 hover:border-teal-400 transition-colors"
-                    data-testid="add-animal-event"
-                >
-                    + {t('animalProfile.add_event') || 'Agregar evento'}
-                </button>
-            </div>
+            {/* ── line of life — one rail: future above «Hoy», past below ── */}
+            <h2 className="text-base font-bold text-stone-900 mt-8 mb-4">{t('animalProfile.timeline_title') || 'Línea de vida'}</h2>
 
-            {/* projected future — nearest first, structurally distinct (dashed) */}
-            {(upcomingSlots.length > 0 || dueSlots.length > 0 || missedSlots.length > 0) && (
-                <div className="mb-4" data-testid="projected-section">
-                    <div className="space-y-2">
-                        {[...dueSlots, ...upcomingSlots].map(s => (
-                            <div
-                                key={s.key}
-                                className="rounded-xl border-2 border-dashed px-4 py-3"
-                                style={s.status === 'due'
-                                    ? { background: 'var(--status-warning-bg)', borderColor: 'var(--status-warning-border)' }
-                                    : { background: 'var(--surface-muted)', borderColor: 'var(--border-default)' }}
-                            >
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <p className="text-sm font-semibold flex-1 min-w-[160px]" style={{ color: 'var(--text-secondary)' }}>{slotLabel(s)}</p>
-                                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${s.status === 'due' ? 'bg-amber-100 text-amber-700' : 'bg-stone-100 text-stone-500'}`}>
-                                        {s.status === 'due' ? (t('followups.status_due') || 'Pendiente') : (t('followups.status_upcoming') || 'Programado')}
-                                    </span>
-                                    <span className="text-xs text-stone-500 tabular-nums">{formatShortDate(s.dueDate)}</span>
-                                </div>
-                                {s.status === 'due' && (
-                                    <div className="flex flex-wrap items-center gap-2 mt-2">
-                                        <button type="button" onClick={() => registerSlot(s)} className="inline-flex px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors">
-                                            {t('followups.register') || 'Registrar'}
-                                        </button>
-                                        {contactButton(s)}
-                                        <span className="text-[11px] text-stone-500">{windowCopy(s)}</span>
-                                    </div>
-                                )}
-                            </div>
-                        ))}
-                        {missedSlots.length > 0 && (
-                            <div>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowMissed(v => !v)}
-                                    aria-expanded={showMissed}
-                                    className="w-full text-left px-4 py-2 rounded-xl border border-dashed text-xs font-semibold text-stone-500 hover:bg-stone-100 transition-colors"
-                                    style={{ borderColor: 'var(--border-default)' }}
-                                >
-                                    {showMissed ? '▾' : '▸'} {missedSlots.length} {missedSlots.length === 1 ? (t('followups.missed_one') || 'recordatorio vencido') : (t('followups.missed_many') || 'recordatorios vencidos')}
-                                </button>
-                                {showMissed && (
-                                    <div className="mt-2 space-y-1.5">
-                                        {missedSlots.map(s => (
-                                            <div
-                                                key={s.key}
-                                                className="flex flex-wrap items-center gap-2 px-4 py-2 rounded-lg border border-dashed text-xs text-stone-500"
-                                                style={{ borderColor: 'var(--border-default)' }}
-                                                data-testid={`missed-slot-${s.key}`}
-                                            >
-                                                <span className="font-semibold flex-1 min-w-[140px]">{slotLabel(s)}</span>
-                                                <span className="tabular-nums">{formatShortDate(s.dueDate)}</span>
-                                                {/* Late is still worth recording: registering from here carries the
-                                                    slot key, which the matcher honors regardless of date, so the
-                                                    reminder clears instead of sitting here forever. */}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => registerSlot(s)}
-                                                    className="inline-flex px-3 py-1.5 rounded-lg text-xs font-bold text-teal-700 bg-teal-50 border border-teal-100 hover:border-teal-400 transition-colors"
-                                                    data-testid={`register-missed-${s.key}`}
-                                                >
-                                                    {t('followups.register_late') || 'Registrar igual'}
-                                                </button>
-                                            </div>
-                                        ))}
-                                        <p className="text-[11px] text-stone-500 px-1">{t('followups.missed_hint') || 'Ya no te los recordamos, pero podés registrarlos igual — quedan marcados como hechos.'}</p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                    <div className="flex items-center gap-2 mt-4">
-                        <span className="text-[11px] font-bold uppercase tracking-widest text-teal-700">{t('followups.today') || 'Hoy'}</span>
-                        <div className="flex-1 h-px bg-stone-200" />
-                    </div>
-                </div>
-            )}
-
-            <AnimalTimeline items={items} animalSex={animal.sex} userNameMap={userNameMap} orgName={orgName} />
+            <AnimalTimeline
+                items={items}
+                animalSex={animal.sex}
+                userNameMap={userNameMap}
+                orgName={orgName}
+                projected={[...dueSlots, ...upcomingSlots].map(s => ({
+                    key: s.key,
+                    label: slotLabel(s),
+                    status: s.status === 'due' ? 'due' as const : 'upcoming' as const,
+                    dueDate: s.dueDate,
+                    windowCopy: windowCopy(s),
+                    iconType: s.subtype === 'neuter' ? 'neuter' : s.subtype === 'vaccination' ? 'vaccination' : 'follow_up',
+                    onRegister: () => registerSlot(s),
+                    contact: contactButton(s),
+                }))}
+                missed={missedSlots.map(s => ({
+                    key: s.key,
+                    label: slotLabel(s),
+                    dueDate: s.dueDate,
+                    onRegister: () => registerSlot(s),
+                }))}
+                onAddEvent={() => setEventModal({})}
+            />
 
             {/* modals */}
             {eventModal && (

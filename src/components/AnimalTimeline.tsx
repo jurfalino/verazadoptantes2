@@ -45,7 +45,7 @@ const DOT: Record<string, string> = {
     created: 'bg-teal-500 ring-teal-200',
 };
 
-function ItemIcon({ type }: { type: string }) {
+function ItemIcon({ type, className = 'w-2.5 h-2.5 text-white' }: { type: string; className?: string }) {
     const paths: Record<string, string> = {
         adoption: 'M3 11l9-8 9 8M5 10v10h14V10',
         foster: 'M12 21C7 17 3 13.5 3 9.5 3 7 5 5 7.5 5c1.7 0 3.2.9 4.5 2.5C13.3 5.9 14.8 5 16.5 5 19 5 21 7 21 9.5c0 4-4 7.5-9 11.5z',
@@ -61,24 +61,45 @@ function ItemIcon({ type }: { type: string }) {
         created: 'M7 7.5a1.5 1.5 0 100 .01M12 5.5a1.5 1.5 0 100 .01M17 7.5a1.5 1.5 0 100 .01M12 11c-3 0-5.5 2.2-5.5 4.5 0 1.4 1.1 2.5 2.5 2.5 1 0 1.9-.4 3-.4s2 .4 3 .4c1.4 0 2.5-1.1 2.5-2.5C17.5 13.2 15 11 12 11z',
     };
     return (
-        <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+        <svg className={className} fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
             <path d={paths[type] || paths.note} />
         </svg>
     );
 }
 
-export default function AnimalTimeline({ items, animalSex, userNameMap = {}, orgName = null }: {
+/** A projected follow-up prepared for display by AnimalProfile. */
+export type TimelineProjected = {
+    key: string;
+    label: string;
+    status: 'due' | 'upcoming';
+    dueDate: number;
+    /** "te quedan 5 días para registrarlo" */
+    windowCopy: string;
+    /** Which beacon icon to draw. */
+    iconType: string;
+    onRegister: () => void;
+    contact?: React.ReactNode;
+};
+export type TimelineMissed = { key: string; label: string; dueDate: number; onRegister: () => void };
+
+export default function AnimalTimeline({ items, animalSex, userNameMap = {}, orgName = null, projected = [], missed = [], onAddEvent }: {
     items: AnimalTimelineItem[];
     animalSex: string | null;
     /** v2.55.18: resolved display names for every recordedBy email. */
     userNameMap?: Record<string, string>;
     /** The owner's org name, for the origin event's copy. */
     orgName?: string | null;
+    /** v2.56.12: future slots share this component's rail — same line, same
+     *  beacons — so past and future read as one continuous life. */
+    projected?: TimelineProjected[];
+    missed?: TimelineMissed[];
+    onAddEvent?: () => void;
 }) {
     const { t } = useLanguage();
     const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
+    const [showMissed, setShowMissed] = useState(false);
 
-    if (items.length === 0) {
+    if (items.length === 0 && projected.length === 0 && missed.length === 0) {
         return (
             <p className="text-sm text-stone-500 italic py-2" data-testid="animal-timeline-empty">
                 {t('animalProfile.timeline_empty') || 'Todavía no hay eventos en la línea de vida.'}
@@ -133,6 +154,119 @@ export default function AnimalTimeline({ items, animalSex, userNameMap = {}, org
         <div className="relative pl-6 md:pl-8" data-testid="animal-timeline">
             {/* vertical rail */}
             <div className="absolute left-[7px] md:left-[15px] top-2 bottom-2 w-0.5 bg-stone-200" aria-hidden />
+
+            {/* ── everything still ahead of today, on the same rail ── */}
+            {(projected.length > 0 || missed.length > 0) && (
+            <div data-testid="projected-section">
+
+            {/* ── expired reminders: collapsed, but still loggable ── */}
+            {missed.length > 0 && (
+                <div className="mb-3">
+                    <button
+                        type="button"
+                        onClick={() => setShowMissed(v => !v)}
+                        aria-expanded={showMissed}
+                        className="w-full text-left px-4 py-2 rounded-xl border border-dashed text-xs font-semibold text-stone-500 hover:bg-stone-100 transition-colors"
+                        style={{ borderColor: 'var(--border-default)' }}
+                    >
+                        {showMissed ? '▾' : '▸'} {missed.length} {missed.length === 1
+                            ? (t('followups.missed_one') || 'recordatorio vencido')
+                            : (t('followups.missed_many') || 'recordatorios vencidos')}
+                    </button>
+                    {showMissed && (
+                        <div className="mt-2 space-y-1.5">
+                            {missed.map(m => (
+                                <div
+                                    key={m.key}
+                                    className="flex flex-wrap items-center gap-2 px-4 py-2 rounded-lg border border-dashed text-xs text-stone-500"
+                                    style={{ borderColor: 'var(--border-default)' }}
+                                    data-testid={`missed-slot-${m.key}`}
+                                >
+                                    <span className="font-semibold flex-1 min-w-[140px]">{m.label}</span>
+                                    <span className="tabular-nums">{formatShortDate(m.dueDate)}</span>
+                                    <button
+                                        type="button"
+                                        onClick={m.onRegister}
+                                        className="inline-flex px-3 py-1.5 rounded-lg text-xs font-bold text-teal-700 bg-teal-50 border border-teal-100 hover:border-teal-400 transition-colors"
+                                        data-testid={`register-missed-${m.key}`}
+                                    >
+                                        {t('followups.register_late') || 'Registrar igual'}
+                                    </button>
+                                </div>
+                            ))}
+                            <p className="text-[11px] text-stone-500 px-1">{t('followups.missed_hint') || 'Ya no te los recordamos, pero podés registrarlos igual — quedan marcados como hechos.'}</p>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── what's coming: same rail, dashed beacons (not yet happened) ── */}
+            {projected.length > 0 && (
+                <div className="space-y-3 mb-3">
+                    {projected.map(p => (
+                        <div key={p.key} className="relative" data-testid={`projected-item-${p.key}`}>
+                            <div
+                                className="absolute -left-6 top-3.5 w-4 h-4 rounded-full flex items-center justify-center border-2 border-dashed"
+                                style={p.status === 'due'
+                                    ? { background: 'var(--surface-card)', borderColor: 'var(--status-warning-border)', color: 'var(--status-warning-text)' }
+                                    : { background: 'var(--surface-card)', borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
+                            >
+                                <ItemIcon type={p.iconType} className="w-2 h-2" />
+                            </div>
+                            <div
+                                className="rounded-xl border-2 border-dashed px-4 py-3"
+                                style={p.status === 'due'
+                                    ? { background: 'var(--status-warning-bg)', borderColor: 'var(--status-warning-border)' }
+                                    : { background: 'var(--surface-muted)', borderColor: 'var(--border-default)' }}
+                            >
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <p className="text-sm font-semibold flex-1 min-w-[160px]" style={{ color: 'var(--text-secondary)' }}>{p.label}</p>
+                                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${p.status === 'due' ? 'bg-amber-100 text-amber-700' : 'bg-stone-100 text-stone-500'}`}>
+                                        {p.status === 'due' ? (t('followups.status_due') || 'Pendiente') : (t('followups.status_upcoming') || 'Programado')}
+                                    </span>
+                                    <span className="text-xs text-stone-500 tabular-nums">{formatShortDate(p.dueDate)}</span>
+                                </div>
+                                {p.status === 'due' && (
+                                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                                        <button
+                                            type="button" onClick={p.onRegister}
+                                            className="inline-flex px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors"
+                                        >
+                                            {t('followups.register') || 'Registrar'}
+                                        </button>
+                                        {p.contact}
+                                        <span className="text-[11px] text-stone-500">{p.windowCopy}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            </div>
+            )}
+
+            {/* ── HOY: the boundary between what's coming and what happened —
+                   and where adding something new belongs. ── */}
+            <div className="relative mb-3">
+                <div className="absolute -left-6 top-1.5 w-4 h-4 rounded-full bg-teal-600 ring-2 ring-teal-200 ring-offset-2 ring-offset-stone-50" aria-hidden />
+                <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-teal-700">{t('followups.today') || 'Hoy'}</span>
+                    <span className="flex-1 h-px bg-stone-200 min-w-[16px]" aria-hidden />
+                    {onAddEvent && (
+                        <button
+                            type="button"
+                            onClick={onAddEvent}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-teal-700 bg-teal-50 border border-teal-100 hover:border-teal-400 transition-colors"
+                            data-testid="add-animal-event"
+                        >
+                            + {t('animalProfile.add_event') || 'Agregar evento'}
+                        </button>
+                    )}
+                </div>
+            </div>
+
             <div className="space-y-3">
                 {items.map(item => {
                     const shot = contractShotOf(item);
@@ -140,7 +274,7 @@ export default function AnimalTimeline({ items, animalSex, userNameMap = {}, org
                     const noteOpen = expandedNotes.has(item.id);
                     return (
                         <div key={item.id} id={`evt-${item.id}`} className="relative" data-testid="timeline-item">
-                            <div className={`absolute -left-6 md:-left-8 top-3.5 w-4 h-4 rounded-full flex items-center justify-center ring-2 ring-offset-2 ring-offset-stone-50 ${DOT[item.type] || DOT.note} ${item.kind === 'placement_end' ? DOT.end : ''}`}>
+                            <div className={`absolute -left-6 top-3.5 w-4 h-4 rounded-full flex items-center justify-center ring-2 ring-offset-2 ring-offset-stone-50 ${DOT[item.type] || DOT.note} ${item.kind === 'placement_end' ? DOT.end : ''}`}>
                                 <ItemIcon type={item.kind === 'placement_end' ? 'end' : item.type} />
                             </div>
                             <div className={`bg-white rounded-xl border border-stone-200 border-l-[3px] ${item.kind === 'placement_end' ? STRIPE.end : (STRIPE[item.type] || STRIPE.note)} px-4 py-3 shadow-sm`}>
