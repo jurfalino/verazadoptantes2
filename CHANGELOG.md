@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.25] - 2026-09-07
+
+### Changed — the service worker never caches the feature-flag endpoint
+
+Follow-up to 2.56.24. `/api/config` decides which UI a user is allowed to see,
+so a stale copy silently hides a feature an admin has switched on. It now sits
+in the service worker's explicit bypass list beside `/api/auth` and
+`/api/admin`, rather than relying on `networkFirst` — whose "network" attempt is
+a `fetch()` the browser's HTTP cache can answer without any request leaving the
+device.
+
+Note for future work: cache-busting **cannot** be triggered by an admin toggling
+a flag. `sw.js` is a static file baked at deploy time; a DB write cannot change
+it. Control-plane endpoints have to be uncacheable instead, which is what these
+two releases do.
+
 ## [2.56.24] - 2026-09-07
 
 ### Fixed — admin feature-flag toggles took up to 10 minutes to appear

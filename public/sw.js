@@ -74,6 +74,15 @@ self.addEventListener('fetch', (event) => {
     // Skip admin API requests
     if (url.pathname.startsWith('/api/admin')) return;
 
+    // Skip the feature-flag endpoint (never cache). /api/config decides which
+    // UI a user is allowed to see, so a stale copy silently hides a feature an
+    // admin has switched on — which is what happened to ENABLE_EMAIL_OTP in
+    // production on 2026-09-07. Bypassing here (rather than relying on
+    // networkFirst) matters because networkFirst's "network" attempt is a
+    // fetch(), which the browser's own HTTP cache can answer without a request
+    // ever leaving the device.
+    if (url.pathname === '/api/config') return;
+
     // Static assets: cache-first
     if (isStaticAsset(url)) {
         event.respondWith(cacheFirst(request));
