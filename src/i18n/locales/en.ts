@@ -1195,6 +1195,7 @@ export const en = {
         new_adopter_redirect: 'You will be redirected to create a new adopter profile with observation details.',
         continue: 'Continue',
         next: 'Next',
+        previous: 'Previous',
         back: 'Back',
         save_record: 'Save Record',
         observation_details_placeholder: 'What did you observe about this adopter?',

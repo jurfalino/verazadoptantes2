@@ -71,19 +71,30 @@ export default function PendingDedup() {
     const { t } = useLanguage();
     const toast = useShowToast();
     const [pairs, setPairs] = useState<PendingDedupPair[] | null>(null);
+    const [total, setTotal] = useState(0);
+    const [page, setPage] = useState(1);
+    // Collapsed by default: production carries hundreds of pending pairs, and a
+    // wall of them above the actual adopter list buries the page.
+    const [open, setOpen] = useState(false);
     const [busyCandidateId, setBusyCandidateId] = useState<string | null>(null);
+
+    const PAGE_SIZE = 10;
 
     const load = useCallback(async () => {
         try {
-            const data = await getPendingDuplicatesForUser();
-            setPairs(data);
+            const data = await getPendingDuplicatesForUser(page, PAGE_SIZE);
+            setPairs(data.pairs);
+            setTotal(data.total);
         } catch (e) {
             toast.error(t('errors.generic') || 'Error', undefined, extractErrorId(e));
             setPairs([]);
+            setTotal(0);
         }
-    }, [t, toast]);
+    }, [t, toast, page]);
 
     useEffect(() => { load(); }, [load]);
+
+    const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
     const handleMerge = async (pair: PendingDedupPair) => {
         if (busyCandidateId) return;
@@ -98,6 +109,7 @@ export default function PendingDedup() {
             if (result.success) {
                 toast.success(t('myAdopters.pending_dedup_merged') || 'Profiles merged');
                 setPairs(prev => prev?.filter(p => p.candidateId !== pair.candidateId) || []);
+                setTotal(n => Math.max(0, n - 1));
             } else {
                 toast.error(t('errors.generic') || 'Error', result.error || 'Merge failed');
             }
@@ -115,6 +127,7 @@ export default function PendingDedup() {
             const result = await dismissDuplicateCandidate(pair.candidateId);
             if (result.success) {
                 setPairs(prev => prev?.filter(p => p.candidateId !== pair.candidateId) || []);
+                setTotal(n => Math.max(0, n - 1));
             } else {
                 toast.error(t('errors.generic') || 'Error', result.error || 'Dismiss failed');
             }
@@ -126,18 +139,37 @@ export default function PendingDedup() {
     };
 
     if (pairs === null) return null; // not loaded yet
-    if (pairs.length === 0) return null;
+    if (total === 0) return null;
 
     return (
         <section className="mb-8">
-            <h2 className="text-lg font-semibold text-stone-800 mb-1 flex items-center gap-2">
-                {t('myAdopters.pending_dedup_title') || 'Pendientes de revisar'}
-                <span className="text-sm font-normal text-stone-500 bg-amber-50 px-2 py-0.5 rounded-full">{pairs.length}</span>
-            </h2>
-            <p className="text-sm text-stone-500 mb-3">
+            <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                aria-expanded={open}
+                aria-controls="pending-dedup-list"
+                className="w-full flex items-center gap-2 text-left group"
+            >
+                <svg className={`w-4 h-4 text-stone-400 transition-transform ${open ? 'rotate-90' : ''}`}
+                    viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 5l6 5-6 5" />
+                </svg>
+                <h2 className="text-lg font-semibold text-stone-800 flex items-center gap-2 group-hover:text-stone-900">
+                    {t('myAdopters.pending_dedup_title') || 'Pendientes de revisar'}
+                    <span className="text-sm font-normal text-stone-500 bg-amber-50 px-2 py-0.5 rounded-full">{total}</span>
+                </h2>
+            </button>
+            {!open && (
+                <p className="text-sm text-stone-500 mt-1 ml-6">
+                    {t('myAdopters.pending_dedup_subtitle') || 'Encontramos perfiles que podrían ser la misma persona. Decidí si combinarlos.'}
+                </p>
+            )}
+            {!open ? null : (
+            <>
+            <p className="text-sm text-stone-500 mb-3 mt-1 ml-6">
                 {t('myAdopters.pending_dedup_subtitle') || 'Encontramos perfiles que podrían ser la misma persona. Decidí si combinarlos.'}
             </p>
-            <div className="space-y-3">
+            <div id="pending-dedup-list" className="space-y-3">
                 {pairs.map(pair => {
                     const busy = busyCandidateId === pair.candidateId;
                     return (
@@ -161,14 +193,20 @@ export default function PendingDedup() {
                                 <AdopterCard side="existing" adopter={pair.existingAdopter} t={t} />
                             </div>
                             <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => handleDismiss(pair)}
-                                    disabled={busy}
-                                    className="px-3 py-2 text-[12px] font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-xl transition-colors disabled:opacity-50"
-                                >
-                                    {t('myAdopters.pending_dedup_action_keep') || 'Mantener separados'}
-                                </button>
+                                {/* Dismiss writes to duplicate_candidates; a
+                                    manually flagged pair has no row there, so
+                                    the action is offered only for detected
+                                    pairs rather than failing on click. */}
+                                {pair.source === 'detected' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleDismiss(pair)}
+                                        disabled={busy}
+                                        className="px-3 py-2 text-[12px] font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-xl transition-colors disabled:opacity-50"
+                                    >
+                                        {t('myAdopters.pending_dedup_action_keep') || 'Mantener separados'}
+                                    </button>
+                                )}
                                 <button
                                     type="button"
                                     onClick={() => handleMerge(pair)}
@@ -182,6 +220,32 @@ export default function PendingDedup() {
                     );
                 })}
             </div>
+
+            {pageCount > 1 && (
+                <div className="flex items-center justify-center gap-3 mt-4 text-sm">
+                    <button
+                        type="button"
+                        onClick={() => setPage(n => Math.max(1, n - 1))}
+                        disabled={page <= 1 || !!busyCandidateId}
+                        className="px-3 py-1.5 rounded-lg bg-stone-100 text-stone-600 font-medium hover:bg-stone-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                        ← {t('common.previous') || 'Anterior'}
+                    </button>
+                    <span className="text-stone-500 tabular-nums">
+                        {page} / {pageCount}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => setPage(n => Math.min(pageCount, n + 1))}
+                        disabled={page >= pageCount || !!busyCandidateId}
+                        className="px-3 py-1.5 rounded-lg bg-stone-100 text-stone-600 font-medium hover:bg-stone-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                        {t('common.next') || 'Siguiente'} →
+                    </button>
+                </div>
+            )}
+            </>
+            )}
         </section>
     );
 }

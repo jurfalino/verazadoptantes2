@@ -7,7 +7,7 @@ import { getDb } from './_db';
 import { reassignAdopterRecords } from './_recordWrite';
 import { extractTokens, computeTokenHash, normalizeText, extractPhones, extractEmails, extractSocials, normalizeSocialHandle, detectSocialPlatformFromValue, type Token } from '@/lib/tokenizer';
 import { deserializeHouseholdMembers } from '@/lib/householdMembers';
-import { normalizeConfidence, confidenceBand, fuzzyNameScore, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
+import { normalizeConfidence, confidenceBand, fuzzyNameScore, storedScoreToPercent, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 import { deserializeContactEntries, mergeContactEntries } from '@/lib/contactEntries';
 
 /**
@@ -871,7 +871,7 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
                     matchTypes: JSON.parse(c.matchTypes || '[]') as string[],
                     score: c.score,
                     confidence: c.confidence,
-                    confidencePercent: normalizeConfidence(c.score, PRACTICAL_MAX_DUPLICATE),
+                    confidencePercent: storedScoreToPercent(c.score),
                 };
             })
             .sort((a: DuplicateCandidate, b: DuplicateCandidate) => b.confidencePercent - a.confidencePercent);
@@ -888,6 +888,16 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
 
 export interface PendingDedupPair {
     candidateId: string;
+    /**
+     * Where the pair came from. 'detected' is the engine (duplicate_candidates);
+     * 'flagged' is a person who marked one profile a duplicate of another
+     * (adopter_flags, reason='duplicate'). Those were visible only on the admin
+     * screen — the one place the rescuer who raised the flag cannot go.
+     *
+     * Dismiss is offered only for 'detected': it writes to duplicate_candidates,
+     * and a flag has no row there to update.
+     */
+    source: 'detected' | 'flagged';
     /** The "new" auto-created side — heuristically the more recent record. */
     newAdopter: {
         id: string;
@@ -919,13 +929,16 @@ export interface PendingDedupPair {
  * Different from getDuplicateCandidates(adopterId): that one is single-adopter
  * + limit-5 (profile banner). This one is user-scoped + limit-20 (queue view).
  */
-export async function getPendingDuplicatesForUser(): Promise<PendingDedupPair[]> {
+export async function getPendingDuplicatesForUser(
+    page = 1,
+    pageSize = 10,
+): Promise<{ pairs: PendingDedupPair[]; total: number }> {
     try {
         const { getUser } = await import('./_db');
         const actorEmail = await getUser();
 
         const db = await getDb();
-        if (!db) return [];
+        if (!db) return { pairs: [], total: 0 };
 
         const a1 = adopters;
         const candidates = await db.select({
@@ -941,7 +954,7 @@ export async function getPendingDuplicatesForUser(): Promise<PendingDedupPair[]>
             .where(eq(duplicateCandidates.status, 'pending'))
             .all() as Array<{ candidateId: string; adopter1Id: string; adopter2Id: string; matchTypes: string; score: number; confidence: string; detectedAt: Date | null }>;
 
-        if (candidates.length === 0) return [];
+        if (candidates.length === 0) return { pairs: [], total: 0 };
 
         // Per CLAUDE.md: D1 has no inArray. Fan out per adopter id.
         const allIds = new Set<string>();
@@ -982,6 +995,7 @@ export async function getPendingDuplicatesForUser(): Promise<PendingDedupPair[]>
 
             pairs.push({
                 candidateId: c.candidateId,
+                source: 'detected',
                 newAdopter: {
                     id: newOne.id,
                     name: newOne.name,
@@ -998,21 +1012,76 @@ export async function getPendingDuplicatesForUser(): Promise<PendingDedupPair[]>
                 },
                 matchTypes: JSON.parse(c.matchTypes || '[]') as string[],
                 confidence: c.confidence,
-                confidencePercent: normalizeConfidence(c.score, PRACTICAL_MAX_DUPLICATE),
+                confidencePercent: storedScoreToPercent(c.score),
             });
 
-            if (pairs.length >= 20) break;
         }
 
-        // Most recently detected first.
-        pairs.sort((p, q) => q.newAdopter.createdAt! - p.newAdopter.createdAt!);
+        // Manually flagged duplicates. A rescuer who flags a profile as a
+        // duplicate of another should see it in their own queue, not only on
+        // /admin/duplicates. Bounded like the admin route's own fan-out.
+        try {
+            const flags = await db.select({
+                id: adopterFlags.id,
+                adopterId: adopterFlags.adopterId,
+                targetAdopterId: adopterFlags.targetAdopterId,
+                flaggedBy: adopterFlags.flaggedBy,
+                createdAt: adopterFlags.createdAt,
+            }).from(adopterFlags).where(eq(adopterFlags.reason, 'duplicate')).limit(100).all();
 
-        return pairs;
+            const seen = new Set(pairs.map(p => [p.newAdopter.id, p.existingAdopter.id].sort().join('|')));
+
+            for (const f of flags) {
+                if (!f.targetAdopterId) continue;
+                const [a, b] = await Promise.all([
+                    db.select({ id: adopters.id, name: adopters.name, contactInfo: adopters.contactInfo, source: adopters.source, addedBy: adopters.addedBy, createdAt: adopters.createdAt, deletedAt: adopters.deletedAt })
+                        .from(adopters).where(eq(adopters.id, f.adopterId)).get(),
+                    db.select({ id: adopters.id, name: adopters.name, contactInfo: adopters.contactInfo, source: adopters.source, addedBy: adopters.addedBy, createdAt: adopters.createdAt, deletedAt: adopters.deletedAt })
+                        .from(adopters).where(eq(adopters.id, f.targetAdopterId)).get(),
+                ]);
+                if (!a || !b || a.deletedAt || b.deletedAt) continue;
+                // Same ownership rule as the detected pairs.
+                if (a.addedBy !== actorEmail && b.addedBy !== actorEmail) continue;
+                const key = [a.id, b.id].sort().join('|');
+                if (seen.has(key)) continue; // the engine already found it
+                seen.add(key);
+
+                const aMs = a.createdAt?.getTime() ?? 0;
+                const bMs = b.createdAt?.getTime() ?? 0;
+                const newOne = aMs >= bMs ? a : b;
+                const oldOne = aMs >= bMs ? b : a;
+                pairs.push({
+                    candidateId: f.id,
+                    source: 'flagged',
+                    newAdopter: { id: newOne.id, name: newOne.name, contactInfo: newOne.contactInfo, source: newOne.source, createdAt: newOne.createdAt ? Math.floor(newOne.createdAt.getTime() / 1000) : null },
+                    existingAdopter: { id: oldOne.id, name: oldOne.name, contactInfo: oldOne.contactInfo, source: oldOne.source, createdAt: oldOne.createdAt ? Math.floor(oldOne.createdAt.getTime() / 1000) : null },
+                    matchTypes: ['flagged_by_user'],
+                    confidence: 'high',
+                    confidencePercent: 100,
+                });
+            }
+        } catch (e) {
+            // A flag-fetch failure must not take out the detected list.
+            logger.warn('getPendingDuplicatesForUser: flagged-pair fetch failed', {
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+
+        // Most recently detected first. Previously a `break` at 20 ran BEFORE
+        // this sort, so the cap took whatever order D1 happened to return and
+        // the sort only reordered that arbitrary subset — new duplicates could
+        // never surface, and the list changed between loads for no visible
+        // reason. Sort the whole set, then page.
+        pairs.sort((p, q) => (q.newAdopter.createdAt ?? 0) - (p.newAdopter.createdAt ?? 0));
+
+        const total = pairs.length;
+        const start = Math.max(0, (page - 1) * pageSize);
+        return { pairs: pairs.slice(start, start + pageSize), total };
     } catch (error) {
         logger.warn('getPendingDuplicatesForUser failed', {
             error: error instanceof Error ? error.message : String(error),
         });
-        return [];
+        return { pairs: [], total: 0 };
     }
 }
 

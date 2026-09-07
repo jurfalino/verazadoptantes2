@@ -2,6 +2,49 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.27] - 2026-09-07
+
+### Fixed — every duplicate said "100% coincidencia"
+
+`duplicate_candidates.score` already holds a percentage: `_adopterFactory` writes
+`match.relevancePercent`, which `findAdopters` produced by normalising a raw
+token score against `PRACTICAL_MAX_DUPLICATE` (12). Two read paths normalised it
+a **second** time against that same 12, so any score above 12 clamped to 100.
+Production's lowest stored score is 20 — so all 641 pending candidates displayed
+"100% coincidencia", including the 516 banded `low`, while the badge beside the
+number still showed the correct band. Reads now go through
+`storedScoreToPercent`, which exists to give the contract a name and a test.
+
+### Fixed — a shared first name is no longer a full-name match
+
+Two records both called "Cristina" emitted `name_full` AND `name_word` from the
+same single token — the same fact counted twice, weight 2 + 1 — scoring 25% and
+landing in `medium`, in front of a rescuer, on a signal that says almost
+nothing. 99 such pairs were pending.
+
+`name_full` now requires a multi-word name (tokenizer v6). Recall is unchanged:
+the identical `name_word` token is still emitted, so the pair is still found,
+just weighted honestly. **Existing candidates keep their old scores until a
+re-scan.**
+
+### Fixed — the pending list showed an arbitrary 20
+
+`getPendingDuplicatesForUser` broke at 20 while iterating and sorted afterwards,
+so the cap took whatever order D1 returned and the sort only rearranged that
+arbitrary subset. New duplicates could never surface and the list changed
+between loads for no visible reason. It now sorts the full set, then pages.
+
+### Added — the pending-duplicates feed is collapsible, paginated, and includes manual flags
+
+- Collapsed by default with a count, since production carries hundreds of pairs
+  and a wall of them buried `/my-adopters`.
+- 10 per page.
+- Manually flagged duplicates (`adopter_flags`, `reason='duplicate'`) now appear
+  in the rescuer's own queue instead of only on `/admin/duplicates` — the one
+  screen the person who raised the flag cannot open. Dismiss is offered only for
+  engine-detected pairs, because it writes to `duplicate_candidates` and a flag
+  has no row there.
+
 ## [2.56.26] - 2026-09-07
 
 ### Fixed — deleting an adoption no longer destroys the animal

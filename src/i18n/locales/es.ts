@@ -1200,6 +1200,7 @@ export const es = {
         new_adopter_redirect: 'Serás redirigido para crear un nuevo perfil de adoptante con los detalles de la observación.',
         continue: 'Continuar',
         next: 'Siguiente',
+        previous: 'Anterior',
         back: 'Atrás',
         save_record: 'Guardar Registro',
         observation_details_placeholder: '¿Qué observaste sobre este adoptante?',
