@@ -37,6 +37,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Gate the deploy on the same checks the app pipeline runs before ITS
+      # deploy. Without these this job went checkout → npm ci → wrangler deploy,
+      # so any commit touching src/domain/followups.ts shipped a new cron
+      # straight to production — bound to the prod D1 and firing daily — with
+      # no type check and no tests, while the app it shares that file with
+      # could not deploy without build, lint, migrations and e2e all passing.
+      #
+      # tsconfig.json includes **/*.ts with only node_modules, scraper and
+      # contract-app excluded, so this type-checks the Worker itself, not just
+      # the app. followups.ts is pure domain logic and is covered by
+      # src/domain/followups.test.ts.
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm test
+
       - name: Deploy Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

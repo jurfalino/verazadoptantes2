@@ -2,6 +2,36 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.20] - 2026-09-07
+
+### Fixed — follow-ups no longer blame rescuers for check-ins that never existed
+
+- Slot status is pure `now` vs due/window math, so enabling follow-ups would
+  have marked every slot on every pre-existing placement as `missed` — in
+  production, 92 of 104 placements. A rescuer opening a year-old adoption would
+  be told they failed five check-ins the product never offered them.
+- `computeFollowups` now takes `notBefore` (`FOLLOWUPS_EPOCH`, set to the
+  production launch date) and drops slots that are **unsatisfied and whose
+  window closed before it**. Anything actually recorded stays `done`, so this
+  removes unearned blame without erasing history, and slots still open at
+  launch remain actionable. Both callers pass it — the animal page and the cron
+  Worker — so reminders and UI agree on what exists.
+- This also bounds the long-running foster case: a foster span opened long ago
+  no longer renders its whole back-catalogue of monthly slots.
+
+### Added — CI actually runs the tests now
+
+- **`npm test` ran nowhere in CI.** `build-and-lint` gated a deploy on `tsc`,
+  lint and build only, so 555 unit tests never executed — including guardrails
+  written specifically to stop a regression from shipping (the timezone pinning
+  behind errorId 43d67f9e). Added to `build-and-lint`, before lint.
+- **The follow-up cron Worker deployed to production ungated.** Its workflow ran
+  checkout → `npm ci` → `wrangler deploy`, so any commit touching
+  `src/domain/followups.ts` shipped a new cron bound to the production D1,
+  firing daily, with no type check and no tests — while the app sharing that
+  file could not deploy without build, lint, migrations and e2e. It now runs
+  `tsc --noEmit` and `npm test` first.
+
 ## [2.56.19] - 2026-09-07
 
 ### Fixed — dates rendered in two timezones at once (React #418, errorId 43d67f9e)

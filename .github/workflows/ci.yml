@@ -69,6 +69,14 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
+      # The unit suite ran nowhere in CI until v2.56.19 — only tsc, lint and
+      # build gated a deploy. Domain logic that type-checks but computes the
+      # wrong answer shipped unchallenged, and guardrail tests written to catch
+      # a regression (src/lib/dates.test.ts pins the timezone handling behind
+      # errorId 43d67f9e) protected local runs only.
+      - name: Unit tests
+        run: npm test
+
       - name: Lint
         run: npm run lint
 

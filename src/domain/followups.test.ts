@@ -185,3 +185,60 @@ describe('v2.55.20 preferences', () => {
         expect(longest).toBeLessThan(400); // ADOPTION_SCAN_DAYS in workers/followup-cron
     });
 });
+
+describe('computeFollowups — pre-launch placements (retroactive "missed")', () => {
+    // Production carried 104 placements before follow-ups existed, 92 of them
+    // older than 180 days. Without a cutoff, enabling the feature marked every
+    // slot on every one of those as 'missed' — telling rescuers they had failed
+    // check-ins that were never offered to them. Nothing was notified (missed
+    // never notifies), but the profile read as a wall of failures.
+    const LAUNCH = new Date('2026-09-08T00:00:00Z');
+    const OLD = new Date('2025-01-01T12:00:00Z');   // long before launch
+    const NOW = new Date('2026-09-20T12:00:00Z');
+
+    it('drops slots whose window closed before the feature existed', () => {
+        const slots = compute({ placementStartedAt: OLD, now: NOW, notBefore: LAUNCH });
+        expect(slots).toEqual([]);
+    });
+
+    it('still reports work that WAS recorded against a pre-launch slot', () => {
+        // A rescuer who logged a follow-up organically keeps the credit — we
+        // suppress unearned blame, not real history.
+        const slots = compute({
+            placementStartedAt: OLD,
+            now: NOW,
+            notBefore: LAUNCH,
+            recorded: [rec({ id: 'r1', date: addDays(OLD, 7), eventType: 'follow_up' })],
+        });
+        expect(slots.map(s => [s.key, s.status])).toEqual([['checkin_7d', 'done']]);
+    });
+
+    it('keeps slots still actionable at launch', () => {
+        // Placed 5 days before launch: the 7d check-in was still open when the
+        // feature arrived, so it is legitimately the rescuer's to action.
+        const recent = addDays(LAUNCH, -5);
+        const slots = compute({
+            placementStartedAt: recent,
+            now: addDays(LAUNCH, 6),
+            notBefore: LAUNCH,
+        });
+        expect(slots.map(s => s.key)).toContain('checkin_7d');
+    });
+
+    it('caps a long-running foster at the slots that postdate launch', () => {
+        const slots = compute({
+            placementStartedAt: OLD,
+            placementType: 'foster',
+            now: NOW,
+            notBefore: LAUNCH,
+        });
+        expect(slots.every(s => s.windowEndsAt >= LAUNCH)).toBe(true);
+        expect(slots.length).toBeLessThan(5);
+    });
+
+    it('without notBefore, behaves exactly as before', () => {
+        const slots = compute({ placementStartedAt: OLD, now: NOW });
+        expect(slots.length).toBeGreaterThan(0);
+        expect(slots.every(s => s.status === 'missed')).toBe(true);
+    });
+});

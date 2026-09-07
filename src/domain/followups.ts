@@ -68,6 +68,21 @@ export const VACCINES_LOOKBACK_DAYS = 33;
 /** Other slots accept records slightly before the due date. */
 export const MATCH_PRE_DAYS = 3;
 
+/**
+ * The date follow-ups became available to users in production.
+ *
+ * Slot status is pure `now` vs due/window math, so without this every
+ * placement that predates the feature renders its whole schedule as 'missed'
+ * the day it is switched on — in production, 92 of 104 placements. Rescuers
+ * would be shown a wall of check-ins they "failed" that were never offered to
+ * them. Passed as `notBefore` by every caller; see the tail of
+ * `computeFollowups` for exactly what it suppresses.
+ *
+ * Set this to the day the flag is actually flipped in production, and then
+ * leave it alone — moving it later suppresses genuinely missed follow-ups.
+ */
+export const FOLLOWUPS_EPOCH = new Date('2026-09-08T00:00:00Z');
+
 /** One WhatsApp/Telegram message template per subtype; `{animal}`, `{familia}`
  *  and `{dias}` interpolate at send time (src/lib/interpolate.ts). */
 export const DEFAULT_MESSAGES: Record<FollowupSubtype, string> = {
@@ -208,6 +223,13 @@ export interface ComputeFollowupsInput {
     fosterRule?: FosterRule;
     recorded: RecordedFollowup[];
     now: Date;
+    /**
+     * The date follow-ups became available to users. Slots that had already
+     * gone 'missed' before it are suppressed — see the tail of
+     * `computeFollowups`. Omit to project the full history (the pre-v2.56.19
+     * behaviour, kept for tests and for any caller that genuinely wants it).
+     */
+    notBefore?: Date;
 }
 
 /**
@@ -216,7 +238,7 @@ export interface ComputeFollowupsInput {
  * (inside the window) or 'missed' (past the window — never notified).
  */
 export function computeFollowups(input: ComputeFollowupsInput): ProjectedFollowup[] {
-    const { placementStartedAt, placementType = 'adoption', animal, schedule, recorded, now } = input;
+    const { placementStartedAt, placementType = 'adoption', animal, schedule, recorded, now, notBefore } = input;
     const fosterRule = input.fosterRule ?? { ...DEFAULT_FOSTER_RULE };
 
     const slots: ProjectedFollowup[] = [];
@@ -304,5 +326,21 @@ export function computeFollowups(input: ComputeFollowupsInput): ProjectedFollowu
             : now <= s.windowEndsAt ? FOLLOWUP_STATUS.DUE
             : FOLLOWUP_STATUS.MISSED;
     }
-    return slots.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+
+    // Pre-launch suppression. Status is otherwise pure `now` vs due/window
+    // math, which means the day this feature is enabled every placement that
+    // predates it renders its whole schedule as 'missed'. In production that is
+    // 92 of 104 placements — rescuers would open a year-old adoption and be told
+    // they failed five check-ins that were never offered to them.
+    //
+    // Only unsatisfied slots whose window had already closed before `notBefore`
+    // are dropped: a slot someone actually recorded against stays 'done', so
+    // this removes unearned blame without erasing real history. Slots still open
+    // when the feature arrived remain the rescuer's to action.
+    const cutoff = notBefore ?? null;
+    const visible = cutoff
+        ? slots.filter(s => s.status !== FOLLOWUP_STATUS.MISSED || s.windowEndsAt >= cutoff)
+        : slots;
+
+    return visible.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
 }

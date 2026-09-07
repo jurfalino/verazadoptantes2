@@ -18,6 +18,7 @@
 
 import {
     computeFollowups, mergeSchedule, mergeFosterRule, parseFollowupSettings,
+    FOLLOWUPS_EPOCH,
     DEFAULT_SCHEDULE, type FollowupSettings, type RecordedFollowup,
 } from '../../../src/domain/followups';
 import { dedupKey, notificationTitle, notificationBody, buildFollowupEmail, type FollowupEmailItem } from './copy';
@@ -176,6 +177,7 @@ export default {
                             fosterRule: mergeFosterRule(settings),
                             recorded,
                             now,
+                            notBefore: FOLLOWUPS_EPOCH,
                         }).filter(s => s.status === 'due'); // NEVER missed — storm guard #1
                         summary.due += slots.length;
 

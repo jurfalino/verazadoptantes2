@@ -18,7 +18,7 @@ import { revalidatePath } from 'next/cache';
 import { ANIMAL_EVENT_TYPES, type AnimalEventType } from '@/domain/constants';
 import {
     computeFollowups, mergeSchedule, mergeFosterRule, parseFollowupSettings,
-    getMessageTemplate, DEFAULT_SCHEDULE,
+    getMessageTemplate, DEFAULT_SCHEDULE, FOLLOWUPS_EPOCH,
     type FollowupSettings, type FollowupStatus, type FollowupSubtype, type RecordedFollowup,
 } from '@/domain/followups';
 import { compareTimelineItems } from '@/domain/animalTimelineOrder';
@@ -379,6 +379,7 @@ async function buildProjectedSlots(db: any, input: {
         fosterRule: mergeFosterRule(settings),
         recorded,
         now: new Date(),
+        notBefore: FOLLOWUPS_EPOCH,
     });
 
     // One-click contact: ONLY when the viewer has full PII access to the
