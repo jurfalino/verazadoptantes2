@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.22] - 2026-09-07
+
+### Fixed — the launch cutoff broke the follow-up e2e
+
+- 2.56.20's `FOLLOWUPS_EPOCH` suppressed the expired 7-day reminder that
+  `animal-profile.authed.spec.ts` asserts on, so E2E failed and the deploy was
+  skipped. The behaviour change is intended; the spec encoded the old one.
+- Structural, not incidental: seeded placements are necessarily older than the
+  epoch, so with the cutoff in force NO slot can ever reach `missed` and the
+  expired-reminder UI is untestable at all — not just today.
+- `notBefore` now resolves through `FOLLOWUPS_EPOCH` with a `FOLLOWUPS_EPOCH`
+  env override that Playwright pins to 2020, restoring the pre-cutoff
+  projection for UI specs. An unparseable value falls back to the real epoch
+  rather than disabling the cutoff, so a typo can't quietly restore the
+  retroactive "missed" wall. The cutoff itself stays covered by
+  `src/domain/followups.test.ts`.
+
 ## [2.56.21] - 2026-09-07
 
 ### Fixed — CI's new test step broke the pipeline; pulled back out

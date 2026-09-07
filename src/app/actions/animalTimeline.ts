@@ -107,6 +107,27 @@ const toMs = (d: unknown): number | null => (d instanceof Date ? d.getTime() : t
  * org-mates (animals are team resources) or an admin.
  * Returns null when missing, deleted, or not permitted (page renders notFound).
  */
+
+/**
+ * The launch cutoff passed to `computeFollowups`.
+ *
+ * `FOLLOWUPS_EPOCH` is the real value. The env override exists for the e2e
+ * suite only: its seeded placements are necessarily older than the epoch, so
+ * with the cutoff in force nothing can ever reach 'missed' and the
+ * expired-reminder UI cannot be exercised at all. Playwright pins it to 2020
+ * (see playwright.config.ts). The cutoff behaviour itself is unit-tested in
+ * src/domain/followups.test.ts, so nothing goes uncovered.
+ *
+ * An unparseable value falls back to the real epoch rather than disabling the
+ * cutoff — a typo must not quietly restore the retroactive "missed" wall.
+ */
+function resolveFollowupsEpoch(): Date {
+    const override = process.env.FOLLOWUPS_EPOCH;
+    if (!override) return FOLLOWUPS_EPOCH;
+    const parsed = new Date(override);
+    return isNaN(parsed.getTime()) ? FOLLOWUPS_EPOCH : parsed;
+}
+
 export async function getAnimalProfile(animalId: string): Promise<AnimalProfileData | null> {
     const { getUser } = await import('@/app/actions/_db');
     const userEmail = await getUser();
@@ -379,7 +400,7 @@ async function buildProjectedSlots(db: any, input: {
         fosterRule: mergeFosterRule(settings),
         recorded,
         now: new Date(),
-        notBefore: FOLLOWUPS_EPOCH,
+        notBefore: resolveFollowupsEpoch(),
     });
 
     // One-click contact: ONLY when the viewer has full PII access to the
