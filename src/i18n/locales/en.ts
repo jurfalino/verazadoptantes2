@@ -3,6 +3,7 @@ export const en = {
         created_by: 'Created by',
     },
     common: {
+        opens_new_tab: '(opens in a new tab)',
         previous: 'Previous',
         next: 'Next',
         save: 'Save',
@@ -246,6 +247,9 @@ export const en = {
         match_name_word: 'Name',
         match_address: 'Address',
         match_source_url: 'Source URL',
+        match_phone_suffix: 'Phone (last digits)',
+        match_id_number: 'ID number',
+        match_flagged: 'Flagged manually',
     },
     stats: {
         searches: 'searches',
@@ -1364,6 +1368,7 @@ export const en = {
         created_by_unknown_hint: 'No identified creator',
         // v2.14.10-20: pending-dedup section on /my-adopters
         pending_dedup_title: 'Pending review',
+        pending_dedup_matched_on: 'Matches on',
         pending_dedup_show_low: 'Show {count} weak matches',
         pending_dedup_hide_low: 'Hide weak matches',
         pending_dedup_subtitle: 'We found profiles that might be the same person. Choose whether to merge them.',

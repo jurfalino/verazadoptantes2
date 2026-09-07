@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.29] - 2026-09-07
+
+### Changed — the duplicate cards show WHY the pair was proposed
+
+- The evidence row was a raw token dump — "name_full, name_word" — which names
+  internal token types and never says *which* phone or name actually matched.
+  It now renders labelled chips with the matched values
+  (`Teléfono 5119-2702`), reusing the existing `duplicates.match_*` labels and
+  reading `duplicate_candidates.match_values`. The per-save path stores null
+  there, so a pair with no stored values falls back to the labels alone rather
+  than showing nothing.
+- Profile links open in a **new tab**, with an inline-SVG external-link icon and
+  an `sr-only` note. Losing the comparison you are half-way through to a
+  navigation is how these decisions get abandoned.
+- The card's date went through a bare `toLocaleDateString` (host timezone); it
+  now uses the shared zone-aware formatter like every other date.
+
 ## [2.56.28] - 2026-09-07
 
 ### Fixed — the pagination buttons rendered their i18n key

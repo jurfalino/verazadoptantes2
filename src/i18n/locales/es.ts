@@ -3,6 +3,7 @@ export const es = {
         created_by: 'Creada por',
     },
     common: {
+        opens_new_tab: '(abre en una pestaña nueva)',
         previous: 'Anterior',
         next: 'Siguiente',
         save: 'Guardar',
@@ -245,6 +246,9 @@ export const es = {
         match_name_word: 'Nombre',
         match_address: 'Dirección',
         match_source_url: 'URL Fuente',
+        match_phone_suffix: 'Teléfono (final)',
+        match_id_number: 'Documento',
+        match_flagged: 'Marcado manualmente',
     },
     stats: {
         searches: 'búsquedas',
@@ -1369,6 +1373,7 @@ export const es = {
         created_by_unknown_hint: 'Sin creador identificado',
         // v2.14.10-20: pending-dedup section on /my-adopters
         pending_dedup_title: 'Pendientes de revisar',
+        pending_dedup_matched_on: 'Coincide en',
         pending_dedup_show_low: 'Ver {count} coincidencias débiles',
         pending_dedup_hide_low: 'Ocultar coincidencias débiles',
         pending_dedup_subtitle: 'Encontramos perfiles que podrían ser la misma persona. Decidí si combinarlos.',

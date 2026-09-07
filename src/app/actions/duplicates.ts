@@ -886,6 +886,23 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
 
 // ── Pending-dedup section on /my-adopters (v2.14.10-20) ─────────────────
 
+/** Tolerant parse of `duplicate_candidates.match_values`. Null (per-save path)
+ *  or malformed JSON both degrade to "no values", never to a thrown render. */
+function safeParseMatchValues(raw: string | null): Record<string, string[]> {
+    if (!raw) return {};
+    try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+        const out: Record<string, string[]> = {};
+        for (const [k, v] of Object.entries(parsed)) {
+            if (Array.isArray(v)) out[k] = v.filter((x): x is string => typeof x === 'string');
+        }
+        return out;
+    } catch {
+        return {};
+    }
+}
+
 export interface PendingDedupPair {
     candidateId: string;
     /**
@@ -915,6 +932,13 @@ export interface PendingDedupPair {
         createdAt: number | null;
     };
     matchTypes: string[];
+    /**
+     * The values that actually matched, keyed by token type — e.g.
+     * `{ phone: ['5119-2702'] }`. Written by the batch rebuild; the per-save
+     * path stores null, so treat an empty object as "we know the types but not
+     * the values" and fall back to showing the type labels alone.
+     */
+    matchValues: Record<string, string[]>;
     confidence: string;
     confidencePercent: number;
 }
@@ -947,13 +971,14 @@ export async function getPendingDuplicatesForUser(
             adopter1Id: duplicateCandidates.adopter1Id,
             adopter2Id: duplicateCandidates.adopter2Id,
             matchTypes: duplicateCandidates.matchTypes,
+            matchValues: duplicateCandidates.matchValues,
             score: duplicateCandidates.score,
             confidence: duplicateCandidates.confidence,
             detectedAt: duplicateCandidates.detectedAt,
         })
             .from(duplicateCandidates)
             .where(eq(duplicateCandidates.status, 'pending'))
-            .all() as Array<{ candidateId: string; adopter1Id: string; adopter2Id: string; matchTypes: string; score: number; confidence: string; detectedAt: Date | null }>;
+            .all() as Array<{ candidateId: string; adopter1Id: string; adopter2Id: string; matchTypes: string; matchValues: string | null; score: number; confidence: string; detectedAt: Date | null }>;
 
         if (candidates.length === 0) return { pairs: [], total: 0, lowHidden: 0 };
 
@@ -1012,6 +1037,7 @@ export async function getPendingDuplicatesForUser(
                     createdAt: oldOne.createdAt ? Math.floor(oldOne.createdAt.getTime() / 1000) : null,
                 },
                 matchTypes: JSON.parse(c.matchTypes || '[]') as string[],
+                matchValues: safeParseMatchValues(c.matchValues),
                 confidence: c.confidence,
                 confidencePercent: storedScoreToPercent(c.score),
             });
@@ -1057,6 +1083,7 @@ export async function getPendingDuplicatesForUser(
                     newAdopter: { id: newOne.id, name: newOne.name, contactInfo: newOne.contactInfo, source: newOne.source, createdAt: newOne.createdAt ? Math.floor(newOne.createdAt.getTime() / 1000) : null },
                     existingAdopter: { id: oldOne.id, name: oldOne.name, contactInfo: oldOne.contactInfo, source: oldOne.source, createdAt: oldOne.createdAt ? Math.floor(oldOne.createdAt.getTime() / 1000) : null },
                     matchTypes: ['flagged_by_user'],
+                    matchValues: {},
                     confidence: 'high',
                     confidencePercent: 100,
                 });
