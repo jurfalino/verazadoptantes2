@@ -5,7 +5,7 @@ import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
 import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, getMatchContext, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun, type MatchContext } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
 import { computeContentFingerprint } from '@/domain/contentFingerprint';
-import { formatDateTimeFull } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import { buildImportBody } from '@/lib/importRow';
 import { inferDateOrder } from '@/domain/importRow';
 import { deserializeContactEntries } from '@/lib/contactEntries';
@@ -127,6 +127,7 @@ type Step = 'upload' | 'confirm' | 'dedup' | 'import';
 type Filter = 'all' | 'valid' | 'invalid' | 'warnings';
 
 export default function SpreadsheetImportWizard() {
+    const { formatDateTimeFull } = useDateFormat();
     const [step, setStep] = useState<Step>('upload');
     const [fileName, setFileName] = useState('');
     const [parsed, setParsed] = useState<ParsedSheet | null>(null);

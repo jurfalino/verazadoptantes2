@@ -19,7 +19,7 @@ import Link from 'next/link';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
-import { formatShortDate } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
 import FormAnswersPanel from '@/components/FormAnswersPanel';
@@ -50,6 +50,7 @@ function FlagBadge({ icon, label, tone }: { icon: string; label: string; tone: '
 }
 
 export default function ApplicantDetailPanel({ applicants, initialIndex, animalId, animalName, onClose, onContractIssued }: Props) {
+    const { formatShortDate } = useDateFormat();
     const { t, locale } = useLanguage();
     const toast = useShowToast();
     const [index, setIndex] = useState(initialIndex);

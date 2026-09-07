@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { formatDateTime } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import { getCountryByCode } from '@/config/countries';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
@@ -120,6 +120,7 @@ function ActivityCell({ user }: { user: UserProfile }) {
 }
 
 export default function AdminUsersPage() {
+    const { formatDateTime } = useDateFormat();
     const { t } = useLanguage();
     const toast = useShowToast();
     const [users, setUsers] = useState<UserProfile[]>([]);

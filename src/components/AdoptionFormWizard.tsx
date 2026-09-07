@@ -15,7 +15,7 @@ import { extractErrorId } from '@/lib/errorUtils';
 import { reportClientError } from '@/lib/clientErrorReporter';
 import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
-import { formatShortDate } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import AnimalSelectPicker from '@/components/AnimalSelectPicker';
 import DatePicker from '@/components/ui/DatePicker';
 import { extractVideoThumbnail } from '@/lib/videoThumbnail';
@@ -165,6 +165,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
      */
     piiOptInEligible?: boolean;
 }) {
+    const { formatShortDate } = useDateFormat();
     const router = useRouter();
     const searchParams = useSearchParams();
     const { t } = useLanguage();

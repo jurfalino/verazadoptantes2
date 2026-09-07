@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { formatShortDate, formatRelativeTime } from '@/lib/dates';
+import { useDateFormat, useRelativeTime } from '@/context/TimezoneContext';
 import { emailHandle } from '@/lib/userDisplay';
 import { formatAge } from '@/lib/ageUtils';
 import ShareFormMenu from '@/components/ShareFormMenu';
@@ -53,6 +53,8 @@ interface Animal {
 }
 
 export default function MyAnimalsPage() {
+    const { formatShortDate } = useDateFormat();
+    const formatRelativeTime = useRelativeTime();
     const { t, locale } = useLanguage();
     const searchParams = useSearchParams();
     const { data: session } = useSession();
@@ -448,7 +450,13 @@ export default function MyAnimalsPage() {
                                                         <span className="font-medium text-stone-600">
                                                             {animal.lastUpdate.name || emailHandle(animal.lastUpdate.by)}
                                                         </span>
-                                                        {' · '}{formatRelativeTime(animal.lastUpdate.at, locale === 'en' ? 'en' : 'es')}
+                                                        {/* Relative time is client-only (it reads the wall clock, which
+                                                            SSR and hydration disagree on), so it is null on first paint.
+                                                            Keep the separator with it or the line renders a dangling " · ". */}
+                                                        {(() => {
+                                                            const rel = formatRelativeTime(animal.lastUpdate.at, locale === 'en' ? 'en' : 'es');
+                                                            return rel ? <>{' · '}{rel}</> : null;
+                                                        })()}
                                                     </p>
                                                 )}
                                             </div>

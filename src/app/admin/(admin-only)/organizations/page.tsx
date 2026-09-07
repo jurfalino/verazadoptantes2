@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { formatDateTime, formatShortDate } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import { useLanguage } from '@/context/LanguageContext';
 
 interface Organization {
@@ -35,6 +35,7 @@ interface OrgDetail {
 }
 
 export default function AdminOrganizationsPage() {
+    const { formatDateTime, formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const highlightId = searchParams.get('highlight');

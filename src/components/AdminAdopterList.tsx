@@ -7,7 +7,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { useLanguage } from '@/context/LanguageContext';
 import { extractErrorId } from '@/lib/errorUtils';
 import { RatingBadge } from '@/components/RatingBadge';
-import { formatShortDate } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import { AdopterName } from '@/components/AdopterName';
 import type { EnrichmentResult } from '@/app/actions/enrichAdopters';
 
@@ -76,6 +76,7 @@ const COUNTRY_OPTIONS = [
 // ── Component ────────────────────────────────────────────────────────────
 
 export default function AdminAdopterList({ adopters, countries: _countries, publicProfilesFlag = false }: Props) {
+    const { formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(false);

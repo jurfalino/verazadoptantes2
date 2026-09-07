@@ -16,6 +16,17 @@ export default defineConfig({
     },
     test: {
         include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+        // Pin the suite to a zone that is neither UTC (what the Cloudflare
+        // Worker runs in) nor America/Argentina/Buenos_Aires (what most viewers
+        // run in, and our DEFAULT_TIMEZONE). Any formatter that reads the host
+        // zone instead of taking an explicit `timeZone` then produces a visibly
+        // wrong string and fails src/lib/dates.test.ts.
+        //
+        // This is the guardrail for the React #418 hydration bug of 2026-09-07
+        // (errorId 43d67f9e): SSR in UTC and hydration in the viewer's zone
+        // rendered different days for the same value. Picking a test zone that
+        // matched either side would have let that bug pass green.
+        env: { TZ: 'Pacific/Kiritimati' }, // UTC+14
     },
     resolve: {
         alias: {

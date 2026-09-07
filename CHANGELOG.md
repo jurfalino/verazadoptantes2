@@ -2,6 +2,69 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.19] - 2026-09-07
+
+### Fixed — dates rendered in two timezones at once (React #418, errorId 43d67f9e)
+
+A user on Android opened an adopter profile in production and got an "Algo salió
+mal" toast. The page was fine; the toast was not.
+
+- **Root cause.** The date formatters built their output from `getDate()`,
+  `getFullYear()` and bare `toLocaleDateString()` — all of which read the
+  *runtime's* timezone. The Cloudflare Worker runs in UTC and the browser runs in
+  the viewer's zone, so the SSR HTML and the hydration pass rendered different
+  days for the same value and React threw the server tree away. The reported
+  record's date was `2026-09-07T00:00:00Z` — Sep 7 on the Worker, Sep 6 in
+  Buenos Aires.
+- **The fix.** Every formatter in `src/lib/dates.ts` now takes an explicit IANA
+  `timeZone` and formats through `Intl.DateTimeFormat`/`formatToParts`, making
+  output a pure function of (value, zone) so both passes agree by construction.
+  The rendered format is unchanged.
+- **Civil dates vs instants.** `adoptions.date` conflates a picked calendar date
+  (`<input type="date">` → UTC midnight, 48 rows in prod) with an auto-stamped
+  instant (1291 rows). A picked date is a wall-calendar day, so rendering it in
+  the viewer's zone shows the wrong day to anyone west of UTC. `formatShortDate`
+  now detects the midnight-UTC marker and renders those in UTC. Splitting the
+  column is the real fix and remains open.
+- **Two more live instances**, both rendering server props on first paint with a
+  bare `toLocaleDateString()` (host locale *and* host zone):
+  `FormResultsContent` and `AnimalApplicants`. The other raw `toLocale*` sites
+  are fetch-populated (empty during SSR) or number formatting.
+- **Relative time can't be made hydration-safe** by pinning a zone — it reads the
+  wall clock, and the two passes run at different instants. `formatRelativeTime`
+  now takes an injectable `now`, and `useRelativeTime` renders it client-side
+  only.
+
+### Added — the viewer's timezone, and a control for it
+
+- Dates now render in the viewer's own zone, resolved once per request from
+  `user_profiles.timezone` and handed down by `TimezoneProvider`
+  (`useDateFormat`/`useRelativeTime`). Resolution reads the stored profile value,
+  **not** the live `cf-timezone` header: Cloudflare reports the egress location,
+  so a VPN user gets someone else's zone (see
+  `.agents/audits/2026-09-04-vpn-stale-data.md`). Anonymous visitors cost no
+  query and fall back to the app default.
+- Configuración gets an editable timezone selector (`updateUserTimezone`,
+  12 curated zones). The column was seeded once from `cf-timezone` at first
+  sign-in with `COALESCE` and never refreshed, so a user who moved had no way to
+  correct it. The list always includes the stored zone, so an auto-detected zone
+  outside the curated set can't be silently overwritten by saving the form.
+
+### Changed — recoverable hydration errors no longer alarm the user
+
+- React 19's default `onRecoverableError` calls `reportError()`, which fires a
+  window `error` event indistinguishable from a real crash — which is how a
+  mismatch React had already repaired reached a user as an error toast with an
+  ID to quote back at us. Those now log at `warn` (still in Axiom, still a real
+  defect) with no toast. Scoped to codes React recovers from: #419 still alarms.
+
+### Added — the guardrail
+
+- `src/lib/dates.test.ts` plus `TZ=Pacific/Kiritimati` (UTC+14) in the Vitest
+  config. The zone is deliberately neither UTC nor the app default: had it
+  matched either, a formatter that forgot its `timeZone` would still produce the
+  expected string and this bug would have shipped green.
+
 ## [2.56.18] - 2026-09-07
 
 ### Changed — the email login fields stay hidden until asked for

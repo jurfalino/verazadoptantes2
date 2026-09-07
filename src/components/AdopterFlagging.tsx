@@ -10,7 +10,7 @@ import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { zarazTrack } from '@/lib/zaraz';
-import { formatShortDate } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 
 export interface AdopterFlaggingHandle {
     openAction: (action: string) => void;
@@ -66,6 +66,7 @@ function ShowLowConfidenceSuggestions({ suppressed, targetAdopter, setTargetAdop
 export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, hasDuplicateBanner?: boolean }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress: _hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests, hasDuplicateBanner = false }, ref) {
     const router = useRouter();
     const { t } = useLanguage();
+    const { formatShortDate } = useDateFormat();
     const { data: _session } = useSession();
     const { openLogin: _openLogin } = useAuthContext();
     const toast = useShowToast();

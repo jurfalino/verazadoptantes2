@@ -1,8 +1,9 @@
 export const runtime = 'edge';
-import { getDb, resolveDataRequest } from "@/app/actions";
+import { getDb, getUser, resolveDataRequest } from "@/app/actions";
 import { dataRequests, adopters } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { formatShortDate } from '@/lib/dates';
+import { resolveViewerTimezone } from '@/lib/viewerTimezone';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 
 // Admin UI is English-only (no t()) — 'No name' mirrors the i18n
@@ -28,6 +29,10 @@ async function handleResolve(id: string, action: 'resolved' | 'rejected') {
 }
 
 export default async function AdminDataRequestsPage() {
+    // Server Components render only on the server, so there is no hydration
+    // pass to disagree with — but the viewer should still read timestamps in
+    // their own zone rather than the Worker's UTC. See src/lib/dates.ts.
+    const timeZone = await resolveViewerTimezone(await getUser());
     const db = await getDb();
     if (!db) return <div>DB Unavailable</div>;
 
@@ -119,7 +124,7 @@ export default async function AdminDataRequestsPage() {
                                                 <div className="truncate" title={r.details || ''}>{r.details || '-'}</div>
                                             </td>
                                             <td className="p-4 text-xs text-stone-500">
-                                                {r.createdAt ? formatShortDate(new Date(r.createdAt)) : '-'}
+                                                {r.createdAt ? formatShortDate(new Date(r.createdAt), timeZone) : '-'}
                                             </td>
                                             <td className="p-4 text-right space-x-2">
                                                 <form className="inline-flex gap-2">
@@ -173,7 +178,7 @@ export default async function AdminDataRequestsPage() {
                                     )}
                                     {r.details && <p className="text-sm text-stone-600 mb-2">{r.details}</p>}
                                     <div className="text-xs text-stone-500 mb-3">
-                                        {r.createdAt ? formatShortDate(new Date(r.createdAt)) : '-'}
+                                        {r.createdAt ? formatShortDate(new Date(r.createdAt), timeZone) : '-'}
                                     </div>
                                     <form className="flex gap-2">
                                         <button
@@ -241,7 +246,7 @@ export default async function AdminDataRequestsPage() {
                                                 </span>
                                             </td>
                                             <td className="p-4 text-xs text-stone-500">
-                                                {r.resolvedAt ? formatShortDate(new Date(r.resolvedAt)) : '-'}
+                                                {r.resolvedAt ? formatShortDate(new Date(r.resolvedAt), timeZone) : '-'}
                                             </td>
                                         </tr>
                                     ))}
@@ -270,7 +275,7 @@ export default async function AdminDataRequestsPage() {
                                         </a>
                                     )}
                                     <div className="text-xs text-stone-500">
-                                        {r.resolvedAt ? formatShortDate(new Date(r.resolvedAt)) : '-'}
+                                        {r.resolvedAt ? formatShortDate(new Date(r.resolvedAt), timeZone) : '-'}
                                     </div>
                                 </div>
                             ))}

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { getImportRuns, getImportRunItems } from '@/app/actions';
-import { formatDateTimeFull } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 
 interface ImportRun {
     id: string; actorEmail: string | null; source: string | null; total: number | null;
@@ -32,6 +32,7 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 export default function AdminImportsPage() {
+    const { formatDateTimeFull } = useDateFormat();
     const [runs, setRuns] = useState<ImportRun[]>([]);
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState<string | null>(null);

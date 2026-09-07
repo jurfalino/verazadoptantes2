@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { formatShortDate } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import { listDeletedAdopters, restoreAdopter, purgeAdopter, purgeDeletedAdopters } from '@/app/actions';
 
 interface DeletedRow {
@@ -21,6 +21,7 @@ interface DeletedRow {
  * purge permanently — one by one or all at once. v2.20.0.
  */
 export default function AdminDeletedPage() {
+    const { formatShortDate } = useDateFormat();
     const { locale } = useLanguage();
     const isEs = locale !== 'en';
     const toast = useShowToast();

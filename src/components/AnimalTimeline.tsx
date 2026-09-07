@@ -12,7 +12,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '@/context/LanguageContext';
-import { formatShortDate } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import { interpolate } from '@/lib/interpolate';
 import { emailHandle } from '@/lib/userDisplay';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
@@ -100,6 +100,7 @@ export default function AnimalTimeline({ items, animalSex, userNameMap = {}, org
     /** How the reminder for an upcoming slot will actually be delivered. */
     reminder?: { email: boolean; toYou: boolean };
 }) {
+    const { formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
     const [showMissed, setShowMissed] = useState(false);

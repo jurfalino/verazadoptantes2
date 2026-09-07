@@ -1980,6 +1980,7 @@ export const en = {
         province: 'Province',
         city: 'City',
         timezone: 'Timezone',
+        timezone_description: 'Dates and times across the app are shown in this timezone. Detected when you signed in — change it if you have moved.',
     },
     organizations: {
         title: 'My Groups',

@@ -4,6 +4,7 @@ import { getUser } from './_db';
 import { logger } from '@/lib/logger';
 import { acceptTermsAndCountrySchema } from './validation';
 import { logAudit } from '@/lib/audit';
+import { isValidTimezone } from '@/domain/timezones';
 
 export interface UserSettings {
     name: string | null;
@@ -114,6 +115,63 @@ export async function updateUserCountry(country: string): Promise<{ success: boo
         return { success: true };
     } catch (error) {
         const errorId = logger.error('updateUserCountry failed', error, { userEmail, country });
+        return { success: false, errorId };
+    }
+}
+
+
+/**
+ * Update the display timezone from the Settings page.
+ *
+ * `user_profiles.timezone` is seeded once from the `cf-timezone` header at
+ * first sign-in (`src/auth.ts` writes it with `COALESCE`, so it is never
+ * refreshed afterwards). Without this action a user who moves — or who signed
+ * in through a VPN, see `.agents/audits/2026-09-04-vpn-stale-data.md` — has no
+ * way to correct the zone their dates are rendered in.
+ *
+ * Validates against `Intl` rather than against the curated picker list: an
+ * auto-detected zone we do not list is still legitimate, and must survive a
+ * save from the settings page.
+ */
+export async function updateUserTimezone(timezone: string): Promise<{ success: boolean; errorId?: string }> {
+    let userEmail: string | undefined;
+    try {
+        if (!isValidTimezone(timezone)) {
+            // Guarded here rather than only in the UI: an invalid zone reaches
+            // Intl.DateTimeFormat during SSR and throws, so it must never land
+            // in the column.
+            logger.warn('updateUserTimezone: rejected invalid zone', { timezone });
+            return { success: false };
+        }
+
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') throw new Error('Not authenticated');
+
+        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        if (!env?.DB) throw new Error('Database not available');
+
+        const user = await env.DB.prepare(
+            `SELECT id FROM user WHERE email = ? LIMIT 1`
+        ).bind(userEmail).first<{ id: string }>();
+
+        if (!user) throw new Error('User not found');
+
+        await env.DB.prepare(
+            `INSERT INTO user_profiles (user_id, timezone)
+             VALUES (?, ?)
+             ON CONFLICT(user_id) DO UPDATE SET timezone = excluded.timezone`
+        ).bind(user.id, timezone).run();
+
+        logger.info('Timezone updated from settings', { userEmail, timezone });
+        logAudit({
+            userEmail,
+            action: 'settings_timezone_update',
+            target: userEmail,
+            details: { timezone },
+        });
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('updateUserTimezone failed', error, { userEmail, timezone });
         return { success: false, errorId };
     }
 }

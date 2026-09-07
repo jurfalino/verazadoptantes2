@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import { RatingBadge } from '@/components/RatingBadge';
-import { formatShortDate } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 
@@ -47,6 +47,7 @@ const RECORD_TYPES = ['all', 'adoption', 'adoption_request', 'foster', 'observat
 type RecordTypeFilter = typeof RECORD_TYPES[number];
 
 export default function MyAdoptionsPage() {
+    const { formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const { data: session } = useSession();
     const toast = useShowToast();

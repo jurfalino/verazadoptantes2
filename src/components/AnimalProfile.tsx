@@ -17,7 +17,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { formatAge } from '@/lib/ageUtils';
-import { formatRelativeTime, formatShortDate } from '@/lib/dates';
+import { useDateFormat, useRelativeTime } from '@/context/TimezoneContext';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import { emailHandle } from '@/lib/userDisplay';
 import { saveAdoption, deleteAnimalForAdoption } from '@/app/actions';
@@ -43,6 +43,8 @@ export default function AnimalProfile({ profile, applicants, userId }: {
     /** session user id (ShareFormMenu links). */
     userId: string;
 }) {
+    const { formatShortDate } = useDateFormat();
+    const formatRelativeTime = useRelativeTime();
     const { t, locale } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();

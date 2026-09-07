@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { getReportedFlags, type ReportedFlagRow } from '@/app/actions/dataQuality';
 import { dismissFlag } from '@/app/actions/flags';
-import { formatShortDate } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 
 /**
@@ -26,6 +26,7 @@ const REASON_META: Record<string, { label: string; cls: string }> = {
 const metaFor = (r: string) => REASON_META[r] ?? { label: r, cls: 'bg-stone-100 text-stone-700' };
 
 export default function ReportedContentPanel() {
+    const { formatShortDate } = useDateFormat();
     const [flags, setFlags] = useState<ReportedFlagRow[] | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [reason, setReason] = useState<string>('duplicate'); // preselected

@@ -1985,6 +1985,7 @@ export const pt = {
         province: 'Estado',
         city: 'Cidade',
         timezone: 'Fuso horário',
+        timezone_description: 'As datas e horas do app são mostradas neste fuso horário. Detectado ao entrar — altere se você se mudou.',
     },
     organizations: {
         title: 'Meus Grupos',

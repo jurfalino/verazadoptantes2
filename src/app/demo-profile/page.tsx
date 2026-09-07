@@ -5,9 +5,10 @@ export const runtime = 'edge';
 import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { useRouter } from 'next/navigation';
-import { formatShortDate } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 
 export default function DemoProfilePage() {
+    const { formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const router = useRouter();
 

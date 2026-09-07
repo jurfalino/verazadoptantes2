@@ -1985,6 +1985,7 @@ export const es = {
         province: 'Provincia',
         city: 'Ciudad',
         timezone: 'Zona horaria',
+        timezone_description: 'Las fechas y horas de la app se muestran en esta zona horaria. Se detectó al iniciar sesión — cambiala si te mudaste.',
     },
     organizations: {
         title: 'Mis Grupos',

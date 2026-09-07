@@ -4,7 +4,7 @@ export const runtime = 'edge';
 import { useState, useEffect } from 'react';
 import { useShowToast } from '@/components/ui/Toast';
 import { useLanguage } from '@/context/LanguageContext';
-import { formatShortDate } from '@/lib/dates';
+import { useDateFormat } from '@/context/TimezoneContext';
 import { extractErrorId } from '@/lib/errorUtils';
 
 async function readErrorBody(res: Response): Promise<{ error?: string; errorId?: string }> {
@@ -89,6 +89,7 @@ const FEATURE_FLAGS = [
 ];
 
 export default function AdminConfigPage() {
+    const { formatShortDate } = useDateFormat();
     const toast = useShowToast();
     const { t } = useLanguage();
     const [config, setConfig] = useState({

@@ -11,7 +11,7 @@ import { getRecordTypeColors } from '@/lib/recordTypeColors';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { getSourceIcon, getSourceName } from '@/lib/sourceIcons';
-import { formatShortDate, formatRelativeTime } from '@/lib/dates';
+import { useDateFormat, useRelativeTime } from '@/context/TimezoneContext';
 import { emailHandle } from '@/lib/userDisplay';
 import { formatAge } from '@/lib/ageUtils';
 import { isAdmin as isAdminEmail } from '@/config/admins-shared';
@@ -91,6 +91,8 @@ function RecordTypeIcon({ type, className }: { type: string; className?: string 
 }
 
 export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, isOrgMate = false, adopterAddress = '', userNameMap = {}, editFormComponent: EditComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, isOrgMate?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string; adopterAdoptions?: Adoption[] }> }) {
+    const { formatShortDate } = useDateFormat();
+    const formatRelativeTime = useRelativeTime();
     const { t, locale } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();

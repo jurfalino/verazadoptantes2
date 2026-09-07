@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { reportClientError } from '@/lib/clientErrorReporter';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
+import { isRecoverableHydrationError } from '@/domain/clientErrors';
 
 /**
  * Mounted once at the root. Captures uncaught errors and unhandled
@@ -54,6 +55,28 @@ export default function ClientErrorReporter() {
                     'Recargá la app',
                     'Hubo una actualización mientras usabas la app. Cerrá y volvé a abrir.',
                 );
+                return;
+            }
+
+            // React hydration mismatches arrive here because React 19's default
+            // onRecoverableError calls reportError(), which fires a window
+            // 'error' event — but React has already re-rendered the subtree and
+            // the page is fine. Log them (they're real defects) without
+            // alarming the user, who has nothing to act on. See
+            // src/domain/clientErrors.ts and errorId 43d67f9e.
+            if (isRecoverableHydrationError(message)) {
+                console.warn('[ClientErrorReporter] recovered hydration mismatch:', message);
+                void reportClientError({
+                    message,
+                    stack,
+                    source: 'window-error',
+                    level: 'warn',
+                    extra: {
+                        filename: event.filename,
+                        lineno: event.lineno,
+                        colno: event.colno,
+                    },
+                });
                 return;
             }
 
