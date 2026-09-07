@@ -22,8 +22,9 @@ import {
     DEFAULT_SCHEDULE, type FollowupSettings, type RecordedFollowup,
 } from '../../../src/domain/followups';
 import { dedupKey, notificationTitle, notificationBody, buildFollowupEmail, type FollowupEmailItem } from './copy';
+import { log, type AxiomEnv } from './log';
 
-interface Env {
+interface Env extends AxiomEnv {
     DB: D1Database;
     /** Deep-link base for notification/email URLs (wrangler [vars]). */
     APP_BASE_URL?: string;
@@ -61,7 +62,7 @@ type PlacementRow = {
 };
 
 export default {
-    async scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
         const summary = { scanned: 0, due: 0, notified: 0, deduped: 0, emailed: 0, emailedItems: 0, emailFailed: 0, skippedOwners: 0, errors: 0 };
         try {
             // ── gates: mirror createNotification's kill switch + the feature flag ──
@@ -74,11 +75,11 @@ export default {
             const emailFrom = env.EMAIL_FROM || flagMap.get('EMAIL_FROM') || 'BuenAdoptante <noreply@buenadoptante.org>';
             const baseUrl = (env.APP_BASE_URL || 'https://buenadoptante.org').replace(/\/$/, '');
             if (flagMap.get('ENABLE_FOLLOWUPS') !== 'true') {
-                console.log(JSON.stringify({ op: 'followup-cron', skipped: 'ENABLE_FOLLOWUPS off' }));
+                log(env, 'info', { message: 'skipped', skipped: 'ENABLE_FOLLOWUPS off' }, ctx);
                 return;
             }
             if (flagMap.get('NOTIF_ENABLED_follow_up_due') === 'false') {
-                console.log(JSON.stringify({ op: 'followup-cron', skipped: 'kill switch' }));
+                log(env, 'info', { message: 'skipped', skipped: 'kill switch' }, ctx);
                 return;
             }
 
@@ -119,7 +120,7 @@ export default {
                     for (const m of mates.results || []) if (m.e && m.e.includes('@')) set.add(m.e);
                     recipientsByOwner.set(email, [...set].slice(0, 30));
                 } catch (e) {
-                    console.log(JSON.stringify({ op: 'followup-cron', warn: 'team fallback (owner only)', email, error: String(e) }));
+                    log(env, 'warn', { warn: 'team fallback (owner only)', email, error: String(e) }, ctx);
                     recipientsByOwner.set(email, [email]);
                 }
             }
@@ -132,7 +133,7 @@ export default {
                     ).bind(email).first<{ s: string | null }>();
                     settingsByEmail.set(email, parseFollowupSettings(row?.s));
                 } catch (e) {
-                    console.log(JSON.stringify({ op: 'followup-cron', warn: 'settings fallback', email, error: String(e) }));
+                    log(env, 'warn', { warn: 'settings fallback', email, error: String(e) }, ctx);
                     settingsByEmail.set(email, null);
                 }
             }
@@ -229,7 +230,7 @@ export default {
                         }
                     } catch (e) {
                         summary.errors++;
-                        console.log(JSON.stringify({ op: 'followup-cron', warn: 'placement fallback', placementId: p.id, animalId: p.animal_id, owner: p.added_by, error: String(e) }));
+                        log(env, 'warn', { warn: 'placement fallback', placementId: p.id, animalId: p.animal_id, owner: p.added_by, error: String(e) }, ctx);
                     }
                 }));
             }
@@ -247,11 +248,11 @@ export default {
                     else {
                         summary.emailFailed++;
                         const apiError = await res.text().catch(() => '');
-                        console.log(JSON.stringify({ op: 'followup-cron', warn: 'email send rejected', status: res.status, apiError: apiError.slice(0, 200), items: queueItems.length }));
+                        log(env, 'error', { message: 'email send rejected', status: res.status, apiError: apiError.slice(0, 200), items: queueItems.length }, ctx);
                     }
                 } catch (e) {
                     summary.emailFailed++;
-                    console.log(JSON.stringify({ op: 'followup-cron', warn: 'email send threw', items: queueItems.length, error: String(e) }));
+                    log(env, 'error', { message: 'email send threw', items: queueItems.length, error: String(e) }, ctx);
                 }
             }
 
@@ -269,15 +270,15 @@ export default {
                        AND expires_at < strftime('%s','now') - 90 * 86400`
                 ).run();
                 const n = pruned.meta?.changes ?? 0;
-                if (n > 0) console.log(JSON.stringify({ op: 'followup-cron', pruned: n }));
+                if (n > 0) log(env, 'info', { message: 'pruned', pruned: n }, ctx);
             } catch (e) {
-                console.log(JSON.stringify({ op: 'followup-cron', warn: 'retention prune failed', error: String(e) }));
+                log(env, 'warn', { warn: 'retention prune failed', error: String(e) }, ctx);
             }
         } catch (e) {
             summary.errors++;
-            console.log(JSON.stringify({ op: 'followup-cron', error: String(e) }));
+            log(env, 'error', { message: 'run failed', error: String(e) }, ctx);
         } finally {
-            console.log(JSON.stringify({ op: 'followup-cron', ...summary }));
+            log(env, 'info', { message: 'run complete', ...summary }, ctx);
         }
     },
 };

@@ -7,12 +7,24 @@ name = "buenadoptante-followup-cron"
 main = "src/index.ts"
 compatibility_date = "2025-01-27"
 
+# Cloudflare Workers Logs (~7 day retention, queryable in the dashboard).
+# Free, and the fallback when Axiom is unreachable or its secrets are missing —
+# every entry is still written to the runtime stream by src/log.ts. Before this
+# the cron's only output was a live `wrangler tail`, so a failed daily run left
+# no trace at all.
+[observability]
+enabled = true
+
 [triggers]
 crons = ["0 12 * * *"] # 09:00 America/Argentina/Buenos_Aires
 
 [vars]
 # Deep-link base for notification/email URLs.
 APP_BASE_URL = "https://buenadoptante.org"
+# Tags every Axiom entry so cron rows filter alongside the app's by env.
+APP_ENV = "production"
+# Dataset name is not a secret; only AXIOM_TOKEN is (set via `wrangler secret put`).
+AXIOM_DATASET = "buenadoptante"
 
 [[d1_databases]]
 binding = "DB"
@@ -22,8 +34,13 @@ database_id = "62ec01e7-deae-4536-be62-7c0a0064b45c"
 [env.staging]
 name = "buenadoptante-followup-cron-staging"
 
+[env.staging.observability]
+enabled = true
+
 [env.staging.vars]
 APP_BASE_URL = "https://staging.verazadoptantes2.pages.dev"
+APP_ENV = "staging"
+AXIOM_DATASET = "buenadoptante"
 
 [env.staging.triggers]
 crons = ["0 12 * * *"]

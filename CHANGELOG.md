@@ -2,6 +2,33 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.23] - 2026-09-07
+
+### Added — the follow-up cron finally logs somewhere durable
+
+The daily cron writes user-facing notifications and sends mail through Resend
+against the production D1, and it was the one component with no durable
+logging: 13 bare `console.log`s reaching only Cloudflare's live runtime stream.
+No retention without Logpush, nothing in the `buenadoptante` Axiom dataset the
+rest of the app writes to, and no severity or errorId. A run that failed at
+09:00 ART had scrolled away before anyone could look — if reminder emails
+silently stopped, nothing would have said so.
+
+- `workers/followup-cron/src/log.ts` ships entries to Axiom in the same shape as
+  `src/lib/logger.ts` — same dataset, same `_time` / `level` / `message` / `env`
+  fields — so cron runs sit alongside app events and the existing
+  `level == "error"` queries pick them up with no extra wiring. `op:
+  'followup-cron'` distinguishes them.
+- Uses `ctx.waitUntil` so a scheduled Worker can't be torn down mid-POST, and
+  degrades to the console line it replaced if Axiom is unconfigured or
+  rejecting. It never throws and never blocks the run.
+- Email-send failures are now `level: 'error'` with an errorId, so a cron
+  failure can be traced exactly like an app one.
+- `[observability] enabled = true` on both envs — Cloudflare Workers Logs,
+  ~7 day retention, free, and the fallback when Axiom is unreachable.
+- `AXIOM_DATASET` and `APP_ENV` are plain `[vars]`; only `AXIOM_TOKEN` is a
+  secret, set out of band per environment.
+
 ## [2.56.22] - 2026-09-07
 
 ### Fixed — the launch cutoff broke the follow-up e2e
