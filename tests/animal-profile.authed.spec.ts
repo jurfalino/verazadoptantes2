@@ -120,8 +120,13 @@ test.describe('Animal detail page', () => {
         // No due slot → no banner, no pending pill.
         await expect(page.getByTestId('due-banner')).not.toBeVisible();
         await expect(page.getByTestId('pending-pill')).not.toBeVisible();
-        // The expired 7d reminder sits collapsed under the disclosure.
-        await expect(section.getByRole('button', { name: /1 (expired reminder|recordatorio vencido)/ })).toBeVisible();
+        // The expired 7d reminder sits collapsed under the disclosure…
+        const disclosure = section.getByRole('button', { name: /1 (expired reminder|recordatorio vencido)/ });
+        await expect(disclosure).toBeVisible();
+        // …and v2.56.10 lets it be logged late: the row carries its own CTA,
+        // which passes the slot key so the matcher clears it whatever the date.
+        await disclosure.click();
+        await expect(page.getByTestId('register-missed-checkin_7d')).toBeVisible();
     });
 
     test('in-place edit updates identity without touching custody', async ({ page }) => {

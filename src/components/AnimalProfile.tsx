@@ -82,6 +82,16 @@ export default function AnimalProfile({ profile, applicants, userId }: {
     const dueSlots = projected.filter(s => s.status === 'due');
     const upcomingSlots = projected.filter(s => s.status === 'upcoming');
     const missedSlots = projected.filter(s => s.status === 'missed');
+    /** Days still available to log a due slot (0 = last day). The window is the
+     *  answer to "how long do I have", so show it as a countdown, not a date. */
+    const daysLeft = (s: ProjectedSlot) => Math.max(0, Math.ceil((s.windowEndsAt - Date.now()) / 86400000));
+    const windowCopy = (s: ProjectedSlot) => {
+        const n = daysLeft(s);
+        return n === 0
+            ? (t('followups.last_day') || 'último día para registrarlo')
+            : interpolate(t('followups.days_left') || 'te quedan {days} días para registrarlo', { days: n });
+    };
+
     const slotLabel = (s: ProjectedSlot) =>
         (s.copyKey === 'checkin_custom' || s.copyKey === 'foster_checkin')
             ? interpolate(t(`followups.${s.copyKey}`) || '{days}', { days: s.offsetDays ?? '' })
@@ -286,7 +296,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                                 <div className="flex-1 min-w-[180px]">
                                     <p className="text-sm font-semibold text-stone-800">{slotLabel(s)}</p>
                                     <p className="text-xs text-stone-500">
-                                        {(t('followups.vencia') || 'vencía el')} {formatShortDate(s.dueDate)} · {(t('followups.registrable_hasta') || 'podés registrarlo hasta el')} {formatShortDate(s.windowEndsAt)}
+                                        {(t('followups.vencia') || 'vencía el')} {formatShortDate(s.dueDate)} · {windowCopy(s)}
                                     </p>
                                 </div>
                                 {contactButton(s)}
@@ -329,9 +339,15 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                 <div className="mb-4" data-testid="projected-section">
                     <div className="space-y-2">
                         {[...dueSlots, ...upcomingSlots].map(s => (
-                            <div key={s.key} className={`rounded-xl border-2 border-dashed px-4 py-3 ${s.status === 'due' ? 'border-amber-300 bg-amber-50/50' : 'border-stone-200 bg-stone-50/50'}`}>
+                            <div
+                                key={s.key}
+                                className="rounded-xl border-2 border-dashed px-4 py-3"
+                                style={s.status === 'due'
+                                    ? { background: 'var(--status-warning-bg)', borderColor: 'var(--status-warning-border)' }
+                                    : { background: 'var(--surface-muted)', borderColor: 'var(--border-default)' }}
+                            >
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <p className="text-sm font-semibold text-stone-700 flex-1 min-w-[160px]">{slotLabel(s)}</p>
+                                    <p className="text-sm font-semibold flex-1 min-w-[160px]" style={{ color: 'var(--text-secondary)' }}>{slotLabel(s)}</p>
                                     <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${s.status === 'due' ? 'bg-amber-100 text-amber-700' : 'bg-stone-100 text-stone-500'}`}>
                                         {s.status === 'due' ? (t('followups.status_due') || 'Pendiente') : (t('followups.status_upcoming') || 'Programado')}
                                     </span>
@@ -343,7 +359,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                                             {t('followups.register') || 'Registrar'}
                                         </button>
                                         {contactButton(s)}
-                                        <span className="text-[11px] text-stone-500">{(t('followups.registrable_hasta') || 'podés registrarlo hasta el')} {formatShortDate(s.windowEndsAt)}</span>
+                                        <span className="text-[11px] text-stone-500">{windowCopy(s)}</span>
                                     </div>
                                 )}
                             </div>
@@ -354,19 +370,36 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                                     type="button"
                                     onClick={() => setShowMissed(v => !v)}
                                     aria-expanded={showMissed}
-                                    className="w-full text-left px-4 py-2 rounded-xl border border-dashed border-stone-300 text-xs font-semibold text-stone-500 hover:bg-stone-100 transition-colors"
+                                    className="w-full text-left px-4 py-2 rounded-xl border border-dashed text-xs font-semibold text-stone-500 hover:bg-stone-100 transition-colors"
+                                    style={{ borderColor: 'var(--border-default)' }}
                                 >
                                     {showMissed ? '▾' : '▸'} {missedSlots.length} {missedSlots.length === 1 ? (t('followups.missed_one') || 'recordatorio vencido') : (t('followups.missed_many') || 'recordatorios vencidos')}
                                 </button>
                                 {showMissed && (
                                     <div className="mt-2 space-y-1.5">
                                         {missedSlots.map(s => (
-                                            <div key={s.key} className="flex items-baseline justify-between gap-2 px-4 py-1.5 rounded-lg border border-dashed border-stone-200 text-xs text-stone-500">
-                                                <span className="font-semibold">{slotLabel(s)}</span>
+                                            <div
+                                                key={s.key}
+                                                className="flex flex-wrap items-center gap-2 px-4 py-2 rounded-lg border border-dashed text-xs text-stone-500"
+                                                style={{ borderColor: 'var(--border-default)' }}
+                                                data-testid={`missed-slot-${s.key}`}
+                                            >
+                                                <span className="font-semibold flex-1 min-w-[140px]">{slotLabel(s)}</span>
                                                 <span className="tabular-nums">{formatShortDate(s.dueDate)}</span>
+                                                {/* Late is still worth recording: registering from here carries the
+                                                    slot key, which the matcher honors regardless of date, so the
+                                                    reminder clears instead of sitting here forever. */}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => registerSlot(s)}
+                                                    className="inline-flex px-3 py-1.5 rounded-lg text-xs font-bold text-teal-700 bg-teal-50 border border-teal-100 hover:border-teal-400 transition-colors"
+                                                    data-testid={`register-missed-${s.key}`}
+                                                >
+                                                    {t('followups.register_late') || 'Registrar igual'}
+                                                </button>
                                             </div>
                                         ))}
-                                        <p className="text-[11px] text-stone-500 px-1">{t('followups.missed_hint') || 'Vencieron hace tiempo, así que no te los recordamos. Podés registrar el evento igual desde «Agregar evento».'}</p>
+                                        <p className="text-[11px] text-stone-500 px-1">{t('followups.missed_hint') || 'Ya no te los recordamos, pero podés registrarlos igual — quedan marcados como hechos.'}</p>
                                     </div>
                                 )}
                             </div>

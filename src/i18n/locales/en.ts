@@ -1467,6 +1467,9 @@ export const en = {
         read_more: 'read more',
     },
     followups: {
+        days_left: 'you have {days} days left to log it',
+        last_day: 'last day to log it',
+        register_late: 'Log it anyway',
         toggle_only_mine: 'Only remind me about animals I added',
         delivery_title: 'How to receive reminders',
         delivery_hint: 'The in-app bell always notifies you. You can also get them by email.',
@@ -1486,7 +1489,7 @@ export const en = {
         register: 'Record',
         missed_one: 'expired reminder',
         missed_many: 'expired reminders',
-        missed_hint: 'These expired a while ago, so we no longer remind you. You can still record the event from "Add event".',
+        missed_hint: 'We no longer remind you about these, but you can still log them — they get marked as done.',
         today: 'Today',
         pending_one: 'due',
         pending_many: 'due',

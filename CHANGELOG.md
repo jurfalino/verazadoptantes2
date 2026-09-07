@@ -2,6 +2,31 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.10] - 2026-09-06
+
+### Fixed — «Programado» slots rendered with unthemed colors
+
+`globals.css` remaps opacity variants only for the classes it enumerates
+(`bg-teal-50/50` is listed; `bg-stone-50/50` and `bg-amber-50/50` are not), so
+the projected-slot cards painted raw light backgrounds in Azul Noche — plus
+`border-amber-300` / `border-stone-300`, which aren't remapped either. Those
+surfaces now use the semantic tokens the design guide prescribes
+(`--status-warning-bg/-border` for due, `--surface-muted` + `--border-default`
+for upcoming, `--text-secondary` for the label). A check over every component in
+this feature confirms no unremapped opacity variant remains.
+
+### Added — a countdown, and late logging that actually clears the reminder
+
+- Due reminders now say **how long is left** («te quedan 5 días para
+  registrarlo», «último día para registrarlo») instead of a second date the
+  reader has to subtract from today. Shown in the «Para hacer ahora» banner and
+  on the timeline slot.
+- Expired reminders get a **«Registrar igual»** button. It passes the slot key,
+  and the matcher's exact-key pass ignores dates — so logging a check-in late
+  marks that reminder done instead of leaving it in the vencidos list forever.
+  Previously the only way to clear one was to add an event and remember to
+  backdate it inside the window.
+
 ## [2.56.9] - 2026-09-06
 
 ### Fixed — three defects in the animal page's «Agregar evento» modal

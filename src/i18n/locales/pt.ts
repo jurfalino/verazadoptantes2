@@ -1472,6 +1472,9 @@ export const pt = {
         read_more: 'ler mais',
     },
     followups: {
+        days_left: 'faltam {days} dias para registrar',
+        last_day: 'último dia para registrar',
+        register_late: 'Registrar mesmo assim',
         toggle_only_mine: 'Lembrar apenas dos animais que eu cadastrei',
         delivery_title: 'Como receber os lembretes',
         delivery_hint: 'O sininho do app sempre avisa. Além disso, você pode recebê-los por e-mail.',
@@ -1491,7 +1494,7 @@ export const pt = {
         register: 'Registrar',
         missed_one: 'lembrete vencido',
         missed_many: 'lembretes vencidos',
-        missed_hint: 'Venceram há tempo, então não lembramos mais. Você ainda pode registrar o evento em «Adicionar evento».',
+        missed_hint: 'Não lembramos mais destes, mas você ainda pode registrá-los — ficam marcados como feitos.',
         today: 'Hoje',
         pending_one: 'pendente',
         pending_many: 'pendentes',

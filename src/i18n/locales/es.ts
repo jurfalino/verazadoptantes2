@@ -1472,6 +1472,9 @@ export const es = {
         read_more: 'leer más',
     },
     followups: {
+        days_left: 'te quedan {days} días para registrarlo',
+        last_day: 'último día para registrarlo',
+        register_late: 'Registrar igual',
         toggle_only_mine: 'Recordarme solo los animales que cargué yo',
         delivery_title: 'Cómo recibir los recordatorios',
         delivery_hint: 'La campanita de la app avisa siempre. Además, podés recibirlos por e-mail.',
@@ -1491,7 +1494,7 @@ export const es = {
         register: 'Registrar',
         missed_one: 'recordatorio vencido',
         missed_many: 'recordatorios vencidos',
-        missed_hint: 'Vencieron hace tiempo, así que no te los recordamos. Podés registrar el evento igual desde «Agregar evento».',
+        missed_hint: 'Ya no te los recordamos, pero podés registrarlos igual — quedan marcados como hechos.',
         today: 'Hoy',
         pending_one: 'pendiente',
         pending_many: 'pendientes',
