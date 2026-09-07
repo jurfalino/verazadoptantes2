@@ -2,6 +2,33 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.13] - 2026-09-06
+
+### Fixed — the merged rail ran time in two directions
+
+Follow-ups to 2.56.12, found reviewing the merged rail as a whole:
+
+- **The future ran backwards.** `items` sorts date-DESC (newest at top, the
+  origin event at the bottom), but the projected block listed nearest-first —
+  so above «Hoy» time ran the opposite way from below it. As two separate
+  sections nobody could tell; on one rail it is the first thing you see.
+  Projected slots now sort DESC too: furthest-out at the top, the nearest one
+  touching «Hoy».
+- **Expired reminders sat in the future.** The disclosure rendered above every
+  projected item — the furthest-future position on the rail — for reminders
+  whose whole defining property is that their window already closed. Moved
+  below the «Hoy» divider, where they belong chronologically.
+- **The upcoming card read heavier than the real ones.** `bg-white` remaps to
+  `--surface-card`, so the recorded cards directly beneath it are that colour;
+  a `--surface-muted` (`#d1d1d6`) slab beside them looked like a grey block
+  rather than something that hasn't happened. Upcoming items are now ghost
+  cards — page colour, dashed border — which reads the same way in both themes.
+- **An animal with no events could not get one.** The empty state returned
+  early, before the «Hoy» line — and the origin event only exists when
+  `animals.created_at` is set, so a legacy row with neither had no
+  «+ Agregar evento» button at all. The empty message now renders inside the
+  rail, under the CTA.
+
 ## [2.56.12] - 2026-09-06
 
 ### Changed — one line of life: past and future share the same rail

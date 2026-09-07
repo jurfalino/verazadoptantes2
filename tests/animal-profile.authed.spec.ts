@@ -120,8 +120,10 @@ test.describe('Animal detail page', () => {
         // No due slot → no banner, no pending pill.
         await expect(page.getByTestId('due-banner')).not.toBeVisible();
         await expect(page.getByTestId('pending-pill')).not.toBeVisible();
-        // The expired 7d reminder sits collapsed under the disclosure…
-        const disclosure = section.getByRole('button', { name: /1 (expired reminder|recordatorio vencido)/ });
+        // The expired 7d reminder sits collapsed under the disclosure — which
+        // v2.56.13 moved BELOW the «Hoy» divider (an expired reminder is past,
+        // so it can't sit above the future), hence page- not section-scoped.
+        const disclosure = page.getByRole('button', { name: /1 (expired reminder|recordatorio vencido)/ });
         await expect(disclosure).toBeVisible();
         // …and v2.56.10 lets it be logged late: the row carries its own CTA,
         // which passes the slot key so the matcher clears it whatever the date.

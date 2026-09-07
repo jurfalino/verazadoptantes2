@@ -99,14 +99,6 @@ export default function AnimalTimeline({ items, animalSex, userNameMap = {}, org
     const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
     const [showMissed, setShowMissed] = useState(false);
 
-    if (items.length === 0 && projected.length === 0 && missed.length === 0) {
-        return (
-            <p className="text-sm text-stone-500 italic py-2" data-testid="animal-timeline-empty">
-                {t('animalProfile.timeline_empty') || 'Todavía no hay eventos en la línea de vida.'}
-            </p>
-        );
-    }
-
     const fem = animalSex === 'hembra' || animalSex === 'female' || animalSex === 'Hembra';
 
     const verbFor = (item: AnimalTimelineItem): React.ReactNode => {
@@ -155,9 +147,69 @@ export default function AnimalTimeline({ items, animalSex, userNameMap = {}, org
             {/* vertical rail */}
             <div className="absolute left-[7px] md:left-[15px] top-2 bottom-2 w-0.5 bg-stone-200" aria-hidden />
 
-            {/* ── everything still ahead of today, on the same rail ── */}
-            {(projected.length > 0 || missed.length > 0) && (
-            <div data-testid="projected-section">
+            {/* ── what's coming: same rail, dashed beacons (not yet happened) ── */}
+            {projected.length > 0 && (
+                <div className="space-y-3 mb-3" data-testid="projected-section">
+                    {[...projected].sort((a, b) => b.dueDate - a.dueDate).map(p => (
+                        <div key={p.key} className="relative" data-testid={`projected-item-${p.key}`}>
+                            <div
+                                className="absolute -left-6 top-3.5 w-4 h-4 rounded-full flex items-center justify-center border-2 border-dashed"
+                                style={p.status === 'due'
+                                    ? { background: 'var(--surface-card)', borderColor: 'var(--status-warning-border)', color: 'var(--status-warning-text)' }
+                                    : { background: 'var(--surface-card)', borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
+                            >
+                                <ItemIcon type={p.iconType} className="w-2 h-2" />
+                            </div>
+                            <div
+                                className="rounded-xl border-2 border-dashed px-4 py-3"
+                                style={p.status === 'due'
+                                    ? { background: 'var(--status-warning-bg)', borderColor: 'var(--status-warning-border)' }
+                                    : { background: 'transparent', borderColor: 'var(--border-default)' }}
+                            >
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <p className="text-sm font-semibold flex-1 min-w-[160px]" style={{ color: 'var(--text-secondary)' }}>{p.label}</p>
+                                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${p.status === 'due' ? 'bg-amber-100 text-amber-700' : 'bg-stone-100 text-stone-500'}`}>
+                                        {p.status === 'due' ? (t('followups.status_due') || 'Pendiente') : (t('followups.status_upcoming') || 'Programado')}
+                                    </span>
+                                    <span className="text-xs text-stone-500 tabular-nums">{formatShortDate(p.dueDate)}</span>
+                                </div>
+                                {p.status === 'due' && (
+                                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                                        <button
+                                            type="button" onClick={p.onRegister}
+                                            className="inline-flex px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors"
+                                        >
+                                            {t('followups.register') || 'Registrar'}
+                                        </button>
+                                        {p.contact}
+                                        <span className="text-[11px] text-stone-500">{p.windowCopy}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* ── HOY: the boundary between what's coming and what happened —
+                   and where adding something new belongs. ── */}
+            <div className="relative mb-3">
+                <div className="absolute -left-6 top-1.5 w-4 h-4 rounded-full bg-teal-600 ring-2 ring-teal-200 ring-offset-2 ring-offset-stone-50" aria-hidden />
+                <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-teal-700">{t('followups.today') || 'Hoy'}</span>
+                    <span className="flex-1 h-px bg-stone-200 min-w-[16px]" aria-hidden />
+                    {onAddEvent && (
+                        <button
+                            type="button"
+                            onClick={onAddEvent}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-teal-700 bg-teal-50 border border-teal-100 hover:border-teal-400 transition-colors"
+                            data-testid="add-animal-event"
+                        >
+                            + {t('animalProfile.add_event') || 'Agregar evento'}
+                        </button>
+                    )}
+                </div>
+            </div>
 
             {/* ── expired reminders: collapsed, but still loggable ── */}
             {missed.length > 0 && (
@@ -199,73 +251,6 @@ export default function AnimalTimeline({ items, animalSex, userNameMap = {}, org
                     )}
                 </div>
             )}
-
-            {/* ── what's coming: same rail, dashed beacons (not yet happened) ── */}
-            {projected.length > 0 && (
-                <div className="space-y-3 mb-3">
-                    {projected.map(p => (
-                        <div key={p.key} className="relative" data-testid={`projected-item-${p.key}`}>
-                            <div
-                                className="absolute -left-6 top-3.5 w-4 h-4 rounded-full flex items-center justify-center border-2 border-dashed"
-                                style={p.status === 'due'
-                                    ? { background: 'var(--surface-card)', borderColor: 'var(--status-warning-border)', color: 'var(--status-warning-text)' }
-                                    : { background: 'var(--surface-card)', borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
-                            >
-                                <ItemIcon type={p.iconType} className="w-2 h-2" />
-                            </div>
-                            <div
-                                className="rounded-xl border-2 border-dashed px-4 py-3"
-                                style={p.status === 'due'
-                                    ? { background: 'var(--status-warning-bg)', borderColor: 'var(--status-warning-border)' }
-                                    : { background: 'var(--surface-muted)', borderColor: 'var(--border-default)' }}
-                            >
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <p className="text-sm font-semibold flex-1 min-w-[160px]" style={{ color: 'var(--text-secondary)' }}>{p.label}</p>
-                                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${p.status === 'due' ? 'bg-amber-100 text-amber-700' : 'bg-stone-100 text-stone-500'}`}>
-                                        {p.status === 'due' ? (t('followups.status_due') || 'Pendiente') : (t('followups.status_upcoming') || 'Programado')}
-                                    </span>
-                                    <span className="text-xs text-stone-500 tabular-nums">{formatShortDate(p.dueDate)}</span>
-                                </div>
-                                {p.status === 'due' && (
-                                    <div className="flex flex-wrap items-center gap-2 mt-2">
-                                        <button
-                                            type="button" onClick={p.onRegister}
-                                            className="inline-flex px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors"
-                                        >
-                                            {t('followups.register') || 'Registrar'}
-                                        </button>
-                                        {p.contact}
-                                        <span className="text-[11px] text-stone-500">{p.windowCopy}</span>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            )}
-
-            </div>
-            )}
-
-            {/* ── HOY: the boundary between what's coming and what happened —
-                   and where adding something new belongs. ── */}
-            <div className="relative mb-3">
-                <div className="absolute -left-6 top-1.5 w-4 h-4 rounded-full bg-teal-600 ring-2 ring-teal-200 ring-offset-2 ring-offset-stone-50" aria-hidden />
-                <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[11px] font-bold uppercase tracking-widest text-teal-700">{t('followups.today') || 'Hoy'}</span>
-                    <span className="flex-1 h-px bg-stone-200 min-w-[16px]" aria-hidden />
-                    {onAddEvent && (
-                        <button
-                            type="button"
-                            onClick={onAddEvent}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-teal-700 bg-teal-50 border border-teal-100 hover:border-teal-400 transition-colors"
-                            data-testid="add-animal-event"
-                        >
-                            + {t('animalProfile.add_event') || 'Agregar evento'}
-                        </button>
-                    )}
-                </div>
-            </div>
 
             <div className="space-y-3">
                 {items.map(item => {
@@ -335,6 +320,11 @@ export default function AnimalTimeline({ items, animalSex, userNameMap = {}, org
                         </div>
                     );
                 })}
+                {items.length === 0 && (
+                    <p className="text-sm text-stone-500 italic py-2" data-testid="animal-timeline-empty">
+                        {t('animalProfile.timeline_empty') || 'Todavía no hay eventos en la línea de vida.'}
+                    </p>
+                )}
             </div>
         </div>
     );
