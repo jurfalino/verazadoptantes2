@@ -159,7 +159,12 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
     for (const row of nameRows) if (row) nameMap.set(row.id, row.name ?? null);
 
     // Event images: one query per event id (few per animal, fail-open).
-    const eventIds: string[] = events.map((e: { id: string }) => e.id);
+    // v2.56.9: care events carry photos too — the add-event modal links them by
+    // the created row's id, so both id spaces are fetched here.
+    const eventIds: string[] = [
+        ...events.map((e: { id: string }) => e.id),
+        ...careEvents.map((e: { id: string }) => e.id),
+    ];
     const eventImageRows = await Promise.all(eventIds.map(eid =>
         db.select().from(adopterImages).where(eq(adopterImages.adoptionId, eid)).all()
             .catch(fallback(`eventImages:${eid}`))
@@ -215,7 +220,8 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
             id: e.id, kind: 'animal_event', type: e.eventType, date: toMs(e.date),
             adopterId: null, adopterName: null, placementId: e.placementId ?? null,
             rating: null, details: e.details ?? null, comments: null,
-            recordedBy: e.recordedBy ?? null, spanDays: null, images: [],
+            recordedBy: e.recordedBy ?? null, spanDays: null,
+            images: mapImages(eventImages.get(e.id) ?? []),
         });
     }
     items.sort((a, b) => (b.date ?? 0) - (a.date ?? 0));

@@ -49,7 +49,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
     const { animal, activePlacement, items, images, projected, addedByName, orgName, userNameMap } = profile;
 
     const [editing, setEditing] = useState(false);
-    const [eventModal, setEventModal] = useState<{ type?: string; followupKey?: string } | null>(null);
+    const [eventModal, setEventModal] = useState<{ type?: string; followupKey?: string; subtype?: ProjectedSlot['subtype'] } | null>(null);
     const [showMissed, setShowMissed] = useState(false);
     const [pickOpen, setPickOpen] = useState<null | 'adoption' | 'foster'>(null);
     const [confirmDelete, setConfirmDelete] = useState(false);
@@ -94,7 +94,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
         if (s.subtype === 'adaptation') {
             router.push(`/adopter/${activePlacement.adopterId}?newAdoption=follow_up&animalId=${animal.id}&followupKey=${encodeURIComponent(s.key)}&followupSubtype=adaptation`);
         } else {
-            setEventModal({ type: s.subtype === 'neuter' ? 'neuter' : 'vaccination', followupKey: s.key });
+            setEventModal({ type: s.subtype === 'neuter' ? 'neuter' : 'vaccination', followupKey: s.key, subtype: s.subtype });
         }
     };
 
@@ -390,6 +390,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                     onClose={() => setEventModal(null)}
                     initialType={eventModal.type}
                     initialFollowupKey={eventModal.followupKey ?? null}
+                    initialSubtype={eventModal.subtype}
                 />
             )}
             {pickOpen && (

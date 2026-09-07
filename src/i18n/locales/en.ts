@@ -1382,6 +1382,9 @@ export const en = {
         profile_pending_dup_other_tooltip: 'The system detected another similar record. Only the responsible rescuer can review.',
     },
     animalProfile: {
+        event_photos: 'Photos',
+        event_rating: 'Rating',
+        photo_failed: 'The event was saved, but a photo could not be uploaded.',
         team: 'team',
         of_teammate: 'by',
         origin_m: 'Rescued and registered',

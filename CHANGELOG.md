@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.9] - 2026-09-06
+
+### Fixed — three defects in the animal page's «Agregar evento» modal
+
+- **No rating.** A follow-up is a judgement about how the family is doing and it
+  feeds the adopter's average, so it now carries the same 1–5 `StarRating` the
+  wizard uses. Care events deliberately don't: `animal_events` has no rating
+  column, and "how did the vaccination go" isn't a rating.
+- **Types and subtypes repeated.** The subtype dropdown listed
+  vacunación/castración/veterinario one line below the very same words in the
+  type list. It's gone: recording a vaccination IS the «Vacunación» care event
+  (which already satisfies the vaccine milestone through the matcher), and a
+  manual follow-up is an adaptation check-in. Slots that need a specific subtype
+  pass it programmatically, so the data model is unchanged.
+- **No photos.** Images can now be attached, compressed client-side (max 1200px,
+  JPEG q0.8) and linked to the row just created — including care events, whose
+  photos `getAnimalProfile` now fetches so they render on the timeline. A failed
+  upload never discards the saved event; it surfaces with an errorId.
+
+`compressImage` extracted to `src/lib/imageCompress.ts` instead of adding a
+third copy. E2E covers the rating appearing for follow-ups and not for care
+events, the absent subtype select, and the photo input.
+
 ## [2.56.8] - 2026-09-06
 
 ### Changed — follow-ups are ON by default, and flag registration is now tested

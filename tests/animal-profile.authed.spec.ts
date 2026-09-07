@@ -73,6 +73,28 @@ test.describe('Animal detail page', () => {
         await expect(page.getByTestId('timeline-item')).toHaveCount(before + 1, { timeout: 30000 });
     });
 
+    test('add-event modal: rating for follow-ups, no duplicated subtype list, photo input', async ({ page }) => {
+        await page.goto(`/my-animals/${ANIMAL_ID}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+        await page.getByTestId('add-animal-event').click();
+
+        // Timon has an active adoption → the follow-up option leads the list and
+        // is selected by default, and it carries a rating.
+        const typeSelect = page.getByTestId('animal-event-type');
+        await expect(typeSelect).toHaveValue('follow_up');
+        // StarRating renders one button per star with a hardcoded English aria-label.
+        await expect(page.getByRole('button', { name: /^[1-5] stars?$/ })).toHaveCount(5);
+
+        // v2.56.9: the old second dropdown repeated vacunación/castración/veterinario.
+        await expect(page.getByTestId('animal-event-subtype')).toHaveCount(0);
+        // Photos can be attached.
+        await expect(page.getByTestId('animal-event-photo')).toHaveCount(1);
+
+        // Care events have no rating (animal_events has no such column).
+        await typeSelect.selectOption('vaccination');
+        await expect(page.getByRole('button', { name: /^[1-5] stars?$/ })).toHaveCount(0);
+    });
+
     test('list card navigates to the detail page', async ({ page }) => {
         await page.goto('/my-animals?view=adopted');
         const card = page.getByTestId(`animal-card-${ANIMAL_ID}`);

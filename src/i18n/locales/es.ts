@@ -1387,6 +1387,9 @@ export const es = {
         profile_pending_dup_other_tooltip: 'El sistema detectó otro registro similar. Solo el responsable del registro puede revisarlo.',
     },
     animalProfile: {
+        event_photos: 'Fotos',
+        event_rating: 'Calificación',
+        photo_failed: 'El evento se guardó, pero una foto no se pudo subir.',
         team: 'equipo',
         of_teammate: 'de',
         origin_m: 'Rescatado y registrado',
