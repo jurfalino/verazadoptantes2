@@ -2,6 +2,34 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.36] - 2026-09-08
+
+### Added — a BIMI logo the mail providers will actually accept
+
+`public/bimi-logo.svg` — the paw shield in SVG Tiny PS, the restricted profile
+BIMI mandates: `version="1.2"`, `baseProfile="tiny-ps"`, a non-empty `<title>`,
+a square `viewBox`, no `x`/`y` on the root, and nothing scripted, animated,
+external, or rasterised. 854 bytes.
+
+The one change to the mark is a full-bleed white background. `icon.svg` is
+transparent, and BIMI logos get cropped to a circle — transparency there
+renders at the client's discretion, which is not a thing to leave to chance in
+an inbox. The silhouette clears the crop: furthest point from centre is ~235
+against the inscribed radius of 256.
+
+Deploying only publishes the file. The `default._bimi` DNS record is a separate
+manual step and is deliberately not part of this commit — the record must not
+exist before the URL it points at returns 200, or validators cache the failure.
+
+**No certificate, so no Gmail.** The record will carry `l=` only; `a=` needs a
+VMC (~$1,000/yr, trademark required) that we are not buying. Fastmail and
+similar will show the logo; Gmail, Yahoo and Apple will ignore it.
+
+Prerequisite closed out-of-band: `_dmarc` carried two records, which RFC 7489
+discards as a set, leaving the domain with no effective policy despite
+`p=quarantine` being present. It is now a single merged record at
+`p=quarantine`, so DMARC enforcement — BIMI's gate — actually holds.
+
 ## [2.56.35] - 2026-09-07
 
 ### Fixed — the evidence chips showed one fact twice
