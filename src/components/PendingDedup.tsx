@@ -19,7 +19,7 @@ import Link from 'next/link';
 import { useLanguage } from '@/context/LanguageContext';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import {
     getPendingDuplicatesForUser,
     dismissDuplicateCandidate,
@@ -181,7 +181,7 @@ export default function PendingDedup() {
             setTotal(data.total);
             setLowHidden(data.lowHidden);
         } catch (e) {
-            toast.error(t('errors.generic') || 'Error', undefined, extractErrorId(e));
+            toast.error(t('errors.generic') || 'Error', undefined, resolveErrorId(e, 'PendingDedup'));
             setPairs([]);
             setTotal(0);
             setLowHidden(0);
@@ -210,7 +210,7 @@ export default function PendingDedup() {
                 toast.error(t('errors.generic') || 'Error', result.error || 'Merge failed');
             }
         } catch (e) {
-            toast.error(t('errors.generic') || 'Error', undefined, extractErrorId(e));
+            toast.error(t('errors.generic') || 'Error', undefined, resolveErrorId(e, 'PendingDedup'));
         } finally {
             setBusyCandidateId(null);
         }
@@ -228,7 +228,7 @@ export default function PendingDedup() {
                 toast.error(t('errors.generic') || 'Error', result.error || 'Dismiss failed');
             }
         } catch (e) {
-            toast.error(t('errors.generic') || 'Error', undefined, extractErrorId(e));
+            toast.error(t('errors.generic') || 'Error', undefined, resolveErrorId(e, 'PendingDedup'));
         } finally {
             setBusyCandidateId(null);
         }

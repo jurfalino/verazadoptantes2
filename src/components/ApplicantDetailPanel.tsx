@@ -18,7 +18,7 @@ import { AdopterName } from '@/components/AdopterName';
 import Link from 'next/link';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
@@ -94,7 +94,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
                 toast.error(t('errors.generic') || 'Error', result.error || 'No se pudo generar la invitación');
             }
         } catch (e) {
-            toast.error(t('errors.generic') || 'Error', undefined, extractErrorId(e));
+            toast.error(t('errors.generic') || 'Error', undefined, resolveErrorId(e, 'ApplicantDetailPanel'));
         } finally {
             setBusy(false);
         }

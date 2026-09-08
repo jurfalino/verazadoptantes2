@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { setProfilePicture } from '@/app/actions';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { MediaLightbox, isVideo } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { extractVideoThumbnail } from '@/lib/videoThumbnail';
@@ -163,7 +163,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
             }, ...images]);
         } catch (error) {
             console.error('Media upload failed:', error instanceof Error ? error.message : error);
-            toast.error(t('toast.upload_failed_title'), t('errors.upload_failed'), extractErrorId(error));
+            toast.error(t('toast.upload_failed_title'), t('errors.upload_failed'), resolveErrorId(error, 'ImageGallery'));
         } finally {
             setUploading(false);
         }
@@ -185,7 +185,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
             })));
         } catch (err) {
             console.error('Failed to set profile picture:', err);
-            toast.error(t('errors.generic'), t('errors.set_profile_pic_failed'), extractErrorId(err));
+            toast.error(t('errors.generic'), t('errors.set_profile_pic_failed'), resolveErrorId(err, 'ImageGallery'));
         } finally {
             setSettingProfile(null);
         }
@@ -301,7 +301,7 @@ export function ImageGallery({ adopterId, initialImages, onUpload, currentUser, 
                                             }
                                         } catch (err) {
                                             console.error(err);
-                                            toast.error(t('errors.generic'), t('errors.delete_image_failed'), extractErrorId(err));
+                                            toast.error(t('errors.generic'), t('errors.delete_image_failed'), resolveErrorId(err, 'ImageGallery'));
                                         }
                                     }}
                                     className="absolute top-0 right-0 m-2 p-2 bg-white/90 hover:bg-white text-rose-600 rounded-xl shadow-md z-10 transition-all hover:scale-105 backdrop-blur-sm md:opacity-0 md:group-hover:opacity-100"

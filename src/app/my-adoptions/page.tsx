@@ -11,7 +11,7 @@ import { useSearchParams } from 'next/navigation';
 import { RatingBadge } from '@/components/RatingBadge';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 
 interface AdoptionImage {
     id: string;
@@ -76,7 +76,7 @@ export default function MyAdoptionsPage() {
                     toast.error(t('errors.generic') || 'Error', body.error || 'Failed to load adoptions.', body.errorId);
                 }
             } catch (e) {
-                toast.error(t('errors.generic') || 'Error', 'Failed to load adoptions.', extractErrorId(e));
+                toast.error(t('errors.generic') || 'Error', 'Failed to load adoptions.', resolveErrorId(e, 'page'));
             } finally {
                 setLoading(false);
             }

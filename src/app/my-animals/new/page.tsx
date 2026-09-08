@@ -7,7 +7,7 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { saveAdoption, deleteAnimalForAdoption, deleteAnimalImage } from '@/app/actions';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { computeBirthDate, deriveAgeFromBirthDate, parseLegacyAge } from '@/lib/ageUtils';
 import Link from 'next/link';
 
@@ -154,7 +154,7 @@ function CreateAnimalForm() {
                 }
             } catch (err) {
                 console.error('Failed to load animal:', err);
-                toast.error(t('errors.generic'), t('errors.load_animal_failed'), extractErrorId(err));
+                toast.error(t('errors.generic'), t('errors.load_animal_failed'), resolveErrorId(err, 'page'));
             } finally {
                 setLoadingData(false);
             }
@@ -176,7 +176,7 @@ function CreateAnimalForm() {
             const base64 = await compressImage(file);
             setPendingImages(prev => [...prev, base64]);
         } catch (error) {
-            toast.error(t('toast.upload_failed_title'), t('errors.upload_image_failed'), extractErrorId(error));
+            toast.error(t('toast.upload_failed_title'), t('errors.upload_image_failed'), resolveErrorId(error, 'page'));
         } finally {
             setUploading(false);
         }
@@ -241,7 +241,7 @@ function CreateAnimalForm() {
             router.push('/my-animals');
         } catch (err) {
             console.error(err);
-            toast.error(t('errors.generic'), t('errors.save_animal_failed'), extractErrorId(err));
+            toast.error(t('errors.generic'), t('errors.save_animal_failed'), resolveErrorId(err, 'page'));
         } finally {
             setLoading(false);
         }
@@ -477,7 +477,7 @@ function CreateAnimalForm() {
                                                         setExistingImages(prev => prev.filter(i => i.id !== img.id));
                                                         toast.success('✓', locale !== 'en' ? 'Foto eliminada' : 'Photo deleted');
                                                     } catch (err) {
-                                                        toast.error('Error', locale !== 'en' ? 'No se pudo eliminar la foto' : 'Could not delete photo', extractErrorId(err));
+                                                        toast.error('Error', locale !== 'en' ? 'No se pudo eliminar la foto' : 'Could not delete photo', resolveErrorId(err, 'page'));
                                                     }
                                                 }}
                                                 className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"
@@ -542,7 +542,7 @@ function CreateAnimalForm() {
                                             toast.success('✓', locale !== 'en' ? 'Animal eliminado' : 'Animal deleted');
                                             router.push('/my-animals');
                                         } catch (err) {
-                                            toast.error('Error', locale !== 'en' ? 'No se pudo eliminar' : 'Could not delete', extractErrorId(err));
+                                            toast.error('Error', locale !== 'en' ? 'No se pudo eliminar' : 'Could not delete', resolveErrorId(err, 'page'));
                                             setDeleting(false);
                                         }
                                     }}

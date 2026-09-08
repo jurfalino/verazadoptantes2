@@ -8,6 +8,8 @@
  * tuples within 30s reuse the prior id without a network call.
  */
 
+import { extractErrorId } from '@/lib/errorUtils';
+
 interface ReportInput {
     errorId?: string;       // pre-generated id; the server uses it verbatim so the user-visible id matches the Axiom row
     message: string;
@@ -70,4 +72,31 @@ export async function reportClientError(input: ReportInput): Promise<string | un
     } catch {
         return undefined;
     }
+}
+
+/**
+ * The id to show a user in an error toast — always a real one.
+ *
+ * `extractErrorId` only finds an id a server action embedded in its message. A
+ * client-side throw, or a server action error that Next redacted in production,
+ * has none — so `toast.error(title, desc, extractErrorId(e))` rendered a toast
+ * with NO code and reported the failure NOWHERE. 49 call sites did that, which
+ * is why a user-reported toast on 2026-09-07 left no trace in Axiom at all.
+ *
+ * Returns synchronously so it can be passed straight to `toast.error`, and
+ * fires the report in the background under that same id — the same contract
+ * ClientErrorReporter uses, so the id the user reads matches the Axiom row.
+ */
+export function resolveErrorId(error: unknown, source: string): string {
+    const existing = extractErrorId(error);
+    if (existing) return existing;
+
+    const errorId = crypto.randomUUID().slice(0, 8);
+    void reportClientError({
+        errorId,
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        source,
+    });
+    return errorId;
 }

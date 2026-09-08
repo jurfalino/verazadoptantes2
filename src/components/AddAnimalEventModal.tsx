@@ -27,7 +27,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { compressImage } from '@/lib/imageCompress';
 import { StarRating } from '@/components/StarRating';
 import { addAnimalEvent } from '@/app/actions/animalTimeline';
@@ -91,7 +91,7 @@ export default function AddAnimalEventModal({ animal, activePlacement, open, onC
             const compressed = await compressImage(file);
             setPhotos(prev => [...prev, compressed]);
         } catch (error) {
-            toast.error(t('errors.generic') || 'Error', t('errors.upload_process_failed') || 'No se pudo procesar la foto.', extractErrorId(error));
+            toast.error(t('errors.generic') || 'Error', t('errors.upload_process_failed') || 'No se pudo procesar la foto.', resolveErrorId(error, 'AddAnimalEventModal'));
         } finally {
             setUploading(false);
         }
@@ -141,7 +141,7 @@ export default function AddAnimalEventModal({ animal, activePlacement, open, onC
                         .catch((e) => {
                             // The event itself is saved; a failed photo must not
                             // discard it — surface with an errorId and continue.
-                            toast.error(t('errors.generic') || 'Error', t('animalProfile.photo_failed') || 'El evento se guardó, pero una foto no se pudo subir.', extractErrorId(e));
+                            toast.error(t('errors.generic') || 'Error', t('animalProfile.photo_failed') || 'El evento se guardó, pero una foto no se pudo subir.', resolveErrorId(e, 'AddAnimalEventModal'));
                         });
                 }
             }
@@ -150,7 +150,7 @@ export default function AddAnimalEventModal({ animal, activePlacement, open, onC
             onClose();
             router.refresh();
         } catch (error) {
-            toast.error(t('errors.generic') || 'Error', t('animalProfile.event_save_failed') || 'No se pudo guardar el evento.', extractErrorId(error));
+            toast.error(t('errors.generic') || 'Error', t('animalProfile.event_save_failed') || 'No se pudo guardar el evento.', resolveErrorId(error, 'AddAnimalEventModal'));
         } finally {
             setSaving(false);
         }

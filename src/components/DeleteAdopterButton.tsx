@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useShowToast } from '@/components/ui/Toast';
 import { useLanguage } from '@/context/LanguageContext';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 
 interface DeleteButtonProps {
@@ -40,7 +40,7 @@ export default function DeleteAdopterButton({ adopterId, adopterName }: DeleteBu
                 toast.error(t('toast.delete_failed_title'), data.error || t('errors.unknown_error'), data.errorId);
             }
         } catch (error) {
-            toast.error(t('toast.delete_failed_title'), t('errors.unexpected'), extractErrorId(error));
+            toast.error(t('toast.delete_failed_title'), t('errors.unexpected'), resolveErrorId(error, 'DeleteAdopterButton'));
         } finally {
             setLoading(false);
         }

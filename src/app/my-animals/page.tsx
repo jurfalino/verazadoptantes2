@@ -13,7 +13,7 @@ import ShareFormMenu from '@/components/ShareFormMenu';
 import AnimalShareSheet from '@/components/AnimalShareSheet';
 import ShowcaseUrlChips from '@/components/ShowcaseUrlChips';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 
 interface AnimalImage {
     id: string;
@@ -87,7 +87,7 @@ export default function MyAnimalsPage() {
                     toast.error(t('errors.generic') || 'Error', body.error || 'Failed to load animals.', body.errorId);
                 }
             } catch (e) {
-                toast.error(t('errors.generic') || 'Error', 'Failed to load animals.', extractErrorId(e));
+                toast.error(t('errors.generic') || 'Error', 'Failed to load animals.', resolveErrorId(e, 'page'));
             } finally {
                 setLoading(false);
             }

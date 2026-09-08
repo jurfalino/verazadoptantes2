@@ -11,7 +11,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getRecordTypeColors } from '@/lib/recordTypeColors';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { getSourceIcon, getSourceName } from '@/lib/sourceIcons';
 import { useDateFormat, useRelativeTime } from '@/context/TimezoneContext';
 import { emailHandle } from '@/lib/userDisplay';
@@ -194,7 +194,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
             router.refresh();
         } catch (error) {
             console.error('Failed to delete adoption:', error);
-            toast.error(t('errors.generic'), t('errors.delete_record_failed'), extractErrorId(error));
+            toast.error(t('errors.generic'), t('errors.delete_record_failed'), resolveErrorId(error, 'AdoptionHistory'));
         } finally {
             setDeletingId(null);
         }

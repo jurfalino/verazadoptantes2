@@ -18,7 +18,7 @@ import { MessagingLogo } from '@/components/MessagingLogo';
 import { addContactEntry } from '@/app/actions/addContactEntry';
 import { updateContactEntry } from '@/app/actions/updateContactEntry';
 import { removeContactEntry } from '@/app/actions/removeContactEntry';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { renderTextWithLinks } from '@/lib/textUtils';
 import DuplicateHint from '@/components/DuplicateHint';
 
@@ -396,7 +396,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 return { ok: false };
             }
         } catch (e) {
-            toast.error(t('errors.generic'), t('adopter.ce_add_error'), extractErrorId(e));
+            toast.error(t('errors.generic'), t('adopter.ce_add_error'), resolveErrorId(e, 'ContactEntriesSection'));
             return { ok: false };
         } finally {
             setComposerBusy(false);
@@ -528,7 +528,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 toast.error(t('errors.generic'), res.error || t('adopter.ce_edit_error'));
             }
         } catch (e) {
-            toast.error(t('errors.generic'), t('adopter.ce_edit_error'), extractErrorId(e));
+            toast.error(t('errors.generic'), t('adopter.ce_edit_error'), resolveErrorId(e, 'ContactEntriesSection'));
         } finally {
             setEditBusy(false);
         }
@@ -570,7 +570,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
             router.refresh();
         } catch (e) {
             setDeletingId(null);
-            toast.error(t('errors.generic'), t('adopter.ce_delete_error'), extractErrorId(e));
+            toast.error(t('errors.generic'), t('adopter.ce_delete_error'), resolveErrorId(e, 'ContactEntriesSection'));
         }
     }
 

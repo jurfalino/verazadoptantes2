@@ -41,7 +41,7 @@ import { useEffect, useRef, useState } from 'react';
 import { findAdopters, grantSearchMatchAccess, flagAdopterAsDuplicate, countAdoptersBySocialHandle, type DuplicateMatch } from '@/app/actions';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import type { ContactEntryType } from '@/lib/contactEntries';
 
 interface Props {
@@ -227,7 +227,7 @@ export default function DuplicateHint({ type, value, excludeAdopterId, onMatch, 
             }
         } catch (e) {
             console.error('[DuplicateHint] flagAdopterAsDuplicate threw:', e);
-            toast.error(t('errors.generic') || 'Error', undefined, extractErrorId(e));
+            toast.error(t('errors.generic') || 'Error', undefined, resolveErrorId(e, 'DuplicateHint'));
         } finally {
             setFlagging(null);
         }

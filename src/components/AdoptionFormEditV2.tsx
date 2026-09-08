@@ -9,7 +9,7 @@ import { useAuthContext } from '@/context/AuthContext';
 import { getRecordTypeColors } from '@/lib/recordTypeColors';
 import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { MediaLightbox, isVideo as isVideoItem } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { useDateFormat } from '@/context/TimezoneContext';
@@ -285,7 +285,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
             }
         } catch (error) {
             console.error('Upload error:', error instanceof Error ? error.message : error);
-            toast.error(t('toast.upload_failed_title'), t('errors.upload_failed'), extractErrorId(error));
+            toast.error(t('toast.upload_failed_title'), t('errors.upload_failed'), resolveErrorId(error, 'AdoptionFormEditV2'));
         } finally {
             setUploading(false);
         }
@@ -355,7 +355,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
             }
         } catch (err) {
             console.error(err);
-            toast.error(t('errors.generic'), t('errors.save_adoption_failed'), extractErrorId(err));
+            toast.error(t('errors.generic'), t('errors.save_adoption_failed'), resolveErrorId(err, 'AdoptionFormEditV2'));
         } finally {
             setLoading(false);
         }
@@ -754,7 +754,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                                                         await deleteImage(img.id, adopterId);
                                                         setAdoptionImages(prev => prev.filter(i => i.id !== img.id));
                                                     } catch (e) {
-                                                        toast.error(t('errors.generic'), t('errors.delete_media_failed'), extractErrorId(e));
+                                                        toast.error(t('errors.generic'), t('errors.delete_media_failed'), resolveErrorId(e, 'AdoptionFormEditV2'));
                                                     }
                                                 }}
                                                 className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-xs font-semibold md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-rose-600 flex items-center justify-center shadow"

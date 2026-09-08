@@ -2,6 +2,31 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.31] - 2026-09-07
+
+### Fixed — error toasts with no code, reported nowhere
+
+A user hit an error toast on an adopter page with no description and no error
+code. It could not be diagnosed: Axiom held **zero** `error` and `warn` rows for
+either environment across the whole window. The failure was never recorded
+anywhere.
+
+`extractErrorId` only finds an id that a *server action* embedded in its
+message. A client-side throw — or a server action error Next redacted in
+production — has none, so `toast.error(title, desc, extractErrorId(e))`
+rendered a toast with no code AND reported nothing. **52 call sites across 24
+files** did exactly that, against the project's own rule that every error toast
+carries an id.
+
+`resolveErrorId(error, source)` replaces it: returns the embedded id when there
+is one, otherwise mints an 8-char id, returns it synchronously so it can go
+straight into the toast, and fires `reportClientError` in the background under
+that same id — so the code the user reads matches the Axiom row. `source` is the
+component name, so a report says where it came from.
+
+The error boundaries (`error.tsx`, `global-error.tsx`, `ClientErrorReporter`)
+keep using `extractErrorId` directly; they already mint and report themselves.
+
 ## [2.56.30] - 2026-09-07
 
 ### Fixed — the dedup card exposed another rescuer's adopter contact

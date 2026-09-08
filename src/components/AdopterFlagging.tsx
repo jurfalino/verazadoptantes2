@@ -8,7 +8,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { zarazTrack } from '@/lib/zaraz';
 import { useDateFormat } from '@/context/TimezoneContext';
 
@@ -176,7 +176,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                 }
             } catch (e) {
                 console.error(e);
-                toast.error(t('errors.generic'), t('errors.report_error'), extractErrorId(e));
+                toast.error(t('errors.generic'), t('errors.report_error'), resolveErrorId(e, 'AdopterFlagging'));
             } finally {
                 setSubmitLoading(false);
             }
@@ -207,7 +207,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                     toast.error(t('errors.generic'), body.error || t('errors.submit_request_failed'), body.errorId);
                 }
             } catch (e) {
-                toast.error(t('errors.generic'), t('errors.request_error'), extractErrorId(e));
+                toast.error(t('errors.generic'), t('errors.request_error'), resolveErrorId(e, 'AdopterFlagging'));
             } finally {
                 setSubmitLoading(false);
             }
@@ -228,7 +228,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             }
         } catch (e) {
             console.error(e);
-            toast.error(t('errors.generic'), t('errors.report_error'), extractErrorId(e));
+            toast.error(t('errors.generic'), t('errors.report_error'), resolveErrorId(e, 'AdopterFlagging'));
         } finally {
             setSubmitLoading(false);
         }

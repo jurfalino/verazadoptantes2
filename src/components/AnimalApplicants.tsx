@@ -17,7 +17,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { StarIcon } from '@/components/StarIcon';
 import { getRatingColors } from '@/lib/ratingColors';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { createContractInvitation } from '@/app/actions/contract';
 import ApplicantDetailPanel from '@/components/ApplicantDetailPanel';
 import { AdopterName } from '@/components/AdopterName';
@@ -231,7 +231,7 @@ export default function AnimalApplicants({
                 toast.error(t('errors.generic') || 'Error', result.error || 'Could not issue invitation');
             }
         } catch (e) {
-            toast.error(t('errors.generic') || 'Error', undefined, extractErrorId(e));
+            toast.error(t('errors.generic') || 'Error', undefined, resolveErrorId(e, 'AnimalApplicants'));
         } finally {
             setBusySubmissionId(null);
         }

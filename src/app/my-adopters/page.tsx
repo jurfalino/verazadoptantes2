@@ -10,7 +10,7 @@ import { RatingExplainer } from '@/components/RatingExplainer';
 // formatShortDate dropped in v2.19.13 — the provenance cell uses relative
 // time (timeAgo helper below) so absolute dates moved to tooltips.
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import PendingDedup from '@/components/PendingDedup';
 import { AdopterName } from '@/components/AdopterName';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
@@ -273,7 +273,7 @@ export default function MyAdoptersPage() {
                     toast.error(t('errors.generic') || 'Error', body.error || 'Failed to load adopters.', body.errorId);
                 }
             } catch (e) {
-                toast.error(t('errors.generic') || 'Error', 'Failed to load data.', extractErrorId(e));
+                toast.error(t('errors.generic') || 'Error', 'Failed to load data.', resolveErrorId(e, 'page'));
             } finally {
                 setLoading(false);
             }

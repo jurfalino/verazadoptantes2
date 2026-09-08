@@ -15,7 +15,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { formatAge } from '@/lib/ageUtils';
 import { useDateFormat, useRelativeTime } from '@/context/TimezoneContext';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
@@ -138,7 +138,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
             toast.success(t('animalProfile.deleted') || 'Animal eliminado', animal.name || '');
             router.push('/my-animals');
         } catch (error) {
-            toast.error(t('errors.generic') || 'Error', t('animalProfile.delete_failed') || 'No se pudo eliminar.', extractErrorId(error));
+            toast.error(t('errors.generic') || 'Error', t('animalProfile.delete_failed') || 'No se pudo eliminar.', resolveErrorId(error, 'AnimalProfile'));
             setBusy(false);
             setConfirmDelete(false);
         }
@@ -452,7 +452,7 @@ function InlineEditForm({ animal, onCancel, onSaved }: {
             toast.success(t('animalProfile.saved') || 'Guardado', name);
             onSaved();
         } catch (error) {
-            toast.error(t('errors.generic') || 'Error', t('animalProfile.edit_save_failed') || 'No se pudieron guardar los cambios.', extractErrorId(error));
+            toast.error(t('errors.generic') || 'Error', t('animalProfile.edit_save_failed') || 'No se pudieron guardar los cambios.', resolveErrorId(error, 'AnimalProfile'));
             setSaving(false);
         }
     };

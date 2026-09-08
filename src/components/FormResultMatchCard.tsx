@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { useState } from 'react';
 import { en } from '@/i18n/locales/en';
 
@@ -99,7 +99,7 @@ export default function FormResultMatchCard({
                 setLinking(false);
             }
         } catch (e) {
-            toast.error('Error', L('link_error'), extractErrorId(e));
+            toast.error('Error', L('link_error'), resolveErrorId(e, 'FormResultMatchCard'));
             setLinking(false);
         }
     };
