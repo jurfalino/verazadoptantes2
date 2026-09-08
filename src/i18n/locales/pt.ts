@@ -1374,6 +1374,7 @@ export const pt = {
         // v2.14.10-20: pending-dedup section on /my-adopters
         pending_dedup_title: 'Pendentes de revisão',
         pending_dedup_matched_on: 'Coincide em',
+        pending_dedup_request_access: 'Pedir acesso a quem cadastrou',
         pending_dedup_show_low: 'Ver {count} correspondências fracas',
         pending_dedup_hide_low: 'Ocultar correspondências fracas',
         pending_dedup_subtitle: 'Encontramos perfis que podem ser a mesma pessoa. Decida se quer combiná-los.',

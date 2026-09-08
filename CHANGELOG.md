@@ -2,6 +2,31 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.30] - 2026-09-07
+
+### Fixed — the dedup card exposed another rescuer's adopter contact
+
+`getPendingDuplicatesForUser` selected `contactInfo` raw. A pair qualifies for
+your feed when **either** side is yours, so the other side is routinely someone
+else's record — and with `ENABLE_PII_ACCESS_GATING` on in production, this was
+the one surface where their adopter's contact details were fully visible.
+Everywhere else routes through `resolveAdopterVisibility`. 2.56.29 widened it by
+adding the matched values to the card.
+
+- Both sides now go through `resolveAdopterVisibility` + `maskAdopterContact`.
+  Resolution failure **fails closed** — masked, not revealed — while still
+  rendering the pair so the merge decision survives.
+- **Matched values stay unmasked.** If two records matched on a phone, that
+  phone is in the viewer's own record; showing it discloses nothing they did not
+  supply.
+- **Except where the match is not exact.** `phone_suffix` agrees on the last 8
+  digits and `name_word_fuzzy` on a Levenshtein near-match, so the other side's
+  full value contains characters the viewer does not have. Those render as the
+  matched portion only (`••••2702`).
+- A gated card offers "Pedir acceso a quien lo cargó", wired to the existing
+  `requestPiiAccess` flow so the owner gets a real, approvable request in
+  `PiiAccessRequestPanel` rather than an email to action by hand.
+
 ## [2.56.29] - 2026-09-07
 
 ### Changed — the duplicate cards show WHY the pair was proposed

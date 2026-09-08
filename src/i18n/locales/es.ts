@@ -1374,6 +1374,7 @@ export const es = {
         // v2.14.10-20: pending-dedup section on /my-adopters
         pending_dedup_title: 'Pendientes de revisar',
         pending_dedup_matched_on: 'Coincide en',
+        pending_dedup_request_access: 'Pedir acceso a quien lo cargó',
         pending_dedup_show_low: 'Ver {count} coincidencias débiles',
         pending_dedup_hide_low: 'Ocultar coincidencias débiles',
         pending_dedup_subtitle: 'Encontramos perfiles que podrían ser la misma persona. Decidí si combinarlos.',

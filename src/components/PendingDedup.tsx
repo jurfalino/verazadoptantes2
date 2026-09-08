@@ -27,6 +27,7 @@ import {
     type PendingDedupPair,
 } from '@/app/actions/duplicates';
 import { AdopterName } from '@/components/AdopterName';
+import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
 
 /** Opens-in-new-tab affordance. Inline SVG with currentColor per the icon
  *  convention — an emoji would not inherit the link's hover colour. */
@@ -100,11 +101,13 @@ function AdopterCard({
     adopter,
     t,
     formatShortDate,
+    onRequestAccess,
 }: {
     side: 'new' | 'existing';
     adopter: PendingDedupPair['newAdopter'];
     t: (k: string) => string;
     formatShortDate: (input: Date | number | string) => string;
+    onRequestAccess: (adopter: PendingDedupPair['newAdopter']) => void;
 }) {
     const sideLabel = side === 'new'
         ? t('myAdopters.pending_dedup_side_new') || 'Nuevo (de formulario / contrato)'
@@ -135,6 +138,18 @@ function AdopterCard({
             {adopter.contactInfo && (
                 <p className="mt-1 text-xs text-stone-500 line-clamp-2 whitespace-pre-line">{adopter.contactInfo}</p>
             )}
+            {/* The matched values are shown above regardless — they are already
+                in the viewer's own record. This is about the REST of the
+                contact blob, which belongs to whoever added this profile. */}
+            {!adopter.canSeeContact && (
+                <button
+                    type="button"
+                    onClick={() => onRequestAccess(adopter)}
+                    className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-800 underline underline-offset-2"
+                >
+                    🔒 {t('myAdopters.pending_dedup_request_access') || 'Pedir acceso a quien lo cargó'}
+                </button>
+            )}
             {dateStr && <p className="mt-1 text-[11px] text-stone-400">{dateStr}</p>}
         </div>
     );
@@ -155,6 +170,7 @@ export default function PendingDedup() {
     // default, with a count so the user knows they exist and can opt in.
     const [showLow, setShowLow] = useState(false);
     const [lowHidden, setLowHidden] = useState(0);
+    const [accessTarget, setAccessTarget] = useState<PendingDedupPair['newAdopter'] | null>(null);
 
     const PAGE_SIZE = 10;
 
@@ -269,9 +285,9 @@ export default function PendingDedup() {
                             </div>
 
                             <div className="flex flex-col md:flex-row gap-3">
-                                <AdopterCard side="new" adopter={pair.newAdopter} t={t} formatShortDate={formatShortDate} />
+                                <AdopterCard side="new" adopter={pair.newAdopter} t={t} formatShortDate={formatShortDate} onRequestAccess={setAccessTarget} />
                                 <div className="flex md:flex-col items-center justify-center text-stone-400 text-xs">↔</div>
-                                <AdopterCard side="existing" adopter={pair.existingAdopter} t={t} formatShortDate={formatShortDate} />
+                                <AdopterCard side="existing" adopter={pair.existingAdopter} t={t} formatShortDate={formatShortDate} onRequestAccess={setAccessTarget} />
                             </div>
                             <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                                 {/* Dismiss writes to duplicate_candidates; a
@@ -341,6 +357,17 @@ export default function PendingDedup() {
             )}
             </>
             )}
+
+            {/* Reuses the existing owner-approval flow rather than a mailto: the
+                owner gets a real request in PiiAccessRequestPanel and can grant
+                it there. */}
+            <RequestPiiAccessModal
+                open={!!accessTarget}
+                adopterId={accessTarget?.id || ''}
+                adopterName={accessTarget?.name || ''}
+                onClose={() => setAccessTarget(null)}
+                onRequested={() => { setAccessTarget(null); load(); }}
+            />
         </section>
     );
 }

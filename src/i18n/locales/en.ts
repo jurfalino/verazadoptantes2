@@ -1369,6 +1369,7 @@ export const en = {
         // v2.14.10-20: pending-dedup section on /my-adopters
         pending_dedup_title: 'Pending review',
         pending_dedup_matched_on: 'Matches on',
+        pending_dedup_request_access: 'Ask the person who added it for access',
         pending_dedup_show_low: 'Show {count} weak matches',
         pending_dedup_hide_low: 'Hide weak matches',
         pending_dedup_subtitle: 'We found profiles that might be the same person. Choose whether to merge them.',

@@ -886,6 +886,75 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
 
 // ── Pending-dedup section on /my-adopters (v2.14.10-20) ─────────────────
 
+/**
+ * Match types whose agreement is EXACT. Their value is present in both records,
+ * so showing it to someone who owns one side discloses nothing they did not
+ * already supply — which is why matched values are not masked.
+ *
+ * `phone_suffix` (last 8 digits) and `name_word_fuzzy` (Levenshtein) are
+ * deliberately absent: those agree on part of a value, so the other record's
+ * full value contains characters the viewer does not have.
+ */
+const EXACT_MATCH_TYPES = new Set([
+    'phone', 'email', 'social', 'social_handle', 'name_full', 'name_word', 'source_url', 'id_number', 'address_word',
+]);
+
+/** Reduce an inexact match to the portion that actually matched. */
+function redactInexactValue(type: string, value: string): string {
+    if (EXACT_MATCH_TYPES.has(type)) return value;
+    if (type === 'phone_suffix') return `••••${value.slice(-4)}`;
+    // name_word_fuzzy and anything unrecognised: show the shape, not the value.
+    return `${value.slice(0, 1)}…`;
+}
+
+/**
+ * Build one side of a pair, masking contact detail the viewer has no right to.
+ *
+ * A pair qualifies for the feed when EITHER side belongs to the viewer, so the
+ * other side is routinely someone else's record. Every other surface routes
+ * contact through `resolveAdopterVisibility`; this one selected `contactInfo`
+ * raw, which — with PII gating enabled in production — made the dedup card the
+ * one place another rescuer's adopter contact was fully exposed.
+ *
+ * The MATCHED values stay visible (see EXACT_MATCH_TYPES): those are already in
+ * the viewer's own record, so showing them discloses nothing. It is the rest of
+ * the blob that gets masked.
+ */
+async function buildPairSide(
+    viewerEmail: string | null | undefined,
+    row: { id: string; name: string; contactInfo: string | null; source: string; addedBy: string | null; createdAt: Date | null },
+): Promise<PendingDedupPair['newAdopter']> {
+    let contactInfo = row.contactInfo;
+    let canSeeContact = true;
+    try {
+        const { resolveAdopterVisibility } = await import('@/lib/piiAccessServer');
+        const { maskAdopterContact } = await import('@/lib/piiAccess');
+        const visibility = await resolveAdopterVisibility(viewerEmail, { id: row.id, addedBy: row.addedBy });
+        if (!visibility.nothingMasked) {
+            const masked = maskAdopterContact({ contactInfo: row.contactInfo, contactEntries: null, addressInfo: null }, visibility);
+            contactInfo = masked.contactInfo;
+            canSeeContact = masked.maskedFieldCount === 0;
+        }
+    } catch (e) {
+        // Fail CLOSED: an unresolvable visibility must hide the contact, never
+        // reveal it. The pair still renders so the merge decision survives.
+        logger.warn('buildPairSide: visibility resolve failed, masking', {
+            adopterId: row.id, error: e instanceof Error ? e.message : String(e),
+        });
+        contactInfo = null;
+        canSeeContact = false;
+    }
+    return {
+        id: row.id,
+        name: row.name,
+        contactInfo,
+        source: row.source,
+        createdAt: row.createdAt ? Math.floor(row.createdAt.getTime() / 1000) : null,
+        canSeeContact,
+    };
+}
+
+
 /** Tolerant parse of `duplicate_candidates.match_values`. Null (per-save path)
  *  or malformed JSON both degrade to "no values", never to a thrown render. */
 function safeParseMatchValues(raw: string | null): Record<string, string[]> {
@@ -922,6 +991,8 @@ export interface PendingDedupPair {
         contactInfo: string | null;
         source: string;
         createdAt: number | null;
+        /** False ⇒ contactInfo is masked and the card offers "ask the owner". */
+        canSeeContact: boolean;
     };
     /** The "existing" side — older record. Use as merge primary. */
     existingAdopter: {
@@ -930,6 +1001,8 @@ export interface PendingDedupPair {
         contactInfo: string | null;
         source: string;
         createdAt: number | null;
+        /** False ⇒ contactInfo is masked and the card offers "ask the owner". */
+        canSeeContact: boolean;
     };
     matchTypes: string[];
     /**
@@ -1022,22 +1095,13 @@ export async function getPendingDuplicatesForUser(
             pairs.push({
                 candidateId: c.candidateId,
                 source: 'detected',
-                newAdopter: {
-                    id: newOne.id,
-                    name: newOne.name,
-                    contactInfo: newOne.contactInfo,
-                    source: newOne.source,
-                    createdAt: newOne.createdAt ? Math.floor(newOne.createdAt.getTime() / 1000) : null,
-                },
-                existingAdopter: {
-                    id: oldOne.id,
-                    name: oldOne.name,
-                    contactInfo: oldOne.contactInfo,
-                    source: oldOne.source,
-                    createdAt: oldOne.createdAt ? Math.floor(oldOne.createdAt.getTime() / 1000) : null,
-                },
+                newAdopter: await buildPairSide(actorEmail, newOne),
+                existingAdopter: await buildPairSide(actorEmail, oldOne),
                 matchTypes: JSON.parse(c.matchTypes || '[]') as string[],
-                matchValues: safeParseMatchValues(c.matchValues),
+                matchValues: Object.fromEntries(
+                    Object.entries(safeParseMatchValues(c.matchValues))
+                        .map(([type, vals]) => [type, vals.map(v => redactInexactValue(type, v))]),
+                ),
                 confidence: c.confidence,
                 confidencePercent: storedScoreToPercent(c.score),
             });
@@ -1080,8 +1144,8 @@ export async function getPendingDuplicatesForUser(
                 pairs.push({
                     candidateId: f.id,
                     source: 'flagged',
-                    newAdopter: { id: newOne.id, name: newOne.name, contactInfo: newOne.contactInfo, source: newOne.source, createdAt: newOne.createdAt ? Math.floor(newOne.createdAt.getTime() / 1000) : null },
-                    existingAdopter: { id: oldOne.id, name: oldOne.name, contactInfo: oldOne.contactInfo, source: oldOne.source, createdAt: oldOne.createdAt ? Math.floor(oldOne.createdAt.getTime() / 1000) : null },
+                    newAdopter: await buildPairSide(actorEmail, newOne),
+                    existingAdopter: await buildPairSide(actorEmail, oldOne),
                     matchTypes: ['flagged_by_user'],
                     matchValues: {},
                     confidence: 'high',
