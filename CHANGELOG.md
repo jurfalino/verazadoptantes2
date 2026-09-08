@@ -2,6 +2,33 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.33] - 2026-09-07
+
+### Fixed — /my-adopters showed two error toasts and no duplicates
+
+Regression from 2.56.30. `getPendingDuplicatesForUser` resolved PII visibility
+for **every** pending candidate before paginating — two sides per pair, each
+about five D1 queries via `resolveAdopterVisibility`. On staging that is 587
+pending candidates; the request blew the Workers subrequest ceiling and died,
+so the action threw and the list rendered empty behind two toasts.
+
+The underlying shape was already wasteful and 2.56.30 pushed it over: it
+fetched one adopter row per id across all pending candidates (~379 subrequests
+on staging, ~1200 in production), sorted, then discarded all but ten.
+
+`getPendingDuplicatesForUser` now **ranks and pages on the candidate rows
+first** — everything needed to order lives on `duplicate_candidates` itself
+(`score`, `confidence`, `detected_at`) — then fetches adopters and resolves
+visibility only for the page being rendered. Ties break on `detected_at`
+instead of `adopters.createdAt`, which had required the very fetch the ordering
+exists to avoid. Visibility is memoised per adopter, so a record appearing in
+several pairs on one page resolves once.
+
+Fan-out is now bounded by `pageSize` (≤ 2 × 10 adopter rows) rather than corpus
+size. Manually flagged pairs are folded into the same ranking path as
+candidate-shaped rows, so they cost one query rather than a fan-out of their
+own.
+
 ## [2.56.32] - 2026-09-07
 
 ### Fixed — error toasts now say what failed, not just that something did
