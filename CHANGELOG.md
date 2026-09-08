@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.32] - 2026-09-07
+
+### Fixed — error toasts now say what failed, not just that something did
+
+2.56.31 gave every toast an errorId but left 11 of them with no description, so
+a user still read a bare "Error" with a code and no explanation. That is half
+the rule, and the half a regex could do.
+
+- Seven new `errors.*` strings across all three locales, each naming the
+  operation and the next step — "No se pudieron combinar los perfiles. Volvé a
+  intentar.", "No pudimos cargar los posibles duplicados. Recargá la página."
+- Wired into the merge, dismiss, duplicate-load, contract-invite,
+  duplicate-flag, applicant-load and contract-attach failures.
+- `/organizations` passed the server's raw error string as the toast **title**.
+  It now goes in the body with a short label as the title, matching the
+  `toast.error(title, message, errorId)` contract.
+
+No `toast.error` in the codebase now passes `undefined` as its description.
+
 ## [2.56.31] - 2026-09-07
 
 ### Fixed — error toasts with no code, reported nowhere

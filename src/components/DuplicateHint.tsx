@@ -227,7 +227,7 @@ export default function DuplicateHint({ type, value, excludeAdopterId, onMatch, 
             }
         } catch (e) {
             console.error('[DuplicateHint] flagAdopterAsDuplicate threw:', e);
-            toast.error(t('errors.generic') || 'Error', undefined, resolveErrorId(e, 'DuplicateHint'));
+            toast.error(t('errors.generic') || 'Error', t('errors.flag_duplicate_failed') || undefined, resolveErrorId(e, 'DuplicateHint'));
         } finally {
             setFlagging(null);
         }

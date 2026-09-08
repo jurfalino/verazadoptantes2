@@ -231,7 +231,7 @@ export default function AnimalApplicants({
                 toast.error(t('errors.generic') || 'Error', result.error || 'Could not issue invitation');
             }
         } catch (e) {
-            toast.error(t('errors.generic') || 'Error', undefined, resolveErrorId(e, 'AnimalApplicants'));
+            toast.error(t('errors.generic') || 'Error', t('errors.contract_invite_failed') || undefined, resolveErrorId(e, 'AnimalApplicants'));
         } finally {
             setBusySubmissionId(null);
         }

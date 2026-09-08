@@ -56,7 +56,7 @@ export default function ContractResultsMatchCard({
                 setConfirmOpen(false);
             }
         } catch (error) {
-            toast.error(t('contractResults.link_error') || 'No se pudo atribuir la adopción', undefined, resolveErrorId(error, 'ContractResultsMatchCard'));
+            toast.error(t('contractResults.link_error') || 'No se pudo atribuir la adopción', t('errors.attach_contract_failed') || undefined, resolveErrorId(error, 'ContractResultsMatchCard'));
             setLinking(false);
             setConfirmOpen(false);
         }

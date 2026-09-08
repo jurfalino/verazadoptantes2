@@ -321,6 +321,13 @@ export const pt = {
         sending: 'Enviando…',
     },
     errors: {
+        load_duplicates_failed: 'Não foi possível carregar os possíveis duplicados. Recarregue a página.',
+        merge_failed: 'Não foi possível combinar os perfis. Tente novamente.',
+        dismiss_failed: 'Não foi possível descartar a sugestão. Tente novamente.',
+        contract_invite_failed: 'Não foi possível gerar o link do contrato. Tente novamente.',
+        flag_duplicate_failed: 'Não foi possível marcar como duplicado. Tente novamente.',
+        attach_contract_failed: 'Não foi possível atribuir a adoção a esse perfil. Tente novamente.',
+        load_applicants_failed: 'Não foi possível carregar os candidatos. Recarregue a página.',
         generic: 'Erro',
         adoption_processing: 'Erro ao processar a adoção. Por favor, tente novamente.',
         unexpected: 'Ocorreu um erro inesperado.',

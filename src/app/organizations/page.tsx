@@ -63,8 +63,10 @@ export default function OrganizationsPage() {
         } else {
             const msg = result.error === 'org_name_exists'
                 ? t('organizations.error_name_exists')
-                : (result.error || 'Error');
-            toast.error(msg, undefined, result.errorId);
+                : (result.error || t('errors.unexpected') || 'Error');
+            // Server text goes in the BODY; the title stays a short label, per
+            // the toast contract (title, message, errorId).
+            toast.error(t('errors.generic') || 'Error', msg, result.errorId);
         }
     };
 
@@ -247,8 +249,10 @@ function OrgCard({ org, onRefresh }: { org: Organization; onRefresh: () => void 
         } else {
             const msg = result.error === 'org_name_exists'
                 ? t('organizations.error_name_exists')
-                : (result.error || 'Error');
-            toast.error(msg, undefined, result.errorId);
+                : (result.error || t('errors.unexpected') || 'Error');
+            // Server text goes in the BODY; the title stays a short label, per
+            // the toast contract (title, message, errorId).
+            toast.error(t('errors.generic') || 'Error', msg, result.errorId);
         }
     };
 
@@ -268,7 +272,7 @@ function OrgCard({ org, onRefresh }: { org: Organization; onRefresh: () => void 
                 } catch { /* user cancelled */ }
             }
         } else {
-            toast.error(result.error || 'Error', undefined, result.errorId);
+            toast.error(t('errors.generic') || 'Error', result.error || t('errors.unexpected') || 'Error', result.errorId);
         }
     };
 
@@ -301,7 +305,7 @@ function OrgCard({ org, onRefresh }: { org: Organization; onRefresh: () => void 
             toast.success(result.deleted ? t('organizations.deleted_success') : t('organizations.left_success'));
             onRefresh();
         } else {
-            toast.error(result.error || 'Error', undefined, result.errorId);
+            toast.error(t('errors.generic') || 'Error', result.error || t('errors.unexpected') || 'Error', result.errorId);
         }
     };
 

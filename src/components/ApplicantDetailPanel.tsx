@@ -94,7 +94,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
                 toast.error(t('errors.generic') || 'Error', result.error || 'No se pudo generar la invitación');
             }
         } catch (e) {
-            toast.error(t('errors.generic') || 'Error', undefined, resolveErrorId(e, 'ApplicantDetailPanel'));
+            toast.error(t('errors.generic') || 'Error', t('errors.contract_invite_failed') || undefined, resolveErrorId(e, 'ApplicantDetailPanel'));
         } finally {
             setBusy(false);
         }

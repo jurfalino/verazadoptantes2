@@ -322,6 +322,13 @@ export const en = {
         sending: 'Sending…',
     },
     errors: {
+        load_duplicates_failed: "We couldn't load possible duplicates. Reload the page.",
+        merge_failed: "The profiles couldn't be merged. Please try again.",
+        dismiss_failed: "The suggestion couldn't be dismissed. Please try again.",
+        contract_invite_failed: "The contract link couldn't be created. Please try again.",
+        flag_duplicate_failed: "It couldn't be flagged as a duplicate. Please try again.",
+        attach_contract_failed: "The adoption couldn't be attributed to that profile. Please try again.",
+        load_applicants_failed: "We couldn't load the applicants. Reload the page.",
         generic: 'Error',
         adoption_processing: 'Error processing adoption. Please try again.',
         unexpected: 'An unexpected error occurred.',
