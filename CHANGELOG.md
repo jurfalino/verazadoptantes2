@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.35] - 2026-09-07
+
+### Fixed — the evidence chips showed one fact twice
+
+A card read `Nombre Completo: luis igartua` beside `Nombre: igartua, luis`.
+"The full name matched" entails "each of its words matched", so the tokenizer
+emits both types from one name and the card rendered the same evidence twice —
+looking like two independent corroborations on a screen whose entire job is
+judging how much corroboration exists.
+
+`collapseNameEvidence` (pure, 7 tests) drops name words already contained in a
+matched full name. A word matched OUTSIDE it — a surname shared via an alias —
+is genuine extra evidence and keeps its chip.
+
+**Presentation only.** The stored score still double-counts: that pair is
+`name_full (30) + name_word (20) = 50`, which is what put it in `high`. Compare
+`Luis Igartua Lozada` ↔ itself at 100 with `name_full + name_word + phone`,
+where the third signal is genuinely independent — the arithmetic treats "a name
+and its own words" the same as "a name and a phone". Fixing that belongs to the
+scoring redesign, not to a display patch.
+
 ## [2.56.34] - 2026-09-07
 
 ### Fixed — "Candidate already resolved" in English, and the row stayed put

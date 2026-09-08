@@ -28,6 +28,7 @@ import {
 } from '@/app/actions/duplicates';
 import { AdopterName } from '@/components/AdopterName';
 import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
+import { collapseNameEvidence } from '@/domain/matchEvidence';
 
 /** Opens-in-new-tab affordance. Inline SVG with currentColor per the icon
  *  convention — an emoji would not inherit the link's hover colour. */
@@ -51,6 +52,13 @@ function ExternalLinkIcon({ className = 'w-3 h-3' }: { className?: string }) {
 function MatchedOn({ pair, t }: { pair: PendingDedupPair; t: (k: string) => string }) {
     if (pair.matchTypes.length === 0) return null;
 
+    const values = collapseNameEvidence(pair.matchValues);
+    // A type whose values were entirely absorbed above no longer earns a chip.
+    // Types with no stored values at all (the per-save path writes none) still
+    // show, since their label is the only evidence available.
+    const types = pair.matchTypes.filter(ty =>
+        !(ty in pair.matchValues) || (values[ty]?.length ?? 0) > 0);
+
     const LABEL: Record<string, string> = {
         phone: t('duplicates.match_phone') || 'Teléfono',
         phone_suffix: t('duplicates.match_phone_suffix') || 'Teléfono (final)',
@@ -70,16 +78,16 @@ function MatchedOn({ pair, t }: { pair: PendingDedupPair; t: (k: string) => stri
             <span className="text-[11px] text-stone-500">
                 {t('myAdopters.pending_dedup_matched_on') || 'Coincide en'}:
             </span>
-            {pair.matchTypes.map(type => {
-                const values = pair.matchValues[type] || [];
+            {types.map(type => {
+                const vals = values[type] || [];
                 const label = LABEL[type] || type;
                 return (
                     <span key={type}
                         className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-100">
                         <span className="font-semibold">{label}</span>
-                        {values.length > 0 && (
+                        {vals.length > 0 && (
                             <span className="font-mono text-amber-800/90 truncate max-w-[14rem]">
-                                {values.slice(0, 2).join(', ')}{values.length > 2 ? '…' : ''}
+                                {vals.slice(0, 2).join(', ')}{vals.length > 2 ? '…' : ''}
                             </span>
                         )}
                     </span>
