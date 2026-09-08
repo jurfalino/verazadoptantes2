@@ -322,6 +322,12 @@ export const en = {
         sending: 'Sending…',
     },
     errors: {
+        link_submission_failed: "The submission couldn't be linked. Please try again.",
+        save_household_failed: "The household couldn't be saved. Please try again.",
+        dedup_already_resolved: 'This suggestion was already resolved. The list has been refreshed.',
+        dedup_not_found: 'This suggestion no longer exists. The list has been refreshed.',
+        dedup_not_authorized: "You don't have permission to dismiss this pair.",
+        dedup_dismiss_failed: "The suggestion couldn't be dismissed. Please try again.",
         load_duplicates_failed: "We couldn't load possible duplicates. Reload the page.",
         merge_failed: "The profiles couldn't be merged. Please try again.",
         dismiss_failed: "The suggestion couldn't be dismissed. Please try again.",

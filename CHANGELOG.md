@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.34] - 2026-09-07
+
+### Fixed — "Candidate already resolved" in English, and the row stayed put
+
+Both halves of a single report on `/my-adopters`.
+
+- **Language.** `dismissDuplicateCandidate` returned raw English prose
+  (`'Candidate already resolved'`) and the client rendered `result.error`
+  straight into the toast, so a Spanish user read an English sentence. It now
+  returns a stable `code` (`not_found` / `already_resolved` / `not_authorized` /
+  `no_db`) which the UI translates; `error` remains an English fallback for logs
+  and must never reach a user.
+- **The stale row.** `already_resolved` means the pair was settled after the
+  page loaded — usually a merge touching the same adopter, which cleans up
+  related candidates. The client only removed a row on success, so a failure
+  left it on screen and the dismissal looked like it did nothing. Those two
+  codes now refresh the list and report in a success tone, because the pair *is*
+  resolved — which is what the user wanted.
+- Swept the user-facing surfaces that still rendered a server's raw English
+  string: the dedup merge failure, contract attribution, household save, and the
+  orphan-submission retry. `src/app/admin/**` is deliberately left alone — that
+  UI is English-only by convention.
+
 ## [2.56.33] - 2026-09-07
 
 ### Fixed — /my-adopters showed two error toasts and no duplicates

@@ -207,7 +207,7 @@ export default function PendingDedup() {
                 setPairs(prev => prev?.filter(p => p.candidateId !== pair.candidateId) || []);
                 setTotal(n => Math.max(0, n - 1));
             } else {
-                toast.error(t('errors.generic') || 'Error', result.error || 'Merge failed');
+                toast.error(t('errors.generic') || 'Error', t('errors.merge_failed') || 'No se pudieron combinar los perfiles.');
             }
         } catch (e) {
             toast.error(t('errors.generic') || 'Error', t('errors.merge_failed') || undefined, resolveErrorId(e, 'PendingDedup'));
@@ -221,14 +221,33 @@ export default function PendingDedup() {
         setBusyCandidateId(pair.candidateId);
         try {
             const result = await dismissDuplicateCandidate(pair.candidateId);
-            if (result.success) {
+            if (result?.success) {
                 setPairs(prev => prev?.filter(p => p.candidateId !== pair.candidateId) || []);
                 setTotal(n => Math.max(0, n - 1));
+                return;
+            }
+
+            // 'already_resolved' / 'not_found' mean the row on screen is STALE —
+            // something else (usually a merge touching the same adopter) settled
+            // this pair after the page loaded. Leaving the row visible after an
+            // error is what made it look like the dismissal did nothing, so
+            // reload instead of just complaining.
+            const stale = result?.code === 'already_resolved' || result?.code === 'not_found';
+            const message = result?.code === 'already_resolved' ? t('errors.dedup_already_resolved')
+                : result?.code === 'not_found' ? t('errors.dedup_not_found')
+                    : result?.code === 'not_authorized' ? t('errors.dedup_not_authorized')
+                        : t('errors.dedup_dismiss_failed');
+
+            if (stale) {
+                // Not an error from the user's side: the pair IS resolved,
+                // which is what they wanted. Success tone, list refreshed.
+                toast.success(t('common.updated') || 'Actualizado', message);
+                await load();
             } else {
-                toast.error(t('errors.generic') || 'Error', result.error || 'Dismiss failed');
+                toast.error(t('errors.generic') || 'Error', message);
             }
         } catch (e) {
-            toast.error(t('errors.generic') || 'Error', t('errors.dismiss_failed') || undefined, resolveErrorId(e, 'PendingDedup'));
+            toast.error(t('errors.generic') || 'Error', t('errors.dedup_dismiss_failed') || undefined, resolveErrorId(e, 'PendingDedup'));
         } finally {
             setBusyCandidateId(null);
         }

@@ -1195,14 +1195,23 @@ export async function getPendingDuplicatesForUser(
     }
 }
 
-export async function dismissDuplicateCandidate(candidateId: string): Promise<{ success: boolean; error?: string }> {
+export async function dismissDuplicateCandidate(candidateId: string): Promise<{
+    success: boolean;
+    /**
+     * Stable machine code for the UI to translate. `error` stays as an English
+     * fallback for logs and older callers — it must never reach a user, who
+     * reads whichever locale they chose. See `errors.dedup_*` in the locales.
+     */
+    code?: 'not_found' | 'already_resolved' | 'not_authorized' | 'no_db' | 'failed';
+    error?: string;
+}> {
     try {
         const { getUser } = await import('./_db');
         const { isAdminAsync } = await import('@/config/admins');
         const actorEmail = await getUser();
 
         const db = await getDb();
-        if (!db) return { success: false, error: 'Database not available' };
+        if (!db) return { success: false, code: 'no_db', error: 'Database not available' };
 
         const candidate = await db.select({
             id: duplicateCandidates.id,
@@ -1211,8 +1220,8 @@ export async function dismissDuplicateCandidate(candidateId: string): Promise<{ 
             status: duplicateCandidates.status,
         }).from(duplicateCandidates).where(eq(duplicateCandidates.id, candidateId)).get();
 
-        if (!candidate) return { success: false, error: 'Candidate not found' };
-        if (candidate.status !== 'pending') return { success: false, error: 'Candidate already resolved' };
+        if (!candidate) return { success: false, code: 'not_found', error: 'Candidate not found' };
+        if (candidate.status !== 'pending') return { success: false, code: 'already_resolved', error: 'Candidate already resolved' };
 
         const [a, b] = await Promise.all([
             db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, candidate.adopter1Id)).get(),
@@ -1223,7 +1232,7 @@ export async function dismissDuplicateCandidate(candidateId: string): Promise<{ 
         const isAdminUser = await isAdminAsync(actorEmail);
 
         if (!isOwner && !isAdminUser) {
-            return { success: false, error: 'Not authorized to dismiss this pair' };
+            return { success: false, code: 'not_authorized', error: 'Not authorized to dismiss this pair' };
         }
 
         await db.update(duplicateCandidates).set({

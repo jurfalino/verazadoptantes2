@@ -321,6 +321,12 @@ export const pt = {
         sending: 'Enviando…',
     },
     errors: {
+        link_submission_failed: 'Não foi possível vincular a solicitação. Tente novamente.',
+        save_household_failed: 'Não foi possível salvar o grupo familiar. Tente novamente.',
+        dedup_already_resolved: 'Esta sugestão já foi resolvida. A lista foi atualizada.',
+        dedup_not_found: 'Esta sugestão não existe mais. A lista foi atualizada.',
+        dedup_not_authorized: 'Você não tem permissão para descartar este par.',
+        dedup_dismiss_failed: 'Não foi possível descartar a sugestão. Tente novamente.',
         load_duplicates_failed: 'Não foi possível carregar os possíveis duplicados. Recarregue a página.',
         merge_failed: 'Não foi possível combinar os perfis. Tente novamente.',
         dismiss_failed: 'Não foi possível descartar a sugestão. Tente novamente.',
