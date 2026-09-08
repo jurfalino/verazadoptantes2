@@ -323,7 +323,18 @@ export function extractAddressWords(text: string): string[] {
  *     hash still matched the old extractor output and Scan skipped them,
  *     keeping the bogus @gmail.com social tokens alive.
  */
-const TOKENIZER_VERSION = 'v5'; // v5: structured household members (names + contacts) feed tokens (household redesign)
+/**
+ * Does this normalized name have more than one part?
+ *
+ * The test for whether `name_full` carries information beyond `name_word`.
+ * Normalisation has already collapsed whitespace and stripped punctuation, so a
+ * space is the only separator left.
+ */
+export function isMultiWordName(normalizedName: string): boolean {
+    return normalizedName.trim().split(/\s+/).filter(Boolean).length > 1;
+}
+
+const TOKENIZER_VERSION = 'v6'; // v6: single-word names no longer emit name_full (it double-counted a shared first name)
 
 /** Compute a simple hash of all tokenizable fields for freshness tracking */
 export function computeTokenHash(adopter: {
@@ -402,7 +413,20 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], 
     for (const src of fullNameSources) {
         if (!src) continue;
         const fullName = normalizeText(src);
-        if (fullName.length >= MIN_NAME_WORD_LENGTH) add('name_full', fullName);
+        if (fullName.length < MIN_NAME_WORD_LENGTH) continue;
+        // v6: only a MULTI-word name earns name_full.
+        //
+        // name_full means "the complete name matched exactly" and carries
+        // weight 2 on top of name_word's 1. For a one-word name those are the
+        // same fact counted twice, so two records both called "Cristina" scored
+        // 3/12 = 25% and landed in `medium` — in front of a rescuer — on a
+        // signal that says almost nothing. A shared first name is a name_word
+        // match and nothing more.
+        //
+        // Recall is unaffected: the identical name_word token is still emitted
+        // below, so the pair is still found, just weighted honestly.
+        if (!isMultiWordName(fullName)) continue;
+        add('name_full', fullName);
     }
 
     // 2. Name words — from name, familyMembers, adoption.onBehalfOf, and

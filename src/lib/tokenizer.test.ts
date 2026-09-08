@@ -41,3 +41,35 @@ describe('extractTokens — household members (household redesign v5)', () => {
         expect(() => extractTokens(base)).not.toThrow();
     });
 });
+
+describe('name_full weighting (v6) — a shared first name is not a full-name match', () => {
+    const of = (name: string) => extractTokens({ ...base, name }, [], [], [], []);
+
+    it('does NOT emit name_full for a one-word name', () => {
+        // Two records both called "Cristina" scored name_full(2) + name_word(1)
+        // = 25%, landing in `medium` and surfacing to rescuers on a signal that
+        // says almost nothing. 99 such pairs were pending in production.
+        const tokens = of('Cristina');
+        expect(tokens.some(t => t.type === 'name_full')).toBe(false);
+        expect(tokens.some(t => t.type === 'name_word' && t.value === 'cristina')).toBe(true);
+    });
+
+    it('still emits name_full for a real full name', () => {
+        const tokens = of('Cristina Fernández');
+        expect(tokens.some(t => t.type === 'name_full' && t.value === 'cristina fernandez')).toBe(true);
+    });
+
+    it('keeps recall: the pair still matches on the shared word', () => {
+        // Suppressing name_full must not make the records invisible to each
+        // other — only less confident.
+        const a = of('Cristina');
+        const b = of('Cristina Gómez');
+        const aWords = a.filter(t => t.type === 'name_word').map(t => t.value);
+        const bWords = b.filter(t => t.type === 'name_word').map(t => t.value);
+        expect(aWords.some(w => bWords.includes(w))).toBe(true);
+    });
+
+    it('is not fooled by padding around a single word', () => {
+        expect(of('  Cristina  ').some(t => t.type === 'name_full')).toBe(false);
+    });
+});

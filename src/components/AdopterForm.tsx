@@ -26,7 +26,7 @@ import { RatingBadge } from '@/components/RatingBadge';
 import ProfilePhotoChooser from '@/components/ProfilePhotoChooser';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
-import { reportClientError } from '@/lib/clientErrorReporter';
+import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
 
 import { getSourceIcon } from '@/lib/sourceIcons';
 import { getCountryByCode } from '@/config/countries';
@@ -312,7 +312,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             // Refresh the page so the server-fetched images list (and the avatar) updates.
             window.location.reload();
         } catch (err) {
-            toast.error(t('errors.generic'), t('adopter.upload_failed') || 'Could not upload the photo. Try again.', extractErrorId(err));
+            toast.error(t('errors.generic'), t('adopter.upload_failed') || 'Could not upload the photo. Try again.', resolveErrorId(err, 'AdopterForm'));
         } finally {
             setAvatarUploading(false);
             // Reset the input so picking the same file again still triggers onChange

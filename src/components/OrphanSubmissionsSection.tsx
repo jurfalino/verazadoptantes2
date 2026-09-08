@@ -60,7 +60,9 @@ export default function OrphanSubmissionsSection() {
             const res = await fetch(`/api/admin/orphan-submissions/${id}/retry`, { method: 'POST' });
             const data = await res.json() as { success?: boolean; adopterId?: string; error?: string; dupCandidates?: number };
             if (!res.ok || !data.success) {
-                toast.error('No se pudo vincular', data.error || 'Error desconocido');
+                // Admin surface: hardcoded copy like the rest of this component.
+                // The point is not showing the server's raw English string.
+                toast.error('No se pudo vincular', 'Revisá la solicitud y volvé a intentar.');
                 return;
             }
             const dupSuffix = data.dupCandidates ? ` — ${data.dupCandidates} posible(s) duplicado(s)` : '';

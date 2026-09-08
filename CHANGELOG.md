@@ -2,6 +2,330 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.35] - 2026-09-07
+
+### Fixed — the evidence chips showed one fact twice
+
+A card read `Nombre Completo: luis igartua` beside `Nombre: igartua, luis`.
+"The full name matched" entails "each of its words matched", so the tokenizer
+emits both types from one name and the card rendered the same evidence twice —
+looking like two independent corroborations on a screen whose entire job is
+judging how much corroboration exists.
+
+`collapseNameEvidence` (pure, 7 tests) drops name words already contained in a
+matched full name. A word matched OUTSIDE it — a surname shared via an alias —
+is genuine extra evidence and keeps its chip.
+
+**Presentation only.** The stored score still double-counts: that pair is
+`name_full (30) + name_word (20) = 50`, which is what put it in `high`. Compare
+`Luis Igartua Lozada` ↔ itself at 100 with `name_full + name_word + phone`,
+where the third signal is genuinely independent — the arithmetic treats "a name
+and its own words" the same as "a name and a phone". Fixing that belongs to the
+scoring redesign, not to a display patch.
+
+## [2.56.34] - 2026-09-07
+
+### Fixed — "Candidate already resolved" in English, and the row stayed put
+
+Both halves of a single report on `/my-adopters`.
+
+- **Language.** `dismissDuplicateCandidate` returned raw English prose
+  (`'Candidate already resolved'`) and the client rendered `result.error`
+  straight into the toast, so a Spanish user read an English sentence. It now
+  returns a stable `code` (`not_found` / `already_resolved` / `not_authorized` /
+  `no_db`) which the UI translates; `error` remains an English fallback for logs
+  and must never reach a user.
+- **The stale row.** `already_resolved` means the pair was settled after the
+  page loaded — usually a merge touching the same adopter, which cleans up
+  related candidates. The client only removed a row on success, so a failure
+  left it on screen and the dismissal looked like it did nothing. Those two
+  codes now refresh the list and report in a success tone, because the pair *is*
+  resolved — which is what the user wanted.
+- Swept the user-facing surfaces that still rendered a server's raw English
+  string: the dedup merge failure, contract attribution, household save, and the
+  orphan-submission retry. `src/app/admin/**` is deliberately left alone — that
+  UI is English-only by convention.
+
+## [2.56.33] - 2026-09-07
+
+### Fixed — /my-adopters showed two error toasts and no duplicates
+
+Regression from 2.56.30. `getPendingDuplicatesForUser` resolved PII visibility
+for **every** pending candidate before paginating — two sides per pair, each
+about five D1 queries via `resolveAdopterVisibility`. On staging that is 587
+pending candidates; the request blew the Workers subrequest ceiling and died,
+so the action threw and the list rendered empty behind two toasts.
+
+The underlying shape was already wasteful and 2.56.30 pushed it over: it
+fetched one adopter row per id across all pending candidates (~379 subrequests
+on staging, ~1200 in production), sorted, then discarded all but ten.
+
+`getPendingDuplicatesForUser` now **ranks and pages on the candidate rows
+first** — everything needed to order lives on `duplicate_candidates` itself
+(`score`, `confidence`, `detected_at`) — then fetches adopters and resolves
+visibility only for the page being rendered. Ties break on `detected_at`
+instead of `adopters.createdAt`, which had required the very fetch the ordering
+exists to avoid. Visibility is memoised per adopter, so a record appearing in
+several pairs on one page resolves once.
+
+Fan-out is now bounded by `pageSize` (≤ 2 × 10 adopter rows) rather than corpus
+size. Manually flagged pairs are folded into the same ranking path as
+candidate-shaped rows, so they cost one query rather than a fan-out of their
+own.
+
+## [2.56.32] - 2026-09-07
+
+### Fixed — error toasts now say what failed, not just that something did
+
+2.56.31 gave every toast an errorId but left 11 of them with no description, so
+a user still read a bare "Error" with a code and no explanation. That is half
+the rule, and the half a regex could do.
+
+- Seven new `errors.*` strings across all three locales, each naming the
+  operation and the next step — "No se pudieron combinar los perfiles. Volvé a
+  intentar.", "No pudimos cargar los posibles duplicados. Recargá la página."
+- Wired into the merge, dismiss, duplicate-load, contract-invite,
+  duplicate-flag, applicant-load and contract-attach failures.
+- `/organizations` passed the server's raw error string as the toast **title**.
+  It now goes in the body with a short label as the title, matching the
+  `toast.error(title, message, errorId)` contract.
+
+No `toast.error` in the codebase now passes `undefined` as its description.
+
+## [2.56.31] - 2026-09-07
+
+### Fixed — error toasts with no code, reported nowhere
+
+A user hit an error toast on an adopter page with no description and no error
+code. It could not be diagnosed: Axiom held **zero** `error` and `warn` rows for
+either environment across the whole window. The failure was never recorded
+anywhere.
+
+`extractErrorId` only finds an id that a *server action* embedded in its
+message. A client-side throw — or a server action error Next redacted in
+production — has none, so `toast.error(title, desc, extractErrorId(e))`
+rendered a toast with no code AND reported nothing. **52 call sites across 24
+files** did exactly that, against the project's own rule that every error toast
+carries an id.
+
+`resolveErrorId(error, source)` replaces it: returns the embedded id when there
+is one, otherwise mints an 8-char id, returns it synchronously so it can go
+straight into the toast, and fires `reportClientError` in the background under
+that same id — so the code the user reads matches the Axiom row. `source` is the
+component name, so a report says where it came from.
+
+The error boundaries (`error.tsx`, `global-error.tsx`, `ClientErrorReporter`)
+keep using `extractErrorId` directly; they already mint and report themselves.
+
+## [2.56.30] - 2026-09-07
+
+### Fixed — the dedup card exposed another rescuer's adopter contact
+
+`getPendingDuplicatesForUser` selected `contactInfo` raw. A pair qualifies for
+your feed when **either** side is yours, so the other side is routinely someone
+else's record — and with `ENABLE_PII_ACCESS_GATING` on in production, this was
+the one surface where their adopter's contact details were fully visible.
+Everywhere else routes through `resolveAdopterVisibility`. 2.56.29 widened it by
+adding the matched values to the card.
+
+- Both sides now go through `resolveAdopterVisibility` + `maskAdopterContact`.
+  Resolution failure **fails closed** — masked, not revealed — while still
+  rendering the pair so the merge decision survives.
+- **Matched values stay unmasked.** If two records matched on a phone, that
+  phone is in the viewer's own record; showing it discloses nothing they did not
+  supply.
+- **Except where the match is not exact.** `phone_suffix` agrees on the last 8
+  digits and `name_word_fuzzy` on a Levenshtein near-match, so the other side's
+  full value contains characters the viewer does not have. Those render as the
+  matched portion only (`••••2702`).
+- A gated card offers "Pedir acceso a quien lo cargó", wired to the existing
+  `requestPiiAccess` flow so the owner gets a real, approvable request in
+  `PiiAccessRequestPanel` rather than an email to action by hand.
+
+## [2.56.29] - 2026-09-07
+
+### Changed — the duplicate cards show WHY the pair was proposed
+
+- The evidence row was a raw token dump — "name_full, name_word" — which names
+  internal token types and never says *which* phone or name actually matched.
+  It now renders labelled chips with the matched values
+  (`Teléfono 5119-2702`), reusing the existing `duplicates.match_*` labels and
+  reading `duplicate_candidates.match_values`. The per-save path stores null
+  there, so a pair with no stored values falls back to the labels alone rather
+  than showing nothing.
+- Profile links open in a **new tab**, with an inline-SVG external-link icon and
+  an `sr-only` note. Losing the comparison you are half-way through to a
+  navigation is how these decisions get abandoned.
+- The card's date went through a bare `toLocaleDateString` (host timezone); it
+  now uses the shared zone-aware formatter like every other date.
+
+## [2.56.28] - 2026-09-07
+
+### Fixed — the pagination buttons rendered their i18n key
+
+2.56.27 added `previous` to the `wizard` block instead of `common`, and
+`common.next` never existed. `t()` returns the raw key path when a key is
+missing — a truthy string — so the `|| 'Anterior'` fallback never fired and the
+buttons showed `common.previous` / `common.next`. Both keys now live in
+`common`, in all three locales.
+
+### Changed — strongest matches first, weak ones hidden
+
+- The pending list sorts by match percentage (ties break on recency, so a page
+  is stable) instead of purely by date.
+- `low` pairs — about 80% of the queue, mostly weak name overlap — are hidden
+  behind a "Ver N coincidencias débiles" toggle rather than dropped, so the
+  count stays honest and the user can still reach them.
+
+## [2.56.27] - 2026-09-07
+
+### Fixed — every duplicate said "100% coincidencia"
+
+`duplicate_candidates.score` already holds a percentage: `_adopterFactory` writes
+`match.relevancePercent`, which `findAdopters` produced by normalising a raw
+token score against `PRACTICAL_MAX_DUPLICATE` (12). Two read paths normalised it
+a **second** time against that same 12, so any score above 12 clamped to 100.
+Production's lowest stored score is 20 — so all 641 pending candidates displayed
+"100% coincidencia", including the 516 banded `low`, while the badge beside the
+number still showed the correct band. Reads now go through
+`storedScoreToPercent`, which exists to give the contract a name and a test.
+
+### Fixed — a shared first name is no longer a full-name match
+
+Two records both called "Cristina" emitted `name_full` AND `name_word` from the
+same single token — the same fact counted twice, weight 2 + 1 — scoring 25% and
+landing in `medium`, in front of a rescuer, on a signal that says almost
+nothing. 99 such pairs were pending.
+
+`name_full` now requires a multi-word name (tokenizer v6). Recall is unchanged:
+the identical `name_word` token is still emitted, so the pair is still found,
+just weighted honestly. **Existing candidates keep their old scores until a
+re-scan.**
+
+### Fixed — the pending list showed an arbitrary 20
+
+`getPendingDuplicatesForUser` broke at 20 while iterating and sorted afterwards,
+so the cap took whatever order D1 returned and the sort only rearranged that
+arbitrary subset. New duplicates could never surface and the list changed
+between loads for no visible reason. It now sorts the full set, then pages.
+
+### Added — the pending-duplicates feed is collapsible, paginated, and includes manual flags
+
+- Collapsed by default with a count, since production carries hundreds of pairs
+  and a wall of them buried `/my-adopters`.
+- 10 per page.
+- Manually flagged duplicates (`adopter_flags`, `reason='duplicate'`) now appear
+  in the rescuer's own queue instead of only on `/admin/duplicates` — the one
+  screen the person who raised the flag cannot open. Dismiss is offered only for
+  engine-detected pairs, because it writes to `duplicate_candidates` and a flag
+  has no row there.
+
+## [2.56.26] - 2026-09-07
+
+### Fixed — deleting an adoption no longer destroys the animal
+
+Deleting a duplicate adoption from an adopter profile hard-deleted the animal.
+Two cats were lost that way in production on 2026-09-07.
+
+The `adoptions` compat view UNIONs animal-backed rows (`id = animals.id`) with
+event-backed rows (`id = adopter_events.id`), and `deleteRecordById` fired a
+delete at every table on that one id. So for `adoption` / `foster` / `available`
+records it destroyed the animal and its images — and because the placement
+delete carried no adopter filter, **every other rescuer's custody span for that
+animal too**. Event-backed records (observation, adoption_request, follow_up,
+returned_pet) were unaffected, which is why this stayed hidden.
+
+- Deleting a record now removes **that record**: only the placement belonging to
+  the adopter on screen.
+- The animal is soft-deleted only when nothing else refers to it — checked
+  across other placements, adopter events, animal events, and contract
+  invitations. The decision is a pure function (`src/domain/animalDeletion.ts`)
+  that fails safe: a malformed count resolves to "keep", never to deleting.
+- Soft, not hard, matching `deleteAnimalForAdoption`. The two delete paths for
+  the same animal previously had opposite recoverability.
+
+### Added — the delete dialog says what it will actually do
+
+- `getAdoptionDeleteImpact` reports the consequence before anything is
+  destroyed. When the record is an animal's last link the dialog says so and
+  offers **"Eliminar solo el registro"**, which keeps the animal in Mis Animales
+  as available. Otherwise it states the animal will stay.
+- `ConfirmDialog` gained an optional secondary action, so a destructive dialog
+  can offer a safer variant instead of only OK/Cancel.
+
+### Added — /admin/deleted covers animals
+
+`softDeleteAnimal` stamped `animals.deletedAt` and the compat view hid the row,
+but the Papelera was built entirely around adopters: a soft-deleted animal was
+invisible to the rescuer AND the admin, restorable only by hand-editing SQL.
+There is now a Deleted animals section with restore and purge. Purge refuses
+anything not already in the trash, so it cannot become a second route to
+destroying a live animal.
+
+## [2.56.25] - 2026-09-07
+
+### Changed — the service worker never caches the feature-flag endpoint
+
+Follow-up to 2.56.24. `/api/config` decides which UI a user is allowed to see,
+so a stale copy silently hides a feature an admin has switched on. It now sits
+in the service worker's explicit bypass list beside `/api/auth` and
+`/api/admin`, rather than relying on `networkFirst` — whose "network" attempt is
+a `fetch()` the browser's HTTP cache can answer without any request leaving the
+device.
+
+Note for future work: cache-busting **cannot** be triggered by an admin toggling
+a flag. `sw.js` is a static file baked at deploy time; a DB write cannot change
+it. Control-plane endpoints have to be uncacheable instead, which is what these
+two releases do.
+
+## [2.56.24] - 2026-09-07
+
+### Fixed — admin feature-flag toggles took up to 10 minutes to appear
+
+`ENABLE_EMAIL_OTP` was switched on in production and the email login option
+stayed invisible. The flag was correct at every layer — the `app_config` row,
+`PUBLIC_FLAG_KEYS`, the live `/api/config` response and `LoginModal`'s read of
+it. The staleness was purely client-side caching.
+
+- `/api/config` was served `max-age=60, stale-while-revalidate=600`, so a
+  browser could answer from cache for ten minutes without a network request.
+  It is a control-plane endpoint; an admin flipping a flag expects it to take
+  effect. Now `max-age=0, must-revalidate` — still cacheable, but revalidated
+  every time. A 304 on this small JSON is cheap, and the homepage reads flags
+  server-side via `getPublicConfig()`, so this is not on the LCP path.
+- The service worker gave no protection despite using `networkFirst`: its
+  "network" attempt is a `fetch()`, which is itself served by the same HTTP
+  cache. Network-first only helps when the request actually leaves the device.
+- `CACHE_VERSION` bumped to v5 so any already-stored copy is dropped on the
+  next visit.
+
+## [2.56.23] - 2026-09-07
+
+### Added — the follow-up cron finally logs somewhere durable
+
+The daily cron writes user-facing notifications and sends mail through Resend
+against the production D1, and it was the one component with no durable
+logging: 13 bare `console.log`s reaching only Cloudflare's live runtime stream.
+No retention without Logpush, nothing in the `buenadoptante` Axiom dataset the
+rest of the app writes to, and no severity or errorId. A run that failed at
+09:00 ART had scrolled away before anyone could look — if reminder emails
+silently stopped, nothing would have said so.
+
+- `workers/followup-cron/src/log.ts` ships entries to Axiom in the same shape as
+  `src/lib/logger.ts` — same dataset, same `_time` / `level` / `message` / `env`
+  fields — so cron runs sit alongside app events and the existing
+  `level == "error"` queries pick them up with no extra wiring. `op:
+  'followup-cron'` distinguishes them.
+- Uses `ctx.waitUntil` so a scheduled Worker can't be torn down mid-POST, and
+  degrades to the console line it replaced if Axiom is unconfigured or
+  rejecting. It never throws and never blocks the run.
+- Email-send failures are now `level: 'error'` with an errorId, so a cron
+  failure can be traced exactly like an app one.
+- `[observability] enabled = true` on both envs — Cloudflare Workers Logs,
+  ~7 day retention, free, and the fallback when Axiom is unreachable.
+- `AXIOM_DATASET` and `APP_ENV` are plain `[vars]`; only `AXIOM_TOKEN` is a
+  secret, set out of band per environment.
+
 ## [2.56.22] - 2026-09-07
 
 ### Fixed — the launch cutoff broke the follow-up e2e

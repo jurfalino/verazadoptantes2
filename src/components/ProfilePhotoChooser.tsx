@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { setProfilePicture } from '@/app/actions';
 import type { AdopterImage } from '@/types/adopter';
 
@@ -62,7 +62,7 @@ export default function ProfilePhotoChooser({ isOpen, onClose, images, adopterId
             // Reload so the server-rendered avatar + badge reflect the new pick.
             window.location.reload();
         } catch (err) {
-            toast.error(t('errors.generic'), t('adopter.set_profile_pic_failed') || 'Could not set the profile photo.', extractErrorId(err));
+            toast.error(t('errors.generic'), t('adopter.set_profile_pic_failed') || 'Could not set the profile photo.', resolveErrorId(err, 'ProfilePhotoChooser'));
             setSettingId(null);
         }
     };

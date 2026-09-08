@@ -19,7 +19,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { saveImage, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
 import { ImageGallery } from '@/components/ImageGallery';
 import { computeVisibilityBadge } from '@/domain/visibilityBadge';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { DisclaimerToast } from '@/components/DisclaimerToast';
 import { RatingBadge } from '@/components/RatingBadge';
 import { useShowToast } from '@/components/ui/Toast';
@@ -196,7 +196,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             setDeleteCheck(result);
             setDeleteModalOpen(true);
         } catch (e) {
-            toast.error(t('errors.generic'), t('adopter.delete_error_check'), extractErrorId(e));
+            toast.error(t('errors.generic'), t('adopter.delete_error_check'), resolveErrorId(e, 'AdopterProfileV2'));
         } finally {
             setDeleteLoading(false);
         }
@@ -209,7 +209,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             toast.success('✓', t('adopter.delete_success'));
             window.location.href = '/';
         } catch (e) {
-            toast.error(t('errors.generic'), t('errors.delete_failed_generic'), extractErrorId(e));
+            toast.error(t('errors.generic'), t('errors.delete_failed_generic'), resolveErrorId(e, 'AdopterProfileV2'));
             setDeleteLoading(false);
         }
     };
@@ -221,7 +221,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             toast.success('✓', t('adopter.delete_request_success'));
             setDeleteModalOpen(false);
         } catch (e) {
-            toast.error(t('errors.generic'), t('errors.delete_request_failed'), extractErrorId(e));
+            toast.error(t('errors.generic'), t('errors.delete_request_failed'), resolveErrorId(e, 'AdopterProfileV2'));
         } finally {
             setDeleteLoading(false);
         }

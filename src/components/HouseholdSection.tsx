@@ -59,7 +59,7 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit }:
         setBusy(true);
         try {
             const res = await fn();
-            if (!res.ok) { toast.error('No se pudo guardar', res.error); return null; }
+            if (!res.ok) { toast.error(t('errors.generic') || 'Error', t('errors.save_household_failed') || 'No se pudo guardar el grupo familiar. Volvé a intentar.'); return null; }
             return res as Extract<T, { ok: true }>;
         } catch (e) {
             toast.error('Error', e instanceof Error ? e.message : 'Error inesperado'); return null;

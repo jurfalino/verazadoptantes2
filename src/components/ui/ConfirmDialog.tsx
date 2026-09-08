@@ -14,6 +14,13 @@ interface Props {
     destructive?: boolean;
     /** Disables both buttons while the action is in flight. */
     busy?: boolean;
+    /**
+     * Optional third choice, for destructive acts that have a safer variant —
+     * e.g. "delete the record but keep the animal". Rendered as a neutral
+     * button beside Confirm so the destructive path is never the only way
+     * forward. Omit it and the dialog is the usual Cancel / Confirm pair.
+     */
+    secondary?: { label: string; onClick: () => void };
     onConfirm: () => void;
     onCancel: () => void;
 }
@@ -41,6 +48,7 @@ export default function ConfirmDialog({
     confirmLabel,
     destructive = true,
     busy = false,
+    secondary,
     onConfirm,
     onCancel,
 }: Props) {
@@ -82,7 +90,7 @@ export default function ConfirmDialog({
                         <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{message}</p>
                     )}
                 </div>
-                <div className="flex gap-2 justify-end pt-1">
+                <div className="flex flex-wrap gap-2 justify-end pt-1">
                     <button
                         ref={cancelRef}
                         type="button"
@@ -93,6 +101,17 @@ export default function ConfirmDialog({
                     >
                         {t('common.cancel')}
                     </button>
+                    {secondary && (
+                        <button
+                            type="button"
+                            onClick={secondary.onClick}
+                            disabled={busy}
+                            className="px-4 py-2 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
+                            style={{ background: 'var(--surface-muted)', color: 'var(--text-primary)' }}
+                        >
+                            {secondary.label}
+                        </button>
+                    )}
                     <button
                         type="button"
                         onClick={onConfirm}

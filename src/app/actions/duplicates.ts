@@ -1,13 +1,13 @@
 'use server';
 
 import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, duplicateTokens, duplicateCandidates, auditLog, placements, adopterEvents } from '@/db/schema';
-import { eq, or, and, gt, ne, inArray, sql } from 'drizzle-orm';
+import { eq, or, and, gt, ne, inArray, sql, isNull } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
 import { reassignAdopterRecords } from './_recordWrite';
 import { extractTokens, computeTokenHash, normalizeText, extractPhones, extractEmails, extractSocials, normalizeSocialHandle, detectSocialPlatformFromValue, type Token } from '@/lib/tokenizer';
 import { deserializeHouseholdMembers } from '@/lib/householdMembers';
-import { normalizeConfidence, confidenceBand, fuzzyNameScore, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
+import { normalizeConfidence, confidenceBand, fuzzyNameScore, storedScoreToPercent, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 import { deserializeContactEntries, mergeContactEntries } from '@/lib/contactEntries';
 
 /**
@@ -871,7 +871,7 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
                     matchTypes: JSON.parse(c.matchTypes || '[]') as string[],
                     score: c.score,
                     confidence: c.confidence,
-                    confidencePercent: normalizeConfidence(c.score, PRACTICAL_MAX_DUPLICATE),
+                    confidencePercent: storedScoreToPercent(c.score),
                 };
             })
             .sort((a: DuplicateCandidate, b: DuplicateCandidate) => b.confidencePercent - a.confidencePercent);
@@ -886,8 +886,107 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
 
 // ── Pending-dedup section on /my-adopters (v2.14.10-20) ─────────────────
 
+/**
+ * Match types whose agreement is EXACT. Their value is present in both records,
+ * so showing it to someone who owns one side discloses nothing they did not
+ * already supply — which is why matched values are not masked.
+ *
+ * `phone_suffix` (last 8 digits) and `name_word_fuzzy` (Levenshtein) are
+ * deliberately absent: those agree on part of a value, so the other record's
+ * full value contains characters the viewer does not have.
+ */
+const EXACT_MATCH_TYPES = new Set([
+    'phone', 'email', 'social', 'social_handle', 'name_full', 'name_word', 'source_url', 'id_number', 'address_word',
+]);
+
+/** Reduce an inexact match to the portion that actually matched. */
+function redactInexactValue(type: string, value: string): string {
+    if (EXACT_MATCH_TYPES.has(type)) return value;
+    if (type === 'phone_suffix') return `••••${value.slice(-4)}`;
+    // name_word_fuzzy and anything unrecognised: show the shape, not the value.
+    return `${value.slice(0, 1)}…`;
+}
+
+/**
+ * Build one side of a pair, masking contact detail the viewer has no right to.
+ *
+ * A pair qualifies for the feed when EITHER side belongs to the viewer, so the
+ * other side is routinely someone else's record. Every other surface routes
+ * contact through `resolveAdopterVisibility`; this one selected `contactInfo`
+ * raw, which — with PII gating enabled in production — made the dedup card the
+ * one place another rescuer's adopter contact was fully exposed.
+ *
+ * The MATCHED values stay visible (see EXACT_MATCH_TYPES): those are already in
+ * the viewer's own record, so showing them discloses nothing. It is the rest of
+ * the blob that gets masked.
+ */
+/** The adopter columns the pair builder needs before visibility is applied. */
+type PairRow = { id: string; name: string; contactInfo: string | null; source: string; addedBy: string | null; createdAt: Date | null };
+
+async function buildPairSide(
+    viewerEmail: string | null | undefined,
+    row: PairRow,
+): Promise<PendingDedupPair['newAdopter']> {
+    let contactInfo = row.contactInfo;
+    let canSeeContact = true;
+    try {
+        const { resolveAdopterVisibility } = await import('@/lib/piiAccessServer');
+        const { maskAdopterContact } = await import('@/lib/piiAccess');
+        const visibility = await resolveAdopterVisibility(viewerEmail, { id: row.id, addedBy: row.addedBy });
+        if (!visibility.nothingMasked) {
+            const masked = maskAdopterContact({ contactInfo: row.contactInfo, contactEntries: null, addressInfo: null }, visibility);
+            contactInfo = masked.contactInfo;
+            canSeeContact = masked.maskedFieldCount === 0;
+        }
+    } catch (e) {
+        // Fail CLOSED: an unresolvable visibility must hide the contact, never
+        // reveal it. The pair still renders so the merge decision survives.
+        logger.warn('buildPairSide: visibility resolve failed, masking', {
+            adopterId: row.id, error: e instanceof Error ? e.message : String(e),
+        });
+        contactInfo = null;
+        canSeeContact = false;
+    }
+    return {
+        id: row.id,
+        name: row.name,
+        contactInfo,
+        source: row.source,
+        createdAt: row.createdAt ? Math.floor(row.createdAt.getTime() / 1000) : null,
+        canSeeContact,
+    };
+}
+
+
+/** Tolerant parse of `duplicate_candidates.match_values`. Null (per-save path)
+ *  or malformed JSON both degrade to "no values", never to a thrown render. */
+function safeParseMatchValues(raw: string | null): Record<string, string[]> {
+    if (!raw) return {};
+    try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+        const out: Record<string, string[]> = {};
+        for (const [k, v] of Object.entries(parsed)) {
+            if (Array.isArray(v)) out[k] = v.filter((x): x is string => typeof x === 'string');
+        }
+        return out;
+    } catch {
+        return {};
+    }
+}
+
 export interface PendingDedupPair {
     candidateId: string;
+    /**
+     * Where the pair came from. 'detected' is the engine (duplicate_candidates);
+     * 'flagged' is a person who marked one profile a duplicate of another
+     * (adopter_flags, reason='duplicate'). Those were visible only on the admin
+     * screen — the one place the rescuer who raised the flag cannot go.
+     *
+     * Dismiss is offered only for 'detected': it writes to duplicate_candidates,
+     * and a flag has no row there to update.
+     */
+    source: 'detected' | 'flagged';
     /** The "new" auto-created side — heuristically the more recent record. */
     newAdopter: {
         id: string;
@@ -895,6 +994,8 @@ export interface PendingDedupPair {
         contactInfo: string | null;
         source: string;
         createdAt: number | null;
+        /** False ⇒ contactInfo is masked and the card offers "ask the owner". */
+        canSeeContact: boolean;
     };
     /** The "existing" side — older record. Use as merge primary. */
     existingAdopter: {
@@ -903,8 +1004,17 @@ export interface PendingDedupPair {
         contactInfo: string | null;
         source: string;
         createdAt: number | null;
+        /** False ⇒ contactInfo is masked and the card offers "ask the owner". */
+        canSeeContact: boolean;
     };
     matchTypes: string[];
+    /**
+     * The values that actually matched, keyed by token type — e.g.
+     * `{ phone: ['5119-2702'] }`. Written by the batch rebuild; the per-save
+     * path stores null, so treat an empty object as "we know the types but not
+     * the values" and fall back to showing the type labels alone.
+     */
+    matchValues: Record<string, string[]>;
     confidence: string;
     confidencePercent: number;
 }
@@ -919,62 +1029,143 @@ export interface PendingDedupPair {
  * Different from getDuplicateCandidates(adopterId): that one is single-adopter
  * + limit-5 (profile banner). This one is user-scoped + limit-20 (queue view).
  */
-export async function getPendingDuplicatesForUser(): Promise<PendingDedupPair[]> {
+export async function getPendingDuplicatesForUser(
+    page = 1,
+    pageSize = 10,
+    includeLow = false,
+): Promise<{ pairs: PendingDedupPair[]; total: number; lowHidden: number }> {
+    const EMPTY = { pairs: [] as PendingDedupPair[], total: 0, lowHidden: 0 };
     try {
         const { getUser } = await import('./_db');
         const actorEmail = await getUser();
 
         const db = await getDb();
-        if (!db) return [];
+        if (!db) return EMPTY;
 
-        const a1 = adopters;
         const candidates = await db.select({
             candidateId: duplicateCandidates.id,
             adopter1Id: duplicateCandidates.adopter1Id,
             adopter2Id: duplicateCandidates.adopter2Id,
             matchTypes: duplicateCandidates.matchTypes,
+            matchValues: duplicateCandidates.matchValues,
             score: duplicateCandidates.score,
             confidence: duplicateCandidates.confidence,
             detectedAt: duplicateCandidates.detectedAt,
         })
             .from(duplicateCandidates)
             .where(eq(duplicateCandidates.status, 'pending'))
-            .all() as Array<{ candidateId: string; adopter1Id: string; adopter2Id: string; matchTypes: string; score: number; confidence: string; detectedAt: Date | null }>;
+            .all() as Array<{ candidateId: string; adopter1Id: string; adopter2Id: string; matchTypes: string; matchValues: string | null; score: number; confidence: string; detectedAt: Date | null }>;
 
-        if (candidates.length === 0) return [];
+        if (candidates.length === 0) return EMPTY;
 
-        // Per CLAUDE.md: D1 has no inArray. Fan out per adopter id.
-        const allIds = new Set<string>();
-        for (const c of candidates) {
-            allIds.add(c.adopter1Id);
-            allIds.add(c.adopter2Id);
+        // ── Rank and page on the CANDIDATE rows, before fetching any adopter ──
+        //
+        // Everything needed to order lives on duplicate_candidates: `score`
+        // (already a percentage), `confidence`, `detected_at`. The previous
+        // shape fetched one adopter row per id across every pending candidate —
+        // ~379 subrequests on staging, ~1200 in production — sorted, then
+        // discarded all but ten. v2.56.30 then added ~5 queries per side on top,
+        // which pushed the request past the Workers subrequest ceiling:
+        // /my-adopters rendered two error toasts and no duplicates at all.
+        //
+        // The fan-out is now bounded by pageSize instead of corpus size.
+        const ownRows = await db.select({ id: adopters.id }).from(adopters)
+            .where(and(eq(adopters.addedBy, actorEmail), isNull(adopters.deletedAt))).all();
+        const ownIds = new Set((ownRows as Array<{ id: string }>).map(r => r.id));
+        if (ownIds.size === 0) return EMPTY;
+
+        // The actor must own at least one side of the pair.
+        const mine = candidates.filter(c => ownIds.has(c.adopter1Id) || ownIds.has(c.adopter2Id));
+
+        // Manually flagged duplicates (adopter_flags, reason='duplicate') join
+        // the same queue — they were visible only on /admin/duplicates, the one
+        // screen the rescuer who raised the flag cannot open. Converted to the
+        // candidate shape here so they rank and page through the identical
+        // path; one query, and their adopter rows come from the page fan-out
+        // below rather than a fan-out of their own.
+        try {
+            const flags = await db.select({
+                id: adopterFlags.id,
+                adopterId: adopterFlags.adopterId,
+                targetAdopterId: adopterFlags.targetAdopterId,
+                createdAt: adopterFlags.createdAt,
+            }).from(adopterFlags).where(eq(adopterFlags.reason, 'duplicate')).limit(100).all();
+
+            const seen = new Set(mine.map(c => [c.adopter1Id, c.adopter2Id].sort().join('|')));
+            for (const f of flags as Array<{ id: string; adopterId: string; targetAdopterId: string | null; createdAt: Date | null }>) {
+                if (!f.targetAdopterId) continue;
+                if (!ownIds.has(f.adopterId) && !ownIds.has(f.targetAdopterId)) continue;
+                const key = [f.adopterId, f.targetAdopterId].sort().join('|');
+                if (seen.has(key)) continue; // the engine already found this pair
+                seen.add(key);
+                mine.push({
+                    candidateId: f.id,
+                    adopter1Id: f.adopterId,
+                    adopter2Id: f.targetAdopterId,
+                    matchTypes: JSON.stringify(['flagged_by_user']),
+                    matchValues: null,
+                    score: 100,
+                    confidence: 'high',
+                    detectedAt: f.createdAt,
+                });
+            }
+        } catch (e) {
+            // A flag-fetch failure must not take out the detected list.
+            logger.warn('getPendingDuplicatesForUser: flagged-pair fetch failed', {
+                error: e instanceof Error ? e.message : String(e),
+            });
         }
-        const adopterRows = await Promise.all(
-            [...allIds].map(id => db.select({
-                id: a1.id,
-                name: a1.name,
-                contactInfo: a1.contactInfo,
-                source: a1.source,
-                addedBy: a1.addedBy,
-                createdAt: a1.createdAt,
-                deletedAt: a1.deletedAt,
-            }).from(a1).where(eq(a1.id, id)).get())
-        );
-        const byId = new Map<string, { id: string; name: string; contactInfo: string | null; source: string; addedBy: string | null; createdAt: Date | null; deletedAt: Date | null }>();
-        for (const row of adopterRows) {
-            if (row) byId.set(row.id, row);
-        }
+
+        if (mine.length === 0) return EMPTY;
+
+        const lowHidden = mine.filter(c => c.confidence === 'low').length;
+        const eligible = includeLow ? mine : mine.filter(c => c.confidence !== 'low');
+
+        // Strongest match first; ties break on detection time so a page is
+        // stable across loads. (Ties used to break on adopters.createdAt, which
+        // required the very fetch this ordering exists to avoid.)
+        eligible.sort((x, y) =>
+            (storedScoreToPercent(y.score) - storedScoreToPercent(x.score))
+            || ((y.detectedAt?.getTime() ?? 0) - (x.detectedAt?.getTime() ?? 0)));
+
+        const total = eligible.length;
+        const start = Math.max(0, (page - 1) * pageSize);
+        const pageCandidates = eligible.slice(start, start + pageSize);
+        if (pageCandidates.length === 0) return { pairs: [], total, lowHidden };
+
+        // Fan out only over the ids on THIS page: at most 2 × pageSize.
+        const ids = new Set<string>();
+        for (const c of pageCandidates) { ids.add(c.adopter1Id); ids.add(c.adopter2Id); }
+        const rows = await Promise.all([...ids].map(id => db.select({
+            id: adopters.id,
+            name: adopters.name,
+            contactInfo: adopters.contactInfo,
+            source: adopters.source,
+            addedBy: adopters.addedBy,
+            createdAt: adopters.createdAt,
+            deletedAt: adopters.deletedAt,
+        }).from(adopters).where(eq(adopters.id, id)).get()));
+        const byId = new Map<string, PairRow & { deletedAt: Date | null }>();
+        for (const r of rows) if (r) byId.set(r.id, r as PairRow & { deletedAt: Date | null });
+
+        // Visibility is resolved once per adopter, not once per appearance.
+        const sideCache = new Map<string, PendingDedupPair['newAdopter']>();
+        const side = async (row: PairRow) => {
+            const hit = sideCache.get(row.id);
+            if (hit) return hit;
+            const built = await buildPairSide(actorEmail, row);
+            sideCache.set(row.id, built);
+            return built;
+        };
 
         const pairs: PendingDedupPair[] = [];
-        for (const c of candidates) {
+        for (const c of pageCandidates) {
             const a = byId.get(c.adopter1Id);
             const b = byId.get(c.adopter2Id);
             if (!a || !b) continue;
-            if (a.deletedAt || b.deletedAt) continue; // already merged elsewhere
-            // Scope to current user: actor must own at least one side
-            if (a.addedBy !== actorEmail && b.addedBy !== actorEmail) continue;
+            if (a.deletedAt || b.deletedAt) continue; // merged elsewhere meanwhile
 
-            // Newer record is the "new" side; older is the "existing" (merge primary).
+            // Newer record is the "new" side; older is the merge primary.
             const aMs = a.createdAt?.getTime() ?? 0;
             const bMs = b.createdAt?.getTime() ?? 0;
             const newOne = aMs >= bMs ? a : b;
@@ -982,53 +1173,45 @@ export async function getPendingDuplicatesForUser(): Promise<PendingDedupPair[]>
 
             pairs.push({
                 candidateId: c.candidateId,
-                newAdopter: {
-                    id: newOne.id,
-                    name: newOne.name,
-                    contactInfo: newOne.contactInfo,
-                    source: newOne.source,
-                    createdAt: newOne.createdAt ? Math.floor(newOne.createdAt.getTime() / 1000) : null,
-                },
-                existingAdopter: {
-                    id: oldOne.id,
-                    name: oldOne.name,
-                    contactInfo: oldOne.contactInfo,
-                    source: oldOne.source,
-                    createdAt: oldOne.createdAt ? Math.floor(oldOne.createdAt.getTime() / 1000) : null,
-                },
+                source: c.matchTypes.includes('flagged_by_user') ? 'flagged' : 'detected',
+                newAdopter: await side(newOne),
+                existingAdopter: await side(oldOne),
                 matchTypes: JSON.parse(c.matchTypes || '[]') as string[],
+                matchValues: Object.fromEntries(
+                    Object.entries(safeParseMatchValues(c.matchValues))
+                        .map(([type, vals]) => [type, vals.map(v => redactInexactValue(type, v))]),
+                ),
                 confidence: c.confidence,
-                confidencePercent: normalizeConfidence(c.score, PRACTICAL_MAX_DUPLICATE),
+                confidencePercent: storedScoreToPercent(c.score),
             });
-
-            if (pairs.length >= 20) break;
         }
 
-        // Most recently detected first.
-        pairs.sort((p, q) => q.newAdopter.createdAt! - p.newAdopter.createdAt!);
-
-        return pairs;
+        return { pairs, total, lowHidden };
     } catch (error) {
         logger.warn('getPendingDuplicatesForUser failed', {
             error: error instanceof Error ? error.message : String(error),
         });
-        return [];
+        return EMPTY;
     }
 }
 
-/**
- * Dismiss a pending duplicate candidate. User-scoped variant of the admin
- * /api/admin/duplicates/dismiss route: the actor must own at least one of
- * the two adopters in the pair (admins are allowed regardless).
- */
-export async function dismissDuplicateCandidate(candidateId: string): Promise<{ success: boolean; error?: string }> {
+export async function dismissDuplicateCandidate(candidateId: string): Promise<{
+    success: boolean;
+    /**
+     * Stable machine code for the UI to translate. `error` stays as an English
+     * fallback for logs and older callers — it must never reach a user, who
+     * reads whichever locale they chose. See `errors.dedup_*` in the locales.
+     */
+    code?: 'not_found' | 'already_resolved' | 'not_authorized' | 'no_db' | 'failed';
+    error?: string;
+}> {
     try {
         const { getUser } = await import('./_db');
         const { isAdminAsync } = await import('@/config/admins');
         const actorEmail = await getUser();
 
         const db = await getDb();
-        if (!db) return { success: false, error: 'Database not available' };
+        if (!db) return { success: false, code: 'no_db', error: 'Database not available' };
 
         const candidate = await db.select({
             id: duplicateCandidates.id,
@@ -1037,8 +1220,8 @@ export async function dismissDuplicateCandidate(candidateId: string): Promise<{ 
             status: duplicateCandidates.status,
         }).from(duplicateCandidates).where(eq(duplicateCandidates.id, candidateId)).get();
 
-        if (!candidate) return { success: false, error: 'Candidate not found' };
-        if (candidate.status !== 'pending') return { success: false, error: 'Candidate already resolved' };
+        if (!candidate) return { success: false, code: 'not_found', error: 'Candidate not found' };
+        if (candidate.status !== 'pending') return { success: false, code: 'already_resolved', error: 'Candidate already resolved' };
 
         const [a, b] = await Promise.all([
             db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, candidate.adopter1Id)).get(),
@@ -1049,7 +1232,7 @@ export async function dismissDuplicateCandidate(candidateId: string): Promise<{ 
         const isAdminUser = await isAdminAsync(actorEmail);
 
         if (!isOwner && !isAdminUser) {
-            return { success: false, error: 'Not authorized to dismiss this pair' };
+            return { success: false, code: 'not_authorized', error: 'Not authorized to dismiss this pair' };
         }
 
         await db.update(duplicateCandidates).set({

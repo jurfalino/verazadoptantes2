@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { attachContractToExistingAdopter } from '@/app/actions/duplicates';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 
 interface MatchType {
     icon: string;
@@ -51,12 +51,12 @@ export default function ContractResultsMatchCard({
                 router.push(result.matchedProfileUrl || `/adopter/${matchId}`);
                 router.refresh();
             } else {
-                toast.error(t('contractResults.link_error') || 'No se pudo atribuir la adopción', result.error);
+                toast.error(t('contractResults.link_error') || 'No se pudo atribuir la adopción', t('errors.attach_contract_failed') || undefined);
                 setLinking(false);
                 setConfirmOpen(false);
             }
         } catch (error) {
-            toast.error(t('contractResults.link_error') || 'No se pudo atribuir la adopción', undefined, extractErrorId(error));
+            toast.error(t('contractResults.link_error') || 'No se pudo atribuir la adopción', t('errors.attach_contract_failed') || undefined, resolveErrorId(error, 'ContractResultsMatchCard'));
             setLinking(false);
             setConfirmOpen(false);
         }

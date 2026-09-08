@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { useShowToast } from '@/components/ui/Toast';
 import { useLanguage } from '@/context/LanguageContext';
 import { useDateFormat } from '@/context/TimezoneContext';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 
 async function readErrorBody(res: Response): Promise<{ error?: string; errorId?: string }> {
     try {
@@ -240,7 +240,7 @@ export default function AdminConfigPage() {
                 toast.error(t('errors.generic'), body.error || t('errors.save_config_failed'), body.errorId);
             }
         } catch (e) {
-            toast.error(t('errors.generic'), t('errors.unexpected'), extractErrorId(e));
+            toast.error(t('errors.generic'), t('errors.unexpected'), resolveErrorId(e, 'page'));
         } finally {
             setSavingGeminiModel(false);
         }
@@ -261,7 +261,7 @@ export default function AdminConfigPage() {
                 toast.error(t('errors.generic'), body.error || t('errors.save_config_failed'), body.errorId);
             }
         } catch (e) {
-            toast.error(t('errors.generic'), t('errors.config_error'), extractErrorId(e));
+            toast.error(t('errors.generic'), t('errors.config_error'), resolveErrorId(e, 'page'));
         } finally {
             setSaving(false);
         }
@@ -282,7 +282,7 @@ export default function AdminConfigPage() {
                 toast.error(t('errors.generic'), body.error || t('errors.save_flag_failed'), body.errorId);
             }
         } catch (e) {
-            toast.error(t('errors.generic'), t('errors.flag_error'), extractErrorId(e));
+            toast.error(t('errors.generic'), t('errors.flag_error'), resolveErrorId(e, 'page'));
         } finally {
             setSavingFlags(false);
         }
@@ -306,7 +306,7 @@ export default function AdminConfigPage() {
                 toast.error(t('errors.generic'), body.error || t('errors.save_social_proof_failed'), body.errorId);
             }
         } catch (e) {
-            toast.error(t('errors.generic'), t('errors.social_proof_error'), extractErrorId(e));
+            toast.error(t('errors.generic'), t('errors.social_proof_error'), resolveErrorId(e, 'page'));
         } finally {
             setSavingSocialProof(false);
         }
@@ -327,7 +327,7 @@ export default function AdminConfigPage() {
                 toast.error(t('errors.generic'), body.error || t('admin.instagram_save_failed'), body.errorId);
             }
         } catch (e) {
-            toast.error(t('errors.generic'), t('errors.unexpected'), extractErrorId(e));
+            toast.error(t('errors.generic'), t('errors.unexpected'), resolveErrorId(e, 'page'));
         } finally {
             setSavingInstagram(false);
         }
@@ -373,7 +373,7 @@ export default function AdminConfigPage() {
                 toast.error(t('errors.generic'), body.error || t('errors.purge_stats_failed'), body.errorId);
             }
         } catch (e) {
-            toast.error(t('errors.generic'), t('errors.purge_stats_error'), extractErrorId(e));
+            toast.error(t('errors.generic'), t('errors.purge_stats_error'), resolveErrorId(e, 'page'));
         } finally {
             setPurging(false);
         }

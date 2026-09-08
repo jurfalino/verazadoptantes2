@@ -43,6 +43,25 @@ export function normalizeConfidence(score: number, max: number): number {
     return Math.min(100, Math.round((score / max) * 100));
 }
 
+/**
+ * A score read back from `duplicate_candidates.score`, as a percentage.
+ *
+ * The column already holds a percentage: `_adopterFactory.ts` writes
+ * `score: match.relevancePercent`, which `findAdopters` produced by running
+ * `normalizeConfidence(rawTokenScore, PRACTICAL_MAX_DUPLICATE)`. Two read paths
+ * normalised it a SECOND time against the same ceiling of 12, so any stored
+ * score above 12 clamped to 100. Production's lowest stored score is 20, so
+ * every one of 641 pending candidates displayed "100% coincidencia" — including
+ * the 516 banded `low` — while the badge beside it still read the correct band.
+ *
+ * This exists so the contract has a name and a test instead of a bare `c.score`
+ * that invites the same mistake.
+ */
+export function storedScoreToPercent(score: number): number {
+    if (!Number.isFinite(score) || score <= 0) return 0;
+    return Math.min(100, Math.round(score));
+}
+
 // ── Band Classification ───────────────────────────────────────────────────────
 
 export type ConfidenceBand = 'none' | 'low' | 'medium' | 'high';

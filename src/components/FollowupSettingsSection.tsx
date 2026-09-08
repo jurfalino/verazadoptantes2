@@ -11,7 +11,7 @@
 import { useEffect, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { getFollowupSettings, saveFollowupSettings } from '@/app/actions/settings';
 import {
     DEFAULT_SCHEDULE, DEFAULT_FOSTER_RULE, DEFAULT_MESSAGES, FOLLOWUP_SUBTYPES,
@@ -114,12 +114,12 @@ export default function FollowupSettingsSection() {
             } else {
                 // The action assigns an errorId to every failure; extractErrorId
                 // is the fallback if one ever reaches here without it.
-                toast.error(t('errors.generic') || 'Error', t('followups.settings_save_failed') || 'No se pudo guardar el cronograma.', res?.errorId || extractErrorId(res));
+                toast.error(t('errors.generic') || 'Error', t('followups.settings_save_failed') || 'No se pudo guardar el cronograma.', res?.errorId || resolveErrorId(res, 'FollowupSettingsSection'));
             }
         } catch (error) {
             // A THROWN server action used to leave no toast at all and a stuck
             // spinner, because this had no catch.
-            toast.error(t('errors.generic') || 'Error', t('followups.settings_save_failed') || 'No se pudo guardar el cronograma.', extractErrorId(error));
+            toast.error(t('errors.generic') || 'Error', t('followups.settings_save_failed') || 'No se pudo guardar el cronograma.', resolveErrorId(error, 'FollowupSettingsSection'));
         } finally {
             setSaving(false);
         }

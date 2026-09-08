@@ -279,6 +279,98 @@ export async function restoreAdopter(adopterId: string) {
     }
 }
 
+// ── Soft-deleted ANIMALS ─────────────────────────────────────────────────────
+// `softDeleteAnimal` (v2.55.20) stamps `animals.deletedAt`, and the `adoptions`
+// compat view filters `deleted_at IS NULL`, so the animal vanishes from every
+// list. But the Papelera was built entirely around adopters, so a soft-deleted
+// animal had no way back and no way out: invisible to the rescuer, invisible to
+// the admin, restorable only by hand-editing SQL. These three close that.
+
+/** List soft-deleted animals for /admin/deleted. */
+export async function listDeletedAnimals() {
+    const session = await auth();
+    try {
+        if (!session?.user?.email || !await checkIsAdminAsync(session.user.email)) {
+            return { ok: false as const, error: 'Unauthorized', rows: [] };
+        }
+        const db = await getDb();
+        if (!db) return { ok: false as const, error: 'No database', rows: [] };
+        const { animals } = await import('@/db/schema');
+        const rows = await db.select({
+            id: animals.id,
+            name: animals.name,
+            species: animals.species,
+            addedBy: animals.addedBy,
+            deletedAt: animals.deletedAt,
+        }).from(animals).where(isNotNull(animals.deletedAt)).orderBy(desc(animals.deletedAt)).all();
+        return { ok: true as const, rows };
+    } catch (error) {
+        const errorId = logger.error('listDeletedAnimals failed', error, { user: session?.user?.email });
+        return { ok: false as const, error: 'Failed to load deleted animals', errorId, rows: [] };
+    }
+}
+
+/**
+ * Restore a soft-deleted animal: clear deletedAt.
+ *
+ * Placements stay as `softDeleteAnimal` left them — it closes any open custody
+ * span so the animal is not "placed" while hidden. A restored animal therefore
+ * comes back as available with its history intact, which is the honest state:
+ * we know it existed, we do not know that the adopter still has it.
+ */
+export async function restoreAnimal(animalId: string) {
+    const session = await auth();
+    try {
+        if (!session?.user?.email || !await checkIsAdminAsync(session.user.email)) {
+            return { ok: false as const, error: 'Unauthorized' };
+        }
+        const db = await getDb();
+        if (!db) return { ok: false as const, error: 'No database' };
+        const { animals } = await import('@/db/schema');
+        const existing = await db.select({ id: animals.id }).from(animals).where(eq(animals.id, animalId)).get();
+        if (!existing) return { ok: false as const, error: 'Animal not found' };
+
+        await db.update(animals).set({ deletedAt: null, updatedAt: new Date() as any }).where(eq(animals.id, animalId));
+        logAudit({ userEmail: session.user.email, action: 'animal_restored', target: animalId });
+        revalidatePath('/admin/deleted');
+        revalidatePath('/my-animals');
+        return { ok: true as const };
+    } catch (error) {
+        const errorId = logger.error('restoreAnimal failed', error, { animalId, user: session?.user?.email });
+        return { ok: false as const, error: 'Failed to restore', errorId };
+    }
+}
+
+/** Permanently delete a soft-deleted animal and everything hanging off it. Irreversible. */
+export async function purgeAnimal(animalId: string) {
+    const session = await auth();
+    try {
+        if (!session?.user?.email || !await checkIsAdminAsync(session.user.email)) {
+            return { ok: false as const, error: 'Unauthorized' };
+        }
+        const db = await getDb();
+        if (!db) return { ok: false as const, error: 'No database' };
+        const { animals } = await import('@/db/schema');
+
+        // Only ever purge something already in the trash — this must not become
+        // a second route to destroying a live animal.
+        const existing = await db.select({ id: animals.id, deletedAt: animals.deletedAt })
+            .from(animals).where(eq(animals.id, animalId)).get();
+        if (!existing) return { ok: false as const, error: 'Animal not found' };
+        if (!existing.deletedAt) return { ok: false as const, error: 'Animal is not deleted' };
+
+        const { deleteRecordById } = await import('./_recordWrite');
+        await deleteRecordById(db, animalId);
+
+        logAudit({ userEmail: session.user.email, action: 'animal_purged', target: animalId });
+        revalidatePath('/admin/deleted');
+        return { ok: true as const };
+    } catch (error) {
+        const errorId = logger.error('purgeAnimal failed', error, { animalId, user: session?.user?.email });
+        return { ok: false as const, error: 'Failed to purge', errorId };
+    }
+}
+
 /** Permanently purge a single soft-deleted adopter (complete cascade, irreversible). */
 export async function purgeAdopter(adopterId: string) {
     const res = await deleteAdopter(adopterId); // admin-gated + complete cascade

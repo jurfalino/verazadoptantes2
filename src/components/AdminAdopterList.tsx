@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useShowToast } from '@/components/ui/Toast';
 import { useLanguage } from '@/context/LanguageContext';
-import { extractErrorId } from '@/lib/errorUtils';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { RatingBadge } from '@/components/RatingBadge';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { AdopterName } from '@/components/AdopterName';
@@ -113,7 +113,7 @@ export default function AdminAdopterList({ adopters, countries: _countries, publ
                 next.set(adopterId, !nextValue);
                 return next;
             });
-            toast.error('Error', extractErrorId(e) || 'No se pudo cambiar el estado');
+            toast.error('Error', resolveErrorId(e, 'AdminAdopterList') || 'No se pudo cambiar el estado');
         } finally {
             setPublicBusy(prev => {
                 const next = new Set(prev);
@@ -179,7 +179,7 @@ export default function AdminAdopterList({ adopters, countries: _countries, publ
                 toast.error(t('toast.action_failed_title'), data.errors?.join(', ') || t('errors.unknown_error'), data.errorId);
             }
         } catch (e) {
-            toast.error(t('toast.action_failed_title'), t('errors.unexpected'), extractErrorId(e));
+            toast.error(t('toast.action_failed_title'), t('errors.unexpected'), resolveErrorId(e, 'AdminAdopterList'));
         } finally {
             setLoading(false);
         }

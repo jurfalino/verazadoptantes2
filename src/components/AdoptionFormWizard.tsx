@@ -11,8 +11,7 @@ import { getRecordTypeColors, getRecordTypeIcon } from '@/lib/recordTypeColors';
 import RecordTypeGuidance from '@/components/RecordTypeGuidance';
 import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
-import { extractErrorId } from '@/lib/errorUtils';
-import { reportClientError } from '@/lib/clientErrorReporter';
+import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
 import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { useDateFormat } from '@/context/TimezoneContext';
@@ -440,7 +439,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 setPendingImages(prev => [...prev, { data: base64, isVideo: false }]);
             }
         } catch (error) {
-            toast.error(t('toast.upload_failed_title'), t('errors.upload_process_failed'), extractErrorId(error));
+            toast.error(t('toast.upload_failed_title'), t('errors.upload_process_failed'), resolveErrorId(error, 'AdoptionFormWizard'));
         } finally {
             setUploading(false);
         }
@@ -616,7 +615,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
             await new Promise(r => setTimeout(r, 100));
             router.refresh();
         } catch (err) {
-            toast.error(t('errors.generic'), t('errors.save_failed_generic'), extractErrorId(err));
+            toast.error(t('errors.generic'), t('errors.save_failed_generic'), resolveErrorId(err, 'AdoptionFormWizard'));
         } finally {
             setLoading(false);
         }
