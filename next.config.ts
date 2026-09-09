@@ -49,13 +49,18 @@ const nextConfig: NextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",  // unsafe-inline for theme script, unsafe-eval for Next.js dev
+              // do.featurebase.app serves the messenger SDK, which the
+              // featurebase-js package injects itself (v2.56.37). It also
+              // resolves the appId over fetch and renders the panel in an
+              // iframe, hence the connect-src/frame-src/img-src entries below —
+              // miss any one of them and the widget silently never appears.
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://do.featurebase.app",  // unsafe-inline for theme script, unsafe-eval for Next.js dev
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
-              "img-src 'self' data: blob: https://lh3.googleusercontent.com https://*.googleusercontent.com https://*.fbsbx.com https://*.fbcdn.net https://*.r2.dev",
+              "img-src 'self' data: blob: https://lh3.googleusercontent.com https://*.googleusercontent.com https://*.fbsbx.com https://*.fbcdn.net https://*.r2.dev https://*.featurebase.app",
               "media-src 'self' blob: https://*.r2.dev https://*.cdninstagram.com https://*.fbcdn.net https://*.fbsbx.com",
-              "connect-src 'self' https://accounts.google.com https://api.axiom.co https://generativelanguage.googleapis.com https://*.cloudflarestorage.com https://lh3.googleusercontent.com https://*.r2.dev https://*.cdninstagram.com https://*.fbcdn.net https://*.fbsbx.com",
-              "frame-src 'self' https://accounts.google.com",
+              "connect-src 'self' https://accounts.google.com https://api.axiom.co https://generativelanguage.googleapis.com https://*.cloudflarestorage.com https://lh3.googleusercontent.com https://*.r2.dev https://*.cdninstagram.com https://*.fbcdn.net https://*.fbsbx.com https://do.featurebase.app https://*.featurebase.app wss://*.featurebase.app",
+              "frame-src 'self' https://accounts.google.com https://*.featurebase.app",
               "frame-ancestors 'none'",
             ].join('; '),
           },

@@ -26,6 +26,13 @@ export const FEATURE_FLAGS = {
     ENABLE_FOLLOWUPS: true,
     ENABLE_SEARCH_CARD_METADATA: true,
     ENABLE_CHAT_WIDGET: false,
+    // Featurebase messenger (v2.56.37) — the async inbox. Rescuers leave a
+    // message, the admin answers later from the Featurebase Android app.
+    // Renders for SIGNED-IN users only and outranks ENABLE_CHAT_WIDGET: both
+    // put a floating launcher in the same corner, so the layout drops
+    // ChatWidget while this is on.
+    // Default off — server-side only, deliberately NOT in PUBLIC_FLAG_KEYS.
+    ENABLE_FEATUREBASE: false,
     // PostHog session replay + product analytics (v2.49.0). Runs in PARALLEL
     // with Clarity and Amplitude — it replaces neither yet. Unlike those two
     // (loaded by Zaraz), PostHog is an app-code dependency: Zaraz's PostHog
@@ -176,6 +183,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_EMAIL_OTP: false,
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
+        ENABLE_FEATUREBASE: false,
         ENABLE_POSTHOG: false,
         ENABLE_MILESTONE_BADGE: true,
         ENABLE_QUICK_ACCESS_STRIP: true,

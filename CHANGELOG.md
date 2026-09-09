@@ -2,6 +2,45 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.37] - 2026-09-08
+
+### Added — Featurebase messenger, an inbox instead of a live chat
+
+Rescuers leave a message; it is answered later from the Featurebase Android
+app. That is the whole difference from `ChatWidget`, and it is why this is
+small: async needs no presence, no polling and no delivery guarantee, which
+were the expensive parts of the live version.
+
+`ENABLE_FEATUREBASE`, default off, read server-side in the layout exactly as
+the chat flag is. It **outranks** `ENABLE_CHAT_WIDGET` — both put a floating
+launcher in the same corner, so the layout drops `ChatWidget` while this is on
+rather than stacking two.
+
+Signed-in users only. Anonymous visitors on the showcase and form see nothing,
+which keeps unverified conversations out of the inbox.
+
+`src/lib/featurebaseJwt.ts` signs the identity HS256 over Web Crypto — edge
+runtime, no `jsonwebtoken`, no new dependency. `jose` is in the tree via
+next-auth but is not ours to import. The claim set is an allowlist of userId,
+email, name and profilePicture: callers hold whole session objects, and 18
+tests pin the shape, the signature, base64url without padding, and the
+degradation path.
+
+That path matters. A null token is supported, not an error — the messenger
+still boots anonymously. It is the normal state before `FEATUREBASE_JWT_SECRET`
+exists, and it is also what the Featurebase org owner gets, because their SSO
+refuses tokens for anyone who administers a Featurebase organization.
+
+CSP needed four directives, not one. The SDK injects its own script from
+`do.featurebase.app`, resolves the appId over `fetch`, opens a socket, and
+renders in an iframe, so `script-src`, `connect-src` with `wss:`, `img-src` and
+`frame-src` all had to move. Miss any single one and the widget does not fail
+loudly, it just never appears.
+
+**Not done by this commit:** `FEATUREBASE_JWT_SECRET` has to be added as a
+Pages secret by hand. `wrangler secret put` exits 0 without writing anything
+under the local read-only token, so the dashboard is the only path.
+
 ## [2.56.36] - 2026-09-08
 
 ### Added — a BIMI logo the mail providers will actually accept

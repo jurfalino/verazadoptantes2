@@ -24,6 +24,8 @@ import ClarityScript from '@/components/ClarityScript';
 import PostHogProvider from '@/components/PostHogProvider';
 import { WebApplicationJsonLd, OrganizationJsonLd } from '@/components/JsonLd';
 import ChatWidget from '@/components/ChatWidget';
+import FeaturebaseMessenger from '@/components/FeaturebaseMessenger';
+import { createFeaturebaseJwt, getFeaturebaseSecret } from '@/lib/featurebaseJwt';
 import { getFeatureFlag } from '@/config/features';
 
 export const runtime = "edge";
@@ -112,6 +114,32 @@ export default async function RootLayout({
     logger.warn('Layout chat-flag lookup failed', { error: e instanceof Error ? e.message : String(e) });
   }
 
+  // Featurebase messenger — the async inbox, signed-in rescuers only. Same
+  // DB → env → default resolution as the chat flag, and the same fall-closed
+  // posture. When this is on it TAKES PRECEDENCE over ChatWidget: both render
+  // a floating launcher in the same corner, so one of them has to win.
+  let featurebaseEnabled = false;
+  try {
+    featurebaseEnabled = await getFeatureFlag('ENABLE_FEATUREBASE');
+  } catch (e) {
+    logger.warn('Layout featurebase-flag lookup failed', { error: e instanceof Error ? e.message : String(e) });
+  }
+
+  // Server-signed identity for the messenger. Null is a supported state — the
+  // widget still boots anonymously — so this never blocks a render.
+  let featurebaseJwt: string | null = null;
+  if (featurebaseEnabled && session?.user?.email) {
+    featurebaseJwt = await createFeaturebaseJwt(
+      {
+        userId: session.user.id || session.user.email,
+        email: session.user.email,
+        name: session.user.name,
+        profilePicture: session.user.image,
+      },
+      getFeaturebaseSecret(),
+    );
+  }
+
   // PostHog session replay + analytics. Same DB → env → default resolution as
   // the chat flag. Falls closed to false: telemetry off is the correct
   // degraded state, and a D1 hiccup must not take down every page render.
@@ -183,7 +211,10 @@ export default async function RootLayout({
                     {children}
                     <Footer />
                   </div>
-                  {chatEnabled && <ChatWidget />}
+                  {chatEnabled && !featurebaseEnabled && <ChatWidget />}
+                  {featurebaseEnabled && session?.user?.email && (
+                    <FeaturebaseMessenger jwt={featurebaseJwt} />
+                  )}
                   </EditActionsProvider>
                 </AuthProvider>
               </ToastProvider>
