@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.38] - 2026-09-09
+
+### Fixed — don't read the Featurebase flag for visitors who can't see it
+
+2.56.37 read `ENABLE_FEATUREBASE` unconditionally in the root layout, which
+runs on every request. The messenger is signed-in only, so for an anonymous
+visitor that query could only ever return a value nobody acts on: one extra
+`appConfig` read per anonymous page view, on the hottest path in the app.
+
+Gated behind the session check that was already two lines below it. Behaviour
+is identical — with no session the messenger does not render either way, and
+`ChatWidget` keeps its own flag.
+
+The 2.56.37 pipeline failed on `adopter.spec.ts:343` with `SQLITE_BUSY:
+database is locked` from `wrangler d1 execute --local`, a foster-placement test
+this work never touched, alongside the three usual networkidle smoke flakes.
+That failure is lock contention on the file-backed local D1, not a regression —
+but a per-render query added to that same file is exactly the wrong direction,
+so it goes now rather than after the next confusing red build.
+
 ## [2.56.37] - 2026-09-08
 
 ### Added — Featurebase messenger, an inbox instead of a live chat

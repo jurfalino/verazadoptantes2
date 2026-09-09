@@ -118,17 +118,23 @@ export default async function RootLayout({
   // DB → env → default resolution as the chat flag, and the same fall-closed
   // posture. When this is on it TAKES PRECEDENCE over ChatWidget: both render
   // a floating launcher in the same corner, so one of them has to win.
+  // The lookup is skipped entirely for anonymous visitors. The messenger is
+  // signed-in only, so their result is always false anyway, and the root layout
+  // renders on every request — an unconditional read here would add one
+  // appConfig query per anonymous page view for nothing.
   let featurebaseEnabled = false;
-  try {
-    featurebaseEnabled = await getFeatureFlag('ENABLE_FEATUREBASE');
-  } catch (e) {
-    logger.warn('Layout featurebase-flag lookup failed', { error: e instanceof Error ? e.message : String(e) });
+  if (session?.user?.email) {
+    try {
+      featurebaseEnabled = await getFeatureFlag('ENABLE_FEATUREBASE');
+    } catch (e) {
+      logger.warn('Layout featurebase-flag lookup failed', { error: e instanceof Error ? e.message : String(e) });
+    }
   }
 
   // Server-signed identity for the messenger. Null is a supported state — the
   // widget still boots anonymously — so this never blocks a render.
   let featurebaseJwt: string | null = null;
-  if (featurebaseEnabled && session?.user?.email) {
+  if (featurebaseEnabled) {
     featurebaseJwt = await createFeaturebaseJwt(
       {
         userId: session.user.id || session.user.email,
