@@ -91,6 +91,12 @@ export default function FeaturebaseMessenger({ jwt }: { jwt: string | null }) {
         let cancelled = false;
         const base = { appId: FEATUREBASE_APP_ID, theme, language: locale };
 
+        // Unconditional, because the failure this integration keeps hitting is
+        // "nothing rendered and nothing said why". If this line is absent from
+        // the console the component never mounted, which points at the layout
+        // gate or a stale bundle rather than at the SDK.
+        console.info('[featurebase] mounting', { jwt: jwt ? 'present' : 'absent', locale, theme });
+
         loadSdk()
             .then((fb) => {
                 if (cancelled) return;

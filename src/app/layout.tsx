@@ -131,8 +131,19 @@ export default async function RootLayout({
     }
   }
 
-  // Server-signed identity for the messenger. Null is a supported state — the
-  // widget still boots anonymously — so this never blocks a render.
+  // Only fires on signed-in renders, so the volume is low and the two booleans
+  // that decide whether the messenger renders at all are visible server-side.
+  // Added after an afternoon of not being able to tell, from outside, whether
+  // the gate or the SDK was at fault.
+  if (session?.user?.email) {
+    logger.info('Layout featurebase gate', {
+      flagEnabled: featurebaseEnabled,
+      hasSession: true,
+    });
+  }
+
+  // Server-signed identity for the messenger. The widget boots either way —
+  // the component falls back to an anonymous session if identity is refused.
   let featurebaseJwt: string | null = null;
   if (featurebaseEnabled) {
     featurebaseJwt = await createFeaturebaseJwt(

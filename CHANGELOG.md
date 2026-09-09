@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.40] - 2026-09-09
+
+### Fixed — installed PWAs were still serving the pre-messenger bundle
+
+`CACHE_VERSION` was not bumped across 2.56.37, .38 and .39, all of which
+changed client code. An installed PWA keeps serving the cached bundle, so the
+messenger could not appear regardless of the feature flag, the secret, or the
+identity fallback. Bumped to v6, which evicts every cache not on the new name.
+
+### Added — say something when the messenger mounts
+
+Every log in this integration was on a failure path, so the one state that kept
+occurring — nothing rendered, nothing logged — was indistinguishable from the
+component never mounting. Now:
+
+- The component logs `[featurebase] mounting` unconditionally in the browser.
+  Absent from the console means it never mounted, which points at the layout
+  gate or a stale bundle rather than the SDK.
+- The layout logs `Layout featurebase gate` with the flag value and session
+  presence, on signed-in renders only. Those are the two booleans that decide
+  whether the widget renders, and until now neither was observable from outside
+  a logged-in browser.
+
 ## [2.56.39] - 2026-09-09
 
 ### Fixed — a rejected identity token hid the messenger completely

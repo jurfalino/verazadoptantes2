@@ -14,7 +14,11 @@
 //     passed. Entries cached by v3 carry no x-sw-cached-at stamp and would be
 //     treated as expired on every read; dropping the old caches outright
 //     avoids that pointless miss-then-evict pass.
-const CACHE_VERSION = 'buenaadoptante-v5';
+//   v6 (v2.56.40) — v2.56.37..39 shipped four client-code changes (the
+//     Featurebase messenger and two rewrites of it) with no bump, so installed
+//     PWAs kept serving the pre-messenger bundle and the widget could not
+//     appear no matter what the flag said. Bumping evicts those.
+const CACHE_VERSION = 'buenaadoptante-v6';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const SHARE_CACHE = 'share-target-media';
