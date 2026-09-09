@@ -24,8 +24,6 @@ import ClarityScript from '@/components/ClarityScript';
 import PostHogProvider from '@/components/PostHogProvider';
 import { WebApplicationJsonLd, OrganizationJsonLd } from '@/components/JsonLd';
 import ChatWidget from '@/components/ChatWidget';
-import FeaturebaseMessenger from '@/components/FeaturebaseMessenger';
-import { createFeaturebaseJwt, getFeaturebaseSecret } from '@/lib/featurebaseJwt';
 import { getFeatureFlag } from '@/config/features';
 
 export const runtime = "edge";
@@ -114,49 +112,6 @@ export default async function RootLayout({
     logger.warn('Layout chat-flag lookup failed', { error: e instanceof Error ? e.message : String(e) });
   }
 
-  // Featurebase messenger — the async inbox, signed-in rescuers only. Same
-  // DB → env → default resolution as the chat flag, and the same fall-closed
-  // posture. When this is on it TAKES PRECEDENCE over ChatWidget: both render
-  // a floating launcher in the same corner, so one of them has to win.
-  // The lookup is skipped entirely for anonymous visitors. The messenger is
-  // signed-in only, so their result is always false anyway, and the root layout
-  // renders on every request — an unconditional read here would add one
-  // appConfig query per anonymous page view for nothing.
-  let featurebaseEnabled = false;
-  if (session?.user?.email) {
-    try {
-      featurebaseEnabled = await getFeatureFlag('ENABLE_FEATUREBASE');
-    } catch (e) {
-      logger.warn('Layout featurebase-flag lookup failed', { error: e instanceof Error ? e.message : String(e) });
-    }
-  }
-
-  // Only fires on signed-in renders, so the volume is low and the two booleans
-  // that decide whether the messenger renders at all are visible server-side.
-  // Added after an afternoon of not being able to tell, from outside, whether
-  // the gate or the SDK was at fault.
-  if (session?.user?.email) {
-    logger.info('Layout featurebase gate', {
-      flagEnabled: featurebaseEnabled,
-      hasSession: true,
-    });
-  }
-
-  // Server-signed identity for the messenger. The widget boots either way —
-  // the component falls back to an anonymous session if identity is refused.
-  let featurebaseJwt: string | null = null;
-  if (featurebaseEnabled) {
-    featurebaseJwt = await createFeaturebaseJwt(
-      {
-        userId: session.user.id || session.user.email,
-        email: session.user.email,
-        name: session.user.name,
-        profilePicture: session.user.image,
-      },
-      getFeaturebaseSecret(),
-    );
-  }
-
   // PostHog session replay + analytics. Same DB → env → default resolution as
   // the chat flag. Falls closed to false: telemetry off is the correct
   // degraded state, and a D1 hiccup must not take down every page render.
@@ -228,10 +183,7 @@ export default async function RootLayout({
                     {children}
                     <Footer />
                   </div>
-                  {chatEnabled && !featurebaseEnabled && <ChatWidget />}
-                  {featurebaseEnabled && session?.user?.email && (
-                    <FeaturebaseMessenger jwt={featurebaseJwt} />
-                  )}
+                  {chatEnabled && <ChatWidget />}
                   </EditActionsProvider>
                 </AuthProvider>
               </ToastProvider>

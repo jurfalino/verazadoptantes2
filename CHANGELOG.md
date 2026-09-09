@@ -2,6 +2,37 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.42] - 2026-09-09
+
+### Removed — Featurebase
+
+Reverted. Building our own UI on their backend needs the REST API, which is a
+paid plan, and their widget's own appearance is dashboard-controlled: the SDK's
+`actionColor` and `backgroundColor` are ignored at boot, so the panel stays
+Featurebase purple with their branding whatever we pass it.
+
+What was kept instead is what the existing Telegram chat already gives us — our
+own widget, our own tables, adopter contact details staying in D1 — which is
+where the work goes next.
+
+Removed: `FeaturebaseMessenger.tsx`, `featurebaseJwt.ts` and its 18 tests, the
+`ENABLE_FEATUREBASE` flag and its four registration sites, the three locale
+strings, and the CSP entries. The `featurebase-js` dependency is gone.
+
+Done as a surgical restore from `0c6525c` rather than `git revert`, because
+2.56.40 also carried the `CACHE_VERSION` bump. **That bump stays at v6.**
+Reverting it would strand every client that has already activated the v6
+worker, which is the opposite of the problem it was added to solve.
+
+Verified: the only files differing from the pre-Featurebase tree are
+`public/bimi-logo.svg` and `public/sw.js`, both deliberate. tsc clean, lint 124
+against the 125 ratchet, 581 tests pass (18 fewer, being the deleted ones),
+production build succeeds.
+
+Left behind on purpose: the `ENABLE_FEATUREBASE` row in the staging
+`app_config` table. Nothing reads it now, and deleting rows from a real
+database to tidy up is not worth the risk.
+
 ## [2.56.41] - 2026-09-09
 
 ### Fixed — the messenger tore itself down moments after it appeared

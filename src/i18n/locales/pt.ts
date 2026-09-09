@@ -133,8 +133,6 @@ export const pt = {
         telegram_saved: 'Configuração do Telegram atualizada.',
         flag_label_chat_widget: 'Widget de suporte por chat',
         flag_desc_chat_widget: 'Bolha flutuante no canto inferior direito que encaminha as mensagens ao Telegram do admin. Requer TELEGRAM_BOT_TOKEN + TELEGRAM_WEBHOOK_SECRET configurados como segredos do Cloudflare e TELEGRAM_ADMIN_CHAT_ID abaixo. Ver docs/CHAT_SETUP.md.',
-        flag_label_featurebase: 'Mensageria Featurebase',
-        flag_desc_featurebase: 'Caixa de mensagens assíncrona para quem tem sessão iniciada: deixam uma mensagem e você responde depois pelo app do Featurebase. Substitui o widget de chat enquanto estiver ativo. Requer FEATUREBASE_JWT_SECRET como segredo do Cloudflare para identificar quem escreve.',
         flag_label_posthog: 'PostHog (gravação de sessões)',
         flag_desc_posthog: 'Grava sessões e análise de produto. Roda em paralelo com o Clarity, não o substitui. Requer POSTHOG_PROJECT_KEY configurado no Cloudflare Pages. A gravação NÃO mascara o que é digitado.',
         flag_label_milestone_badge: 'Insígnia de marcos',
