@@ -39,7 +39,7 @@
  * the public workspace.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useTheme } from '@/context/ThemeContext';
 import { reportClientError } from '@/lib/clientErrorReporter';
@@ -59,43 +59,63 @@ declare global {
     interface Window { Featurebase?: FeaturebaseGlobal }
 }
 
-/** Resolve once the SDK global is callable, injecting the script if needed. */
+/**
+ * Resolve once the SDK global is callable, injecting the script if needed.
+ *
+ * The promise is module-level on purpose. An earlier version attached a `load`
+ * listener to whatever script tag it found, which hangs forever on the second
+ * call because that event has already fired — no error, no log, just a promise
+ * that never settles and a messenger that never boots. Caching the promise
+ * makes every later caller resolve immediately.
+ */
+let sdkPromise: Promise<FeaturebaseGlobal> | null = null;
+
 function loadSdk(): Promise<FeaturebaseGlobal> {
-    return new Promise((resolve, reject) => {
-        if (typeof window.Featurebase === 'function') {
-            resolve(window.Featurebase);
-            return;
-        }
-        const existing = document.getElementById(SDK_SCRIPT_ID) as HTMLScriptElement | null;
-        const script = existing ?? document.createElement('script');
-        const onLoad = () => {
+    if (typeof window.Featurebase === 'function') return Promise.resolve(window.Featurebase);
+    if (sdkPromise) return sdkPromise;
+
+    sdkPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.id = SDK_SCRIPT_ID;
+        script.src = SDK_SRC;
+        script.async = true;
+        script.addEventListener('load', () => {
             if (typeof window.Featurebase === 'function') resolve(window.Featurebase);
             else reject(new Error('Featurebase SDK loaded but window.Featurebase is not callable'));
-        };
-        script.addEventListener('load', onLoad, { once: true });
-        script.addEventListener('error', () => reject(new Error('Featurebase SDK failed to load')), { once: true });
-        if (!existing) {
-            script.id = SDK_SCRIPT_ID;
-            script.src = SDK_SRC;
-            script.async = true;
-            document.head.appendChild(script);
-        }
+        }, { once: true });
+        script.addEventListener('error', () => {
+            sdkPromise = null; // let a later mount retry the fetch
+            reject(new Error('Featurebase SDK failed to load'));
+        }, { once: true });
+        document.head.appendChild(script);
     });
+    return sdkPromise;
 }
 
 export default function FeaturebaseMessenger({ jwt }: { jwt: string | null }) {
     const { locale } = useLanguage();
     const { theme } = useTheme();
 
+    // Read inside the boot effect without being dependencies of it. Both
+    // providers hydrate from localStorage right after mount, so including them
+    // would tear the messenger down and rebuild it moments after it appears —
+    // and the SDK has a boot-loop backoff that eventually stops booting
+    // altogether. Theme and language changes are pushed with their own actions
+    // below instead.
+    const themeRef = useRef(theme);
+    const localeRef = useRef(locale);
+    themeRef.current = theme;
+    localeRef.current = locale;
+
     useEffect(() => {
         let cancelled = false;
-        const base = { appId: FEATUREBASE_APP_ID, theme, language: locale };
+        const base = { appId: FEATUREBASE_APP_ID, theme: themeRef.current, language: localeRef.current };
 
         // Unconditional, because the failure this integration keeps hitting is
         // "nothing rendered and nothing said why". If this line is absent from
         // the console the component never mounted, which points at the layout
         // gate or a stale bundle rather than at the SDK.
-        console.info('[featurebase] mounting', { jwt: jwt ? 'present' : 'absent', locale, theme });
+        console.info('[featurebase] mounting', { jwt: jwt ? 'present' : 'absent', locale: localeRef.current, theme: themeRef.current });
 
         loadSdk()
             .then((fb) => {
@@ -137,11 +157,28 @@ export default function FeaturebaseMessenger({ jwt }: { jwt: string | null }) {
                 });
             });
 
-        return () => {
-            cancelled = true;
-            try { window.Featurebase?.('shutdown'); } catch { /* SDK never loaded */ }
-        };
-    }, [jwt, locale, theme]);
+        // Deliberately does NOT shut the messenger down. Harness result: after a
+        // SUCCESSFUL boot, `shutdown` followed by `boot` leaves the widget dead
+        // — 1 DOM node, no iframe, no error. The teardown is deferred inside the
+        // SDK and lands on top of the fresh boot. The messenger is a
+        // page-lifetime singleton, and signing out is a full navigation, so
+        // there is nothing here worth risking that race for.
+        //
+        // The identity-rejected path below is the one exception, and it is safe
+        // precisely because that boot never succeeded.
+        return () => { cancelled = true; };
+    }, [jwt]);
+
+    // Theme and language are pushed as their own actions rather than re-booting.
+    useEffect(() => {
+        try { window.Featurebase?.('setTheme', { theme }); } catch { /* not booted yet */ }
+    }, [theme]);
+
+    // setLanguage takes the code itself, not a settings object — the object form
+    // throws. Verified in the harness.
+    useEffect(() => {
+        try { window.Featurebase?.('setLanguage', locale as unknown as FeaturebaseSettings); } catch { /* not booted yet */ }
+    }, [locale]);
 
     return null;
 }

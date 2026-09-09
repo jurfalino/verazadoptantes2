@@ -2,6 +2,40 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.41] - 2026-09-09
+
+### Fixed — the messenger tore itself down moments after it appeared
+
+The boot effect depended on `[jwt, locale, theme]`. Both the language and theme
+providers hydrate from `localStorage` right after mount, so the effect re-ran
+within a second or two of the page loading: cleanup called `shutdown`, the
+re-run called `boot`, and the widget never came back.
+
+Measured in a browser harness replaying that exact sequence — boot, shutdown,
+boot — against the real SDK: **1 DOM node and no iframe**. The SDK defers its
+teardown, so the shutdown lands on top of the fresh boot and kills it. No
+error, no console output, nothing to find. Which is why every layer looked
+correct while the corner stayed empty.
+
+The identity fallback added in 2.56.39 survived this only because its first
+boot had already failed, so there was nothing left to tear down.
+
+Three changes:
+
+- The boot effect keys on `[jwt]` alone. Theme and locale are read through refs
+  and pushed afterwards with the `setTheme` and `setLanguage` actions instead of
+  rebuilding the widget. `setLanguage` takes the code itself, not a settings
+  object — the object form throws.
+- Cleanup no longer calls `shutdown`. The messenger is a page-lifetime
+  singleton and signing out is a full navigation, so there is nothing worth
+  risking that race for.
+- The SDK loader caches its promise at module scope. The previous version
+  attached a `load` listener to an existing script tag, which never fires a
+  second time.
+
+Same harness, fixed sequence: 14 nodes and a visible launcher, surviving both
+the theme and language settles.
+
 ## [2.56.40] - 2026-09-09
 
 ### Fixed — installed PWAs were still serving the pre-messenger bundle
