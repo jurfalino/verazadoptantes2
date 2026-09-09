@@ -2,6 +2,43 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.39] - 2026-09-09
+
+### Fixed — a rejected identity token hid the messenger completely
+
+The 2.56.37 note claimed a bad token degrades to an anonymous session. It does
+not, and that claim was never tested. A rejected token 401s
+`/v1/messenger/widget/config` and the widget does not render at all. Measured
+in a browser harness against the real SDK:
+
+| token | Featurebase DOM nodes | launcher |
+|---|---|---|
+| valid or absent | 14 | yes |
+| rejected | 1 | no |
+
+Featurebase refuses SSO tokens for anyone who administers a Featurebase
+organization, so the workspace owner is permanently in the failing state. The
+person most likely to be testing the integration is the one person guaranteed
+to see nothing, with no error anywhere in the UI.
+
+Neither hook in `featurebase-js` can drive a recovery. Its `boot()` swallows
+the error, and `whenReady()` fires *even when the boot failed* — the library
+flushes ready inside the same callback that logs the error, which was verified
+after a first fix built on `whenReady` proved worthless. The raw `boot` action
+does pass the error to a callback, so the component now talks to
+`window.Featurebase` directly and the wrapper dependency is gone.
+
+On error: `shutdown`, then boot again without the token. `shutdown` is
+mandatory — the SDK converts a repeat boot for an already-booted appId into an
+`identify`, which would re-send the same rejected token. Same harness, same bad
+token, after the fix: 14 nodes and a launcher.
+
+Both failure paths now report through `reportClientError` at `warn`, so an
+identity-less messenger or an SDK that never loaded shows up in logs instead of
+only in one person's console.
+
+Identity is best-effort. Reaching support is not.
+
 ## [2.56.38] - 2026-09-09
 
 ### Fixed — don't read the Featurebase flag for visitors who can't see it
