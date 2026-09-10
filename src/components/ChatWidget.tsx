@@ -326,27 +326,28 @@ export default function ChatWidget() {
 
                     {/* Messages */}
                     <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2" style={{ minHeight: '240px', maxHeight: 'min(60vh, 480px)' }}>
-                        {messages.length === 0 ? (
+                        {/* The opening message is a message, not a placeholder: it stays
+                            at the top of the thread once the conversation starts. It sat
+                            in the old empty state's either/or slot in v2.56.43 and so
+                            vanished the moment anyone replied to it. */}
+                        <div
+                            className="max-w-[85%] mr-auto px-3 py-2 rounded-2xl rounded-bl-sm text-sm"
+                            style={{ background: 'var(--surface-muted)', color: 'var(--text-primary)' }}
+                        >
+                            {greeting}
+                        </div>
+                        {messages.map(m => (
                             <div
-                                className="max-w-[85%] mr-auto px-3 py-2 rounded-2xl rounded-bl-sm text-sm"
-                                style={{ background: 'var(--surface-muted)', color: 'var(--text-primary)' }}
+                                key={m.id}
+                                className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm ${m.direction === 'user' ? 'ml-auto rounded-br-sm' : 'mr-auto rounded-bl-sm'}`}
+                                style={{
+                                    background: m.direction === 'user' ? 'var(--brand-dark)' : 'var(--surface-muted)',
+                                    color: m.direction === 'user' ? 'var(--btn-primary-text)' : 'var(--text-primary)',
+                                }}
                             >
-                                {greeting}
+                                <span className="whitespace-pre-wrap break-words">{m.body}</span>
                             </div>
-                        ) : (
-                            messages.map(m => (
-                                <div
-                                    key={m.id}
-                                    className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm ${m.direction === 'user' ? 'ml-auto rounded-br-sm' : 'mr-auto rounded-bl-sm'}`}
-                                    style={{
-                                        background: m.direction === 'user' ? 'var(--brand-dark)' : 'var(--surface-muted)',
-                                        color: m.direction === 'user' ? 'var(--btn-primary-text)' : 'var(--text-primary)',
-                                    }}
-                                >
-                                    <span className="whitespace-pre-wrap break-words">{m.body}</span>
-                                </div>
-                            ))
-                        )}
+                        ))}
                         <div ref={messagesEndRef} />
                     </div>
 

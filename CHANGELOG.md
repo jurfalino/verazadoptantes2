@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.45] - 2026-09-09
+
+### Fixed — the opening message vanished as soon as anyone replied to it
+
+2.56.43 put the greeting in the slot the old empty state occupied, which is an
+either/or: `messages.length === 0 ? greeting : messages`. So it behaved like a
+placeholder — the first message a visitor sent replaced it.
+
+That was wrong for what it now is. An opening message is a message: it stays at
+the top of the thread, above everything that follows, the way the first line of
+any conversation does. It renders unconditionally now.
+
 ## [2.56.44] - 2026-09-09
 
 ### Security — one account could read another's support conversation
