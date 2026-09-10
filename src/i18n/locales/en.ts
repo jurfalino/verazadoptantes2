@@ -535,8 +535,6 @@ export const en = {
         what_is: {
             title: 'What is BuenAdoptante?',
             intro: 'It\'s an adopter registry — a "veraz" (a reference list, if you know the term) — where you can record adoptions, adoption requests, and any observation useful to the rescue community for evaluating future adoptions.',
-            how_title: 'How does it work?',
-            how_body: 'When someone asks you for an animal, search their name and details here. If the profile already exists, you can see the rating and comments left by others; if not, you can create it and start logging their history.',
         },
     },
     faq: {
@@ -2161,13 +2159,14 @@ export const en = {
         dark: 'Night Blue',
     },
     chat: {
-        open: 'Open support chat',
+        open: 'Write to us',
         close: 'Close chat',
-        title: 'Support chat',
+        title: 'Write to us',
         subtitle: "We'll get back to you as soon as we can",
         placeholder: 'Type your message…',
         send: 'Send',
-        empty_state: 'Hi 👋 How can we help?',
+        greeting_named: "Hi {name} 👋 We'd love to know what you think of BuenAdoptante: what did you find useful, and what would you suggest?",
+        greeting_anon: "Hi 👋 We'd love to know what you think of BuenAdoptante: what did you find useful, and what would you suggest?",
         unread_indicator: 'Unread message',
         error_send: "Couldn't send the message. Try again.",
     },

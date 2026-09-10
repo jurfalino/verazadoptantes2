@@ -2,6 +2,350 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.46] - 2026-09-10
+
+### Fixed — clearing the search emptied the box but left the results on screen
+
+Two separate paths put the results straight back after the X was clicked, which
+is why it looked like the button only half worked.
+
+The first was the `?q=` replay. Clearing drops the query from the URL with
+`history.replaceState`, but Next re-syncs `useSearchParams` a tick later, so for
+at least one render the auto-run effect saw the old query with `results` already
+back at null — its exact "arriving with a query" signature — and re-ran the very
+search the X was meant to undo. It now remembers what was cleared and skips it
+until the URL catches up.
+
+The second was an in-flight response. The X stays clickable while a search runs
+and nothing cancelled the pending call, so a slow search landed after the clear
+and repopulated the list while the box stayed empty. Every search now carries a
+sequence number that clearing invalidates, which also stops two quick searches
+from landing out of order.
+
+### Changed — the search hint sits under the field it describes
+
+"Probá buscando un teléfono o nombre" was rendering below the search button. It
+is about what to type, so it belongs under the input.
+
+### Removed — the "¿Cómo funciona?" half of the homepage explainer
+
+The expanded "¿Qué es Buen Adoptante?" panel is down to its opening paragraph.
+
+## [2.56.45] - 2026-09-09
+
+### Fixed — the opening message vanished as soon as anyone replied to it
+
+2.56.43 put the greeting in the slot the old empty state occupied, which is an
+either/or: `messages.length === 0 ? greeting : messages`. So it behaved like a
+placeholder — the first message a visitor sent replaced it.
+
+That was wrong for what it now is. An opening message is a message: it stays at
+the top of the thread, above everything that follows, the way the first line of
+any conversation does. It renders unconditionally now.
+
+## [2.56.44] - 2026-09-09
+
+### Security — one account could read another's support conversation
+
+Reported from the field: signing out and back in as a different account showed
+the same chat. The cause was two independent gaps that lined up.
+
+`ChatWidget` kept the conversation id in `localStorage` under a key belonging to
+the **browser**, not the account. And `GET /api/chat` never called `auth()` at
+all — it checked the feature flag, validated the id was a UUID, and returned the
+thread. There was no ownership check anywhere in either handler.
+
+So on a shared device — completely normal among rescuers — the second person to
+sign in read the first person's private messages to us. `POST` had the same gap:
+it appended to any conversation whose id you held, and relabelled it with the
+new person's address while keeping the original owner, so the Telegram thread
+became one conversation containing two identities.
+
+The id is a random UUID, so nobody was guessing their way in. But logging out
+revoked nothing, and this is a platform whose entire subject is sensitive
+information about named people.
+
+**The fix, on both sides:**
+
+- `src/domain/chatAccess.ts` holds the rule as two pure functions with 10 tests.
+  A conversation with an owner requires an exact, case-insensitive match on the
+  signed-in address; one without an owner stays open to whoever holds the id,
+  which is all an anonymous thread ever had. The tests pin the prefix and
+  substring cases, because an authorization check that is clever is one that is
+  wrong.
+- Both handlers now authorize before touching a message body, and answer 403
+  with `reset: true`.
+- The client files the id under its owner and starts a fresh conversation when
+  that owner changes. **Signing in counts as a change**, so an anonymous thread
+  never attaches itself to whoever logs in next. A 403 resets the widget rather
+  than showing an error nobody can act on, and the hydration waits for the
+  session to settle so an authenticated load doesn't mint an orphan `anon`
+  thread first.
+
+Values written by earlier builds are bare UUIDs with no owner recorded, so they
+are discarded on sight. **Anyone mid-conversation when this deploys starts a new
+one.** That is the correct outcome and it is worth knowing before the messages
+stop matching up.
+
+## [2.56.43] - 2026-09-09
+
+### Fixed — the chat widget was unreadable in dark mode
+
+Every coloured surface in the widget was filled with `--accent` and given white
+text. That token is documented for links and selected state, and its dark value
+is a pale mint meant to be read *as* text. White on it measures **1.48:1**
+against the style guide's own AA floor of 4.5. The header subtitle, the close
+control, the send arrow and every message the visitor sent were all effectively
+invisible in Azul Noche.
+
+Fills now use `--brand-dark` and text uses `--btn-primary-text`. Both are
+already defined identically in each theme, so this cost no new tokens:
+
+| | fill | text | ratio |
+|---|---|---|---|
+| Light | `#0f766e` | `#ffffff` | 5.47:1 |
+| Dark | `#0f766e` | `#ffffff` | 5.47:1 |
+
+Riding along, all from the same audit against `docs/design-style-guide.md`:
+
+- Seven hardcoded hex values gone. The error text was `#dc2626`, which measures
+  3.03:1 in dark; `--status-error-text` gives 5.44:1.
+- `focus-visible:ring-2` had **no ring colour at all**, and ring utilities are
+  not remapped by the theme, so keyboard focus was invisible. Replaced with a
+  scoped `.chat-focusable` outline in `--accent`.
+- `rounded-lg` and `rounded-md` to `rounded-xl`; the scale allows three radii
+  and 8px is not one of them.
+- Tailwind's `shadow-lg` / `shadow-2xl` to the Overlay tokens.
+- Disabled send from 50% to the 40% the button matrix specifies.
+
+### Changed — the widget asks for feedback, and says so in the header
+
+Opening message, in place of the old "¿En qué te podemos ayudar?" empty state:
+
+> Hola, {nombre} 👋 Nos encantaría saber qué pensás de BuenAdoptante: ¿qué te
+> resultó útil y qué sugerencias nos querrías hacer llegar?
+
+The name comes from the session, first word only. A display name that looks
+like an email handle falls back to the anonymous copy — greeting someone as
+"Hola, maria.gonzalez83" is worse than not using a name — and so do signed-out
+visitors, who see this widget too.
+
+The header follows: "Chat de soporte" becomes "Escribinos". A panel titled
+support that opens by asking for product suggestions is honest about neither.
+Six strings across the three locale files.
+
+## [2.56.42] - 2026-09-09
+
+### Removed — Featurebase
+
+Reverted. Building our own UI on their backend needs the REST API, which is a
+paid plan, and their widget's own appearance is dashboard-controlled: the SDK's
+`actionColor` and `backgroundColor` are ignored at boot, so the panel stays
+Featurebase purple with their branding whatever we pass it.
+
+What was kept instead is what the existing Telegram chat already gives us — our
+own widget, our own tables, adopter contact details staying in D1 — which is
+where the work goes next.
+
+Removed: `FeaturebaseMessenger.tsx`, `featurebaseJwt.ts` and its 18 tests, the
+`ENABLE_FEATUREBASE` flag and its four registration sites, the three locale
+strings, and the CSP entries. The `featurebase-js` dependency is gone.
+
+Done as a surgical restore from `0c6525c` rather than `git revert`, because
+2.56.40 also carried the `CACHE_VERSION` bump. **That bump stays at v6.**
+Reverting it would strand every client that has already activated the v6
+worker, which is the opposite of the problem it was added to solve.
+
+Verified: the only files differing from the pre-Featurebase tree are
+`public/bimi-logo.svg` and `public/sw.js`, both deliberate. tsc clean, lint 124
+against the 125 ratchet, 581 tests pass (18 fewer, being the deleted ones),
+production build succeeds.
+
+Left behind on purpose: the `ENABLE_FEATUREBASE` row in the staging
+`app_config` table. Nothing reads it now, and deleting rows from a real
+database to tidy up is not worth the risk.
+
+## [2.56.41] - 2026-09-09
+
+### Fixed — the messenger tore itself down moments after it appeared
+
+The boot effect depended on `[jwt, locale, theme]`. Both the language and theme
+providers hydrate from `localStorage` right after mount, so the effect re-ran
+within a second or two of the page loading: cleanup called `shutdown`, the
+re-run called `boot`, and the widget never came back.
+
+Measured in a browser harness replaying that exact sequence — boot, shutdown,
+boot — against the real SDK: **1 DOM node and no iframe**. The SDK defers its
+teardown, so the shutdown lands on top of the fresh boot and kills it. No
+error, no console output, nothing to find. Which is why every layer looked
+correct while the corner stayed empty.
+
+The identity fallback added in 2.56.39 survived this only because its first
+boot had already failed, so there was nothing left to tear down.
+
+Three changes:
+
+- The boot effect keys on `[jwt]` alone. Theme and locale are read through refs
+  and pushed afterwards with the `setTheme` and `setLanguage` actions instead of
+  rebuilding the widget. `setLanguage` takes the code itself, not a settings
+  object — the object form throws.
+- Cleanup no longer calls `shutdown`. The messenger is a page-lifetime
+  singleton and signing out is a full navigation, so there is nothing worth
+  risking that race for.
+- The SDK loader caches its promise at module scope. The previous version
+  attached a `load` listener to an existing script tag, which never fires a
+  second time.
+
+Same harness, fixed sequence: 14 nodes and a visible launcher, surviving both
+the theme and language settles.
+
+## [2.56.40] - 2026-09-09
+
+### Fixed — installed PWAs were still serving the pre-messenger bundle
+
+`CACHE_VERSION` was not bumped across 2.56.37, .38 and .39, all of which
+changed client code. An installed PWA keeps serving the cached bundle, so the
+messenger could not appear regardless of the feature flag, the secret, or the
+identity fallback. Bumped to v6, which evicts every cache not on the new name.
+
+### Added — say something when the messenger mounts
+
+Every log in this integration was on a failure path, so the one state that kept
+occurring — nothing rendered, nothing logged — was indistinguishable from the
+component never mounting. Now:
+
+- The component logs `[featurebase] mounting` unconditionally in the browser.
+  Absent from the console means it never mounted, which points at the layout
+  gate or a stale bundle rather than the SDK.
+- The layout logs `Layout featurebase gate` with the flag value and session
+  presence, on signed-in renders only. Those are the two booleans that decide
+  whether the widget renders, and until now neither was observable from outside
+  a logged-in browser.
+
+## [2.56.39] - 2026-09-09
+
+### Fixed — a rejected identity token hid the messenger completely
+
+The 2.56.37 note claimed a bad token degrades to an anonymous session. It does
+not, and that claim was never tested. A rejected token 401s
+`/v1/messenger/widget/config` and the widget does not render at all. Measured
+in a browser harness against the real SDK:
+
+| token | Featurebase DOM nodes | launcher |
+|---|---|---|
+| valid or absent | 14 | yes |
+| rejected | 1 | no |
+
+Featurebase refuses SSO tokens for anyone who administers a Featurebase
+organization, so the workspace owner is permanently in the failing state. The
+person most likely to be testing the integration is the one person guaranteed
+to see nothing, with no error anywhere in the UI.
+
+Neither hook in `featurebase-js` can drive a recovery. Its `boot()` swallows
+the error, and `whenReady()` fires *even when the boot failed* — the library
+flushes ready inside the same callback that logs the error, which was verified
+after a first fix built on `whenReady` proved worthless. The raw `boot` action
+does pass the error to a callback, so the component now talks to
+`window.Featurebase` directly and the wrapper dependency is gone.
+
+On error: `shutdown`, then boot again without the token. `shutdown` is
+mandatory — the SDK converts a repeat boot for an already-booted appId into an
+`identify`, which would re-send the same rejected token. Same harness, same bad
+token, after the fix: 14 nodes and a launcher.
+
+Both failure paths now report through `reportClientError` at `warn`, so an
+identity-less messenger or an SDK that never loaded shows up in logs instead of
+only in one person's console.
+
+Identity is best-effort. Reaching support is not.
+
+## [2.56.38] - 2026-09-09
+
+### Fixed — don't read the Featurebase flag for visitors who can't see it
+
+2.56.37 read `ENABLE_FEATUREBASE` unconditionally in the root layout, which
+runs on every request. The messenger is signed-in only, so for an anonymous
+visitor that query could only ever return a value nobody acts on: one extra
+`appConfig` read per anonymous page view, on the hottest path in the app.
+
+Gated behind the session check that was already two lines below it. Behaviour
+is identical — with no session the messenger does not render either way, and
+`ChatWidget` keeps its own flag.
+
+The 2.56.37 pipeline failed on `adopter.spec.ts:343` with `SQLITE_BUSY:
+database is locked` from `wrangler d1 execute --local`, a foster-placement test
+this work never touched, alongside the three usual networkidle smoke flakes.
+That failure is lock contention on the file-backed local D1, not a regression —
+but a per-render query added to that same file is exactly the wrong direction,
+so it goes now rather than after the next confusing red build.
+
+## [2.56.37] - 2026-09-08
+
+### Added — Featurebase messenger, an inbox instead of a live chat
+
+Rescuers leave a message; it is answered later from the Featurebase Android
+app. That is the whole difference from `ChatWidget`, and it is why this is
+small: async needs no presence, no polling and no delivery guarantee, which
+were the expensive parts of the live version.
+
+`ENABLE_FEATUREBASE`, default off, read server-side in the layout exactly as
+the chat flag is. It **outranks** `ENABLE_CHAT_WIDGET` — both put a floating
+launcher in the same corner, so the layout drops `ChatWidget` while this is on
+rather than stacking two.
+
+Signed-in users only. Anonymous visitors on the showcase and form see nothing,
+which keeps unverified conversations out of the inbox.
+
+`src/lib/featurebaseJwt.ts` signs the identity HS256 over Web Crypto — edge
+runtime, no `jsonwebtoken`, no new dependency. `jose` is in the tree via
+next-auth but is not ours to import. The claim set is an allowlist of userId,
+email, name and profilePicture: callers hold whole session objects, and 18
+tests pin the shape, the signature, base64url without padding, and the
+degradation path.
+
+That path matters. A null token is supported, not an error — the messenger
+still boots anonymously. It is the normal state before `FEATUREBASE_JWT_SECRET`
+exists, and it is also what the Featurebase org owner gets, because their SSO
+refuses tokens for anyone who administers a Featurebase organization.
+
+CSP needed four directives, not one. The SDK injects its own script from
+`do.featurebase.app`, resolves the appId over `fetch`, opens a socket, and
+renders in an iframe, so `script-src`, `connect-src` with `wss:`, `img-src` and
+`frame-src` all had to move. Miss any single one and the widget does not fail
+loudly, it just never appears.
+
+**Not done by this commit:** `FEATUREBASE_JWT_SECRET` has to be added as a
+Pages secret by hand. `wrangler secret put` exits 0 without writing anything
+under the local read-only token, so the dashboard is the only path.
+
+## [2.56.36] - 2026-09-08
+
+### Added — a BIMI logo the mail providers will actually accept
+
+`public/bimi-logo.svg` — the paw shield in SVG Tiny PS, the restricted profile
+BIMI mandates: `version="1.2"`, `baseProfile="tiny-ps"`, a non-empty `<title>`,
+a square `viewBox`, no `x`/`y` on the root, and nothing scripted, animated,
+external, or rasterised. 854 bytes.
+
+The one change to the mark is a full-bleed white background. `icon.svg` is
+transparent, and BIMI logos get cropped to a circle — transparency there
+renders at the client's discretion, which is not a thing to leave to chance in
+an inbox. The silhouette clears the crop: furthest point from centre is ~235
+against the inscribed radius of 256.
+
+Deploying only publishes the file. The `default._bimi` DNS record is a separate
+manual step and is deliberately not part of this commit — the record must not
+exist before the URL it points at returns 200, or validators cache the failure.
+
+**No certificate, so no Gmail.** The record will carry `l=` only; `a=` needs a
+VMC (~$1,000/yr, trademark required) that we are not buying. Fastmail and
+similar will show the logo; Gmail, Yahoo and Apple will ignore it.
+
+Prerequisite closed out-of-band: `_dmarc` carried two records, which RFC 7489
+discards as a set, leaving the domain with no effective policy despite
+`p=quarantine` being present. It is now a single merged record at
+`p=quarantine`, so DMARC enforcement — BIMI's gate — actually holds.
+
 ## [2.56.35] - 2026-09-07
 
 ### Fixed — the evidence chips showed one fact twice

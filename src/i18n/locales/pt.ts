@@ -534,8 +534,6 @@ export const pt = {
         what_is: {
             title: 'O que é o Buen Adoptante?',
             intro: 'É um registro de adotantes — um "veraz", se você conhece o termo — onde você pode registrar adoções, pedidos de adoção e toda observação que seja útil para a comunidade resgatista avaliar futuras adoções.',
-            how_title: 'Como funciona?',
-            how_body: 'Quando alguém te pede um animal em adoção, busque o nome e os dados dessa pessoa aqui. Se o perfil já existe, você pode ver a avaliação e comentários de outras pessoas; se não, você pode criá-lo e começar a registrar o histórico.',
         },
     },
     faq: {
@@ -2166,13 +2164,14 @@ export const pt = {
         dark: 'Azul Noite',
     },
     chat: {
-        open: 'Abrir chat de suporte',
+        open: 'Escreva para nós',
         close: 'Fechar chat',
-        title: 'Chat de suporte',
+        title: 'Escreva para nós',
         subtitle: 'Respondemos o mais rápido possível',
         placeholder: 'Escreva sua mensagem…',
         send: 'Enviar',
-        empty_state: 'Olá 👋 Como podemos ajudar?',
+        greeting_named: 'Olá, {name} 👋 Adoraríamos saber o que você acha do BuenAdoptante: o que achou útil e que sugestões gostaria de nos enviar?',
+        greeting_anon: 'Olá 👋 Adoraríamos saber o que você acha do BuenAdoptante: o que achou útil e que sugestões gostaria de nos enviar?',
         unread_indicator: 'Mensagem não lida',
         error_send: 'Não foi possível enviar a mensagem. Tente de novo.',
     },

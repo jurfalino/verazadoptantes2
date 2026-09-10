@@ -1967,3 +1967,13 @@ button {
   .import-grid tr:not(:has(> td:nth-child(5))) > td:first-child { display: none; }
   .import-grid tr:not(:has(> td:nth-child(5))) > td { padding-left: 0.5rem; padding-right: 0.5rem; }
 }
+
+/* Support widget focus ring (v2.56.43).
+   The widget previously used `focus-visible:ring-2` with no ring colour. Ring
+   utilities are not remapped by the [data-theme] palette, so keyboard focus
+   rendered raw in dark mode — and with no colour set at all it was effectively
+   invisible. An outline in --accent tracks the active theme. */
+.chat-focusable:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}

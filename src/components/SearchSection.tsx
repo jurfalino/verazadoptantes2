@@ -55,6 +55,26 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
      * match-and-grant replay would run a search that never produced that match.
      */
     const [submittedQuery, setSubmittedQuery] = useState('');
+    /**
+     * The `?q=` value the user just cleared, so the auto-replay effect below does
+     * not resurrect the results they dismissed.
+     *
+     * `handleClear` drops `q` with history.replaceState, but Next re-syncs
+     * useSearchParams a tick later — so for at least one render the effect sees the
+     * old query with `results` already back at null, and re-runs the very search
+     * the X was meant to undo.
+     */
+    const clearedQueryRef = useRef<string | null>(null);
+    /**
+     * Monotonic id of the newest search the user asked for. A response whose id is
+     * stale is dropped instead of written to state.
+     *
+     * Clearing does not cancel an in-flight findAdopters call, so without this the X
+     * emptied the box and the pending response then put the results straight back —
+     * the same symptom as the ?q= replay above, by a different route. It also keeps
+     * two rapid searches from landing out of order.
+     */
+    const searchSeqRef = useRef(0);
     /** The floating alta exists only while the closing block is off screen. */
     const [barHidden, setBarHidden] = useState(true);
     // Lazy "weak tier" — fuzzy/partial name matches, loaded only when the user
@@ -125,6 +145,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
     // Re-run search when returning to page with query in URL
     const runSearch = useCallback(async (searchQuery: string) => {
         if (!searchQuery.trim()) return;
+        const seq = ++searchSeqRef.current;
         setLoading(true);
         setValidationError(null);
         setTruncatedInfo(null);
@@ -135,6 +156,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                 { raw: searchQuery },
                 { mode: 'discovery', enrich: true },
             );
+            if (searchSeqRef.current !== seq) return;
             if (!response) return;
             setSubmittedQuery(searchQuery.trim());
             if (response.validationError) {
@@ -165,12 +187,14 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
     }, []);
 
     useEffect(() => {
+        // Once the URL has caught up with the clear, the query is fair game again.
+        if (!initialQuery) clearedQueryRef.current = null;
         // Only auto-run when arriving with ?q=… and no results yet AND no in-flight search.
         // The `!loading` guard prevents a double-fire when handleSearch updates the URL via
         // history.replaceState — that URL change re-triggers useSearchParams and would
         // otherwise fire a second findAdopters call (one audit row per call → duplicates
         // in /admin/audit). v2.12.1-35.
-        if (initialQuery && !results && !loading) {
+        if (initialQuery && initialQuery !== clearedQueryRef.current && !results && !loading) {
             runSearch(initialQuery);
         }
     }, [initialQuery, results, runSearch, loading]);
@@ -246,6 +270,9 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
         e.preventDefault();
         if (!query.trim()) return;
 
+        // An explicit search overrides an earlier clear of the same query.
+        clearedQueryRef.current = null;
+        const seq = ++searchSeqRef.current;
         setLoading(true);
         setValidationError(null);
         setTruncatedInfo(null);
@@ -255,6 +282,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                 { raw: query },
                 { mode: 'discovery', enrich: true },
             );
+            if (searchSeqRef.current !== seq) return;
             if (!response) throw new Error('No response from search');
             setSubmittedQuery(query.trim());
             if (response.validationError) {
@@ -301,12 +329,16 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
     };
 
     const handleClear = () => {
+        clearedQueryRef.current = initialQuery || submittedQuery || query;
+        searchSeqRef.current++;
         setQuery('');
         setSubmittedQuery('');
         setResults(null);
         setValidationError(null);
         setTruncatedInfo(null);
         setSingleTokenResultCount(undefined);
+        setLowRelevanceResults([]);
+        resetWeak();
         // Clear URL param
         const url = new URL(window.location.href);
         url.searchParams.delete('q');
@@ -411,6 +443,14 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                             </button>
                         )}
                     </div>
+                    {/* Sits under the field it describes, not under the button: the
+                        example it gives ("un teléfono o nombre") is about what to type. */}
+                    {!results && !loading && !query && (
+                        <p className="text-center text-stone-500 text-xs">
+                            <svg className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" /></svg>
+                            {t('search.hint')}
+                        </p>
+                    )}
                     {/* After results, mobile uses a compact magnifier so the input stays
                         wide (the long labeled button used to squeeze it to a strip);
                         desktop and the initial state keep the full labeled button. */}
@@ -459,13 +499,6 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                                 : t('search.summary_for').replace('{query}', submittedQuery)}
                         </p>
                     </div>
-                )}
-
-                {!results && !loading && !query && (
-                    <p className="text-center text-stone-500 text-xs mt-2">
-                        <svg className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" /></svg>
-                        {t('search.hint')}
-                    </p>
                 )}
 
                 <style>{`
