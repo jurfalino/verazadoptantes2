@@ -18,7 +18,8 @@
  * from the browser — the relay is server-side only.
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useSession } from 'next-auth/react';
 import { useLanguage } from '@/context/LanguageContext';
 
 const SESSION_KEY = 'chat_session_id';
@@ -49,6 +50,20 @@ function getOrCreateSessionId(): string {
 
 export default function ChatWidget() {
     const { t, locale } = useLanguage();
+    const { data: session } = useSession();
+
+    // Opening message. First name only — the session's display name can be an
+    // email handle for some accounts, and "Hola, maria.gonzalez83" is worse than
+    // no name at all, so anything that doesn't look like a name falls back to
+    // the anonymous copy that signed-out visitors already get.
+    const greeting = useMemo(() => {
+        const raw = (session?.user?.name || '').trim();
+        const first = raw.split(/\s+/)[0] || '';
+        const looksLikeAName = first.length > 1 && !/[@._\d]/.test(first);
+        return looksLikeAName
+            ? t('chat.greeting_named').replace('{name}', first)
+            : t('chat.greeting_anon');
+    }, [session?.user?.name, t]);
     const [open, setOpen] = useState(false);
     const [sessionId, setSessionId] = useState<string>('');
     const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -200,10 +215,11 @@ export default function ChatWidget() {
                     onClick={() => setOpen(true)}
                     aria-label={t('chat.open')}
                     title={t('chat.open')}
-                    className="fixed bottom-4 right-4 z-[80] inline-flex items-center justify-center w-14 h-14 rounded-full shadow-lg transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                    className="chat-focusable fixed bottom-4 right-4 z-[80] inline-flex items-center justify-center w-14 h-14 rounded-full transition-all duration-200 hover:scale-105 active:scale-95"
                     style={{
-                        background: 'var(--accent)',
-                        color: '#ffffff',
+                        background: 'var(--brand-dark)',
+                        color: 'var(--btn-primary-text)',
+                        boxShadow: '0 8px 32px var(--shadow-lg), 0 2px 8px var(--shadow-color)',
                     }}
                 >
                     <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -212,7 +228,7 @@ export default function ChatWidget() {
                     {hasUnread && (
                         <span
                             className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2"
-                            style={{ background: '#ef4444', borderColor: 'var(--surface-base)' }}
+                            style={{ background: 'var(--status-error-text)', borderColor: 'var(--brand-dark)' }}
                             aria-label={t('chat.unread_indicator')}
                         />
                     )}
@@ -224,17 +240,18 @@ export default function ChatWidget() {
                 <div
                     role="dialog"
                     aria-label={t('chat.title')}
-                    className="fixed bottom-4 right-4 z-[80] w-[calc(100vw-2rem)] sm:w-[380px] max-h-[calc(100vh-2rem)] rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-slideDown"
+                    className="fixed bottom-4 right-4 z-[80] w-[calc(100vw-2rem)] sm:w-[380px] max-h-[calc(100vh-2rem)] rounded-2xl flex flex-col overflow-hidden animate-slideDown"
                     style={{
                         background: 'var(--surface-card)',
                         border: '1px solid var(--border-default)',
                         color: 'var(--text-primary)',
+                        boxShadow: '0 8px 32px var(--shadow-lg), 0 2px 8px var(--shadow-color)',
                     }}
                 >
                     {/* Header */}
                     <div
                         className="px-4 py-3 flex items-center justify-between gap-2"
-                        style={{ background: 'var(--accent)', color: '#ffffff' }}
+                        style={{ background: 'var(--brand-dark)', color: 'var(--btn-primary-text)' }}
                     >
                         <div className="min-w-0">
                             <p className="text-sm font-semibold truncate">{t('chat.title')}</p>
@@ -245,8 +262,8 @@ export default function ChatWidget() {
                             onClick={() => setOpen(false)}
                             aria-label={t('chat.close')}
                             title={t('chat.close')}
-                            className="shrink-0 p-1 rounded-md transition-opacity opacity-80 hover:opacity-100 focus:outline-none focus-visible:opacity-100"
-                            style={{ color: '#ffffff' }}
+                            className="chat-focusable shrink-0 p-1 rounded-xl transition-opacity opacity-80 hover:opacity-100"
+                            style={{ color: 'var(--btn-primary-text)' }}
                         >
                             <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                                 <path strokeLinecap="round" d="M6 6l8 8M14 6l-8 8" />
@@ -258,10 +275,10 @@ export default function ChatWidget() {
                     <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2" style={{ minHeight: '240px', maxHeight: 'min(60vh, 480px)' }}>
                         {messages.length === 0 ? (
                             <div
-                                className="text-sm text-center py-8 px-4"
-                                style={{ color: 'var(--text-secondary)' }}
+                                className="max-w-[85%] mr-auto px-3 py-2 rounded-2xl rounded-bl-sm text-sm"
+                                style={{ background: 'var(--surface-muted)', color: 'var(--text-primary)' }}
                             >
-                                {t('chat.empty_state')}
+                                {greeting}
                             </div>
                         ) : (
                             messages.map(m => (
@@ -269,8 +286,8 @@ export default function ChatWidget() {
                                     key={m.id}
                                     className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm ${m.direction === 'user' ? 'ml-auto rounded-br-sm' : 'mr-auto rounded-bl-sm'}`}
                                     style={{
-                                        background: m.direction === 'user' ? 'var(--accent)' : 'var(--surface-muted)',
-                                        color: m.direction === 'user' ? '#ffffff' : 'var(--text-primary)',
+                                        background: m.direction === 'user' ? 'var(--brand-dark)' : 'var(--surface-muted)',
+                                        color: m.direction === 'user' ? 'var(--btn-primary-text)' : 'var(--text-primary)',
                                     }}
                                 >
                                     <span className="whitespace-pre-wrap break-words">{m.body}</span>
@@ -283,7 +300,7 @@ export default function ChatWidget() {
                     {/* Composer */}
                     <div className="px-3 py-3 border-t" style={{ borderColor: 'var(--border-default)' }}>
                         {error && (
-                            <p className="text-xs mb-2" style={{ color: '#dc2626' }}>{error}</p>
+                            <p className="text-xs mb-2" style={{ color: 'var(--status-error-text)' }}>{error}</p>
                         )}
                         {/* Honeypot — visually hidden but reachable to bots */}
                         <input
@@ -304,7 +321,7 @@ export default function ChatWidget() {
                                 placeholder={t('chat.placeholder')}
                                 rows={2}
                                 maxLength={2000}
-                                className="flex-1 px-3 py-2 rounded-lg text-sm resize-none focus:outline-none focus-visible:ring-2"
+                                className="chat-focusable flex-1 px-3 py-2 rounded-xl text-sm resize-none"
                                 style={{
                                     background: 'var(--surface-base)',
                                     color: 'var(--text-primary)',
@@ -317,10 +334,10 @@ export default function ChatWidget() {
                                 disabled={sending || !input.trim()}
                                 aria-label={t('chat.send')}
                                 title={t('chat.send')}
-                                className="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-lg transition-all duration-150 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2"
+                                className="chat-focusable shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-xl transition-all duration-150 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
                                 style={{
-                                    background: 'var(--accent)',
-                                    color: '#ffffff',
+                                    background: 'var(--brand-dark)',
+                                    color: 'var(--btn-primary-text)',
                                 }}
                             >
                                 <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">

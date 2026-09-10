@@ -2,6 +2,53 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.43] - 2026-09-09
+
+### Fixed — the chat widget was unreadable in dark mode
+
+Every coloured surface in the widget was filled with `--accent` and given white
+text. That token is documented for links and selected state, and its dark value
+is a pale mint meant to be read *as* text. White on it measures **1.48:1**
+against the style guide's own AA floor of 4.5. The header subtitle, the close
+control, the send arrow and every message the visitor sent were all effectively
+invisible in Azul Noche.
+
+Fills now use `--brand-dark` and text uses `--btn-primary-text`. Both are
+already defined identically in each theme, so this cost no new tokens:
+
+| | fill | text | ratio |
+|---|---|---|---|
+| Light | `#0f766e` | `#ffffff` | 5.47:1 |
+| Dark | `#0f766e` | `#ffffff` | 5.47:1 |
+
+Riding along, all from the same audit against `docs/design-style-guide.md`:
+
+- Seven hardcoded hex values gone. The error text was `#dc2626`, which measures
+  3.03:1 in dark; `--status-error-text` gives 5.44:1.
+- `focus-visible:ring-2` had **no ring colour at all**, and ring utilities are
+  not remapped by the theme, so keyboard focus was invisible. Replaced with a
+  scoped `.chat-focusable` outline in `--accent`.
+- `rounded-lg` and `rounded-md` to `rounded-xl`; the scale allows three radii
+  and 8px is not one of them.
+- Tailwind's `shadow-lg` / `shadow-2xl` to the Overlay tokens.
+- Disabled send from 50% to the 40% the button matrix specifies.
+
+### Changed — the widget asks for feedback, and says so in the header
+
+Opening message, in place of the old "¿En qué te podemos ayudar?" empty state:
+
+> Hola, {nombre} 👋 Nos encantaría saber qué pensás de BuenAdoptante: ¿qué te
+> resultó útil y qué sugerencias nos querrías hacer llegar?
+
+The name comes from the session, first word only. A display name that looks
+like an email handle falls back to the anonymous copy — greeting someone as
+"Hola, maria.gonzalez83" is worse than not using a name — and so do signed-out
+visitors, who see this widget too.
+
+The header follows: "Chat de soporte" becomes "Escribinos". A panel titled
+support that opens by asking for product suggestions is honest about neither.
+Six strings across the three locale files.
+
 ## [2.56.42] - 2026-09-09
 
 ### Removed — Featurebase
