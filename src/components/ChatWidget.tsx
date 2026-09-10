@@ -21,6 +21,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useLanguage } from '@/context/LanguageContext';
+import { conversationOwnerKey } from '@/domain/chatAccess';
 
 const SESSION_KEY = 'chat_session_id';
 const LAST_SEEN_KEY = 'chat_last_seen_at';
@@ -33,24 +34,44 @@ interface ChatMessage {
     createdAt: number;
 }
 
-function getOrCreateSessionId(): string {
-    if (typeof window === 'undefined') return '';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The stored conversation is filed under the account that started it.
+ *
+ * Before v2.56.44 this key held a bare UUID belonging to the BROWSER, so
+ * signing out and in as someone else on the same device reopened the first
+ * account's support thread. Storing the owner alongside the id means a change
+ * of account starts a fresh conversation. Signing in counts as a change, so an
+ * anonymous thread never attaches itself to whoever logs in next.
+ */
+function readStoredConversation(owner: string): string | null {
+    if (typeof window === 'undefined') return null;
     try {
-        const existing = localStorage.getItem(SESSION_KEY);
-        if (existing && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(existing)) {
-            return existing;
-        }
-        const fresh = crypto.randomUUID();
-        localStorage.setItem(SESSION_KEY, fresh);
-        return fresh;
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as { owner?: string; id?: string };
+        if (parsed?.owner !== owner) return null;
+        return parsed.id && UUID_RE.test(parsed.id) ? parsed.id : null;
     } catch {
-        return crypto.randomUUID();
+        // Unparseable, or a bare-UUID value written by an older build. Either
+        // way it has no owner we can trust, so it is discarded.
+        return null;
     }
+}
+
+function startConversation(owner: string): string {
+    const fresh = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '';
+    try {
+        localStorage.setItem(SESSION_KEY, JSON.stringify({ owner, id: fresh }));
+        localStorage.removeItem(LAST_SEEN_KEY);
+    } catch { /* localStorage unavailable */ }
+    return fresh;
 }
 
 export default function ChatWidget() {
     const { t, locale } = useLanguage();
-    const { data: session } = useSession();
+    const { data: session, status } = useSession();
 
     // Opening message. First name only — the session's display name can be an
     // email handle for some accounts, and "Hola, maria.gonzalez83" is worse than
@@ -75,15 +96,27 @@ export default function ChatWidget() {
     const lastSeenRef = useRef<number>(0);
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-    // Hydrate session id + last-seen marker on mount
+    // Resolve the conversation for whoever is signed in now. Waits for the
+    // session to settle first: minting an `anon` conversation and swapping it a
+    // moment later would leave an orphan thread on every authenticated load.
     useEffect(() => {
-        const id = getOrCreateSessionId();
-        setSessionId(id);
-        try {
-            const raw = localStorage.getItem(LAST_SEEN_KEY);
-            if (raw) lastSeenRef.current = Number(raw) || 0;
-        } catch { /* localStorage unavailable */ }
-    }, []);
+        if (status === 'loading') return;
+        const owner = conversationOwnerKey(session?.user?.email);
+        const stored = readStoredConversation(owner);
+        if (stored) {
+            setSessionId(stored);
+            try {
+                const raw = localStorage.getItem(LAST_SEEN_KEY);
+                if (raw) lastSeenRef.current = Number(raw) || 0;
+            } catch { /* localStorage unavailable */ }
+            return;
+        }
+        // Different account, first visit, or a pre-2.56.44 value: start clean.
+        lastSeenRef.current = 0;
+        setMessages([]);
+        setHasUnread(false);
+        setSessionId(startConversation(owner));
+    }, [status, session?.user?.email]);
 
     // Auto-scroll to newest on each render where messages changed
     useEffect(() => {
@@ -91,6 +124,18 @@ export default function ChatWidget() {
             messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
         }
     }, [messages, open]);
+
+    // The server answers 403 with `reset` when the stored id belongs to another
+    // account — a shared device, or a session that changed under us. Start a
+    // clean conversation rather than showing an error the user cannot act on.
+    const resetConversation = useCallback(() => {
+        const owner = conversationOwnerKey(session?.user?.email);
+        lastSeenRef.current = 0;
+        setMessages([]);
+        setHasUnread(false);
+        setError(null);
+        setSessionId(startConversation(owner));
+    }, [session?.user?.email]);
 
     const persistLastSeen = useCallback((ts: number) => {
         lastSeenRef.current = ts;
@@ -114,6 +159,10 @@ export default function ChatWidget() {
                 method: 'GET',
                 cache: 'no-store',
             });
+            if (res.status === 403) {
+                resetConversation();
+                return;
+            }
             if (!res.ok) return;
             const data = (await res.json()) as { messages?: ChatMessage[] };
             const incoming: ChatMessage[] = Array.isArray(data?.messages) ? data.messages : [];
@@ -137,7 +186,7 @@ export default function ChatWidget() {
         } catch {
             // Network blip — next tick will retry.
         }
-    }, [sessionId, open, persistLastSeen]);
+    }, [sessionId, open, persistLastSeen, resetConversation]);
 
     // Initial fetch (load history when widget mounts so the user sees their
     // prior session on refresh).
@@ -177,6 +226,10 @@ export default function ChatWidget() {
                     companyName: honeypot,
                 }),
             });
+            if (res.status === 403) {
+                resetConversation();
+                return;
+            }
             if (!res.ok) {
                 const data = (await res.json().catch(() => ({}))) as { error?: string };
                 setError(typeof data?.error === 'string' ? data.error : t('chat.error_send'));
@@ -197,7 +250,7 @@ export default function ChatWidget() {
         } finally {
             setSending(false);
         }
-    }, [input, sending, sessionId, locale, honeypot, t]);
+    }, [input, sending, sessionId, locale, honeypot, t, resetConversation]);
 
     const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === 'Enter' && !e.shiftKey) {

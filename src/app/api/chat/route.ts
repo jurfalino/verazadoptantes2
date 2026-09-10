@@ -25,6 +25,7 @@ import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { chatConversations, chatMessages } from '@/db/schema';
 import { getTelegramConfig, sendTelegramMessage, formatForwardedMessage } from '@/lib/telegram';
+import { canAccessConversation } from '@/domain/chatAccess';
 import { getFeatureFlag } from '@/config/features';
 
 const RATE_LIMIT_MIN_GAP_MS = 5_000;
@@ -73,6 +74,17 @@ export async function POST(request: NextRequest) {
         const now = Date.now();
         const existing = await db.select().from(chatConversations).where(eq(chatConversations.id, conversationId)).get();
 
+        // Ownership. Without this, holding a conversation id was enough to append
+        // to it — and the id lives in localStorage, so signing in as a second
+        // account on the same device filed that person's messages into the first
+        // person's thread, which the admin then saw as one conversation with two
+        // identities. 403 tells the widget to discard its stored id and start
+        // clean rather than surfacing an error.
+        if (existing && !canAccessConversation({ conversationUserEmail: existing.userEmail, sessionEmail: userEmail })) {
+            logger.warn('chat.POST: conversation ownership mismatch', { conversationId });
+            return NextResponse.json({ error: 'Conversation not available', reset: true }, { status: 403 });
+        }
+
         // Blocked conversations: silently drop. Don't leak block status to abusers.
         if (existing?.blocked) {
             logger.warn('chat.POST: dropped message on blocked conversation', { conversationId });
@@ -102,7 +114,7 @@ export async function POST(request: NextRequest) {
         if (existing) {
             await db.update(chatConversations).set({
                 userEmail: userEmail ?? existing.userEmail,
-                userLabel: effectiveLabel,
+                userLabel: existing.userEmail && !userEmail ? existing.userLabel : effectiveLabel,
                 lastMessageAt: new Date(now),
                 hourCount: hourCount + 1,
                 hourWindowStart: new Date(hourWindowStart),
@@ -166,6 +178,20 @@ export async function GET(request: NextRequest) {
         const db = await getDb();
         if (!db) {
             return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
+        }
+
+        // Authorize BEFORE reading any message body. This handler previously
+        // never called auth() at all: any holder of the id could read the whole
+        // thread, signed in or not, and logging out revoked nothing.
+        const session = await auth();
+        const conversation = await db.select().from(chatConversations)
+            .where(eq(chatConversations.id, conversationId)).get();
+        if (conversation && !canAccessConversation({
+            conversationUserEmail: conversation.userEmail,
+            sessionEmail: session?.user?.email,
+        })) {
+            logger.warn('chat.GET: conversation ownership mismatch', { conversationId });
+            return NextResponse.json({ error: 'Conversation not available', reset: true }, { status: 403 });
         }
 
         const since = sinceParam ? new Date(Number(sinceParam)) : new Date(0);

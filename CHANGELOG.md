@@ -2,6 +2,50 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.44] - 2026-09-09
+
+### Security — one account could read another's support conversation
+
+Reported from the field: signing out and back in as a different account showed
+the same chat. The cause was two independent gaps that lined up.
+
+`ChatWidget` kept the conversation id in `localStorage` under a key belonging to
+the **browser**, not the account. And `GET /api/chat` never called `auth()` at
+all — it checked the feature flag, validated the id was a UUID, and returned the
+thread. There was no ownership check anywhere in either handler.
+
+So on a shared device — completely normal among rescuers — the second person to
+sign in read the first person's private messages to us. `POST` had the same gap:
+it appended to any conversation whose id you held, and relabelled it with the
+new person's address while keeping the original owner, so the Telegram thread
+became one conversation containing two identities.
+
+The id is a random UUID, so nobody was guessing their way in. But logging out
+revoked nothing, and this is a platform whose entire subject is sensitive
+information about named people.
+
+**The fix, on both sides:**
+
+- `src/domain/chatAccess.ts` holds the rule as two pure functions with 10 tests.
+  A conversation with an owner requires an exact, case-insensitive match on the
+  signed-in address; one without an owner stays open to whoever holds the id,
+  which is all an anonymous thread ever had. The tests pin the prefix and
+  substring cases, because an authorization check that is clever is one that is
+  wrong.
+- Both handlers now authorize before touching a message body, and answer 403
+  with `reset: true`.
+- The client files the id under its owner and starts a fresh conversation when
+  that owner changes. **Signing in counts as a change**, so an anonymous thread
+  never attaches itself to whoever logs in next. A 403 resets the widget rather
+  than showing an error nobody can act on, and the hydration waits for the
+  session to settle so an authenticated load doesn't mint an orphan `anon`
+  thread first.
+
+Values written by earlier builds are bare UUIDs with no owner recorded, so they
+are discarded on sight. **Anyone mid-conversation when this deploys starts a new
+one.** That is the correct outcome and it is worth knowing before the messages
+stop matching up.
+
 ## [2.56.43] - 2026-09-09
 
 ### Fixed — the chat widget was unreadable in dark mode
