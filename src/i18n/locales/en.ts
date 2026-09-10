@@ -158,7 +158,7 @@ export const en = {
         flag_label_showcase_user: 'Public per-user URL',
         flag_desc_showcase_user: 'On /my-animals, show the public /user/[handle] link for the user to share their personal catalog. Off by default.',
         flag_label_guided_walkthrough: 'Guided walkthrough',
-        flag_desc_guided_walkthrough: 'Auto-launch a one-time spotlight tour for new users that guides them to search an adopter by name and read the result. Also shows a "Show me how to search" button on the homepage. Default off.',
+        flag_desc_guided_walkthrough: 'Auto-launch a one-time spotlight tour for new users that guides them to search an adopter by name and read the result. Also appends a "Show me how to search" link to the hint under the search box. Default off.',
         flag_label_household_members: 'Structured household members',
         flag_desc_household_members: 'Replaces the free-text family field with structured people (name, relationship, and their own contact details), PII-protected and deduplicated like the adopter. Off by default.',
         flag_label_followups: 'Adoption follow-ups',
@@ -534,7 +534,9 @@ export const en = {
         hero_features: 'Features',
         what_is: {
             title: 'What is BuenAdoptante?',
-            intro: 'It\'s an adopter registry — a "veraz" (a reference list, if you know the term) — where you can record adoptions, adoption requests, and any observation useful to the rescue community for evaluating future adoptions.',
+            intro: 'It\'s an adopter registry where you can record adoptions, adoption requests, and any observation useful to the rescue community for evaluating future adoptions.',
+            how_title: 'How does it work?',
+            how_body: 'When someone asks you for an animal, search their name and details here. If the profile already exists, you can see the rating and comments left by others; if not, you can create it and start logging their history.',
         },
     },
     faq: {

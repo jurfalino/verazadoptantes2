@@ -2,6 +2,43 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.47] - 2026-09-10
+
+### Changed — the search box stays put on desktop
+
+The search card was pinned on mobile only. On a wide screen it scrolled away the
+moment you started reading results, taking the match count and the "sumá un
+apellido" nudge with it — so the instruction to narrow the search left the screen
+before you could act on it, and refining meant scrolling back to the top.
+
+It now pins at every width, with the same tightened bottom edge and lifted shadow
+mobile already had. The scroll helper needed no change: it asks each element
+whether it is genuinely pinned rather than assuming, so it absorbed this on its
+own.
+
+### Changed — the floating alta became a shortcut in the summary
+
+The bar pinned to the bottom of the window is gone. "¿Ninguna coincide?" now sits
+beside the result count as a link that jumps to the closing block.
+
+It costs no height, because it rides on a row the card already draws, and it is a
+shortcut rather than a second create button: the alta still has to be reached and
+read, so it stays earned instead of being offered before a single result has been
+looked at. The link stands down while the closing block is on screen, which is the
+same "never say it twice" rule the bar followed.
+
+### Changed — "Mostrame cómo buscar" moved into the search hint
+
+It was a pill floating under the search card. It now ends the hint sentence under
+the field, which is where someone is already reading. Same walkthrough flag gate.
+
+### Changed — the "Ampliar la búsqueda" divider is now space
+
+The rule above it was `stone-100` on the `stone-50` page background, too faint to
+separate anything, and on a no-match search it hung above nothing at all.
+
+### Removed — the "veraz" aside from the homepage explainer
+
 ## [2.56.46] - 2026-09-10
 
 ### Fixed — clearing the search emptied the box but left the results on screen

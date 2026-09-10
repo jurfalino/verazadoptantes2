@@ -28,7 +28,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
     // Guided walkthrough: while it runs, this section renders the demo query +
     // results (the spotlight tour highlights these real elements). The tour
     // reveals progressively — empty box → "Juan" → results.
-    const { demoActive, demoQuery, demoResults } = useWalkthrough();
+    const { demoActive, demoQuery, demoResults, enabled: walkthroughEnabled, start: startWalkthrough } = useWalkthrough();
 
     // Initialize from URL params for back-navigation persistence
     const initialQuery = searchParams.get('q') || '';
@@ -43,6 +43,13 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
     const sentinelRef = useRef<HTMLDivElement>(null);
     const searchCardRef = useRef<HTMLDivElement>(null);
     const closingRef = useRef<HTMLDivElement>(null);
+    /**
+     * Whether the closing "¿Ninguna coincide?" block is on screen. The summary's
+     * jump link asks the same question, so it stands down while the block itself
+     * is legible — the same "never say it twice" rule the floating alta followed,
+     * and a shortcut to something already in view is a no-op anyway.
+     */
+    const [closingInView, setClosingInView] = useState(false);
     /** Desktop only: the card drops its stacked layout once scrolling starts. */
     const [condensed, setCondensed] = useState(false);
     /**
@@ -75,8 +82,6 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
      * two rapid searches from landing out of order.
      */
     const searchSeqRef = useRef(0);
-    /** The floating alta exists only while the closing block is off screen. */
-    const [barHidden, setBarHidden] = useState(true);
     // Lazy "weak tier" — fuzzy/partial name matches, loaded only when the user
     // expands "Otras posibles coincidencias" (the duplicate engine's ~3s cost is
     // paid on demand, not on every search). `weakFor` caches which query the
@@ -119,12 +124,13 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
     /**
      * Bring the results into view without parking the first card underneath the
      * chrome. `scrollIntoView({ block: 'start' })` aligns the list with the top of
-     * the VIEWPORT, but the global nav is pinned there and, on mobile, so is the
-     * search card — so the first result landed behind them.
+     * the VIEWPORT, but the global nav is pinned there and so is the search card
+     * — so the first result landed behind them.
      *
      * Each candidate is asked whether it is actually pinned rather than assumed:
-     * the nav's height is set by NavBar, and the search card is sticky on mobile
-     * but `md:static` from the medium breakpoint up.
+     * the nav's height is set by NavBar, and the search card is pinned only once a
+     * search has results. That question-don't-assume shape is why making the card
+     * sticky on desktop needed no change here.
      */
     const scrollToResults = useCallback(() => {
         const el = resultsRef.current;
@@ -140,6 +146,19 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
         const top = el.getBoundingClientRect().top + window.scrollY - occluded;
         const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         window.scrollTo({ top: Math.max(0, top), behavior: reduced ? 'auto' : 'smooth' });
+    }, []);
+
+    /**
+     * Jump to the closing "¿Ninguna coincide?" block. Reached from the link in the
+     * result summary, which is a SHORTCUT and not a second create button: the alta
+     * still has to be read in place, so the create action stays earned rather than
+     * offered from the first paint.
+     */
+    const scrollToClosing = useCallback(() => {
+        const el = closingRef.current;
+        if (!el) return;
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
     }, []);
 
     // Re-run search when returning to page with query in URL
@@ -381,15 +400,14 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
 
     useEffect(() => {
         const closing = closingRef.current;
-        if (!closing || !hasResults) { setBarHidden(true); return; }
-        // Fires a little before the block is properly in view, so the floating
-        // alta and the block are never legible at the same time.
+        if (!closing || !hasResults) { setClosingInView(false); return; }
+        // Fires a little before the block is properly in view, so the link and the
+        // block are never legible at the same time.
         const io = new IntersectionObserver(
-            ([e]) => setBarHidden(e.isIntersecting),
+            ([e]) => setClosingInView(e.isIntersecting),
             { rootMargin: '0px 0px -72px 0px', threshold: 0 },
         );
         io.observe(closing);
-        setBarHidden(false);
         return () => io.disconnect();
     }, [hasResults, shownCount]);
 
@@ -403,7 +421,13 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
             </div>
 
             {/* Search card — just the search tool */}
-            <div ref={searchCardRef} className={`bg-white rounded-3xl shadow-sm border border-stone-200 transition-all ${hasResults && !demoActive ? 'md:static sticky top-16 z-30 rounded-b-xl md:rounded-3xl shadow-md md:shadow-sm' : ''
+            {/* Pinned at EVERY width since v2.56.47. It used to be `md:static`, so on
+                desktop the field scrolled away the moment the rescuer started reading
+                — including the "sumá un apellido" nudge that lives inside this card,
+                which they then had to scroll back up to act on. The exposed bottom
+                edge tightens to `xl` and the shadow lifts, so it reads as sitting
+                above the list rather than inside it. */}
+            <div ref={searchCardRef} className={`bg-white rounded-3xl shadow-sm border border-stone-200 transition-all ${hasResults && !demoActive ? 'sticky top-16 z-30 rounded-b-xl shadow-md' : ''
                 } ${condensed && hasResults ? 'p-5 md:px-6 md:py-3.5' : 'p-5 md:p-6'}`}>
                 {/* Condensed (desktop, after scrolling): keep the mobile row layout
                     instead of switching to the stacked one, so the button sits beside
@@ -444,11 +468,26 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                         )}
                     </div>
                     {/* Sits under the field it describes, not under the button: the
-                        example it gives ("un teléfono o nombre") is about what to type. */}
+                        example it gives ("un teléfono o nombre") is about what to type.
+                        The guided tour rides on the end of that sentence instead of
+                        standing alone as a pill below the card — same offer, same
+                        flag gate, one less thing competing with the search itself. */}
                     {!results && !loading && !query && (
                         <p className="text-center text-stone-500 text-xs">
                             <svg className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" /></svg>
                             {t('search.hint')}
+                            {walkthroughEnabled && (
+                                <>
+                                    {' '}
+                                    <button
+                                        type="button"
+                                        onClick={startWalkthrough}
+                                        className="font-semibold text-teal-700 underline underline-offset-2 hover:text-teal-800 transition-colors"
+                                    >
+                                        {t('walkthrough.relaunch_button')}
+                                    </button>
+                                </>
+                            )}
                         </p>
                     )}
                     {/* After results, mobile uses a compact magnifier so the input stays
@@ -485,19 +524,38 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                     the results saying the same thing in two colours. No second input:
                     the field it sits under IS the refine control. */}
                 {hasResults && shownCount > 0 && (
-                    <div className="mt-3 pt-3 border-t border-stone-100">
-                        <p className="text-sm font-semibold text-stone-800 tabular-nums">
-                            {isTruncated
-                                ? t('search.summary_shown')
-                                    .replace('{total}', totalMatches.toString())
-                                    .replace('{shown}', shownCount.toString())
-                                : t('search.summary_total').replace('{count}', shownCount.toString())}
-                        </p>
-                        <p className="text-xs text-stone-500 mt-0.5">
-                            {shouldRefine
-                                ? t('search.summary_refine')
-                                : t('search.summary_for').replace('{query}', submittedQuery)}
-                        </p>
+                    <div className="mt-3 pt-3 border-t border-stone-100 flex items-center gap-3">
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-stone-800 tabular-nums">
+                                {isTruncated
+                                    ? t('search.summary_shown')
+                                        .replace('{total}', totalMatches.toString())
+                                        .replace('{shown}', shownCount.toString())
+                                    : t('search.summary_total').replace('{count}', shownCount.toString())}
+                            </p>
+                            <p className="text-xs text-stone-500 mt-0.5">
+                                {shouldRefine
+                                    ? t('search.summary_refine')
+                                    : t('search.summary_for').replace('{query}', submittedQuery)}
+                            </p>
+                        </div>
+                        {/* A shortcut to the closing block, not a second create button.
+                            It rides on a row that already exists, so the pinned card
+                            gains no height — which is what ruled out putting the alta
+                            itself up here. The surrounding `shownCount > 0` guard is
+                            the same condition that renders the closing block, so the
+                            target always exists; the walkthrough is excluded because it
+                            drives its own scripted scroll. */}
+                        {!demoActive && !closingInView && (
+                            <button
+                                type="button"
+                                onClick={scrollToClosing}
+                                className="shrink-0 inline-flex items-center gap-1 text-sm font-semibold text-teal-700 underline underline-offset-2 hover:text-teal-800 transition-colors"
+                            >
+                                {t('search.none_match_q')}
+                                <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} aria-hidden="true"><path strokeLinecap="round" d="M12 5v14m0 0-6-6m6 6 6-6" /></svg>
+                            </button>
+                        )}
                     </div>
                 )}
 
@@ -643,9 +701,15 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                             // Lightweight, muted disclosure — a secondary "broaden the
                             // search" affordance, deliberately quieter than the result
                             // cards so it doesn't compete with the real matches.
+                            //
+                            // Space marks the tier boundary, not a rule. The border-t this
+                            // used to carry was stone-100 on the stone-50 page background
+                            // (the idiom belongs inside white cards, where it has contrast
+                            // to spend), so it was invisible where it mattered and visible
+                            // only in the no-match state, where it hung above nothing.
                             <details
                                 key={submittedQuery}
-                                className="group mt-3 border-t border-stone-100 pt-3"
+                                className="group mt-6"
                                 open={results.length === 0}
                                 onToggle={(e) => { if (e.currentTarget.open) loadWeakMatches(submittedQuery, [...shownIds]); }}
                             >
@@ -686,7 +750,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                         <div
                             ref={closingRef}
                             data-walkthrough="create-new"
-                            className="bg-white rounded-2xl p-6 text-center border border-teal-200 shadow-sm mt-4 scroll-mt-28 md:scroll-mt-4"
+                            className="bg-white rounded-2xl p-6 text-center border border-teal-200 shadow-sm mt-4 scroll-mt-28"
                         >
                             <p className="text-[11px] font-bold uppercase tracking-wide text-teal-600 mb-2">
                                 {t('search.none_match_kicker')}
@@ -727,39 +791,6 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                 </div>
             )}
 
-            {/* Floating alta. A LAST CHILD of this section, so even if the observer
-                never ran it could not reach the Adopción / Reporte / Importar cards
-                below — those are competing create paths and an alta hovering over
-                them would be worse than the duplication this avoids.
-                It slides out as the closing block arrives, so the same action is
-                never on screen twice. Hidden from the walkthrough, which drives its
-                own scripted scroll. */}
-            {hasResults && !demoActive && (results?.length ?? 0) > 0 && (
-                <div
-                    // Mirrors the search card above, which is the element that sets the
-                    // convention for a pinned surface in this section: it keeps the
-                    // content column (no full-bleed) and tightens its EXPOSED edge to
-                    // `xl` when stuck — `rounded-b-xl` at the top, so `rounded-t-xl`
-                    // here. `border-b-0` because the bottom edge is flush with the
-                    // viewport. Themed utilities only: `bg-white` maps to
-                    // var(--surface-card), whereas the `bg-white/95` this used to carry
-                    // is NOT in the remap and rendered raw white on the dark ground.
-                    className={`sticky bottom-0 z-30 px-4 py-2.5 bg-white border border-b-0 border-stone-200 rounded-t-xl shadow-[0_-4px_12px_rgba(0,0,0,0.06)] flex items-center gap-3 transition-[transform,opacity] duration-200 motion-reduce:transition-none ${barHidden ? 'translate-y-[125%] opacity-0 pointer-events-none invisible' : ''
-                        }`}
-                >
-                    <span className="flex-1 min-w-0 truncate text-sm font-medium text-stone-600">
-                        {t('search.none_match_q')}
-                    </span>
-                    <button
-                        onClick={handleCreateNew}
-                        tabIndex={barHidden ? -1 : 0}
-                        className="inline-flex items-center gap-1.5 shrink-0 max-w-[60%] px-4 py-2 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors shadow-sm"
-                    >
-                        <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.4} viewBox="0 0 24 24"><path strokeLinecap="round" d="M12 5v14m7-7H5" /></svg>
-                        <span className="truncate">{createLabel}</span>
-                    </button>
-                </div>
-            )}
         </div>
     );
 }

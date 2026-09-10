@@ -16,7 +16,6 @@ import MilestoneBadge from '@/components/MilestoneBadge';
 import ReferralBanner from '@/components/ReferralBanner';
 import { useShowToast } from '@/components/ui/Toast';
 import { WalkthroughProvider } from '@/components/walkthrough/WalkthroughProvider';
-import { RelaunchButton } from '@/components/walkthrough/RelaunchButton';
 
 /**
  * Client-side homepage logic. The outer `src/app/page.tsx` is now a server
@@ -108,7 +107,6 @@ export default function HomeClient({ initialConfig, userEmail }: { initialConfig
                 <div id="search-section">
                     <SearchSection locale={locale} showCardMetadata={appConfig.ENABLE_SEARCH_CARD_METADATA !== 'false'} />
                 </div>
-                <RelaunchButton />
 
                 {/* Social proof + milestone — below search for mobile-first.
                     MilestoneBadge gated by ENABLE_MILESTONE_BADGE (admin-toggleable, default ON). */}

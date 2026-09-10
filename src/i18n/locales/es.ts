@@ -158,7 +158,7 @@ export const es = {
         flag_label_showcase_user: 'URL pública por usuario',
         flag_desc_showcase_user: 'Mostrar en /my-animals el link público /user/[handle] del usuario para compartir su catálogo personal. Por defecto apagado.',
         flag_label_guided_walkthrough: 'Recorrido guiado',
-        flag_desc_guided_walkthrough: 'Lanza una vez un recorrido guiado para usuarios nuevos que los guía a buscar un adoptante por nombre y leer el resultado. También muestra un botón "Mostrame cómo buscar" en la home. Por defecto apagado.',
+        flag_desc_guided_walkthrough: 'Lanza una vez un recorrido guiado para usuarios nuevos que los guía a buscar un adoptante por nombre y leer el resultado. También agrega un enlace "Mostrame cómo buscar" al final de la ayuda debajo del buscador. Por defecto apagado.',
         flag_label_household_members: 'Familiares / Convivientes estructurados',
         flag_desc_household_members: 'Reemplaza el campo de texto libre de familiares por personas estructuradas (nombre, parentesco y datos de contacto propios), protegidas y detectadas como duplicados igual que el adoptante. Por defecto apagado.',
         flag_label_followups: 'Seguimientos de adopción',
@@ -533,7 +533,9 @@ export const es = {
         hero_features: 'Funcionalidades',
         what_is: {
             title: '¿Qué es Buen Adoptante?',
-            intro: 'Es un registro de adoptantes — un "veraz", si conocés el término — donde podés registrar adopciones, pedidos de adopción, y toda observación que le sea de utilidad a la comunidad rescatista para evaluar futuras adopciones.',
+            intro: 'Es un registro de adoptantes donde podés registrar adopciones, pedidos de adopción, y toda observación que le sea de utilidad a la comunidad rescatista para evaluar futuras adopciones.',
+            how_title: '¿Cómo funciona?',
+            how_body: 'Cuando alguien te pide un animal en adopción, busca su nombre y sus datos acá. Si el perfil ya existe, podés ver la calificación y comentarios de otras personas; si no, lo podés crear y comenzar a registrar su historial.',
         },
     },
     faq: {
