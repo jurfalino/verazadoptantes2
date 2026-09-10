@@ -6,7 +6,7 @@ import { useLanguage } from '@/context/LanguageContext';
 /**
  * Homepage hero explainer — replaces the old "Busca adoptantes y Registra
  * adopciones" subtitle. Click-to-expand pattern: the question always renders
- * collapsed; tapping reveals the two-paragraph product + workflow explainer.
+ * collapsed; tapping reveals the one-paragraph product explainer.
  *
  * No state persistence — every page load starts collapsed (per UX sign-off
  * favoring simplicity over returning-user fatigue mitigation; if fatigue
@@ -49,8 +49,6 @@ export default function WhatIsBuenAdoptante() {
                 <div className="overflow-hidden">
                     <div className="max-w-2xl mx-auto px-2 text-left text-stone-600 text-sm leading-relaxed space-y-3">
                         <p>{t('home.what_is.intro')}</p>
-                        <p className="font-semibold text-stone-700">{t('home.what_is.how_title')}</p>
-                        <p>{t('home.what_is.how_body')}</p>
                     </div>
                 </div>
             </div>

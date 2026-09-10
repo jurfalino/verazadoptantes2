@@ -535,8 +535,6 @@ export const en = {
         what_is: {
             title: 'What is BuenAdoptante?',
             intro: 'It\'s an adopter registry — a "veraz" (a reference list, if you know the term) — where you can record adoptions, adoption requests, and any observation useful to the rescue community for evaluating future adoptions.',
-            how_title: 'How does it work?',
-            how_body: 'When someone asks you for an animal, search their name and details here. If the profile already exists, you can see the rating and comments left by others; if not, you can create it and start logging their history.',
         },
     },
     faq: {

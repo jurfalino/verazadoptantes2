@@ -534,8 +534,6 @@ export const pt = {
         what_is: {
             title: 'O que é o Buen Adoptante?',
             intro: 'É um registro de adotantes — um "veraz", se você conhece o termo — onde você pode registrar adoções, pedidos de adoção e toda observação que seja útil para a comunidade resgatista avaliar futuras adoções.',
-            how_title: 'Como funciona?',
-            how_body: 'Quando alguém te pede um animal em adoção, busque o nome e os dados dessa pessoa aqui. Se o perfil já existe, você pode ver a avaliação e comentários de outras pessoas; se não, você pode criá-lo e começar a registrar o histórico.',
         },
     },
     faq: {

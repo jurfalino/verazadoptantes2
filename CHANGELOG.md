@@ -2,6 +2,35 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.46] - 2026-09-10
+
+### Fixed — clearing the search emptied the box but left the results on screen
+
+Two separate paths put the results straight back after the X was clicked, which
+is why it looked like the button only half worked.
+
+The first was the `?q=` replay. Clearing drops the query from the URL with
+`history.replaceState`, but Next re-syncs `useSearchParams` a tick later, so for
+at least one render the auto-run effect saw the old query with `results` already
+back at null — its exact "arriving with a query" signature — and re-ran the very
+search the X was meant to undo. It now remembers what was cleared and skips it
+until the URL catches up.
+
+The second was an in-flight response. The X stays clickable while a search runs
+and nothing cancelled the pending call, so a slow search landed after the clear
+and repopulated the list while the box stayed empty. Every search now carries a
+sequence number that clearing invalidates, which also stops two quick searches
+from landing out of order.
+
+### Changed — the search hint sits under the field it describes
+
+"Probá buscando un teléfono o nombre" was rendering below the search button. It
+is about what to type, so it belongs under the input.
+
+### Removed — the "¿Cómo funciona?" half of the homepage explainer
+
+The expanded "¿Qué es Buen Adoptante?" panel is down to its opening paragraph.
+
 ## [2.56.45] - 2026-09-09
 
 ### Fixed — the opening message vanished as soon as anyone replied to it
