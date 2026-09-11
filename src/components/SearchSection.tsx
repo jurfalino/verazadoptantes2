@@ -433,13 +433,24 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                 {/* Condensed (desktop, after scrolling): keep the mobile row layout
                     instead of switching to the stacked one, so the button sits beside
                     the field and the sticky card gives ~100px back to the results. */}
+                {/* The card says what it is for, at every state including pinned: the
+                    placeholder tells you what to type, never what happens when you do,
+                    and a pinned instrument that loses its name is worse the further you
+                    scroll from the top. Condensed it keeps the words at a third of the
+                    height, because that header rides every screen of a long list. */}
+                <h2 className={hasResults && condensed
+                    ? 'text-[13px] font-semibold text-stone-600 mb-2'
+                    : 'text-base md:text-lg font-semibold text-stone-900 mb-3'}>
+                    {t('search.card_title')}
+                </h2>
+
                 {/* One shape in every state. The control used to restructure itself
                     the first time you searched — a full-width labeled button below the
                     field became a magnifier beside it — so the primary action moved as
-                    a result of using it. `flex-wrap` exists for the hint, which claims
-                    a full row of its own below the field on mobile and sits between
-                    field and button on desktop, where the layout is stacked. */}
-                <form onSubmit={handleSearch} className={`flex flex-wrap gap-2 items-stretch ${condensed ? '' : 'md:block md:space-y-4'}`}>
+                    a result of using it. Since v2.56.52 there is no stacked variant at
+                    all: the field and its icon are one row at every width, and
+                    `flex-wrap` gives the hint a full row of its own beneath them. */}
+                <form onSubmit={handleSearch} className="flex flex-wrap gap-2 items-stretch">
                     <div className="relative flex-1 min-w-0">
                         <label htmlFor="search" className="sr-only">{t('common.search')}</label>
                         {/* text-base (16px) in EVERY state: below 16px, iOS Safari auto-
@@ -493,26 +504,23 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                             )}
                         </p>
                     )}
-                    {/* Mobile is always a compact magnifier so the input keeps the width
-                        (a long labeled button squeezes the field to a strip); desktop
-                        keeps the label, full-width until the card condenses. */}
+                    {/* A magnifier beside the field at every width. Beside, not inside:
+                        the clear button already owns the field's right edge, and a typed
+                        query is exactly when both exist — two glyphs a thumb apart, one
+                        of which wipes what you wrote. The name lives on `aria-label`,
+                        and now on the heading above too, which is what makes an
+                        unlabeled button affordable at all. */}
                     <button
                         type="submit"
                         disabled={loading}
-                        aria-label={t('search.button')}
-                        className={`bg-teal-200 text-teal-900 font-semibold shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] flex items-center justify-center ${condensed
-                            ? 'flex-none w-12 rounded-xl md:w-auto md:px-6 md:rounded-xl md:text-base'
-                            : 'flex-none w-12 rounded-xl md:w-full md:py-4 md:px-6 md:rounded-2xl md:text-lg'
-                            }`}
+                        aria-label={loading ? t('search.searching') : t('search.button')}
+                        className="flex-none w-12 rounded-xl bg-teal-200 text-teal-900 shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] flex items-center justify-center"
                     >
-                        <span className="md:hidden" aria-hidden="true">
-                            {loading ? (
-                                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
-                            ) : (
-                                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" strokeLinecap="round" /></svg>
-                            )}
-                        </span>
-                        <span className="hidden md:inline">{loading ? t('search.searching') : t('search.button')}</span>
+                        {loading ? (
+                            <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
+                        ) : (
+                            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" strokeLinecap="round" /></svg>
+                        )}
                     </button>
                 </form>
 

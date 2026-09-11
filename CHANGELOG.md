@@ -2,6 +2,38 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.52] - 2026-09-11
+
+### Added — the search card says what it is for
+
+"Nombre, Teléfono ó Dirección" tells you what to type and never what happens when
+you do. Someone arriving from a shared link had no way to know this box searches
+a registry of adopters rather than, say, animals looking for a home.
+
+A heading now sits above the field: "Buscá referencias de un adoptante". It stays
+visible in every state, pinned included, because an instrument that loses its
+name the further you scroll is worse than one that costs a line. Once the card
+condenses it keeps the same words at about a third of the height.
+
+### Changed — the submit button is a magnifier at every width
+
+Desktop used to draw a full-width labeled button, which was the last thing
+keeping the control in two shapes. It is now one row everywhere: the field, and
+an icon beside it.
+
+Beside it, not inside. The clear button already owns the field's right edge, and
+a typed query is exactly when both exist, which would have put two glyphs a thumb
+apart with one of them wiping what you wrote. The button's name lives on its
+accessible label, and now on the heading above as well, which is what makes an
+unlabeled button affordable here at all.
+
+### Changed — the line above shortens to "Un registro de adopciones"
+
+It read "Un registro compartido de adoptantes: buscá a quien te pide un animal
+antes de entregarlo", which with the new heading two lines below said "adoptante"
+twice in a row. The line now names what the site holds, the heading names what
+the box does, and no word is spent twice.
+
 ## [2.56.51] - 2026-09-11
 
 ### Fixed — the guided tour failed without saying anything

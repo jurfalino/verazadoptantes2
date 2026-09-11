@@ -439,6 +439,7 @@ export const es = {
     search: {
         title: 'Verificar Adoptante',
         possible_duplicate_tooltip: 'El sistema detectó otro registro similar. El responsable del registro puede revisarlo.',
+        card_title: 'Buscá referencias de un adoptante',
         placeholder: 'Nombre, Teléfono ó Dirección',
         hint: 'Probá buscando un teléfono o nombre para ver cómo funciona.',
         button: 'Buscar Registros',
@@ -532,7 +533,7 @@ export const es = {
         hero_guide: 'Guía de Adopción',
         hero_features: 'Funcionalidades',
         what_is: {
-            line: 'Un registro compartido de adoptantes: buscá a quien te pide un animal antes de entregarlo.',
+            line: 'Un registro de adopciones.',
             step1_lead: 'Buscá',
             step1: 'el nombre, teléfono o dirección',
             step2_lead: 'Mirá',

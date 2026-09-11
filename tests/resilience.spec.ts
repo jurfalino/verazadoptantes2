@@ -175,20 +175,25 @@ test.describe('i18n Language Switching', () => {
         const langBtn = page.getByTestId('language-switcher');
 
         if (await langBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-            // Switch to English → search button should read "Search"
+            // The submit button draws only a magnifier since v2.56.52, so its name
+            // lives on `aria-label`. Assert that instead of its text, which is now
+            // empty in every language.
+            const submit = page.locator('button[type="submit"]');
+
+            // Switch to English → the button is named "Search…"
             await langBtn.click();
             await page.getByTestId('lang-option-en').click();
-            await expect(page.locator('button[type="submit"]')).toContainText(/Search/i, { timeout: 5000 });
+            await expect(submit).toHaveAttribute('aria-label', /Search/i, { timeout: 5000 });
 
-            // Switch to Portuguese → search button should read "Buscar"
+            // Switch to Portuguese → "Buscar…"
             await langBtn.click();
             await page.getByTestId('lang-option-pt').click();
-            await expect(page.locator('button[type="submit"]')).toContainText(/Buscar/i, { timeout: 5000 });
+            await expect(submit).toHaveAttribute('aria-label', /Buscar/i, { timeout: 5000 });
 
-            // Switch back to Spanish → also "Buscar"
+            // Switch back to Spanish → also "Buscar…"
             await langBtn.click();
             await page.getByTestId('lang-option-es').click();
-            await expect(page.locator('button[type="submit"]')).toContainText(/Buscar/i, { timeout: 5000 });
+            await expect(submit).toHaveAttribute('aria-label', /Buscar/i, { timeout: 5000 });
         } else {
             // Language selector not visible — skip gracefully
             test.skip();

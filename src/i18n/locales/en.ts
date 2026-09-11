@@ -440,6 +440,7 @@ export const en = {
     search: {
         title: 'Vet an Adopter',
         possible_duplicate_tooltip: 'The system detected another similar record. The responsible rescuer can review it.',
+        card_title: 'Look up an adopter\'s references',
         placeholder: 'Name, Phone, or Address',
         hint: 'Try searching a phone number or name to see how it works.',
         button: 'Search Records',
@@ -533,7 +534,7 @@ export const en = {
         hero_guide: 'Adoption Guide',
         hero_features: 'Features',
         what_is: {
-            line: 'A shared registry of adopters: look up whoever asks you for an animal before you hand it over.',
+            line: 'A registry of adoptions.',
             step1_lead: 'Search',
             step1: 'by name, phone or address',
             step2_lead: 'Read',
