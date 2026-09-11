@@ -433,9 +433,13 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                 {/* Condensed (desktop, after scrolling): keep the mobile row layout
                     instead of switching to the stacked one, so the button sits beside
                     the field and the sticky card gives ~100px back to the results. */}
-                <form onSubmit={handleSearch} className={hasResults
-                    ? `flex gap-2 items-stretch ${condensed ? '' : 'md:block md:space-y-4'}`
-                    : 'space-y-3'}>
+                {/* One shape in every state. The control used to restructure itself
+                    the first time you searched — a full-width labeled button below the
+                    field became a magnifier beside it — so the primary action moved as
+                    a result of using it. `flex-wrap` exists for the hint, which claims
+                    a full row of its own below the field on mobile and sits between
+                    field and button on desktop, where the layout is stacked. */}
+                <form onSubmit={handleSearch} className={`flex flex-wrap gap-2 items-stretch ${condensed ? '' : 'md:block md:space-y-4'}`}>
                     <div className="relative flex-1 min-w-0">
                         <label htmlFor="search" className="sr-only">{t('common.search')}</label>
                         {/* text-base (16px) in EVERY state: below 16px, iOS Safari auto-
@@ -445,11 +449,9 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                             type="text"
                             id="search"
                             placeholder={t('search.placeholder')}
-                            className={`w-full border border-stone-200 focus:border-teal-400 focus:ring-4 focus:ring-teal-100 transition-all outline-none text-stone-900 placeholder:text-stone-500 font-medium bg-stone-50 text-base ${hasResults
-                                ? (condensed
-                                    ? 'px-4 py-3 pr-10 rounded-xl md:px-5 md:py-3 md:pr-12'
-                                    : 'px-4 py-3 pr-10 rounded-xl md:px-5 md:py-4 md:pr-12 md:rounded-2xl')
-                                : 'px-4 py-3.5 pr-12 rounded-2xl'
+                            className={`w-full border border-stone-200 focus:border-teal-400 focus:ring-4 focus:ring-teal-100 transition-all outline-none text-stone-900 placeholder:text-stone-500 font-medium bg-stone-50 text-base ${condensed
+                                ? 'px-4 py-3 pr-10 rounded-xl md:px-5 md:py-3 md:pr-12'
+                                : 'px-4 py-3 pr-10 rounded-xl md:px-5 md:py-4 md:pr-12 md:rounded-2xl'
                                 }`}
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
@@ -474,7 +476,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                         standing alone as a pill below the card — same offer, same
                         flag gate, one less thing competing with the search itself. */}
                     {!results && !loading && !query && (
-                        <p className="text-center text-stone-500 text-xs">
+                        <p className="basis-full order-last text-center text-stone-500 text-xs">
                             <svg className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" /></svg>
                             {t('search.hint')}
                             {walkthroughEnabled && (
@@ -491,32 +493,26 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                             )}
                         </p>
                     )}
-                    {/* After results, mobile uses a compact magnifier so the input stays
-                        wide (the long labeled button used to squeeze it to a strip);
-                        desktop and the initial state keep the full labeled button. */}
+                    {/* Mobile is always a compact magnifier so the input keeps the width
+                        (a long labeled button squeezes the field to a strip); desktop
+                        keeps the label, full-width until the card condenses. */}
                     <button
                         type="submit"
                         disabled={loading}
-                        aria-label={hasResults ? t('search.button') : undefined}
-                        className={`bg-teal-200 text-teal-900 font-semibold shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] flex items-center justify-center ${hasResults
-                            ? (condensed
-                                ? 'flex-none w-12 rounded-xl md:w-auto md:px-6 md:rounded-xl md:text-base'
-                                : 'flex-none w-12 rounded-xl md:w-full md:py-4 md:px-6 md:rounded-2xl md:text-lg')
-                            : 'w-full py-3.5 px-6 rounded-2xl text-base'
+                        aria-label={t('search.button')}
+                        className={`bg-teal-200 text-teal-900 font-semibold shadow-sm hover:bg-teal-300 hover:shadow-md transition-all disabled:opacity-70 transform active:scale-[0.98] flex items-center justify-center ${condensed
+                            ? 'flex-none w-12 rounded-xl md:w-auto md:px-6 md:rounded-xl md:text-base'
+                            : 'flex-none w-12 rounded-xl md:w-full md:py-4 md:px-6 md:rounded-2xl md:text-lg'
                             }`}
                     >
-                        {hasResults ? (
-                            <>
-                                <span className="md:hidden" aria-hidden="true">
-                                    {loading ? (
-                                        <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
-                                    ) : (
-                                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" strokeLinecap="round" /></svg>
-                                    )}
-                                </span>
-                                <span className="hidden md:inline">{loading ? t('search.searching') : t('search.button')}</span>
-                            </>
-                        ) : (loading ? t('search.searching') : t('search.button'))}
+                        <span className="md:hidden" aria-hidden="true">
+                            {loading ? (
+                                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
+                            ) : (
+                                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" strokeLinecap="round" /></svg>
+                            )}
+                        </span>
+                        <span className="hidden md:inline">{loading ? t('search.searching') : t('search.button')}</span>
                     </button>
                 </form>
 

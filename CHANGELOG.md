@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.49] - 2026-09-11
+
+### Changed — the search control stops restructuring itself
+
+Before the first search, mobile drew a full-width labeled button below the field.
+After it, the same button became a magnifier beside the field. So the primary
+action moved as a consequence of using it, and the field it sat under changed
+shape at the same moment.
+
+It is now one control in every state: field and button side by side on mobile
+with the label carried by the accessible name, field above a full-width labeled
+button on desktop, and the desktop pair collapsing to a single row once the card
+condenses. The result state was already this; the empty state now matches it.
+
+The hint keeps its place under the field. It claims a full row of its own below
+the pair on mobile, and sits between field and button on desktop where the
+layout is stacked.
+
 ## [2.56.48] - 2026-09-10
 
 ### Changed — the homepage explainer answers before it asks
