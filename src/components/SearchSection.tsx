@@ -413,9 +413,10 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
 
     return (
         <div className="w-full">
-            {/* Hero explainer — click-to-expand "¿Qué es Buen Adoptante?".
-                Replaces the old utility subtitle ("Busca adoptantes y Registra adopciones").
-                Collapses on mobile when results are visible (same pattern as before). */}
+            {/* Hero explainer — an always-visible line saying what this is, with the
+                "¿Cómo funciona?" steps one tap away. Replaces the old utility subtitle
+                ("Busca adoptantes y Registra adopciones").
+                Hidden on mobile when results are visible (same pattern as before). */}
             <div className={`mb-4 ${hasResults ? 'hidden md:block' : ''}`}>
                 <WhatIsBuenAdoptante />
             </div>

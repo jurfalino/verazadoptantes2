@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.48] - 2026-09-10
+
+### Changed — the homepage explainer answers before it asks
+
+It was a collapsed "¿Qué es Buen Adoptante?" toggle, so the state almost everyone
+saw was a question with no answer. The only way to learn anything was to click.
+
+A single always-visible line now says what this is: "Un registro compartido de
+adoptantes: buscá a quien te pide un animal antes de entregarlo." It costs the
+same one line the question did.
+
+"¿Cómo funciona?" rides on the end of that line and unfolds three steps in place,
+so the trigger and what it reveals stay adjacent. The steps replaced the
+paragraph they came from, which was one sentence carrying a semicolon and two
+branches the reader had to hold both of to get either. Forty words became twenty,
+each beginning with a verb.
+
+The longer explanation did not just vanish with the prose: the panel links to the
+guide, which is where that detail already lives.
+
 ## [2.56.47] - 2026-09-10
 
 ### Changed — the search box stays put on desktop

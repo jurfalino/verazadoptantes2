@@ -533,10 +533,15 @@ export const en = {
         hero_guide: 'Adoption Guide',
         hero_features: 'Features',
         what_is: {
-            title: 'What is BuenAdoptante?',
-            intro: 'It\'s an adopter registry where you can record adoptions, adoption requests, and any observation useful to the rescue community for evaluating future adoptions.',
+            line: 'A shared registry of adopters: look up whoever asks you for an animal before you hand it over.',
+            step1_lead: 'Search',
+            step1: 'by name, phone or address',
+            step2_lead: 'Read',
+            step2: 'the rating and what other rescuers wrote',
+            step3_lead: 'Record',
+            step3: 'what you know, for whoever searches next',
+            more: 'Read the full guide',
             how_title: 'How does it work?',
-            how_body: 'When someone asks you for an animal, search their name and details here. If the profile already exists, you can see the rating and comments left by others; if not, you can create it and start logging their history.',
         },
     },
     faq: {

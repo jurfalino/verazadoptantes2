@@ -532,10 +532,15 @@ export const pt = {
         hero_guide: 'Guia de Adoção',
         hero_features: 'Funcionalidades',
         what_is: {
-            title: 'O que é o Buen Adoptante?',
-            intro: 'É um registro de adotantes onde você pode registrar adoções, pedidos de adoção e toda observação que seja útil para a comunidade resgatista avaliar futuras adoções.',
+            line: 'Um registro compartilhado de adotantes: busque quem te pede um animal antes de entregá-lo.',
+            step1_lead: 'Busque',
+            step1: 'pelo nome, telefone ou endereço',
+            step2_lead: 'Veja',
+            step2: 'a avaliação e os comentários de outros resgatistas',
+            step3_lead: 'Registre',
+            step3: 'o que você sabe, para quem buscar depois',
+            more: 'Ver o guia completo',
             how_title: 'Como funciona?',
-            how_body: 'Quando alguém te pede um animal em adoção, busque o nome e os dados dessa pessoa aqui. Se o perfil já existe, você pode ver a avaliação e comentários de outras pessoas; se não, você pode criá-lo e começar a registrar o histórico.',
         },
     },
     faq: {
