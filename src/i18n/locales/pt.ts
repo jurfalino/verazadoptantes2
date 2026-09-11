@@ -2203,6 +2203,8 @@ export const pt = {
         dismiss: 'Fechar',
     },
     walkthrough: {
+        start_failed_title: 'Não conseguimos abrir o tour',
+        start_failed_body: 'Recarregue a página e tente de novo. Se falhar de novo, nos envie o código.',
         relaunch_button: 'Me mostre como buscar',
         back: 'Voltar',
         next: 'Próximo',

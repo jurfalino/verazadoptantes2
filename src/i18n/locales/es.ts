@@ -2203,6 +2203,8 @@ export const es = {
         dismiss: 'Cerrar',
     },
     walkthrough: {
+        start_failed_title: 'No pudimos abrir el recorrido',
+        start_failed_body: 'Recargá la página y probá de nuevo. Si vuelve a fallar, pasanos el código.',
         relaunch_button: 'Mostrame cómo buscar',
         back: 'Atrás',
         next: 'Siguiente',

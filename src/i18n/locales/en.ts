@@ -2198,6 +2198,8 @@ export const en = {
         dismiss: 'Dismiss',
     },
     walkthrough: {
+        start_failed_title: 'We could not open the tour',
+        start_failed_body: 'Reload the page and try again. If it fails again, send us the code.',
         relaunch_button: 'Show me how to search',
         back: 'Back',
         next: 'Next',

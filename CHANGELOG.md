@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.51] - 2026-09-11
+
+### Fixed — the guided tour failed without saying anything
+
+Reported as "Mostrame cómo buscar is not working". It could not be diagnosed,
+because the function that starts the tour caught every error and discarded it:
+no log, no toast, no code. A tour that refuses to open in silence is
+indistinguishable from a dead button.
+
+Everything it awaits can fail off the happy path — the demo-record actions, and
+the dynamically imported driver.js and its stylesheets. Any of those now reports
+an error with a traceable code instead of returning the page to its resting
+state as though nothing had been clicked.
+
+This makes the failure visible; it does not yet explain it. The code from one
+click names the cause.
+
 ## [2.56.50] - 2026-09-11
 
 ### Changed — "Desde contactos" is now "Contactos del teléfono", and only shows where it works

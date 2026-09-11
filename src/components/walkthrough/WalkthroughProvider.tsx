@@ -16,6 +16,8 @@ import type { DiscoveryMatch } from '@/app/actions';
 import { getWalkthroughDemoMatches, getWalkthroughDemoRevealed } from '@/app/actions/walkthroughDemo';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { useLanguage } from '@/context/LanguageContext';
+import { useShowToast } from '@/components/ui/Toast';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 
 interface WalkthroughContextValue {
     enabled: boolean;
@@ -86,6 +88,7 @@ export function WalkthroughProvider({
     const revealQueryRef = useRef<string>('Juan');     // "Juan <phone>"
     const driverRef = useRef<Driver | null>(null);
     const startingRef = useRef(false);
+    const toast = useShowToast();
     const typingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const keys = keysFor(userEmail);
 
@@ -206,16 +209,26 @@ export function WalkthroughProvider({
 
             driverRef.current = d;
             requestAnimationFrame(() => requestAnimationFrame(() => d.drive()));
-        } catch {
+        } catch (e) {
+            // NEVER swallow. Everything this function awaits can fail off the
+            // happy path — the demo-record actions, the dynamic driver.js and CSS
+            // chunks — and a tour that refuses to open without saying so is
+            // indistinguishable from a dead button. That is exactly how it got
+            // reported, with no log and no code to trace.
             clearTyping();
             setDemoActive(false);
             setDemoQuery('');
             setDemoResults(null);
             driverRef.current = null;
+            toast.error(
+                t('walkthrough.start_failed_title'),
+                t('walkthrough.start_failed_body'),
+                resolveErrorId(e, 'WalkthroughProvider.start'),
+            );
         } finally {
             startingRef.current = false;
         }
-    }, [t, keys.done, clearTyping, typeQuery]);
+    }, [t, keys.done, clearTyping, typeQuery, toast]);
 
     // Auto-launch once for genuine new users (pending set by CountryConfirmBanner's
     // new-user path, so flipping the flag on never floods existing users).
