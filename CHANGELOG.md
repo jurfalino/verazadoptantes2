@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.50] - 2026-09-11
+
+### Changed — "Desde contactos" is now "Contactos del teléfono", and only shows where it works
+
+The Contact Picker API, which opens the device address book, ships on Chromium
+for Android and nowhere else. On iOS every browser is WebKit underneath, so no
+iPhone has it, and desktop Chrome does not either.
+
+Everywhere else the button quietly fell back to uploading a `.vcf` file. That is
+a different task than the label promised, reached by a control that looked like
+it would open your contacts. The entry point is now offered only where the OS
+sheet actually opens.
+
+The gate lives at the call site rather than inside the launcher, so the separator
+pills on the clean homepage stay in step instead of leaving a dangling divider.
+The fallback inside the click handler stays, because a supported device can still
+refuse: the picker throws on permission denial.
+
+The admin flag description said the button appears everywhere. It now says where
+it appears and why.
+
 ## [2.56.49] - 2026-09-11
 
 ### Changed — the search control stops restructuring itself

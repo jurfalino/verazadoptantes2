@@ -148,7 +148,7 @@ export const es = {
         flag_label_clean_homepage: 'Homepage minimalista',
         flag_desc_clean_homepage: 'Cuando está activa, oculta las dos tarjetas de actividad de la homepage ("Registrar una adopción" y "Dejar una observación"). Solo queda la búsqueda como acción principal; el botón de importar desde redes sociales sigue accesible como link secundario debajo de la búsqueda. Útil para enfocar la homepage en consulta de adoptantes. Por defecto desactivada.',
         flag_label_contact_import: 'Importar desde contactos',
-        flag_desc_contact_import: 'Mostrar el botón "Desde contactos" en la portada para crear un perfil eligiendo un contacto de la agenda del dispositivo (en Chrome Android) o subiendo un archivo .vcf (en otros navegadores). Por defecto desactivado.',
+        flag_desc_contact_import: 'Mostrar el botón "Contactos del teléfono" en la portada para crear un perfil eligiendo un contacto de la agenda del dispositivo. Solo aparece donde el selector del sistema existe, que hoy es Chrome en Android; en el resto de los navegadores queda oculto. Por defecto desactivado.',
         flag_label_google_contacts_import: 'Importar desde Google Contacts',
         flag_desc_google_contacts_import: 'Mostrar el botón "Desde Google Contacts" en la portada para crear un perfil eligiendo un contacto de la agenda de Google del usuario. Requiere que la app esté verificada por Google para el scope `contacts.readonly` (mientras esté en verificación, solo funciona para usuarios de prueba listados en Google Cloud Console). Por defecto desactivado.',
         flag_label_showcase_global: 'URL pública de catálogo global',
@@ -516,12 +516,12 @@ export const es = {
         action_import_desc: 'Creá un perfil desde un post de redes sociales o desde tu agenda de contactos.',
         action_import_btn: 'Importar Ahora',
         action_import_post_btn: 'Desde un post',
-        action_import_contacts_btn: 'Desde contactos',
+        action_import_contacts_btn: 'Contactos del teléfono',
         action_import_google_contacts_btn: 'Desde Google Contacts',
         // Compact labels used in clean-homepage mode where the two import
         // modes render as paired pills below the search (no card chrome).
         action_import_post_secondary: 'Importar desde un post',
-        action_import_contacts_secondary: 'Importar desde contactos',
+        action_import_contacts_secondary: 'Importar desde los contactos del teléfono',
         action_import_google_contacts_secondary: 'Importar desde Google Contacts',
         // Legacy key — still read in case any older entry-point references
         // it. Mirrors the post-only label so existing surfaces keep working.

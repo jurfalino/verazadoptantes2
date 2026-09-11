@@ -148,7 +148,7 @@ export const en = {
         flag_label_clean_homepage: 'Minimal homepage',
         flag_desc_clean_homepage: 'When on, hides the two activity cards on the homepage ("Register an adoption" and "Leave an observation"). Search becomes the sole primary action; the import-from-social affordance stays accessible as a secondary link below the search. Useful to focus the homepage on adopter lookup. Default OFF.',
         flag_label_contact_import: 'Import from contacts',
-        flag_desc_contact_import: 'Show the "From contacts" button on the homepage to create a profile by picking a contact from the device address book (Chrome on Android) or uploading a .vcf file (other browsers). Default OFF.',
+        flag_desc_contact_import: 'Show the "Phone contacts" button on the homepage to create a profile by picking a contact from the device address book. It only appears where the OS picker exists, which today means Chrome on Android; every other browser hides it. Default OFF.',
         flag_label_google_contacts_import: 'Import from Google Contacts',
         flag_desc_google_contacts_import: 'Show the "From Google Contacts" button on the homepage to create a profile by picking a contact from the user\'s Google address book. Requires the app to be verified by Google for the `contacts.readonly` scope (while in verification, only works for test users listed in Google Cloud Console). Default OFF.',
         flag_label_showcase_global: 'Public global catalog URL',
@@ -517,12 +517,12 @@ export const en = {
         action_import_desc: 'Build a profile from a social media post or from your contact list.',
         action_import_btn: 'Import Now',
         action_import_post_btn: 'From a post',
-        action_import_contacts_btn: 'From contacts',
+        action_import_contacts_btn: 'Phone contacts',
         action_import_google_contacts_btn: 'From Google Contacts',
         // Compact labels used in clean-homepage mode where the two import
         // modes render as paired pills below the search (no card chrome).
         action_import_post_secondary: 'Import from a post',
-        action_import_contacts_secondary: 'Import from contacts',
+        action_import_contacts_secondary: 'Import from phone contacts',
         action_import_google_contacts_secondary: 'Import from Google Contacts',
         // Legacy key — still read in case any older entry-point references
         // it. Mirrors the post-only label so existing surfaces keep working.

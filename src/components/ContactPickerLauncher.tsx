@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
@@ -42,6 +42,26 @@ function hasContactPickerApi(): boolean {
     return 'contacts' in navigator
         && typeof window !== 'undefined'
         && 'ContactsManager' in window;
+}
+
+/**
+ * Whether this device can open the OS contacts sheet. In practice that means
+ * Chromium on Android: the Contact Picker API ships nowhere else, and on iOS
+ * every browser is WebKit underneath, so no iPhone qualifies.
+ *
+ * Call sites use this to decide whether to OFFER the entry point at all, since
+ * v2.56.50 — the button used to appear everywhere and quietly fall back to a
+ * `.vcf` upload, which is a different task than the one its label promised.
+ * The fallback inside `handleClick` stays, because a supported device can still
+ * refuse: the picker throws on permission denial.
+ *
+ * Always false on the first render, because the server has no `navigator` and a
+ * mismatch here would be a hydration error. It resolves on mount.
+ */
+export function useContactPickerSupported(): boolean {
+    const [supported, setSupported] = useState(false);
+    useEffect(() => { setSupported(hasContactPickerApi()); }, []);
+    return supported;
 }
 
 /**
