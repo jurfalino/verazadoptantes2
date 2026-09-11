@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.53] - 2026-09-11
+
+### Fixed — the homepage smoke test had no anchor left to find
+
+2.56.52 never deployed: both landing-page smoke tests hard-failed on `/`, which
+checks that a known string is visible to prove React mounted.
+
+That string was the search button's text, which 2.56.52 deleted. The check had a
+second alternative, "BuenAdoptante", but it never matched anything — the logo
+renders "Buen Adoptante", with a space — so the button was the only thing holding
+it up.
+
+The anchor is now the search card's heading, in all three languages.
+
 ## [2.56.52] - 2026-09-11
 
 ### Added — the search card says what it is for

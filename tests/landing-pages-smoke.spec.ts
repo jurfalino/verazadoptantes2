@@ -25,7 +25,11 @@ import { runSmokeRoute, type SmokeRoute } from './landing-pages-smoke-shared';
 
 const ROUTES: SmokeRoute[] = [
     // Homepage — every visitor sees it; tab navigation lands here.
-    { path: '/', anchor: /search records|buscar registros|BuenAdoptante/i },
+    // The search card's heading. It replaced the button text in v2.56.52, when
+    // the submit became an icon — and "BuenAdoptante" never matched, because the
+    // logo renders "Buen Adoptante" with a space. Bilingual: Chromium renders
+    // English here with no locale set.
+    { path: '/', anchor: /references|referencias|referências/i },
 
     // My-* surfaces — owner views, hit hardest by v2.19.13 changes.
     { path: '/my-adopters', anchor: /my adopters|mis adoptantes|adoptantes/i },
