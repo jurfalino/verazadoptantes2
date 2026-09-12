@@ -10,6 +10,13 @@ export type StepDetail = {
     linkTextEs?: string;
     linkTextEn?: string;
     linkTextPt?: string;
+    /**
+     * One level of sub-points, no deeper. Phases 3 to 5 read as "do this, and
+     * here is what that involves", which a flat list turned into a run of
+     * equal-weight instructions. `**bold**` inside any text renders as bold —
+     * this copy is static and authored here, never user input.
+     */
+    children?: StepDetail[];
 };
 
 export type GuideStepEntry = {
@@ -68,9 +75,9 @@ export const STEPS: GuideStep[] = [
             order: 1,
             details: [
                 {
-                    textEs: 'Salud al día: Vacunación (mínimo la Triple Felina o Séxtuple Canina) y desparasitación interna y externa.',
-                    textEn: 'Health up to date: Vaccination (at minimum the Feline Triple or Canine Sextuple) and internal and external deworming.',
-                    textPt: 'Saúde em dia: Vacinação (no mínimo a Tríplice Felina ou a Sêxtupla Canina) e vermifugação interna e externa.',
+                    textEs: 'Salud al día: desparasitación interna y externa.',
+                    textEn: 'Health up to date: internal and external deworming.',
+                    textPt: 'Saúde em dia: vermifugação interna e externa.',
                 },
                 {
                     textEs: 'Castración obligatoria: Es la única forma de evitar criaderos clandestinos o que el animal se escape por celo. Si es muy cachorro, la adopción debe estar sujeta a un compromiso de castración a los 6 meses.',
@@ -120,38 +127,52 @@ export const STEPS: GuideStep[] = [
         slug: 'filtro-investigacion',
         entry: {
             title: 'El Filtro',
-            titleEs: 'Fase 3: El Filtro (Investigación del Candidato)',
-            titleEn: 'Phase 3: The Filter (Candidate Investigation)',
-            titlePt: 'Fase 3: O Filtro (Investigação do Candidato)',
-            descriptionEs: 'Aquí es donde aplicamos el cuestionario de filtro sutil.',
-            descriptionEn: 'This is where we apply the subtle screening questionnaire.',
-            descriptionPt: 'É aqui que aplicamos o questionário de triagem sutil.',
+            titleEs: 'Fase 3: El Filtro (Investigación de los candidatos)',
+            titleEn: 'Phase 3: The Filter (Researching the Candidates)',
+            titlePt: 'Fase 3: O Filtro (Investigação dos candidatos)',
+            descriptionEs: '',
+            descriptionEn: '',
+            descriptionPt: '',
             icon: '🔍',
             order: 3,
             details: [
                 {
-                    textEs: 'Formulario Inicial: Enviá las preguntas por WhatsApp o Google Forms.',
-                    textEn: 'Initial Form: Send the questions via WhatsApp or Google Forms.',
-                    textPt: 'Formulário inicial: Envie as perguntas por WhatsApp ou Google Forms.',
+                    textEs: 'Como primer paso se recomienda **recabar información** de los interesados:',
+                    textEn: 'As a first step, **gather information** about the people interested:',
+                    textPt: 'Como primeiro passo, recomenda-se **reunir informações** sobre os interessados:',
+                    children: [
+                        {
+                            textEs: 'Se puede hacer con un formulario, una entrevista telefónica, ó ambos (lo recomendado).',
+                            textEn: 'You can use a form, a phone interview, or both (recommended).',
+                            textPt: 'Pode ser com um formulário, uma entrevista por telefone, ou ambos (o recomendado).',
+                        },
+                        {
+                            textEs: 'Referencias: podés pedir el contacto del veterinario de su mascota anterior o actual.',
+                            textEn: 'References: you can ask for the contact of the vet who saw their previous or current pet.',
+                            textPt: 'Referências: você pode pedir o contato do veterinário do pet anterior ou atual.',
+                        },
+                    ],
                 },
                 {
-                    textEs: 'El "Stalkeo" Preventivo: Buscá el nombre en Google y redes sociales.',
-                    textEn: 'Preventive Background Check: Search the name on Google and social media.',
-                    textPt: 'A investigação preventiva: Busque o nome no Google e nas redes sociais.',
-                },
-                {
-                    textEs: 'Consultá bases de datos de adoptantes o grupos de "Alertas de Maltratadores" en Facebook.',
-                    textEn: 'Check adopter databases or "Abuser Alert" groups on Facebook.',
-                    textPt: 'Consulte bancos de dados de adotantes ou grupos de "Alerta de Maus-Tratos" no Facebook.',
-                    linkUrl: '/',
-                    linkTextEs: '🔎 Buscar en Veraz Adoptantes',
-                    linkTextEn: '🔎 Search in Veraz Adoptantes',
-                    linkTextPt: '🔎 Buscar no Veraz Adoptantes',
-                },
-                {
-                    textEs: 'Si sospechás de un perfil falso, pedí una videollamada.',
-                    textEn: 'If you suspect a fake profile, request a video call.',
-                    textPt: 'Se suspeitar de um perfil falso, peça uma videochamada.',
+                    textEs: 'Luego debés **verificar los datos**:',
+                    textEn: 'Then you have to **verify what they told you**:',
+                    textPt: 'Depois você deve **verificar os dados**:',
+                    children: [
+                        {
+                            textEs: 'Buscá el nombre en Google y redes sociales.',
+                            textEn: 'Search the name on Google and social media.',
+                            textPt: 'Busque o nome no Google e nas redes sociais.',
+                        },
+                        {
+                            textEs: 'Verificá los antecedentes —y registralos— en Buen Adoptante.',
+                            textEn: 'Check their history — and record it — on Buen Adoptante.',
+                            textPt: 'Verifique os antecedentes — e registre-os — no Buen Adoptante.',
+                            linkUrl: '/',
+                            linkTextEs: '🔎 Buscar en Buen Adoptante',
+                            linkTextEn: '🔎 Search on Buen Adoptante',
+                            linkTextPt: '🔎 Buscar no Buen Adoptante',
+                        },
+                    ],
                 },
             ],
         },
@@ -159,30 +180,32 @@ export const STEPS: GuideStep[] = [
     {
         slug: 'entrevista-visita',
         entry: {
-            title: 'Entrevista y Visita',
-            titleEs: 'Fase 4: La Entrevista y Visita Domiciliaria',
-            titleEn: 'Phase 4: Interview & Home Visit',
-            titlePt: 'Fase 4: A Entrevista e a Visita Domiciliar',
-            descriptionEs: 'Nunca entregues un animal en un punto medio (plaza, estación de servicio).',
-            descriptionEn: 'Never hand over an animal at a midpoint (park, gas station).',
-            descriptionPt: 'Nunca entregue um animal em um ponto intermediário (praça, posto de gasolina).',
+            title: 'Entrevista presencial',
+            titleEs: 'Fase 4: La Entrevista presencial',
+            titleEn: 'Phase 4: The In-Person Meeting',
+            titlePt: 'Fase 4: A Entrevista presencial',
+            descriptionEs: '',
+            descriptionEn: '',
+            descriptionPt: '',
             icon: '🏠',
             order: 4,
             details: [
                 {
-                    textEs: 'La Visita: Ver dónde va a vivir permite detectar si hay peligros (balcones sin red, cercos bajos, suciedad extrema).',
-                    textEn: 'The Visit: Seeing where the animal will live allows you to detect dangers (balconies without nets, low fences, extreme dirt).',
-                    textPt: 'A visita: Ver onde o animal vai morar permite detectar perigos (sacadas sem tela, cercas baixas, sujeira extrema).',
-                },
-                {
-                    textEs: 'La Dinámica Familiar: Observar cómo interactúan los otros miembros de la casa (especialmente niños) con el animal.',
-                    textEn: 'Family Dynamics: Observe how other household members (especially children) interact with the animal.',
-                    textPt: 'A dinâmica familiar: Observe como os outros moradores da casa (especialmente crianças) interagem com o animal.',
-                },
-                {
-                    textEs: 'Referencias: Pedir el contacto del veterinario de su mascota anterior o actual. Si no tiene, pedí una referencia personal de confianza.',
-                    textEn: 'References: Ask for the contact of their previous or current pet\'s veterinarian. If they don\'t have one, ask for a trusted personal reference.',
-                    textPt: 'Referências: Peça o contato do veterinário do pet anterior ou atual. Se não tiver, peça uma referência pessoal de confiança.',
+                    textEs: 'Es recomendable invitar a los interesados a conocer al animal en tu casa.',
+                    textEn: 'Invite the people interested to meet the animal at your home.',
+                    textPt: 'É recomendável convidar os interessados para conhecer o animal na sua casa.',
+                    children: [
+                        {
+                            textEs: 'Te permite conocer mejor al interesado y entablar una relación para que sea más ameno el seguimiento.',
+                            textEn: 'It lets you get to know them better and build a rapport that makes the follow-up easier.',
+                            textPt: 'Permite conhecê-los melhor e criar um vínculo que torna o acompanhamento mais leve.',
+                        },
+                        {
+                            textEs: 'Si el adoptante tiene otro animal o un niño, pedile que lo lleve, para observar cómo interactúan con el animal.',
+                            textEn: 'If they have another pet or a child, ask them to bring them along, so you can see how they interact with the animal.',
+                            textPt: 'Se o adotante tiver outro animal ou uma criança, peça que leve, para observar como interagem com o animal.',
+                        },
+                    ],
                 },
             ],
         },
@@ -190,30 +213,49 @@ export const STEPS: GuideStep[] = [
     {
         slug: 'contrato-entrega',
         entry: {
-            title: 'Contrato y Entrega',
-            titleEs: 'Fase 5: El Contrato y la Entrega',
-            titleEn: 'Phase 5: Contract & Handover',
-            titlePt: 'Fase 5: O Contrato e a Entrega',
-            descriptionEs: 'El momento del traspaso debe ser formal para que el adoptante sienta el peso de la responsabilidad.',
-            descriptionEn: 'The handover moment must be formal so the adopter feels the weight of responsibility.',
-            descriptionPt: 'O momento da entrega deve ser formal para que o adotante sinta o peso da responsabilidade.',
+            title: 'Entrega y Contrato',
+            titleEs: 'Fase 5: La Entrega y El Contrato',
+            titleEn: 'Phase 5: The Handover and the Contract',
+            titlePt: 'Fase 5: A Entrega e o Contrato',
+            descriptionEs: 'Las adopciones se entregan SOLO en el domicilio del adoptante:',
+            descriptionEn: 'Animals are handed over ONLY at the adopter\'s home:',
+            descriptionPt: 'As adoções são entregues SOMENTE no domicílio do adotante:',
             icon: '📋',
             order: 5,
             details: [
                 {
-                    textEs: 'Documentación: Fotocopia del DNI del adoptante y firma de un Contrato de Adopción Responsable.',
-                    textEn: 'Documentation: Copy of the adopter\'s ID and signing of a Responsible Adoption Contract.',
-                    textPt: 'Documentação: Cópia do documento do adotante e assinatura de um Contrato de Adoção Responsável.',
+                    textEs: 'Esto te permite verificar la dirección real y observar dónde va a vivir.',
+                    textEn: 'This lets you confirm the real address and see where the animal will live.',
+                    textPt: 'Isso permite verificar o endereço real e observar onde o animal vai viver.',
+                    children: [
+                        {
+                            textEs: 'Detectar si hay peligros (balcones sin red, cercos bajos, suciedad extrema) y si te dijeron la verdad en relación a los detalles de la vivienda.',
+                            textEn: 'Spot hazards (balconies without nets, low fences, extreme dirt) and whether they told you the truth about the home.',
+                            textPt: 'Detectar perigos (sacadas sem tela, cercas baixas, sujeira extrema) e se disseram a verdade sobre a moradia.',
+                        },
+                        {
+                            textEs: 'Por ejemplo, si no tienen la comida, el collar/chapa o las piedras sanitarias antes de que el animal llegue, no es una buena señal.',
+                            textEn: 'For example, if the food, collar/tag or litter are not ready before the animal arrives, that is not a good sign.',
+                            textPt: 'Por exemplo, se a comida, a coleira/plaquinha ou a areia não estiverem prontas antes de o animal chegar, não é um bom sinal.',
+                        },
+                        {
+                            textEs: 'También observar cómo se desenvuelve el animal, y la familia, y brindarles asistencia para asegurar una pronta adaptación.',
+                            textEn: 'Also watch how the animal and the family settle in, and help them so the adaptation goes quickly.',
+                            textPt: 'Observe também como o animal e a família se adaptam, e ofereça ajuda para que a adaptação seja rápida.',
+                        },
+                    ],
                 },
                 {
-                    textEs: 'Kit de inicio: Pedir que tengan preparada la comida, el collar/chapa o las piedras sanitarias antes de que el animal llegue.',
-                    textEn: 'Starter kit: Ask them to have food, collar/tag, or litter prepared before the animal arrives.',
-                    textPt: 'Kit inicial: Peça que tenham a comida, a coleira/plaquinha ou a areia sanitária prontas antes de o animal chegar.',
-                },
-                {
-                    textEs: 'Microchip (opcional pero recomendado): En Argentina hay opciones privadas para chipear al animal y vincularlo legalmente al dueño.',
-                    textEn: 'Microchip (optional but recommended): In Argentina, there are private options to chip the animal and legally link it to the owner.',
-                    textPt: 'Microchip (opcional, mas recomendado): Há opções privadas para microchipar o animal e vinculá-lo legalmente ao dono.',
+                    textEs: 'El momento del traspaso debe ser formal para que el adoptante sienta el peso de la responsabilidad.',
+                    textEn: 'The handover moment must be formal so the adopter feels the weight of the responsibility.',
+                    textPt: 'O momento da entrega deve ser formal para que o adotante sinta o peso da responsabilidade.',
+                    children: [
+                        {
+                            textEs: 'Verificá el documento del adoptante y la firma de un **Contrato de Adopción Responsable** impreso o digital.',
+                            textEn: 'Check the adopter\'s ID and the signature on a **Responsible Adoption Contract**, printed or digital.',
+                            textPt: 'Verifique o documento do adotante e a assinatura de um **Contrato de Adoção Responsável**, impresso ou digital.',
+                        },
+                    ],
                 },
             ],
         },
@@ -225,9 +267,9 @@ export const STEPS: GuideStep[] = [
             titleEs: 'Fase 6: Seguimiento Post-Adopción',
             titleEn: 'Phase 6: Post-Adoption Follow-up',
             titlePt: 'Fase 6: Acompanhamento Pós-Adoção',
-            descriptionEs: 'El trabajo no termina cuando cerrás la puerta del adoptante.',
-            descriptionEn: 'The work doesn\'t end when you close the adopter\'s door.',
-            descriptionPt: 'O trabalho não termina quando você fecha a porta do adotante.',
+            descriptionEs: 'El trabajo no termina cuando entregás el animal.',
+            descriptionEn: 'The work does not end when you hand the animal over.',
+            descriptionPt: 'O trabalho não termina quando você entrega o animal.',
             icon: '📞',
             order: 6,
             details: [
@@ -237,9 +279,9 @@ export const STEPS: GuideStep[] = [
                     textPt: 'Dia 1: Como foi a noite?',
                 },
                 {
-                    textEs: 'Semana 1: ¿Hubo algún problema de adaptación o destrozos?',
-                    textEn: 'Week 1: Were there any adaptation issues or damage?',
-                    textPt: 'Semana 1: Houve algum problema de adaptação ou estragos?',
+                    textEs: 'Semana 1: ¿Hubo algún problema de adaptación?',
+                    textEn: 'Week 1: Were there any adaptation issues?',
+                    textPt: 'Semana 1: Houve algum problema de adaptação?',
                 },
                 {
                     textEs: 'Mes 1: Pedir foto del carnet de vacunación actualizado o turno de castración.',

@@ -24,9 +24,14 @@ export const metadata: Metadata = {
 };
 
 export default function GuiaLayout({ children }: { children: React.ReactNode }) {
+    // Some phases carry no standalone description — they open straight into their
+    // steps — so fall back to the first one rather than emitting an empty
+    // HowToStep description. The `**` emphasis markers are stripped: this is
+    // structured data, not rendered copy.
     const howToSteps = STEPS.map((s) => ({
         name: s.entry.titleEs,
-        description: s.entry.descriptionEs,
+        description: (s.entry.descriptionEs || s.entry.details?.[0]?.textEs || s.entry.titleEs)
+            .replace(/\*\*/g, ''),
     }));
     return (
         <>

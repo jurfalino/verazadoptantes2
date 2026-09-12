@@ -14,7 +14,21 @@ type StepDetail = {
     linkTextEs?: string;
     linkTextEn?: string;
     linkTextPt?: string;
+    children?: StepDetail[];
 };
+
+/**
+ * Renders `**bold**` inside guide copy. That copy lives in guide-data.ts and is
+ * written by us, never submitted by anyone, so splitting on the markers is safe
+ * and beats pulling in a markdown renderer for two emphasised phrases.
+ */
+function withEmphasis(text: string) {
+    return text.split(/\*\*(.+?)\*\*/g).map((part, i) =>
+        i % 2 === 1
+            ? <strong key={i} className="font-semibold text-stone-900">{part}</strong>
+            : part
+    );
+}
 
 type GuideStep = {
     slug: string;
@@ -181,9 +195,11 @@ export default function GuiaPage() {
                                                         <h3 className="text-lg font-semibold text-stone-900 mb-1 leading-snug">
                                                             {pick(step.entry.titleEs, step.entry.titleEn, step.entry.titlePt)}
                                                         </h3>
-                                                        <p className="text-stone-500 text-sm leading-relaxed">
-                                                            {pick(step.entry.descriptionEs, step.entry.descriptionEn, step.entry.descriptionPt)}
-                                                        </p>
+                                                        {pick(step.entry.descriptionEs, step.entry.descriptionEn, step.entry.descriptionPt).trim() && (
+                                                            <p className="text-stone-500 text-sm leading-relaxed">
+                                                                {pick(step.entry.descriptionEs, step.entry.descriptionEn, step.entry.descriptionPt)}
+                                                            </p>
+                                                        )}
                                                     </div>
                                                 </div>
 
@@ -198,8 +214,34 @@ export default function GuiaPage() {
                                                                     </span>
                                                                     <div className="flex-1 min-w-0">
                                                                         <p className="text-stone-700 text-sm leading-relaxed">
-                                                                            {pick(detail.textEs, detail.textEn, detail.textPt)}
+                                                                            {withEmphasis(pick(detail.textEs, detail.textEn, detail.textPt))}
                                                                         </p>
+                                                                        {/* One level deep, no further — the sub-points explain
+                                                                            the instruction above them rather than adding new ones,
+                                                                            so they read as prose with a marker, not as more steps. */}
+                                                                        {detail.children && detail.children.length > 0 && (
+                                                                            <ul className="mt-2 space-y-1.5">
+                                                                                {detail.children.map((child, k) => (
+                                                                                    <li key={k} className="flex items-start gap-2">
+                                                                                        <span aria-hidden="true" className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${colors.accent} mt-[7px]`} />
+                                                                                        <div className="min-w-0">
+                                                                                            <p className="text-stone-600 text-sm leading-relaxed">
+                                                                                                {withEmphasis(pick(child.textEs, child.textEn, child.textPt))}
+                                                                                            </p>
+                                                                                            {child.linkUrl && (
+                                                                                                <Link
+                                                                                                    href={child.linkUrl}
+                                                                                                    className={`inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg text-xs font-semibold ${colors.badge} hover:opacity-80 transition-opacity shadow-sm`}
+                                                                                                >
+                                                                                                    {pick(child.linkTextEs || child.linkUrl, child.linkTextEn || child.linkUrl, child.linkTextPt || child.linkUrl)}
+                                                                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                                                                                </Link>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </li>
+                                                                                ))}
+                                                                            </ul>
+                                                                        )}
                                                                         {detail.linkUrl && (
                                                                             <Link
                                                                                 href={detail.linkUrl}

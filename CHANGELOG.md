@@ -2,6 +2,31 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.56] - 2026-09-12
+
+### Changed — the adoption guide, rewritten from the Notion draft
+
+Phases 3, 4 and 5 were restructured rather than reworded.
+
+Phase 3 becomes two actions, gather information and then verify it, each with
+its own sub-points. Phase 4 is now an in-person meeting at the rescuer's home
+rather than a home visit to the adopter. Phase 5 inverts: the handover happens
+only at the adopter's home, which is what makes the address check possible, and
+the contract follows. Phase 1 drops the vaccination requirement from the health
+line, and phase 6 no longer asks about damage in the first week.
+
+### Added — sub-points and emphasis in guide steps
+
+The new copy reads as "do this, and here is what it involves", which a flat list
+turned into a run of equal-weight instructions. Steps can now carry one level of
+sub-points, and no more than one. Text can carry `**bold**`, rendered without a
+markdown library, since this copy is authored in the repo and never submitted by
+anyone.
+
+Two phases now open straight into their steps with no separate description. The
+page skips the empty paragraph, and the structured data falls back to the first
+step so no HowToStep ships with an empty description.
+
 ## [2.56.55] - 2026-09-12
 
 ### Removed — the quick-jump pills from the guide header
