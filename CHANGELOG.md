@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.55] - 2026-09-12
+
+### Removed — the quick-jump pills from the guide header
+
+Six pills under the hero, one per phase, each scrolling to a section that was
+already a few hundred pixels below them on a page with no other content. They
+pushed the first phase further down to save a scroll that was shorter than the
+pills themselves.
+
 ## [2.56.54] - 2026-09-12
 
 ### Changed — the homepage has a heading again, and it opens the steps

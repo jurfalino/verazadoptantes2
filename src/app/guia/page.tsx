@@ -141,21 +141,6 @@ export default function GuiaPage() {
                             '6 fases para garantir que cada animal chegue ao lar certo — e permaneça nele'
                         )}
                     </p>
-                    {/* Quick jump pills */}
-                    {sortedSteps.length > 0 && (
-                        <div className="flex flex-wrap justify-center gap-2 pt-4">
-                            {sortedSteps.map((step, i) => (
-                                <button
-                                    key={step.slug}
-                                    onClick={() => document.getElementById(`phase-${i}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-white/15 hover:bg-white/25 backdrop-blur-sm transition-all hover:scale-105"
-                                >
-                                    <span>{step.entry.icon}</span>
-                                    <span className="hidden sm:inline">{pick(step.entry.titleEs, step.entry.titleEn, step.entry.titlePt).replace(/^Fase \d+:\s*/, '').replace(/^Phase \d+:\s*/, '').split('(')[0].trim()}</span>
-                                </button>
-                            ))}
-                        </div>
-                    )}
                 </div>
             </header>
 
