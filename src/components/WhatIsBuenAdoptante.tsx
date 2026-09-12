@@ -4,19 +4,18 @@ import { useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 
 /**
- * Homepage explainer, above the search card.
+ * Homepage heading, above the search card.
  *
- * The line itself is always visible and says what this is. Until v2.56.48 the
- * whole thing was a collapsed "¿Qué es Buen Adoptante?" toggle, so the state
- * almost everyone saw was a question with no answer — the only way to learn
- * anything was to click. It now answers first and keeps the toggle for the
- * mechanics.
+ * Names the page — "Registro de Adopciones" — and doubles as the disclosure for
+ * how the thing works. One element instead of two: until v2.56.54 a sentence
+ * carried a separate "¿Cómo funciona?" link at its end, which meant the page's
+ * only heading was a line of body copy with a link stuck to it.
  *
- * "¿Cómo funciona?" rides on the end of the line rather than sitting in its own
- * block, and the steps unfold directly beneath it, so the trigger and what it
- * reveals stay adjacent. Three parallel steps replaced the paragraph they came
- * from: that was one sentence with a semicolon and two branches, which the
- * reader had to hold both halves of to get either.
+ * The heading IS the button, so the whole phrase is the hit target, with a
+ * chevron because a heading that does nothing looks exactly like a heading that
+ * does. Three parallel steps sit behind it, replacing the paragraph they came
+ * from: one sentence with a semicolon and two branches the reader had to hold
+ * both halves of to get either.
  *
  * Nothing persists — every page load starts collapsed. The panel stays in the
  * DOM (visibility-toggled via class instead of `hidden`) so the height can
@@ -34,28 +33,27 @@ export default function WhatIsBuenAdoptante() {
 
     return (
         <div className="text-center">
-            <p className="max-w-xl mx-auto text-stone-600 text-sm md:text-[15px] leading-relaxed">
-                {t('home.what_is.line')}{' '}
+            <h2>
                 <button
                     type="button"
                     onClick={() => setOpen(o => !o)}
                     aria-expanded={open}
                     aria-controls="what-is-content"
-                    className="inline-flex items-center gap-1 whitespace-nowrap font-semibold text-teal-700 underline underline-offset-2 hover:text-teal-800 transition-colors"
+                    className="inline-flex items-center gap-2 text-lg md:text-xl font-bold tracking-tight text-stone-900 hover:text-teal-800 transition-colors"
                 >
-                    {t('home.what_is.how_title')}
+                    {t('home.what_is.heading')}
                     <svg
-                        className={`w-3.5 h-3.5 transition-transform duration-200 motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
+                        className={`w-4 h-4 shrink-0 text-stone-400 transition-transform duration-200 motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
                         viewBox="0 0 20 20"
                         fill="none"
                         stroke="currentColor"
-                        strokeWidth="2"
+                        strokeWidth="2.2"
                         aria-hidden="true"
                     >
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 8l5 5 5-5" />
                     </svg>
                 </button>
-            </p>
+            </h2>
 
             <div
                 id="what-is-content"

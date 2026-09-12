@@ -533,7 +533,7 @@ export const es = {
         hero_guide: 'Guía de Adopción',
         hero_features: 'Funcionalidades',
         what_is: {
-            line: 'Un registro de adopciones.',
+            heading: 'Registro de Adopciones',
             step1_lead: 'Buscá',
             step1: 'el nombre, teléfono o dirección',
             step2_lead: 'Mirá',
@@ -541,7 +541,6 @@ export const es = {
             step3_lead: 'Registrá',
             step3: 'lo que sabés, para el que busque después',
             more: 'Ver la guía completa',
-            how_title: '¿Cómo funciona?',
         },
     },
     faq: {

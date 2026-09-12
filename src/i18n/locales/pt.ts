@@ -533,7 +533,7 @@ export const pt = {
         hero_guide: 'Guia de Adoção',
         hero_features: 'Funcionalidades',
         what_is: {
-            line: 'Um registro de adoções.',
+            heading: 'Registro de Adoções',
             step1_lead: 'Busque',
             step1: 'pelo nome, telefone ou endereço',
             step2_lead: 'Veja',
@@ -541,7 +541,6 @@ export const pt = {
             step3_lead: 'Registre',
             step3: 'o que você sabe, para quem buscar depois',
             more: 'Ver o guia completo',
-            how_title: 'Como funciona?',
         },
     },
     faq: {

@@ -11,11 +11,11 @@ test.describe('Smoke Tests', () => {
         await expect(page).toHaveTitle(/BuenAdoptante/i);
         // The search input is the homepage's primary anchor (no H1 since v2.12.1-39).
         await expect(page.locator('input#search')).toBeVisible({ timeout: 30000 });
-        // The explainer above the search proves i18n + layout rendered (v2.14.9-7).
-        // Its always-visible line carries the "¿Cómo funciona?" trigger, which
-        // replaced the "¿Qué es Buen Adoptante?" toggle in v2.56.48. Bilingual,
-        // because Chromium renders English here with no locale set.
-        await expect(page.getByRole('button', { name: /¿Cómo funciona\?|How does it work\?|Como funciona\?/i })).toBeVisible({ timeout: 30000 });
+        // The heading above the search proves i18n + layout rendered (v2.14.9-7).
+        // Since v2.56.54 the heading itself is the disclosure button — it was
+        // "¿Cómo funciona?" before that, and "¿Qué es Buen Adoptante?" before
+        // v2.56.48. Bilingual, because Chromium renders English with no locale set.
+        await expect(page.getByRole('button', { name: /Registro de Adopciones|Adoption Registry|Registro de Adoções/i })).toBeVisible({ timeout: 30000 });
     });
 
     test('Authenticated user has access', async ({ page }) => {

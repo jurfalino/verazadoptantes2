@@ -438,11 +438,11 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                     and a pinned instrument that loses its name is worse the further you
                     scroll from the top. Condensed it keeps the words at a third of the
                     height, because that header rides every screen of a long list. */}
-                <h2 className={hasResults && condensed
+                <h3 className={hasResults && condensed
                     ? 'text-[13px] font-semibold text-stone-600 mb-2'
                     : 'text-base md:text-lg font-semibold text-stone-900 mb-3'}>
                     {t('search.card_title')}
-                </h2>
+                </h3>
 
                 {/* One shape in every state. The control used to restructure itself
                     the first time you searched — a full-width labeled button below the

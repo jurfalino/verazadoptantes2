@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.54] - 2026-09-12
+
+### Changed — the homepage has a heading again, and it opens the steps
+
+The line above the search read "Un registro de adopciones." with a separate
+"¿Cómo funciona?" link stuck to its end. Two elements doing one job, and the
+page's only visible heading was a sentence of body copy.
+
+It is now a heading: "Registro de Adopciones", set as one. Clicking it opens the
+three steps that the link used to open, so the whole phrase is the hit target
+instead of a few words at the end of it. The chevron stays, because a heading
+that does something looks exactly like a heading that does not.
+
+The search card's own heading drops from an h2 to an h3, so the page outline
+reads in order rather than as two peers.
+
 ## [2.56.53] - 2026-09-11
 
 ### Fixed — the homepage smoke test had no anchor left to find

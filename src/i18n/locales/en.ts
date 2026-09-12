@@ -534,7 +534,7 @@ export const en = {
         hero_guide: 'Adoption Guide',
         hero_features: 'Features',
         what_is: {
-            line: 'A registry of adoptions.',
+            heading: 'Adoption Registry',
             step1_lead: 'Search',
             step1: 'by name, phone or address',
             step2_lead: 'Read',
@@ -542,7 +542,6 @@ export const en = {
             step3_lead: 'Record',
             step3: 'what you know, for whoever searches next',
             more: 'Read the full guide',
-            how_title: 'How does it work?',
         },
     },
     faq: {
