@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.57] - 2026-09-14
+
+### Fixed — installed copies of the app could keep serving the old bundle
+
+Ten client releases, 2.56.47 through 2.56.56, shipped without bumping the
+service worker's cache version, so a browser that had cached the previous bundle
+had no reason to drop it. On staging the guided tour stayed dead until a manual
+refresh, which is what a stale chunk looks like.
+
+The cache moves to v7. The worker's activate step deletes every cache that does
+not match the current name, so this evicts the old bundle on the next visit.
+
 ## [2.56.56] - 2026-09-12
 
 ### Changed — the adoption guide, rewritten from the Notion draft

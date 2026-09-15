@@ -19,7 +19,11 @@
 //     server-side fixing could reach them. The code that prompted it was
 //     reverted in v2.56.42, but this stays at v6: lowering it would strand
 //     every client that already activated the v6 worker.
-const CACHE_VERSION = 'buenaadoptante-v6';
+//   v7 (v2.56.57) — ten client releases (2.56.47..56) went out on v6, reworking
+//     the homepage search, its heading and the guide. On staging the guided tour
+//     stayed dead until a manual refresh, the signature of a stale chunk, so
+//     production gets the eviction before users hit the same thing.
+const CACHE_VERSION = 'buenaadoptante-v7';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const SHARE_CACHE = 'share-target-media';
