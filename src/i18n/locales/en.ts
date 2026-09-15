@@ -148,7 +148,7 @@ export const en = {
         flag_label_clean_homepage: 'Minimal homepage',
         flag_desc_clean_homepage: 'When on, hides the two activity cards on the homepage ("Register an adoption" and "Leave an observation"). Search becomes the sole primary action; the import-from-social affordance stays accessible as a secondary link below the search. Useful to focus the homepage on adopter lookup. Default OFF.',
         flag_label_contact_import: 'Import from contacts',
-        flag_desc_contact_import: 'Show the "From contacts" button on the homepage to create a profile by picking a contact from the device address book (Chrome on Android) or uploading a .vcf file (other browsers). Default OFF.',
+        flag_desc_contact_import: 'Show the "Phone contacts" button on the homepage to create a profile by picking a contact from the device address book. It only appears where the OS picker exists, which today means Chrome on Android; every other browser hides it. Default OFF.',
         flag_label_google_contacts_import: 'Import from Google Contacts',
         flag_desc_google_contacts_import: 'Show the "From Google Contacts" button on the homepage to create a profile by picking a contact from the user\'s Google address book. Requires the app to be verified by Google for the `contacts.readonly` scope (while in verification, only works for test users listed in Google Cloud Console). Default OFF.',
         flag_label_showcase_global: 'Public global catalog URL',
@@ -158,7 +158,7 @@ export const en = {
         flag_label_showcase_user: 'Public per-user URL',
         flag_desc_showcase_user: 'On /my-animals, show the public /user/[handle] link for the user to share their personal catalog. Off by default.',
         flag_label_guided_walkthrough: 'Guided walkthrough',
-        flag_desc_guided_walkthrough: 'Auto-launch a one-time spotlight tour for new users that guides them to search an adopter by name and read the result. Also shows a "Show me how to search" button on the homepage. Default off.',
+        flag_desc_guided_walkthrough: 'Auto-launch a one-time spotlight tour for new users that guides them to search an adopter by name and read the result. Also appends a "Show me how to search" link to the hint under the search box. Default off.',
         flag_label_household_members: 'Structured household members',
         flag_desc_household_members: 'Replaces the free-text family field with structured people (name, relationship, and their own contact details), PII-protected and deduplicated like the adopter. Off by default.',
         flag_label_followups: 'Adoption follow-ups',
@@ -440,6 +440,7 @@ export const en = {
     search: {
         title: 'Vet an Adopter',
         possible_duplicate_tooltip: 'The system detected another similar record. The responsible rescuer can review it.',
+        card_title: 'Look up an adopter\'s references',
         placeholder: 'Name, Phone, or Address',
         hint: 'Try searching a phone number or name to see how it works.',
         button: 'Search Records',
@@ -517,12 +518,12 @@ export const en = {
         action_import_desc: 'Build a profile from a social media post or from your contact list.',
         action_import_btn: 'Import Now',
         action_import_post_btn: 'From a post',
-        action_import_contacts_btn: 'From contacts',
+        action_import_contacts_btn: 'Phone contacts',
         action_import_google_contacts_btn: 'From Google Contacts',
         // Compact labels used in clean-homepage mode where the two import
         // modes render as paired pills below the search (no card chrome).
         action_import_post_secondary: 'Import from a post',
-        action_import_contacts_secondary: 'Import from contacts',
+        action_import_contacts_secondary: 'Import from phone contacts',
         action_import_google_contacts_secondary: 'Import from Google Contacts',
         // Legacy key — still read in case any older entry-point references
         // it. Mirrors the post-only label so existing surfaces keep working.
@@ -533,8 +534,14 @@ export const en = {
         hero_guide: 'Adoption Guide',
         hero_features: 'Features',
         what_is: {
-            title: 'What is BuenAdoptante?',
-            intro: 'It\'s an adopter registry — a "veraz" (a reference list, if you know the term) — where you can record adoptions, adoption requests, and any observation useful to the rescue community for evaluating future adoptions.',
+            heading: 'Adoption Registry',
+            step1_lead: 'Search',
+            step1: 'by name, phone or address',
+            step2_lead: 'Read',
+            step2: 'the rating and what other rescuers wrote',
+            step3_lead: 'Record',
+            step3: 'what you know, for whoever searches next',
+            more: 'Read the full guide',
         },
     },
     faq: {
@@ -2191,6 +2198,8 @@ export const en = {
         dismiss: 'Dismiss',
     },
     walkthrough: {
+        start_failed_title: 'We could not open the tour',
+        start_failed_body: 'Reload the page and try again. If it fails again, send us the code.',
         relaunch_button: 'Show me how to search',
         back: 'Back',
         next: 'Next',

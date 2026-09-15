@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import HomepageActionCard from '@/components/HomepageActionCard';
-import ContactPickerLauncher from '@/components/ContactPickerLauncher';
+import ContactPickerLauncher, { useContactPickerSupported } from '@/components/ContactPickerLauncher';
 import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLauncher';
 import { useEffect } from 'react';
 import InstallCTA from '@/components/InstallCTA';
@@ -16,7 +16,6 @@ import MilestoneBadge from '@/components/MilestoneBadge';
 import ReferralBanner from '@/components/ReferralBanner';
 import { useShowToast } from '@/components/ui/Toast';
 import { WalkthroughProvider } from '@/components/walkthrough/WalkthroughProvider';
-import { RelaunchButton } from '@/components/walkthrough/RelaunchButton';
 
 /**
  * Client-side homepage logic. The outer `src/app/page.tsx` is now a server
@@ -44,9 +43,17 @@ export default function HomeClient({ initialConfig, userEmail }: { initialConfig
     const contentImportEnabled = appConfig.ENABLE_CONTENT_IMPORT === 'true';
     const contactImportEnabled = appConfig.ENABLE_CONTACT_IMPORT === 'true';
     const googleContactsImportEnabled = appConfig.ENABLE_GOOGLE_CONTACTS_IMPORT === 'true';
+    const contactPickerSupported = useContactPickerSupported();
     // True when ANY import path is on — drives whether the parent "Importar
     // perfil" card renders at all and whether the 3-card grid stays 3-col.
-    const anyImportEnabled = contentImportEnabled || contactImportEnabled || googleContactsImportEnabled;
+    /**
+     * The phone-contacts entry point is offered only where the OS contacts sheet
+     * actually opens, which is Chromium on Android. Gating here rather than
+     * inside the launcher keeps the separator pills in step: a launcher that
+     * returned null on its own would leave a dangling "·" behind it.
+     */
+    const contactImportAvailable = contactImportEnabled && contactPickerSupported;
+    const anyImportEnabled = contentImportEnabled || contactImportAvailable || googleContactsImportEnabled;
 
     // Auto-open LoginModal when redirected (session expired or auth required)
     useEffect(() => {
@@ -108,7 +115,6 @@ export default function HomeClient({ initialConfig, userEmail }: { initialConfig
                 <div id="search-section">
                     <SearchSection locale={locale} showCardMetadata={appConfig.ENABLE_SEARCH_CARD_METADATA !== 'false'} />
                 </div>
-                <RelaunchButton />
 
                 {/* Social proof + milestone — below search for mobile-first.
                     MilestoneBadge gated by ENABLE_MILESTONE_BADGE (admin-toggleable, default ON). */}
@@ -143,10 +149,10 @@ export default function HomeClient({ initialConfig, userEmail }: { initialConfig
                                 </button>
                             )}
                             {/* Divider — render between any two adjacent enabled pills. */}
-                            {contentImportEnabled && (contactImportEnabled || googleContactsImportEnabled) && (
+                            {contentImportEnabled && (contactImportAvailable || googleContactsImportEnabled) && (
                                 <span aria-hidden="true" className="text-stone-300 hidden sm:inline">·</span>
                             )}
-                            {contactImportEnabled && (
+                            {contactImportAvailable && (
                                 <ContactPickerLauncher
                                     testId="import-contacts-btn"
                                     onPicked={() => handleAuthNavigation('/import?contact_import=1')}
@@ -159,7 +165,7 @@ export default function HomeClient({ initialConfig, userEmail }: { initialConfig
                                     <span aria-hidden="true">→</span>
                                 </ContactPickerLauncher>
                             )}
-                            {contactImportEnabled && googleContactsImportEnabled && (
+                            {contactImportAvailable && googleContactsImportEnabled && (
                                 <span aria-hidden="true" className="text-stone-300 hidden sm:inline">·</span>
                             )}
                             {googleContactsImportEnabled && (
@@ -232,7 +238,7 @@ export default function HomeClient({ initialConfig, userEmail }: { initialConfig
                                             <span>{t('home.action_import_post_btn')}</span>
                                         </button>
                                     )}
-                                    {contactImportEnabled && (
+                                    {contactImportAvailable && (
                                         <ContactPickerLauncher
                                             testId="import-contacts-btn"
                                             onPicked={() => handleAuthNavigation('/import?contact_import=1')}

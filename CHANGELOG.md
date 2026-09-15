@@ -2,6 +2,227 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.57] - 2026-09-14
+
+### Fixed — installed copies of the app could keep serving the old bundle
+
+Ten client releases, 2.56.47 through 2.56.56, shipped without bumping the
+service worker's cache version, so a browser that had cached the previous bundle
+had no reason to drop it. On staging the guided tour stayed dead until a manual
+refresh, which is what a stale chunk looks like.
+
+The cache moves to v7. The worker's activate step deletes every cache that does
+not match the current name, so this evicts the old bundle on the next visit.
+
+## [2.56.56] - 2026-09-12
+
+### Changed — the adoption guide, rewritten from the Notion draft
+
+Phases 3, 4 and 5 were restructured rather than reworded.
+
+Phase 3 becomes two actions, gather information and then verify it, each with
+its own sub-points. Phase 4 is now an in-person meeting at the rescuer's home
+rather than a home visit to the adopter. Phase 5 inverts: the handover happens
+only at the adopter's home, which is what makes the address check possible, and
+the contract follows. Phase 1 drops the vaccination requirement from the health
+line, and phase 6 no longer asks about damage in the first week.
+
+### Added — sub-points and emphasis in guide steps
+
+The new copy reads as "do this, and here is what it involves", which a flat list
+turned into a run of equal-weight instructions. Steps can now carry one level of
+sub-points, and no more than one. Text can carry `**bold**`, rendered without a
+markdown library, since this copy is authored in the repo and never submitted by
+anyone.
+
+Two phases now open straight into their steps with no separate description. The
+page skips the empty paragraph, and the structured data falls back to the first
+step so no HowToStep ships with an empty description.
+
+## [2.56.55] - 2026-09-12
+
+### Removed — the quick-jump pills from the guide header
+
+Six pills under the hero, one per phase, each scrolling to a section that was
+already a few hundred pixels below them on a page with no other content. They
+pushed the first phase further down to save a scroll that was shorter than the
+pills themselves.
+
+## [2.56.54] - 2026-09-12
+
+### Changed — the homepage has a heading again, and it opens the steps
+
+The line above the search read "Un registro de adopciones." with a separate
+"¿Cómo funciona?" link stuck to its end. Two elements doing one job, and the
+page's only visible heading was a sentence of body copy.
+
+It is now a heading: "Registro de Adopciones", set as one. Clicking it opens the
+three steps that the link used to open, so the whole phrase is the hit target
+instead of a few words at the end of it. The chevron stays, because a heading
+that does something looks exactly like a heading that does not.
+
+The search card's own heading drops from an h2 to an h3, so the page outline
+reads in order rather than as two peers.
+
+## [2.56.53] - 2026-09-11
+
+### Fixed — the homepage smoke test had no anchor left to find
+
+2.56.52 never deployed: both landing-page smoke tests hard-failed on `/`, which
+checks that a known string is visible to prove React mounted.
+
+That string was the search button's text, which 2.56.52 deleted. The check had a
+second alternative, "BuenAdoptante", but it never matched anything — the logo
+renders "Buen Adoptante", with a space — so the button was the only thing holding
+it up.
+
+The anchor is now the search card's heading, in all three languages.
+
+## [2.56.52] - 2026-09-11
+
+### Added — the search card says what it is for
+
+"Nombre, Teléfono ó Dirección" tells you what to type and never what happens when
+you do. Someone arriving from a shared link had no way to know this box searches
+a registry of adopters rather than, say, animals looking for a home.
+
+A heading now sits above the field: "Buscá referencias de un adoptante". It stays
+visible in every state, pinned included, because an instrument that loses its
+name the further you scroll is worse than one that costs a line. Once the card
+condenses it keeps the same words at about a third of the height.
+
+### Changed — the submit button is a magnifier at every width
+
+Desktop used to draw a full-width labeled button, which was the last thing
+keeping the control in two shapes. It is now one row everywhere: the field, and
+an icon beside it.
+
+Beside it, not inside. The clear button already owns the field's right edge, and
+a typed query is exactly when both exist, which would have put two glyphs a thumb
+apart with one of them wiping what you wrote. The button's name lives on its
+accessible label, and now on the heading above as well, which is what makes an
+unlabeled button affordable here at all.
+
+### Changed — the line above shortens to "Un registro de adopciones"
+
+It read "Un registro compartido de adoptantes: buscá a quien te pide un animal
+antes de entregarlo", which with the new heading two lines below said "adoptante"
+twice in a row. The line now names what the site holds, the heading names what
+the box does, and no word is spent twice.
+
+## [2.56.51] - 2026-09-11
+
+### Fixed — the guided tour failed without saying anything
+
+Reported as "Mostrame cómo buscar is not working". It could not be diagnosed,
+because the function that starts the tour caught every error and discarded it:
+no log, no toast, no code. A tour that refuses to open in silence is
+indistinguishable from a dead button.
+
+Everything it awaits can fail off the happy path — the demo-record actions, and
+the dynamically imported driver.js and its stylesheets. Any of those now reports
+an error with a traceable code instead of returning the page to its resting
+state as though nothing had been clicked.
+
+This makes the failure visible; it does not yet explain it. The code from one
+click names the cause.
+
+## [2.56.50] - 2026-09-11
+
+### Changed — "Desde contactos" is now "Contactos del teléfono", and only shows where it works
+
+The Contact Picker API, which opens the device address book, ships on Chromium
+for Android and nowhere else. On iOS every browser is WebKit underneath, so no
+iPhone has it, and desktop Chrome does not either.
+
+Everywhere else the button quietly fell back to uploading a `.vcf` file. That is
+a different task than the label promised, reached by a control that looked like
+it would open your contacts. The entry point is now offered only where the OS
+sheet actually opens.
+
+The gate lives at the call site rather than inside the launcher, so the separator
+pills on the clean homepage stay in step instead of leaving a dangling divider.
+The fallback inside the click handler stays, because a supported device can still
+refuse: the picker throws on permission denial.
+
+The admin flag description said the button appears everywhere. It now says where
+it appears and why.
+
+## [2.56.49] - 2026-09-11
+
+### Changed — the search control stops restructuring itself
+
+Before the first search, mobile drew a full-width labeled button below the field.
+After it, the same button became a magnifier beside the field. So the primary
+action moved as a consequence of using it, and the field it sat under changed
+shape at the same moment.
+
+It is now one control in every state: field and button side by side on mobile
+with the label carried by the accessible name, field above a full-width labeled
+button on desktop, and the desktop pair collapsing to a single row once the card
+condenses. The result state was already this; the empty state now matches it.
+
+The hint keeps its place under the field. It claims a full row of its own below
+the pair on mobile, and sits between field and button on desktop where the
+layout is stacked.
+
+## [2.56.48] - 2026-09-10
+
+### Changed — the homepage explainer answers before it asks
+
+It was a collapsed "¿Qué es Buen Adoptante?" toggle, so the state almost everyone
+saw was a question with no answer. The only way to learn anything was to click.
+
+A single always-visible line now says what this is: "Un registro compartido de
+adoptantes: buscá a quien te pide un animal antes de entregarlo." It costs the
+same one line the question did.
+
+"¿Cómo funciona?" rides on the end of that line and unfolds three steps in place,
+so the trigger and what it reveals stay adjacent. The steps replaced the
+paragraph they came from, which was one sentence carrying a semicolon and two
+branches the reader had to hold both of to get either. Forty words became twenty,
+each beginning with a verb.
+
+The longer explanation did not just vanish with the prose: the panel links to the
+guide, which is where that detail already lives.
+
+## [2.56.47] - 2026-09-10
+
+### Changed — the search box stays put on desktop
+
+The search card was pinned on mobile only. On a wide screen it scrolled away the
+moment you started reading results, taking the match count and the "sumá un
+apellido" nudge with it — so the instruction to narrow the search left the screen
+before you could act on it, and refining meant scrolling back to the top.
+
+It now pins at every width, with the same tightened bottom edge and lifted shadow
+mobile already had. The scroll helper needed no change: it asks each element
+whether it is genuinely pinned rather than assuming, so it absorbed this on its
+own.
+
+### Changed — the floating alta became a shortcut in the summary
+
+The bar pinned to the bottom of the window is gone. "¿Ninguna coincide?" now sits
+beside the result count as a link that jumps to the closing block.
+
+It costs no height, because it rides on a row the card already draws, and it is a
+shortcut rather than a second create button: the alta still has to be reached and
+read, so it stays earned instead of being offered before a single result has been
+looked at. The link stands down while the closing block is on screen, which is the
+same "never say it twice" rule the bar followed.
+
+### Changed — "Mostrame cómo buscar" moved into the search hint
+
+It was a pill floating under the search card. It now ends the hint sentence under
+the field, which is where someone is already reading. Same walkthrough flag gate.
+
+### Changed — the "Ampliar la búsqueda" divider is now space
+
+The rule above it was `stone-100` on the `stone-50` page background, too faint to
+separate anything, and on a no-match search it hung above nothing at all.
+
+### Removed — the "veraz" aside from the homepage explainer
+
 ## [2.56.46] - 2026-09-10
 
 ### Fixed — clearing the search emptied the box but left the results on screen

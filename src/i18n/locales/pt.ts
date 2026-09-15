@@ -148,7 +148,7 @@ export const pt = {
         flag_label_clean_homepage: 'Página inicial minimalista',
         flag_desc_clean_homepage: 'Quando ativa, oculta os dois cartões de atividade da página inicial ("Registrar uma adoção" e "Deixar uma observação"). Fica apenas a busca como ação principal; o botão de importar de redes sociais continua acessível como link secundário abaixo da busca. Útil para focar a página inicial na consulta de adotantes. Desativada por padrão.',
         flag_label_contact_import: 'Importar dos contatos',
-        flag_desc_contact_import: 'Mostrar o botão "Dos contatos" na página inicial para criar um perfil escolhendo um contato da agenda do dispositivo (no Chrome Android) ou enviando um arquivo .vcf (em outros navegadores). Desativado por padrão.',
+        flag_desc_contact_import: 'Mostrar o botão "Contatos do telefone" na página inicial para criar um perfil escolhendo um contato da agenda do dispositivo. Só aparece onde o seletor do sistema existe, hoje o Chrome no Android; nos demais navegadores fica oculto. Desativado por padrão.',
         flag_label_google_contacts_import: 'Importar do Google Contacts',
         flag_desc_google_contacts_import: 'Mostrar o botão "Do Google Contacts" na página inicial para criar um perfil escolhendo um contato da agenda do Google do usuário. Requer que o app esteja verificado pelo Google para o scope `contacts.readonly` (enquanto estiver em verificação, só funciona para usuários de teste listados no Google Cloud Console). Desativado por padrão.',
         flag_label_showcase_global: 'URL pública do catálogo global',
@@ -158,7 +158,7 @@ export const pt = {
         flag_label_showcase_user: 'URL pública por usuário',
         flag_desc_showcase_user: 'Mostrar em /my-animals o link público /user/[handle] do usuário para compartilhar seu catálogo pessoal. Desativado por padrão.',
         flag_label_guided_walkthrough: 'Tour guiado',
-        flag_desc_guided_walkthrough: 'Lança uma vez um tour guiado para usuários novos que os orienta a buscar um adotante por nome e ler o resultado. Também mostra um botão "Mostre-me como buscar" na home. Desativado por padrão.',
+        flag_desc_guided_walkthrough: 'Lança uma vez um tour guiado para usuários novos que os orienta a buscar um adotante por nome e ler o resultado. Também adiciona um link "Me mostre como buscar" ao final da dica abaixo da busca. Desativado por padrão.',
         flag_label_household_members: 'Familiares / conviventes estruturados',
         flag_desc_household_members: 'Substitui o campo de texto livre de familiares por pessoas estruturadas (nome, parentesco e dados de contato próprios), protegidas e detectadas como duplicados como o adotante. Desligado por padrão.',
         flag_label_followups: 'Acompanhamentos de adoção',
@@ -439,6 +439,7 @@ export const pt = {
     search: {
         title: 'Verificar Adotante',
         possible_duplicate_tooltip: 'O sistema detectou outro registro semelhante. O responsável pelo registro pode revisá-lo.',
+        card_title: 'Busque referências de um adotante',
         placeholder: 'Nome, Telefone ou Endereço',
         hint: 'Experimente buscar um telefone ou nome para ver como funciona.',
         button: 'Buscar Registros',
@@ -516,12 +517,12 @@ export const pt = {
         action_import_desc: 'Crie um perfil a partir de um post de redes sociais ou da sua agenda de contatos.',
         action_import_btn: 'Importar Agora',
         action_import_post_btn: 'De um post',
-        action_import_contacts_btn: 'De contatos',
+        action_import_contacts_btn: 'Contatos do telefone',
         action_import_google_contacts_btn: 'De Google Contacts',
         // Compact labels used in clean-homepage mode where the two import
         // modes render as paired pills below the search (no card chrome).
         action_import_post_secondary: 'Importar de um post',
-        action_import_contacts_secondary: 'Importar de contatos',
+        action_import_contacts_secondary: 'Importar dos contatos do telefone',
         action_import_google_contacts_secondary: 'Importar de Google Contacts',
         // Legacy key — still read in case any older entry-point references
         // it. Mirrors the post-only label so existing surfaces keep working.
@@ -532,8 +533,14 @@ export const pt = {
         hero_guide: 'Guia de Adoção',
         hero_features: 'Funcionalidades',
         what_is: {
-            title: 'O que é o Buen Adoptante?',
-            intro: 'É um registro de adotantes — um "veraz", se você conhece o termo — onde você pode registrar adoções, pedidos de adoção e toda observação que seja útil para a comunidade resgatista avaliar futuras adoções.',
+            heading: 'Registro de Adoções',
+            step1_lead: 'Busque',
+            step1: 'pelo nome, telefone ou endereço',
+            step2_lead: 'Veja',
+            step2: 'a avaliação e os comentários de outros resgatistas',
+            step3_lead: 'Registre',
+            step3: 'o que você sabe, para quem buscar depois',
+            more: 'Ver o guia completo',
         },
     },
     faq: {
@@ -2196,6 +2203,8 @@ export const pt = {
         dismiss: 'Fechar',
     },
     walkthrough: {
+        start_failed_title: 'Não conseguimos abrir o tour',
+        start_failed_body: 'Recarregue a página e tente de novo. Se falhar de novo, nos envie o código.',
         relaunch_button: 'Me mostre como buscar',
         back: 'Voltar',
         next: 'Próximo',
