@@ -971,7 +971,17 @@ async function runDiscoveryMode(
         : null;
     // Public-profiles flag is read once and then applied per-adopter via the
     // adopter's `isPublic` column (v2.16.0-12+).
-    const publicProfilesFlag = piiGatingOn && await isPublicProfilesEnabled();
+    //
+    // NOT chained on `piiGatingOn`. That value is forced false for a logged-out
+    // viewer (above), and chaining off it meant a logged-out search treated the
+    // public-profiles feature as OFF: `is_public` was never consulted, so every
+    // card — public ones included — came back "Protegido" with masked contact.
+    // The profile page reads the flag unconditionally and showed the same
+    // record as Público, which is the disagreement that got reported. Public is
+    // public for exactly the audience that can't sign in; the flag must be read
+    // the same way here. Protected records stay protected for that viewer via
+    // NO_ACCESS_VISIBILITY, which this line does not touch.
+    const publicProfilesFlag = await isPublicProfilesEnabled();
     // Search-match grants discovered while masking; persisted after the map.
     const newGrants: Array<{ adopterId: string; entryRef: string; scope: 'entry' | 'name_token' }> = [];
 

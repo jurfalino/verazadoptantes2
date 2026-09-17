@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.58] - 2026-09-17
+
+### Fixed — public records showed as "Protegido" to anyone not signed in
+
+Reported from production: a record marked public showed the "Protegido" badge
+on its search card while a signed-in viewer saw it, correctly, as "Público".
+
+The search derived the public-profiles feature flag from the PII-gating value,
+and that value is forced off for a logged-out viewer. So for exactly the
+audience the public flag exists for, the flag read as disabled, the record's
+`is_public` column was never consulted, and every card came back "Protegido"
+with its contact masked. The profile page reads the flag unconditionally, which
+is why the two surfaces disagreed.
+
+The flag is now read on its own, in the search and in the weak-match tier that
+shares the pattern. Protected records are unchanged for logged-out viewers:
+they were, and still are, masked through the no-access visibility.
+
+Three unit tests pin the rule at the assembler: a public record with a
+logged-out viewer is Público with contact in the open, a public record whose
+flag is not honored is the reported bug, and a protected record stays
+Protegido.
+
 ## [2.56.57] - 2026-09-14
 
 ### Fixed — installed copies of the app could keep serving the old bundle

@@ -76,7 +76,12 @@ export async function hydrateDuplicateMatches(
     const visibilityMap = piiGatingOn
         ? await resolveAdoptersVisibility(opts.viewer, scoped.map(r => ({ id: r.id, addedBy: r.addedBy })))
         : null;
-    const publicProfilesFlag = piiGatingOn && await isPublicProfilesEnabled();
+    // Read unconditionally — see findAdopters.ts for why. Chaining this on
+    // `piiGatingOn` (false for a logged-out viewer) hid the public flag from
+    // exactly the audience it exists for, so public records came back
+    // "Protegido" in the weak tier. Protected records stay protected for that
+    // viewer through NO_ACCESS_VISIBILITY, which this does not touch.
+    const publicProfilesFlag = await isPublicProfilesEnabled();
 
     const byId = new Map(scoped.map(r => [r.id, r]));
     const results: DiscoveryMatch[] = [];
