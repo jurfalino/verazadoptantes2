@@ -57,3 +57,36 @@ describe('assembleDiscoveryMatch', () => {
         expect(assembleDiscoveryMatch(row, enrichment, meta('history'), NO_ACCESS_VISIBILITY).matchSnippet?.snippet).toBe('secret');
     });
 });
+
+describe('assembleDiscoveryMatch — public record, logged-out viewer', () => {
+    // Regression for the prod report "protected label but data unmasked" on a
+    // public record. The search used to derive the public-profiles flag from
+    // `piiGatingOn`, which is forced false for a logged-out viewer, so `isPublic`
+    // was never consulted on that path and every card came back "Protegido".
+    // The assembler itself is correct given the right maskOpts; this pins that
+    // NO_ACCESS_VISIBILITY + adopterIsPublic yields Público, contact in the open.
+    const publicRow = { ...row, isPublic: 1 } as AdopterRow;
+
+    it('is Público with contact in the open when the record is public', () => {
+        const m = assembleDiscoveryMatch(publicRow, enrichment, meta(), NO_ACCESS_VISIBILITY, 'maría', { adopterIsPublic: true });
+        expect(m.visibilityBadge).toBe('public');
+        expect(m.adopter.contactInfo).toContain('4567-8901');
+    });
+
+    it('stays Protegido and masked when the public flag is NOT honored', () => {
+        // What the logged-out search produced before the fix: the record IS
+        // public but maskOpts said otherwise, so the badge and the data disagreed
+        // with the profile page, which reads the flag unconditionally.
+        const m = assembleDiscoveryMatch(publicRow, enrichment, meta(), NO_ACCESS_VISIBILITY, 'maría', { adopterIsPublic: false });
+        expect(m.visibilityBadge).toBe('protected-locked');
+        expect(m.adopter.contactInfo).not.toContain('4567-8901');
+    });
+
+    it('a protected record stays Protegido for a logged-out viewer', () => {
+        // The fix must not widen anything: honoring the flag only matters when
+        // the row itself is public.
+        const m = assembleDiscoveryMatch(row, enrichment, meta(), NO_ACCESS_VISIBILITY, 'maría', { adopterIsPublic: false });
+        expect(m.visibilityBadge).toBe('protected-locked');
+        expect(m.adopter.contactInfo).not.toContain('4567-8901');
+    });
+});
