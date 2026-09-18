@@ -8,6 +8,8 @@
  * tuples within 30s reuse the prior id without a network call.
  */
 
+import { isDeploymentSkewError, DEPLOYMENT_SKEW_SENTINEL } from '@/domain/clientErrors';
+import { attemptStaleReload } from '@/lib/staleDeploy';
 import { extractErrorId } from '@/lib/errorUtils';
 
 interface ReportInput {
@@ -88,6 +90,17 @@ export async function reportClientError(input: ReportInput): Promise<string | un
  * ClientErrorReporter uses, so the id the user reads matches the Axiom row.
  */
 export function resolveErrorId(error: unknown, source: string): string {
+    // A tab older than the deployment answering it. Nothing is broken and there
+    // is nothing to report — the page just needs to be fetched again. Reload
+    // once (the guard in staleDeploy.ts makes that at most once per session) and
+    // hand back a fixed marker instead of a fresh id, because an id the user
+    // could quote would point at a row we deliberately never write.
+    if (isDeploymentSkewError(error)) {
+        console.warn('[resolveErrorId] deployment skew — reloading this stale tab');
+        attemptStaleReload();
+        return DEPLOYMENT_SKEW_SENTINEL;
+    }
+
     const existing = extractErrorId(error);
     if (existing) return existing;
 

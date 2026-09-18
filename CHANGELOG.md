@@ -2,6 +2,49 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.61] - 2026-09-18
+
+### Fixed — a tab older than the running deployment now recovers instead of failing quietly
+
+The root cause behind `3d84fc1c`, found by testing it rather than reasoning
+about it. A server-action id the running deployment no longer knows is answered
+with **200 and an HTML page**. Next's client action reducer parses a response
+as a result only when the content type is RSC, and throws only when the status
+is 400 or above; a 200 that is not RSC falls through to a `return` that carries
+no `actionResult`. So the action resolves `undefined`. Reads hand back nothing,
+writes report success having done nothing.
+
+`deploymentId` in `next.config.ts` makes the client send its build id as
+`x-deployment-id`. Next 15.1.6 never compares that header — it leaves
+enforcement to the host, and Cloudflare Pages does not do it — so the
+middleware now compares it and answers a mismatch with `409` and
+`DEPLOYMENT_SKEW` as plain text. That one rejection produces two recoveries:
+
+- **Navigation** — Next treats any non-flight or non-OK response as a reason to
+  fall back to a full browser navigation, so following a link in a stale tab
+  lands on the current build with no error shown at all.
+- **Saving or editing** — the action now throws with that body as its message,
+  which `resolveErrorId` recognises and turns into a single page reload, using
+  the same once-per-session guard as the chunk recovery.
+
+Both sides must be known for the check to mean anything: no header, or no build
+id, and the request passes through untouched. That keeps it inert in local
+development and in the end-to-end suite, where no build id is set. `APP_BUILD_ID`
+is supplied from the commit sha by both Cloudflare build steps in CI; **if that
+value is ever empty the guard silently does nothing**, which is the one thing to
+check first if stale tabs start failing again.
+
+Scope, stated plainly: this covers server actions and RSC navigations, which is
+where the failure lives. API routes under `/api` are excluded from the
+middleware and do not need this, since they are addressed by path and do not
+change identity between builds. It also makes the same hazard harmless in the
+three other `saveAdoption` callers left open in 2.56.60 — their stale calls now
+throw rather than resolve empty.
+
+The one-shot reload helper is now `src/lib/staleDeploy.ts`, since it serves both
+symptoms of the same cause. Its stored guard key is deliberately unchanged, so a
+tab that already reloaded cannot reload a second time.
+
 ## [2.56.60] - 2026-09-18
 
 ### Fixed — editing a record in a tab left open across a deploy

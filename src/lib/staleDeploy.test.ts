@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { attemptChunkReload, CHUNK_RELOAD_GUARD } from './chunkRecovery';
+import { attemptStaleReload, STALE_RELOAD_GUARD } from './staleDeploy';
 
 /** Minimal sessionStorage stand-in; `throws` simulates private-mode blocking. */
 function fakeStorage(initial: Record<string, string> = {}, throws = false) {
@@ -13,24 +13,24 @@ function fakeStorage(initial: Record<string, string> = {}, throws = false) {
 
 afterEach(() => { vi.unstubAllGlobals(); });
 
-describe('attemptChunkReload', () => {
+describe('attemptStaleReload', () => {
     it('reloads once and records the attempt', () => {
         const reload = vi.fn();
         const storage = fakeStorage();
         vi.stubGlobal('sessionStorage', storage);
         vi.stubGlobal('window', { location: { reload } });
 
-        expect(attemptChunkReload()).toBe(true);
+        expect(attemptStaleReload()).toBe(true);
         expect(reload).toHaveBeenCalledTimes(1);
-        expect(storage.store[CHUNK_RELOAD_GUARD]).toBe('1');
+        expect(storage.store[STALE_RELOAD_GUARD]).toBe('1');
     });
 
     it('refuses a second reload in the same session', () => {
         const reload = vi.fn();
-        vi.stubGlobal('sessionStorage', fakeStorage({ [CHUNK_RELOAD_GUARD]: '1' }));
+        vi.stubGlobal('sessionStorage', fakeStorage({ [STALE_RELOAD_GUARD]: '1' }));
         vi.stubGlobal('window', { location: { reload } });
 
-        expect(attemptChunkReload()).toBe(false);
+        expect(attemptStaleReload()).toBe(false);
         expect(reload).not.toHaveBeenCalled();
     });
 
@@ -39,7 +39,7 @@ describe('attemptChunkReload', () => {
         vi.stubGlobal('sessionStorage', fakeStorage({}, true));
         vi.stubGlobal('window', { location: { reload } });
 
-        expect(attemptChunkReload()).toBe(false);
+        expect(attemptStaleReload()).toBe(false);
         expect(reload).not.toHaveBeenCalled();
     });
 });

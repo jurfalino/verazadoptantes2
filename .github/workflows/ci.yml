@@ -248,6 +248,11 @@ jobs:
         run: npx @cloudflare/next-on-pages
         env:
           SKIP_ENV_VALIDATION: 'true'
+          # Build identity for deployment-skew detection. Baked into both the
+          # client bundle (sent as x-deployment-id) and the middleware bundle
+          # (compared against it). If this is ever empty the guard goes inert
+          # and stale tabs silently fail again — see src/middleware.ts.
+          APP_BUILD_ID: ${{ github.sha }}
 
       - name: Deploy to Cloudflare Pages (Preview)
         run: npx wrangler pages deploy .vercel/output/static --project-name="verazadoptantes2" --branch="staging"
@@ -280,6 +285,11 @@ jobs:
         run: npx @cloudflare/next-on-pages
         env:
           SKIP_ENV_VALIDATION: 'true'
+          # Build identity for deployment-skew detection. Baked into both the
+          # client bundle (sent as x-deployment-id) and the middleware bundle
+          # (compared against it). If this is ever empty the guard goes inert
+          # and stale tabs silently fail again — see src/middleware.ts.
+          APP_BUILD_ID: ${{ github.sha }}
 
       - name: Deploy to Cloudflare Pages (Production)
         run: npx wrangler pages deploy .vercel/output/static --project-name="verazadoptantes2" --branch="master"

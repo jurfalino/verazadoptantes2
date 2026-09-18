@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { extractErrorId } from '@/lib/errorUtils';
 import { reportClientError } from '@/lib/clientErrorReporter';
 import { isChunkLoadError } from '@/domain/clientErrors';
-import { attemptChunkReload } from '@/lib/chunkRecovery';
+import { attemptStaleReload } from '@/lib/staleDeploy';
 
 export default function Error({
     error,
@@ -33,7 +33,7 @@ export default function Error({
         // Reload once and they carry on — Reintentar would only re-render the
         // same missing chunk. (errorId 7092aed7, 2026-09-10.)
         if (isChunkLoadError(error)) {
-            if (attemptChunkReload()) {
+            if (attemptStaleReload()) {
                 setRecovering(true);
                 return;
             }

@@ -115,3 +115,28 @@ export function classifyWindowError(event: {
     if (isOpaqueCrossOriginError(event)) return 'opaque';
     return 'report';
 }
+
+/**
+ * Body returned by the middleware when a request carries a deployment id that
+ * is not the running one, and therefore the message of the error Next's client
+ * raises for it. Shared so the producer (src/middleware.ts) and the consumer
+ * (resolveErrorId) cannot drift apart.
+ */
+export const DEPLOYMENT_SKEW_SENTINEL = 'DEPLOYMENT_SKEW';
+
+/**
+ * Whether a caught error means "this tab is older than the deployment serving
+ * it" rather than a genuine failure.
+ *
+ * Next's action reducer throws `new Error(await res.text())` for a `text/plain`
+ * response at status >= 400, so the middleware's body reaches the client
+ * verbatim. Without the middleware guard the same request gets 200 + HTML and
+ * the action quietly resolves `undefined` instead — which is the bug this
+ * whole path exists to convert into something recoverable.
+ */
+export function isDeploymentSkewError(error: unknown): boolean {
+    const message = error instanceof Error
+        ? error.message
+        : typeof error === 'string' ? error : '';
+    return message.includes(DEPLOYMENT_SKEW_SENTINEL);
+}

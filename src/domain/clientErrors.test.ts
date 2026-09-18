@@ -4,6 +4,8 @@ import {
     isChunkLoadError,
     isOpaqueCrossOriginError,
     classifyWindowError,
+    isDeploymentSkewError,
+    DEPLOYMENT_SKEW_SENTINEL,
 } from './clientErrors';
 
 describe('isRecoverableHydrationError', () => {
@@ -174,5 +176,30 @@ describe('classifyWindowError', () => {
             lineno: 0,
             colno: 0,
         })).toBe('chunk');
+    });
+});
+
+describe('isDeploymentSkewError', () => {
+    it('recognises the error Next builds from the middleware rejection', () => {
+        // middleware answers a mismatched x-deployment-id with 409 +
+        // text/plain; Next's action reducer throws `new Error(await res.text())`,
+        // so the body arrives verbatim as the message.
+        expect(isDeploymentSkewError(new Error(DEPLOYMENT_SKEW_SENTINEL))).toBe(true);
+    });
+
+    it('recognises it when a caller has wrapped the message', () => {
+        expect(isDeploymentSkewError(new Error(`Failed: ${DEPLOYMENT_SKEW_SENTINEL} (retry)`))).toBe(true);
+    });
+
+    it('does not fire on ordinary failures', () => {
+        expect(isDeploymentSkewError(new Error('Failed to fetch'))).toBe(false);
+        expect(isDeploymentSkewError(new Error('An unexpected response was received from the server.'))).toBe(false);
+        expect(isDeploymentSkewError(undefined)).toBe(false);
+        expect(isDeploymentSkewError(null)).toBe(false);
+        expect(isDeploymentSkewError('DEPLOYMENT')).toBe(false);
+    });
+
+    it('accepts a bare string carrying the sentinel', () => {
+        expect(isDeploymentSkewError(DEPLOYMENT_SKEW_SENTINEL)).toBe(true);
     });
 });

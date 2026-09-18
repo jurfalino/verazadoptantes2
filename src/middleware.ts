@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DEPLOYMENT_SKEW_SENTINEL } from "@/domain/clientErrors";
 
 // Canonical domain mapping: redirect .pages.dev URLs to custom domains
 const DOMAIN_REDIRECTS: Record<string, string> = {
@@ -9,6 +10,33 @@ const DOMAIN_REDIRECTS: Record<string, string> = {
 const PROTECTED_ROUTES = ['/my-animals', '/my-adopters', '/my-adoptions', '/settings', '/admin'];
 
 export default async function middleware(req: NextRequest) {
+    // 0. Deployment skew. `deploymentId` in next.config.ts makes the client send
+    //    its build id on server-action and RSC-navigation requests. Next 15.1.6
+    //    never compares it — that is left to the host, and Cloudflare Pages does
+    //    not do it, so an action id the running build no longer knows is simply
+    //    answered with 200 + HTML. Next's client reads any non-RSC response under
+    //    status 400 as an action that succeeded and returned nothing, so reads
+    //    hand back `undefined` and writes silently do nothing (errorId 3d84fc1c).
+    //
+    //    Rejecting the request converts that into two recoveries, both handled by
+    //    the framework or by resolveErrorId:
+    //      - an RSC navigation falls back to a full browser navigation, which
+    //        lands the user on the current build with no error at all;
+    //      - an action throws with this body as its message, which
+    //        resolveErrorId turns into a single reload.
+    //
+    //    Both sides must be known before this can mean anything: no header (an
+    //    older client, a non-Next caller) or no build id (local dev, where
+    //    APP_BUILD_ID is empty) means we cannot tell, so we let it through.
+    const clientBuildId = req.headers.get('x-deployment-id');
+    const serverBuildId = process.env.APP_BUILD_ID;
+    if (clientBuildId && serverBuildId && clientBuildId !== serverBuildId) {
+        return new NextResponse(DEPLOYMENT_SKEW_SENTINEL, {
+            status: 409,
+            headers: { 'content-type': 'text/plain' },
+        });
+    }
+
     // 1. Domain redirect — no auth needed, return immediately
     const host = req.headers.get('host') || '';
     const canonicalOrigin = DOMAIN_REDIRECTS[host];

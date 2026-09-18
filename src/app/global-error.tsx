@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { extractErrorId } from '@/lib/errorUtils';
 import { reportClientError } from '@/lib/clientErrorReporter';
 import { isChunkLoadError } from '@/domain/clientErrors';
-import { attemptChunkReload } from '@/lib/chunkRecovery';
+import { attemptStaleReload } from '@/lib/staleDeploy';
 
 type Palette = {
     pageBg: string;
@@ -54,7 +54,7 @@ export default function GlobalError({
     );
     const [palette, setPalette] = useState(PALETTES.light);
     // Set once a reload has been requested; covers the window before the
-    // navigation lands — see src/lib/chunkRecovery.ts.
+    // navigation lands — see src/lib/staleDeploy.ts.
     const [recovering, setRecovering] = useState(false);
 
     useEffect(() => {
@@ -69,7 +69,7 @@ export default function GlobalError({
         // so the recovery has to live here too, not only in the global
         // handlers of ClientErrorReporter.
         if (isChunkLoadError(error)) {
-            if (attemptChunkReload()) {
+            if (attemptStaleReload()) {
                 setRecovering(true);
                 return;
             }

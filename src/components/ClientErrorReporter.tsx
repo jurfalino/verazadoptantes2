@@ -5,7 +5,7 @@ import { reportClientError } from '@/lib/clientErrorReporter';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
 import { classifyWindowError, isChunkLoadError } from '@/domain/clientErrors';
-import { attemptChunkReload } from '@/lib/chunkRecovery';
+import { attemptStaleReload } from '@/lib/staleDeploy';
 
 /**
  * Mounted once at the root. Captures uncaught errors and unhandled
@@ -43,9 +43,9 @@ export default function ClientErrorReporter() {
             // 404s on its next lazy chunk. Detection and the one-shot reload
             // both live in shared modules now, because the React error
             // boundaries need exactly the same recovery — see
-            // src/lib/chunkRecovery.ts.
+            // src/lib/staleDeploy.ts.
             if (kind === 'chunk') {
-                if (attemptChunkReload()) {
+                if (attemptStaleReload()) {
                     console.warn('[ClientErrorReporter] ChunkLoadError — reloading to pick up fresh chunk hashes:', message);
                     return;
                 }
@@ -136,7 +136,7 @@ export default function ClientErrorReporter() {
                 message,
                 stack,
             })) {
-                if (attemptChunkReload()) {
+                if (attemptStaleReload()) {
                     console.warn('[ClientErrorReporter] ChunkLoadError (rejection) — reloading:', message);
                     return;
                 }
