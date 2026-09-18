@@ -2,6 +2,53 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.59] - 2026-09-17
+
+### Fixed — a deploy mid-session dead-ended the page instead of reloading
+
+Loading a lazy chunk after a deploy fails by design: the tab holds
+content-hashed filenames from the build it loaded, the new build rewrites those
+hashes, and the CDN drops the old files. The recovery for that has existed
+since v2.16.0-45 — reload once, so fresh HTML brings fresh chunk references —
+but it lived only in the global `error` and `unhandledrejection` handlers.
+
+When the missing chunk is a lazy *component*, the failure surfaces during React
+rendering, so the error boundary claims it first and the global handlers never
+see it. Neither boundary had any chunk handling, so the user got a full-page
+error with a code, and a "Reintentar" button that re-rendered the same missing
+chunk. Observed in production as errorId `7092aed7`.
+
+Both boundaries now run the same one-shot recovery. Detection moved to
+`isChunkLoadError` in the domain layer and the reload to
+`src/lib/chunkRecovery.ts`, so the sessionStorage guard that promises we reload
+at most once exists in one place instead of four. Detection also reads the
+stack, not just the error name: the real production payload arrived with
+`name: "Error"` and only its stack spelling out `ChunkLoadError`.
+
+### Fixed — a third-party script error showed visitors a red error toast
+
+A script served from another origin without CORS headers gets sanitised by the
+browser when it throws: the message becomes the literal "Script error.", the
+filename is empty and the position is 0:0. Nothing the page or the user can act
+on, and almost never our code — third-party tags throw these on pages that are
+working perfectly.
+
+The global error handler treated it as a crash. That is how errorId `b1f16983`
+put "algo salió mal" in front of a visitor browsing the homepage from the
+Instagram in-app browser on a page where nothing had failed.
+
+These are now handled like a recovered hydration mismatch: still logged to
+Axiom, at `warn`, with no toast. Note the consequence: this path no longer
+produces a user-reportable error id, which is the intent. The check is
+deliberately strict — message, empty filename and 0:0 position must all agree —
+so a genuine same-origin failure still reaches the user with a code.
+
+Which branch an event lands in is now one pure function, `classifyWindowError`,
+covered by tests that feed it the verbatim payloads behind `b1f16983`,
+`7092aed7` and `43d67f9e`. The order of those checks is what put a useless code
+in front of a user twice, so the order is the thing under test; the handler
+only carries out the action.
+
 ## [2.56.58] - 2026-09-17
 
 ### Fixed — public records showed as "Protegido" to anyone not signed in

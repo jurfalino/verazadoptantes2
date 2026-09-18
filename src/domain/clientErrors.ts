@@ -38,3 +38,80 @@ export function isRecoverableHydrationError(message: string): boolean {
 
     return RECOVERABLE_PATTERNS.some(pattern => message.includes(pattern));
 }
+
+/**
+ * Whether an uncaught error is webpack failing to fetch a lazy chunk.
+ *
+ * This happens on every deploy: the running SPA holds content-hashed chunk
+ * filenames from the build it loaded, a new build rewrites those hashes, the
+ * CDN drops the old files, and the next dynamic import 404s. The recovery is
+ * always the same — reload once, so fresh HTML brings fresh chunk references.
+ *
+ * Checks name, message AND stack because production gets all three wrong in
+ * different ways. Real payload behind errorId 7092aed7 (2026-09-10) arrived
+ * with `name: 'Error'` and only the stack spelling out `ChunkLoadError`, so a
+ * name-only test misses it.
+ */
+export function isChunkLoadError(
+    err: { name?: string; message?: string; stack?: string } | null | undefined,
+): boolean {
+    if (!err) return false;
+    if (err.name === 'ChunkLoadError') return true;
+    if (err.stack?.startsWith('ChunkLoadError')) return true;
+    return /Loading (CSS )?chunk [^\s]+ failed/.test(err.message || '');
+}
+
+/**
+ * Whether a global error event is the browser's opaque cross-origin placeholder.
+ *
+ * When a script served from another origin without CORS headers throws, the
+ * spec requires the browser to withhold everything: the message becomes the
+ * literal "Script error.", the filename is empty and the position is 0:0. The
+ * page cannot act on it, the user cannot act on it, and — crucially — it is
+ * almost never our code. Third-party tags (analytics, in-app-browser
+ * injections) throw these routinely on pages that are working perfectly.
+ *
+ * That is how errorId b1f16983 reached a visitor on 2026-09-17: a throw inside
+ * a cross-origin tag in the Instagram in-app browser showed a red "algo salió
+ * mal" toast over a homepage that was fine.
+ *
+ * Deliberately strict. All three signals must agree, so a genuine same-origin
+ * failure that merely mentions a script error still reaches the user.
+ */
+export function isOpaqueCrossOriginError(
+    event: { message?: string; filename?: string; lineno?: number; colno?: number },
+): boolean {
+    const message = (event.message || '').trim();
+    if (message !== 'Script error.' && message !== 'Script error') return false;
+    if (event.filename) return false;
+    return !event.lineno && !event.colno;
+}
+
+/** What the global error handler should do with an uncaught event. */
+export type WindowErrorKind = 'chunk' | 'hydration' | 'opaque' | 'report';
+
+/**
+ * Decide which branch an uncaught window error belongs in.
+ *
+ * The predicates above are each honest on their own; what has twice put a
+ * useless error code in front of a user is the ORDER they run in. Keeping the
+ * order here, as one pure function, is what makes it testable — the handler in
+ * ClientErrorReporter only carries out the action.
+ *
+ * `chunk` goes first on purpose: a missing chunk is the one case with a real
+ * recovery, and it must not be claimed by a looser match. `report` is the
+ * default, so anything unrecognised still reaches the user with an id.
+ */
+export function classifyWindowError(event: {
+    message?: string;
+    name?: string;
+    stack?: string;
+    filename?: string;
+    lineno?: number;
+    colno?: number;
+}): WindowErrorKind {
+    if (isChunkLoadError({ name: event.name, message: event.message, stack: event.stack })) return 'chunk';
+    if (isRecoverableHydrationError(event.message || '')) return 'hydration';
+    if (isOpaqueCrossOriginError(event)) return 'opaque';
+    return 'report';
+}
