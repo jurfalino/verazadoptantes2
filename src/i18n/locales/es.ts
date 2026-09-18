@@ -346,6 +346,8 @@ export const es = {
         upload_process_failed: 'No se pudo procesar el archivo.',
         upload_image_failed: 'No se pudo procesar la imagen.',
         save_adoption_failed: 'No se pudo guardar el registro. Probá de nuevo.',
+        stale_deploy_title: 'Recargá la página',
+        stale_deploy_body: 'Se actualizó la app mientras tenías esta pestaña abierta, así que no se guardó nada. Recargá y probá de nuevo.',
         save_adopter_failed: 'No se pudo guardar el perfil del adoptante.',
         save_failed_generic: 'No se pudo guardar. Probá de nuevo.',
         save_animal_failed: 'No se pudo guardar el animal. Probá de nuevo.',

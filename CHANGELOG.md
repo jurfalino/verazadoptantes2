@@ -2,6 +2,124 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.61] - 2026-09-18
+
+### Fixed — a tab older than the running deployment now recovers instead of failing quietly
+
+The root cause behind `3d84fc1c`, found by testing it rather than reasoning
+about it. A server-action id the running deployment no longer knows is answered
+with **200 and an HTML page**. Next's client action reducer parses a response
+as a result only when the content type is RSC, and throws only when the status
+is 400 or above; a 200 that is not RSC falls through to a `return` that carries
+no `actionResult`. So the action resolves `undefined`. Reads hand back nothing,
+writes report success having done nothing.
+
+`deploymentId` in `next.config.ts` makes the client send its build id as
+`x-deployment-id`. Next 15.1.6 never compares that header — it leaves
+enforcement to the host, and Cloudflare Pages does not do it — so the
+middleware now compares it and answers a mismatch with `409` and
+`DEPLOYMENT_SKEW` as plain text. That one rejection produces two recoveries:
+
+- **Navigation** — Next treats any non-flight or non-OK response as a reason to
+  fall back to a full browser navigation, so following a link in a stale tab
+  lands on the current build with no error shown at all.
+- **Saving or editing** — the action now throws with that body as its message,
+  which `resolveErrorId` recognises and turns into a single page reload, using
+  the same once-per-session guard as the chunk recovery.
+
+Both sides must be known for the check to mean anything: no header, or no build
+id, and the request passes through untouched. That keeps it inert in local
+development and in the end-to-end suite, where no build id is set. `APP_BUILD_ID`
+is supplied from the commit sha by both Cloudflare build steps in CI; **if that
+value is ever empty the guard silently does nothing**, which is the one thing to
+check first if stale tabs start failing again.
+
+Scope, stated plainly: this covers server actions and RSC navigations, which is
+where the failure lives. API routes under `/api` are excluded from the
+middleware and do not need this, since they are addressed by path and do not
+change identity between builds. It also makes the same hazard harmless in the
+three other `saveAdoption` callers left open in 2.56.60 — their stale calls now
+throw rather than resolve empty.
+
+The one-shot reload helper is now `src/lib/staleDeploy.ts`, since it serves both
+symptoms of the same cause. Its stored guard key is deliberately unchanged, so a
+tab that already reloaded cannot reload a second time.
+
+## [2.56.60] - 2026-09-18
+
+### Fixed — editing a record in a tab left open across a deploy
+
+Reported from staging as errorId `3d84fc1c`. The tab had been open since a
+build six days earlier; its JavaScript bundle no longer exists on the CDN.
+
+A server action called from a bundle that old comes back empty rather than
+failing, so `getAdoptionImages` resolved with nothing and that went straight
+into state. The submit handler then read `.length` off it while assembling the
+analytics event and threw `Cannot read properties of undefined`. The render
+path had guarded the same state with `Array.isArray` for months; the submit
+path never did. Every write into that state now goes through one guard, so a
+non-array cannot enter it.
+
+The more serious half is what the guard alone would have caused. The save
+result was read as `result?.id`, so an empty result skipped the follow-up work,
+reported success, closed the form and refreshed — the user would have believed
+an edit was saved that never left the browser. A mutating action here either
+throws or returns the record's id, so an empty result now fails loudly and
+tells the user to reload the page. The rule is `didPersist` in the domain
+layer, with the same hazard still present in three other callers of
+`saveAdoption` (the wizard, the animal event modal and the animal profile),
+noted for a follow-up rather than changed on the strength of one report.
+
+Not a `ChunkLoadError`, so the recovery added in 2.56.59 does not apply and
+should not: a save that silently did not save has to reach the user.
+
+## [2.56.59] - 2026-09-17
+
+### Fixed — a deploy mid-session dead-ended the page instead of reloading
+
+Loading a lazy chunk after a deploy fails by design: the tab holds
+content-hashed filenames from the build it loaded, the new build rewrites those
+hashes, and the CDN drops the old files. The recovery for that has existed
+since v2.16.0-45 — reload once, so fresh HTML brings fresh chunk references —
+but it lived only in the global `error` and `unhandledrejection` handlers.
+
+When the missing chunk is a lazy *component*, the failure surfaces during React
+rendering, so the error boundary claims it first and the global handlers never
+see it. Neither boundary had any chunk handling, so the user got a full-page
+error with a code, and a "Reintentar" button that re-rendered the same missing
+chunk. Observed in production as errorId `7092aed7`.
+
+Both boundaries now run the same one-shot recovery. Detection moved to
+`isChunkLoadError` in the domain layer and the reload to
+`src/lib/chunkRecovery.ts`, so the sessionStorage guard that promises we reload
+at most once exists in one place instead of four. Detection also reads the
+stack, not just the error name: the real production payload arrived with
+`name: "Error"` and only its stack spelling out `ChunkLoadError`.
+
+### Fixed — a third-party script error showed visitors a red error toast
+
+A script served from another origin without CORS headers gets sanitised by the
+browser when it throws: the message becomes the literal "Script error.", the
+filename is empty and the position is 0:0. Nothing the page or the user can act
+on, and almost never our code — third-party tags throw these on pages that are
+working perfectly.
+
+The global error handler treated it as a crash. That is how errorId `b1f16983`
+put "algo salió mal" in front of a visitor browsing the homepage from the
+Instagram in-app browser on a page where nothing had failed.
+
+These are now handled like a recovered hydration mismatch: still logged to
+Axiom, at `warn`, with no toast. Note the consequence: this path no longer
+produces a user-reportable error id, which is the intent. The check is
+deliberately strict — message, empty filename and 0:0 position must all agree —
+so a genuine same-origin failure still reaches the user with a code.
+
+Which branch an event lands in is now one pure function, `classifyWindowError`,
+covered by tests that feed it the verbatim payloads behind `b1f16983`,
+`7092aed7` and `43d67f9e`. The order of those checks is what put a useless code
+in front of a user twice, so the order is the thing under test; the handler
+only carries out the action.
+
 ## [2.56.58] - 2026-09-17
 
 ### Fixed — public records showed as "Protegido" to anyone not signed in

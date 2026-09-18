@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { saveAdoption, getAdoptionImages, deleteImage } from '@/app/actions';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
@@ -9,6 +9,7 @@ import { useAuthContext } from '@/context/AuthContext';
 import { getRecordTypeColors } from '@/lib/recordTypeColors';
 import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
+import { didPersist } from '@/domain/serverActionResult';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { MediaLightbox, isVideo as isVideoItem } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
@@ -141,14 +142,23 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
         setMode('new');
     }
 
+    // Every write into `adoptionImages` goes through here. A server action that
+    // resolves with something other than an array (a tab older than the
+    // deployment serving it comes back empty) used to land straight in state,
+    // and the submit handler then read `.length` off undefined — errorId
+    // 3d84fc1c. The render path was already guarded; this closes the source.
+    const applyAdoptionImages = useCallback((images: unknown) => {
+        setAdoptionImages(Array.isArray(images) ? images : []);
+    }, []);
+
     // Fetch images linked to this adoption
     useEffect(() => {
         if (formData.id) {
-            getAdoptionImages(formData.id).then(setAdoptionImages);
+            getAdoptionImages(formData.id).then(applyAdoptionImages);
         } else {
-            setAdoptionImages([]);
+            applyAdoptionImages([]);
         }
-    }, [formData.id]);
+    }, [formData.id, applyAdoptionImages]);
 
     // Auto-scroll to adoption form when coming from new adopter flow or observation flow
     useEffect(() => {
@@ -267,7 +277,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                     const result = await res.json() as { error?: string };
                     if (!res.ok) throw new Error(result.error || 'Upload failed');
                     const updatedImages = await getAdoptionImages(formData.id);
-                    setAdoptionImages(updatedImages);
+                    applyAdoptionImages(updatedImages);
                 } else {
                     // Record not yet saved — queue the File object
                     setPendingImages(prev => [...prev, { data: '', file, isVideo: true, thumbnail }]);
@@ -278,7 +288,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                     const { saveImage } = await import('@/app/actions');
                     await saveImage(adopterId, base64, `Photo for ${formData.animalName}`, formData.id, 'image');
                     const updatedImages = await getAdoptionImages(formData.id);
-                    setAdoptionImages(updatedImages);
+                    applyAdoptionImages(updatedImages);
                 } else {
                     setPendingImages(prev => [...prev, { data: base64, isVideo: false }]);
                 }
@@ -315,6 +325,24 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                 identityVerified: formData.identityVerified ? 1 : 0
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             } as any);
+
+            // saveAdoption throws on failure and otherwise returns the record's
+            // id, so a resolved-but-empty result means nothing was written —
+            // the tab is older than the deployment answering it. Without this
+            // the form would sail on, call onSuccess and refresh, and the user
+            // would believe an edit was saved that never left the browser.
+            if (!didPersist(result)) {
+                console.error('[AdoptionFormEditV2] save resolved with no record id', result);
+                toast.error(
+                    t('errors.stale_deploy_title'),
+                    t('errors.stale_deploy_body'),
+                    resolveErrorId(
+                        new Error('saveAdoption resolved without a record id (stale deployment?)'),
+                        'AdoptionFormEditV2.staleSave',
+                    ),
+                );
+                return;
+            }
 
             // Upload any pending media concurrently now that we have the adoption ID
             if (pendingImages.length > 0 && result?.id) {

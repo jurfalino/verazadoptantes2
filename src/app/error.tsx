@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { extractErrorId } from '@/lib/errorUtils';
 import { reportClientError } from '@/lib/clientErrorReporter';
+import { isChunkLoadError } from '@/domain/clientErrors';
+import { attemptStaleReload } from '@/lib/staleDeploy';
 
 export default function Error({
     error,
@@ -12,6 +14,12 @@ export default function Error({
     reset: () => void;
 }) {
     const [copied, setCopied] = useState(false);
+    // Set once a reload has been requested. location.reload() does not stop
+    // this component re-rendering, so this covers the window before the
+    // navigation actually lands — usually imperceptible, but on a slow
+    // connection it is the difference between a blank frame and an error
+    // screen the user is about to be navigated away from anyway.
+    const [recovering, setRecovering] = useState(false);
     // The id is generated once and never changes — it's what the user copies
     // and what the server uses when writing to Axiom, so they match by
     // construction (server-thrown errors that already carry an id keep it).
@@ -20,6 +28,18 @@ export default function Error({
     );
 
     useEffect(() => {
+        // A chunk that vanished under us is a deploy artefact, not a failure
+        // the user can act on: their tab predates the build now on the CDN.
+        // Reload once and they carry on — Reintentar would only re-render the
+        // same missing chunk. (errorId 7092aed7, 2026-09-10.)
+        if (isChunkLoadError(error)) {
+            if (attemptStaleReload()) {
+                setRecovering(true);
+                return;
+            }
+            console.error('[error boundary] ChunkLoadError persists after reload:', error.message);
+        }
+
         // Already-logged server errors carry their id in the message — skip the POST.
         if (extractErrorId(error)) return;
         void reportClientError({
@@ -36,6 +56,8 @@ export default function Error({
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };
+
+    if (recovering) return null;
 
     return (
         <div className="min-h-[60vh] flex items-center justify-center px-4">

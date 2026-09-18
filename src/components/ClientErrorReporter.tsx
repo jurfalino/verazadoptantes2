@@ -4,7 +4,8 @@ import { useEffect } from 'react';
 import { reportClientError } from '@/lib/clientErrorReporter';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
-import { isRecoverableHydrationError } from '@/domain/clientErrors';
+import { classifyWindowError, isChunkLoadError } from '@/domain/clientErrors';
+import { attemptStaleReload } from '@/lib/staleDeploy';
 
 /**
  * Mounted once at the root. Captures uncaught errors and unhandled
@@ -26,25 +27,26 @@ export default function ClientErrorReporter() {
 
             const stack = event.error instanceof Error ? event.error.stack : undefined;
 
-            // Deploy-churn recovery (v2.16.0-45). webpack's lazy-load
-            // runtime references content-hashed chunk filenames. If the
-            // user loaded the page on an older deploy and we've since
-            // shipped a new build (chunks rewritten with new hashes,
-            // old ones GC'd from the Pages CDN), the next dynamic
-            // import inside the running SPA 404s and webpack throws
-            // ChunkLoadError. The standard fix: detect and force-
-            // reload — fresh HTML has fresh chunk references.
-            // Reload at most once per session (sessionStorage guard)
-            // to avoid loops if the new deploy is also broken.
-            const errName = event.error?.name || '';
-            const isChunkLoadError = errName === 'ChunkLoadError'
-                || /Loading (CSS )?chunk \d+ failed/.test(message);
-            if (isChunkLoadError) {
-                const RELOAD_GUARD = 'buenadoptante.chunk_reload_attempted';
-                if (!sessionStorage.getItem(RELOAD_GUARD)) {
-                    sessionStorage.setItem(RELOAD_GUARD, '1');
-                    console.warn('[ClientErrorReporter] ChunkLoadError — forcing reload to pick up fresh chunk hashes:', message);
-                    window.location.reload();
+            // Which branch this belongs in is decided in one tested place —
+            // the ORDER is the part that has twice shown a user a code for
+            // something they could not act on. See src/domain/clientErrors.ts.
+            const kind = classifyWindowError({
+                message,
+                name: event.error?.name,
+                stack,
+                filename: event.filename,
+                lineno: event.lineno,
+                colno: event.colno,
+            });
+
+            // Deploy-churn recovery (v2.16.0-45): a tab open across a deploy
+            // 404s on its next lazy chunk. Detection and the one-shot reload
+            // both live in shared modules now, because the React error
+            // boundaries need exactly the same recovery — see
+            // src/lib/staleDeploy.ts.
+            if (kind === 'chunk') {
+                if (attemptStaleReload()) {
+                    console.warn('[ClientErrorReporter] ChunkLoadError — reloading to pick up fresh chunk hashes:', message);
                     return;
                 }
                 // Already reloaded once in this session and the same
@@ -64,11 +66,32 @@ export default function ClientErrorReporter() {
             // the page is fine. Log them (they're real defects) without
             // alarming the user, who has nothing to act on. See
             // src/domain/clientErrors.ts and errorId 43d67f9e.
-            if (isRecoverableHydrationError(message)) {
+            if (kind === 'hydration') {
                 console.warn('[ClientErrorReporter] recovered hydration mismatch:', message);
                 void reportClientError({
                     message,
                     stack,
+                    source: 'window-error',
+                    level: 'warn',
+                    extra: {
+                        filename: event.filename,
+                        lineno: event.lineno,
+                        colno: event.colno,
+                    },
+                });
+                return;
+            }
+
+            // A cross-origin script threw and the browser withheld every
+            // detail. Almost always a third-party tag on a page that is
+            // working fine — that is how errorId b1f16983 showed a red toast
+            // to a visitor in the Instagram in-app browser on 2026-09-17.
+            // Same treatment as a recovered hydration mismatch: keep it in
+            // Axiom at warn, don't alarm someone who has nothing to act on.
+            if (kind === 'opaque') {
+                console.warn('[ClientErrorReporter] opaque cross-origin script error:', message);
+                void reportClientError({
+                    message,
                     source: 'window-error',
                     level: 'warn',
                     extra: {
@@ -105,19 +128,16 @@ export default function ClientErrorReporter() {
 
             const stack = reason instanceof Error ? reason.stack : undefined;
 
-            // Same ChunkLoadError auto-reload path as the window-error
-            // handler above (v2.16.0-45). Next.js's dynamic import can
-            // surface chunk failures as a rejected promise rather than
-            // an error event, so we need the recovery here too.
-            const errName = reason instanceof Error ? reason.name : '';
-            const isChunkLoadError = errName === 'ChunkLoadError'
-                || /Loading (CSS )?chunk \d+ failed/.test(message);
-            if (isChunkLoadError) {
-                const RELOAD_GUARD = 'buenadoptante.chunk_reload_attempted';
-                if (!sessionStorage.getItem(RELOAD_GUARD)) {
-                    sessionStorage.setItem(RELOAD_GUARD, '1');
-                    console.warn('[ClientErrorReporter] ChunkLoadError (rejection) — forcing reload:', message);
-                    window.location.reload();
+            // Same ChunkLoadError recovery as the window-error handler above:
+            // Next.js's dynamic import can surface chunk failures as a
+            // rejected promise rather than an error event.
+            if (isChunkLoadError({
+                name: reason instanceof Error ? reason.name : undefined,
+                message,
+                stack,
+            })) {
+                if (attemptStaleReload()) {
+                    console.warn('[ClientErrorReporter] ChunkLoadError (rejection) — reloading:', message);
                     return;
                 }
                 console.error('[ClientErrorReporter] ChunkLoadError (rejection) persists after reload:', message);

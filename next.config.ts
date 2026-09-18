@@ -16,6 +16,27 @@ if (process.env.NODE_ENV !== 'production') {
   }
 }
 
+// Build identity, used for deployment-skew detection.
+//
+// A tab whose bundle predates the running deployment does NOT fail loudly on
+// this stack: an unknown server-action id is answered with 200 + text/html,
+// and Next's client action reducer treats any non-RSC response under status
+// 400 as a successful action carrying no result (see its fetchServerAction —
+// the fall-through `return` has no `actionResult`). Every stale action
+// therefore resolves `undefined`: reads hand back nothing, writes look like
+// they succeeded. That is errorId 3d84fc1c.
+//
+// `deploymentId` makes the client send this value as `x-deployment-id` on
+// every action request. Next 15.1.6 does NOT compare it server-side — that is
+// left to the host, and Cloudflare Pages does not do it — so src/middleware.ts
+// does the comparison and rejects a mismatch. `env` is what puts the same
+// value inside the middleware bundle to compare against.
+const BUILD_ID =
+  process.env.APP_BUILD_ID ||
+  process.env.GITHUB_SHA ||
+  process.env.CF_PAGES_COMMIT_SHA ||
+  '';
+
 const nextConfig: NextConfig = {
   // v2.19.30: add `crossorigin="anonymous"` to Next-emitted <script>/<link>
   // tags so Microsoft Clarity (loaded by Zaraz — see project memory
@@ -27,6 +48,9 @@ const nextConfig: NextConfig = {
   // Pages serves `/_next/static/*` with permissive CORS already, so the
   // crossorigin fetch resolves cleanly — no `_headers` file changes needed.
   crossOrigin: 'anonymous',
+  // Empty in local dev, which is what keeps the middleware guard inert there.
+  deploymentId: BUILD_ID || undefined,
+  env: { APP_BUILD_ID: BUILD_ID },
   serverExternalPackages: ["better-sqlite3"],
   // Mitigate Next.js 15.1 dev server memory leak (known regression)
   // DISABLED: causes webpack module factory eviction → TypeError during RSC hydration

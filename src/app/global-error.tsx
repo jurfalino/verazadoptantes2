@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { extractErrorId } from '@/lib/errorUtils';
 import { reportClientError } from '@/lib/clientErrorReporter';
+import { isChunkLoadError } from '@/domain/clientErrors';
+import { attemptStaleReload } from '@/lib/staleDeploy';
 
 type Palette = {
     pageBg: string;
@@ -51,12 +53,28 @@ export default function GlobalError({
         extractErrorId(error) || error.digest?.slice(0, 8) || crypto.randomUUID().slice(0, 8)
     );
     const [palette, setPalette] = useState(PALETTES.light);
+    // Set once a reload has been requested; covers the window before the
+    // navigation lands — see src/lib/staleDeploy.ts.
+    const [recovering, setRecovering] = useState(false);
 
     useEffect(() => {
         try {
             const stored = localStorage.getItem('theme');
             if (stored === 'dark') setPalette(PALETTES.dark);
         } catch { /* localStorage unavailable */ }
+
+        // A chunk that vanished under us is a deploy artefact, not a failure
+        // the user can act on. This boundary is where that actually lands when
+        // the missing chunk is a lazy component (errorId 7092aed7, 2026-09-10),
+        // so the recovery has to live here too, not only in the global
+        // handlers of ClientErrorReporter.
+        if (isChunkLoadError(error)) {
+            if (attemptStaleReload()) {
+                setRecovering(true);
+                return;
+            }
+            console.error('[global-error] ChunkLoadError persists after reload:', error.message);
+        }
 
         if (extractErrorId(error)) return;
         void reportClientError({
@@ -67,6 +85,11 @@ export default function GlobalError({
             digest: error.digest,
         });
     }, [error, errorId]);
+
+    // global-error owns the whole document, so it must still render html/body.
+    if (recovering) {
+        return <html><body style={{ margin: 0, background: palette.pageBg }} /></html>;
+    }
 
     return (
         <html>

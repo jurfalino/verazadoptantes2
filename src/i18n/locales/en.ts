@@ -347,6 +347,8 @@ export const en = {
         upload_process_failed: 'Could not process the file.',
         upload_image_failed: 'Could not process the image.',
         save_adoption_failed: 'Failed to save the record. Please try again.',
+        stale_deploy_title: 'Reload the page',
+        stale_deploy_body: 'The app updated while this tab was open, so nothing was saved. Reload and try again.',
         save_adopter_failed: 'Failed to save the adopter profile.',
         save_failed_generic: 'Failed to save. Please try again.',
         save_animal_failed: 'Failed to save the animal. Please try again.',
