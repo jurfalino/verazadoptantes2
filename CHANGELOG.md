@@ -2,6 +2,34 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.60] - 2026-09-18
+
+### Fixed — editing a record in a tab left open across a deploy
+
+Reported from staging as errorId `3d84fc1c`. The tab had been open since a
+build six days earlier; its JavaScript bundle no longer exists on the CDN.
+
+A server action called from a bundle that old comes back empty rather than
+failing, so `getAdoptionImages` resolved with nothing and that went straight
+into state. The submit handler then read `.length` off it while assembling the
+analytics event and threw `Cannot read properties of undefined`. The render
+path had guarded the same state with `Array.isArray` for months; the submit
+path never did. Every write into that state now goes through one guard, so a
+non-array cannot enter it.
+
+The more serious half is what the guard alone would have caused. The save
+result was read as `result?.id`, so an empty result skipped the follow-up work,
+reported success, closed the form and refreshed — the user would have believed
+an edit was saved that never left the browser. A mutating action here either
+throws or returns the record's id, so an empty result now fails loudly and
+tells the user to reload the page. The rule is `didPersist` in the domain
+layer, with the same hazard still present in three other callers of
+`saveAdoption` (the wizard, the animal event modal and the animal profile),
+noted for a follow-up rather than changed on the strength of one report.
+
+Not a `ChunkLoadError`, so the recovery added in 2.56.59 does not apply and
+should not: a save that silently did not save has to reach the user.
+
 ## [2.56.59] - 2026-09-17
 
 ### Fixed — a deploy mid-session dead-ended the page instead of reloading

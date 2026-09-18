@@ -346,6 +346,8 @@ export const pt = {
         upload_process_failed: 'Não foi possível processar o arquivo.',
         upload_image_failed: 'Não foi possível processar a imagem.',
         save_adoption_failed: 'Não foi possível salvar o registro. Tente novamente.',
+        stale_deploy_title: 'Recarregue a página',
+        stale_deploy_body: 'O app foi atualizado enquanto esta aba estava aberta, então nada foi salvo. Recarregue e tente novamente.',
         save_adopter_failed: 'Não foi possível salvar o perfil do adotante.',
         save_failed_generic: 'Não foi possível salvar. Tente novamente.',
         save_animal_failed: 'Não foi possível salvar o animal. Tente novamente.',
