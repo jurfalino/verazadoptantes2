@@ -235,6 +235,13 @@ the check is silently disabled, so:
   sha in `x-deployment-id-server`. A red run there means stale tabs are no longer recovered —
   treat it as a failed deploy.
 
-Never deploy by hand without `APP_BUILD_ID`. Each deploy makes every open tab stale once, so
+The build also needs **`APP_DEPLOY_MAP`** (CI step "Build deploy map", from the Cloudflare
+API): recent build ids → deployment URLs. With it, an old tab's saves and searches are served
+by the deployment that tab was loaded from, so a deploy is invisible to people mid-task. The
+post-deploy check also sends a request as the *previous* build and requires
+`x-deployment-skew-proxied`. **Do not delete recent Pages deployments** — old tabs are served
+from them for 14 days.
+
+Never deploy by hand without `APP_BUILD_ID` and `APP_DEPLOY_MAP`. Each deploy makes every open tab stale once, so
 batch releases rather than dripping them.
 

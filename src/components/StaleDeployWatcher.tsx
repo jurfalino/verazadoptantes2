@@ -22,7 +22,10 @@ import { DEPLOYMENT_STALE_EVENT, markDeploymentStale, isDeploymentMarkedStale, t
 declare global { interface Window { __bnaFetchWatched?: boolean } }
 
 export default function StaleDeployWatcher() {
-    const { showToast } = useToast();
+    const { showToast, toasts } = useToast();
+    const toastsRef = useRef(toasts);
+    toastsRef.current = toasts;
+    const reportedRef = useRef(false);
     const { t } = useLanguage();
     const shownRef = useRef(false);
 
@@ -34,7 +37,9 @@ export default function StaleDeployWatcher() {
         window.fetch = async (...args: Parameters<typeof fetch>) => {
             const res = await original(...args);
             if (res.status === 409 && res.headers.get('x-deployment-skew') === '1') {
-                markDeploymentStale({ serverBuildId: res.headers.get('x-deployment-id-server') });
+                const init = args[1] as RequestInit | undefined;
+                const method = (init?.method || (args[0] instanceof Request ? args[0].method : 'GET')).toUpperCase();
+                markDeploymentStale({ serverBuildId: res.headers.get('x-deployment-id-server'), userInitiated: method !== 'GET' });
             }
             return res;
         };
@@ -42,9 +47,13 @@ export default function StaleDeployWatcher() {
 
     useEffect(() => {
         const onStale = (e: Event) => {
-            if (shownRef.current) return;
-            shownRef.current = true;
             const detail = (e as CustomEvent<DeploymentStaleDetail>).detail ?? {};
+            const title = t('errors.stale_banner_title');
+            const visible = toastsRef.current.some(x => x.title === title);
+            // Show it the first time, and again whenever the person tries to do
+            // something after dismissing it. Background polls don't bring it back.
+            if (visible || (shownRef.current && !detail.userInitiated)) return;
+            shownRef.current = true;
             showToast({
                 type: 'warning',
                 title: t('errors.stale_banner_title'),
@@ -54,6 +63,8 @@ export default function StaleDeployWatcher() {
             });
             // Observability (audit P1-1): without this, skew was invisible — the
             // middleware 409 is silent and nothing downstream reported it.
+            if (reportedRef.current) return;
+            reportedRef.current = true;
             void reportClientError({
                 level: 'warn',
                 source: 'deployment-skew',

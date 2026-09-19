@@ -64,8 +64,8 @@ describe('attemptStaleReload', () => {
 });
 
 describe('markDeploymentStale', () => {
-    it('announces a stale tab once, with both build ids, however many callers notice', async () => {
-        const { markDeploymentStale, DEPLOYMENT_STALE_EVENT, _resetStaleMarkForTests } = await import('./staleDeploy');
+    it('announces every rejection, so a dismissed notice can come back on the next save', async () => {
+        const { markDeploymentStale, DEPLOYMENT_STALE_EVENT, isDeploymentMarkedStale, _resetStaleMarkForTests } = await import('./staleDeploy');
         _resetStaleMarkForTests();
         const events: CustomEvent[] = [];
         const target = new EventTarget();
@@ -73,11 +73,12 @@ describe('markDeploymentStale', () => {
         vi.stubGlobal('window', target);
 
         markDeploymentStale({ serverBuildId: 'NEW' });
-        markDeploymentStale({ serverBuildId: 'NEW' });
-        markDeploymentStale();
+        markDeploymentStale({ userInitiated: true });
 
-        expect(events).toHaveLength(1);
+        expect(events).toHaveLength(2);
         expect(events[0].detail).toEqual({ serverBuildId: 'NEW' });
+        expect(events[1].detail).toEqual({ userInitiated: true });
+        expect(isDeploymentMarkedStale()).toBe(true);
     });
 
     it('never reloads the page — typed input must survive', async () => {

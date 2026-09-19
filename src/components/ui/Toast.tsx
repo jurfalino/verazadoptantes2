@@ -188,6 +188,8 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
                 </div>
                 <button
                     onClick={onDismiss}
+                    aria-label="Cerrar"
+                    data-testid="toast-dismiss"
                     className="hover:opacity-70"
                     style={{ color: 'var(--text-muted)' }}
                 >

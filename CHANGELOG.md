@@ -2,6 +2,79 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.69] - 2026-09-19
+
+### Security — 2.56.68's forwarder could be pointed at another host (never deployed)
+
+Found by the independent review that now runs **before** production, and fixed
+before 2.56.68 reached any environment (its staging run was superseded by this
+one). A request path such as `//evil.com/x` resolves, against the old deployment's
+URL, to a **different host**. With a known build id, that turned the forwarder into
+an open proxy through our domain. The target's origin must now equal the mapped
+deployment exactly; pinned by unit tests and by a post-deploy probe.
+
+Also from that review:
+- An error page from an old deployment (deleted, Cloudflare error, redirect to the
+  old host) is no longer passed to the browser as if it were a result; it falls
+  back to the "new version" notice. A real action error from the old build still
+  passes through.
+- Forwarding has a 10-second deadline, is POST-only, and ignores inherited object
+  keys as build ids.
+- The deploy map is read page by page (staging covers 30 builds, up from 11),
+  never includes the sha being built (a re-run no longer probes itself), and has an
+  `ALLOW_EMPTY_DEPLOY_MAP=1` escape so a Cloudflare API outage cannot block a
+  hotfix.
+- The post-deploy check also requires a `//host` path to be rejected.
+
+## [2.56.68] - 2026-09-19
+
+### Changed — a deploy is now invisible to someone in the middle of a task
+
+Until now, a tab opened before a deploy had its next save or search **rejected**.
+2.56.67 made the rejection polite (a "new version — reload" notice, a search that
+reloads by itself), but that still made our release the customer's problem, and
+it could not help tabs loaded before the notice existed: right after 2.56.67 went
+out, a search from an already-open tab answered "Búsqueda fallida" once more.
+
+**An old tab's saves and searches are now served by the deployment that tab was
+loaded from.** Cloudflare Pages keeps every deployment alive at its own URL. CI
+bakes a map of recent build ids to those URLs into each build
+(`scripts/build-deploy-map.mjs`), and the middleware forwards a save or search
+from an older build to its own deployment, where its action ids still exist. The
+person gets their search results or their save, and notices nothing. **This also
+rescues tabs that are already open**, since it needs nothing from the old tab's
+code.
+
+- Verified against production before building it: an old production deployment
+  answers a forwarded search correctly, provided `x-forwarded-host` carries the
+  public host (Next's server-action origin check). Without it the old build
+  answers 500.
+- Page navigations from an old tab are still rejected, deliberately: Next turns
+  that into a full browser navigation, so the tab upgrades itself silently the
+  next time a link is clicked.
+- Only builds from the last 14 days are in the map (older code may not fit the
+  current database). Beyond that, the 2.56.67 notice remains as the fallback.
+- A forwarding target can only be one of our own Pages deployment URLs, taken
+  from the baked-in map, never from the request.
+- CI refuses to build without the map, and after each deploy sends a request as
+  the *previous* build and requires it to be served by that build.
+
+### Fixed — the two save-path defects from the second audit
+
+- **An unsaved value could look saved.** After a rejected inline save, the form
+  kept its optimistic update, so pressing Guardar again read as "no change",
+  closed the editor and showed the unsaved text as saved. It is now reverted; the
+  typed draft stays in the editor.
+- **A dismissed "new version" notice never came back**, leaving later saves
+  failing with no explanation. It now returns whenever the person tries to save
+  again (background polls do not bring it back).
+- The end-to-end tests the audit called weak are tightened: the search test
+  requires a real document reload (not the URL update a successful search also
+  makes), every action in the test is stale (not just the first), the fetch
+  watcher is tested on its own, and the save test asserts no error toast, no late
+  reload, "Guardar again" and the returning notice.
+- The toast close button gained an accessible name.
+
 ## [2.56.67] - 2026-09-19
 
 ### Fixed — deploy recovery, from the 2026-09-19 audit (every P0, P1 and P2)

@@ -12,7 +12,7 @@ import { markDeploymentStale } from './staleDeploy';
  */
 export function userFacingMessage(err: unknown, fallback: string): string {
     if (isDeploymentSkewError(err)) {
-        markDeploymentStale();
+        markDeploymentStale({ userInitiated: true });
         return fallback;
     }
     return err instanceof Error && err.message ? err.message : fallback;
@@ -25,6 +25,6 @@ export function userFacingMessage(err: unknown, fallback: string): string {
  */
 export function handledAsStale(err: unknown): boolean {
     if (!isDeploymentSkewError(err)) return false;
-    markDeploymentStale();
+    markDeploymentStale({ userInitiated: true });
     return true;
 }

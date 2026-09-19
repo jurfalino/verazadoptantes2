@@ -65,13 +65,21 @@ export const DEPLOYMENT_STALE_EVENT = 'buenadoptante:deployment-stale';
  */
 export const STALE_DEPLOY_ERROR_ID = 'stale-deploy';
 
-export interface DeploymentStaleDetail { serverBuildId?: string | null }
+export interface DeploymentStaleDetail {
+    serverBuildId?: string | null;
+    /** True when the person just tried to do something (a save), not a background poll. */
+    userInitiated?: boolean;
+}
 
 let staleMarked = false;
 
-/** Flag this tab as older than the running deployment. Idempotent; never reloads. */
+/**
+ * Flag this tab as older than the running deployment. Never reloads. Announces
+ * EVERY time: if the person dismissed the notice and then tries to save again,
+ * the watcher must be able to bring it back — a one-shot event left later saves
+ * failing with no explanation at all (audit 2, F2).
+ */
 export function markDeploymentStale(detail: DeploymentStaleDetail = {}): void {
-    if (staleMarked) return;
     staleMarked = true;
     try {
         window.dispatchEvent(new CustomEvent<DeploymentStaleDetail>(DEPLOYMENT_STALE_EVENT, { detail }));

@@ -266,12 +266,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Map of recent deployments (git sha → URL), baked into the build so the
+      # middleware can serve an old tab's requests from the deployment it was
+      # loaded from — a deploy must be invisible to someone mid-task. Fails the
+      # run if the map cannot be built: an empty map silently degrades every old
+      # tab to a "reload" notice.
+      - name: Build deploy map (skew protection)
+        run: node scripts/build-deploy-map.mjs --env preview --branch staging --github-env
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       - name: Build for Cloudflare Pages
         shell: bash
         run: |
           # Without a build id the deploy-skew guard is silently inert — no header
           # is sent and nothing is compared (audit 2026-09-19, P1-1). Refuse.
           if [ -z "$APP_BUILD_ID" ]; then echo "::error::APP_BUILD_ID is empty; the deploy-skew guard would be disabled"; exit 1; fi
+          if [ -z "$APP_DEPLOY_MAP" ]; then echo "::error::APP_DEPLOY_MAP is unset; the 'Build deploy map' step did not run"; exit 1; fi
           npx @cloudflare/next-on-pages
         env:
           SKIP_ENV_VALIDATION: 'true'
@@ -295,7 +307,7 @@ jobs:
       - name: Verify deploy-skew guard on the new deployment
         shell: bash
         run: |
-          URL=$(grep -oE 'https://[a-z0-9]+\.verazadoptantes2\.pages\.dev' deploy.log | head -1)
+          URL=$(grep -oE 'https://[a-z0-9]+\.verazadoptantes2\.pages\.dev' deploy.log | head -1 || true)
           if [ -z "$URL" ]; then echo "::error::could not find the deployment URL in the wrangler output"; exit 1; fi
           echo "checking $URL"
           for i in $(seq 1 10); do
@@ -304,8 +316,8 @@ jobs:
             sleep 6
           done
           CODE=$(cat code.txt)
-          SKEW=$(grep -i '^x-deployment-skew:' headers.txt | tr -d '\r' | awk '{print $2}')
-          SERVER=$(grep -i '^x-deployment-id-server:' headers.txt | tr -d '\r' | awk '{print $2}')
+          SKEW=$(grep -i '^x-deployment-skew:' headers.txt | tr -d '\r' | awk '{print $2}' || true)
+          SERVER=$(grep -i '^x-deployment-id-server:' headers.txt | tr -d '\r' | awk '{print $2}' || true)
           echo "stale request -> $CODE, x-deployment-skew=$SKEW, server build=$SERVER"
           [ "$CODE" = "409" ] || { echo "::error::deploy-skew guard is NOT active (got $CODE, expected 409)"; exit 1; }
           [ "$SKEW" = "1" ] || { echo "::error::409 without the x-deployment-skew marker"; exit 1; }
@@ -313,6 +325,18 @@ jobs:
           OK=$(curl -s -o /dev/null -w '%{http_code}' "$URL/")
           echo "normal request -> $OK"
           case "$OK" in 2*|3*) ;; *) echo "::error::normal request failed with $OK"; exit 1;; esac
+          # A tab from the PREVIOUS build must be served by that build, not rejected.
+          if [ -z "$APP_PREVIOUS_BUILD_ID" ]; then echo "::warning::no previous build in the deploy map; skipping the forwarding check"; exit 0; fi
+          curl -s -o /dev/null -D prev.txt -w '%{http_code}' -X POST "$URL/" -H "x-deployment-id: $APP_PREVIOUS_BUILD_ID" -H 'Next-Action: ci-probe' > prevcode.txt || true
+          PCODE=$(cat prevcode.txt)
+          PROXIED=$(grep -i '^x-deployment-skew-proxied:' prev.txt | tr -d '\r' | awk '{print $2}' || true)
+          echo "previous-build request -> $PCODE, served by build: ${PROXIED:-<not forwarded>}"
+          [ "$PROXIED" = "$APP_PREVIOUS_BUILD_ID" ] || { echo "::error::a tab from the previous build ($APP_PREVIOUS_BUILD_ID) was NOT served by its own deployment"; exit 1; }
+          [ "$PCODE" != "409" ] || { echo "::error::previous-build request was rejected with 409"; exit 1; }
+          # A path that resolves to another host must never be forwarded (SSRF).
+          ESC=$(curl -s -o /dev/null -w '%{http_code}' --path-as-is -X POST "$URL//example.com/" -H "x-deployment-id: $APP_PREVIOUS_BUILD_ID" -H 'Next-Action: ci-probe' || true)
+          echo "cross-host path -> $ESC (must be 409)"
+          [ "$ESC" = "409" ] || { echo "::error::a //host path was not rejected ($ESC) — the forwarder may be an open proxy"; exit 1; }
 
   # Deploy to Production (Direct Upload)
   deploy-production:
@@ -335,12 +359,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Map of recent deployments (git sha → URL), baked into the build so the
+      # middleware can serve an old tab's requests from the deployment it was
+      # loaded from — a deploy must be invisible to someone mid-task. Fails the
+      # run if the map cannot be built: an empty map silently degrades every old
+      # tab to a "reload" notice.
+      - name: Build deploy map (skew protection)
+        run: node scripts/build-deploy-map.mjs --env production --github-env
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       - name: Build for Cloudflare Pages
         shell: bash
         run: |
           # Without a build id the deploy-skew guard is silently inert — no header
           # is sent and nothing is compared (audit 2026-09-19, P1-1). Refuse.
           if [ -z "$APP_BUILD_ID" ]; then echo "::error::APP_BUILD_ID is empty; the deploy-skew guard would be disabled"; exit 1; fi
+          if [ -z "$APP_DEPLOY_MAP" ]; then echo "::error::APP_DEPLOY_MAP is unset; the 'Build deploy map' step did not run"; exit 1; fi
           npx @cloudflare/next-on-pages
         env:
           SKIP_ENV_VALIDATION: 'true'
@@ -364,7 +400,7 @@ jobs:
       - name: Verify deploy-skew guard on the new deployment
         shell: bash
         run: |
-          URL=$(grep -oE 'https://[a-z0-9]+\.verazadoptantes2\.pages\.dev' deploy.log | head -1)
+          URL=$(grep -oE 'https://[a-z0-9]+\.verazadoptantes2\.pages\.dev' deploy.log | head -1 || true)
           if [ -z "$URL" ]; then echo "::error::could not find the deployment URL in the wrangler output"; exit 1; fi
           echo "checking $URL"
           for i in $(seq 1 10); do
@@ -373,8 +409,8 @@ jobs:
             sleep 6
           done
           CODE=$(cat code.txt)
-          SKEW=$(grep -i '^x-deployment-skew:' headers.txt | tr -d '\r' | awk '{print $2}')
-          SERVER=$(grep -i '^x-deployment-id-server:' headers.txt | tr -d '\r' | awk '{print $2}')
+          SKEW=$(grep -i '^x-deployment-skew:' headers.txt | tr -d '\r' | awk '{print $2}' || true)
+          SERVER=$(grep -i '^x-deployment-id-server:' headers.txt | tr -d '\r' | awk '{print $2}' || true)
           echo "stale request -> $CODE, x-deployment-skew=$SKEW, server build=$SERVER"
           [ "$CODE" = "409" ] || { echo "::error::deploy-skew guard is NOT active (got $CODE, expected 409)"; exit 1; }
           [ "$SKEW" = "1" ] || { echo "::error::409 without the x-deployment-skew marker"; exit 1; }
@@ -382,6 +418,18 @@ jobs:
           OK=$(curl -s -o /dev/null -w '%{http_code}' "$URL/")
           echo "normal request -> $OK"
           case "$OK" in 2*|3*) ;; *) echo "::error::normal request failed with $OK"; exit 1;; esac
+          # A tab from the PREVIOUS build must be served by that build, not rejected.
+          if [ -z "$APP_PREVIOUS_BUILD_ID" ]; then echo "::warning::no previous build in the deploy map; skipping the forwarding check"; exit 0; fi
+          curl -s -o /dev/null -D prev.txt -w '%{http_code}' -X POST "$URL/" -H "x-deployment-id: $APP_PREVIOUS_BUILD_ID" -H 'Next-Action: ci-probe' > prevcode.txt || true
+          PCODE=$(cat prevcode.txt)
+          PROXIED=$(grep -i '^x-deployment-skew-proxied:' prev.txt | tr -d '\r' | awk '{print $2}' || true)
+          echo "previous-build request -> $PCODE, served by build: ${PROXIED:-<not forwarded>}"
+          [ "$PROXIED" = "$APP_PREVIOUS_BUILD_ID" ] || { echo "::error::a tab from the previous build ($APP_PREVIOUS_BUILD_ID) was NOT served by its own deployment"; exit 1; }
+          [ "$PCODE" != "409" ] || { echo "::error::previous-build request was rejected with 409"; exit 1; }
+          # A path that resolves to another host must never be forwarded (SSRF).
+          ESC=$(curl -s -o /dev/null -w '%{http_code}' --path-as-is -X POST "$URL//example.com/" -H "x-deployment-id: $APP_PREVIOUS_BUILD_ID" -H 'Next-Action: ci-probe' || true)
+          echo "cross-host path -> $ESC (must be 409)"
+          [ "$ESC" = "409" ] || { echo "::error::a //host path was not rejected ($ESC) — the forwarder may be an open proxy"; exit 1; }
 
 
 

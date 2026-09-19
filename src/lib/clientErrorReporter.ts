@@ -101,7 +101,7 @@ export function resolveErrorId(error: unknown, source: string): string {
     // Raise the "new version" banner instead, and hand back the id the toast
     // layer drops so the caller's error toast never appears.
     if (isDeploymentSkewError(error)) {
-        markDeploymentStale();
+        markDeploymentStale({ userInitiated: true });
         return STALE_DEPLOY_ERROR_ID;
     }
 

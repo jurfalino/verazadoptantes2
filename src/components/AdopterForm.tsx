@@ -741,7 +741,15 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         let stale = false;
         const res = await saveAdopter({ ...updated, contactEntries: undefined, contactInfo: undefined })
             .catch((e) => { stale = handledAsStale(e); return null; });
-        if (stale) return false;
+        if (stale) {
+            // Undo the optimistic update. Left in place, the field's value would
+            // equal the typed text, so pressing Guardar again read as "no change",
+            // closed the editor and showed an unsaved value as saved (audit 2, F1).
+            // The typed draft lives in InlineEditField's own state and survives.
+            setData(prevData);
+            dataRef.current = prevData;
+            return false;
+        }
         if (!res?.success) {
             setData(prevData);
             dataRef.current = prevData;
