@@ -831,7 +831,6 @@ export const en = {
         family_notes: 'Notes',
         hh_cta_add: 'Add family / household member',
         hh_add_contact: 'Add contact detail',
-        hh_contacts: 'Contact details',
         hh_name: 'Name',
         hh_name_ph: 'Full name',
         hh_rel: 'Relationship',

@@ -838,7 +838,6 @@ export const pt = {
         family_notes: 'Notas',
         hh_cta_add: 'Adicionar familiar / convivente',
         hh_add_contact: 'Adicionar dado de contato',
-        hh_contacts: 'Dados de contato',
         hh_name: 'Nome',
         hh_name_ph: 'Nome e sobrenome',
         hh_rel: 'Parentesco',

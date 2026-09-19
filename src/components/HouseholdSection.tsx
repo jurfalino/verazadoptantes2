@@ -226,9 +226,11 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                                     </div>
                                 )}
                             </div>
-                            {/* contacts */}
+                            {/* contacts — no heading: "Agregar dato de contacto" says it. A
+                                viewer who can't edit a member with no contacts gets no
+                                block at all rather than an empty divider. */}
+                            {(m.contactEntries.length > 0 || canEdit) && (
                             <div className="mt-3 pt-3 border-t border-dashed border-stone-200">
-                                <p className="text-[11px] font-bold uppercase tracking-wide text-stone-500 mb-2">{t('adopter.hh_contacts')}</p>
                                 {m.contactEntries.length > 0 && (
                                     <ul className="space-y-1.5 mb-2">
                                         {(m.contactEntries as CEditing[]).map((ce, ci) => ce.editing ? (
@@ -268,6 +270,7 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                                     <button type="button" onClick={() => openComposer(m)} className="inline-flex items-center gap-1 text-sm font-medium text-teal-700 hover:text-teal-900"><Plus className="w-4 h-4" />{t('adopter.hh_add_contact')}</button>
                                 ))}
                             </div>
+                            )}
                         </>
                     )}
                 </div>

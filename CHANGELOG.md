@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.63] - 2026-09-19
+
+### Changed — contact sections lose their heading
+
+The "Datos de contacto" heading is gone from the profile's contact section and
+from each household member's contacts. The "Agregar dato de contacto" button and
+the empty-state line already say what the section holds, and every line saved
+moves the "¿Qué pasó con…?" prompt, which sits below the whole adopter card,
+further up the screen.
+
+Someone who cannot edit, looking at a household member with no contacts, now
+sees nothing there rather than an empty divider. The heading on the create form
+goes too, since it is the same component.
+
 ## [2.56.62] - 2026-09-19
 
 ### Fixed — family members typed on the create form disappeared from the profile
