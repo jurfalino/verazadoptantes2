@@ -88,6 +88,49 @@ describe('middleware — an old tab\'s action is served by its own deployment', 
         expect(res.headers.get('x-deployment-skew')).toBe('1');
     });
 
+    it('never forwards to another host, however the path is written (SSRF)', async () => {
+        // new URL('//evil.com/x', origin) resolves to evil.com. Found in the
+        // pre-production review of 2.56.68.
+        const upstream = vi.fn(async () => new Response('x')); vi.stubGlobal('fetch', upstream);
+        const { default: middleware } = await import('./middleware');
+        for (const path of ['//evil.com/x?a=1', '/\\evil.com/x', '///evil.com']) {
+            const req = new NextRequest('https://buenadoptante.org/', { method: 'POST', body: '[]', headers: { host: 'buenadoptante.org', 'x-deployment-id': 'BUILD_A', 'next-action': 'abc' } });
+            Object.defineProperty(req, 'nextUrl', { value: { pathname: path.split('?')[0], search: path.includes('?') ? '?' + path.split('?')[1] : '', host: 'buenadoptante.org' } });
+            const res = await middleware(req);
+            expect(res.status).toBe(409);
+        }
+        expect(upstream).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the 409 when the old deployment answers with an error page', async () => {
+        // A deleted deployment or a Cloudflare error page is not an action result;
+        // passing it through gave the user a generic error and no notice.
+        vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>gone</html>', { status: 404, headers: { 'content-type': 'text/html' } })));
+        const { default: middleware } = await import('./middleware');
+        const res = await middleware(new NextRequest('https://buenadoptante.org/', { method: 'POST', body: '[]', headers: { host: 'buenadoptante.org', 'x-deployment-id': 'BUILD_A', 'next-action': 'abc' } }));
+        expect(res.status).toBe(409);
+        expect(res.headers.get('x-deployment-skew')).toBe('1');
+    });
+
+    it('passes through a real action error from the old build (RSC content type)', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response('1:E{"digest":"x"}', { status: 500, headers: { 'content-type': 'text/x-component' } })));
+        const { default: middleware } = await import('./middleware');
+        const res = await middleware(new NextRequest('https://buenadoptante.org/', { method: 'POST', body: '[]', headers: { host: 'buenadoptante.org', 'x-deployment-id': 'BUILD_A', 'next-action': 'abc' } }));
+        expect(res.status).toBe(500);
+        expect(res.headers.get('x-deployment-skew-proxied')).toBe('BUILD_A');
+    });
+
+    it('only forwards POST, and gives the old deployment a deadline', async () => {
+        const upstream = vi.fn(async () => new Response('ok', { headers: { 'content-type': 'text/x-component' } })); vi.stubGlobal('fetch', upstream);
+        const { default: middleware } = await import('./middleware');
+        const get = await middleware(new NextRequest('https://buenadoptante.org/', { method: 'GET', headers: { host: 'buenadoptante.org', 'x-deployment-id': 'BUILD_A', 'next-action': 'abc' } }));
+        expect(get.status).toBe(409);
+        expect(upstream).not.toHaveBeenCalled();
+        await middleware(new NextRequest('https://buenadoptante.org/', { method: 'POST', body: '[]', headers: { host: 'buenadoptante.org', 'x-deployment-id': 'BUILD_A', 'next-action': 'abc' } }));
+        const [, init] = upstream.mock.calls[0] as unknown as [unknown, RequestInit];
+        expect(init.signal).toBeInstanceOf(AbortSignal);
+    });
+
     it('still rejects an old tab\'s page navigation, which Next turns into a silent upgrade', async () => {
         const upstream = vi.fn(); vi.stubGlobal('fetch', upstream);
         const { default: middleware } = await import('./middleware');

@@ -49,9 +49,8 @@ export function decideSkew(input: {
     // Both sides must be known for a difference to mean anything.
     if (!clientBuildId || !serverBuildId || clientBuildId === serverBuildId) return { kind: 'pass' };
     if (alreadyProxied) return { kind: 'pass' };
-    if (isServerAction) {
-        const origin = map[clientBuildId];
-        if (origin) return { kind: 'proxy', origin };
+    if (isServerAction && Object.hasOwn(map, clientBuildId)) {
+        return { kind: 'proxy', origin: map[clientBuildId] };
     }
     return { kind: 'reject' };
 }

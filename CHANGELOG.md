@@ -2,6 +2,30 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.69] - 2026-09-19
+
+### Security — 2.56.68's forwarder could be pointed at another host (never deployed)
+
+Found by the independent review that now runs **before** production, and fixed
+before 2.56.68 reached any environment (its staging run was superseded by this
+one). A request path such as `//evil.com/x` resolves, against the old deployment's
+URL, to a **different host**. With a known build id, that turned the forwarder into
+an open proxy through our domain. The target's origin must now equal the mapped
+deployment exactly; pinned by unit tests and by a post-deploy probe.
+
+Also from that review:
+- An error page from an old deployment (deleted, Cloudflare error, redirect to the
+  old host) is no longer passed to the browser as if it were a result; it falls
+  back to the "new version" notice. A real action error from the old build still
+  passes through.
+- Forwarding has a 10-second deadline, is POST-only, and ignores inherited object
+  keys as build ids.
+- The deploy map is read page by page (staging covers 30 builds, up from 11),
+  never includes the sha being built (a re-run no longer probes itself), and has an
+  `ALLOW_EMPTY_DEPLOY_MAP=1` escape so a Cloudflare API outage cannot block a
+  hotfix.
+- The post-deploy check also requires a `//host` path to be rejected.
+
 ## [2.56.68] - 2026-09-19
 
 ### Changed — a deploy is now invisible to someone in the middle of a task

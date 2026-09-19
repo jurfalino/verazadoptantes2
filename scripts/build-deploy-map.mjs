@@ -26,8 +26,8 @@ const PROJECT = 'verazadoptantes2';
 const token = process.env.CLOUDFLARE_API_TOKEN, account = process.env.CLOUDFLARE_ACCOUNT_ID;
 if (!token || !account) { console.error('::error::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID are required'); process.exit(1); }
 
-async function list() {
-    const url = `https://api.cloudflare.com/client/v4/accounts/${account}/pages/projects/${PROJECT}/deployments?env=${ENV}&per_page=25`;
+async function page(n) {
+    const url = `https://api.cloudflare.com/client/v4/accounts/${account}/pages/projects/${PROJECT}/deployments?env=${ENV}&per_page=25&page=${n}`;
     let lastErr;
     for (let attempt = 1; attempt <= 3; attempt++) {
         try {
@@ -41,20 +41,48 @@ async function list() {
     throw new Error(`Cloudflare API: ${lastErr}`);
 }
 
+/** Newest first, page by page, until past the cutoff (about half the rows are 'idle' duplicates). */
+async function list(cutoff) {
+    const all = [];
+    for (let n = 1; n <= 8; n++) {
+        const rows = await page(n);
+        all.push(...rows);
+        if (rows.length < 25 || new Date(rows.at(-1).created_on).getTime() < cutoff) break;
+    }
+    return all;
+}
+
+/**
+ * Escape hatch: ALLOW_EMPTY_DEPLOY_MAP=1 lets a hotfix deploy through a
+ * Cloudflare API outage. Old tabs then fall back to the "new version" notice.
+ */
+function giveUp(message) {
+    if (process.env.ALLOW_EMPTY_DEPLOY_MAP === '1') {
+        console.log(`::warning title=Deploy map::${message} — continuing WITHOUT skew forwarding (ALLOW_EMPTY_DEPLOY_MAP=1)`);
+        if (process.argv.includes('--github-env')) appendFileSync(process.env.GITHUB_ENV, 'APP_DEPLOY_MAP={}\nAPP_PREVIOUS_BUILD_ID=\n');
+        process.exit(0);
+    }
+    console.error(`::error::${message}`);
+    process.exit(1);
+}
+
 try {
     const cutoff = Date.now() - MAX_AGE_DAYS * 86_400_000;
     const map = {};
-    for (const d of await list()) {                       // newest first
+    for (const d of await list(cutoff)) {                 // newest first
         const meta = d.deployment_trigger?.metadata ?? {};
         const ok = d.latest_stage?.name === 'deploy' && d.latest_stage?.status === 'success';
         if (!ok || d.environment !== ENV || meta.branch !== BRANCH) continue;
         if (new Date(d.created_on).getTime() < cutoff) continue;
         if (!/^https:\/\/[a-z0-9]+\.verazadoptantes2\.pages\.dev$/.test(d.url)) continue;
-        if (meta.commit_hash && !map[meta.commit_hash]) map[meta.commit_hash] = d.url;
+        // Never map the sha being built: on a re-run it is already deployed, and
+        // the post-deploy check would then probe "the previous build" with itself.
+        if (meta.commit_hash === process.env.GITHUB_SHA) continue;
+        if (meta.commit_hash && !Object.hasOwn(map, meta.commit_hash)) map[meta.commit_hash] = d.url;
         if (Object.keys(map).length >= MAX_ENTRIES) break;
     }
     const n = Object.keys(map).length;
-    if (!n) { console.error(`::error::no successful ${ENV}/${BRANCH} deployment in the last ${MAX_AGE_DAYS} days — the deploy map would be empty`); process.exit(1); }
+    if (!n) giveUp(`no successful ${ENV}/${BRANCH} deployment in the last ${MAX_AGE_DAYS} days — the deploy map would be empty`);
     const json = JSON.stringify(map);
     if (process.argv.includes('--github-env')) {
         appendFileSync(process.env.GITHUB_ENV, `APP_DEPLOY_MAP=${json}\n`);
@@ -65,6 +93,5 @@ try {
         console.log(json);
     }
 } catch (e) {
-    console.error(`::error::could not build the deploy map: ${e.message}`);
-    process.exit(1);
+    giveUp(`could not build the deploy map: ${e.message}`);
 }

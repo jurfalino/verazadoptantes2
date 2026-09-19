@@ -28,6 +28,12 @@ describe('decideSkew — what to do with a request from another build', () => {
         expect(decideSkew({ ...base, clientBuildId: 'ANCIENT', isServerAction: true })).toEqual({ kind: 'reject' });
     });
 
+    it('does not treat inherited object keys as known builds', () => {
+        for (const id of ['__proto__', 'constructor', 'toString']) {
+            expect(decideSkew({ ...base, clientBuildId: id, isServerAction: true })).toEqual({ kind: 'reject' });
+        }
+    });
+
     it('never forwards a request that was already forwarded', () => {
         expect(decideSkew({ ...base, clientBuildId: 'OLDSHA', isServerAction: true, alreadyProxied: true })).toEqual({ kind: 'pass' });
     });

@@ -283,7 +283,7 @@ jobs:
           # Without a build id the deploy-skew guard is silently inert — no header
           # is sent and nothing is compared (audit 2026-09-19, P1-1). Refuse.
           if [ -z "$APP_BUILD_ID" ]; then echo "::error::APP_BUILD_ID is empty; the deploy-skew guard would be disabled"; exit 1; fi
-          if [ -z "$APP_DEPLOY_MAP" ]; then echo "::error::APP_DEPLOY_MAP is empty; old tabs would not be served by their own deployment"; exit 1; fi
+          if [ -z "$APP_DEPLOY_MAP" ]; then echo "::error::APP_DEPLOY_MAP is unset; the 'Build deploy map' step did not run"; exit 1; fi
           npx @cloudflare/next-on-pages
         env:
           SKIP_ENV_VALIDATION: 'true'
@@ -326,12 +326,17 @@ jobs:
           echo "normal request -> $OK"
           case "$OK" in 2*|3*) ;; *) echo "::error::normal request failed with $OK"; exit 1;; esac
           # A tab from the PREVIOUS build must be served by that build, not rejected.
+          if [ -z "$APP_PREVIOUS_BUILD_ID" ]; then echo "::warning::no previous build in the deploy map; skipping the forwarding check"; exit 0; fi
           curl -s -o /dev/null -D prev.txt -w '%{http_code}' -X POST "$URL/" -H "x-deployment-id: $APP_PREVIOUS_BUILD_ID" -H 'Next-Action: ci-probe' > prevcode.txt || true
           PCODE=$(cat prevcode.txt)
           PROXIED=$(grep -i '^x-deployment-skew-proxied:' prev.txt | tr -d '\r' | awk '{print $2}' || true)
           echo "previous-build request -> $PCODE, served by build: ${PROXIED:-<not forwarded>}"
           [ "$PROXIED" = "$APP_PREVIOUS_BUILD_ID" ] || { echo "::error::a tab from the previous build ($APP_PREVIOUS_BUILD_ID) was NOT served by its own deployment"; exit 1; }
           [ "$PCODE" != "409" ] || { echo "::error::previous-build request was rejected with 409"; exit 1; }
+          # A path that resolves to another host must never be forwarded (SSRF).
+          ESC=$(curl -s -o /dev/null -w '%{http_code}' --path-as-is -X POST "$URL//example.com/" -H "x-deployment-id: $APP_PREVIOUS_BUILD_ID" -H 'Next-Action: ci-probe' || true)
+          echo "cross-host path -> $ESC (must be 409)"
+          [ "$ESC" = "409" ] || { echo "::error::a //host path was not rejected ($ESC) — the forwarder may be an open proxy"; exit 1; }
 
   # Deploy to Production (Direct Upload)
   deploy-production:
@@ -371,7 +376,7 @@ jobs:
           # Without a build id the deploy-skew guard is silently inert — no header
           # is sent and nothing is compared (audit 2026-09-19, P1-1). Refuse.
           if [ -z "$APP_BUILD_ID" ]; then echo "::error::APP_BUILD_ID is empty; the deploy-skew guard would be disabled"; exit 1; fi
-          if [ -z "$APP_DEPLOY_MAP" ]; then echo "::error::APP_DEPLOY_MAP is empty; old tabs would not be served by their own deployment"; exit 1; fi
+          if [ -z "$APP_DEPLOY_MAP" ]; then echo "::error::APP_DEPLOY_MAP is unset; the 'Build deploy map' step did not run"; exit 1; fi
           npx @cloudflare/next-on-pages
         env:
           SKIP_ENV_VALIDATION: 'true'
@@ -414,12 +419,17 @@ jobs:
           echo "normal request -> $OK"
           case "$OK" in 2*|3*) ;; *) echo "::error::normal request failed with $OK"; exit 1;; esac
           # A tab from the PREVIOUS build must be served by that build, not rejected.
+          if [ -z "$APP_PREVIOUS_BUILD_ID" ]; then echo "::warning::no previous build in the deploy map; skipping the forwarding check"; exit 0; fi
           curl -s -o /dev/null -D prev.txt -w '%{http_code}' -X POST "$URL/" -H "x-deployment-id: $APP_PREVIOUS_BUILD_ID" -H 'Next-Action: ci-probe' > prevcode.txt || true
           PCODE=$(cat prevcode.txt)
           PROXIED=$(grep -i '^x-deployment-skew-proxied:' prev.txt | tr -d '\r' | awk '{print $2}' || true)
           echo "previous-build request -> $PCODE, served by build: ${PROXIED:-<not forwarded>}"
           [ "$PROXIED" = "$APP_PREVIOUS_BUILD_ID" ] || { echo "::error::a tab from the previous build ($APP_PREVIOUS_BUILD_ID) was NOT served by its own deployment"; exit 1; }
           [ "$PCODE" != "409" ] || { echo "::error::previous-build request was rejected with 409"; exit 1; }
+          # A path that resolves to another host must never be forwarded (SSRF).
+          ESC=$(curl -s -o /dev/null -w '%{http_code}' --path-as-is -X POST "$URL//example.com/" -H "x-deployment-id: $APP_PREVIOUS_BUILD_ID" -H 'Next-Action: ci-probe' || true)
+          echo "cross-host path -> $ESC (must be 409)"
+          [ "$ESC" = "409" ] || { echo "::error::a //host path was not rejected ($ESC) — the forwarder may be an open proxy"; exit 1; }
 
 
 

@@ -16,6 +16,10 @@ const DEPLOY_MAP = parseDeployMap(process.env.APP_DEPLOY_MAP, process.env.APP_DE
 async function forwardToDeployment(req: NextRequest, origin: string, buildId: string): Promise<NextResponse | null> {
     try {
         const target = new URL(req.nextUrl.pathname + req.nextUrl.search, origin);
+        // A path like `//evil.com/x` or `/\evil.com` resolves to ANOTHER HOST.
+        // Without this check the forwarder is an open proxy (pre-production
+        // review of 2.56.68). The target must be exactly the mapped deployment.
+        if (target.origin !== origin) return null;
         const headers = new Headers(req.headers);
         headers.set('x-forwarded-host', req.headers.get('host') || req.nextUrl.host);
         headers.set('x-skew-proxied', '1');
@@ -27,7 +31,14 @@ async function forwardToDeployment(req: NextRequest, origin: string, buildId: st
             headers,
             body: hasBody ? await req.arrayBuffer() : undefined,
             redirect: 'manual',
+            // A hung old deployment must not hang the user's save.
+            signal: AbortSignal.timeout(10_000),
         });
+        // Only an action result is worth returning. A deleted deployment, a
+        // Cloudflare error page or a redirect to the old pages.dev host is not:
+        // fall back to the 409, whose notice at least explains what to do.
+        const isActionResult = (res.headers.get('content-type') || '').startsWith('text/x-component');
+        if (!isActionResult && (res.status >= 300)) return null;
         const out = new Headers(res.headers);
         // fetch already decoded the body; these would now describe the wrong bytes.
         out.delete('content-encoding');
@@ -72,7 +83,8 @@ export default async function middleware(req: NextRequest) {
     const decision = decideSkew({
         clientBuildId,
         serverBuildId,
-        isServerAction: req.headers.has('next-action'),
+        // Server actions are always POST; nothing else is ever forwarded.
+        isServerAction: req.method === 'POST' && req.headers.has('next-action'),
         alreadyProxied: req.headers.has('x-skew-proxied'),
         map: DEPLOY_MAP,
     });
