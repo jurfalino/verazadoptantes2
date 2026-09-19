@@ -2,6 +2,37 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.65] - 2026-09-19
+
+### Added — "¿Qué pasó?" card pinned to the bottom of the screen, behind a flag
+
+The "¿Qué pasó con…?" card sits below the whole adopter card, so on a phone it
+starts below the first screen, and every section the profile gains pushes it
+further down. With **`ENABLE_PINNED_VISIT_INTENT`** on (Admin → Configuración,
+off by default), the card is pinned to the bottom of the screen on every
+profile, so recording what happened is one tap from anywhere.
+
+- **Phones:** an edge-to-edge sheet. **Wider screens:** exactly the width of the
+  profile column, centred.
+- **While a field is being edited** the card slides below the fold, so a phone
+  keyboard never opens with the card sitting on top of it.
+- **Choosing an option** replaces the card with the record wizard, which scrolls
+  itself into view, as before. Nothing pinned covers the form.
+- **The chat bubble** sits above the card, and the page leaves room at the end so
+  the last controls stay reachable. The card publishes its height as
+  `--visit-intent-pinned-h`, which both of them read.
+- Signed-in users only, as the card already was. The flag is read on the server,
+  so the card is pinned in the first HTML rather than jumping after load.
+
+The pinned card has a solid backing under its usual tint: on its own the tint is
+8% opaque and the page showed through. It slides away using the `translate`
+property rather than `transform`, because the card's entrance animation holds
+`transform` and a held animation overrides an inline style.
+
+A new spec runs with the flag on at phone size: the card is pinned and on the
+first screen, an option opens the wizard in view, and editing a field moves the
+card out of the way.
+
 ## [2.56.64] - 2026-09-19
 
 ### Fixed — every profile with change history hydrated with a mismatch

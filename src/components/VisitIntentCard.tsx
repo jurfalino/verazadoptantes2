@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { zarazTrack } from '@/lib/zaraz';
 import AdoptionFormWizard from './AdoptionFormWizard';
@@ -32,6 +32,11 @@ interface Props {
     adopterAddress?: string;
     /** Forwarded to the wizard — offers a "request contact access" opt-in when masked. */
     piiOptInEligible?: boolean;
+    /**
+     * ENABLE_PINNED_VISIT_INTENT: pin the card to the bottom of the screen so it is
+     * reachable from anywhere on the profile, not only below the adopter card.
+     */
+    pinned?: boolean;
 }
 
 /**
@@ -49,13 +54,52 @@ interface Props {
  * (v2.14.8 made this the only entry point — the standalone "Registrar
  * Actividad" CTA on AdoptionFormWizard was removed for UX consistency).
  */
-export default function VisitIntentCard({ adopterId, adopterName, avgRating = null, tooManyAdoptions = null, tooManyRequests = null, currentUser, adoptions, availableAnimals, adopterAddress = '', piiOptInEligible = false }: Props) {
+export default function VisitIntentCard({ adopterId, adopterName, avgRating = null, tooManyAdoptions = null, tooManyRequests = null, currentUser, adoptions, availableAnimals, adopterAddress = '', piiOptInEligible = false, pinned = false }: Props) {
     const { t } = useLanguage();
     const [openedRecordType, setOpenedRecordType] = useState<IntentType | null>(null);
     const [trackedShown, setTrackedShown] = useState(false);
     const [view, setView] = useState<View>('main');
 
     const baseEligible = !!currentUser;
+
+    // ── Pinned mode ────────────────────────────────────────────────────────
+    // While any field is focused the card slides below the fold, so a phone
+    // keyboard never opens with the card riding on top of it.
+    const [editing, setEditing] = useState(false);
+    const rootRef = useRef<HTMLDivElement>(null);
+    const pinnedVisible = pinned && baseEligible && !openedRecordType && !editing;
+
+    useEffect(() => {
+        if (!pinned) return;
+        const isField = (el: EventTarget | null) =>
+            el instanceof HTMLElement &&
+            (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+        const onIn = (e: FocusEvent) => { if (isField(e.target)) setEditing(true); };
+        const onOut = (e: FocusEvent) => { if (isField(e.target)) setEditing(false); };
+        document.addEventListener('focusin', onIn);
+        document.addEventListener('focusout', onOut);
+        return () => {
+            document.removeEventListener('focusin', onIn);
+            document.removeEventListener('focusout', onOut);
+        };
+    }, [pinned]);
+
+    // Publish the pinned card's height as --visit-intent-pinned-h, so the page
+    // can leave room for it at the end and the chat bubble can sit above it.
+    // Zero whenever the card is not on screen: wizard open, editing, or unpinned.
+    useEffect(() => {
+        const root = document.documentElement;
+        const el = rootRef.current;
+        if (!pinnedVisible || !el) {
+            root.style.setProperty('--visit-intent-pinned-h', '0px');
+            return;
+        }
+        const publish = () => root.style.setProperty('--visit-intent-pinned-h', `${Math.round(el.getBoundingClientRect().height)}px`);
+        publish();
+        const ro = new ResizeObserver(publish);
+        ro.observe(el);
+        return () => { ro.disconnect(); root.style.setProperty('--visit-intent-pinned-h', '0px'); };
+    }, [pinnedVisible]);
 
     useEffect(() => {
         if (!baseEligible || trackedShown || openedRecordType) return;
@@ -191,14 +235,34 @@ export default function VisitIntentCard({ adopterId, adopterName, avgRating = nu
 
     return (
         <div
+            ref={rootRef}
             role="region"
             aria-label={titleText}
-            className="visit-intent-card rounded-xl px-4 py-3 mb-3 flex flex-col gap-3"
-            style={{
+            className={pinned
+                // Phones: an edge-to-edge sheet. Wider screens: the profile column's
+                // width (<main px-4> → max-w-3xl), centred, with its side borders.
+                ? 'visit-intent-card fixed inset-x-0 bottom-0 z-40 px-4 pt-3 flex flex-col gap-3 rounded-t-2xl border-solid border-t-2 border-x-0 border-b-0 sm:border-x-2 sm:mx-auto sm:w-[min(48rem,calc(100vw-2rem))]'
+                : 'visit-intent-card rounded-xl px-4 py-3 mb-3 flex flex-col gap-3'}
+            style={pinned ? {
+                // The card's own background is an 8% tint meant to sit on the page;
+                // pinned over content it needs a solid backing under the same tint.
+                background: 'linear-gradient(var(--accent-subtle-bg), var(--accent-subtle-bg)), var(--surface-card)',
+                borderColor: 'var(--accent)',
+                color: 'var(--text-primary)',
+                boxShadow: '0 -6px 20px rgba(0,0,0,0.12)',
+                paddingBottom: 'max(env(safe-area-inset-bottom), 12px)',
+                // `translate`, not `transform`: the card's entrance animation
+                // (globals.css, fill-mode both) holds `transform`, and a held
+                // animation wins over an inline style. `translate` composes
+                // with it instead of competing.
+                translate: editing ? '0 110%' : '0 0',
+                transition: 'translate 200ms ease',
+            } : {
                 background: 'var(--accent-subtle-bg)',
                 border: '2px solid var(--accent)',
                 color: 'var(--text-primary)',
             }}
+            aria-hidden={pinned && editing ? true : undefined}
         >
             <div className="flex items-center gap-2">
                 <span

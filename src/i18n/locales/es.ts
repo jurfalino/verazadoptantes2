@@ -161,6 +161,8 @@ export const es = {
         flag_desc_guided_walkthrough: 'Lanza una vez un recorrido guiado para usuarios nuevos que los guía a buscar un adoptante por nombre y leer el resultado. También agrega un enlace "Mostrame cómo buscar" al final de la ayuda debajo del buscador. Por defecto apagado.',
         flag_label_household_members: 'Familiares / Convivientes estructurados',
         flag_desc_household_members: 'Reemplaza el campo de texto libre de familiares por personas estructuradas (nombre, parentesco y datos de contacto propios), protegidas y detectadas como duplicados igual que el adoptante. Por defecto apagado.',
+        flag_label_pinned_visit_intent: 'Tarjeta "¿Qué pasó?" fija abajo',
+        flag_desc_pinned_visit_intent: 'Fija la tarjeta "¿Qué pasó con…?" al pie de la pantalla en los perfiles, para registrar lo que pasó con un toque desde cualquier parte, en vez de tener que bajar hasta debajo de toda la ficha. Se corre mientras se edita un campo. Por defecto apagado.',
         flag_label_followups: 'Seguimientos de adopción',
         flag_desc_followups: 'Activa la línea de vida proyectada: recordatorios de control post-adopción y de tránsito, la sección «Seguimientos» en Configuración, las insignias de pendientes en Mis animales y el envío diario de recordatorios.',
         flag_label_email_otp: 'Acceso con código por email',
