@@ -22,18 +22,20 @@ function execD1(sql: string): string {
     );
 }
 
-/** Make this tab's server-action calls claim an old build, once. */
-async function goStale(page: Page) {
-    let used = false;
+/** Make this tab's server-action calls claim an old, unknown build. Returns the statuses seen. */
+async function goStale(page: Page): Promise<number[]> {
+    const statuses: number[] = [];
     await page.route('**/*', async (route) => {
         const req = route.request();
-        if (!used && req.method() === 'POST' && req.headers()['next-action']) {
-            used = true;
-            await route.continue({ headers: { ...req.headers(), 'x-deployment-id': 'stale-e2e-build' } });
+        if (req.method() === 'POST' && req.headers()['next-action']) {
+            const res = await route.fetch({ headers: { ...req.headers(), 'x-deployment-id': 'stale-e2e-build' } });
+            statuses.push(res.status());
+            await route.fulfill({ response: res });
             return;
         }
         await route.continue();
     });
+    return statuses;
 }
 
 test.describe('deploy skew — a tab older than the running deployment', () => {
@@ -52,13 +54,17 @@ test.describe('deploy skew — a tab older than the running deployment', () => {
         let navigations = 0;
         page.on('framenavigated', f => { if (f === page.mainFrame()) navigations++; });
 
-        await goStale(page);
+        const statuses = await goStale(page);
         await page.locator('main button[aria-label="Editar"], main button[aria-label="Edit"]').first().click();
         await page.locator('main input:focus').fill(`${NAME} typed`);
         await page.getByRole('button', { name: /Guardar|Save/ }).first().click();
 
         await expect(page.getByText(/Hay una versión nueva|A new version is available|Há uma versão nova/)).toBeVisible({ timeout: 15000 });
         await expect(page.getByRole('button', { name: /^(Recargar|Reload|Recarregar)$/ })).toBeVisible();
+        expect(statuses).toContain(409);
+        // No error toast beside the notice, and no late reload.
+        await expect(page.getByText(/Error ID:/)).toHaveCount(0);
+        await page.waitForTimeout(2500);
         expect(navigations).toBe(0);
         const typed = await page.evaluate(() => [...document.querySelectorAll('main input')].some(el => (el as HTMLInputElement).value.endsWith('typed')));
         expect(typed).toBe(true);
@@ -66,17 +72,44 @@ test.describe('deploy skew — a tab older than the running deployment', () => {
         // The save never ran.
         const rows = JSON.parse(execD1(`SELECT name FROM adopters WHERE id='${ID}'`))[0].results;
         expect(rows[0].name).toBe(NAME);
+
+        // Audit 2, F1: pressing Guardar again must NOT close the editor as if saved.
+        await page.getByRole('button', { name: /Guardar|Save/ }).first().click();
+        await page.waitForTimeout(1500);
+        await expect(page.getByRole('button', { name: /Guardar|Save/ }).first()).toBeVisible();
+
+        // Audit 2, F2: dismiss the notice, try again — it must come back.
+        const notice = page.getByText(/Hay una versión nueva|A new version is available|Há uma versão nova/);
+        await page.getByTestId('toast-dismiss').last().click();
+        await expect(notice).toHaveCount(0);
+        await page.getByRole('button', { name: /Guardar|Save/ }).first().click();
+        await expect(notice).toBeVisible({ timeout: 15000 });
+    });
+
+    test('the watcher recognises a rejection on its own, whatever the caller does', async ({ page }) => {
+        // Isolates the fetch wrapper (audit 2, F4): no catch block, no helper involved.
+        await page.goto(`/adopter/${ID}`);
+        await dismissCountryBanner(page);
+        await expect(page.getByRole('heading', { name: NAME })).toBeVisible({ timeout: 30000 });
+        const status = await page.evaluate(async () => (await fetch('/', { method: 'POST', headers: { 'x-deployment-id': 'stale-e2e-build', 'next-action': 'x' } })).status);
+        expect(status).toBe(409);
+        await expect(page.getByText(/Hay una versión nueva|A new version is available|Há uma versão nova/)).toBeVisible({ timeout: 15000 });
     });
 
     test('a search reloads onto the current build by itself', async ({ page }) => {
         await page.goto('/');
         await dismissCountryBanner(page);
-        await goStale(page);
-        // Generous: in a full run the dev server may still be compiling the action route.
-        const reloaded = page.waitForEvent('framenavigated', { timeout: 45000 });
+        const statuses = await goStale(page);
+        // A sentinel that only a real document reload clears — a successful search
+        // also fires framenavigated (history.replaceState), so that proves nothing.
+        await page.evaluate(() => { (window as unknown as { __skewSentinel?: boolean }).__skewSentinel = true; });
         await page.fill('input#search', 'SkewFixture');
         await page.getByRole('button', { name: /search records|buscar registros/i }).click();
-        await reloaded;
+        await expect.poll(() => statuses.includes(409), { timeout: 30000 }).toBe(true);
+        await expect.poll(
+            () => page.evaluate(() => (window as unknown as { __skewSentinel?: boolean }).__skewSentinel === true).catch(() => false),
+            { timeout: 45000 },
+        ).toBe(false);
         await expect(page.getByText(/Búsqueda fallida|Search failed/)).toHaveCount(0);
     });
 });

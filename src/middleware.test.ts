@@ -37,3 +37,62 @@ describe('middleware deploy-skew guard', () => {
         expect(res.status).not.toBe(409);
     });
 });
+
+describe('middleware — an old tab\'s action is served by its own deployment', () => {
+    const OLD = 'https://38ff5995.verazadoptantes2.pages.dev';
+    beforeEach(() => {
+        vi.resetModules();
+        vi.stubEnv('APP_BUILD_ID', 'BUILD_B');
+        vi.stubEnv('APP_DEPLOY_MAP', JSON.stringify({ BUILD_A: OLD }));
+    });
+    afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+
+    it('forwards method, path, body and cookies, adds x-forwarded-host, and returns the old build\'s answer', async () => {
+        const upstream = vi.fn(async () => new Response('0:{"ok":true}', {
+            status: 200, headers: { 'content-type': 'text/x-component', 'content-encoding': 'gzip', 'x-action-revalidated': '[[],0,0]' },
+        }));
+        vi.stubGlobal('fetch', upstream);
+        const { default: middleware } = await import('./middleware');
+        const res = await middleware(new NextRequest('https://buenadoptante.org/adopter/x?q=1', {
+            method: 'POST', body: '["payload"]',
+            headers: { host: 'buenadoptante.org', 'x-deployment-id': 'BUILD_A', 'next-action': 'abc', cookie: 'authjs.session-token=t', origin: 'https://buenadoptante.org' },
+        }));
+
+        expect(upstream).toHaveBeenCalledTimes(1);
+        const [url, init] = upstream.mock.calls[0] as unknown as [URL | string, RequestInit & { headers: Headers }];
+        expect(String(url)).toBe(`${OLD}/adopter/x?q=1`);
+        expect(init.method).toBe('POST');
+        expect(new TextDecoder().decode(init.body as ArrayBuffer)).toBe('["payload"]');
+        expect(init.headers.get('x-forwarded-host')).toBe('buenadoptante.org');
+        expect(init.headers.get('cookie')).toBe('authjs.session-token=t');
+        expect(init.headers.get('next-action')).toBe('abc');
+        expect(init.headers.get('x-skew-proxied')).toBe('1');
+        expect(init.redirect).toBe('manual');
+
+        expect(res.status).toBe(200);
+        expect(res.headers.get('content-type')).toBe('text/x-component');
+        expect(res.headers.get('x-action-revalidated')).toBe('[[],0,0]');
+        expect(res.headers.get('x-deployment-skew-proxied')).toBe('BUILD_A');
+        // The body was already decoded by fetch; the stale encoding header must go.
+        expect(res.headers.get('content-encoding')).toBeNull();
+        expect(await res.text()).toBe('0:{"ok":true}');
+    });
+
+    it('falls back to the 409 when the old deployment cannot be reached', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('connect failed'); }));
+        const { default: middleware } = await import('./middleware');
+        const res = await middleware(new NextRequest('https://buenadoptante.org/', {
+            method: 'POST', body: '[]', headers: { host: 'buenadoptante.org', 'x-deployment-id': 'BUILD_A', 'next-action': 'abc' },
+        }));
+        expect(res.status).toBe(409);
+        expect(res.headers.get('x-deployment-skew')).toBe('1');
+    });
+
+    it('still rejects an old tab\'s page navigation, which Next turns into a silent upgrade', async () => {
+        const upstream = vi.fn(); vi.stubGlobal('fetch', upstream);
+        const { default: middleware } = await import('./middleware');
+        const res = await middleware(new NextRequest('https://buenadoptante.org/faq', { headers: { host: 'buenadoptante.org', 'x-deployment-id': 'BUILD_A', rsc: '1' } }));
+        expect(res.status).toBe(409);
+        expect(upstream).not.toHaveBeenCalled();
+    });
+});

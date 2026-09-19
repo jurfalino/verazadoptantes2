@@ -50,7 +50,14 @@ const nextConfig: NextConfig = {
   crossOrigin: 'anonymous',
   // Empty in local dev, which is what keeps the middleware guard inert there.
   deploymentId: BUILD_ID || undefined,
-  env: { APP_BUILD_ID: BUILD_ID },
+  env: {
+    APP_BUILD_ID: BUILD_ID,
+    // Build id → deployment URL for recent deployments (scripts/build-deploy-map.mjs,
+    // run by CI). The middleware serves an old tab's saves and searches from the
+    // deployment it was loaded from, so a deploy is invisible to people mid-task.
+    APP_DEPLOY_MAP: process.env.APP_DEPLOY_MAP || '',
+    APP_DEPLOY_MAP_ALLOW_LOCAL: process.env.APP_DEPLOY_MAP_ALLOW_LOCAL || '',
+  },
   serverExternalPackages: ["better-sqlite3"],
   // Mitigate Next.js 15.1 dev server memory leak (known regression)
   // DISABLED: causes webpack module factory eviction → TypeError during RSC hydration
