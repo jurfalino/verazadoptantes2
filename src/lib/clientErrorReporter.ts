@@ -9,7 +9,7 @@
  */
 
 import { isDeploymentSkewError } from '@/domain/clientErrors';
-import { attemptStaleReload } from '@/lib/staleDeploy';
+import { markDeploymentStale, STALE_DEPLOY_ERROR_ID } from '@/lib/staleDeploy';
 import { extractErrorId } from '@/lib/errorUtils';
 
 interface ReportInput {
@@ -95,13 +95,14 @@ export function resolveErrorId(error: unknown, source: string): string {
     // once (the guard in staleDeploy.ts makes that at most once per session) and
     // hand back a fixed marker instead of a fresh id, because an id the user
     // could quote would point at a row we deliberately never write.
+    // A tab older than the running deployment. Nothing failed, and there is
+    // nothing to report. Almost every caller of this function is a SAVE, so we
+    // must NOT reload — that destroyed typed input (audit 2026-09-19, P0-1).
+    // Raise the "new version" banner instead, and hand back the id the toast
+    // layer drops so the caller's error toast never appears.
     if (isDeploymentSkewError(error)) {
-        console.warn('[resolveErrorId] deployment skew — reloading this stale tab');
-        attemptStaleReload();
-        // No code either way: if the reload fired the page is going away, and if
-        // it was declined the caller's toast must not print the sentinel where an
-        // error code goes (it did, 2.56.61–2.56.65).
-        return '';
+        markDeploymentStale();
+        return STALE_DEPLOY_ERROR_ID;
     }
 
     const existing = extractErrorId(error);

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { extractErrorId } from '@/lib/errorUtils';
 import { reportClientError } from '@/lib/clientErrorReporter';
-import { isChunkLoadError } from '@/domain/clientErrors';
+import { isChunkLoadError, isDeploymentSkewError } from '@/domain/clientErrors';
 import { attemptStaleReload } from '@/lib/staleDeploy';
 
 type Palette = {
@@ -68,12 +68,15 @@ export default function GlobalError({
         // the missing chunk is a lazy component (errorId 7092aed7, 2026-09-10),
         // so the recovery has to live here too, not only in the global
         // handlers of ClientErrorReporter.
-        if (isChunkLoadError(error)) {
+        // Chunk failure or stale-tab rejection: both mean this tab predates the
+        // running deployment. The tree already crashed, so nothing typed can be
+        // saved by waiting — reload onto the current build.
+        if (isChunkLoadError(error) || isDeploymentSkewError(error)) {
             if (attemptStaleReload()) {
                 setRecovering(true);
                 return;
             }
-            console.error('[global-error] ChunkLoadError persists after reload:', error.message);
+            console.error('[global-error] stale deployment persists after reload:', error.message);
         }
 
         if (extractErrorId(error)) return;

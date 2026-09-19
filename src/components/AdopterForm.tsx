@@ -37,6 +37,7 @@ import type { AdopterFlaggingHandle } from '@/components/AdopterFlagging';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, AdoptionConfig } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 import { parseContactsParam } from '@/lib/createPrefill';
+import { handledAsStale } from '@/lib/errorMessage';
 
 interface AdopterFormProps {
     initialData?: Adopter | null;
@@ -457,7 +458,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             }
         } catch (e) {
             // eslint-disable-next-line no-alert
-            alert(e instanceof Error ? e.message : 'Error inesperado');
+            if (!handledAsStale(e)) alert(e instanceof Error ? e.message : 'Error inesperado');
             setContinueBusyId(null);
             setPendingMerge(null);
         }
@@ -628,6 +629,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                 toast.error(t('errors.generic'), t('errors.save_adopter_failed'), errorId);
             }
         } catch (err: any) {
+            // A stale tab: the save never ran. Don't log it as an error or show a
+            // retry that would fail again — the "new version" notice offers the
+            // reload, and the form keeps what was typed until the user chooses.
+            if (handledAsStale(err)) return;
             console.error("Save Error:", err);
             // v2.19.43: every error toast must carry an id (per user reminder).
             // Server-thrown errors (saveAdopter's catch block re-throws with the
@@ -730,7 +735,13 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         const updated = { ...prevData, [field]: next };
         setData(updated);
         dataRef.current = updated;
-        const res = await saveAdopter({ ...updated, contactEntries: undefined, contactInfo: undefined }).catch(() => null);
+        // A stale tab's save never ran: the "new version" notice says so. Don't
+        // also report it as a failed save. Returning false keeps the editor open
+        // with what was typed.
+        let stale = false;
+        const res = await saveAdopter({ ...updated, contactEntries: undefined, contactInfo: undefined })
+            .catch((e) => { stale = handledAsStale(e); return null; });
+        if (stale) return false;
         if (!res?.success) {
             setData(prevData);
             dataRef.current = prevData;

@@ -203,3 +203,15 @@ describe('isDeploymentSkewError', () => {
         expect(isDeploymentSkewError(DEPLOYMENT_SKEW_SENTINEL)).toBe(true);
     });
 });
+
+describe('classifyWindowError — stale deployment', () => {
+    it('routes an escaped deploy-skew error to its own branch, not to a toast', () => {
+        // A skew rejection a caller didn't catch reached the global handler and
+        // became "Algo salió mal" (audit 2026-09-19, P0-2).
+        expect(classifyWindowError({ message: `Uncaught Error: ${DEPLOYMENT_SKEW_SENTINEL}` })).toBe('skew');
+    });
+
+    it('still prefers the chunk branch for a chunk failure', () => {
+        expect(classifyWindowError({ message: 'Loading chunk 12 failed.' })).toBe('chunk');
+    });
+});

@@ -23,7 +23,7 @@
 //     the homepage search, its heading and the guide. On staging the guided tour
 //     stayed dead until a manual refresh, the signature of a stale chunk, so
 //     production gets the eviction before users hit the same thing.
-const CACHE_VERSION = 'buenaadoptante-v7';
+const CACHE_VERSION = 'buenaadoptante-v8'; // v8 (2.56.67): evicts ?dpl= duplicates, see cacheKeyFor
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const SHARE_CACHE = 'share-target-media';
@@ -205,15 +205,28 @@ async function handleShareTarget(request) {
 // --- Strategies ---
 
 // Cache-first: check cache, fall back to network
+// Cache key for a static asset: the URL without `dpl`. Next's `deploymentId`
+// appends `?dpl=<sha>` to every /_next/static URL, so keying on the full URL made
+// each deploy store another full copy of every visited asset — unchanged chunks
+// included — with nothing to evict them. Content-hashed filenames already
+// identify the content; `dpl` only identifies the deploy. Same key on match and
+// put, or we would write under one and read under the other.
+function cacheKeyFor(url) {
+    const u = new URL(url);
+    u.searchParams.delete('dpl');
+    return u.toString();
+}
+
 async function cacheFirst(request) {
-    const cached = await caches.match(request);
+    const key = cacheKeyFor(request.url);
+    const cached = await caches.match(key);
     if (cached) return cached;
 
     try {
         const response = await fetch(request);
         if (response.ok) {
             const cache = await caches.open(STATIC_CACHE);
-            cache.put(request, response.clone());
+            cache.put(key, response.clone());
         }
         return response;
     } catch {

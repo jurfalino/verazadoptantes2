@@ -1,6 +1,6 @@
 import { checkCloudflareStatus } from './serviceStatus';
 import { resolveErrorId } from './clientErrorReporter';
-import { attemptStaleReload } from './staleDeploy';
+import { attemptStaleReload, markDeploymentStale } from './staleDeploy';
 import { isDeploymentSkewError } from '@/domain/clientErrors';
 
 type ErrorToast = (title: string, message?: string, errorId?: string) => void;
@@ -28,9 +28,10 @@ export async function notifyRequestError(
     // requests). Nothing failed — the page just needs fetching again. This is
     // the search box's error path, and until 2.56.66 it did not know about skew:
     // stale tabs got "Búsqueda fallida" after every deploy.
+    // Search is a read: there is nothing typed to lose, so it reloads by itself.
+    // If a reload is not allowed right now, the "new version" banner takes over.
     if (isDeploymentSkewError(err)) {
-        if (attemptStaleReload()) return;
-        toastError(t('errors.stale_deploy_title'), t('errors.stale_page_body'));
+        if (!attemptStaleReload()) markDeploymentStale();
         return;
     }
 

@@ -43,6 +43,7 @@ const BTN_PRIMARY =
     'focus-visible:ring-teal-500 disabled:opacity-40 disabled:cursor-not-allowed';
 import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
+import { userFacingMessage } from '@/lib/errorMessage';
 
 interface PersonMatch {
     id: string;
@@ -642,7 +643,7 @@ export default function ImportWizard() {
             setSourceUrl(targetUrl);
             setStep(2);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to fetch content');
+            setError(userFacingMessage(err, 'Failed to fetch content'));
         } finally {
             setLoading(false);
         }
@@ -781,7 +782,7 @@ export default function ImportWizard() {
             }
             setStep(3);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to extract data');
+            setError(userFacingMessage(err, 'Failed to extract data'));
         } finally {
             setLoading(false);
         }
@@ -1020,7 +1021,7 @@ export default function ImportWizard() {
                 router.push('/');
             }
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to save');
+            setError(userFacingMessage(err, 'Failed to save'));
             setShowConfirmModal(false);
         } finally {
             setIsSaving(false);
@@ -1174,7 +1175,7 @@ export default function ImportWizard() {
 
             router.push('/');
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to add record');
+            setError(userFacingMessage(err, 'Failed to add record'));
             setShowConfirmModal(false);
         } finally {
             setIsSaving(false);

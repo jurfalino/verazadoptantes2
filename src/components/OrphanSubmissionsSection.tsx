@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useShowToast } from '@/components/ui/Toast';
 import { useDateFormat } from '@/context/TimezoneContext';
+import { handledAsStale } from '@/lib/errorMessage';
 
 interface Orphan {
     id: string;
@@ -45,7 +46,7 @@ export default function OrphanSubmissionsSection() {
             const data = await res.json() as { submissions: Orphan[] };
             setRows(data.submissions ?? []);
         } catch (e) {
-            toast.error('Error', e instanceof Error ? e.message : String(e));
+            if (!handledAsStale(e)) toast.error('Error', e instanceof Error ? e.message : String(e));
         } finally {
             setLoading(false);
         }
@@ -69,7 +70,7 @@ export default function OrphanSubmissionsSection() {
             toast.success('Vinculado', `Adoptante creado${dupSuffix}`);
             await load();
         } catch (e) {
-            toast.error('Error', e instanceof Error ? e.message : String(e));
+            if (!handledAsStale(e)) toast.error('Error', e instanceof Error ? e.message : String(e));
         } finally {
             setRetryingId(null);
         }

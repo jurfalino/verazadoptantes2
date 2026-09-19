@@ -62,3 +62,31 @@ describe('attemptStaleReload', () => {
         expect(reload).not.toHaveBeenCalled();
     });
 });
+
+describe('markDeploymentStale', () => {
+    it('announces a stale tab once, with both build ids, however many callers notice', async () => {
+        const { markDeploymentStale, DEPLOYMENT_STALE_EVENT, _resetStaleMarkForTests } = await import('./staleDeploy');
+        _resetStaleMarkForTests();
+        const events: CustomEvent[] = [];
+        const target = new EventTarget();
+        target.addEventListener(DEPLOYMENT_STALE_EVENT, e => events.push(e as CustomEvent));
+        vi.stubGlobal('window', target);
+
+        markDeploymentStale({ serverBuildId: 'NEW' });
+        markDeploymentStale({ serverBuildId: 'NEW' });
+        markDeploymentStale();
+
+        expect(events).toHaveLength(1);
+        expect(events[0].detail).toEqual({ serverBuildId: 'NEW' });
+    });
+
+    it('never reloads the page — typed input must survive', async () => {
+        const { markDeploymentStale, _resetStaleMarkForTests } = await import('./staleDeploy');
+        _resetStaleMarkForTests();
+        const reload = vi.fn();
+        const target = Object.assign(new EventTarget(), { location: { reload } });
+        vi.stubGlobal('window', target);
+        markDeploymentStale();
+        expect(reload).not.toHaveBeenCalled();
+    });
+});

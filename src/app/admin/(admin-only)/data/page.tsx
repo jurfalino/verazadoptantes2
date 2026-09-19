@@ -10,6 +10,7 @@ import {
     type TableGroupKey,
 } from '@/lib/dataMigrationManifest';
 import AdminDangerZone from '@/components/AdminDangerZone';
+import { userFacingMessage } from '@/lib/errorMessage';
 
 interface ImportResult {
     success: boolean;
@@ -72,7 +73,7 @@ export default function DataMigrationPage() {
             a.click();
             URL.revokeObjectURL(url);
         } catch (e: unknown) {
-            setExportError(e instanceof Error ? e.message : 'Export failed');
+            setExportError(userFacingMessage(e, 'Export failed'));
         } finally {
             setExporting(false);
         }
@@ -105,7 +106,7 @@ export default function DataMigrationPage() {
                 recognised.filter(t => onByDefault.has(t.group)).map(t => t.key)
             ));
         } catch (e: unknown) {
-            setImportError(e instanceof Error ? e.message : 'Failed to read file');
+            setImportError(userFacingMessage(e, 'Failed to read file'));
         }
     };
 
@@ -155,7 +156,7 @@ export default function DataMigrationPage() {
             setImportSelected(new Set());
             if (fileRef.current) fileRef.current.value = '';
         } catch (e: unknown) {
-            setImportError(e instanceof Error ? e.message : 'Import failed');
+            setImportError(userFacingMessage(e, 'Import failed'));
         } finally {
             setImporting(false);
             setConfirmReplace(false);

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('./serviceStatus', () => ({ checkCloudflareStatus: vi.fn(async () => ({ degraded: false })) }));
-vi.mock('./staleDeploy', () => ({ attemptStaleReload: vi.fn() }));
+vi.mock('./staleDeploy', () => ({ attemptStaleReload: vi.fn(), markDeploymentStale: vi.fn() }));
 
 import { notifyRequestError } from './notifyError';
-import { attemptStaleReload } from './staleDeploy';
+import { attemptStaleReload, markDeploymentStale } from './staleDeploy';
 import { checkCloudflareStatus } from './serviceStatus';
 import { DEPLOYMENT_SKEW_SENTINEL } from '@/domain/clientErrors';
 
@@ -24,12 +24,12 @@ describe('notifyRequestError', () => {
         expect(checkCloudflareStatus).not.toHaveBeenCalled();
     });
 
-    it('asks for a reload, with no error code, when a reload is not allowed', async () => {
+    it('hands over to the stale banner when a reload is not allowed', async () => {
         vi.mocked(attemptStaleReload).mockReturnValue(false);
         const toast = vi.fn();
         await notifyRequestError(toast, t, new Error(DEPLOYMENT_SKEW_SENTINEL), fallback);
-        expect(toast).toHaveBeenCalledTimes(1);
-        expect(toast).toHaveBeenCalledWith('errors.stale_deploy_title', 'errors.stale_page_body');
+        expect(markDeploymentStale).toHaveBeenCalledTimes(1);
+        expect(toast).not.toHaveBeenCalled();
     });
 
     it('still reports a genuine failure with an error code', async () => {

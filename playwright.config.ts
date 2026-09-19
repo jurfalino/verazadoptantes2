@@ -98,6 +98,10 @@ export default defineConfig({
     timeout: 120000,
     env: {
       NODE_OPTIONS: '--max-old-space-size=4096 --expose-gc',
+      // A fixed build id so the deploy-skew guard is active here exactly as in
+      // production (and identical locally and in CI, where GITHUB_SHA would
+      // otherwise be picked up). tests/deploy-skew.authed.spec.ts relies on it.
+      APP_BUILD_ID: 'e2e-build',
       // Email OTP specs must never hit the real Resend API (a developer's
       // .env.local may carry a real key): with no key, requestEmailOtp's dev
       // fallback records the code row without sending.

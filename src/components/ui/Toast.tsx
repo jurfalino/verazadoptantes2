@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react';
 import { X, CheckCircle, AlertCircle, AlertTriangle, Info, Copy, Check } from 'lucide-react';
+import { STALE_DEPLOY_ERROR_ID } from '@/lib/staleDeploy';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info';
 
@@ -48,8 +49,13 @@ export function useShowToast() {
     return useMemo(() => ({
         success: (title: string, message?: string, action?: { label: string; onClick?: () => void; href?: string }) =>
             showToast({ type: 'success', title, message, action, duration: action ? 0 : 5000 }),
-        error: (title: string, message?: string, errorId?: string) =>
-            showToast({ type: 'error', title, message, errorId, duration: 0 }),
+        // A stale tab (resolveErrorId returns STALE_DEPLOY_ERROR_ID) is not an
+        // error: StaleDeployWatcher's "new version" notice is the one message.
+        // Dropping it here spares ~50 catch blocks from knowing about skew.
+        error: (title: string, message?: string, errorId?: string) => {
+            if (errorId === STALE_DEPLOY_ERROR_ID) return;
+            showToast({ type: 'error', title, message, errorId, duration: 0 });
+        },
         warning: (title: string, message?: string) =>
             showToast({ type: 'warning', title, message }),
         info: (title: string, message?: string) =>

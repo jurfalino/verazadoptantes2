@@ -8,7 +8,7 @@
 // lib that transitively imports `@cloudflare/next-on-pages` (which requires
 // `server-only`) fails to load under vitest.
 //
-// This file is aliased in vitest.config.ts so those imports resolve to a
+// This file is aliased in vitest.config.mts so those imports resolve to a
 // no-op, mirroring what Next does server-side. It has no effect on the real
 // build — Next's own bundler never sees this file.
 export {};

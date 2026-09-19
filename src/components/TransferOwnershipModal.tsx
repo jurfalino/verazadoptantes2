@@ -5,6 +5,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { transferAdopterOwnership } from '@/app/actions';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
+import { handledAsStale } from '@/lib/errorMessage';
 
 interface UserOption {
     email: string;
@@ -76,7 +77,7 @@ export default function TransferOwnershipModal({
                 toast.error(t('errors.generic'), res.error || t('admin.transfer_error') || 'Transfer failed');
             }
         } catch (e) {
-            toast.error(t('errors.generic'), e instanceof Error ? e.message : 'Transfer failed');
+            if (!handledAsStale(e)) toast.error(t('errors.generic'), e instanceof Error ? e.message : 'Transfer failed');
         } finally {
             setSubmitting(false);
         }

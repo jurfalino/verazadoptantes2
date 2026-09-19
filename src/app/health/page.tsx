@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { userFacingMessage } from '@/lib/errorMessage';
 
 type ServiceStatus = 'ok' | 'starting' | 'degraded' | 'down';
 
@@ -120,7 +121,7 @@ export default function HealthPage() {
             }
             setError(null);
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Error de conexión');
+            setError(userFacingMessage(e, 'Error de conexión'));
         } finally {
             setLoading(false);
             setCountdown(REFRESH_INTERVAL);

@@ -2,6 +2,59 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.67] - 2026-09-19
+
+### Fixed — deploy recovery, from the 2026-09-19 audit (every P0, P1 and P2)
+
+`.agents/audits/2026-09-19-deploy-skew-audit.md` found that the stale-tab
+recovery reached only part of the app, destroyed typed input on saves, could fail
+silently, and was tested nowhere that gates a deploy. All of it is addressed here.
+
+**Saves no longer reload the page.** A tab older than the running deployment used
+to reload itself when a save was rejected, and whatever had been typed was lost.
+Now it keeps everything on screen and shows one persistent notice: "Hay una
+versión nueva — Recargar", and the person chooses when. Searches still reload by
+themselves, since there is nothing typed to lose. Proven on a real build switch:
+a stale save kept the typed text, did not reload and wrote nothing; a stale
+search reloaded onto the new build.
+
+**Coverage no longer depends on catch blocks.** `StaleDeployWatcher` (root
+layout) recognises the rejection from the response itself, via a new
+`x-deployment-skew` header, for every request made through `window.fetch` —
+which is how Next sends server actions and page data. So it no longer matters
+what a component's catch block does. 25 places that printed `err.message` could show
+users the literal text "DEPLOYMENT_SKEW"; they now go through `userFacingMessage`
+or `handledAsStale`. The global error reporter and both error boundaries
+recognise it too, and error toasts for a stale tab are dropped, so the notice is
+the one message.
+
+**It can no longer fail silently.**
+- The Cloudflare build step refuses to run without `APP_BUILD_ID`.
+- After each deploy, CI checks the live guard: a fake old build id must get 409,
+  the marker header and the commit's sha.
+- Stale-tab events are reported to Axiom, with both build ids.
+
+**Tests gate deploys again.** Unit tests were pulled from CI in 2.56.21 over a
+missing native binary; they run again. The binary is unpacked at the lockfile's
+version, and the config is `.mts` so Node 20.18 can load it; both were proven on
+a throwaway PR first. The new `tests/deploy-skew.authed.spec.ts` covers a stale
+save and a stale search, with the build id pinned in the Playwright config; it
+fails if the fix is removed.
+
+**Offline cache.** Every deploy stored another copy of every visited asset,
+because the per-deploy `?dpl=` parameter was part of the cache key. It no longer
+is, and `CACHE_VERSION` v8 clears what had piled up.
+
+**Flag drift is now visible.** `scripts/check-flag-parity.mjs` runs in CI as a
+warning. Its first run found 13 differences between production and the e2e seed,
+including contact-data protection and public profiles being ON in production and
+OFF in tests. Aligning them is a separate decision.
+
+Documented in `CLAUDE.md` and `.agents/workflows/deploy.md`.
+
+**Deploying this makes every open tab stale one final time with the previous
+behaviour.** Tabs loaded from this release onward recover as described.
+
 ## [2.56.66] - 2026-09-19
 
 ### Fixed — searching from a tab opened before a deploy showed "Búsqueda fallida"

@@ -33,7 +33,16 @@ export default async function middleware(req: NextRequest) {
     if (clientBuildId && serverBuildId && clientBuildId !== serverBuildId) {
         return new NextResponse(DEPLOYMENT_SKEW_SENTINEL, {
             status: 409,
-            headers: { 'content-type': 'text/plain' },
+            headers: {
+                // EXACTLY 'text/plain' — Next surfaces the body as the error
+                // message only on an exact match (pinned in middleware.test.ts).
+                'content-type': 'text/plain',
+                // Lets the browser recognise the rejection from the response
+                // alone, whatever a caller's catch block does with the error
+                // (StaleDeployWatcher), and records which build answered.
+                'x-deployment-skew': '1',
+                'x-deployment-id-server': serverBuildId,
+            },
         });
     }
 

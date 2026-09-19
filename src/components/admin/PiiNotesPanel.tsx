@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { updateEventDetails, dismissPiiNote, undismissPiiNote, type PiiNoteRow } from '@/app/actions/dataQuality';
 import { detectNotePii } from '@/domain/notePii';
 import { useShowToast } from '@/components/ui/Toast';
+import { handledAsStale } from '@/lib/errorMessage';
 
 // Accent-insensitive, case-insensitive normalization for the search box.
 const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -66,7 +67,7 @@ export default function PiiNotesPanel({ rows }: { rows: PiiNoteRow[] }) {
                 toast.error('No se pudo guardar', res?.error === 'Unauthorized' ? 'No tenés permiso.' : 'Revisá e intentá de nuevo.', res?.error && res.error !== 'Unauthorized' ? res.error : undefined);
             }
         } catch (e) {
-            toast.error('No se pudo guardar', e instanceof Error ? e.message : 'Error inesperado.');
+            if (!handledAsStale(e)) toast.error('No se pudo guardar', e instanceof Error ? e.message : 'Error inesperado.');
         } finally {
             setSaving(null);
         }
@@ -89,7 +90,7 @@ export default function PiiNotesPanel({ rows }: { rows: PiiNoteRow[] }) {
                                 toast.error('No se pudo deshacer', u?.error === 'Unauthorized' ? 'No tenés permiso.' : 'Intentá de nuevo.', u?.error && u.error !== 'Unauthorized' ? u.error : undefined);
                             }
                         } catch (e) {
-                            toast.error('No se pudo deshacer', e instanceof Error ? e.message : 'Error inesperado.');
+                            if (!handledAsStale(e)) toast.error('No se pudo deshacer', e instanceof Error ? e.message : 'Error inesperado.');
                         }
                     },
                 });
@@ -97,7 +98,7 @@ export default function PiiNotesPanel({ rows }: { rows: PiiNoteRow[] }) {
                 toast.error('No se pudo descartar', res?.error === 'Unauthorized' ? 'No tenés permiso.' : 'Intentá de nuevo.', res?.error && res.error !== 'Unauthorized' ? res.error : undefined);
             }
         } catch (e) {
-            toast.error('No se pudo descartar', e instanceof Error ? e.message : 'Error inesperado.');
+            if (!handledAsStale(e)) toast.error('No se pudo descartar', e instanceof Error ? e.message : 'Error inesperado.');
         } finally {
             setSaving(null);
         }
