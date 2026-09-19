@@ -8,6 +8,7 @@ import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser, checkIsAdminAsync } from './_db';
 import { flagAdopterSchema, dismissFlagSchema, removeVerificationSchema } from './validation';
+import { runAfterResponse } from '@/lib/background';
 
 export async function flagAdopter(adopterId: string, reason: string, details?: string, targetAdopterId?: string) {
     const parsed = flagAdopterSchema.safeParse({ adopterId, reason, details, targetAdopterId });
@@ -46,10 +47,11 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
 
         logAudit({ userEmail: flaggedBy, action: 'flag_created', target: adopterId, details: { reason, details } });
 
-        // Notify admins (fire-and-forget)
-        import('@/app/actions/notifications').then(async ({ notifyAdmins, resolveDisplayName }) => {
+        // Notify admins (after the response, kept alive — see src/lib/background.ts)
+        await runAfterResponse('flagAdopter.notifyAdmins', async () => {
+            const { notifyAdmins, resolveDisplayName } = await import('@/app/actions/notifications');
             const displayName = await resolveDisplayName(flaggedBy);
-            notifyAdmins({
+            await notifyAdmins({
                 actorEmail: flaggedBy,
                 type: 'adopter_flagged',
                 title: '🚩 Adoptante reportado',
@@ -57,14 +59,8 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
                 url: `/adopter/${adopterId}`,
                 icon: '🚩',
                 metadata: { adopterId, reason, details },
-            }).catch((e) => {
-                logger.warn('flagAdopter: notifyAdmins failed', {
-                    adopterId,
-                    flaggedBy,
-                    error: e instanceof Error ? e.message : String(e),
-                });
             });
-        });
+        }, { adopterId, flaggedBy });
 
         return { success: true, id };
     } catch (error) {

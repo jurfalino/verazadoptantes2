@@ -2,6 +2,75 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.71] - 2026-09-19
+
+### Fixed — the automatic access request no longer depends on re-reading the session after the response
+
+From the pre-production review of 2.56.70. That release moved the automatic access
+request to run after the response — and `requestPiiAccess` looked the signed-in
+user up again from the request headers at that point. Whether that still works on
+Cloudflare once the response is gone is unproven, and a failure would have been
+silent: it returns "Not authenticated" without throwing, which the new log line
+recorded only as a status, at `info`.
+
+The request core now lives in `src/lib/piiAccessRequest.ts` as
+`fileAccessRequestFor(viewer, …)` and takes the user the caller already resolved.
+It is deliberately **not** a server action — anything exported from a `'use
+server'` file is callable from the browser, and a function that takes the
+requester as an argument would let a client file requests in anyone's name. The
+public `requestPiiAccess` still resolves the session itself and delegates. Pinned
+by tests: not a server action, no session lookup inside, both callers wired as
+described.
+
+- A request that does not file now logs at `warn` with the reason.
+- "No one to notify" (own record, an import with no real owner) now logs too; it
+  returned before the success line, so a zero was still silent in that case.
+
+Known and **not** changed here, both now firing reliably for the first time:
+org mates notified of a form submission are sent to a page only the form's owner
+may open; and two notification bodies show a full email address where the project
+convention is a display name. Production has no form submissions and a single
+one-member organisation today, so neither is live yet.
+
+## [2.56.70] - 2026-09-19
+
+### Fixed — "someone added a contact detail" notifications and automatic access requests never ran
+
+When someone adds a contact detail to a record they do not own, the owner should
+be notified and an access request should be filed in the contributor's name, for
+the owner to approve or deny. **Neither had happened once in production**: 0
+notifications, 0 access requests and 0 log lines from that code between May and
+2026-09-19, across the three contributions by a non-admin that should have
+produced them. Found while answering whether an accidental contribution had
+notified a record's owner. It had not.
+
+Both were started without being awaited. On Cloudflare the worker may be torn
+down as soon as the response is sent, and these two — several database
+round-trips each — lost that race every time. Lighter background writes (profile
+views, search hits) survive it, which is why this went unnoticed.
+
+`runAfterResponse` (`src/lib/background.ts`) hands such work to the platform's
+`waitUntil`, which keeps the worker alive until it finishes without making the
+person wait; where that is unavailable it waits for the work instead. A failure
+never reaches the caller and is logged with the task's name and context. All
+**eight** places that sent a notification in the background now use it: the two
+above, plus new-org-member, ownership transfer, deletion request, adopter
+flagged, form submission and contract signed (six that were built the same way
+and either unproven or, for ownership transfer, winning the race so far).
+
+- A test scans the server code and fails if a notification or access request is
+  ever again started without being awaited; it catches the original bug when it
+  is put back.
+- A new end-to-end spec runs the whole loop for the first time: a non-admin adds a
+  detail → the owner is notified → a request is filed → the owner approves → the
+  contributor holds a grant. It passed unchanged, so the approval flow that had
+  never run in production is sound. It cannot reproduce the race itself — a local
+  server never tears a worker down.
+- Both steps now write a success log line, so "zero since May" would be visible.
+
+The three missed requests were not backfilled; the record owner in all three was
+the admin account.
+
 ## [2.56.69] - 2026-09-19
 
 ### Security — 2.56.68's forwarder could be pointed at another host (never deployed)

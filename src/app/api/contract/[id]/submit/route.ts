@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { withCors, corsPreflightResponse } from '@/lib/cors';
 import { isRealActorEmail } from '@/lib/piiAccess';
+import { runAfterResponse } from '@/lib/background';
 
 export const runtime = 'edge';
 
@@ -254,9 +255,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
                 logger.info('Contract fuzzy search completed', { animalId, adopterId, matchCount });
 
-                // Fan-out to org members (fire-and-forget)
-                import('@/app/actions/notifications').then(({ notifyOrgMembers }) => {
-                    notifyOrgMembers({
+                // Fan-out to org members (after the response, kept alive — see src/lib/background.ts)
+                await runAfterResponse('contractSubmit.notifyOrgMembers', async () => {
+                    const { notifyOrgMembers } = await import('@/app/actions/notifications');
+                    await notifyOrgMembers({
                         actorEmail: rescuerEmail,
                         type: 'contract_result',
                         title: `Contrato firmado: ${animal.animalName || 'Animal'}`,
@@ -264,15 +266,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         url: `/adopter/${adopterId}`,
                         icon: '📝',
                         metadata: { adopterId, adopterName: fullName, animalName: animal.animalName },
-                    }).catch((e) => {
-                        logger.warn('contract submit: notifyOrgMembers failed', {
-                            adopterId,
-                            animalId,
-                            rescuerEmail,
-                            error: e instanceof Error ? e.message : String(e),
-                        });
                     });
-                });
+                }, { adopterId, animalId, rescuerEmail });
             }
         } catch (searchErr) {
             // Never block the contract response — just log
