@@ -351,6 +351,7 @@ export const en = {
         save_adoption_failed: 'Failed to save the record. Please try again.',
         stale_deploy_title: 'Reload the page',
         stale_deploy_body: 'The app updated while this tab was open, so nothing was saved. Reload and try again.',
+        stale_page_body: 'The app was updated while this tab was open. Reload the page and try again.',
         save_adopter_failed: 'Failed to save the adopter profile.',
         save_failed_generic: 'Failed to save. Please try again.',
         save_animal_failed: 'Failed to save the animal. Please try again.',

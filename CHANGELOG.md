@@ -2,6 +2,43 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.66] - 2026-09-19
+
+### Fixed — searching from a tab opened before a deploy showed "Búsqueda fallida"
+
+Reported minutes after 2.56.65 reached production. The tab predated the deploy,
+so the middleware rejected its search as coming from an old build (2.56.61) —
+correctly. But the recovery added then lived in `resolveErrorId`, and the search
+box reports failures through `notifyRequestError`, which never consulted it. So
+instead of reloading, every stale tab answered its first search after a deploy
+with "Búsqueda fallida". Confirmed from both sides: a fresh session searched
+production fine, and no search from the reporting tab ever reached the server.
+
+- **Search now recognises a stale tab** and reloads onto the current build. If a
+  reload is not allowed right then, it says to reload the page, with no error
+  code, instead of "Búsqueda fallida".
+- **Search failures are logged and carry a code.** `notifyRequestError` used the
+  bare `extractErrorId`, so a failure thrown in the browser reached the toast with
+  no id and never reached Axiom.
+- **Automatic reloads are limited to one per five minutes per tab**, not one per
+  tab forever. The old marker lived in sessionStorage, which survives reloads, so
+  a tab that recovered once could never recover from a later deploy.
+- **The skew sentinel no longer appears as an error code.** When a reload was
+  declined, callers printed "DEPLOYMENT_SKEW" where the code goes.
+
+Verified against a real build switch, locally: a tab loaded on one production
+build, the server replaced by another underneath it, then a search from that tab
+— the request got 409, the page reloaded onto the new build, and no failure
+message appeared.
+
+**Not covered:** 26 other error handlers, mostly admin panels and import
+wizards, still show their own error message on a stale tab instead of reloading.
+Left as a follow-up rather than changed on one report.
+
+**Expect one more round of this.** Tabs already open are running 2.56.65, which
+lacks this fix, so deploying it makes them stale with the old behaviour one last
+time. Tabs loaded from this release onward recover on their own.
+
 ## [2.56.65] - 2026-09-19
 
 ### Added — "¿Qué pasó?" card pinned to the bottom of the screen, behind a flag

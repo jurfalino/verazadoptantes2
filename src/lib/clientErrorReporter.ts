@@ -8,7 +8,7 @@
  * tuples within 30s reuse the prior id without a network call.
  */
 
-import { isDeploymentSkewError, DEPLOYMENT_SKEW_SENTINEL } from '@/domain/clientErrors';
+import { isDeploymentSkewError } from '@/domain/clientErrors';
 import { attemptStaleReload } from '@/lib/staleDeploy';
 import { extractErrorId } from '@/lib/errorUtils';
 
@@ -98,7 +98,10 @@ export function resolveErrorId(error: unknown, source: string): string {
     if (isDeploymentSkewError(error)) {
         console.warn('[resolveErrorId] deployment skew — reloading this stale tab');
         attemptStaleReload();
-        return DEPLOYMENT_SKEW_SENTINEL;
+        // No code either way: if the reload fired the page is going away, and if
+        // it was declined the caller's toast must not print the sentinel where an
+        // error code goes (it did, 2.56.61–2.56.65).
+        return '';
     }
 
     const existing = extractErrorId(error);

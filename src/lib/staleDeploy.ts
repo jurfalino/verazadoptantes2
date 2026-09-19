@@ -19,6 +19,8 @@
  * reloaded under the old key reload a second time.
  */
 export const STALE_RELOAD_GUARD = 'buenadoptante.chunk_reload_attempted';
+/** At most one automatic reload per this window, per tab. */
+export const STALE_RELOAD_WINDOW_MS = 5 * 60_000;
 
 /**
  * Reload once per session. Returns whether a reload was actually triggered, so
@@ -28,10 +30,16 @@ export const STALE_RELOAD_GUARD = 'buenadoptante.chunk_reload_attempted';
  * to reload at all: without the guard we cannot promise to stop, and a reload
  * loop is far worse than an error screen.
  */
-export function attemptStaleReload(): boolean {
+export function attemptStaleReload(now: number = Date.now()): boolean {
     try {
-        if (sessionStorage.getItem(STALE_RELOAD_GUARD)) return false;
-        sessionStorage.setItem(STALE_RELOAD_GUARD, '1');
+        // A timestamp, not a one-shot flag. sessionStorage survives reloads, so a
+        // flag meant "this tab may never recover again": fine on the first
+        // deploy, stuck on every later one. A window still stops a loop — a
+        // deploy that is genuinely broken reloads at most once per window.
+        // The pre-2.56.66 value '1' reads as an attempt at epoch 1: long past.
+        const last = Number(sessionStorage.getItem(STALE_RELOAD_GUARD));
+        if (last && now - last < STALE_RELOAD_WINDOW_MS) return false;
+        sessionStorage.setItem(STALE_RELOAD_GUARD, String(now));
     } catch {
         return false;
     }

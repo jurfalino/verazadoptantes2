@@ -350,6 +350,7 @@ export const es = {
         save_adoption_failed: 'No se pudo guardar el registro. Probá de nuevo.',
         stale_deploy_title: 'Recargá la página',
         stale_deploy_body: 'Se actualizó la app mientras tenías esta pestaña abierta, así que no se guardó nada. Recargá y probá de nuevo.',
+        stale_page_body: 'Se actualizó la app mientras tenías esta pestaña abierta. Recargá la página y probá de nuevo.',
         save_adopter_failed: 'No se pudo guardar el perfil del adoptante.',
         save_failed_generic: 'No se pudo guardar. Probá de nuevo.',
         save_animal_failed: 'No se pudo guardar el animal. Probá de nuevo.',
