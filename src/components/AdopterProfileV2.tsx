@@ -70,9 +70,11 @@ interface AdopterProfileV2Props {
     piiContext?: AdopterPiiContext | null;
     /** Show the "removal requested" banner (already gated to owner + admin/mod by the page). */
     showDeletionRequested?: boolean;
+    /** ENABLE_PINNED_VISIT_INTENT — pin the visit-intent card to the bottom of the screen. */
+    pinnedVisitIntent?: boolean;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false }: AdopterProfileV2Props) {
     const { formatDateTime, formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const searchParams = useSearchParams();
@@ -285,7 +287,12 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
         : (t('nav.back_to_search') || 'Back to Search');
 
     return (
-        <main className="min-h-screen bg-teal-50 py-12 px-4 relative">
+        <main
+            className="min-h-screen bg-teal-50 py-12 px-4 relative"
+            // Pinned visit-intent card: keep the last content reachable above it.
+            // The card publishes its own height; 0px when it isn't on screen.
+            style={pinnedVisitIntent ? { paddingBottom: 'calc(var(--visit-intent-pinned-h, 0px) + 3rem)' } : undefined}
+        >
             <div className="max-w-3xl mx-auto space-y-5">
 
                 {/* One-time legal disclaimer (localStorage-gated) */}
@@ -476,6 +483,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             availableAnimals={availableAnimals}
                             adopterAddress={adopter?.contactInfo || ''}
                             piiOptInEligible={piiOptInEligible}
+                            pinned={pinnedVisitIntent}
                         />
                         <CollapsibleSection
                             title={t('adoption.title')}

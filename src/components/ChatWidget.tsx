@@ -268,8 +268,11 @@ export default function ChatWidget() {
                     onClick={() => setOpen(true)}
                     aria-label={t('chat.open')}
                     title={t('chat.open')}
-                    className="chat-focusable fixed bottom-4 right-4 z-[80] inline-flex items-center justify-center w-14 h-14 rounded-full transition-all duration-200 hover:scale-105 active:scale-95"
+                    className="chat-focusable fixed right-4 z-[80] inline-flex items-center justify-center w-14 h-14 rounded-full transition-all duration-200 hover:scale-105 active:scale-95"
                     style={{
+                        // Sits 1rem above whatever is pinned to the bottom of the page:
+                        // the visit-intent card publishes its height here (0 otherwise).
+                        bottom: 'calc(var(--visit-intent-pinned-h, 0px) + 1rem)',
                         background: 'var(--brand-dark)',
                         color: 'var(--btn-primary-text)',
                         boxShadow: '0 8px 32px var(--shadow-lg), 0 2px 8px var(--shadow-color)',

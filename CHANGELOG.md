@@ -2,6 +2,67 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.65] - 2026-09-19
+
+### Added — "¿Qué pasó?" card pinned to the bottom of the screen, behind a flag
+
+The "¿Qué pasó con…?" card sits below the whole adopter card, so on a phone it
+starts below the first screen, and every section the profile gains pushes it
+further down. With **`ENABLE_PINNED_VISIT_INTENT`** on (Admin → Configuración,
+off by default), the card is pinned to the bottom of the screen on every
+profile, so recording what happened is one tap from anywhere.
+
+- **Phones:** an edge-to-edge sheet. **Wider screens:** exactly the width of the
+  profile column, centred.
+- **While a field is being edited** the card slides below the fold, so a phone
+  keyboard never opens with the card sitting on top of it.
+- **Choosing an option** replaces the card with the record wizard, which scrolls
+  itself into view, as before. Nothing pinned covers the form.
+- **The chat bubble** sits above the card, and the page leaves room at the end so
+  the last controls stay reachable. The card publishes its height as
+  `--visit-intent-pinned-h`, which both of them read.
+- Signed-in users only, as the card already was. The flag is read on the server,
+  so the card is pinned in the first HTML rather than jumping after load.
+
+The pinned card has a solid backing under its usual tint: on its own the tint is
+8% opaque and the page showed through. It slides away using the `translate`
+property rather than `transform`, because the card's entrance animation holds
+`transform` and a held animation overrides an inline style.
+
+A new spec runs with the flag on at phone size: the card is pinned and on the
+first screen, an option opens the wizard in view, and editing a field moves the
+card out of the way.
+
+## [2.56.64] - 2026-09-19
+
+### Fixed — every profile with change history hydrated with a mismatch
+
+Node and Chromium ship different versions of ICU, the library behind
+`Intl.DateTimeFormat`, and they disagree on the invisible spaces inside a
+formatted time. For es-AR, Node renders "12:52 a. m." and Chromium renders
+"12:52 a.\u00A0m." — identical on screen, different strings. The change-history
+dates are formatted once on the server and again in the browser, so React found
+different text and re-rendered the section, on every profile that has history.
+React recovered each time and production only logged it quietly since 2.56.59,
+but it was a real mismatch and it filled the development overlay.
+
+Both date-time formatters now replace those space characters with an ordinary
+space, so the server and the browser produce the same string.
+
+## [2.56.63] - 2026-09-19
+
+### Changed — contact sections lose their heading
+
+The "Datos de contacto" heading is gone from the profile's contact section and
+from each household member's contacts. The "Agregar dato de contacto" button and
+the empty-state line already say what the section holds, and every line saved
+moves the "¿Qué pasó con…?" prompt, which sits below the whole adopter card,
+further up the screen.
+
+Someone who cannot edit, looking at a household member with no contacts, now
+sees nothing there rather than an empty divider. The heading on the create form
+goes too, since it is the same component.
+
 ## [2.56.62] - 2026-09-19
 
 ### Fixed — family members typed on the create form disappeared from the profile

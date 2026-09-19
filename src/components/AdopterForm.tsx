@@ -1302,8 +1302,9 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                         adopters (with adopterId, calls the per-entry actions).
                         Either way the add UX, edit UX and chip rendering are
                         identical. */}
+                    {/* No section heading: the "Agregar dato de contacto" button and the
+                        empty-state line already say what this is (v2.56.63). */}
                     <div className="md:col-span-2">
-                        <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
                         {isNew ? (
                             <ContactEntriesSection
                                 entries={contactEntries}

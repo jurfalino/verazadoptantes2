@@ -3,6 +3,7 @@ import {
     DEFAULT_TIMEZONE,
     formatShortDate,
     formatDateTime,
+    normalizeSpaces,
     formatDateTimeFull,
     formatRelativeTime,
 } from './dates';
@@ -131,5 +132,32 @@ describe('formatRelativeTime', () => {
     it('returns null outside the 30-day window and for future dates', () => {
         expect(formatRelativeTime(new Date(now.getTime() - 31 * 86400_000), 'es', now)).toBeNull();
         expect(formatRelativeTime(new Date(now.getTime() + 60_000), 'es', now)).toBeNull();
+    });
+});
+
+describe('normalizeSpaces — hydration-safe date strings', () => {
+    it('turns the space Chromium puts inside "a. m." into an ordinary one', () => {
+        // Chromium's ICU formats es-AR as "12:52 a.\u00A0m."; Node's as "12:52 a. m.".
+        // Identical to the eye, different to React, so every profile with change
+        // history hydrated with a mismatch.
+        expect(normalizeSpaces('30 de ago de 2026, 12:52 a.\u00A0m.')).toBe('30 de ago de 2026, 12:52 a. m.');
+    });
+
+    it('covers the other invisible spaces ICU versions use', () => {
+        expect(normalizeSpaces('12:52\u202Fa.\u2009m.')).toBe('12:52 a. m.');
+    });
+
+    it('leaves ordinary text alone', () => {
+        expect(normalizeSpaces('6 de sept de 2026')).toBe('6 de sept de 2026');
+    });
+});
+
+describe('date-time formatters emit only ordinary spaces', () => {
+    const INSTANT_ = new Date('2026-08-30T03:52:05Z');
+    it('formatDateTime', () => {
+        expect(formatDateTime(INSTANT_, 'America/Argentina/Buenos_Aires')).not.toMatch(/[\u00A0\u202F\u2009]/);
+    });
+    it('formatDateTimeFull', () => {
+        expect(formatDateTimeFull(INSTANT_, 'America/Argentina/Buenos_Aires')).not.toMatch(/[\u00A0\u202F\u2009]/);
     });
 });

@@ -88,6 +88,11 @@ export const FEATURE_FLAGS = {
     // Structured household/family members (name+relationship+own contacts) —
     // replaces the free-text family section. Household redesign (2026-08).
     ENABLE_HOUSEHOLD_MEMBERS: false,
+    // Pins the "¿Qué pasó con X?" visit-intent card to the bottom of the screen on
+    // adopter profiles, so recording activity is one tap from anywhere instead of
+    // below the whole adopter card. Read server-side by the profile page, so it
+    // needs no public-config entry. Admin-togglable. Default off.
+    ENABLE_PINNED_VISIT_INTENT: false,
     // Email OTP login (6-digit code) as an alternative to Google OAuth.
     // Requires Resend to be configured (RESEND_API_KEY secret + verified
     // sending domain) before enabling anywhere real. Client-visible (login
@@ -190,6 +195,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         SHOWCASE_USER_VISIBLE: false,
         ENABLE_GUIDED_WALKTHROUGH: false,
         ENABLE_HOUSEHOLD_MEMBERS: false,
+        ENABLE_PINNED_VISIT_INTENT: false,
     };
 
     for (const flag of Object.keys(FEATURE_FLAGS) as FeatureFlag[]) {

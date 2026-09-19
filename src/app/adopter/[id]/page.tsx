@@ -6,6 +6,7 @@ import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
 import { getAdopterPiiContext } from '@/app/actions/piiAccess';
 import { replaySearchMatchGrants } from '@/lib/piiAccessServer';
 import { logger } from '@/lib/logger';
+import { getFeatureFlag } from '@/config/features';
 import { AdopterProfileV2 } from '@/components/AdopterProfileV2';
 import type { AdopterPiiContext } from '@/lib/piiAccess';
 
@@ -179,6 +180,10 @@ export default async function AdopterPage({
     // people who act on it) see it — not unrelated viewers.
     const showDeletionRequested = deletionRequested && (isModeratorOrAdmin || (!!currentUser && adopter?.addedBy === currentUser));
 
+    // Read here rather than on the client so the card is already pinned in the
+    // server HTML — no jump from in-page to pinned after hydration.
+    const pinnedVisitIntent = !isNew && await getFeatureFlag('ENABLE_PINNED_VISIT_INTENT');
+
     return (
         <AdopterProfileV2
             id={id}
@@ -203,6 +208,7 @@ export default async function AdopterPage({
             userNameMap={userNameMap}
             piiContext={piiContext}
             showDeletionRequested={showDeletionRequested}
+            pinnedVisitIntent={pinnedVisitIntent}
         />
     );
 }
