@@ -92,6 +92,12 @@ INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
 INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
 ('ENABLE_EMAIL_OTP', 'true', strftime('%s','now'), 'test-seed');
 
+-- Household members: ON in production since 2026-09-03, so ON here too. It was
+-- missing, which meant no spec ever exercised the profile path real users see —
+-- how family text typed on the create form went invisible unnoticed (v2.56.62).
+INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
+('ENABLE_HOUSEHOLD_MEMBERS', 'true', strftime('%s','now'), 'test-seed');
+
 -- ============================================================
 -- USER (admin account for authenticated tests)
 -- ============================================================

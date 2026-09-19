@@ -835,6 +835,7 @@ export const es = {
         family_members: 'Familiares / Convivientes',
         placeholder_family: 'Enumere otros familiares, cónyuges o personas que vivan en el mismo hogar...',
         no_family: 'No hay familiares registrados.',
+        family_notes: 'Notas',
         hh_cta_add: 'Agregar familiar / conviviente',
         hh_add_contact: 'Agregar dato de contacto',
         hh_contacts: 'Datos de contacto',

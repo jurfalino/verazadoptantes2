@@ -38,8 +38,10 @@ interface MemberUI extends HouseholdMember {
 }
 interface CEditing extends ContactEntry { editing?: boolean; draft?: Draft }
 
-export default function HouseholdSection({ adopterId, initialMembers, canEdit }: {
+export default function HouseholdSection({ adopterId, initialMembers, canEdit, hasLegacyText = false }: {
     adopterId: string; initialMembers: HouseholdMember[]; canEdit: boolean;
+    /** Legacy free-text family notes are shown beneath; don't also say "no family". */
+    hasLegacyText?: boolean;
 }) {
     const { t } = useLanguage();
     const toast = useShowToast();
@@ -184,7 +186,7 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit }:
 
     return (
         <div className="space-y-3">
-            {members.length === 0 && !canEdit && <p className="text-sm text-stone-500 italic">{t('adopter.no_family')}</p>}
+            {members.length === 0 && !canEdit && !hasLegacyText && <p className="text-sm text-stone-500 italic">{t('adopter.no_family')}</p>}
             {members.map(m => (
                 <div key={m.id} className="border border-stone-200 rounded-xl p-3.5 bg-stone-50">
                     {m.editing ? (
