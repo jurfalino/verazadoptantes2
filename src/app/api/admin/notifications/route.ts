@@ -2,13 +2,19 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { isAdminAsync } from '@/config/admins';
 import { getDb } from '@/lib/db';
-import { appConfig } from '@/db/schema';
-import { like } from 'drizzle-orm';
+import { appConfig, notifications } from '@/db/schema';
+import { like, eq } from 'drizzle-orm';
+import { logAudit } from '@/lib/audit';
 import { logger } from '@/lib/logger';
+import { resolveDisplayNames } from '@/app/actions/notifications';
+import { notificationSeenState } from '@/domain/notificationState';
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
 
 export const runtime = 'edge';
+
+/** A row of the per-type preview query below. */
+interface PreviewRow { id: string; userId: string; read: number | null; dismissed: number | null; [column: string]: unknown }
 
 export async function GET() {
     // Auth guard
@@ -73,11 +79,12 @@ export async function GET() {
             
              
             const previewQuery = await rawDb.prepare(`
-                SELECT id, title, body, icon, metadata, created_at as createdAt, read
+                SELECT id, user_id as userId, title, body, url, icon, metadata,
+                       created_at as createdAt, read, dismissed
                 FROM notifications
                 WHERE type = ?
                 ORDER BY created_at DESC
-                LIMIT 5
+                LIMIT 10
             `).bind(type).all() as any;
 
             // Default state for a type is implicitly 'true' unless strictly 'false' in the DB
@@ -93,6 +100,21 @@ export async function GET() {
             };
         }));
 
+        // Who received each one, by name. Admin-only page, so the email is shown
+        // alongside; one batched lookup for every recipient on the page.
+        const recipientEmails = [...new Set(enrichedStats.flatMap(s => (s.previews as PreviewRow[]).map(p => p.userId)).filter(Boolean))];
+        const names = await resolveDisplayNames(recipientEmails).catch((e) => {
+            logger.warn('admin notifications: recipient name lookup failed', { error: e instanceof Error ? e.message : String(e) });
+            return new Map<string, string>();
+        });
+        for (const s of enrichedStats) {
+            s.previews = (s.previews as PreviewRow[]).map(p => ({
+                ...p,
+                recipientName: names.get(p.userId) || null,
+                seenState: notificationSeenState(p),
+            }));
+        }
+
         // Sort enriched stats by totalSent DESC, then alphabetically
         enrichedStats.sort((a, b) => {
             if (b.totalSent !== a.totalSent) return b.totalSent - a.totalSent;
@@ -103,5 +125,52 @@ export async function GET() {
     } catch (error) {
         logger.error('Failed to fetch admin notifications', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    }
+}
+
+/**
+ * Delete one triggered notification (admin only). It disappears from the
+ * recipient's bell for good, so it is confirmed in the UI and recorded in the
+ * audit log with who it was for — the notification body is NOT copied there, it
+ * can name a third party.
+ */
+export async function DELETE(request: Request) {
+    const session = await auth();
+    const actor = session?.user?.email;
+    if (!actor) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (!(await isAdminAsync(actor))) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const id = new URL(request.url).searchParams.get('id')?.trim() || '';
+    try {
+        if (!id || id.length > 100) {
+            return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
+        }
+        const db = await getDb();
+        if (!db) {
+            return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
+        }
+        const existing = await db.select({ id: notifications.id, userId: notifications.userId, type: notifications.type })
+            .from(notifications).where(eq(notifications.id, id)).get();
+        if (!existing) {
+            return NextResponse.json({ error: 'Not found' }, { status: 404 });
+        }
+
+        await db.delete(notifications).where(eq(notifications.id, id));
+
+        logger.info('Admin deleted a notification', { notificationId: id, type: existing.type, actor });
+        await logAudit({
+            userEmail: actor,
+            action: 'notification_deleted',
+            target: id,
+            details: { type: existing.type, recipient: existing.userId },
+        });
+        return NextResponse.json({ ok: true });
+    } catch (error) {
+        const errorId = logger.error('Admin notification delete failed', error, { notificationId: id, actor });
+        return NextResponse.json({ error: 'Internal Server Error', errorId }, { status: 500 });
     }
 }

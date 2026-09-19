@@ -1,8 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { reportClientError } from '@/lib/clientErrorReporter';
+import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
+import { useShowToast } from '@/components/ui/Toast';
 import { userFacingMessage } from '@/lib/errorMessage';
+import type { NotificationSeenState } from '@/domain/notificationState';
+import { useDateFormat } from '@/context/TimezoneContext';
 
 interface NotificationPreview {
     id: string;
@@ -12,7 +15,18 @@ interface NotificationPreview {
     metadata: string | null; // JSON string
     createdAt: string;
     read: number;
+    dismissed: number;
+    userId: string;
+    recipientName: string | null;
+    url: string | null;
+    seenState: NotificationSeenState;
 }
+
+const SEEN_LABEL: Record<NotificationSeenState, { text: string; className: string }> = {
+    seen: { text: 'Vista', className: 'bg-teal-50 text-teal-700 border-teal-200' },
+    dismissed: { text: 'Descartada sin abrir', className: 'bg-stone-100 text-stone-600 border-stone-200' },
+    unseen: { text: 'Sin ver', className: 'bg-white text-stone-500 border-stone-200' },
+};
 
 interface NotificationTypeStat {
     type: string;
@@ -31,14 +45,28 @@ const KNOWN_TYPES: Record<string, { label: string; description: string }> = {
     'import_result': { label: 'Scraper Imports', description: 'Status updates from background social media import jobs.' },
     // v2.55.17: the followup-cron Worker checks NOTIF_ENABLED_follow_up_due
     // before inserting — this row is its kill switch.
+    'contact_entry_added': { label: 'Dato de contacto agregado', description: 'Al dueño (y editores) cuando otra persona agrega un dato de contacto a su registro.' },
+    'pii_access_request': { label: 'Solicitud de acceso', description: 'Al dueño cuando alguien pide ver los datos de contacto de su registro. Se aprueba o rechaza desde el perfil.' },
+    'pii_access_revoked': { label: 'Acceso revocado', description: 'A quien tenía acceso, cuando el dueño o un admin se lo quita.' },
+    'ownership_transferred': { label: 'Cambio de propietario', description: 'A ambas partes cuando un admin transfiere un registro.' },
+    'adopter_flagged': { label: 'Adoptante reportado', description: 'A los admins cuando alguien reporta un adoptante.' },
+    'deletion_request': { label: 'Solicitud de eliminación', description: 'A los admins cuando alguien pide eliminar un registro.' },
+    'member_joined': { label: 'Nuevo miembro', description: 'A los miembros de una organización cuando se suma alguien.' },
+    'form_submission': { label: 'Respuesta al formulario', description: 'Cuando un posible adoptante completa el formulario compartido.' },
+    'contract_attached': { label: 'Contrato vinculado', description: 'Cuando un contrato firmado se vincula a un perfil.' },
     'follow_up_due': { label: 'Follow-up Reminders', description: 'Daily cron reminder when an adoption/transit follow-up slot is due.' }
 };
 
 export default function AdminNotificationsPage() {
+    // Stored in epoch SECONDS; `new Date(n)` read them as milliseconds and every
+    // date on this page showed as 21/1/1970. The shared formatter handles both.
+    const { formatDateTime } = useDateFormat();
     const [types, setTypes] = useState<NotificationTypeStat[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [expandedType, setExpandedType] = useState<string | null>(null);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
+    const toast = useShowToast();
 
     const fetchData = useCallback(async () => {
         try {
@@ -58,6 +86,33 @@ export default function AdminNotificationsPage() {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    const deleteNotification = async (notif: NotificationPreview) => {
+        const who = notif.recipientName && notif.recipientName !== notif.userId ? `${notif.recipientName} (${notif.userId})` : notif.userId;
+        if (!confirm(`¿Eliminar esta notificación de ${who}?\n\n"${notif.title}"\n\nDesaparece de su campana y no se puede deshacer.`)) return;
+        setDeletingId(notif.id);
+        try {
+            const res = await fetch(`/api/admin/notifications?id=${encodeURIComponent(notif.id)}`, { method: 'DELETE' });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({})) as { errorId?: string };
+                throw new Error(`No se pudo eliminar (HTTP ${res.status})${data.errorId ? ` (ID: ${data.errorId})` : ''}`);
+            }
+            // Drop the row and keep the per-type totals honest without a refetch.
+            setTypes(prev => prev.map(t => t.previews.some(p => p.id === notif.id)
+                ? {
+                    ...t,
+                    totalSent: Math.max(0, t.totalSent - 1),
+                    totalRead: Math.max(0, t.totalRead - (notif.read ? 1 : 0)),
+                    previews: t.previews.filter(p => p.id !== notif.id),
+                }
+                : t));
+            toast.success('Notificación eliminada');
+        } catch (e) {
+            toast.error('No se pudo eliminar', userFacingMessage(e, 'Probá de nuevo.'), resolveErrorId(e, 'AdminNotifications.delete'));
+        } finally {
+            setDeletingId(null);
+        }
+    };
 
     const handleToggle = async (type: string, currentEnabled: boolean) => {
         const newValue = !currentEnabled;
@@ -181,10 +236,10 @@ export default function AdminNotificationsPage() {
                                         <div className="px-4 pb-4 pt-2 bg-stone-50 border-t border-stone-100">
                                             <div className="mb-3 flex items-center justify-between">
                                                 <h4 className="text-xs font-semibold text-stone-500 uppercase flex items-center gap-2">
-                                                    <span>🔍</span> Inspección de Carga (Últimas 5)
+                                                    <span>🔍</span> Inspección de Carga (Últimas 10)
                                                 </h4>
                                                 {stat.lastSentAt && (
-                                                    <span className="text-[10px] text-stone-400 font-mono">Última: {new Date(stat.lastSentAt).toLocaleString('es-AR')}</span>
+                                                    <span className="text-[10px] text-stone-400 font-mono">Última: {formatDateTime(Number(stat.lastSentAt))}</span>
                                                 )}
                                             </div>
                                             
@@ -195,17 +250,46 @@ export default function AdminNotificationsPage() {
                                             ) : (
                                                 <div className="space-y-2">
                                                     {stat.previews.map(notif => (
-                                                        <div key={notif.id} className="p-3 bg-white rounded-lg border border-stone-200 text-sm flex gap-3 opacity-90">
+                                                        <div key={notif.id} data-notification-id={notif.id} className="p-3 bg-white rounded-lg border border-stone-200 text-sm flex gap-3 opacity-90">
                                                             <div className="text-xl shrink-0 pt-0.5 opacity-80">{notif.icon || '🔔'}</div>
                                                             <div className="flex-1 min-w-0">
                                                                 <div className="flex justify-between items-start gap-4">
                                                                     <div className="font-medium text-stone-900 truncate">{notif.title}</div>
                                                                     <div className="text-[10px] text-stone-400 font-mono whitespace-nowrap pt-1">
-                                                                        {new Date(notif.createdAt).toLocaleDateString()}
+                                                                        {formatDateTime(Number(notif.createdAt))}
                                                                     </div>
                                                                 </div>
                                                                 <div className="text-stone-500 text-xs mt-0.5 line-clamp-2 leading-relaxed">
                                                                     {notif.body}
+                                                                </div>
+                                                                {/* Who got it, and whether they saw it. Identity stays
+                                                                    visible, never behind a hover (audit-visibility rule). */}
+                                                                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                                                                    <span className="text-stone-700 min-w-0 break-all">
+                                                                        <span className="text-stone-500">Para: </span>
+                                                                        {notif.recipientName && notif.recipientName !== notif.userId
+                                                                            ? <>{notif.recipientName} <span className="text-stone-500">({notif.userId})</span></>
+                                                                            : notif.userId}
+                                                                    </span>
+                                                                    <span data-testid="notif-seen-state" className={`px-2 py-0.5 rounded-full border text-[11px] font-medium ${SEEN_LABEL[notif.seenState].className}`}>
+                                                                        {SEEN_LABEL[notif.seenState].text}
+                                                                    </span>
+                                                                    {notif.url && (
+                                                                        <a href={notif.url} className="font-semibold text-teal-700 underline underline-offset-2 hover:text-teal-800">
+                                                                            Abrir →
+                                                                        </a>
+                                                                    )}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => deleteNotification(notif)}
+                                                                        disabled={deletingId === notif.id}
+                                                                        className="ml-auto inline-flex items-center gap-1 font-medium text-rose-700 hover:text-rose-800 disabled:opacity-50"
+                                                                    >
+                                                                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7V5h6v2m-7 0l.7 12h6.6L16 7M10 11v5m4-5v5" />
+                                                                        </svg>
+                                                                        {deletingId === notif.id ? 'Eliminando…' : 'Eliminar'}
+                                                                    </button>
                                                                 </div>
                                                                 {notif.metadata && (
                                                                     <div className="mt-2 text-[10px] font-mono text-stone-400 bg-stone-50 p-1.5 rounded line-clamp-1 border border-stone-100">
