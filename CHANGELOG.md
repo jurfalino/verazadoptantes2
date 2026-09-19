@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.64] - 2026-09-19
+
+### Fixed — every profile with change history hydrated with a mismatch
+
+Node and Chromium ship different versions of ICU, the library behind
+`Intl.DateTimeFormat`, and they disagree on the invisible spaces inside a
+formatted time. For es-AR, Node renders "12:52 a. m." and Chromium renders
+"12:52 a.\u00A0m." — identical on screen, different strings. The change-history
+dates are formatted once on the server and again in the browser, so React found
+different text and re-rendered the section, on every profile that has history.
+React recovered each time and production only logged it quietly since 2.56.59,
+but it was a real mismatch and it filled the development overlay.
+
+Both date-time formatters now replace those space characters with an ordinary
+space, so the server and the browser produce the same string.
+
 ## [2.56.63] - 2026-09-19
 
 ### Changed — contact sections lose their heading

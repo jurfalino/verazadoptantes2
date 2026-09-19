@@ -78,6 +78,20 @@ function getFormatter(locale: string, options: Intl.DateTimeFormatOptions): Intl
 }
 
 /**
+ * Replace the invisible space characters ICU puts in formatted dates with an
+ * ordinary space.
+ *
+ * Node and Chromium ship different ICU versions and disagree on them: for es-AR,
+ * Node renders "12:52 a. m." while Chromium renders "12:52 a.\u00A0m.". The two
+ * look identical but are different strings, so any date formatted during SSR and
+ * again on hydration mismatched — on every profile with change history. Every
+ * formatter below whose output can contain a day period runs through this.
+ */
+export function normalizeSpaces(text: string): string {
+    return text.replace(/[\u00A0\u202F\u2009\u2007]/g, ' ');
+}
+
+/**
  * Format a date as "Feb 4 '26" — short month + day + 2-digit year.
  * Accepts Date objects, epoch-seconds (number), or ISO strings.
  *
@@ -105,11 +119,11 @@ export function formatShortDate(input: Date | number | string, timeZone: string 
 export function formatDateTime(input: Date | number | string, timeZone: string = DEFAULT_TIMEZONE): string {
     const date = toDate(input);
     if (!date) return '—';
-    return getFormatter('es-AR', {
+    return normalizeSpaces(getFormatter('es-AR', {
         timeZone,
         day: 'numeric', month: 'short', year: 'numeric',
         hour: '2-digit', minute: '2-digit',
-    }).format(date);
+    }).format(date));
 }
 
 /**
@@ -118,11 +132,11 @@ export function formatDateTime(input: Date | number | string, timeZone: string =
 export function formatDateTimeFull(input: Date | number | string, timeZone: string = DEFAULT_TIMEZONE): string {
     const date = toDate(input);
     if (!date) return '—';
-    return getFormatter('es-AR', {
+    return normalizeSpaces(getFormatter('es-AR', {
         timeZone,
         day: 'numeric', month: 'short', year: 'numeric',
         hour: '2-digit', minute: '2-digit', second: '2-digit',
-    }).format(date);
+    }).format(date));
 }
 
 /**
