@@ -20,6 +20,7 @@ import { tokenizeAdopter } from './duplicates';
 import { hashEntryValue, isRealActorEmail } from '@/lib/piiAccess';
 import { createNotification, resolveDisplayName } from './notifications';
 import { getAdopterApprovers, requestPiiAccess } from './piiAccess';
+import { runAfterResponse } from '@/lib/background';
 
 /**
  * Append-only contribution path. Open to ANY authenticated user, regardless
@@ -164,19 +165,23 @@ export async function addContactEntry(
             await tokenizeAdopter(adopterId).catch(e => {
                 logger.error('addContactEntry: tokenize after add failed', e, { adopterId });
             });
-            notifyApprovers(adopterId, target.name, actor, type).catch(e => {
-                logger.error('addContactEntry: notify approvers failed', e, { adopterId, actor });
-            });
+            // These two ran as bare fire-and-forget calls and never completed once
+            // in production (0 notifications, 0 access requests, 0 log lines, May →
+            // 2026-09-19): the worker was gone before they finished.
+            await runAfterResponse('addContactEntry.notifyApprovers',
+                () => notifyApprovers(adopterId, target.name, actor, type), { adopterId, actor });
             // v2.19.51: auto-fire a PII access request on the contributor's
             // behalf. Replaces the v2.19.50-deprecated "contributing earns
             // permanent privileged view" path. `requestPiiAccess` handles
             // every edge case internally — already-privileged actors get a
             // `has_access` no-op, pending requests dedup, and the denial
-            // cooldown is respected — so we just call it. Fire-and-forget
-            // since the contribution itself already succeeded; the request
+            // cooldown is respected — so we just call it. Runs after the
+            // response: the contribution already succeeded, and the request
             // failing shouldn't undo the entry write.
-            requestPiiAccess(adopterId, { justification: 'auto:contribution' })
-                .catch(e => logger.error('addContactEntry: auto access-request failed', e, { adopterId, actor }));
+            await runAfterResponse('addContactEntry.autoAccessRequest', async () => {
+                const res = await requestPiiAccess(adopterId, { justification: 'auto:contribution' });
+                logger.info('addContactEntry: auto access-request', { adopterId, actor, status: res.status });
+            }, { adopterId, actor });
             logAudit({ userEmail: actor, action: 'contact_entry_added', target: adopterId, details: { type } });
         }
 
@@ -269,4 +274,5 @@ async function notifyApprovers(
         icon: '+',
         metadata: { adopterId, contributor: actor, entryType: type },
     })));
+    logger.info('addContactEntry: approvers notified', { adopterId, actor, recipients: recipients.size });
 }

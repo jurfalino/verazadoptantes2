@@ -9,6 +9,7 @@ import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, checkIsAdmin, checkIsAdminAsync } from './_db';
 import { deleteAdopterRecords } from './_recordWrite';
+import { runAfterResponse } from '@/lib/background';
 
 export interface AdminQueryResult {
     rows?: unknown[];
@@ -788,9 +789,10 @@ export async function transferAdopterOwnership(adopterId: string, toEmail: strin
             .set({ addedBy: normalizedTo, updatedAt: new Date() })
             .where(eq(adopters.id, adopterId));
 
-        // 4. Fire-and-forget notifications to both parties. Wrap each
-        //    .catch(logger.warn) per project convention — never swallow.
-        import('@/app/actions/notifications').then(async ({ createNotification }) => {
+        // 4. Notify both parties after the response (kept alive by
+        //    runAfterResponse, which also logs a module-load failure).
+        await runAfterResponse('transferAdopterOwnership.notify', async () => {
+            const { createNotification } = await import('@/app/actions/notifications');
             const url = `/adopter/${adopterId}`;
             const targets = [from, normalizedTo].filter(e => e && e.includes('@') && e !== 'anonymous');
             // v2.19.23: include the adopter name in both notification bodies
@@ -813,11 +815,7 @@ export async function transferAdopterOwnership(adopterId: string, toEmail: strin
                     error: e instanceof Error ? e.message : String(e),
                 });
             })));
-        }).catch((e: unknown) => {
-            logger.warn('transferAdopterOwnership: notifications module load failed', {
-                adopterId, actor, error: e instanceof Error ? e.message : String(e),
-            });
-        });
+        }, { adopterId, actor });
 
         logger.info('Adopter ownership transferred', { adopterId, from, to: normalizedTo, actor });
         revalidatePath(`/adopter/${adopterId}`);

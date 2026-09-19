@@ -18,6 +18,7 @@ import {
 import { canEditAdopterRecord, maskAdopterContact, redactHistoryChanges, renderName } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, resolveAdopterVisibility, buildMaskOptions } from '@/lib/piiAccessServer';
 import { deleteAdopterRecords } from '@/app/actions/_recordWrite';
+import { runAfterResponse } from '@/lib/background';
 
 
 export async function getAdopter(id: string) {
@@ -730,10 +731,11 @@ export async function requestAdopterDeletion(adopterId: string) {
         logger.info('Adopter deletion requested', { adopterId, requestedBy: user });
         logAudit({ userEmail: user, action: 'adopter_deletion_requested', target: adopterId });
 
-        // Notify admins (fire-and-forget)
-        import('@/app/actions/notifications').then(async ({ notifyAdmins, resolveDisplayName }) => {
+        // Notify admins (after the response, kept alive — see src/lib/background.ts)
+        await runAfterResponse('requestAdopterDeletion.notifyAdmins', async () => {
+            const { notifyAdmins, resolveDisplayName } = await import('@/app/actions/notifications');
             const displayName = await resolveDisplayName(user);
-            notifyAdmins({
+            await notifyAdmins({
                 actorEmail: user,
                 type: 'deletion_request',
                 title: '🗑️ Solicitud de eliminación',
@@ -741,14 +743,8 @@ export async function requestAdopterDeletion(adopterId: string) {
                 url: '/admin/data-requests',
                 icon: '🗑️',
                 metadata: { adopterId },
-            }).catch((e) => {
-                logger.warn('notifyAdmins (deletion_request) fire-and-forget failed', {
-                    adopterId,
-                    actorEmail: user,
-                    error: e instanceof Error ? e.message : String(e),
-                });
             });
-        });
+        }, { adopterId, actorEmail: user });
 
         return { success: true };
     } catch (error) {

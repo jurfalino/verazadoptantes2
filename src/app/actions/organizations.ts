@@ -4,6 +4,7 @@ import { organizations, orgMembers, orgInvites } from '@/db/schema';
 import { eq, and, inArray, sql, ne } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { logger } from '@/lib/logger';
+import { runAfterResponse } from '@/lib/background';
 
 /**
  * Case-insensitive name-collision check. Returns true when *another* org
@@ -322,10 +323,11 @@ export async function joinOrganization(inviteToken: string): Promise<{ success: 
 
         const org = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, invite.orgId)).get();
 
-        // Notify existing org members about the new member (fire-and-forget)
-        import('@/app/actions/notifications').then(async ({ notifyOrgMembers, resolveDisplayName }) => {
+        // Notify existing org members about the new member (after the response, kept alive — see src/lib/background.ts)
+        await runAfterResponse('joinOrganization.notifyOrgMembers', async () => {
+            const { notifyOrgMembers, resolveDisplayName } = await import('@/app/actions/notifications');
             const displayName = await resolveDisplayName(user);
-            notifyOrgMembers({
+            await notifyOrgMembers({
                 actorEmail: user,
                 type: 'member_joined',
                 title: '👋 Nuevo miembro',
@@ -333,14 +335,8 @@ export async function joinOrganization(inviteToken: string): Promise<{ success: 
                 url: '/organizations',
                 icon: '👋',
                 metadata: { orgId: invite.orgId, orgName: org?.name },
-            }).catch((e) => {
-                logger.warn('joinOrganization: notifyOrgMembers failed', {
-                    actorEmail: user,
-                    orgId: invite.orgId,
-                    error: e instanceof Error ? e.message : String(e),
-                });
             });
-        });
+        }, { actorEmail: user, orgId: invite.orgId });
 
         return { success: true, orgName: org?.name || 'Organization' };
     } catch (error) {

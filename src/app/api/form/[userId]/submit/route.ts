@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { withCors, corsPreflightResponse } from '@/lib/cors';
+import { runAfterResponse } from '@/lib/background';
 
 export const runtime = 'edge';
 
@@ -213,9 +214,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
 
             logger.info('Form fuzzy search completed', { submissionId, matchCount });
 
-            // Fan-out to org members (fire-and-forget)
-            import('@/app/actions/notifications').then(({ notifyOrgMembers }) => {
-                notifyOrgMembers({
+            // Fan-out to org members (after the response, kept alive — see src/lib/background.ts)
+            await runAfterResponse('formSubmit.notifyOrgMembers', async () => {
+                const { notifyOrgMembers } = await import('@/app/actions/notifications');
+                await notifyOrgMembers({
                     actorEmail: rescuerEmail,
                     type: 'form_submission',
                     title: `Nueva respuesta al formulario`,
@@ -223,14 +225,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     url: `/form-results/${submissionId}`,
                     icon: '📋',
                     metadata: { submissionId, submitterName: name },
-                }).catch((e) => {
-                    logger.warn('form submit: notifyOrgMembers failed', {
-                        submissionId,
-                        rescuerEmail,
-                        error: e instanceof Error ? e.message : String(e),
-                    });
                 });
-            });
+            }, { submissionId, rescuerEmail });
         } catch (searchErr) {
             logger.warn('Form fuzzy search/notification failed (non-blocking)', { error: (searchErr as Error).message, submissionId });
         }

@@ -2,6 +2,45 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.70] - 2026-09-19
+
+### Fixed — "someone added a contact detail" notifications and automatic access requests never ran
+
+When someone adds a contact detail to a record they do not own, the owner should
+be notified and an access request should be filed in the contributor's name, for
+the owner to approve or deny. **Neither had happened once in production**: 0
+notifications, 0 access requests and 0 log lines from that code between May and
+2026-09-19, across the three contributions by a non-admin that should have
+produced them. Found while answering whether an accidental contribution had
+notified a record's owner. It had not.
+
+Both were started without being awaited. On Cloudflare the worker may be torn
+down as soon as the response is sent, and these two — several database
+round-trips each — lost that race every time. Lighter background writes (profile
+views, search hits) survive it, which is why this went unnoticed.
+
+`runAfterResponse` (`src/lib/background.ts`) hands such work to the platform's
+`waitUntil`, which keeps the worker alive until it finishes without making the
+person wait; where that is unavailable it waits for the work instead. A failure
+never reaches the caller and is logged with the task's name and context. All
+**eight** places that sent a notification in the background now use it: the two
+above, plus new-org-member, ownership transfer, deletion request, adopter
+flagged, form submission and contract signed (six that were built the same way
+and either unproven or, for ownership transfer, winning the race so far).
+
+- A test scans the server code and fails if a notification or access request is
+  ever again started without being awaited; it catches the original bug when it
+  is put back.
+- A new end-to-end spec runs the whole loop for the first time: a non-admin adds a
+  detail → the owner is notified → a request is filed → the owner approves → the
+  contributor holds a grant. It passed unchanged, so the approval flow that had
+  never run in production is sound. It cannot reproduce the race itself — a local
+  server never tears a worker down.
+- Both steps now write a success log line, so "zero since May" would be visible.
+
+The three missed requests were not backfilled; the record owner in all three was
+the admin account.
+
 ## [2.56.69] - 2026-09-19
 
 ### Security — 2.56.68's forwarder could be pointed at another host (never deployed)
