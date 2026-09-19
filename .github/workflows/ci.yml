@@ -69,13 +69,25 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
-      # NOTE: `npm test` belongs here and was added in 2.56.20, but `npm ci`
-      # on this repo does not install rolldown's linux native binary (vitest 4
-      # depends on it) — `.npmrc` sets legacy-peer-deps=true, which triggers
-      # npm's optional-dependency resolution bug, so the step failed with
-      # "Cannot find module '@rolldown/binding-linux-x64-gnu'". Pulled back out
-      # in 2.56.21 rather than let it block a production hotfix. The unit suite
-      # still runs nowhere in CI; re-add it once the install is fixed.
+      # vitest 4 needs rolldown's linux native binary. It IS in package-lock,
+      # but `npm ci` skips it: `.npmrc` sets legacy-peer-deps=true, which hits
+      # npm's optional-dependency bug ("Cannot find module
+      # '@rolldown/binding-linux-x64-gnu'", 2.56.20 → pulled in 2.56.21). Unpack
+      # exactly the version rolldown asks for, without `npm install`, which would
+      # re-resolve the whole tree. Restored 2.56.67 (audit 2026-09-19, P1-2):
+      # the domain tests for deploy recovery never gated a deploy before this.
+      - name: Install rolldown native binding (npm optional-deps bug)
+        run: |
+          V=$(node -p "require('./node_modules/rolldown/package.json').optionalDependencies['@rolldown/binding-linux-x64-gnu']")
+          if [ -d node_modules/@rolldown/binding-linux-x64-gnu ]; then echo "binding already installed ($V)"; exit 0; fi
+          npm pack "@rolldown/binding-linux-x64-gnu@$V" --silent
+          mkdir -p node_modules/@rolldown/binding-linux-x64-gnu
+          tar -xzf rolldown-binding-linux-x64-gnu-$V.tgz -C node_modules/@rolldown/binding-linux-x64-gnu --strip-components=1
+          rm -f rolldown-binding-linux-x64-gnu-$V.tgz
+          node -e "require('@rolldown/binding-linux-x64-gnu'); console.log('rolldown binding', process.argv[1], 'OK')" "$V"
+
+      - name: Unit tests
+        run: npm test
 
       - name: Lint
         run: npm run lint
