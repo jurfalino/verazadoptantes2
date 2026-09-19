@@ -19,8 +19,9 @@ import {
 import { tokenizeAdopter } from './duplicates';
 import { hashEntryValue, isRealActorEmail } from '@/lib/piiAccess';
 import { createNotification, resolveDisplayName } from './notifications';
-import { getAdopterApprovers, requestPiiAccess } from './piiAccess';
+import { getAdopterApprovers } from './piiAccess';
 import { runAfterResponse } from '@/lib/background';
+import { fileAccessRequestFor } from '@/lib/piiAccessRequest';
 
 /**
  * Append-only contribution path. Open to ANY authenticated user, regardless
@@ -179,8 +180,14 @@ export async function addContactEntry(
             // response: the contribution already succeeded, and the request
             // failing shouldn't undo the entry write.
             await runAfterResponse('addContactEntry.autoAccessRequest', async () => {
-                const res = await requestPiiAccess(adopterId, { justification: 'auto:contribution' });
-                logger.info('addContactEntry: auto access-request', { adopterId, actor, status: res.status });
+                // `actor` was resolved before the response; do not look the session up
+                // again out here (see src/lib/piiAccessRequest.ts).
+                const res = await fileAccessRequestFor(actor, adopterId, { justification: 'auto:contribution' });
+                if (res.status === 'error') {
+                    logger.warn('addContactEntry: auto access-request did not file', { adopterId, actor, error: res.error });
+                } else {
+                    logger.info('addContactEntry: auto access-request', { adopterId, actor, status: res.status });
+                }
             }, { adopterId, actor });
             logAudit({ userEmail: actor, action: 'contact_entry_added', target: adopterId, details: { type } });
         }
@@ -253,7 +260,11 @@ async function notifyApprovers(
     const { owner, editors } = await getAdopterApprovers(adopterId);
     const recipients = new Set<string>([...(owner ? [owner] : []), ...editors]);
     recipients.delete(actor);
-    if (recipients.size === 0) return;
+    if (recipients.size === 0) {
+        // Own record, an import with no real owner, or the only approver acted.
+        logger.info('addContactEntry: approvers notified', { adopterId, actor, recipients: 0 });
+        return;
+    }
     const actorName = await resolveDisplayName(actor);
     const displayName = adopterName || 'el adoptante';
     const typeLabel: Record<ContactEntry['type'], string> = {
