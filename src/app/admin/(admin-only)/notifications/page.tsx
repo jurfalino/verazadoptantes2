@@ -22,8 +22,11 @@ interface NotificationPreview {
     seenState: NotificationSeenState;
 }
 
+/** Types whose recipient-facing results page is rendered from the notification row. */
+const DATA_BEARING_TYPES = new Set(['contract_result', 'form_submission']);
+
 const SEEN_LABEL: Record<NotificationSeenState, { text: string; className: string }> = {
-    seen: { text: 'Vista', className: 'bg-teal-50 text-teal-700 border-teal-200' },
+    seen: { text: 'Leída', className: 'bg-teal-50 text-teal-700 border-teal-200' },
     dismissed: { text: 'Descartada sin abrir', className: 'bg-stone-100 text-stone-600 border-stone-200' },
     unseen: { text: 'Sin ver', className: 'bg-white text-stone-500 border-stone-200' },
 };
@@ -87,13 +90,23 @@ export default function AdminNotificationsPage() {
         fetchData();
     }, [fetchData]);
 
+    const typeOf = (notificationId: string) => types.find(t => t.previews.some(p => p.id === notificationId))?.type ?? '';
+
     const deleteNotification = async (notif: NotificationPreview) => {
         const who = notif.recipientName && notif.recipientName !== notif.userId ? `${notif.recipientName} (${notif.userId})` : notif.userId;
-        if (!confirm(`¿Eliminar esta notificación de ${who}?\n\n"${notif.title}"\n\nDesaparece de su campana y no se puede deshacer.`)) return;
+        // For these types the recipient's results page is built FROM this row
+        // (contract-results/[id] reads it; form-results reads its match data), so
+        // deleting it takes the report with it, not just the bell entry.
+        const carriesReport = DATA_BEARING_TYPES.has(typeOf(notif.id));
+        const consequence = carriesReport
+            ? 'ATENCIÓN: esta notificación contiene el informe de coincidencias. Si la eliminás, esa persona pierde el informe, no solo el aviso. No se puede deshacer.'
+            : 'Desaparece de su campana y no se puede deshacer.';
+        if (!confirm(`¿Eliminar esta notificación de ${who}?\n\n"${notif.title}"\n\n${consequence}`)) return;
         setDeletingId(notif.id);
         try {
             const res = await fetch(`/api/admin/notifications?id=${encodeURIComponent(notif.id)}`, { method: 'DELETE' });
-            if (!res.ok) {
+            // 404 = already gone (a double click, or another admin): same outcome.
+            if (!res.ok && res.status !== 404) {
                 const data = await res.json().catch(() => ({})) as { errorId?: string };
                 throw new Error(`No se pudo eliminar (HTTP ${res.status})${data.errorId ? ` (ID: ${data.errorId})` : ''}`);
             }
@@ -283,6 +296,7 @@ export default function AdminNotificationsPage() {
                                                                         type="button"
                                                                         onClick={() => deleteNotification(notif)}
                                                                         disabled={deletingId === notif.id}
+                                                                        aria-label={`Eliminar notificación de ${notif.recipientName || notif.userId}: ${notif.title}`}
                                                                         className="ml-auto inline-flex items-center gap-1 font-medium text-rose-700 hover:text-rose-800 disabled:opacity-50"
                                                                     >
                                                                         <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">

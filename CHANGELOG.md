@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.73] - 2026-09-19
+
+### Fixed — admin notification delete, from its pre-production review
+
+The review of 2.56.72 returned GO with no security findings, and these:
+
+- **Deleting a "contract signed" or "form response" notification deletes the
+  recipient's report, not just the bell entry** — their results page is rendered
+  from that row. The confirmation now says so for those two types.
+- **"Vista" is now "Leída".** The flag is also set by "mark all as read", so it
+  shows the bell was attended to, not that this message was looked at.
+- Recipient names were looked up with one bound parameter per person; past D1's
+  100-parameter cap the whole lookup failed and names silently fell back to the
+  email handle. Chunked. Mixed-case emails now resolve too.
+- Deleting something already gone (a double click, another admin) is treated as
+  done, not an error. Each delete button names its notification for screen
+  readers.
+- The test now asserts the audit entry (who, which, whose, and not the message
+  text), the recipient and state shown on the row, and the 404 / 400 cases.
+
 ## [2.56.72] - 2026-09-19
 
 ### Added — admin notifications: who received it, whether they saw it, and delete

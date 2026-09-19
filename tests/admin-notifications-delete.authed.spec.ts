@@ -35,6 +35,8 @@ test.describe('admin deletes a notification', () => {
         await page.getByText(TYPE, { exact: true }).first().click();
         const row = page.locator(`[data-notification-id="${DROP}"]`);
         await expect(row).toBeVisible({ timeout: 30000 });
+        await expect(row.getByText('testuser@example.com')).toBeVisible();
+        await expect(row.getByTestId('notif-seen-state')).toHaveText('Sin ver');
 
         // Declining the confirmation deletes nothing.
         page.once('dialog', d => d.dismiss());
@@ -47,6 +49,17 @@ test.describe('admin deletes a notification', () => {
         await expect(row).toHaveCount(0, { timeout: 15000 });
         await expect(page.locator(`[data-notification-id="${KEEP}"]`)).toBeVisible();
         expect(ids()).toEqual([KEEP]);
+        // Audited: who deleted it, which one, whose it was — and not the message text.
+        const audit = JSON.parse(execD1(`SELECT user_email, target, details FROM audit_log WHERE action='notification_deleted' AND target='${DROP}' ORDER BY rowid DESC LIMIT 1`))[0].results as Array<{ user_email: string; target: string; details: string }>;
+        expect(audit).toHaveLength(1);
+        expect(audit[0].user_email).toBe('gatitosolivos@gmail.com');
+        expect(JSON.parse(audit[0].details)).toEqual({ type: TYPE, recipient: 'testuser@example.com' });
+    });
+
+    test('deleting one that is already gone is not an error, and a bad id is refused', async ({ page }) => {
+        expect((await page.request.delete('/api/admin/notifications?id=test-notif-does-not-exist')).status()).toBe(404);
+        expect((await page.request.delete('/api/admin/notifications?id=')).status()).toBe(400);
+        expect(ids()).toEqual([DROP, KEEP].sort());
     });
 
     test('a non-admin cannot delete one through the API', async ({ browser }) => {

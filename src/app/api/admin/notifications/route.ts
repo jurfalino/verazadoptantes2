@@ -110,7 +110,8 @@ export async function GET() {
         for (const s of enrichedStats) {
             s.previews = (s.previews as PreviewRow[]).map(p => ({
                 ...p,
-                recipientName: names.get(p.userId) || null,
+                // resolveDisplayNames keys its map by lowercased email.
+                recipientName: names.get(String(p.userId).toLowerCase()) || null,
                 seenState: notificationSeenState(p),
             }));
         }

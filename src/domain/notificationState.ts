@@ -2,7 +2,10 @@
  * Whether a notification's recipient actually saw it — for the admin view of
  * triggered notifications. Pure; the two flags live on the `notifications` row.
  *
- *   seen       the recipient opened it (or marked it read)
+ *   seen       marked read: the recipient opened it, OR used "mark all as read",
+ *              which flips every unread row. Shown to admins as "Leída", not
+ *              "Vista" — it proves the bell was attended to, not that this one
+ *              message was looked at.
  *   dismissed  cleared from their list without opening it: they looked, they did
  *              not follow it
  *   unseen     still waiting in their bell
