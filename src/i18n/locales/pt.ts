@@ -835,6 +835,7 @@ export const pt = {
         family_members: 'Familiares / Coabitantes',
         placeholder_family: 'Liste outros familiares, cônjuges ou pessoas que morem no mesmo lar...',
         no_family: 'Não há familiares registrados.',
+        family_notes: 'Notas',
         hh_cta_add: 'Adicionar familiar / convivente',
         hh_add_contact: 'Adicionar dado de contato',
         hh_contacts: 'Dados de contato',

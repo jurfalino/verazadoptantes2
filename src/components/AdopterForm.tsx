@@ -762,6 +762,26 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     }, [isEditing, isNew, loading, setEditActions]);
     useEffect(() => () => setEditActions(null), [setEditActions]);
 
+    // The free-text family field. Used on its own when household members are off,
+    // and — since v2.56.62 — beneath the household section when they are on, for
+    // as long as the legacy column still holds text. Before that, turning the
+    // flag on hid this text entirely: every pre-flag record, and every record
+    // created since, because the create form still writes free text here.
+    const legacyFamilyField = (
+        <InlineEditField
+            value={data.familyMembers}
+            canEdit={canEdit}
+            multiline
+            onSave={(next) => saveField('familyMembers', next)}
+            placeholder={t('adopter.placeholder_family')}
+            emptyLabel={t('adopter.no_family')}
+            displayRender={(v) => renderTextWithLinks(v, { emptyLabel: t('audit.empty_val') })}
+            displayClassName={`w-full p-4 rounded-xl border bg-white text-teal-900 font-medium leading-relaxed min-h-[60px] transition-colors ${canEdit ? 'border-teal-200 hover:border-teal-400' : 'border-teal-200'}`}
+            inputClassName="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-y min-h-[60px]"
+        />
+    );
+    const hasLegacyFamilyText = !!data.familyMembers?.trim();
+
     return (
         <div className={`bg-white rounded-2xl shadow-sm border border-stone-200 relative group transition-all duration-300 overflow-hidden ${isEditing ? 'ring-4 ring-teal-50/50' : ''}`}>
 
@@ -1332,11 +1352,20 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                     <div className="md:col-span-2">
                         <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.family_members')}</h3>
                         {!isNew && enableHousehold && adopterId ? (
-                            <HouseholdSection
-                                adopterId={adopterId}
-                                initialMembers={deserializeHouseholdMembers(initialData?.householdMembers)}
-                                canEdit={canEdit}
-                            />
+                            <div className="space-y-3">
+                                <HouseholdSection
+                                    adopterId={adopterId}
+                                    initialMembers={deserializeHouseholdMembers(initialData?.householdMembers)}
+                                    canEdit={canEdit}
+                                    hasLegacyText={hasLegacyFamilyText}
+                                />
+                                {hasLegacyFamilyText && (
+                                    <div>
+                                        <p className="text-[11px] font-semibold text-stone-500 mb-1">{t('adopter.family_notes')}</p>
+                                        {legacyFamilyField}
+                                    </div>
+                                )}
+                            </div>
                         ) : isNew ? (
                             <textarea
                                 rows={2}
@@ -1348,17 +1377,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                         ) : (
                             // Unified direct-edit (existing profile): tap → inline textarea →
                             // autosaves on blur → Deshacer. Same model as the contact entries.
-                            <InlineEditField
-                                value={data.familyMembers}
-                                canEdit={canEdit}
-                                multiline
-                                onSave={(next) => saveField('familyMembers', next)}
-                                placeholder={t('adopter.placeholder_family')}
-                                emptyLabel={t('adopter.no_family')}
-                                displayRender={(v) => renderTextWithLinks(v, { emptyLabel: t('audit.empty_val') })}
-                                displayClassName={`w-full p-4 rounded-xl border bg-white text-teal-900 font-medium leading-relaxed min-h-[60px] transition-colors ${canEdit ? 'border-teal-200 hover:border-teal-400' : 'border-teal-200'}`}
-                                inputClassName="w-full p-4 rounded-xl border border-teal-200 bg-white text-teal-900 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-y min-h-[60px]"
-                            />
+                            legacyFamilyField
                         )}
                     </div>
 

@@ -2,6 +2,33 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.62] - 2026-09-19
+
+### Fixed — family members typed on the create form disappeared from the profile
+
+The create form still shows the free-text family field, which saves into the
+legacy `family_members` column. Once the record exists, the profile shows the
+structured household section instead — and that section reads only
+`household_members`. Nothing on the profile rendered the legacy text, so since
+household members were switched on (2026-09-03) every family entry typed at
+creation vanished from view the moment the profile was saved, and every older
+record's family text vanished with them. 16 records in production: 13 from
+before the switch, 3 created through the form since.
+
+The text was never deleted, only hidden. The profile now shows it beneath the
+household section, under "Notas", editable by whoever could edit it before,
+and still masked for viewers without access exactly as it was. The household
+section no longer says "no family registered" when such notes exist.
+
+The end-to-end seed now switches household members on, matching production.
+It was missing, which is why no test ever loaded the profile the way real users
+see it; a new spec covers a record with legacy text and no structured members.
+
+Still to do: converting these notes into structured household members (to be
+reviewed record by record, not run blind — the existing parser would turn
+placeholder answers and whole sentences into people), and replacing the
+free-text field on the create form with the household control.
+
 ## [2.56.61] - 2026-09-18
 
 ### Fixed — a tab older than the running deployment now recovers instead of failing quietly

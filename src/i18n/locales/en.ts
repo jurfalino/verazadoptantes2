@@ -828,6 +828,7 @@ export const en = {
         family_members: 'Family Members / Households',
         placeholder_family: 'List other family members, spouses, or people living in the same home...',
         no_family: 'No family members listed.',
+        family_notes: 'Notes',
         hh_cta_add: 'Add family / household member',
         hh_add_contact: 'Add contact detail',
         hh_contacts: 'Contact details',
