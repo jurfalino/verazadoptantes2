@@ -222,3 +222,19 @@ These commands must NEVER be run without explicit user approval:
 - `git push origin HEAD:master`
 - Any push that targets the `master` branch directly
 - Running `git push origin staging:master` (This is completely forbidden now, always use a PR to merge staging to master)
+
+## Deploy skew guard — required build id
+
+Every deploy must be built with `APP_BUILD_ID` set (CI uses `github.sha`). It powers the
+middleware check that recognises browser tabs older than the running deployment. Without it
+the check is silently disabled, so:
+
+- the Cloudflare build step **fails** when `APP_BUILD_ID` is empty;
+- after `wrangler pages deploy`, CI step **"Verify deploy-skew guard on the new deployment"**
+  POSTs with a fake old build id and requires `409`, `x-deployment-skew: 1` and the commit's
+  sha in `x-deployment-id-server`. A red run there means stale tabs are no longer recovered —
+  treat it as a failed deploy.
+
+Never deploy by hand without `APP_BUILD_ID`. Each deploy makes every open tab stale once, so
+batch releases rather than dripping them.
+

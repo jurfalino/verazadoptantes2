@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { purgeAllData } from '@/app/actions';
 import { useShowToast } from '@/components/ui/Toast';
 import { useRouter } from 'next/navigation';
+import { userFacingMessage } from '@/lib/errorMessage';
 
 export default function AdminDangerZone() {
     const router = useRouter();
@@ -36,7 +37,7 @@ export default function AdminDangerZone() {
             setConfirmInput('');
             router.refresh();
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to purge data');
+            setError(userFacingMessage(err, 'Failed to purge data'));
         } finally {
             setLoading(false);
         }

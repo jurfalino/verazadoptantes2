@@ -4,7 +4,8 @@ import { useEffect } from 'react';
 import { reportClientError } from '@/lib/clientErrorReporter';
 import { useShowToast } from '@/components/ui/Toast';
 import { extractErrorId } from '@/lib/errorUtils';
-import { classifyWindowError, isChunkLoadError } from '@/domain/clientErrors';
+import { classifyWindowError, isChunkLoadError, isDeploymentSkewError } from '@/domain/clientErrors';
+import { markDeploymentStale } from '@/lib/staleDeploy';
 import { attemptStaleReload } from '@/lib/staleDeploy';
 
 /**
@@ -44,6 +45,13 @@ export default function ClientErrorReporter() {
             // both live in shared modules now, because the React error
             // boundaries need exactly the same recovery — see
             // src/lib/staleDeploy.ts.
+            // A stale tab's rejection that no catch block handled. Not an error
+            // to report or toast: StaleDeployWatcher offers the reload.
+            if (kind === 'skew') {
+                markDeploymentStale();
+                return;
+            }
+
             if (kind === 'chunk') {
                 if (attemptStaleReload()) {
                     console.warn('[ClientErrorReporter] ChunkLoadError — reloading to pick up fresh chunk hashes:', message);
@@ -127,6 +135,13 @@ export default function ClientErrorReporter() {
             if (existingId) return;
 
             const stack = reason instanceof Error ? reason.stack : undefined;
+
+            // An uncaught stale-tab rejection (a server call whose promise nobody
+            // awaited in a try) — hand over to StaleDeployWatcher, no toast.
+            if (isDeploymentSkewError(reason)) {
+                markDeploymentStale();
+                return;
+            }
 
             // Same ChunkLoadError recovery as the window-error handler above:
             // Next.js's dynamic import can surface chunk failures as a

@@ -17,7 +17,7 @@ import {
  * threw away the server tree.
  *
  * The whole suite runs under `TZ=Pacific/Kiritimati` (UTC+14 — see
- * vitest.config.ts). That zone is deliberately different from BOTH `UTC` and
+ * vitest.config.mts). That zone is deliberately different from BOTH `UTC` and
  * `DEFAULT_TIMEZONE`: if it matched either, a formatter that forgot to pass an
  * explicit `timeZone` would still produce the expected string and the guardrail
  * would pass while the bug shipped.

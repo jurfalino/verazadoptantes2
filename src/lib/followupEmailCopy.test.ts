@@ -1,7 +1,7 @@
 /**
  * Tests for the follow-up cron's pure copy builders.
  *
- * They live under src/ because vitest.config.ts scopes `include` to
+ * They live under src/ because vitest.config.mts scopes `include` to
  * `src/**\/*.test.ts` — the worker's own directory is never collected. The
  * module under test is pure (no Worker APIs), so importing it here is safe and
  * gives the least-covered part of the feature (Worker code never runs in CI)

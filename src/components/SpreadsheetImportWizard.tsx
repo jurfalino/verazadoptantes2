@@ -10,6 +10,7 @@ import { buildImportBody } from '@/lib/importRow';
 import { inferDateOrder } from '@/domain/importRow';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType, normalizeNeutered } from '@/domain/importRow';
+import { userFacingMessage } from '@/lib/errorMessage';
 import {
     TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE,
     applyColumnMap, emptyMappedRow, guessColumnMap,
@@ -256,7 +257,7 @@ export default function SpreadsheetImportWizard() {
             setMap(guessColumnMap(sheet.headers)); setMode('mapping'); setAdvancedOpen(true);
             setStep('confirm');
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'No se pudo leer el archivo.'); setStep('upload');
+            setError(userFacingMessage(e, 'No se pudo leer el archivo.')); setStep('upload');
         } finally { setBusy(false); }
     };
 
@@ -328,7 +329,7 @@ export default function SpreadsheetImportWizard() {
         // track only this retry batch (see sendBatches).
         try { await sendBatches(resumable.runId, rows, [], resumable.names, results); }
         catch (e) {
-            setError(e instanceof Error ? e.message : 'La importación se interrumpió.');
+            setError(userFacingMessage(e, 'La importación se interrumpió.'));
             setImportDone(true); setCancelling(false);
         }
     };
@@ -747,7 +748,7 @@ export default function SpreadsheetImportWizard() {
         } catch (e) {
             // Last-resort terminal state — never leave the screen stuck on "Importando…".
             // Row-level failures are already handled resiliently inside sendBatches.
-            setError(e instanceof Error ? e.message : 'La importación se interrumpió.');
+            setError(userFacingMessage(e, 'La importación se interrumpió.'));
             setImportDone(true); setCancelling(false);
         }
     };
@@ -769,7 +770,7 @@ export default function SpreadsheetImportWizard() {
             // is empty (fresh mount) — harmless.
             await sendBatches(snap.runId, snap.rows, [], snap.names, results);
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'La importación se interrumpió.');
+            setError(userFacingMessage(e, 'La importación se interrumpió.'));
             setImportDone(true); setCancelling(false);
         }
     };

@@ -5,6 +5,7 @@ import { getReportedFlags, type ReportedFlagRow } from '@/app/actions/dataQualit
 import { dismissFlag } from '@/app/actions/flags';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
+import { handledAsStale } from '@/lib/errorMessage';
 
 /**
  * "Contenido reportado" tab of Calidad de datos — the user-flag review moved
@@ -73,7 +74,7 @@ export default function ReportedContentPanel() {
             await dismissFlag(id);
         } catch (e) {
             setFlags(prev ?? null); // restore on failure
-            alert(e instanceof Error ? e.message : 'No se pudo descartar el reporte.');
+            if (!handledAsStale(e)) alert(e instanceof Error ? e.message : 'No se pudo descartar el reporte.');
         } finally {
             setDismissing(null);
         }

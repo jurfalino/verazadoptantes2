@@ -196,7 +196,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
             await notifyRequestError(toast.error, t, err, {
                 title: t('toast.search_failed_title'),
                 message: t('errors.search_failed'),
-            });
+            }, 'SearchSection');
         } finally {
             setLoading(false);
         }
@@ -341,7 +341,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
             await notifyRequestError(toast.error, t, err, {
                 title: t('toast.search_failed_title'),
                 message: t('errors.search_failed'),
-            });
+            }, 'SearchSection');
         } finally {
             setLoading(false);
         }

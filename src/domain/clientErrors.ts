@@ -88,7 +88,7 @@ export function isOpaqueCrossOriginError(
 }
 
 /** What the global error handler should do with an uncaught event. */
-export type WindowErrorKind = 'chunk' | 'hydration' | 'opaque' | 'report';
+export type WindowErrorKind = 'chunk' | 'skew' | 'hydration' | 'opaque' | 'report';
 
 /**
  * Decide which branch an uncaught window error belongs in.
@@ -111,6 +111,8 @@ export function classifyWindowError(event: {
     colno?: number;
 }): WindowErrorKind {
     if (isChunkLoadError({ name: event.name, message: event.message, stack: event.stack })) return 'chunk';
+    // A tab older than the running deployment whose rejection nobody caught.
+    if (isDeploymentSkewError(event.message)) return 'skew';
     if (isRecoverableHydrationError(event.message || '')) return 'hydration';
     if (isOpaqueCrossOriginError(event)) return 'opaque';
     return 'report';

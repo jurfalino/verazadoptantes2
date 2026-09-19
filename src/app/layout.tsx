@@ -14,6 +14,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import LoginModal from '@/components/LoginModal';
 import { ToastProvider } from '@/components/ui/Toast';
 import ClientErrorReporter from '@/components/ClientErrorReporter';
+import StaleDeployWatcher from '@/components/StaleDeployWatcher';
 import InstallPrompt from '@/components/InstallPrompt';
 import SplashScreen from '@/components/SplashScreen';
 import AppleSplashLinks from '@/components/AppleSplashLinks';
@@ -171,6 +172,7 @@ export default async function RootLayout({
             <ThemeProvider>
               <ToastProvider>
                 <ClientErrorReporter />
+                <StaleDeployWatcher />
                 <AuthProvider>
                   <EditActionsProvider>
                   <div className="min-h-screen flex flex-col bg-stone-50">

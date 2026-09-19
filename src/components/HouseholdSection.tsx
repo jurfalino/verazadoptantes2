@@ -21,6 +21,7 @@ import { PhoneAppsToggle } from '@/components/PhoneAppsToggle';
 import { MessagingLogo } from '@/components/MessagingLogo';
 import { detectSocialPlatform, type ContactEntry, type ContactEntryType, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
 import { RELATIONSHIPS, type HouseholdMember, type Relationship } from '@/lib/householdMembers';
+import { handledAsStale } from '@/lib/errorMessage';
 import {
     addHouseholdMember, updateHouseholdMember, removeHouseholdMember,
     addMemberContactEntry, updateMemberContactEntry, removeMemberContactEntry,
@@ -64,7 +65,7 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
             if (!res.ok) { toast.error(t('errors.generic') || 'Error', t('errors.save_household_failed') || 'No se pudo guardar el grupo familiar. Volvé a intentar.'); return null; }
             return res as Extract<T, { ok: true }>;
         } catch (e) {
-            toast.error('Error', e instanceof Error ? e.message : 'Error inesperado'); return null;
+            if (!handledAsStale(e)) toast.error('Error', e instanceof Error ? e.message : 'Error inesperado'); return null;
         } finally { setBusy(false); }
     }
 

@@ -22,6 +22,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useLanguage } from '@/context/LanguageContext';
 import { conversationOwnerKey } from '@/domain/chatAccess';
+import { userFacingMessage } from '@/lib/errorMessage';
 
 const SESSION_KEY = 'chat_session_id';
 const LAST_SEEN_KEY = 'chat_last_seen_at';
@@ -246,7 +247,7 @@ export default function ChatWidget() {
             }]);
             setInput('');
         } catch (e) {
-            setError(e instanceof Error ? e.message : t('chat.error_send'));
+            setError(userFacingMessage(e, t('chat.error_send')));
         } finally {
             setSending(false);
         }

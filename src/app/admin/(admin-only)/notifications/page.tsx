@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { reportClientError } from '@/lib/clientErrorReporter';
+import { userFacingMessage } from '@/lib/errorMessage';
 
 interface NotificationPreview {
     id: string;
@@ -48,7 +49,7 @@ export default function AdminNotificationsPage() {
             setTypes(data.types || []);
             setError(null);
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to fetch data');
+            setError(userFacingMessage(e, 'Failed to fetch data'));
         } finally {
             setLoading(false);
         }

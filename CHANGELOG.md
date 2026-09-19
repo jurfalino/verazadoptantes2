@@ -2,6 +2,96 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.67] - 2026-09-19
+
+### Fixed — deploy recovery, from the 2026-09-19 audit (every P0, P1 and P2)
+
+`.agents/audits/2026-09-19-deploy-skew-audit.md` found that the stale-tab
+recovery reached only part of the app, destroyed typed input on saves, could fail
+silently, and was tested nowhere that gates a deploy. All of it is addressed here.
+
+**Saves no longer reload the page.** A tab older than the running deployment used
+to reload itself when a save was rejected, and whatever had been typed was lost.
+Now it keeps everything on screen and shows one persistent notice: "Hay una
+versión nueva — Recargar", and the person chooses when. Searches still reload by
+themselves, since there is nothing typed to lose. Proven on a real build switch:
+a stale save kept the typed text, did not reload and wrote nothing; a stale
+search reloaded onto the new build.
+
+**Coverage no longer depends on catch blocks.** `StaleDeployWatcher` (root
+layout) recognises the rejection from the response itself, via a new
+`x-deployment-skew` header, for every request made through `window.fetch` —
+which is how Next sends server actions and page data. So it no longer matters
+what a component's catch block does. 25 places that printed `err.message` could show
+users the literal text "DEPLOYMENT_SKEW"; they now go through `userFacingMessage`
+or `handledAsStale`. The global error reporter and both error boundaries
+recognise it too, and error toasts for a stale tab are dropped, so the notice is
+the one message.
+
+**It can no longer fail silently.**
+- The Cloudflare build step refuses to run without `APP_BUILD_ID`.
+- After each deploy, CI checks the live guard: a fake old build id must get 409,
+  the marker header and the commit's sha.
+- Stale-tab events are reported to Axiom, with both build ids.
+
+**Tests gate deploys again.** Unit tests were pulled from CI in 2.56.21 over a
+missing native binary; they run again. The binary is unpacked at the lockfile's
+version, and the config is `.mts` so Node 20.18 can load it; both were proven on
+a throwaway PR first. The new `tests/deploy-skew.authed.spec.ts` covers a stale
+save and a stale search, with the build id pinned in the Playwright config; it
+fails if the fix is removed.
+
+**Offline cache.** Every deploy stored another copy of every visited asset,
+because the per-deploy `?dpl=` parameter was part of the cache key. It no longer
+is, and `CACHE_VERSION` v8 clears what had piled up.
+
+**Flag drift is now visible.** `scripts/check-flag-parity.mjs` runs in CI as a
+warning. Its first run found 13 differences between production and the e2e seed,
+including contact-data protection and public profiles being ON in production and
+OFF in tests. Aligning them is a separate decision.
+
+Documented in `CLAUDE.md` and `.agents/workflows/deploy.md`.
+
+**Deploying this makes every open tab stale one final time with the previous
+behaviour.** Tabs loaded from this release onward recover as described.
+
+## [2.56.66] - 2026-09-19
+
+### Fixed — searching from a tab opened before a deploy showed "Búsqueda fallida"
+
+Reported minutes after 2.56.65 reached production. The tab predated the deploy,
+so the middleware rejected its search as coming from an old build (2.56.61) —
+correctly. But the recovery added then lived in `resolveErrorId`, and the search
+box reports failures through `notifyRequestError`, which never consulted it. So
+instead of reloading, every stale tab answered its first search after a deploy
+with "Búsqueda fallida". Confirmed from both sides: a fresh session searched
+production fine, and no search from the reporting tab ever reached the server.
+
+- **Search now recognises a stale tab** and reloads onto the current build. If a
+  reload is not allowed right then, it says to reload the page, with no error
+  code, instead of "Búsqueda fallida".
+- **Search failures are logged and carry a code.** `notifyRequestError` used the
+  bare `extractErrorId`, so a failure thrown in the browser reached the toast with
+  no id and never reached Axiom.
+- **Automatic reloads are limited to one per five minutes per tab**, not one per
+  tab forever. The old marker lived in sessionStorage, which survives reloads, so
+  a tab that recovered once could never recover from a later deploy.
+- **The skew sentinel no longer appears as an error code.** When a reload was
+  declined, callers printed "DEPLOYMENT_SKEW" where the code goes.
+
+Verified against a real build switch, locally: a tab loaded on one production
+build, the server replaced by another underneath it, then a search from that tab
+— the request got 409, the page reloaded onto the new build, and no failure
+message appeared.
+
+**Not covered:** 26 other error handlers, mostly admin panels and import
+wizards, still show their own error message on a stale tab instead of reloading.
+Left as a follow-up rather than changed on one report.
+
+**Expect one more round of this.** Tabs already open are running 2.56.65, which
+lacks this fix, so deploying it makes them stale with the old behaviour one last
+time. Tabs loaded from this release onward recover on their own.
+
 ## [2.56.65] - 2026-09-19
 
 ### Added — "¿Qué pasó?" card pinned to the bottom of the screen, behind a flag
