@@ -2,6 +2,57 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.73] - 2026-09-19
+
+### Fixed — admin notification delete, from its pre-production review
+
+The review of 2.56.72 returned GO with no security findings, and these:
+
+- **Deleting a "contract signed" or "form response" notification deletes the
+  recipient's report, not just the bell entry** — their results page is rendered
+  from that row. The confirmation now says so for those two types.
+- **"Vista" is now "Leída".** The flag is also set by "mark all as read", so it
+  shows the bell was attended to, not that this message was looked at.
+- Recipient names were looked up with one bound parameter per person; past D1's
+  100-parameter cap the whole lookup failed and names silently fell back to the
+  email handle. Chunked. Mixed-case emails now resolve too.
+- Deleting something already gone (a double click, another admin) is treated as
+  done, not an error. Each delete button names its notification for screen
+  readers.
+- The test now asserts the audit entry (who, which, whose, and not the message
+  text), the recipient and state shown on the row, and the 404 / 400 cases.
+
+## [2.56.72] - 2026-09-19
+
+### Added — admin notifications: who received it, whether they saw it, and delete
+
+`/admin/notifications` listed each notification type with totals and its last few
+messages, but not **who** each one went to or what happened to it. Each message
+now shows:
+
+- **the recipient**, by name and email;
+- **whether they saw it**: *Vista* (opened or marked read), *Descartada sin abrir*
+  (cleared from their list without opening), or *Sin ver* (still waiting in their
+  bell). The rule is `notificationSeenState` in the domain layer;
+- **Abrir →**, a link to what the notification points at, so an admin can go and
+  deal with it — an access request is approved or denied on that profile.
+
+- **Eliminar**, to delete a notification. It disappears from the recipient's
+  bell for good, so it asks for confirmation naming the recipient, is admin-only
+  on the server (a non-admin gets 403, an anonymous caller 401), and is written to
+  the audit log with who deleted it, its type and whose it was. The message text
+  is not copied to the audit log, since it can name a third party.
+
+Ten messages per type, up from five. The types that actually fire now have
+readable names and descriptions (contact detail added, access request, ownership
+transfer, adopter reported, deletion request, new member, form response…).
+
+### Fixed — every date on that page read "21/1/1970"
+
+Notification timestamps are stored in epoch seconds and the page read them as
+milliseconds. It now uses the shared formatter, which handles both and renders
+identically on the server and in the browser.
+
 ## [2.56.71] - 2026-09-19
 
 ### Fixed — the automatic access request no longer depends on re-reading the session after the response

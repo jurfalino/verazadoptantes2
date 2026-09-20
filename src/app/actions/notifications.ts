@@ -334,13 +334,19 @@ export async function resolveDisplayNames(emails: string[]): Promise<Map<string,
         const { getRequestContext } = await import('@cloudflare/next-on-pages');
         const { env } = getRequestContext();
         if (env?.DB) {
-            const placeholders = lower.map(() => '?').join(', ');
-            const stmt = env.DB.prepare(
-                `SELECT email, name FROM user WHERE email IN (${placeholders})`,
-            ).bind(...lower);
-            const rows = await stmt.all<{ email: string; name: string | null }>();
-            for (const r of rows.results ?? []) {
-                if (r.name) out.set(r.email.toLowerCase(), r.name);
+            // D1 caps a statement at 100 bound parameters. The admin notifications
+            // page can ask for more recipients than that; past the cap the whole
+            // lookup failed and every name silently fell back to the email handle.
+            const CHUNK = 90;
+            for (let i = 0; i < lower.length; i += CHUNK) {
+                const chunk = lower.slice(i, i + CHUNK);
+                const placeholders = chunk.map(() => '?').join(', ');
+                const rows = await env.DB.prepare(
+                    `SELECT email, name FROM user WHERE email IN (${placeholders})`,
+                ).bind(...chunk).all<{ email: string; name: string | null }>();
+                for (const r of rows.results ?? []) {
+                    if (r.name) out.set(r.email.toLowerCase(), r.name);
+                }
             }
         }
     } catch (e) {
