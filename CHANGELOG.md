@@ -2,6 +2,53 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.74] - 2026-09-21
+
+### Security — notifications were creatable by anyone, and org lookups returned the wrong people
+
+From the 2026-09-21 audit of 2.56.70-73
+(`.agents/audits/2026-09-21-notifications-batch-audit.md`), findings 2 and 6.
+
+- **Anyone could put a message in anyone's notification bell.**
+  `src/app/actions/notifications.ts` was a `'use server'` module, so every one of
+  its exports was a POST endpoint the browser could call with arguments of its
+  choosing. `createNotification` takes the recipient, title, body and
+  click-through URL and checked none of them: a phishing message wearing the
+  product's own chrome, delivered to any address the caller named.
+  `resolveDisplayNames` answered "what is this person's real name?" for any
+  address, for anyone who asked.
+
+  An authentication check was the wrong fix, because the legitimate callers
+  include the public contract and form submission routes, which have no session
+  on purpose. The module is now simply not a server action. Every caller is
+  server-side already; the browser reaches notifications through
+  `/api/notifications`, which resolves the session itself. Nothing about the
+  logged-in experience changes.
+
+- **Members of a second organization were dropped from every recipient list.**
+  `getOrgMemberEmailsFor` and three sibling queries in
+  `src/app/actions/organizations.ts` used drizzle's `inArray`, which D1 binds as
+  a single parameter: `IN (?)` however long the list. For anyone in two or more
+  organizations it silently matched the first and dropped the rest. That
+  function decides who receives `contract_result`, `form_submission` and
+  `member_joined` notifications, so the effect was notifying the wrong people,
+  not merely showing fewer. It also truncated the organization list on
+  `/organizations`. All four now fan out per id, the sanctioned D1 pattern.
+
+- Two guards, both mutation-checked against the bug they describe.
+  `serverActionSurface.test.ts` fails if any of these helpers is exported from a
+  `'use server'` module, including via a re-export or an alias — which also
+  closes the one-line path to filing PII access requests in someone else's name
+  that the audit flagged as finding 1. `d1ArrayParams.test.ts` is a ratchet: it
+  records the three files that still bind an array to `IN (…)` and fails on any
+  new one.
+
+**Not fixed, and recorded in the audit:** the un-awaited-call guard from 2.56.70
+still catches only one of five ways the original bug can return; the batch is
+still unverified in production, because none of the eight paths that notify
+anyone has run since it shipped; and five of the eight swallow their own errors,
+so a total failure reaches the background wrapper looking like success.
+
 ## [2.56.73] - 2026-09-19
 
 ### Fixed — admin notification delete, from its pre-production review
