@@ -235,3 +235,48 @@ actor (`notifications.ts:41`) and would notify the other real admins.
    cannot report failure.
 6. The LOW items are backlog, except the two privacy items, which need a product
    decision rather than a patch.
+
+---
+
+## Follow-up — what was done, same day
+
+**Fixed and on staging (2.56.74, 2.56.75), green through the full pipeline.**
+
+- **F3, the unauthenticated notification surface.** Closed by taking
+  `src/app/actions/notifications.ts` off the wire entirely rather than adding a
+  check, because the public contract and form routes call it without a session
+  on purpose. The audit understated the exposure: all **thirteen** exports were
+  endpoints, and the read side (`getNotifications` and friends, which return any
+  named user's bell, whose `metadata` carries an adopter's name, phone, email,
+  DNI and address) is the worse half. Built both ways to confirm: 148 endpoints
+  now, 161 with the module back on the wire.
+- **F5, the banned array parameter.** All four queries in `organizations.ts` now
+  fan out per id. Two further findings from the pre-production review were taken
+  with it: the per-id fallbacks are gone from the two functions that choose
+  notification recipients, because a half-built recipient list silently answers
+  with the wrong people, and the id list is deduplicated.
+
+**And a lesson that belongs in this audit, because it is the audit's own
+finding happening again.** The guards shipped with the first of those releases
+had the same defect F1 describes. The surface test read only the first ten lines
+of a file for the `'use server'` directive, and the twenty-line comment that
+release added to the module was enough to hide it: the directive on line 21 put
+all thirteen endpoints back with both tests green. The array-parameter guard
+matched only the spelling used in CLAUDE.md and missed the parenthesised form
+everyone writes, an aliased import, and multi-line templates. The independent
+pre-production review caught both before production; 2.56.75 fixes them, with
+every mutation run against the guard before and after.
+
+The structural conclusion is that a source-scanning guard tends to encode the
+shape of the bug that prompted it. Two things help: mutate the bug back in
+several syntactic shapes before believing the guard, and prefer a check on
+compiled output where one exists. `scripts/check-action-surface.mjs` now counts
+the browser-callable endpoints in the built manifest during CI, which is immune
+to how the directive is written and is the only check that notices a new action
+wrapping a trusted helper under a different name.
+
+**Still open from this audit:** F1 (the un-awaited-call guard still catches one
+of five shapes), F2 (the impersonation guard — its re-export path is now covered
+by `serverActionSurface.test.ts`, the rest is not), F4 (no alert), F6 (five of
+eight sites cannot report failure), F7 (the batch is still unverified in
+production) and the LOW items.
