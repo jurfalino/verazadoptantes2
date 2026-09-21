@@ -2,6 +2,55 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.75] - 2026-09-21
+
+### Fixed — the guards shipped in 2.56.74 had the same hole they were built to catch
+
+Pre-production review of 2.56.74 returned GO, and found that the guard protecting
+the fix could be walked past in one line. It never reached production.
+
+- **`'use server'` one line below a comment reopened everything.** The surface
+  test read only the first ten lines of a file, and the twenty-line header
+  2.56.74 added to the notifications module was enough to hide the directive
+  under. ECMAScript ignores leading comments when it looks for a directive
+  prologue, so the module went back on the wire with both tests green: the built
+  manifest registered 161 server actions instead of 148, all thirteen exports
+  live again. Directive detection now follows the language's own rule, and the
+  test carries cases for the comment-hidden form. Also closed: an aliased
+  export (`export const x = createNotification`), a wrapping default export, and
+  the read-side and destructive exports, which were missing from the list
+  entirely.
+
+- **The array-parameter ratchet matched one spelling.** It looked for
+  ``sql`IN ${ids}` `` exactly as CLAUDE.md spells it, so the parenthesised form
+  everyone actually writes, `IN (${ids})`, passed, as did `inArray` imported
+  under an alias and any multi-line template. All three now fail. Interpolating
+  a prepared `sql.join(…)` fragment is still allowed, because that emits one
+  bind per value and is the sanctioned pattern.
+
+- **A CI step now counts the doors.** `scripts/check-action-surface.mjs` reads
+  the built manifest after `npm run build` and fails when the number of
+  browser-callable endpoints moves without someone saying so. It is the only
+  check that sees a new action wrapping a trusted helper under a different name,
+  which no source scan can tell apart from an ordinary action. Adding an action
+  on purpose means raising the number in the same commit.
+
+- **A half-built recipient list is worse than none.** The per-id fallbacks
+  2.56.74 added to `getOrgMemberEmails` and `getOrgMemberEmailsFor` would have
+  let one failed query silently produce a partial set — and that set decides who
+  sees organization records and who is notified about them. They now fail to the
+  caller alone, which is visible, instead of to the wrong people, which is not.
+  `getMyOrganizations` keeps its fallback, where a missing row is cosmetic.
+
+- **Organization ids are deduplicated** before the fan-out. `inArray` did this
+  by accident. Production's unique index makes it moot there, but `schema.ts`
+  declares that index as non-unique, so other databases may differ.
+
+**Known and accepted:** `getOrgMemberEmails` now returns the union across a
+user's organizations, and three queries downstream build unchunked `IN (…)`
+lists from it against D1's 100-parameter cap. The largest real union is two
+emails, so this is latent, not live.
+
 ## [2.56.74] - 2026-09-21
 
 ### Security — notifications were creatable by anyone, and org lookups returned the wrong people
@@ -9,14 +58,23 @@ All notable changes to BuenAdoptante are documented here.
 From the 2026-09-21 audit of 2.56.70-73
 (`.agents/audits/2026-09-21-notifications-batch-audit.md`), findings 2 and 6.
 
-- **Anyone could put a message in anyone's notification bell.**
-  `src/app/actions/notifications.ts` was a `'use server'` module, so every one of
-  its exports was a POST endpoint the browser could call with arguments of its
-  choosing. `createNotification` takes the recipient, title, body and
-  click-through URL and checked none of them: a phishing message wearing the
-  product's own chrome, delivered to any address the caller named.
-  `resolveDisplayNames` answered "what is this person's real name?" for any
-  address, for anyone who asked.
+- **Anyone could read, write and clear anyone's notification bell.**
+  `src/app/actions/notifications.ts` was a `'use server'` module, so **all
+  thirteen** of its exports were POST endpoints the browser could call with
+  arguments of its choosing — not only the two named in the first draft of this
+  entry. Each takes the user it acts on as an argument and checked none of them:
+
+  - `getNotifications`, `getNotificationsPaginated`, `getNotificationTypes` and
+    `getUnreadCount` returned **any named user's bell**. A notification's
+    `metadata` carries `submittedData` — an adopter's name, phone, email, DNI
+    and address. Reading a stranger's messages is the worse half of this.
+  - `createNotification` takes the recipient, title, body and click-through URL:
+    a phishing message wearing the product's own chrome, delivered to any
+    address the caller named.
+  - `markAllNotificationsRead` and `dismissAllNotifications` cleared anyone's
+    bell on request.
+  - `resolveDisplayName(s)` answered "what is this person's real name?" for any
+    address, for anyone who asked.
 
   An authentication check was the wrong fix, because the legitimate callers
   include the public contract and form submission routes, which have no session
@@ -37,11 +95,11 @@ From the 2026-09-21 audit of 2.56.70-73
 
 - Two guards, both mutation-checked against the bug they describe.
   `serverActionSurface.test.ts` fails if any of these helpers is exported from a
-  `'use server'` module, including via a re-export or an alias — which also
-  closes the one-line path to filing PII access requests in someone else's name
-  that the audit flagged as finding 1. `d1ArrayParams.test.ts` is a ratchet: it
-  records the three files that still bind an array to `IN (…)` and fails on any
-  new one.
+  `'use server'` module, including via a re-export — which also closes the
+  one-line path to filing PII access requests in someone else's name that the
+  audit flagged as finding 1. `d1ArrayParams.test.ts` is a ratchet: it records
+  the files that still bind an array to `IN (…)` and fails on any new one.
+  (Both guards had holes of their own; see 2.56.75.)
 
 **Not fixed, and recorded in the audit:** the un-awaited-call guard from 2.56.70
 still catches only one of five ways the original bug can return; the batch is
