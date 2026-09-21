@@ -25,6 +25,7 @@ jobs:
   check:
     name: Did notifications reach their owners?
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       issues: write
@@ -44,14 +45,21 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DAYS: ${{ github.event.inputs.days || '7' }}
         run: |
-          node scripts/check-notification-health.mjs --days "${{ github.event.inputs.days || '7' }}" 2>&1 | tee health.txt
-          exit "${PIPESTATUS[0]}"
+          set +e
+          node scripts/check-notification-health.mjs --days "$DAYS" 2>&1 | tee health.txt
+          code="${PIPESTATUS[0]}"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
 
       # One open issue, not one per day: a daily pile of identical issues is
       # noise, and noise is how the last four months happened.
       - name: Open an issue if it is broken
-        if: failure()
+        # Only when the check ASKED and got a bad answer. Exit 2 means it could
+        # not ask at all, and an npm or network flake filing "notifications are
+        # not reaching owners" is how a daily alarm gets muted within a month.
+        if: failure() && steps.check.outputs.code == '1'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

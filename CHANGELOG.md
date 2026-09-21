@@ -2,6 +2,54 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.77] - 2026-09-21
+
+### Fixed — from the pre-production review of 2.56.76
+
+Review returned GO with two defects it asked to land in the same work, because
+together they are the difference between a monitor that means something and one
+that gets muted. Neither reached production.
+
+- **The health check printed a confident "OK" over evidence that proves
+  nothing.** Its gate counted every contribution, while the thing it actually
+  verifies is contributions to somebody *else's* record. **43 of the 49
+  contributions in this product's history are to the contributor's own record**,
+  where notifying nobody is correct — so a week of self-contributions would have
+  reported "every contribution notified its record's owner" having checked
+  nothing at all. That is the false reassurance the check exists to remove,
+  reintroduced one level up. Both the gate and the message now count only
+  qualifying contributions.
+
+- **An npm hiccup would have filed "Notifications are not reaching owners in
+  production".** The issue step fired on any failure, so a flaky install or an
+  expired token read exactly like a product breakage. The script now exits 2 for
+  "could not ask" and 1 for "asked, and the answer is bad", and only the latter
+  raises the alarm.
+
+- **The un-awaited-call guard now analyses each call rather than each line of
+  text.** The version shipped hours earlier flagged a whole statement, which
+  both missed work parked in a variable — `const _ = notifyAdmins(…)`, the
+  reflex when a check complains, and a shape the test had explicitly blessed —
+  and wrongly flagged correct code such as `results.push(await
+  createNotification(…))`. It now walks out from the call itself to see whether
+  anything is waiting for it, treats `Promise.all` and friends as passing the
+  same work along, and covers optional calls and assignment. It also scans all
+  of `src`, not three directories, so a helper in `src/domain` or a server
+  component is no longer a blind spot.
+
+- Smaller, all from the same review: the error line reports the true number of
+  unmatched contributions rather than the display limit; the dispatch input goes
+  through the environment instead of being interpolated into the shell; the job
+  has a timeout; and wrangler's output is parsed as a balanced array rather than
+  sliced at the first bracket it happens to print.
+
+**Known and unfixed, recorded so they are decisions:** two contributions to the
+same record within twenty minutes share one notification, so a second silent
+failure would not be seen; transferring ownership, deleting a notification, or
+switching off that notification type all make the check go red over correct
+behaviour; and the contribution count itself comes from the audit log, which
+rides the same background machinery being measured.
+
 ## [2.56.76] - 2026-09-21
 
 ### Fixed — the un-awaited-call guard, and an alarm that reaches a person

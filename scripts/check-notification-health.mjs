@@ -44,14 +44,19 @@ const FIX_DEPLOYED_AT = values.since === undefined ? 1789869600 : Number(values.
 
 if (!Number.isFinite(WINDOW_DAYS) || WINDOW_DAYS <= 0) {
     console.error(`::error::--days must be a positive number, got ${values.days}`);
-    process.exit(1);
+    process.exit(2);
 }
 
 const q = (sql) => {
     const out = execFileSync('npx', [
         'wrangler', 'd1', 'execute', values.db, '--remote', '--json', '--command', sql,
     ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 8 << 20 });
-    return JSON.parse(out.slice(out.indexOf('[')))[0].results;
+    // wrangler prints banners and update nags around the JSON, so take the
+    // last balanced array rather than slicing at the first '[' it emitted.
+    const start = out.indexOf('[');
+    const end = out.lastIndexOf(']');
+    if (start < 0 || end < start) throw new Error(`no JSON in wrangler output: ${out.slice(0, 200)}`);
+    return JSON.parse(out.slice(start, end + 1))[0].results;
 };
 
 /**
@@ -79,12 +84,24 @@ const UNMATCHED = `
     ORDER BY a.created_at DESC
     LIMIT 20`;
 
+const UNMATCHED_TOTAL = UNMATCHED
+    .replace('SELECT a.target AS adopter_id, a.created_at', 'SELECT COUNT(*) AS n')
+    .replace(/ORDER BY[\s\S]*$/, '');
+
 const COUNTS = `
     SELECT
-      (SELECT COUNT(*) FROM audit_log
-        WHERE action = 'contact_entry_added'
-          AND created_at > strftime('%s','now') - ${WINDOW}
-          AND created_at > ${FIX_DEPLOYED_AT})                                     AS contributions,
+      -- Only contributions to SOMEONE ELSE's record count. 43 of the 49 in
+      -- this product's history are to the contributor's own, where notifying
+      -- nobody is correct — so counting all of them would print a confident
+      -- "OK" over evidence that proves nothing, which is the exact false
+      -- reassurance this check exists to remove.
+      (SELECT COUNT(*) FROM audit_log a
+        JOIN adopters ad ON ad.id = a.target
+        WHERE a.action = 'contact_entry_added'
+          AND a.created_at > strftime('%s','now') - ${WINDOW}
+          AND a.created_at > ${FIX_DEPLOYED_AT}
+          AND ad.added_by <> a.user_email
+          AND ad.added_by LIKE '%@%')                                              AS contributions,
       (SELECT COUNT(*) FROM notifications
         WHERE created_at > strftime('%s','now') - ${WINDOW}
           AND created_at > ${FIX_DEPLOYED_AT})                                     AS notifications,
@@ -92,27 +109,32 @@ const COUNTS = `
         WHERE created_at > strftime('%s','now') - ${WINDOW}
           AND created_at > ${FIX_DEPLOYED_AT})                                     AS access_requests`;
 
-let unmatched, counts;
+let unmatched, unmatchedTotal, counts;
 try {
     unmatched = q(UNMATCHED);
+    [{ n: unmatchedTotal }] = q(UNMATCHED_TOTAL);
     [counts] = q(COUNTS);
 } catch (e) {
+    // Exit 2, not 1: "I could not ask" is not "the answer is bad". The
+    // workflow only raises the alarm on 1, so an outage or an expired token
+    // does not file an issue saying notifications are broken.
     console.error(`::error::could not query ${values.db}: ${e.message}`);
-    process.exit(1);
+    process.exit(2);
 }
 
 console.log(`Window: last ${WINDOW_DAYS} day(s) of ${values.db}, from the fix at ${new Date(FIX_DEPLOYED_AT * 1000).toISOString()}`);
-console.log(`  contributions logged      ${counts.contributions}`);
+console.log(`  contributions to others'   ${counts.contributions}`);
 console.log(`  notifications created     ${counts.notifications}`);
 console.log(`  access requests filed     ${counts.access_requests}`);
 
 if (unmatched.length > 0) {
     console.error('');
-    console.error(`::error::${unmatched.length} contribution(s) to someone else's record notified nobody.`);
+    console.error(`::error::${unmatchedTotal} contribution(s) to someone else's record notified nobody.`);
     console.error('The owner-notification path is not completing in production — the same failure');
     console.error('that went unnoticed from May to 2026-09-19. Check that background work is still');
     console.error('handed to runAfterResponse (src/lib/background.ts) and look for');
     console.error('"addContactEntry: approvers notified" in Axiom.');
+    if (unmatchedTotal > unmatched.length) console.error(`  (showing the ${unmatched.length} most recent)`);
     for (const row of unmatched) {
         console.error(`  adopter ${row.adopter_id} at ${new Date(row.created_at * 1000).toISOString()}`);
     }
@@ -121,7 +143,7 @@ if (unmatched.length > 0) {
 
 if (counts.contributions === 0) {
     console.log('');
-    console.log(`No contribution to anyone else's record in ${WINDOW_DAYS} day(s), so this proves nothing yet.`);
+    console.log(`No contribution to anyone ELSE's record in ${WINDOW_DAYS} day(s), so this proves nothing yet.`);
     console.log('Not a failure: a quiet week is not a fault, and an alarm that cries wolf gets muted.');
     console.log('To settle it deliberately, add a contact detail to a record you own and look for');
     console.log('"addContactEntry: approvers notified" with recipients: 0 in Axiom.');

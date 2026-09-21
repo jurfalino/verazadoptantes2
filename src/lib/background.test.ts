@@ -76,7 +76,6 @@ describe('runAfterResponse', () => {
  * — all of those use the value and are fine.
  */
 describe('no un-awaited notifications in server code', () => {
-    const roots = ['src/app/actions', 'src/app/api', 'src/lib'];
     const files: string[] = [];
     const walk = (dir: string) => {
         for (const name of readdirSync(dir)) {
@@ -85,7 +84,7 @@ describe('no un-awaited notifications in server code', () => {
             else if (/\.tsx?$/.test(name) && !/\.test\./.test(name)) files.push(p);
         }
     };
-    for (const r of roots) walk(join(process.cwd(), r));
+    walk(join(process.cwd(), 'src'));
 
     /** Work that must never be started and forgotten. */
     const BACKGROUND_WORK = [
@@ -94,30 +93,71 @@ describe('no un-awaited notifications in server code', () => {
     ];
     const MODULE_IMPORTS = ['@/app/actions/notifications', '@/lib/piiAccessRequest'];
 
-    /** True when this statement starts background work of the kind above. */
-    const startsBackgroundWork = (text: string): boolean =>
-        BACKGROUND_WORK.some(name => new RegExp(`\\b${name}\\s*\\(`).test(text))
-        || MODULE_IMPORTS.some(mod => text.includes(mod));
+    /** The name being called, through `x.y()`, `x?.()` and parentheses. */
+    const calleeName = (call: ts.CallExpression): string | null => {
+        let e: ts.Node = call.expression;
+        while (ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e)) e = e.expression;
+        if (ts.isPropertyAccessExpression(e)) return e.name.text;
+        if (ts.isIdentifier(e)) return e.text;
+        return null;
+    };
+
+    /**
+     * Is this call's result thrown away?
+     *
+     * Walk out from the call until something either uses the value — `await`,
+     * `return`, an argument, an array element, an arrow body — or drops it. A
+     * `.catch(…)` or `.finally(…)` chained on top is still the same value, so
+     * we keep walking through it. Reaching a statement, a `void`, or a binding
+     * means nobody is waiting.
+     *
+     * A promise parked in a variable counts as dropped. `const p = notify();
+     * await p;` is legitimate and rare, and the cost of writing it differently
+     * is far lower than the cost of "assign it to something to quiet the
+     * check", which is the reflex this guard exists to stop.
+     */
+    const isDiscarded = (call: ts.CallExpression): boolean => {
+        let cur: ts.Node = call;
+        for (;;) {
+            const parent: ts.Node | undefined = cur.parent;
+            if (!parent) return false;
+            if (ts.isAwaitExpression(parent) || ts.isReturnStatement(parent)) return false;
+            if (ts.isYieldExpression(parent)) return false;
+            // Still the same promise: `notify(…).catch(…)`, `(notify(…))`, `notify(…)!`
+            if ((ts.isPropertyAccessExpression(parent) || ts.isCallExpression(parent)) && (parent as ts.PropertyAccessExpression | ts.CallExpression).expression === cur) { cur = parent; continue; }
+            if (ts.isParenthesizedExpression(parent) || ts.isNonNullExpression(parent) || ts.isAsExpression(parent)) { cur = parent; continue; }
+            if (ts.isVoidExpression(parent) || ts.isExpressionStatement(parent)) return true;
+            // `Promise.all([...])` and friends hand the same pending work on, so
+            // keep walking: awaited above, it is fine; dropped above, it is not.
+            if (ts.isArrayLiteralExpression(parent)) { cur = parent; continue; }
+            if (ts.isCallExpression(parent) && parent.arguments.includes(cur as ts.Expression)
+                && ['all', 'allSettled', 'race', 'any', 'resolve'].includes(calleeName(parent) || '')) { cur = parent; continue; }
+            if (ts.isVariableDeclaration(parent) && parent.initializer === cur) return true;
+            if (ts.isBinaryExpression(parent) && parent.right === cur) return true;
+            return false; // an argument, an array element, an arrow body — somebody has it
+        }
+    };
 
     const offendersIn = (source: string, fileName: string): string[] => {
         const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
         const found: string[] = [];
+        const at = (n: ts.Node) => `${fileName}:${sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1}`;
         const visit = (node: ts.Node) => {
+            if (ts.isCallExpression(node)) {
+                const name = calleeName(node);
+                if (name && BACKGROUND_WORK.includes(name) && isDiscarded(node)) found.push(at(node));
+            }
+            // The shape the bug originally had: `import('…notifications').then(…)`
+            // started and never awaited. The banned name is only a binding there.
             if (ts.isExpressionStatement(node)) {
-                // An expression statement discards the value. `await x` and
-                // `yield x` do not, and an assignment keeps it.
-                const e = node.expression;
-                const kept = ts.isAwaitExpression(e) || ts.isYieldExpression(e)
-                    || ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.EqualsToken;
-                if (!kept && startsBackgroundWork(node.getText(sf))) {
-                    const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
-                    found.push(`${fileName}:${line + 1}`);
-                }
+                const text = node.getText(sf);
+                const kept = ts.isAwaitExpression(node.expression);
+                if (!kept && MODULE_IMPORTS.some(m => text.includes(m)) && /\.then\s*\(/.test(text)) found.push(at(node));
             }
             ts.forEachChild(node, visit);
         };
         visit(sf);
-        return found;
+        return [...new Set(found)];
     };
 
     it('every notification / access-request call is awaited or handed to runAfterResponse', () => {
@@ -132,6 +172,11 @@ describe('no un-awaited notifications in server code', () => {
             'one-line .catch': "notifyAdmins({ x: 1 }).catch(e => logger.warn('x', e));",
             'void-prefixed': 'void notifyOrgMembers({ x: 1 });',
             'the new function name': "fileAccessRequestFor(actor, id, { justification: 'auto' });",
+            'parked in a variable': 'const _unused = notifyAdmins({});',
+            'assigned and forgotten': 'holder = notifyAdmins({});',
+            'optional call': 'notifyApprovers?.(a, b);',
+            'wrapped in Promise.resolve': 'Promise.resolve(notifyApprovers(a, b));',
+            'dropped Promise.all': 'Promise.all([notifyAdmins({}), notifyOrgMembers({})]);',
             'the original dynamic import': "import('@/app/actions/notifications').then(async ({ createNotification }) => {\n  await createNotification({});\n});",
             'multi-line .catch': 'notifyApprovers(a, b).catch(e => {\n  logger.error("x", e);\n});',
         };
@@ -143,10 +188,11 @@ describe('no un-awaited notifications in server code', () => {
     it('does not flag work whose value is used', () => {
         const fine = [
             'await notifyApprovers(a, b);',
+            'results.push(await createNotification({}));',
+            'const tasks = emails.map(e => createNotification({ userId: e }));',
             "await runAfterResponse('x', () => notifyApprovers(a, b), {});",
             'return createNotification({});',
             'await Promise.all(list.map(e => createNotification({ userId: e })));',
-            'const p = notifyAdmins({});',
         ];
         for (const code of fine) {
             expect(offendersIn(`async function f() {\n${code}\n}`, code), code).toEqual([]);
