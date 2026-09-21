@@ -10,6 +10,7 @@ vi.mock('./logger', () => ({ logger: { error: (...a: unknown[]) => error(...a), 
 
 import { runAfterResponse } from './background';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
+import ts from 'typescript';
 import { join } from 'node:path';
 
 beforeEach(() => { waitUntil.mockReset(); error.mockClear(); info.mockClear(); contextAvailable = true; });
@@ -56,11 +57,26 @@ describe('runAfterResponse', () => {
 });
 
 /**
- * Regression guard. The bug was not one bad line but a pattern: a notification
- * or access request started and never awaited. Eight call sites had it. This
- * fails if the pattern comes back anywhere in server code.
+ * Regression guard.
+ *
+ * The bug was not one bad line but a pattern: a notification or access request
+ * started and never awaited, so the worker was torn down before it finished.
+ * Eight call sites had it.
+ *
+ * The first version of this guard matched the TEXT of the shape that happened to
+ * be in the files — a call whose first line carried no semicolon. It therefore
+ * passed with the same bug written on one line, with `.catch(...)`, behind
+ * `void`, or under the new function's name: four of five ways it could come
+ * back. Encoding the spelling of a bug is not guarding against the bug.
+ *
+ * This version asks the compiler instead. Every statement whose value is thrown
+ * away is a floating promise if it starts background work, whatever it looks
+ * like, so we parse each file and look at what the statement DOES. `await`,
+ * `return`, `runAfterResponse(...)`, a `.map()` inside an awaited `Promise.all`
+ * — all of those use the value and are fine.
  */
 describe('no un-awaited notifications in server code', () => {
+    const roots = ['src/app/actions', 'src/app/api', 'src/lib'];
     const files: string[] = [];
     const walk = (dir: string) => {
         for (const name of readdirSync(dir)) {
@@ -69,28 +85,71 @@ describe('no un-awaited notifications in server code', () => {
             else if (/\.tsx?$/.test(name) && !/\.test\./.test(name)) files.push(p);
         }
     };
-    walk(join(process.cwd(), 'src/app/actions'));
-    walk(join(process.cwd(), 'src/app/api'));
+    for (const r of roots) walk(join(process.cwd(), r));
 
-    const BARE = [
-        /^\s*import\(['"]@\/app\/actions\/notifications['"]\)\.then\(/,                 // dynamic import, then fire
-        /^\s*(notify\w+|createNotification|requestPiiAccess)\([^;]*$/,                      // statement starts the call…
+    /** Work that must never be started and forgotten. */
+    const BACKGROUND_WORK = [
+        'createNotification', 'notifyAdmins', 'notifyOrgMembers', 'notifyApprovers',
+        'requestPiiAccess', 'fileAccessRequestFor',
     ];
+    const MODULE_IMPORTS = ['@/app/actions/notifications', '@/lib/piiAccessRequest'];
+
+    /** True when this statement starts background work of the kind above. */
+    const startsBackgroundWork = (text: string): boolean =>
+        BACKGROUND_WORK.some(name => new RegExp(`\\b${name}\\s*\\(`).test(text))
+        || MODULE_IMPORTS.some(mod => text.includes(mod));
+
+    const offendersIn = (source: string, fileName: string): string[] => {
+        const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+        const found: string[] = [];
+        const visit = (node: ts.Node) => {
+            if (ts.isExpressionStatement(node)) {
+                // An expression statement discards the value. `await x` and
+                // `yield x` do not, and an assignment keeps it.
+                const e = node.expression;
+                const kept = ts.isAwaitExpression(e) || ts.isYieldExpression(e)
+                    || ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.EqualsToken;
+                if (!kept && startsBackgroundWork(node.getText(sf))) {
+                    const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+                    found.push(`${fileName}:${line + 1}`);
+                }
+            }
+            ts.forEachChild(node, visit);
+        };
+        visit(sf);
+        return found;
+    };
 
     it('every notification / access-request call is awaited or handed to runAfterResponse', () => {
-        const offenders: string[] = [];
-        for (const file of files) {
-            const lines = readFileSync(file, 'utf8').split('\n');
-            lines.forEach((line, i) => {
-                if (BARE[0].test(line)) offenders.push(`${file}:${i + 1}`);
-                // …a bare call at statement position (not `await x(`, `return x(`, `() => x(`)
-                // An arrow body wrapped onto its own line (`.map(email =>\n  createNotification({`)
-                // belongs to the expression above it, which is what gets awaited.
-                const prev = (lines[i - 1] || '').trimEnd();
-                const continuesExpression = /(=>|\(|,)$/.test(prev);
-                if (BARE[1].test(line) && !/^\s*(await|return)\b/.test(line) && !continuesExpression) offenders.push(`${file}:${i + 1}`);
-            });
+        const offenders = files.flatMap(f =>
+            offendersIn(readFileSync(f, 'utf8'), f.replace(process.cwd() + '/', '')));
+        expect(offenders).toEqual([]);
+    });
+
+    it('catches every shape the bug can come back in', () => {
+        const shapes: Record<string, string> = {
+            'bare one-liner': 'notifyApprovers(a, b);',
+            'one-line .catch': "notifyAdmins({ x: 1 }).catch(e => logger.warn('x', e));",
+            'void-prefixed': 'void notifyOrgMembers({ x: 1 });',
+            'the new function name': "fileAccessRequestFor(actor, id, { justification: 'auto' });",
+            'the original dynamic import': "import('@/app/actions/notifications').then(async ({ createNotification }) => {\n  await createNotification({});\n});",
+            'multi-line .catch': 'notifyApprovers(a, b).catch(e => {\n  logger.error("x", e);\n});',
+        };
+        for (const [name, code] of Object.entries(shapes)) {
+            expect(offendersIn(`async function f() {\n${code}\n}`, name), name).toHaveLength(1);
         }
-        expect(offenders.map(o => o.replace(process.cwd() + '/', ''))).toEqual([]);
+    });
+
+    it('does not flag work whose value is used', () => {
+        const fine = [
+            'await notifyApprovers(a, b);',
+            "await runAfterResponse('x', () => notifyApprovers(a, b), {});",
+            'return createNotification({});',
+            'await Promise.all(list.map(e => createNotification({ userId: e })));',
+            'const p = notifyAdmins({});',
+        ];
+        for (const code of fine) {
+            expect(offendersIn(`async function f() {\n${code}\n}`, code), code).toEqual([]);
+        }
     });
 });

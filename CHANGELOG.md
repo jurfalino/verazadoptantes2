@@ -2,6 +2,49 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.76] - 2026-09-21
+
+### Fixed — the un-awaited-call guard, and an alarm that reaches a person
+
+Audit findings 3 and 5 from `.agents/audits/2026-09-21-notifications-batch-audit.md`.
+
+- **The guard against the original bug caught one shape out of five.** It looked
+  for the TEXT of the code that happened to be in the files — a call whose first
+  line carried no semicolon — so the same bug written on one line, with
+  `.catch(...)`, behind `void`, or under the new function's name all passed. It
+  now parses each file and asks what the statement does: an expression statement
+  discards its value, so starting background work in one is a floating promise
+  whatever it looks like. `await`, `return`, `runAfterResponse(...)` and a
+  `.map()` inside an awaited `Promise.all` all use the value and are fine. It
+  also walks `src/lib`, which the old one skipped although the access-request
+  filer lives there. All five shapes were reintroduced into real source and are
+  now caught; the test carries them as cases so the next version cannot regress
+  quietly.
+
+- **A log line is a record, not a signal.** 2.56.70 added "this ran" lines so a
+  silent zero would show up next time, but that still needs somebody to go and
+  look, which is exactly what did not happen for four months.
+  `.github/workflows/notification-health.yml` now runs daily and asks the
+  database the one question that matters: did every contribution to somebody
+  else's record notify that record's owner? If not, the run fails, GitHub mails
+  it, and a single issue is opened or commented on — one issue, not one a day.
+
+  It does not fail when nothing happened. A quiet week is not a fault, and an
+  alarm that cries wolf gets muted, which is how four months of silence happen.
+  It says so in the output instead, and names the one-minute check that settles
+  it: add a contact detail to a record you own and look for
+  `addContactEntry: approvers notified` with `recipients: 0`.
+
+  Proven in both directions against production. Replaying history with
+  `--since 0` it finds the six contributions that notified nobody between May
+  and 2026-09-19; from the fix onward it is clean. Contributions before the fix
+  went live are excluded, or this would be red every day over history nobody can
+  change.
+
+**Still open from that audit:** the batch remains unexercised in production
+(finding 4), and five of the eight background sites swallow their own errors, so
+a total failure still reaches the wrapper looking like success (finding 7).
+
 ## [2.56.75] - 2026-09-21
 
 ### Fixed — the guards shipped in 2.56.74 had the same hole they were built to catch
