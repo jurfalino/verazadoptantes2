@@ -5,9 +5,17 @@
  *
  * Mounted once at the root layout, gated by the ENABLE_CHAT_WIDGET flag.
  * Holds a per-browser conversationId in localStorage; sends visitor
- * messages to /api/chat (which forwards to admin's Telegram); short-polls
- * /api/chat for admin replies while the panel is open AND the tab is
- * visible. Closes silently otherwise — no background traffic.
+ * messages to /api/chat (which forwards to admin's Telegram); polls
+ * /api/chat for admin replies whenever the tab is visible — every 4s with
+ * the panel open, every 25s with it closed — plus an immediate catch-up
+ * fetch when a backgrounded tab comes back to the foreground.
+ *
+ * The closed-panel poll is load-bearing, not a nicety. Until v2.56.78 nothing
+ * fetched while the panel was closed, and the one-shot mount fetch was the
+ * only other read. An admin reply written after the page loaded therefore
+ * never arrived and lit no indicator, however long the visitor kept browsing:
+ * client-side navigation does not remount this widget. Measured on production
+ * before the fix: one /api/chat request for a whole session.
  *
  * Theme: uses CSS variables only (`--surface-card`, `--accent`,
  * `--text-primary`, etc.) so it inherits whichever palette is active under
@@ -22,18 +30,25 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useLanguage } from '@/context/LanguageContext';
 import { conversationOwnerKey } from '@/domain/chatAccess';
+import { mergeMessages, nextSince, unreadAdminCount, type ChatThreadMessage } from '@/domain/chatThread';
 import { userFacingMessage } from '@/lib/errorMessage';
 
 const SESSION_KEY = 'chat_session_id';
-const LAST_SEEN_KEY = 'chat_last_seen_at';
-const POLL_INTERVAL_MS = 4_000;
+/**
+ * v2 of the last-seen key. v1 (`chat_last_seen_at`) was written from the
+ * optimistic bubble's CLIENT clock while every server timestamp is server
+ * clock, so a visitor whose clock ran fast stored a value no reply will ever
+ * exceed — and the unread indicator stayed dark for good. Those values are not
+ * repairable, so they are abandoned rather than migrated. The one-time cost is
+ * an indicator on a thread the visitor had already read; `unreadAdminCount`
+ * clamps a future value anyway, so this is belt and braces.
+ */
+const LAST_SEEN_KEY = 'chat_last_seen_v2';
+const LEGACY_LAST_SEEN_KEY = 'chat_last_seen_at';
+const POLL_OPEN_MS = 4_000;
+const POLL_CLOSED_MS = 25_000;
 
-interface ChatMessage {
-    id: string;
-    direction: 'user' | 'admin';
-    body: string;
-    createdAt: number;
-}
+type ChatMessage = ChatThreadMessage;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -66,6 +81,7 @@ function startConversation(owner: string): string {
     try {
         localStorage.setItem(SESSION_KEY, JSON.stringify({ owner, id: fresh }));
         localStorage.removeItem(LAST_SEEN_KEY);
+        localStorage.removeItem(LEGACY_LAST_SEEN_KEY);
     } catch { /* localStorage unavailable */ }
     return fresh;
 }
@@ -92,10 +108,26 @@ export default function ChatWidget() {
     const [input, setInput] = useState('');
     const [sending, setSending] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [hasUnread, setHasUnread] = useState(false);
+    const [unreadCount, setUnreadCount] = useState(0);
     const [honeypot, setHoneypot] = useState('');
     const lastSeenRef = useRef<number>(0);
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+    /**
+     * The poll reads `open` and `messages` through refs on purpose.
+     *
+     * `fetchMessages` used to close over `open`, and it is a dependency of the
+     * mount fetch — so every open/close toggle re-ran a full `since=0` refetch,
+     * which is what surfaced the duplicated bubble. `messages` was a dependency
+     * of the poll effect, so the 4s timer was torn down and rebuilt on every
+     * arriving message. Refs keep both callbacks stable: fetches happen on a
+     * schedule, not on a re-render.
+     */
+    const openRef = useRef(open);
+    const messagesRef = useRef<ChatMessage[]>(messages);
+    const pollFailureLoggedRef = useRef(false);
+    useEffect(() => { openRef.current = open; }, [open]);
+    useEffect(() => { messagesRef.current = messages; }, [messages]);
 
     // Resolve the conversation for whoever is signed in now. Waits for the
     // session to settle first: minting an `anon` conversation and swapping it a
@@ -107,6 +139,7 @@ export default function ChatWidget() {
         if (stored) {
             setSessionId(stored);
             try {
+                localStorage.removeItem(LEGACY_LAST_SEEN_KEY);
                 const raw = localStorage.getItem(LAST_SEEN_KEY);
                 if (raw) lastSeenRef.current = Number(raw) || 0;
             } catch { /* localStorage unavailable */ }
@@ -115,7 +148,8 @@ export default function ChatWidget() {
         // Different account, first visit, or a pre-2.56.44 value: start clean.
         lastSeenRef.current = 0;
         setMessages([]);
-        setHasUnread(false);
+        messagesRef.current = [];
+        setUnreadCount(0);
         setSessionId(startConversation(owner));
     }, [status, session?.user?.email]);
 
@@ -133,24 +167,30 @@ export default function ChatWidget() {
         const owner = conversationOwnerKey(session?.user?.email);
         lastSeenRef.current = 0;
         setMessages([]);
-        setHasUnread(false);
+        messagesRef.current = [];
+        setUnreadCount(0);
         setError(null);
         setSessionId(startConversation(owner));
     }, [session?.user?.email]);
 
+    // Monotonic on purpose. Two paths advance the read mark — the poll and the
+    // effect below — and a slow `since=0` mount fetch can resolve after a fast
+    // poll has already moved it. Without this guard the older, smaller value
+    // wins and the visitor gets an indicator for a reply they have already read.
+    // `unreadAdminCount` clamps a mark that is too HIGH; this is the other side.
     const persistLastSeen = useCallback((ts: number) => {
+        if (!Number.isFinite(ts) || ts <= lastSeenRef.current) return;
         lastSeenRef.current = ts;
         try { localStorage.setItem(LAST_SEEN_KEY, String(ts)); } catch { /* localStorage unavailable */ }
     }, []);
 
-    // When the panel opens, mark all current admin replies as seen so the
-    // unread dot clears.
+    // Opening the panel marks everything currently in the thread as read, so the
+    // indicator clears. `nextSince` rather than the last element: the cursor and
+    // the read mark must both be the newest SERVER timestamp held.
     useEffect(() => {
-        if (open && messages.length > 0) {
-            const newest = messages[messages.length - 1].createdAt;
-            persistLastSeen(newest);
-            setHasUnread(false);
-        }
+        if (!open || messages.length === 0) return;
+        persistLastSeen(nextSince(messages));
+        setUnreadCount(0);
     }, [open, messages, persistLastSeen]);
 
     const fetchMessages = useCallback(async (since: number) => {
@@ -164,52 +204,76 @@ export default function ChatWidget() {
                 resetConversation();
                 return;
             }
-            if (!res.ok) return;
-            const data = (await res.json()) as { messages?: ChatMessage[] };
-            const incoming: ChatMessage[] = Array.isArray(data?.messages) ? data.messages : [];
-            if (incoming.length === 0) return;
-            setMessages(prev => {
-                const seen = new Set(prev.map(m => m.id));
-                const merged = [...prev];
-                for (const m of incoming) {
-                    if (!seen.has(m.id)) merged.push(m);
+            if (!res.ok) {
+                // A poll runs for as long as the page is open, so logging every
+                // tick of an outage would drown the console (and Clarity) in
+                // noise. Once per session is enough to tell a stuck thread from
+                // a quiet one — and `logger` is server-only, so this is the only
+                // channel available here.
+                if (!pollFailureLoggedRef.current) {
+                    pollFailureLoggedRef.current = true;
+                    console.warn('chat: poll failed, will keep retrying', { status: res.status, since });
                 }
-                merged.sort((a, b) => a.createdAt - b.createdAt);
-                return merged;
-            });
-            const newestIncoming = incoming[incoming.length - 1].createdAt;
-            const adminUnread = incoming.some(m => m.direction === 'admin' && m.createdAt > lastSeenRef.current);
-            if (open) {
-                persistLastSeen(newestIncoming);
-            } else if (adminUnread) {
-                setHasUnread(true);
+                return;
+            }
+            pollFailureLoggedRef.current = false;
+            const data = (await res.json()) as { messages?: ChatMessage[] };
+
+            // Merged off the ref, not off `prev`, so the read-state side effects
+            // below stay out of the state updater (which React may run twice).
+            // Writing the ref back immediately also keeps two overlapping polls
+            // from each appending the same rows.
+            const merged = mergeMessages(messagesRef.current, data?.messages);
+            if (merged === messagesRef.current) return;
+            messagesRef.current = merged;
+            setMessages(prev => mergeMessages(prev, data?.messages));
+
+            if (openRef.current) {
+                // Read as it arrives — the panel is in front of the visitor.
+                persistLastSeen(nextSince(merged));
+                setUnreadCount(0);
+            } else {
+                setUnreadCount(unreadAdminCount(merged, lastSeenRef.current));
             }
         } catch {
-            // Network blip — next tick will retry.
+            // Network blip — the next tick retries.
         }
-    }, [sessionId, open, persistLastSeen, resetConversation]);
+    }, [sessionId, persistLastSeen, resetConversation]);
 
-    // Initial fetch (load history when widget mounts so the user sees their
-    // prior session on refresh).
+    // Initial fetch: the visitor's prior thread on a reload, including any reply
+    // that landed while the tab was closed. `fetchMessages` no longer closes over
+    // `open`, so this runs once per conversation instead of on every toggle.
     useEffect(() => {
         if (sessionId) {
             fetchMessages(0);
         }
     }, [sessionId, fetchMessages]);
 
-    // Polling effect: only while open AND tab visible.
+    // Poll whenever the tab is visible — 4s with the panel open, 25s with it
+    // closed. The closed cadence is the fix for a reply that arrives after the
+    // page has loaded: there is no remount to piggyback on, because client-side
+    // navigation keeps this widget mounted, so without a background poll nothing
+    // ever fetched again and no indicator could light.
+    //
+    // Hidden tabs are skipped rather than polled, and a tab returning to the
+    // foreground fetches immediately instead of waiting out the interval.
     useEffect(() => {
-        if (!open || !sessionId) return;
+        if (!sessionId) return;
         let cancelled = false;
-        const tick = async () => {
+        const poll = () => {
             if (cancelled) return;
             if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-            const since = messages.length > 0 ? messages[messages.length - 1].createdAt : 0;
-            await fetchMessages(since);
+            void fetchMessages(nextSince(messagesRef.current));
         };
-        const handle = setInterval(tick, POLL_INTERVAL_MS);
-        return () => { cancelled = true; clearInterval(handle); };
-    }, [open, sessionId, messages, fetchMessages]);
+        const handle = setInterval(poll, open ? POLL_OPEN_MS : POLL_CLOSED_MS);
+        const onVisibility = () => { if (document.visibilityState === 'visible') poll(); };
+        document.addEventListener('visibilitychange', onVisibility);
+        return () => {
+            cancelled = true;
+            clearInterval(handle);
+            document.removeEventListener('visibilitychange', onVisibility);
+        };
+    }, [open, sessionId, fetchMessages]);
 
     const send = useCallback(async () => {
         const body = input.trim();
@@ -236,15 +300,36 @@ export default function ChatWidget() {
                 setError(typeof data?.error === 'string' ? data.error : t('chat.error_send'));
                 return;
             }
-            // Optimistic local insert — the server-assigned id arrives but
-            // we don't strictly need it; next poll will reconcile by id.
-            const localId = res.headers.get('x-chat-local-id') || `local-${Date.now()}`;
-            setMessages(prev => [...prev, {
-                id: localId,
+            // Optimistic insert under the SERVER's id and timestamp.
+            //
+            // This is bug 1. The old code read the id from an `x-chat-local-id`
+            // response header that no route has ever set — the id is in the JSON
+            // body — so the bubble always got a fabricated `local-<Date.now()>`
+            // id. Dedupe is by id, so the server's row for that same message
+            // looked new on the next refetch and was appended beside the
+            // optimistic copy: the visitor saw what they sent, twice. The
+            // client-clock `createdAt` was the same mistake in the time
+            // dimension — it poisoned the poll cursor and the read mark, both of
+            // which are compared against second-truncated SERVER time.
+            const sent = (await res.json().catch(() => ({}))) as { id?: unknown; createdAt?: unknown };
+            const serverId = typeof sent.id === 'string' && sent.id ? sent.id : '';
+            const serverCreatedAt = typeof sent.createdAt === 'number' && Number.isFinite(sent.createdAt)
+                ? sent.createdAt
+                : Math.floor(Date.now() / 1000) * 1000;
+            // No id comes back only where no row was written — the honeypot and
+            // a blocked conversation, both of which answer a bare `{ ok: true }`.
+            // Those still get a bubble, because a message that visibly vanishes
+            // is exactly the tell that silent-drop exists to avoid; with no row
+            // behind it there is nothing for it to duplicate against.
+            const inserted: ChatMessage = {
+                id: serverId || `local-${serverCreatedAt}`,
                 direction: 'user',
                 body,
-                createdAt: Date.now(),
-            }]);
+                createdAt: serverCreatedAt,
+            };
+            const merged = mergeMessages(messagesRef.current, [inserted]);
+            messagesRef.current = merged;
+            setMessages(prev => mergeMessages(prev, [inserted]));
             setInput('');
         } catch (e) {
             setError(userFacingMessage(e, t('chat.error_send')));
@@ -282,12 +367,21 @@ export default function ChatWidget() {
                     <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
                     </svg>
-                    {hasUnread && (
+                    {/* The count, not a bare dot: docs/ux-ui-guidelines.md — colour
+                        is never the only signal, so a red badge alone fails a
+                        colourblind visitor. A digit reads without colour. */}
+                    {unreadCount > 0 && (
                         <span
-                            className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2"
-                            style={{ background: 'var(--status-error-text)', borderColor: 'var(--brand-dark)' }}
+                            className="absolute -top-1 -right-1 min-w-5 h-5 px-1 inline-flex items-center justify-center rounded-full border-2 text-[11px] font-bold leading-none"
+                            style={{
+                                background: 'var(--status-error-text)',
+                                color: 'var(--btn-primary-text)',
+                                borderColor: 'var(--brand-dark)',
+                            }}
                             aria-label={t('chat.unread_indicator')}
-                        />
+                        >
+                            {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
                     )}
                 </button>
             )}

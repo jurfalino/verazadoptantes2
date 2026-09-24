@@ -2,6 +2,58 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.78] - 2026-09-24
+
+### Fixed — the support chat widget, three reported defects
+
+All three were verified against live data before anything was changed: production
+and staging hold **exactly one row per sent message**, so nothing here was ever a
+double send or a lost write. Every one of these lived in the client.
+
+- **A sent message appeared twice.** The widget read the server's message id from
+  an `x-chat-local-id` response header that no route has ever set — the id is in
+  the JSON body — so the optimistic bubble always fell back to a fabricated
+  `local-<Date.now()>` id. Deduplication is by id, so when the same message came
+  back from the server it looked new and was appended beside the optimistic copy.
+  A refetch was guaranteed: `fetchMessages` closed over `open` and was a
+  dependency of the mount fetch, so **every open/close toggle re-ran a full
+  `since=0` history load**. `POST /api/chat` now returns `{ id, createdAt }` and
+  the bubble carries both.
+
+- **An admin reply never arrived unless the page happened to reload after it was
+  written.** Nothing polled while the panel was closed, and the one-shot mount
+  fetch was the only other read — so a reply written *after* the page loaded was
+  never fetched, however long the visitor kept browsing, because client-side
+  navigation does not remount the widget. Measured on production before the fix:
+  **one `/api/chat` request for an entire session, zero over 20s idle, zero
+  across a navigation.** The widget now polls whenever the tab is visible — 4s
+  with the panel open, 25s with it closed — and fetches immediately when a
+  backgrounded tab returns to the foreground.
+
+- **No activity indicator when a reply landed.** Same root cause, plus a second
+  one that would have kept the indicator dark even with polling: the last-seen
+  mark was persisted from the optimistic bubble's **client** clock, while every
+  server timestamp is whole-second **server** time. A visitor whose clock ran
+  fast stored a value no reply will ever exceed. Last-seen is now clamped to the
+  newest message actually held, and is stored under a new key so the unrepairable
+  values written by earlier builds are abandoned rather than trusted.
+
+### Fixed — found while tracing the above
+
+- **A second admin reply written in the same whole second as the first was never
+  delivered by polling.** `created_at` has one-second resolution and the cursor
+  filter was exclusive, so the later message sat permanently below the cursor.
+  The filter is now inclusive; the cost is one re-sent row per poll, which the
+  client dedupes by id.
+
+### Changed
+
+- The unread indicator shows the **number** of unread replies rather than a bare
+  red dot, per `docs/ux-ui-guidelines.md`: colour is never the only signal.
+- The thread's merge, poll cursor and unread arithmetic moved to
+  `src/domain/chatThread.ts` with 15 tests. None of it was reachable by a test
+  while it was inline in a component, which is why all three defects shipped.
+
 ## [2.56.77] - 2026-09-21
 
 ### Fixed — from the pre-production review of 2.56.76
