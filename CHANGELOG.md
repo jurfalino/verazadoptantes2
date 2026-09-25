@@ -2,6 +2,333 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.80] - 2026-09-24
+
+### Fixed — the last two protected routes with no loading boundary
+
+Completes 2.56.79. `/my-animals` and `/settings` had the same defect as
+`/my-adoptions` and `/my-adopters`: a client-component page whose own loading
+text cannot appear until the route's payload and chunk have arrived, with no
+Suspense boundary to paint in the meantime. All five `PROTECTED_ROUTES` now have
+one.
+
+`/settings` deliberately does not reuse the page's own inline skeleton, which
+uses `dark:bg-stone-700` — this app themes via `[data-theme]` remaps rather than
+Tailwind's dark variant, so a `dark:` class renders raw.
+
+### Measured — what a loading boundary does and does not buy
+
+Worth recording, because it bounds the fix. With a route's RSC payload held 5s
+to stand in for a cold worker:
+
+| | skeleton appears |
+|---|---|
+| click after the `<Link>` prefetch has settled | **0.14s** |
+| click that races the prefetch (straight after page load) | **5.06s** |
+
+The boundary only paints early if the prefetch already delivered the route's
+partial tree. A click that races it leaves the router with nothing to render, so
+the skeleton arrives with the page and the dead-click window is unchanged — and
+"the first time I tried to open it" is exactly that case.
+
+That gap and the stale-tab gap from 2.56.79 have the **same** cure: a global
+navigation pending indicator, which does not depend on prefetch state and keeps
+working during the `location.replace()` a stale tab performs. Not taken here —
+it is an app-wide visible element and a deliberate design choice.
+
+`/my-animals` could not be click-tested: its menu link is gated behind
+`ENABLE_ANIMALS_FOR_ADOPTION`, which is off. The boundary mechanism itself is
+the one verified above on `/my-adoptions`.
+
+## [2.56.79] - 2026-09-24
+
+### Fixed — opening My Adoptions / My Adopters looked like a dead click
+
+Reported as "more than 10 seconds passed without any new page or loading
+indicator appearing". Two independent gaps sit behind that sentence; this ships
+the one that is provably fixable here.
+
+- **Neither route had a Suspense boundary, so a slow navigation showed nothing
+  at all.** Both pages are client components that render their own
+  `common.loading` text — but that text cannot appear until the route's RSC
+  payload *and* its JS chunk have arrived and the shell has mounted. Until then
+  the App Router keeps the PREVIOUS page on screen with no feedback. On a
+  protected route the payload also waits on middleware's `import('@/auth')` +
+  `auth()`, measured at 1.4s on a cold Cloudflare worker before the page's own
+  data fetch even begins. Added `loading.tsx` to both, mirroring each page's
+  container so content fills in rather than jumps. Measured with the RSC payload
+  held for 5s: **skeleton paints at 0.20s instead of 5s of nothing.**
+
+  This is the same defect `/adopter/[id]` got a skeleton for, and the same cure.
+  **Four of the five `PROTECTED_ROUTES` had no boundary** — `/my-animals` and
+  `/settings` are still uncovered.
+
+### Known, not fixed — the stale-tab half
+
+The reporter's tab was **older than the running deployment** (Axiom, 2026-09-25
+00:11:07Z: `clientBuildId 3f29e71…`, env staging). For such a tab the middleware
+answers the navigation with 409 and Next falls back to `location.replace()` — a
+full browser document navigation, verified against Next 15.1.6's
+`fetch-server-response.js` (`!res.ok` → `doMpaNavigation`). React is not running
+during that, so **no Suspense fallback can paint**; measured directly, the new
+skeleton never appears on this path. The only feedback is the browser's own
+progress UI plus the existing "new version / Recargar" notice. Covering it needs
+a router-level pending state, which is a deliberate design choice and not taken
+here.
+
+For the record, what was ruled out: the server is not slow (staging
+`/my-adoptions` TTFB 0.6–1.6s across three passes) and the skew fallback itself
+is not slow (0.6s to navigate, reproduced locally with an authenticated stale
+tab).
+
+## [2.56.78] - 2026-09-24
+
+### Fixed — the support chat widget, three reported defects
+
+All three were verified against live data before anything was changed: production
+and staging hold **exactly one row per sent message**, so nothing here was ever a
+double send or a lost write. Every one of these lived in the client.
+
+- **A sent message appeared twice.** The widget read the server's message id from
+  an `x-chat-local-id` response header that no route has ever set — the id is in
+  the JSON body — so the optimistic bubble always fell back to a fabricated
+  `local-<Date.now()>` id. Deduplication is by id, so when the same message came
+  back from the server it looked new and was appended beside the optimistic copy.
+  A refetch was guaranteed: `fetchMessages` closed over `open` and was a
+  dependency of the mount fetch, so **every open/close toggle re-ran a full
+  `since=0` history load**. `POST /api/chat` now returns `{ id, createdAt }` and
+  the bubble carries both.
+
+- **An admin reply never arrived unless the page happened to reload after it was
+  written.** Nothing polled while the panel was closed, and the one-shot mount
+  fetch was the only other read — so a reply written *after* the page loaded was
+  never fetched, however long the visitor kept browsing, because client-side
+  navigation does not remount the widget. Measured on production before the fix:
+  **one `/api/chat` request for an entire session, zero over 20s idle, zero
+  across a navigation.** The widget now polls whenever the tab is visible — 4s
+  with the panel open, 25s with it closed — and fetches immediately when a
+  backgrounded tab returns to the foreground.
+
+- **No activity indicator when a reply landed.** Same root cause, plus a second
+  one that would have kept the indicator dark even with polling: the last-seen
+  mark was persisted from the optimistic bubble's **client** clock, while every
+  server timestamp is whole-second **server** time. A visitor whose clock ran
+  fast stored a value no reply will ever exceed. Last-seen is now clamped to the
+  newest message actually held, and is stored under a new key so the unrepairable
+  values written by earlier builds are abandoned rather than trusted.
+
+### Fixed — found while tracing the above
+
+- **A second admin reply written in the same whole second as the first was never
+  delivered by polling.** `created_at` has one-second resolution and the cursor
+  filter was exclusive, so the later message sat permanently below the cursor.
+  The filter is now inclusive; the cost is one re-sent row per poll, which the
+  client dedupes by id.
+
+### Changed
+
+- The unread indicator shows the **number** of unread replies rather than a bare
+  red dot, per `docs/ux-ui-guidelines.md`: colour is never the only signal.
+- The thread's merge, poll cursor and unread arithmetic moved to
+  `src/domain/chatThread.ts` with 15 tests. None of it was reachable by a test
+  while it was inline in a component, which is why all three defects shipped.
+
+## [2.56.77] - 2026-09-21
+
+### Fixed — from the pre-production review of 2.56.76
+
+Review returned GO with two defects it asked to land in the same work, because
+together they are the difference between a monitor that means something and one
+that gets muted. Neither reached production.
+
+- **The health check printed a confident "OK" over evidence that proves
+  nothing.** Its gate counted every contribution, while the thing it actually
+  verifies is contributions to somebody *else's* record. **43 of the 49
+  contributions in this product's history are to the contributor's own record**,
+  where notifying nobody is correct — so a week of self-contributions would have
+  reported "every contribution notified its record's owner" having checked
+  nothing at all. That is the false reassurance the check exists to remove,
+  reintroduced one level up. Both the gate and the message now count only
+  qualifying contributions.
+
+- **An npm hiccup would have filed "Notifications are not reaching owners in
+  production".** The issue step fired on any failure, so a flaky install or an
+  expired token read exactly like a product breakage. The script now exits 2 for
+  "could not ask" and 1 for "asked, and the answer is bad", and only the latter
+  raises the alarm.
+
+- **The un-awaited-call guard now analyses each call rather than each line of
+  text.** The version shipped hours earlier flagged a whole statement, which
+  both missed work parked in a variable — `const _ = notifyAdmins(…)`, the
+  reflex when a check complains, and a shape the test had explicitly blessed —
+  and wrongly flagged correct code such as `results.push(await
+  createNotification(…))`. It now walks out from the call itself to see whether
+  anything is waiting for it, treats `Promise.all` and friends as passing the
+  same work along, and covers optional calls and assignment. It also scans all
+  of `src`, not three directories, so a helper in `src/domain` or a server
+  component is no longer a blind spot.
+
+- Smaller, all from the same review: the error line reports the true number of
+  unmatched contributions rather than the display limit; the dispatch input goes
+  through the environment instead of being interpolated into the shell; the job
+  has a timeout; and wrangler's output is parsed as a balanced array rather than
+  sliced at the first bracket it happens to print.
+
+**Known and unfixed, recorded so they are decisions:** two contributions to the
+same record within twenty minutes share one notification, so a second silent
+failure would not be seen; transferring ownership, deleting a notification, or
+switching off that notification type all make the check go red over correct
+behaviour; and the contribution count itself comes from the audit log, which
+rides the same background machinery being measured.
+
+## [2.56.76] - 2026-09-21
+
+### Fixed — the un-awaited-call guard, and an alarm that reaches a person
+
+Audit findings 3 and 5 from `.agents/audits/2026-09-21-notifications-batch-audit.md`.
+
+- **The guard against the original bug caught one shape out of five.** It looked
+  for the TEXT of the code that happened to be in the files — a call whose first
+  line carried no semicolon — so the same bug written on one line, with
+  `.catch(...)`, behind `void`, or under the new function's name all passed. It
+  now parses each file and asks what the statement does: an expression statement
+  discards its value, so starting background work in one is a floating promise
+  whatever it looks like. `await`, `return`, `runAfterResponse(...)` and a
+  `.map()` inside an awaited `Promise.all` all use the value and are fine. It
+  also walks `src/lib`, which the old one skipped although the access-request
+  filer lives there. All five shapes were reintroduced into real source and are
+  now caught; the test carries them as cases so the next version cannot regress
+  quietly.
+
+- **A log line is a record, not a signal.** 2.56.70 added "this ran" lines so a
+  silent zero would show up next time, but that still needs somebody to go and
+  look, which is exactly what did not happen for four months.
+  `.github/workflows/notification-health.yml` now runs daily and asks the
+  database the one question that matters: did every contribution to somebody
+  else's record notify that record's owner? If not, the run fails, GitHub mails
+  it, and a single issue is opened or commented on — one issue, not one a day.
+
+  It does not fail when nothing happened. A quiet week is not a fault, and an
+  alarm that cries wolf gets muted, which is how four months of silence happen.
+  It says so in the output instead, and names the one-minute check that settles
+  it: add a contact detail to a record you own and look for
+  `addContactEntry: approvers notified` with `recipients: 0`.
+
+  Proven in both directions against production. Replaying history with
+  `--since 0` it finds the six contributions that notified nobody between May
+  and 2026-09-19; from the fix onward it is clean. Contributions before the fix
+  went live are excluded, or this would be red every day over history nobody can
+  change.
+
+**Still open from that audit:** the batch remains unexercised in production
+(finding 4), and five of the eight background sites swallow their own errors, so
+a total failure still reaches the wrapper looking like success (finding 7).
+
+## [2.56.75] - 2026-09-21
+
+### Fixed — the guards shipped in 2.56.74 had the same hole they were built to catch
+
+Pre-production review of 2.56.74 returned GO, and found that the guard protecting
+the fix could be walked past in one line. It never reached production.
+
+- **`'use server'` one line below a comment reopened everything.** The surface
+  test read only the first ten lines of a file, and the twenty-line header
+  2.56.74 added to the notifications module was enough to hide the directive
+  under. ECMAScript ignores leading comments when it looks for a directive
+  prologue, so the module went back on the wire with both tests green: the built
+  manifest registered 161 server actions instead of 148, all thirteen exports
+  live again. Directive detection now follows the language's own rule, and the
+  test carries cases for the comment-hidden form. Also closed: an aliased
+  export (`export const x = createNotification`), a wrapping default export, and
+  the read-side and destructive exports, which were missing from the list
+  entirely.
+
+- **The array-parameter ratchet matched one spelling.** It looked for
+  ``sql`IN ${ids}` `` exactly as CLAUDE.md spells it, so the parenthesised form
+  everyone actually writes, `IN (${ids})`, passed, as did `inArray` imported
+  under an alias and any multi-line template. All three now fail. Interpolating
+  a prepared `sql.join(…)` fragment is still allowed, because that emits one
+  bind per value and is the sanctioned pattern.
+
+- **A CI step now counts the doors.** `scripts/check-action-surface.mjs` reads
+  the built manifest after `npm run build` and fails when the number of
+  browser-callable endpoints moves without someone saying so. It is the only
+  check that sees a new action wrapping a trusted helper under a different name,
+  which no source scan can tell apart from an ordinary action. Adding an action
+  on purpose means raising the number in the same commit.
+
+- **A half-built recipient list is worse than none.** The per-id fallbacks
+  2.56.74 added to `getOrgMemberEmails` and `getOrgMemberEmailsFor` would have
+  let one failed query silently produce a partial set — and that set decides who
+  sees organization records and who is notified about them. They now fail to the
+  caller alone, which is visible, instead of to the wrong people, which is not.
+  `getMyOrganizations` keeps its fallback, where a missing row is cosmetic.
+
+- **Organization ids are deduplicated** before the fan-out. `inArray` did this
+  by accident. Production's unique index makes it moot there, but `schema.ts`
+  declares that index as non-unique, so other databases may differ.
+
+**Known and accepted:** `getOrgMemberEmails` now returns the union across a
+user's organizations, and three queries downstream build unchunked `IN (…)`
+lists from it against D1's 100-parameter cap. The largest real union is two
+emails, so this is latent, not live.
+
+## [2.56.74] - 2026-09-21
+
+### Security — notifications were creatable by anyone, and org lookups returned the wrong people
+
+From the 2026-09-21 audit of 2.56.70-73
+(`.agents/audits/2026-09-21-notifications-batch-audit.md`), findings 2 and 6.
+
+- **Anyone could read, write and clear anyone's notification bell.**
+  `src/app/actions/notifications.ts` was a `'use server'` module, so **all
+  thirteen** of its exports were POST endpoints the browser could call with
+  arguments of its choosing — not only the two named in the first draft of this
+  entry. Each takes the user it acts on as an argument and checked none of them:
+
+  - `getNotifications`, `getNotificationsPaginated`, `getNotificationTypes` and
+    `getUnreadCount` returned **any named user's bell**. A notification's
+    `metadata` carries `submittedData` — an adopter's name, phone, email, DNI
+    and address. Reading a stranger's messages is the worse half of this.
+  - `createNotification` takes the recipient, title, body and click-through URL:
+    a phishing message wearing the product's own chrome, delivered to any
+    address the caller named.
+  - `markAllNotificationsRead` and `dismissAllNotifications` cleared anyone's
+    bell on request.
+  - `resolveDisplayName(s)` answered "what is this person's real name?" for any
+    address, for anyone who asked.
+
+  An authentication check was the wrong fix, because the legitimate callers
+  include the public contract and form submission routes, which have no session
+  on purpose. The module is now simply not a server action. Every caller is
+  server-side already; the browser reaches notifications through
+  `/api/notifications`, which resolves the session itself. Nothing about the
+  logged-in experience changes.
+
+- **Members of a second organization were dropped from every recipient list.**
+  `getOrgMemberEmailsFor` and three sibling queries in
+  `src/app/actions/organizations.ts` used drizzle's `inArray`, which D1 binds as
+  a single parameter: `IN (?)` however long the list. For anyone in two or more
+  organizations it silently matched the first and dropped the rest. That
+  function decides who receives `contract_result`, `form_submission` and
+  `member_joined` notifications, so the effect was notifying the wrong people,
+  not merely showing fewer. It also truncated the organization list on
+  `/organizations`. All four now fan out per id, the sanctioned D1 pattern.
+
+- Two guards, both mutation-checked against the bug they describe.
+  `serverActionSurface.test.ts` fails if any of these helpers is exported from a
+  `'use server'` module, including via a re-export — which also closes the
+  one-line path to filing PII access requests in someone else's name that the
+  audit flagged as finding 1. `d1ArrayParams.test.ts` is a ratchet: it records
+  the files that still bind an array to `IN (…)` and fails on any new one.
+  (Both guards had holes of their own; see 2.56.75.)
+
+**Not fixed, and recorded in the audit:** the un-awaited-call guard from 2.56.70
+still catches only one of five ways the original bug can return; the batch is
+still unverified in production, because none of the eight paths that notify
+anyone has run since it shipped; and five of the eight swallow their own errors,
+so a total failure reaches the background wrapper looking like success.
+
 ## [2.56.73] - 2026-09-19
 
 ### Fixed — admin notification delete, from its pre-production review

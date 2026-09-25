@@ -1,0 +1,75 @@
+name: Notification health
+
+# A thing that does not happen produces no error, only silence. Owner
+# notifications and access requests were broken in production from May to
+# 2026-09-19 and nobody noticed for four months, because nothing anywhere said
+# so. 2.56.70 added log lines, but a log line needs a human to go and look —
+# which is precisely what failed. This asks the database once a day and fails
+# loudly, so the answer arrives instead of waiting to be fetched.
+
+on:
+  schedule:
+    - cron: '0 14 * * *' # 11:00 America/Argentina/Buenos_Aires
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Window in days'
+        required: false
+        default: '7'
+
+concurrency:
+  group: notification-health
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Did notifications reach their owners?
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check production
+        id: check
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DAYS: ${{ github.event.inputs.days || '7' }}
+        run: |
+          set +e
+          node scripts/check-notification-health.mjs --days "$DAYS" 2>&1 | tee health.txt
+          code="${PIPESTATUS[0]}"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      # One open issue, not one per day: a daily pile of identical issues is
+      # noise, and noise is how the last four months happened.
+      - name: Open an issue if it is broken
+        # Only when the check ASKED and got a bad answer. Exit 2 means it could
+        # not ask at all, and an npm or network flake filing "notifications are
+        # not reaching owners" is how a daily alarm gets muted within a month.
+        if: failure() && steps.check.outputs.code == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create notification-health --color B60205 \
+            --description "Production notifications are not reaching record owners" 2>/dev/null || true
+          existing=$(gh issue list --label notification-health --state open --json number --jq '.[0].number' || true)
+          body=$'Notifications are not reaching record owners in production.\n\n```\n'"$(cat health.txt 2>/dev/null || echo 'no output captured')"$'\n```\n\nRun: '"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "Notifications are not reaching owners in production" \
+              --label notification-health --body "$body"
+          fi

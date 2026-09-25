@@ -1,4 +1,23 @@
-'use server';
+/**
+ * NOT a `'use server'` module, deliberately.
+ *
+ * Every export of a server-action module is a POST endpoint the browser can
+ * call with arguments of its choosing. `createNotification` takes the
+ * recipient, title, body and click-through URL and checks none of them, so as
+ * an action it let any visitor drop a message of their choosing into anyone's
+ * notification bell, wearing the product's own chrome. `resolveDisplayNames`
+ * answered "what is this person's real name?" for any address.
+ *
+ * An auth check was the wrong fix: the legitimate callers include the public
+ * contract and form submission routes, which have no session on purpose. Taking
+ * the module off the wire keeps those working and removes the door entirely.
+ * Every caller is server-side (actions, API routes, `src/lib`); the browser
+ * reaches notifications through `/api/notifications`, which resolves the
+ * session itself and passes the user down.
+ *
+ * Guarded by `src/lib/serverActionSurface.test.ts` — including against a
+ * re-export from a module that IS `'use server'`.
+ */
 
 import { getDb } from '@/lib/db';
 import { notifications } from '@/db/schema';

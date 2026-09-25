@@ -1,7 +1,7 @@
 'use server';
 
 import { organizations, orgMembers, orgInvites } from '@/db/schema';
-import { eq, and, inArray, sql, ne } from 'drizzle-orm';
+import { eq, and, sql, ne } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
@@ -128,22 +128,35 @@ export async function getMyOrganizations(): Promise<Organization[]> {
 
         if (memberships.length === 0) return [];
 
-        const orgIds = memberships.map((m: { orgId: string; role: string | null }) => m.orgId);
+        const orgIds = [...new Set<string>(memberships.map((m: { orgId: string; role: string | null }) => m.orgId))];
         const roleMap = new Map<string, string>();
         for (const m of memberships) {
             roleMap.set(m.orgId, m.role || 'member');
         }
 
-        const orgs = await db
-            .select()
-            .from(organizations)
-            .where(inArray(organizations.id, orgIds));
+        // D1 does not expand an array bound parameter: `inArray` becomes `IN (?)`
+        // with a single value, so a user in two organizations silently saw only
+        // one. Fan out per id instead (same idiom as hydrateDuplicateMatches).
+        const orgs = (await Promise.all(orgIds.map((id: string) =>
+            db.select().from(organizations).where(eq(organizations.id, id))
+                .catch((e: unknown) => {
+                    logger.warn('getMyOrganizations: org row lookup fallback', {
+                        orgId: id, error: e instanceof Error ? e.message : String(e),
+                    });
+                    return [];
+                }),
+        ))).flat();
 
         // Fetch all members for these orgs
-        const allMembers = await db
-            .select()
-            .from(orgMembers)
-            .where(inArray(orgMembers.orgId, orgIds));
+        const allMembers = (await Promise.all(orgIds.map((id: string) =>
+            db.select().from(orgMembers).where(eq(orgMembers.orgId, id))
+                .catch((e: unknown) => {
+                    logger.warn('getMyOrganizations: member lookup fallback', {
+                        orgId: id, error: e instanceof Error ? e.message : String(e),
+                    });
+                    return [];
+                }),
+        ))).flat();
 
         type OrgRow = { id: string; name: string; createdBy: string; createdAt: Date | null };
         type MemberRow = { id: string; orgId: string; userEmail: string; role: string | null; joinedAt: Date | null };
@@ -396,12 +409,20 @@ export async function getOrgMemberEmails(): Promise<string[]> {
 
         if (myOrgs.length === 0) return [user];
 
-        const orgIds = myOrgs.map((o: { orgId: string }) => o.orgId);
+        const orgIds = [...new Set<string>(myOrgs.map((o: { orgId: string }) => o.orgId))];
 
-        // Get all member emails across those orgs
-        const allMembers = await db.select({ userEmail: orgMembers.userEmail })
-            .from(orgMembers)
-            .where(inArray(orgMembers.orgId, orgIds));
+        // Get all member emails across those orgs. Per-id fan-out, never
+        // `inArray`: D1 binds an array as one parameter and drops the rest,
+        // which quietly returned a single org's members for multi-org users.
+        //
+        // Deliberately NO per-id fallback. This list decides who is allowed to
+        // see things and who gets told about them, and a half-built list is
+        // worse than none: it silently answers with the wrong people. Let a
+        // failure reject into the catch below, which returns just the caller.
+        const allMembers = (await Promise.all(orgIds.map((id: string) =>
+            db.select({ userEmail: orgMembers.userEmail }).from(orgMembers)
+                .where(eq(orgMembers.orgId, id)),
+        ))).flat();
 
         const emails = new Set<string>(allMembers.map((m: { userEmail: string }) => m.userEmail));
         emails.add(user); // always include self
@@ -428,11 +449,17 @@ export async function getOrgMemberEmailsFor(email: string): Promise<string[]> {
 
         if (myOrgs.length === 0) return [email];
 
-        const orgIds = myOrgs.map((o: { orgId: string }) => o.orgId);
+        const orgIds = [...new Set<string>(myOrgs.map((o: { orgId: string }) => o.orgId))];
 
-        const allMembers = await db.select({ userEmail: orgMembers.userEmail })
-            .from(orgMembers)
-            .where(inArray(orgMembers.orgId, orgIds));
+        // Per-id fan-out, never `inArray` — see getOrgMemberEmails above. This
+        // one decides who receives contract_result, form_submission and
+        // member_joined notifications, so a truncated set meant notifying the
+        // wrong people rather than merely showing less. No per-id fallback, for
+        // the same reason: fail to the caller alone rather than to a half list.
+        const allMembers = (await Promise.all(orgIds.map((id: string) =>
+            db.select({ userEmail: orgMembers.userEmail }).from(orgMembers)
+                .where(eq(orgMembers.orgId, id)),
+        ))).flat();
 
         const emails = new Set<string>(allMembers.map((m: { userEmail: string }) => m.userEmail));
         emails.add(email);

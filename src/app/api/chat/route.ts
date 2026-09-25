@@ -10,7 +10,11 @@
  *   6. persist returned message_id (admin Reply gesture targets it)
  *
  * GET /api/chat?conversationId=<uuid>&since=<unix-ms> — visitor poll:
- *   returns messages newer than `since` for that conversation.
+ *   returns messages at or after `since` for that conversation. INCLUSIVE on
+ *   purpose: `created_at` has whole-second resolution, so an exclusive filter
+ *   dropped anything written in the same second the cursor pointed at — two
+ *   admin replies inside one second and the second was never delivered. The
+ *   cost is one re-sent row per poll, which the widget dedupes by id.
  *
  * Privacy: this endpoint and the Telegram outbound fetch are the only paths
  * between visitor and admin. The browser never touches Telegram directly.
@@ -19,7 +23,7 @@
 export const runtime = 'edge';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { eq, and, gt, asc } from 'drizzle-orm';
+import { eq, and, gte, asc } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -132,11 +136,18 @@ export async function POST(request: NextRequest) {
         }
 
         const messageId = crypto.randomUUID();
+        // `createdAt` is set explicitly, and truncated to the whole second the
+        // column actually stores (`strftime('%s','now')` is seconds, and Drizzle
+        // floors a Date to seconds on the way in). The widget echoes this exact
+        // value onto its optimistic bubble, so the row it gets back on the next
+        // poll is byte-identical and dedupes instead of appearing twice.
+        const createdAtMs = Math.floor(now / 1000) * 1000;
         await db.insert(chatMessages).values({
             id: messageId,
             conversationId,
             direction: 'user',
             body: messageBody,
+            createdAt: new Date(createdAtMs),
         });
 
         // Forward to admin's Telegram. Failure here doesn't fail the user
@@ -158,7 +169,7 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        return NextResponse.json({ ok: true, id: messageId });
+        return NextResponse.json({ ok: true, id: messageId, createdAt: createdAtMs });
     } catch (e) {
         const errorId = logger.error('chat.POST failed', e, { conversationId });
         return NextResponse.json({ error: 'Failed to send message', errorId }, { status: 500 });
@@ -196,7 +207,7 @@ export async function GET(request: NextRequest) {
 
         const since = sinceParam ? new Date(Number(sinceParam)) : new Date(0);
         const rows = await db.select().from(chatMessages)
-            .where(and(eq(chatMessages.conversationId, conversationId), gt(chatMessages.createdAt, since)))
+            .where(and(eq(chatMessages.conversationId, conversationId), gte(chatMessages.createdAt, since)))
             .orderBy(asc(chatMessages.createdAt));
 
         type MsgRow = typeof chatMessages.$inferSelect;

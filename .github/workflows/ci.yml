@@ -98,6 +98,14 @@ jobs:
           # Skip actual Cloudflare binding checks during CI build
           SKIP_ENV_VALIDATION: 'true'
 
+      # Every export of a 'use server' module is a POST endpoint a stranger can
+      # call with arguments they choose. This counts them in the built manifest
+      # and fails when the number moves without someone saying so. It is the
+      # only check that sees a directive hidden below a comment, or a new action
+      # that wraps a trusted helper under a different name.
+      - name: Assert the browser-callable surface has not grown
+        run: node scripts/check-action-surface.mjs
+
   # This job runs after build-and-lint passes
   # It's a "gate" that must pass before merging to main
   ready-to-merge:
