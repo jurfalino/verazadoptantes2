@@ -2,6 +2,44 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.80] - 2026-09-24
+
+### Fixed — the last two protected routes with no loading boundary
+
+Completes 2.56.79. `/my-animals` and `/settings` had the same defect as
+`/my-adoptions` and `/my-adopters`: a client-component page whose own loading
+text cannot appear until the route's payload and chunk have arrived, with no
+Suspense boundary to paint in the meantime. All five `PROTECTED_ROUTES` now have
+one.
+
+`/settings` deliberately does not reuse the page's own inline skeleton, which
+uses `dark:bg-stone-700` — this app themes via `[data-theme]` remaps rather than
+Tailwind's dark variant, so a `dark:` class renders raw.
+
+### Measured — what a loading boundary does and does not buy
+
+Worth recording, because it bounds the fix. With a route's RSC payload held 5s
+to stand in for a cold worker:
+
+| | skeleton appears |
+|---|---|
+| click after the `<Link>` prefetch has settled | **0.14s** |
+| click that races the prefetch (straight after page load) | **5.06s** |
+
+The boundary only paints early if the prefetch already delivered the route's
+partial tree. A click that races it leaves the router with nothing to render, so
+the skeleton arrives with the page and the dead-click window is unchanged — and
+"the first time I tried to open it" is exactly that case.
+
+That gap and the stale-tab gap from 2.56.79 have the **same** cure: a global
+navigation pending indicator, which does not depend on prefetch state and keeps
+working during the `location.replace()` a stale tab performs. Not taken here —
+it is an app-wide visible element and a deliberate design choice.
+
+`/my-animals` could not be click-tested: its menu link is gated behind
+`ENABLE_ANIMALS_FOR_ADOPTION`, which is off. The boundary mechanism itself is
+the one verified above on `/my-adoptions`.
+
 ## [2.56.79] - 2026-09-24
 
 ### Fixed — opening My Adoptions / My Adopters looked like a dead click
