@@ -2,6 +2,47 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.79] - 2026-09-24
+
+### Fixed — opening My Adoptions / My Adopters looked like a dead click
+
+Reported as "more than 10 seconds passed without any new page or loading
+indicator appearing". Two independent gaps sit behind that sentence; this ships
+the one that is provably fixable here.
+
+- **Neither route had a Suspense boundary, so a slow navigation showed nothing
+  at all.** Both pages are client components that render their own
+  `common.loading` text — but that text cannot appear until the route's RSC
+  payload *and* its JS chunk have arrived and the shell has mounted. Until then
+  the App Router keeps the PREVIOUS page on screen with no feedback. On a
+  protected route the payload also waits on middleware's `import('@/auth')` +
+  `auth()`, measured at 1.4s on a cold Cloudflare worker before the page's own
+  data fetch even begins. Added `loading.tsx` to both, mirroring each page's
+  container so content fills in rather than jumps. Measured with the RSC payload
+  held for 5s: **skeleton paints at 0.20s instead of 5s of nothing.**
+
+  This is the same defect `/adopter/[id]` got a skeleton for, and the same cure.
+  **Four of the five `PROTECTED_ROUTES` had no boundary** — `/my-animals` and
+  `/settings` are still uncovered.
+
+### Known, not fixed — the stale-tab half
+
+The reporter's tab was **older than the running deployment** (Axiom, 2026-09-25
+00:11:07Z: `clientBuildId 3f29e71…`, env staging). For such a tab the middleware
+answers the navigation with 409 and Next falls back to `location.replace()` — a
+full browser document navigation, verified against Next 15.1.6's
+`fetch-server-response.js` (`!res.ok` → `doMpaNavigation`). React is not running
+during that, so **no Suspense fallback can paint**; measured directly, the new
+skeleton never appears on this path. The only feedback is the browser's own
+progress UI plus the existing "new version / Recargar" notice. Covering it needs
+a router-level pending state, which is a deliberate design choice and not taken
+here.
+
+For the record, what was ruled out: the server is not slow (staging
+`/my-adoptions` TTFB 0.6–1.6s across three passes) and the skew fallback itself
+is not slow (0.6s to navigate, reproduced locally with an authenticated stale
+tab).
+
 ## [2.56.78] - 2026-09-24
 
 ### Fixed — the support chat widget, three reported defects
