@@ -99,6 +99,11 @@ export const FEATURE_FLAGS = {
     // sending domain) before enabling anywhere real. Client-visible (login
     // modal) → also in PUBLIC_FLAG_KEYS. Default off.
     ENABLE_EMAIL_OTP: false,
+    // The "Instalar BuenAdoptante" bar pinned to the bottom of every page when
+    // the browser offers a home-screen install. Client-visible (InstallPrompt)
+    // → also in PUBLIC_FLAG_KEYS. Default off. The homepage's inline install
+    // section (InstallCTA) is not gated by this.
+    ENABLE_PWA_INSTALL_PROMPT: false,
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
@@ -180,6 +185,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_ANIMALS_FOR_ADOPTION: false,
         ENABLE_FOLLOWUPS: true,
         ENABLE_EMAIL_OTP: false,
+        ENABLE_PWA_INSTALL_PROMPT: false,
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
         ENABLE_POSTHOG: false,

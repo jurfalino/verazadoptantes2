@@ -48,6 +48,8 @@ export const PUBLIC_FLAG_KEYS = [
     'ENABLE_GUIDED_WALKTHROUGH',
     // Email OTP login — the login modal renders the email option only when on.
     'ENABLE_EMAIL_OTP',
+    // The install bar pinned to the bottom of every page (InstallPrompt).
+    'ENABLE_PWA_INSTALL_PROMPT',
 ] as const;
 
 export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
@@ -69,6 +71,7 @@ export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
     INSTAGRAM_URL: '',
     ENABLE_GUIDED_WALKTHROUGH: 'false',
     ENABLE_EMAIL_OTP: 'false',
+    ENABLE_PWA_INSTALL_PROMPT: 'false',
 };
 
 const CACHE_TTL_MS = 30 * 1000;

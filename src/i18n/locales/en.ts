@@ -169,6 +169,8 @@ export const en = {
         flag_desc_followups: 'Turns on the projected line of life: post-adoption and foster check-in reminders, the «Seguimientos» section in Settings, the pending badges on My Animals, and the daily reminder job.',
         flag_label_email_otp: 'Email code login',
         flag_desc_email_otp: 'Adds a "sign in with email" option to the login modal: a 6-digit code is emailed and typed in, no Google account needed. Requires Resend (API key + verified domain) to be configured. Off by default.',
+        flag_label_pwa_install_prompt: '"Install the app" bar',
+        flag_desc_pwa_install_prompt: 'Shows the bar pinned to the bottom of every page inviting people to add BuenAdoptante to their home screen, when the browser allows it. The install section on the homepage does not depend on this.',
         instagram_section_title: 'Instagram URL (public)',
         instagram_section_desc: 'Link to the Instagram profile shown in the empty-state of the public catalog and the animal detail page. Leave blank to hide.',
         gemini_model_section_title: 'Default Gemini model',
