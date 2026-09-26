@@ -4,7 +4,7 @@ import { pendingSearches, adopters } from '@/db/schema';
 import { and, desc, eq, gte, isNull } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { getDb, getUser } from './_db';
-import { groupPendingSearches, type PendingAsk } from '@/domain/pendingSearches';
+import { groupPendingSearches, isIdentified, type PendingAsk } from '@/domain/pendingSearches';
 
 /** How far back the homepage asks, and how many asks it shows. */
 const WINDOW_DAYS = 30;
@@ -46,21 +46,25 @@ export async function getPendingAsks(): Promise<PendingAsk[]> {
                 query: r.query,
                 createdAt: Math.floor(new Date(r.createdAt ?? new Date()).getTime() / 1000),
                 adopterId: r.adopterId,
+                matchConfidence: r.matchConfidence,
             })),
             { maxAgeDays: WINDOW_DAYS, limit: MAX_ASKS },
         );
 
         // D1 does not expand array parameters, so the names are fetched one by one.
         return await Promise.all(asks.map(async (ask) => {
-            if (!ask.adopterId) return ask;
+            // Only a certain match may be named. A weak or absent one leaves the
+            // ask about the words the rescuer typed, which is always true.
+            const adopterId = ask.adopterId;
+            if (!adopterId || !isIdentified(ask)) return { ...ask, adopterId: null, adopterName: null };
             const adopter = await db.select({ name: adopters.name, deletedAt: adopters.deletedAt })
                 .from(adopters)
-                .where(eq(adopters.id, ask.adopterId))
+                .where(eq(adopters.id, adopterId))
                 .get()
                 .catch((e: unknown) => {
                     logger.warn('getPendingAsks: D1 fallback hit reading adopter name', {
                         user,
-                        adopterId: ask.adopterId,
+                        adopterId,
                         error: e instanceof Error ? e.message : String(e),
                     });
                     return null;

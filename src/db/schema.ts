@@ -119,6 +119,12 @@ export const pendingSearches = sqliteTable("pending_searches", {
     query: text("query").notNull(),
     /** Set when the search matched exactly one adopter, so the ask can name them. */
     adopterId: text("adopter_id"),
+    /**
+     * Relevance % of that single match. The deck only names the adopter, and
+     * only offers to open their profile, above HIGH_CONFIDENCE_PERCENT — a weak
+     * single match is a coincidence, not an identification.
+     */
+    matchConfidence: integer("match_confidence"),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     resolvedAt: integer("resolved_at", { mode: "timestamp" }),
     /** 'recorded' | 'dismissed' — null while the ask is still open. */

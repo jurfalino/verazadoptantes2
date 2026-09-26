@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { groupPendingSearches, refines, refineKind, fingerprint } from './pendingSearches';
+import { groupPendingSearches, refines, refineKind, fingerprint, isIdentified, HIGH_CONFIDENCE_PERCENT } from './pendingSearches';
 
 const NOW = 1_800_000_000;
 const ago = (days: number) => NOW - days * 86400;
@@ -73,14 +73,31 @@ describe('groupPendingSearches', () => {
         expect(asks.map((a) => a.query)).toEqual(['Juan Gomez', 'Maria Perez']);
     });
 
-    it('carries the adopter named by any search in the group', () => {
+    it('never borrows the identity a broader search matched', () => {
+        // The v2.56.82 defect: "Maria Ornella" matched one record called
+        // "Ornella", and that name ended up on an ask led by a narrower search
+        // that had matched nobody — then a record was written against it.
         const asks = groupPendingSearches([
-            s('1', 'Maria Perez 11-6666666', ago(2)),
-            s('2', 'Maria', ago(1), { adopterId: 'a1', adopterName: 'María Pérez' }),
+            s('1', 'Maria', ago(3)),
+            s('2', 'Maria Ornella', ago(3), { adopterId: 'ornella', adopterName: 'Ornella', matchConfidence: 95 }),
+            s('3', 'Maria Ornella Capri', ago(3)),
+            s('4', 'Maria Ornella Capri Otto', ago(3)),
+        ], { now: NOW });
+
+        expect(asks).toHaveLength(1);
+        expect(asks[0].query).toBe('Maria Ornella Capri Otto');
+        expect(asks[0].adopterId).toBeFalsy();
+        expect(isIdentified(asks[0])).toBe(false);
+    });
+
+    it('keeps the identity when the most complete search found it itself', () => {
+        const asks = groupPendingSearches([
+            s('1', 'Maria', ago(2)),
+            s('2', 'Maria Perez 11-6666666', ago(1), { adopterId: 'a1', adopterName: 'María Pérez', matchConfidence: 96 }),
         ], { now: NOW });
 
         expect(asks[0].adopterId).toBe('a1');
-        expect(asks[0].adopterName).toBe('María Pérez');
+        expect(isIdentified(asks[0])).toBe(true);
     });
 
     it('drops searches older than the window', () => {
@@ -123,5 +140,14 @@ describe('groupPendingSearches', () => {
         ], { now: NOW, limit: 2 });
 
         expect(asks.map((a) => a.query)).toEqual(['Maria Perez', 'Juan Gomez']);
+    });
+});
+
+describe('isIdentified', () => {
+    it('needs a match that is certain, not merely single', () => {
+        expect(isIdentified({ adopterId: 'a1', matchConfidence: HIGH_CONFIDENCE_PERCENT })).toBe(true);
+        expect(isIdentified({ adopterId: 'a1', matchConfidence: HIGH_CONFIDENCE_PERCENT - 1 })).toBe(false);
+        expect(isIdentified({ adopterId: 'a1', matchConfidence: null })).toBe(false);
+        expect(isIdentified({ adopterId: null, matchConfidence: 99 })).toBe(false);
     });
 });

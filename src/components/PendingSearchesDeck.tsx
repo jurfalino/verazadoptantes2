@@ -6,22 +6,25 @@
  *
  * Why it exists: a third of the searches that find someone never open a
  * profile, so the question on the profile page cannot reach those people.
- * Searches that refine one another are one ask (`groupPendingSearches`), and
- * the asks are swiped rather than stacked, so ten pending people cost one
- * screen.
+ *
+ * **This deck never writes an activity record.** v2.56.82 did, onto an adopter
+ * inherited from a broader search in the same group, without showing who it
+ * was — a record whose subject nobody had confirmed. A reason tapped here now
+ * only carries the rescuer to the place where the person is on screen: their
+ * profile when the search identified them beyond doubt, the search itself when
+ * it did not. The save happens there, deliberately.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getPendingAsks, resolvePendingAsk, saveAdoption } from '@/app/actions';
-import type { PendingAsk } from '@/domain/pendingSearches';
+import { getPendingAsks, resolvePendingAsk } from '@/app/actions';
+import { isIdentified, type PendingAsk } from '@/domain/pendingSearches';
 import { RECORD_TYPES } from '@/domain/constants';
 import { useLanguage } from '@/context/LanguageContext';
 import { useRelativeTime } from '@/context/TimezoneContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { userFacingMessage, handledAsStale } from '@/lib/errorMessage';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-import { appendCreatePrefill } from '@/lib/createPrefill';
 import { zarazTrack } from '@/lib/zaraz';
 
 type Answer = typeof RECORD_TYPES.REQUEST | typeof RECORD_TYPES.ADOPTION;
@@ -47,50 +50,23 @@ export default function PendingSearchesDeck() {
         return () => { alive = false; };
     }, []);
 
-    const drop = useCallback((id: string) => {
-        setAsks((prev) => prev.filter((a) => a.id !== id));
-        setActive(0);
-        trackRef.current?.scrollTo({ left: 0 });
-    }, []);
-
-    const onScroll = () => {
+    const onScroll = useCallback(() => {
         const el = trackRef.current;
         const card = el?.firstElementChild as HTMLElement | null;
         if (!el || !card) return;
         setActive(Math.min(asks.length - 1, Math.round(el.scrollLeft / (card.offsetWidth + 8))));
+    }, [asks.length]);
+
+    /** Take the rescuer to the person, with the reason already chosen. */
+    const openProfile = (ask: PendingAsk, recordType: Answer) => {
+        zarazTrack('pending_ask_opened_profile', { record_type: recordType });
+        router.push(`/adopter/${ask.adopterId}?newAdoption=${recordType}`);
     };
 
-    const answer = async (ask: PendingAsk, recordType: Answer) => {
-        setBusyId(ask.id);
-        zarazTrack('pending_ask_answered', { record_type: recordType, known_adopter: !!ask.adopterId });
-        try {
-            if (!ask.adopterId) {
-                // Nobody matched this search, so the person has to be created
-                // first. The create form carries the query and the answer.
-                const params = new URLSearchParams();
-                appendCreatePrefill(params, ask.query);
-                params.set('continueToAdoption', 'true');
-                params.set('newAdoption', recordType);
-                await resolvePendingAsk(ask.memberIds, 'recorded');
-                router.push(`/adopter/create?${params.toString()}`);
-                return;
-            }
-
-            await saveAdoption({ adopterId: ask.adopterId, recordType, date: new Date() } as never);
-            await resolvePendingAsk(ask.memberIds, 'recorded');
-            drop(ask.id);
-            toast.success(t('pendingSearches.saved'));
-        } catch (e) {
-            if (!handledAsStale(e)) {
-                toast.error(
-                    t('pendingSearches.save_failed'),
-                    userFacingMessage(e, t('pendingSearches.save_failed')),
-                    resolveErrorId(e, 'PendingSearchesDeck.answer'),
-                );
-            }
-        } finally {
-            setBusyId(null);
-        }
+    /** Nobody was identified, so run the search again and let them choose. */
+    const searchAgain = (ask: PendingAsk) => {
+        zarazTrack('pending_ask_searched_again', {});
+        router.push(`/?q=${encodeURIComponent(ask.query)}`);
     };
 
     const dismiss = async (ask: PendingAsk) => {
@@ -98,7 +74,9 @@ export default function PendingSearchesDeck() {
         zarazTrack('pending_ask_dismissed', {});
         try {
             await resolvePendingAsk(ask.memberIds, 'dismissed');
-            drop(ask.id);
+            setAsks((prev) => prev.filter((a) => a.id !== ask.id));
+            setActive(0);
+            trackRef.current?.scrollTo({ left: 0 });
         } catch (e) {
             if (!handledAsStale(e)) {
                 toast.error(
@@ -118,6 +96,11 @@ export default function PendingSearchesDeck() {
         background: 'var(--surface-card)',
         color: 'var(--accent)',
         border: '1px solid var(--accent)',
+    } as const;
+    const quietStyle = {
+        background: 'transparent',
+        color: 'var(--text-muted)',
+        border: '1px solid var(--border-default)',
     } as const;
 
     return (
@@ -146,14 +129,13 @@ export default function PendingSearchesDeck() {
                 style={{ scrollSnapType: 'x mandatory', scrollbarWidth: 'none' }}
             >
                 {asks.map((ask) => {
-                    const when = relative(ask.createdAt * 1000, locale === 'en' ? 'en' : 'es');
-                    const subtitle = ask.searchCount > 1
+                    const when = relative(ask.createdAt * 1000, locale === 'en' ? 'en' : 'es') || '';
+                    const counted = ask.searchCount > 1
                         ? t('pendingSearches.searched_times')
                             .replace('{count}', String(ask.searchCount))
-                            .replace('{when}', when || '')
-                        : t('pendingSearches.searched_once')
-                            .replace('{query}', ask.query)
-                            .replace('{when}', when || '');
+                            .replace('{when}', when)
+                        : t('pendingSearches.searched_once_short').replace('{when}', when);
+                    const known = isIdentified(ask) && !!ask.adopterName;
                     const busy = busyId === ask.id;
 
                     return (
@@ -161,42 +143,60 @@ export default function PendingSearchesDeck() {
                             key={ask.id}
                             className="shrink-0 w-[88%] sm:w-[48%] rounded-xl p-4 flex flex-col gap-3"
                             style={{ background: 'var(--accent-subtle-bg)', border: '1px solid var(--border-accent)', scrollSnapAlign: 'start' }}
+                            data-testid={known ? 'pending-ask-known' : 'pending-ask-unknown'}
                         >
                             <div className="min-w-0">
-                                <p className="text-base font-bold truncate" style={{ color: 'var(--text-primary)' }}>
-                                    {ask.adopterName || ask.query}
+                                {/* The words they typed — the one thing that is always true. */}
+                                <p className="text-base font-bold line-clamp-2" style={{ color: 'var(--text-primary)' }}>
+                                    {ask.query}
                                 </p>
-                                {/* Two lines: a long query would otherwise eat the "when" that
-                                    tells the rescuer which visit this was. */}
-                                <p className="text-xs line-clamp-2" style={{ color: 'var(--text-faint)' }}>{subtitle}</p>
+                                <p className="text-xs line-clamp-2" style={{ color: 'var(--text-faint)' }}>{counted}</p>
+                                {known && (
+                                    <p className="text-xs font-semibold line-clamp-1 mt-1" style={{ color: 'var(--accent)' }}>
+                                        {t('pendingSearches.matches').replace('{name}', ask.adopterName as string)}
+                                    </p>
+                                )}
                             </div>
+
                             <div className="flex flex-col gap-2">
-                                <button
-                                    type="button"
-                                    disabled={busy}
-                                    onClick={() => void answer(ask, RECORD_TYPES.REQUEST)}
-                                    data-testid="pending-ask-request"
-                                    className="px-4 py-2 rounded-xl text-sm font-bold text-left transition-all duration-200 disabled:opacity-40"
-                                    style={chipStyle}
-                                >
-                                    {t('pendingSearches.option_request')}
-                                </button>
-                                <button
-                                    type="button"
-                                    disabled={busy}
-                                    onClick={() => void answer(ask, RECORD_TYPES.ADOPTION)}
-                                    className="px-4 py-2 rounded-xl text-sm font-bold text-left transition-all duration-200 disabled:opacity-40"
-                                    style={chipStyle}
-                                >
-                                    {t('pendingSearches.option_adoption')}
-                                </button>
+                                {known ? (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={() => openProfile(ask, RECORD_TYPES.REQUEST)}
+                                            data-testid="pending-ask-request"
+                                            className="px-4 py-2 rounded-xl text-sm font-bold text-left transition-all duration-200"
+                                            style={chipStyle}
+                                        >
+                                            {t('pendingSearches.option_request')}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => openProfile(ask, RECORD_TYPES.ADOPTION)}
+                                            className="px-4 py-2 rounded-xl text-sm font-bold text-left transition-all duration-200"
+                                            style={chipStyle}
+                                        >
+                                            {t('pendingSearches.option_adoption')}
+                                        </button>
+                                    </>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => searchAgain(ask)}
+                                        data-testid="pending-ask-search-again"
+                                        className="px-4 py-2 rounded-xl text-sm font-bold text-left transition-all duration-200"
+                                        style={chipStyle}
+                                    >
+                                        {t('pendingSearches.option_search_again')}
+                                    </button>
+                                )}
                                 <button
                                     type="button"
                                     disabled={busy}
                                     onClick={() => void dismiss(ask)}
                                     data-testid="pending-ask-dismiss"
                                     className="px-4 py-2 rounded-xl text-sm font-bold transition-all duration-200 disabled:opacity-40"
-                                    style={{ background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border-default)' }}
+                                    style={quietStyle}
                                 >
                                     {t('pendingSearches.option_nothing')}
                                 </button>

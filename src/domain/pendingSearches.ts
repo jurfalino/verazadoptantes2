@@ -17,9 +17,28 @@ export interface PendingSearch {
     query: string;
     /** Epoch seconds. */
     createdAt: number;
-    /** Set when the search pointed at one known adopter, so the ask can name them. */
+    /** Set when THIS search matched exactly one adopter. */
     adopterId?: string | null;
     adopterName?: string | null;
+    /** Relevance % of that single match, 0-100. */
+    matchConfidence?: number | null;
+}
+
+/**
+ * Below this, a single match is a coincidence rather than an identification,
+ * and the deck must not name that person or offer to open their profile.
+ */
+export const HIGH_CONFIDENCE_PERCENT = 80;
+
+/**
+ * Whether the ask knows who it is about. Only the ask's own search counts:
+ * v2.56.82 let a broader search ("Maria Ornella", one match) name an ask led by
+ * a narrower one ("Maria Ornella Capri Otto", no matches), and a record was
+ * written against a person the rescuer never confirmed. A narrower search
+ * finding nobody is evidence the person is NOT that record.
+ */
+export function isIdentified(ask: Pick<PendingSearch, 'adopterId' | 'matchConfidence'>): boolean {
+    return !!ask.adopterId && (ask.matchConfidence ?? 0) >= HIGH_CONFIDENCE_PERCENT;
 }
 
 export interface PendingAsk extends PendingSearch {
@@ -130,12 +149,9 @@ export function groupPendingSearches(searches: PendingSearch[], options: GroupOp
             return Math.abs(g.lead.createdAt - search.createdAt) <= TYPING_WINDOW_SECONDS;
         });
         if (home) {
+            // The lead keeps its OWN identity, or none. Never borrow the match of
+            // a broader search in the group — see isIdentified().
             home.memberIds.push(search.id);
-            // A search that named an adopter identifies the person better than a
-            // bare string, so let it supply the name even when it is not the lead.
-            if (!home.lead.adopterId && search.adopterId) {
-                home.lead = { ...home.lead, adopterId: search.adopterId, adopterName: search.adopterName };
-            }
             continue;
         }
         groups.push({ lead: search, leadPrint: print, memberIds: [search.id] });

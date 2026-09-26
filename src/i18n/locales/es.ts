@@ -2252,9 +2252,12 @@ export const es = {
     },
     pendingSearches: {
         title: 'Quedó pendiente',
-        subtitle: 'Buscaste a estas personas y no quedó registro. Un toque alcanza.',
+        subtitle: 'Buscaste a estas personas y no quedó registro. Abrilas para contar qué pasó.',
         searched_times: '{count} búsquedas · {when}',
         searched_once: 'Buscaste "{query}" {when}',
+        searched_once_short: 'Buscaste {when}',
+        matches: 'Coincide con {name}',
+        option_search_again: 'Buscar de nuevo',
         option_request: 'Me pidió un animal',
         option_adoption: 'Le dí un animal',
         option_nothing: 'No pasó nada',

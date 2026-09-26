@@ -2247,9 +2247,12 @@ export const en = {
     },
     pendingSearches: {
         title: 'Still pending',
-        subtitle: 'You looked these people up and nothing was recorded. One tap is enough.',
+        subtitle: 'You looked these people up and nothing was recorded. Open one to say what happened.',
         searched_times: '{count} searches · {when}',
         searched_once: 'You searched "{query}" {when}',
+        searched_once_short: 'You searched {when}',
+        matches: 'Matches {name}',
+        option_search_again: 'Search again',
         option_request: 'They asked me for an animal',
         option_adoption: 'I gave them an animal',
         option_nothing: 'Nothing happened',

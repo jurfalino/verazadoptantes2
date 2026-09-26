@@ -21,7 +21,8 @@ const MAX_QUERY_LENGTH = 200;
  */
 export async function recordPendingSearch(
     db: Db,
-    { userEmail, query, adopterId }: { userEmail: string; query: string; adopterId?: string | null },
+    { userEmail, query, adopterId, matchConfidence }:
+        { userEmail: string; query: string; adopterId?: string | null; matchConfidence?: number | null },
 ): Promise<void> {
     const trimmed = (query || '').trim();
     if (!db || !userEmail || userEmail === 'unknown' || !trimmed) return;
@@ -31,6 +32,7 @@ export async function recordPendingSearch(
             userEmail,
             query: trimmed.slice(0, MAX_QUERY_LENGTH),
             adopterId: adopterId ?? null,
+            matchConfidence: matchConfidence ?? null,
             createdAt: new Date(),
         });
     } catch (e) {

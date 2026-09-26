@@ -1321,10 +1321,16 @@ async function runDiscoveryMode(
 
     const totalCount = mainResults.length;
     if (options.trackPending) {
-        // One result means we know who they were looking at, so the ask can name
-        // them and save straight onto that profile. With several, it cannot.
-        const onlyMatch = mainResults.length === 1 ? mainResults[0].adopterId : null;
-        await recordPendingSearch(db, { userEmail: user, query: normalizedQuery, adopterId: onlyMatch });
+        // Only THIS search's own single match may identify the person later, and
+        // only with its relevance carried along: the deck has to be able to tell
+        // a certain match from a lucky one before it names anybody.
+        const only = mainResults.length === 1 ? mainResults[0] : null;
+        await recordPendingSearch(db, {
+            userEmail: user,
+            query: normalizedQuery,
+            adopterId: only?.adopterId ?? null,
+            matchConfidence: only ? Math.round(only.relevancePercent) : null,
+        });
     }
     logger.info('findAdopters:discovery', { query: normalizedQuery, tokens: tokens.length, resultCount: Math.min(totalCount, limit), user });
     logAudit({ userEmail: user, action: 'search', details: { query: normalizedQuery, resultCount: Math.min(totalCount, limit) } });
