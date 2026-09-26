@@ -171,6 +171,8 @@ export const en = {
         flag_desc_email_otp: 'Adds a "sign in with email" option to the login modal: a 6-digit code is emailed and typed in, no Google account needed. Requires Resend (API key + verified domain) to be configured. Off by default.',
         flag_label_pwa_install_prompt: '"Install the app" bar',
         flag_desc_pwa_install_prompt: 'Shows the bar pinned to the bottom of every page inviting people to add BuenAdoptante to their home screen, when the browser allows it. The install section on the homepage does not depend on this.',
+        flag_label_guest_name_mask: 'Hide names when logged out',
+        flag_desc_guest_name_mask: 'People searching without signing in see results with the name masked (only the words they typed stay; the rest become e.g. R••••), including inside the contact line, and the sign-in box pinned over the list.',
         instagram_section_title: 'Instagram URL (public)',
         instagram_section_desc: 'Link to the Instagram profile shown in the empty-state of the public catalog and the animal detail page. Leave blank to hide.',
         gemini_model_section_title: 'Default Gemini model',

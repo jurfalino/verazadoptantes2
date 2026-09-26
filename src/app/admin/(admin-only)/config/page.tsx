@@ -51,6 +51,7 @@ interface ConfigData {
         ENABLE_PINNED_VISIT_INTENT?: string;
         ENABLE_EMAIL_OTP?: string;
         ENABLE_PWA_INSTALL_PROMPT?: string;
+        ENABLE_GUEST_NAME_MASK?: string;
         ENABLE_FOLLOWUPS?: string;
         TELEGRAM_ADMIN_CHAT_ID?: string;
         TELEGRAM_BOT_TOKEN_SET?: string;
@@ -91,6 +92,7 @@ const FEATURE_FLAGS = [
     { key: 'ENABLE_PINNED_VISIT_INTENT', labelKey: 'flag_label_pinned_visit_intent', descKey: 'flag_desc_pinned_visit_intent' },
     { key: 'ENABLE_EMAIL_OTP', labelKey: 'flag_label_email_otp', descKey: 'flag_desc_email_otp' },
     { key: 'ENABLE_PWA_INSTALL_PROMPT', labelKey: 'flag_label_pwa_install_prompt', descKey: 'flag_desc_pwa_install_prompt' },
+    { key: 'ENABLE_GUEST_NAME_MASK', labelKey: 'flag_label_guest_name_mask', descKey: 'flag_desc_guest_name_mask' },
     { key: 'ENABLE_FOLLOWUPS', labelKey: 'flag_label_followups', descKey: 'flag_desc_followups' },
 ];
 
@@ -127,6 +129,7 @@ export default function AdminConfigPage() {
         ENABLE_PINNED_VISIT_INTENT: false,
         ENABLE_EMAIL_OTP: false,
         ENABLE_PWA_INSTALL_PROMPT: false,
+        ENABLE_GUEST_NAME_MASK: false,
         ENABLE_FOLLOWUPS: true,
     });
     const [instagramUrl, setInstagramUrl] = useState('');
@@ -193,6 +196,7 @@ export default function AdminConfigPage() {
                         ENABLE_PINNED_VISIT_INTENT: data.config?.ENABLE_PINNED_VISIT_INTENT === 'true',
                         ENABLE_EMAIL_OTP: data.config?.ENABLE_EMAIL_OTP === 'true',
                         ENABLE_PWA_INSTALL_PROMPT: data.config?.ENABLE_PWA_INSTALL_PROMPT === 'true',
+                        ENABLE_GUEST_NAME_MASK: data.config?.ENABLE_GUEST_NAME_MASK === 'true',
                         // default ON: an absent row means enabled (features.ts default)
                         ENABLE_FOLLOWUPS: data.config?.ENABLE_FOLLOWUPS !== 'false',
                     });

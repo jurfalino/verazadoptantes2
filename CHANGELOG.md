@@ -2,6 +2,44 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.83] - 2026-09-26
+
+### Added — logged-out search can hide who the results are (`ENABLE_GUEST_NAME_MASK`, off)
+
+With the flag on, someone searching without signing in still gets every result
+card as it is today, but the name is masked: the words they typed stay and each
+other word keeps its first letter, so "María Rosa Rodríguez López" searched as
+"maria" reads "María R•••• R•••• L••••" (the same bullet the contact line uses,
+fixed length so it gives nothing away). The same name and alias words are masked
+inside the contact line too ("Conocido/a como: …", a profile named after the
+person). The login box is pinned under the search box over a lightly blurred
+list; closing it with the X leaves the masked list, and signing in comes back to
+the same search with the names.
+
+The masking happens on the server (`src/lib/guestMatch.ts`, rules in
+`src/domain/guestNameMask.ts`), for the main list and the "Otras posibles
+coincidencias" tier, and the response also drops what the card never shows
+(contact entries, address, household, notes, source link), so the names are not
+in what the browser receives either. Signed-in searches are unchanged. Admin
+toggle: "Ocultar nombres sin sesión".
+
+Not covered by this flag: an adopter profile opened directly by URL, and the
+duplicate-detection mode of `findAdopters`, which a logged-out caller can still
+reach.
+
+### Added — the pinned "install the app" bar is behind `ENABLE_PWA_INSTALL_PROMPT` (off)
+
+The bar at the bottom of every page inviting people to install BuenAdoptante now
+shows only when an admin turns it on. The homepage's own install section is
+unchanged.
+
+### Fixed — `next dev` kept serving the first build of a page
+
+Dev chunk URLs aren't content-hashed, so the service worker's cache-first route
+kept answering with whatever it cached first and a refresh couldn't get past it.
+Under `next dev` the layout now removes the worker and its caches (reloading once
+if it was in control). Production registration is unchanged.
+
 ## [2.56.82] - 2026-09-26
 
 ### Changed — the browser-callable surface ratchet now expects 150

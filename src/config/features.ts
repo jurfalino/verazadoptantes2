@@ -104,6 +104,12 @@ export const FEATURE_FLAGS = {
     // → also in PUBLIC_FLAG_KEYS. Default off. The homepage's inline install
     // section (InstallCTA) is not gated by this.
     ENABLE_PWA_INSTALL_PROMPT: false,
+    // Logged-out search: names in the results are masked on the server (the
+    // typed words stay, the rest "R••••"), the same words are masked in the
+    // contact line, and the login box is pinned over the list. Read server-side
+    // by findAdopters / findWeakNameMatches, which tell the page via
+    // `guestNameMasked`, so it needs no public-config entry. Default off.
+    ENABLE_GUEST_NAME_MASK: false,
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
@@ -186,6 +192,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_FOLLOWUPS: true,
         ENABLE_EMAIL_OTP: false,
         ENABLE_PWA_INSTALL_PROMPT: false,
+        ENABLE_GUEST_NAME_MASK: false,
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
         ENABLE_POSTHOG: false,

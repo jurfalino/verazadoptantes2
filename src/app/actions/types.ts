@@ -172,4 +172,7 @@ export interface FindAdoptersResponse {
     truncated?: boolean;
     totalCount?: number;
     validationError?: 'min_digits' | 'invalid_query' | 'login_required';
+    /** Discovery mode, logged-out viewer, ENABLE_GUEST_NAME_MASK on: the names in
+     * these results are masked, and the page asks the visitor to sign in. */
+    guestNameMasked?: boolean;
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { findAdopters, findWeakNameMatches } from '@/app/actions';
 import type { DiscoveryMatch } from '@/app/actions';
 import { AdopterResultCard } from './AdopterResultCard';
@@ -8,6 +9,7 @@ import { useWalkthrough } from './walkthrough/WalkthroughProvider';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
+import { LoginPanel } from '@/components/LoginModal';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useShowToast } from '@/components/ui/Toast';
 import { notifyRequestError } from '@/lib/notifyError';
@@ -23,7 +25,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
     const router = useRouter();
     const searchParams = useSearchParams();
     const { data: session } = useSession();
-    const { openLogin } = useAuthContext();
+    const { openLogin, isLoginOpen } = useAuthContext();
     const toast = useShowToast();
     // Guided walkthrough: while it runs, this section renders the demo query +
     // results (the spotlight tour highlights these real elements). The tour
@@ -52,6 +54,20 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
     const [closingInView, setClosingInView] = useState(false);
     /** Desktop only: the card drops its stacked layout once scrolling starts. */
     const [condensed, setCondensed] = useState(false);
+    /**
+     * ENABLE_GUEST_NAME_MASK: the server masked the names in these results
+     * because the visitor is logged out, so the login box is pinned over the
+     * list. `loginBoxClosedFor` is the search whose box was closed with the X —
+     * it comes back on the next search.
+     */
+    const [guestNameMasked, setGuestNameMasked] = useState(false);
+    const [loginBoxClosedFor, setLoginBoxClosedFor] = useState<string | null>(null);
+    /**
+     * Where the login box pins: under the global nav (64px) and the pinned search
+     * card, at the gap the list starts at, so it doesn't jump when scrolling
+     * starts. Follows the card's height, which shrinks once scrolling begins.
+     */
+    const [loginBoxTop, setLoginBoxTop] = useState(64 + 41);
     /**
      * The query that produced the results currently on screen — NOT what is in the
      * box right now.
@@ -178,6 +194,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
             if (searchSeqRef.current !== seq) return;
             if (!response) return;
             setSubmittedQuery(searchQuery.trim());
+            setGuestNameMasked(!!response.guestNameMasked);
             if (response.validationError) {
                 setValidationError(response.validationError);
                 setResults([]);
@@ -307,6 +324,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
             if (searchSeqRef.current !== seq) return;
             if (!response) throw new Error('No response from search');
             setSubmittedQuery(query.trim());
+            setGuestNameMasked(!!response.guestNameMasked);
             if (response.validationError) {
                 setValidationError(response.validationError);
                 setResults([]);
@@ -360,6 +378,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
         setTruncatedInfo(null);
         setSingleTokenResultCount(undefined);
         setLowRelevanceResults([]);
+        setGuestNameMasked(false);
         resetWeak();
         // Clear URL param
         const url = new URL(window.location.href);
@@ -369,6 +388,19 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
 
     // On mobile, make search form sticky when results are visible
     const hasResults = results !== null;
+
+    // The pinned login box (ENABLE_GUEST_NAME_MASK). Steps aside during the
+    // guided tour, while a search is running, and while the regular login modal
+    // is open (a tapped card), so there are never two.
+    const showLoginBox = guestNameMasked && !session?.user && !demoActive && !loading && !isLoginOpen
+        && !!results && results.length > 0 && loginBoxClosedFor !== submittedQuery;
+    useEffect(() => {
+        const card = searchCardRef.current;
+        if (!showLoginBox || !card) return;
+        const ro = new ResizeObserver(() => setLoginBoxTop(64 + card.offsetHeight + 41));
+        ro.observe(card);
+        return () => ro.disconnect();
+    }, [showLoginBox]);
 
     // ── Search-results CTA rework ──────────────────────────────────────────
     // One honest count in the sticky card, replacing the blue truncation banner
@@ -420,7 +452,9 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                 "¿Cómo funciona?" steps one tap away. Replaces the old utility subtitle
                 ("Busca adoptantes y Registra adopciones").
                 Hidden on mobile when results are visible (same pattern as before). */}
-            <div className={`mb-4 ${hasResults ? 'hidden md:block' : ''}`}>
+            {/* Above the list's blur while the login box is pinned, like the search
+                card, so only the results are blurred. */}
+            <div className={`mb-4 ${hasResults ? 'hidden md:block' : ''} ${showLoginBox ? 'relative z-20' : ''}`}>
                 <WhatIsBuenAdoptante />
             </div>
 
@@ -627,7 +661,32 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
             <div ref={sentinelRef} aria-hidden="true" className="h-px" />
 
             {results && (
-                <div ref={resultsRef} data-walkthrough="results" className="mt-8 space-y-4 scroll-mt-4">
+                <div ref={resultsRef} data-walkthrough="results" className="relative mt-8 space-y-4 scroll-mt-4">
+
+                    {/* ENABLE_GUEST_NAME_MASK: the login box, pinned under the search
+                        card while the list scrolls beneath it — a zero-height sticky
+                        row with the box hanging off it. Signing in comes back to the
+                        same search, now with the names. */}
+                    {showLoginBox && (
+                        <>
+                            {/* A light blur over the list beneath the search card and the
+                                box (both sit above it). Clicks pass through, so a tapped
+                                card still asks to sign in. Portaled to <body>: an
+                                ancestor here clips `fixed`. */}
+                            {createPortal(
+                                <div aria-hidden className="fixed inset-0 z-10 backdrop-blur-[2px] pointer-events-none" />,
+                                document.body,
+                            )}
+                            <div className="sticky z-20 h-0" style={{ top: loginBoxTop }}>
+                                <div data-testid="guest-login-box" className="absolute inset-x-0 top-0 flex justify-center">
+                                    <LoginPanel
+                                        redirectPath={`/?q=${encodeURIComponent(submittedQuery)}`}
+                                        onClose={() => setLoginBoxClosedFor(submittedQuery)}
+                                    />
+                                </div>
+                            </div>
+                        </>
+                    )}
 
                     {/* The quiet duplicate that used to sit here is gone: the alta now has
                         exactly one home per scroll position — the floating control while

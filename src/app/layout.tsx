@@ -201,10 +201,32 @@ export default async function RootLayout({
             ClientErrorReporter and surfaces as a generic "Algo salió mal"
             toast to the user (v2.16.0-35) — SW is an offline-cache nicety
             and should never user-visibly fail. Console.warn keeps the
-            signal for debugging without polluting the UX. */}
+            signal for debugging without polluting the UX.
+
+            Not in `next dev`: dev chunk URLs are not content-hashed, so the
+            worker's cache-first static route kept serving the first build of a
+            page forever, and a refresh couldn't get past it. There, remove any
+            worker a dev browser already has, clear its caches, and reload once
+            if it was controlling this page. Pages are network-first, so this
+            script always arrives fresh even when the chunks don't. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `
+            __html: process.env.NODE_ENV === 'development' ? `
+              if ('serviceWorker' in navigator) {
+                var hadWorker = !!navigator.serviceWorker.controller;
+                navigator.serviceWorker.getRegistrations().then(function(regs) {
+                  return Promise.all(regs.map(function(r) { return r.unregister(); }));
+                }).then(function() {
+                  return window.caches ? caches.keys().then(function(keys) {
+                    return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+                  }) : null;
+                }).then(function() {
+                  if (hadWorker) location.reload();
+                }).catch(function(err) {
+                  console.warn('[sw] dev cleanup failed:', err);
+                });
+              }
+            ` : `
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
                   navigator.serviceWorker.register('/sw.js').catch(function(err) {

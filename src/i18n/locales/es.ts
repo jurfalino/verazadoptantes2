@@ -171,6 +171,8 @@ export const es = {
         flag_desc_email_otp: 'Agrega una opción de "iniciar sesión con email" al modal de acceso: se envía un código de 6 dígitos por correo y se ingresa, sin necesidad de cuenta de Google. Requiere Resend configurado (API key + dominio verificado). Por defecto apagado.',
         flag_label_pwa_install_prompt: 'Barra "Instalar la app"',
         flag_desc_pwa_install_prompt: 'Muestra la barra fija al pie de cada página que invita a instalar BuenAdoptante en la pantalla de inicio, cuando el navegador lo permite. La sección de instalación del inicio no depende de esto.',
+        flag_label_guest_name_mask: 'Ocultar nombres sin sesión',
+        flag_desc_guest_name_mask: 'Quien busca sin iniciar sesión ve los resultados con el nombre enmascarado (solo quedan las palabras que escribió; el resto, por ejemplo R••••), también dentro de los datos de contacto, y el recuadro de inicio de sesión fijo sobre la lista.',
         instagram_section_title: 'URL de Instagram (público)',
         instagram_section_desc: 'Link al perfil de Instagram que se muestra en el estado vacío del catálogo público y en el detalle de cada animal. Dejar vacío para no mostrar.',
         gemini_model_section_title: 'Modelo de Gemini por defecto',

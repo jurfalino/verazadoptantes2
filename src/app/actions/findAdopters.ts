@@ -35,6 +35,8 @@ import { normalizeText, extractPhones, extractEmails, extractSocials, isPlacehol
 import { count } from 'drizzle-orm';
 import { matchSearchEntries, matchSearchNameTokens, hashNameToken, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
 import { assembleDiscoveryMatch } from '@/lib/discoveryMatch';
+import { toGuestMatch } from '@/lib/guestMatch';
+import { getFeatureFlag } from '@/config/features';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
 import { deserializeContactEntries, TYPE_LABEL } from '@/lib/contactEntries';
 import { deserializeHouseholdMembers } from '@/lib/householdMembers';
@@ -1355,10 +1357,29 @@ async function runDiscoveryMode(
         }
     }
 
+    // ENABLE_GUEST_NAME_MASK: a logged-out visitor gets the names masked and
+    // nothing the card doesn't show — done here so the names never leave the
+    // server, not just the screen. The flag is read only for a guest search.
+    const guestNameMasked = isUnauthenticated && await getFeatureFlag('ENABLE_GUEST_NAME_MASK');
+    const rawById = new Map<string, typeof adopters.$inferSelect>(allProfiles.map((a: typeof adopters.$inferSelect) => [a.id, a]));
+    const forViewer = (list: DiscoveryMatch[]) => guestNameMasked
+        ? list.map(r => {
+            const raw = rawById.get(r.adopterId);
+            // Every result is built from allProfiles, so a miss is a bug; drop the
+            // row rather than send it unmasked.
+            if (!raw) {
+                logger.error('findAdopters: guest mask found no source row; result dropped', null, { adopterId: r.adopterId });
+                return null;
+            }
+            return toGuestMatch(r, raw, normalizedQuery);
+        }).filter((r): r is DiscoveryMatch => r !== null)
+        : list;
+
     const response: FindAdoptersResponse = {
-        results: mainResults.slice(0, limit),
-        ...(lowRelevanceResults.length > 0 && { lowRelevanceResults: lowRelevanceResults.slice(0, limit) }),
+        results: forViewer(mainResults.slice(0, limit)),
+        ...(lowRelevanceResults.length > 0 && { lowRelevanceResults: forViewer(lowRelevanceResults.slice(0, limit)) }),
         ...(singleTokenResultCount !== undefined && { singleTokenResultCount }),
+        ...(guestNameMasked && { guestNameMasked: true }),
     };
     if (totalCount > limit) { response.truncated = true; response.totalCount = totalCount; }
     return response;

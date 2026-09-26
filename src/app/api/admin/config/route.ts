@@ -90,6 +90,7 @@ export async function GET() {
             ENABLE_PINNED_VISIT_INTENT: config['ENABLE_PINNED_VISIT_INTENT'] || 'false',
             ENABLE_EMAIL_OTP: config['ENABLE_EMAIL_OTP'] || 'false',
             ENABLE_PWA_INSTALL_PROMPT: config['ENABLE_PWA_INSTALL_PROMPT'] || 'false',
+            ENABLE_GUEST_NAME_MASK: config['ENABLE_GUEST_NAME_MASK'] || 'false',
             ENABLE_FOLLOWUPS: config['ENABLE_FOLLOWUPS'] || 'true',
             // Telegram support chat — chat_id is non-sensitive and returned
             // verbatim. The bot token and webhook secret are sensitive: never
