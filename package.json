@@ -1,6 +1,6 @@
 {
   "name": "buenadoptante",
-  "version": "2.56.81",
+  "version": "2.56.82",
   "private": true,
   "scripts": {
     "dev": "set NODE_OPTIONS=--max-old-space-size=2048 --expose-gc&& next dev",

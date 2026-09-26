@@ -29,7 +29,19 @@
 import { readFileSync } from 'node:fs';
 
 const MANIFEST = '.next/server/server-reference-manifest.json';
-const EXPECTED_ACTIONS = 148;
+// 150 since v2.56.82: `getPendingAsks` and `resolvePendingAsk`
+// (src/app/actions/pendingSearches.ts), the read and write behind the
+// "Quedó pendiente" deck. Checked against the rule above — what a stranger
+// can do with arguments they choose:
+//   getPendingAsks()      takes nothing, and every row it reads is filtered by
+//                         the caller's own session email; logged out it returns [].
+//   resolvePendingAsk()   takes ids, but each UPDATE carries
+//                         `user_email = <session>`, so a guessed id closes
+//                         nothing; `resolution` is checked against the two
+//                         allowed values, and the array is length-capped.
+// The writes themselves (recording a search, closing asks after a record) stay
+// in src/lib/pendingSearchLog.ts precisely so they never become endpoints.
+const EXPECTED_ACTIONS = 150;
 
 let manifest;
 try {

@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.82] - 2026-09-26
+
+### Changed — the browser-callable surface ratchet now expects 150
+
+2.56.81 added `getPendingAsks` and `resolvePendingAsk`, so CI's endpoint count
+moved 148 → 150 and `build-and-lint` failed, exactly as that guard is meant to:
+a new door has to be signed off in the same commit. Both were checked against
+what a stranger can do with arguments they choose. `getPendingAsks` takes none
+and filters every row by the caller's own session email. `resolvePendingAsk`
+takes ids, but each UPDATE carries `user_email = <session>`, so a guessed id
+closes nothing; the resolution is checked against its two allowed values and the
+array is length-capped. The writes stay in `src/lib/pendingSearchLog.ts` so they
+never become endpoints.
+
 ## [2.56.81] - 2026-09-26
 
 ### Added — "Quedó pendiente": asking about searches that never became a record
