@@ -106,6 +106,28 @@ export const searches = sqliteTable("searches", {
     lastSearchedAt: integer("last_searched_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
 });
 
+/**
+ * Searches a signed-in rescuer made that never turned into a record, so the
+ * homepage can ask "¿qué pasó?" on their next visit. A row is closed when they
+ * answer it, dismiss it, or record anything about that adopter elsewhere.
+ * Searches that refine one another are collapsed into one ask at read time
+ * (`src/domain/pendingSearches.ts`), not here — the raw searches stay.
+ */
+export const pendingSearches = sqliteTable("pending_searches", {
+    id: text("id").primaryKey(),
+    userEmail: text("user_email").notNull(),
+    query: text("query").notNull(),
+    /** Set when the search matched exactly one adopter, so the ask can name them. */
+    adopterId: text("adopter_id"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+    /** 'recorded' | 'dismissed' — null while the ask is still open. */
+    resolution: text("resolution"),
+}, (table) => ({
+    openIdx: index("idx_pending_searches_open").on(table.userEmail, table.resolvedAt),
+    adopterIdx: index("idx_pending_searches_adopter").on(table.adopterId),
+}));
+
 export const adoptions = sqliteTable("adoptions", {
     id: text("id").primaryKey(),
     adopterId: text("adopter_id"), // Nullable for "Available" animals not yet linked

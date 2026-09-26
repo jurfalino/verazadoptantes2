@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import HomepageActionCard from '@/components/HomepageActionCard';
+import PendingSearchesDeck from '@/components/PendingSearchesDeck';
 import ContactPickerLauncher, { useContactPickerSupported } from '@/components/ContactPickerLauncher';
 import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLauncher';
 import { useEffect } from 'react';
@@ -112,6 +113,10 @@ export default function HomeClient({ initialConfig, userEmail }: { initialConfig
         <main className="min-h-screen bg-stone-50 py-6 px-4 relative">
             <div className="max-w-3xl mx-auto space-y-6">
                 <h1 className="sr-only">{t('home.h1')}</h1>
+                {/* "Quedó pendiente": the searches that never became a record.
+                    Signed-in only — it is that rescuer's own search history. */}
+                {session?.user && appConfig.ENABLE_PENDING_SEARCHES === 'true' && <PendingSearchesDeck />}
+
                 <div id="search-section">
                     <SearchSection locale={locale} showCardMetadata={appConfig.ENABLE_SEARCH_CARD_METADATA !== 'false'} />
                 </div>

@@ -2,6 +2,34 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.81] - 2026-09-26
+
+### Added — "Quedó pendiente": asking about searches that never became a record
+
+A third of the searches that find someone (47 of 149 over 60 days in
+production) never open a profile, so the "¿Qué pasó?" card on the profile page
+cannot reach those rescuers at all. Behind `ENABLE_PENDING_SEARCHES` (off by
+default), the homepage now asks about the searches that produced nothing.
+
+- **One ask per person, not per search.** A rescuer usually searches the same
+  person two or three times, each more specific ("Maria" → "Maria Perez" →
+  "Maria Perez 11-6666666"). `src/domain/pendingSearches.ts` collapses those
+  into a single ask carried by the most complete search. An added surname or
+  phone folds in; a half-typed name folds in only when it was typed minutes
+  earlier, so "Ana" and "Anabel" a week apart stay two asks. 16 unit tests.
+- **Swiped, not stacked.** The asks are a scroll-snap deck with a counter and
+  dots, so ten pending people cost one screen instead of ten.
+- **Answering costs one tap.** When the search matched exactly one adopter the
+  ask names them and records straight onto that profile; when it matched nobody
+  it opens the create form carrying the query and the answer.
+- **An ask retires** when it is answered, dismissed, or when the rescuer
+  records anything about that adopter anywhere else.
+- Only the rescuer's own search box files these searches; the adopter picker,
+  the flag dialog and back-navigation re-runs do not.
+
+New table `pending_searches` (migration `0069`), server actions
+`getPendingAsks` / `resolvePendingAsk`, and `tests/pending-searches.authed.spec.ts`.
+
 ## [2.56.80] - 2026-09-24
 
 ### Fixed — the last two protected routes with no loading boundary

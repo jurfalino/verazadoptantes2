@@ -79,3 +79,4 @@ export type { MatchContext } from './matchContext';
 
 export { getAnimalProfile, addAnimalEvent, deleteAnimalEvent } from './animalTimeline';
 export type { AnimalProfileData, AnimalTimelineItem } from './animalTimeline';
+export { getPendingAsks, resolvePendingAsk } from './pendingSearches';

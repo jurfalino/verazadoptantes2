@@ -86,6 +86,7 @@ export async function GET() {
             // it, so enabling the feature could silently disable it. Third
             // instance of this bug; see the v2.19.48 note above.
             ENABLE_HOUSEHOLD_MEMBERS: config['ENABLE_HOUSEHOLD_MEMBERS'] || 'false',
+            ENABLE_PENDING_SEARCHES: config['ENABLE_PENDING_SEARCHES'] || 'false',
             ENABLE_PINNED_VISIT_INTENT: config['ENABLE_PINNED_VISIT_INTENT'] || 'false',
             ENABLE_EMAIL_OTP: config['ENABLE_EMAIL_OTP'] || 'false',
             ENABLE_FOLLOWUPS: config['ENABLE_FOLLOWUPS'] || 'true',

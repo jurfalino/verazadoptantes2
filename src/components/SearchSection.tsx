@@ -299,7 +299,10 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
         try {
             const response = await findAdopters(
                 { raw: query },
-                { mode: 'discovery', enrich: true },
+                // trackPending: only a search the rescuer typed here becomes a
+                // "¿qué pasó?" ask later. The ?q= re-run above must not, or
+                // every back-navigation would file the same search again.
+                { mode: 'discovery', enrich: true, trackPending: true },
             );
             if (searchSeqRef.current !== seq) return;
             if (!response) throw new Error('No response from search');

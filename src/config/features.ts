@@ -88,6 +88,7 @@ export const FEATURE_FLAGS = {
     // Structured household/family members (name+relationship+own contacts) —
     // replaces the free-text family section. Household redesign (2026-08).
     ENABLE_HOUSEHOLD_MEMBERS: false,
+    ENABLE_PENDING_SEARCHES: false,
     // Pins the "¿Qué pasó con X?" visit-intent card to the bottom of the screen on
     // adopter profiles, so recording activity is one tap from anywhere instead of
     // below the whole adopter card. Read server-side by the profile page, so it
@@ -195,6 +196,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         SHOWCASE_USER_VISIBLE: false,
         ENABLE_GUIDED_WALKTHROUGH: false,
         ENABLE_HOUSEHOLD_MEMBERS: false,
+    ENABLE_PENDING_SEARCHES: false,
         ENABLE_PINNED_VISIT_INTENT: false,
     };
 

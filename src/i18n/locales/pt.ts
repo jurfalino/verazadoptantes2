@@ -161,6 +161,8 @@ export const pt = {
         flag_desc_guided_walkthrough: 'Lança uma vez um tour guiado para usuários novos que os orienta a buscar um adotante por nome e ler o resultado. Também adiciona um link "Me mostre como buscar" ao final da dica abaixo da busca. Desativado por padrão.',
         flag_label_household_members: 'Familiares / conviventes estruturados',
         flag_desc_household_members: 'Substitui o campo de texto livre de familiares por pessoas estruturadas (nome, parentesco e dados de contato próprios), protegidas e detectadas como duplicados como o adotante. Desligado por padrão.',
+        flag_label_pending_searches: 'Cartões "Ficou pendente"',
+        flag_desc_pending_searches: 'Na página inicial, pergunta ao resgatista o que aconteceu com as pessoas que procurou e não registrou. Agrupa as buscas da mesma pessoa e mostra a mais completa. Desligado por padrão.',
         flag_label_pinned_visit_intent: 'Cartão "O que aconteceu?" fixo embaixo',
         flag_desc_pinned_visit_intent: 'Fixa o cartão "O que aconteceu com…?" na parte de baixo da tela nos perfis, para registrar o que aconteceu com um toque de qualquer lugar, em vez de abaixo de toda a ficha. Sai da frente enquanto um campo é editado. Desligado por padrão.',
         flag_label_followups: 'Acompanhamentos de adoção',
@@ -2244,5 +2246,17 @@ export const pt = {
         demo_cierre_title: 'É algum desses?',
         demo_cierre_body: 'Se um deles é o Juan que você procura, você já tem o histórico dele. Se não aparecer, crie um registro novo.',
     },
+    pendingSearches: {
+        title: 'Ficou pendente',
+        subtitle: 'Você procurou estas pessoas e não ficou registro. Um toque basta.',
+        searched_times: '{count} buscas · {when}',
+        searched_once: 'Você procurou "{query}" {when}',
+        option_request: 'Me pediu um animal',
+        option_adoption: 'Dei um animal a ele',
+        option_nothing: 'Não aconteceu nada',
+        saved: 'Salvo',
+        save_failed: 'Não conseguimos salvar',
+    },
+
 };
 

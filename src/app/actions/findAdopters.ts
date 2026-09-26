@@ -14,6 +14,7 @@
  */
 
 import { adopters, searches, adopterHistory, adoptions, adopterStats, duplicateTokens, piiAccessGrants } from '@/db/schema';
+import { recordPendingSearch } from '@/lib/pendingSearchLog';
 import { or, like, sql, and, isNull, eq, ne, desc } from 'drizzle-orm';
 import { logger, withTrace } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
@@ -959,7 +960,12 @@ async function runDiscoveryMode(
     }
 
     const allProfiles = [...directResults, ...extraProfiles];
-    if (allProfiles.length === 0) return { results: [] };
+    if (allProfiles.length === 0) {
+        // Nobody matched — the most interesting case to ask about later, since
+        // the rescuer knows someone the registry does not.
+        if (options.trackPending) await recordPendingSearch(db, { userEmail: user, query: normalizedQuery });
+        return { results: [] };
+    }
 
     // PII access gating: resolve per-result visibility once for the whole batch.
     const piiGatingOn = !isUnauthenticated && await isPiiGatingEnabled();
@@ -1312,6 +1318,12 @@ async function runDiscoveryMode(
         ? allResults.length : undefined;
 
     const totalCount = mainResults.length;
+    if (options.trackPending) {
+        // One result means we know who they were looking at, so the ask can name
+        // them and save straight onto that profile. With several, it cannot.
+        const onlyMatch = mainResults.length === 1 ? mainResults[0].adopterId : null;
+        await recordPendingSearch(db, { userEmail: user, query: normalizedQuery, adopterId: onlyMatch });
+    }
     logger.info('findAdopters:discovery', { query: normalizedQuery, tokens: tokens.length, resultCount: Math.min(totalCount, limit), user });
     logAudit({ userEmail: user, action: 'search', details: { query: normalizedQuery, resultCount: Math.min(totalCount, limit) } });
 

@@ -161,6 +161,8 @@ export const es = {
         flag_desc_guided_walkthrough: 'Lanza una vez un recorrido guiado para usuarios nuevos que los guía a buscar un adoptante por nombre y leer el resultado. También agrega un enlace "Mostrame cómo buscar" al final de la ayuda debajo del buscador. Por defecto apagado.',
         flag_label_household_members: 'Familiares / Convivientes estructurados',
         flag_desc_household_members: 'Reemplaza el campo de texto libre de familiares por personas estructuradas (nombre, parentesco y datos de contacto propios), protegidas y detectadas como duplicados igual que el adoptante. Por defecto apagado.',
+        flag_label_pending_searches: 'Tarjetas "Quedó pendiente"',
+        flag_desc_pending_searches: 'En la portada, le pregunta al rescatista qué pasó con las personas que buscó y no registró. Agrupa las búsquedas de una misma persona y muestra la más completa. Por defecto apagado.',
         flag_label_pinned_visit_intent: 'Tarjeta "¿Qué pasó?" fija abajo',
         flag_desc_pinned_visit_intent: 'Fija la tarjeta "¿Qué pasó con…?" al pie de la pantalla en los perfiles, para registrar lo que pasó con un toque desde cualquier parte, en vez de tener que bajar hasta debajo de toda la ficha. Se corre mientras se edita un campo. Por defecto apagado.',
         flag_label_followups: 'Seguimientos de adopción',
@@ -2244,5 +2246,17 @@ export const es = {
         demo_cierre_title: '¿Es alguno de estos?',
         demo_cierre_body: 'Si uno es el Juan que buscás, ya tenés su historial. Si no aparece, creá un registro nuevo.',
     },
+    pendingSearches: {
+        title: 'Quedó pendiente',
+        subtitle: 'Buscaste a estas personas y no quedó registro. Un toque alcanza.',
+        searched_times: '{count} búsquedas · {when}',
+        searched_once: 'Buscaste "{query}" {when}',
+        option_request: 'Me pidió un animal',
+        option_adoption: 'Le dí un animal',
+        option_nothing: 'No pasó nada',
+        saved: 'Guardado',
+        save_failed: 'No pudimos guardar',
+    },
+
 };
 

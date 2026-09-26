@@ -10,6 +10,7 @@ import { tokenizeAdopter } from './duplicates';
 import { saveAdoptionSchema } from './validation';
 import { insertRecord, updateRecord, deleteRecordById, softDeleteAnimal, isAnimalBacked, countAnimalLinks, deletePlacementForAdopter } from './_recordWrite';
 import { decideAnimalFate, NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
+import { closePendingSearchesForAdopter } from '@/lib/pendingSearchLog';
 
 export async function saveAdoption(data: typeof adoptions.$inferInsert) {
     // Validate input
@@ -171,6 +172,10 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
             if (data.adopterId && data.onBehalfOf) {
                 await tokenizeAdopter(data.adopterId).catch(e => { logger.error('Tokenize adopter failed (adoption create)', e, { adopterId: data.adopterId }); });
             }
+
+            // The work is done, so the homepage must stop asking about it
+            // (ENABLE_PENDING_SEARCHES). Best-effort inside the helper.
+            if (data.adopterId) await closePendingSearchesForAdopter(db, changedBy, data.adopterId);
 
             return { success: true, id };
         }

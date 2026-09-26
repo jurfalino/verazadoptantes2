@@ -19,6 +19,8 @@ import { logger } from '@/lib/logger';
 
 export const PUBLIC_FLAG_KEYS = [
     'ENABLE_HOUSEHOLD_MEMBERS',
+    // Homepage deck asking about searches that never became a record.
+    'ENABLE_PENDING_SEARCHES',
     'ENABLE_CONTENT_IMPORT',
     'ENABLE_CONTACT_IMPORT',
     'ENABLE_GOOGLE_CONTACTS_IMPORT',
@@ -49,6 +51,7 @@ export const PUBLIC_FLAG_KEYS = [
 ] as const;
 
 export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
+    ENABLE_PENDING_SEARCHES: 'false',
     ENABLE_CONTENT_IMPORT: 'false',
     ENABLE_CONTACT_IMPORT: 'false',
     ENABLE_GOOGLE_CONTACTS_IMPORT: 'false',

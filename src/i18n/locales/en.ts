@@ -161,6 +161,8 @@ export const en = {
         flag_desc_guided_walkthrough: 'Auto-launch a one-time spotlight tour for new users that guides them to search an adopter by name and read the result. Also appends a "Show me how to search" link to the hint under the search box. Default off.',
         flag_label_household_members: 'Structured household members',
         flag_desc_household_members: 'Replaces the free-text family field with structured people (name, relationship, and their own contact details), PII-protected and deduplicated like the adopter. Off by default.',
+        flag_label_pending_searches: '"Still pending" cards',
+        flag_desc_pending_searches: 'On the homepage, asks the rescuer what happened with the people they searched for and never recorded. Searches for the same person are grouped, showing the most complete one. Off by default.',
         flag_label_pinned_visit_intent: 'Pinned "What happened?" card',
         flag_desc_pinned_visit_intent: 'Pins the "What happened with…?" card to the bottom of the screen on profiles, so recording what happened is one tap from anywhere instead of below the whole adopter card. Slides away while a field is being edited. Off by default.',
         flag_label_followups: 'Adoption follow-ups',
@@ -2239,4 +2241,16 @@ export const en = {
         demo_cierre_title: 'Is it one of these?',
         demo_cierre_body: 'If one is the Juan you want, you’ve got their history. If none match, create a new record.',
     },
+    pendingSearches: {
+        title: 'Still pending',
+        subtitle: 'You looked these people up and nothing was recorded. One tap is enough.',
+        searched_times: '{count} searches · {when}',
+        searched_once: 'You searched "{query}" {when}',
+        option_request: 'They asked me for an animal',
+        option_adoption: 'I gave them an animal',
+        option_nothing: 'Nothing happened',
+        saved: 'Saved',
+        save_failed: "We couldn't save that",
+    },
+
 };
