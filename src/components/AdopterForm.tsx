@@ -449,6 +449,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                 familyMembers: data.familyMembers || undefined,
             });
             if (result.success && result.adopterId) {
+                zarazTrack('adopter_updated', { source: 'append' });
                 router.push(`/adopter/${result.adopterId}`);
             } else {
                 // eslint-disable-next-line no-alert
@@ -613,6 +614,9 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                         window.location.href = redirectUrl;
                     }
                 } else {
+                    // Counterpart of adopter_created for the funnel's "created or
+                    // modified an adopter" step.
+                    zarazTrack('adopter_updated', { source: 'form' });
                     setIsEditing(false);
                     router.refresh();
                 }
@@ -761,6 +765,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             toast.error(t('toast.save_error_title'), t('errors.save_adopter_failed'), errorId);
             return false;
         }
+        zarazTrack('adopter_updated', { source: 'inline', field });
         return true;
     }, [toast, t]);
 

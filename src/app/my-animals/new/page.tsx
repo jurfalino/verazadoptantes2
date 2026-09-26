@@ -10,6 +10,7 @@ import { saveAdoption, deleteAnimalForAdoption, deleteAnimalImage } from '@/app/
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { computeBirthDate, deriveAgeFromBirthDate, parseLegacyAge } from '@/lib/ageUtils';
 import Link from 'next/link';
+import { zarazTrack } from '@/lib/zaraz';
 
 /** Compress image to max 1200px and JPEG 80% */
 function compressImage(file: File): Promise<string> {
@@ -230,6 +231,10 @@ function CreateAnimalForm() {
                 for (const img of pendingImages) {
                     await saveImage('__available__', img, `Photo for ${formData.animalName}`, targetId || undefined, 'image');
                 }
+            }
+
+            if (!isEditMode && result?.id) {
+                zarazTrack('animal_listed', { species: formData.species, hasMedia: pendingImages.length > 0 ? 1 : 0 });
             }
 
             toast.success(

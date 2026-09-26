@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.85] - 2026-09-26
+
+### Added — PostHog sees what rescuers do, not just which pages they open
+
+Groundwork for a PostHog funnel: landed → signed in → searched → saved an
+adopter → listed an animal. Until now PostHog only received page loads and
+logins; every product event went to Amplitude alone.
+
+- **Every `zarazTrack` event is mirrored to PostHog** (`search_performed`,
+  `adopter_created`, `import_completed`, …). Events fired before PostHog's
+  deferred init are queued and sent once it loads, instead of being dropped.
+- **New events:** `adopter_updated` (full edit, inline field edit, "continue
+  with this existing profile") and `animal_listed` (new animal in Mis animales,
+  not edits). Both also reach Amplitude.
+- **`signed_in_visit`** (PostHog only), once per browser session for a logged-in
+  user. `signed_in` fires only on a fresh login, so it misses rescuers whose
+  session carried over.
+- **Fixed:** a user whose session loaded before PostHog initialised was never
+  identified until the session object changed.
+
 ## [2.56.84] - 2026-09-26
 
 ### Fixed — the deck named a person it had not identified, and wrote to them
