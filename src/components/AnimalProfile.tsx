@@ -442,11 +442,19 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
     const [mainId, setMainId] = useState<string | null>(images.find(i => i.isPrimary)?.id ?? null);
     const [uploading, setUploading] = useState(false);
 
+    /** Photos uploaded during THIS save that have already landed. Kept apart
+     *  from `images` (stale until the page refreshes) so that a later step
+     *  failing can't make a photo that IS saved vanish from the editor — the
+     *  user would add it again and get a duplicate. */
+    const [justUploaded, setJustUploaded] = useState<{ id: string; dataUrl: string }[]>([]);
     const kept = images.filter(i => !removed.has(i.id));
-    /** Most animals predate the flag: the hero is simply the first photo, so
-     *  show that as «Principal» rather than leaving the row with no main. */
-    const shownMain = mainId ?? kept[0]?.id ?? null;
-    const totalAfter = kept.length + added.length;
+    const keptNew = justUploaded.filter(i => !removed.has(i.id));
+    /** Only an explicit pick counts. There is deliberately NO default: with no
+     *  primary set the surfaces disagree about which photo leads (the animal
+     *  page shows the newest, the cards and public page the oldest), so
+     *  badging one of them would promise a hero the rest of the app ignores. */
+    const shownMain = mainId;
+    const totalAfter = kept.length + keptNew.length + added.length;
     /** Removing the last photo un-lists an available animal — say so BEFORE saving. */
     const warnsEmpty = isAvailable && totalAfter === 0 && images.length > 0;
 
@@ -475,26 +483,32 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
      *  be the chosen main; returns an error message, or null on success. */
     const applyPhotos = async (): Promise<string | null> => {
         const { addAnimalPhoto, deleteAnimalPhoto, setAnimalPrimaryPhoto } = await import('@/app/actions');
-        const newIdByKey = new Map<string, string>();
+        // Tracked locally too: React state set inside this loop isn't readable
+        // back before it ends, and a retry must see the effect of what landed.
+        let effectiveMain = mainId;
         for (const item of added) {
             const res = await addAnimalPhoto(animal.id, item.dataUrl);
             if ('error' in res) return res.error;
-            newIdByKey.set(item.key, res.id);
-            // Drop it from the staging list immediately: if a later step fails,
-            // pressing Guardar again must not upload this photo a second time.
+            // It exists now, so stop treating it as staged: a retry must not
+            // upload it twice, and it must stay VISIBLE if a later step fails.
             setAdded(prev => prev.filter(x => x.key !== item.key));
+            setJustUploaded(prev => [...prev, { id: res.id, dataUrl: item.dataUrl }]);
+            if (effectiveMain === item.key) {
+                effectiveMain = res.id;   // the choice follows the real id
+                setMainId(res.id);
+            }
         }
         for (const id of removed) {
             const res = await deleteAnimalPhoto(animal.id, id);
             // Already gone is the outcome we wanted — don't wedge a retry on it.
             if ('error' in res && res.error !== 'Not found') return res.error;
             setRemoved(prev => { const next = new Set(prev); next.delete(id); return next; });
+            setJustUploaded(prev => prev.filter(x => x.id !== id));
         }
-        if (mainId) {
-            const resolved = newIdByKey.get(mainId) ?? (mainId.startsWith('new:') ? undefined : mainId);
+        if (effectiveMain && !effectiveMain.startsWith('new:')) {
             const wasPrimary = images.find(i => i.isPrimary)?.id;
-            if (resolved && resolved !== wasPrimary) {
-                const res = await setAnimalPrimaryPhoto(animal.id, resolved);
+            if (effectiveMain !== wasPrimary) {
+                const res = await setAnimalPrimaryPhoto(animal.id, effectiveMain);
                 if ('error' in res) return res.error;
             }
         }
@@ -631,6 +645,35 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
                             </div>
                         );
                     })}
+                    {keptNew.map(im => {
+                        const isMain = shownMain === im.id;
+                        return (
+                            <div key={im.id} className="relative">
+                                <img src={im.dataUrl} alt="" className={`w-20 h-20 rounded-xl object-cover border-2 ${isMain ? 'border-teal-500' : 'border-stone-200'}`} />
+                                <button
+                                    type="button" onClick={() => setMainId(im.id)} aria-pressed={isMain}
+                                    aria-label={t('animalProfile.photo_make_main') || 'Hacer principal'}
+                                    title={t('animalProfile.photo_make_main') || 'Hacer principal'}
+                                    className={`absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors ${isMain ? 'bg-teal-600 text-white' : 'bg-white/90 text-stone-600 hover:bg-white'}`}
+                                    data-testid={`photo-main-${im.id}`}
+                                >
+                                    {isMain ? (t('animalProfile.photo_main') || 'Principal') : (
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden><path d="M12 3l2.6 5.8 6.4.7-4.8 4.3 1.4 6.2-5.6-3.2-5.6 3.2 1.4-6.2L3 9.5l6.4-.7z" /></svg>
+                                    )}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setRemoved(prev => new Set(prev).add(im.id));
+                                        setMainId(cur => cur === im.id ? null : cur);
+                                    }}
+                                    aria-label={t('animalProfile.photo_remove') || 'Quitar foto'}
+                                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-stone-800 text-white text-xs leading-none grid place-items-center"
+                                    data-testid={`photo-remove-${im.id}`}
+                                >×</button>
+                            </div>
+                        );
+                    })}
                     {added.map(({ key, dataUrl }) => {
                         const isMain = shownMain === key;
                         return (
@@ -664,7 +707,12 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
                         ) : (
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M4 8h3l2-2h6l2 2h3v11H4V8z" /><circle cx="12" cy="13" r="3.5" /></svg>
                         )}
-                        <input type="file" accept="image/*" className="hidden" onChange={pickPhoto} disabled={uploading} data-testid="animal-photo-input" />
+                        <input
+                            type="file" accept="image/*" className="hidden"
+                            onChange={pickPhoto} disabled={uploading}
+                            aria-label={t('animalProfile.photo_add') || 'Agregar foto'}
+                            data-testid="animal-photo-input"
+                        />
                     </label>
                 </div>
                 {warnsEmpty && (

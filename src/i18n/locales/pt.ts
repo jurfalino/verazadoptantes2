@@ -1434,6 +1434,7 @@ export const pt = {
         profile_pending_dup_other_tooltip: 'O sistema detectou outro registro parecido. Apenas o responsável pelo registro pode revisá-lo.',
     },
     animalProfile: {
+        photo_add: 'Adicionar foto',
         field_photos: 'Fotos',
         photo_make_main: 'Tornar principal',
         photo_main: 'Principal',

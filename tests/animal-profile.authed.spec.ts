@@ -211,7 +211,13 @@ test.describe('Animal detail page', () => {
         await page.getByTestId('profile-edit').click();
         await expect(editor.locator('img')).toHaveCount(before);
 
-        // Add TWO, so "which one leads" is a real choice.
+        // Add TWO, so "which one leads" is a real choice. Ids are read from the
+        // DOM rather than picked by position: the surfaces disagree about which
+        // photo comes first when none is primary, and a retry that left debris
+        // on this shared fixture would silently target a seeded photo.
+        const idsOf = async () => (await page.locator('[data-testid^="photo-main-"]').all())
+            .reduce(async (acc, el) => [...(await acc), (await el.getAttribute('data-testid'))!.replace('photo-main-', '')], Promise.resolve([] as string[]));
+        const idsBefore = await idsOf();
         await page.getByTestId('animal-photo-input').setInputFiles(file);
         await expect(editor.locator('img')).toHaveCount(before + 1);
         await page.getByTestId('animal-photo-input').setInputFiles(file);
@@ -219,12 +225,13 @@ test.describe('Animal detail page', () => {
         await page.getByTestId('inline-edit-save').click();
         await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
 
-        // Both persisted. Make the LAST one the main photo and save.
+        // Both persisted. Take the ids THIS test created and make one main.
         await page.getByTestId('profile-edit').click();
         await expect(editor.locator('img')).toHaveCount(before + 2, { timeout: 30000 });
-        const lastMainBtn = page.locator('[data-testid^="photo-main-"]').last();
-        const chosen = await lastMainBtn.getAttribute('data-testid');
-        await lastMainBtn.click();
+        const mine = (await idsOf()).filter(id => !idsBefore.includes(id));
+        expect(mine).toHaveLength(2);
+        const chosen = mine[1];
+        await page.getByTestId(`photo-main-${chosen}`).click();
         await page.getByTestId('inline-edit-save').click();
         await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
 
@@ -232,11 +239,11 @@ test.describe('Animal detail page', () => {
         // chosen photo is now FIRST, which is what is_primary ordering buys.
         await page.getByTestId('profile-edit').click();
         const firstMainBtn = page.locator('[data-testid^="photo-main-"]').first();
-        await expect(firstMainBtn).toHaveAttribute('data-testid', chosen!, { timeout: 30000 });
+        await expect(firstMainBtn).toHaveAttribute('data-testid', `photo-main-${chosen}`, { timeout: 30000 });
         await expect(firstMainBtn).toHaveAttribute('aria-pressed', 'true');
 
-        // Clean the fixture up: remove both photos this test added.
-        for (let i = 0; i < 2; i++) await page.locator('[data-testid^="photo-remove-"]').last().click();
+        // Clean up exactly the two this test added — never by position.
+        for (const id of mine) await page.getByTestId(`photo-remove-${id}`).click();
         await expect(editor.locator('img')).toHaveCount(before);
         await page.getByTestId('inline-edit-save').click();
         await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });

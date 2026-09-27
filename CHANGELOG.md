@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.89] - 2026-09-27
+
+### Fixed — review findings on the photo editor (self-review before production)
+
+- **«Principal» was a false label on every existing animal.** With no primary
+  chosen, the editor badged the first photo *as the animal page orders them*
+  (newest first) — but the cards, the public page and the contract lead with the
+  oldest. So the badge named one photo while adopters saw another. No photo is
+  badged now until someone actually picks one; the split fallback order itself
+  is older than this feature and is left alone deliberately.
+- **A partial failure could hide a photo that was already saved, and silently
+  drop the main choice.** Uploads were removed from the staging list as they
+  landed, but nothing rendered them until the page refreshed — so if a later
+  delete failed, a photo that existed vanished from the editor and the user
+  would add it again. Worse, a «main» pointing at a staged photo resolved to
+  nothing on retry, so the choice was skipped without a word. Landed uploads are
+  now promoted to real photos in place, carrying the main choice onto their real
+  id as they go.
+- **The file input had no accessible name** — its label holds only an icon.
+- **The e2e picked and cleaned up photos by position**, on a fixture shared with
+  other specs. It now diffs the ids it created and cleans up exactly those.
+
 ## [2.56.88] - 2026-09-27
 
 ### Fixed — the chosen main photo was being discarded by two readers

@@ -1429,6 +1429,7 @@ export const en = {
         profile_pending_dup_other_tooltip: 'The system detected another similar record. Only the responsible rescuer can review.',
     },
     animalProfile: {
+        photo_add: 'Add photo',
         field_photos: 'Photos',
         photo_make_main: 'Make main photo',
         photo_main: 'Main',
