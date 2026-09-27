@@ -188,7 +188,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                             animal={animal}
                             images={images}
                             isAvailable={!activePlacement}
-                            onCancel={() => setEditing(false)}
+                            onCancel={() => { setEditing(false); router.refresh(); }}
                             onSaved={() => { setEditing(false); router.refresh(); }}
                         />
                     ) : (
@@ -439,7 +439,12 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
        photo added in this same session can be chosen as the main one. */
     const [removed, setRemoved] = useState<Set<string>>(new Set());
     const [added, setAdded] = useState<{ key: string; dataUrl: string }[]>([]);
-    const [mainId, setMainId] = useState<string | null>(images.find(i => i.isPrimary)?.id ?? null);
+    /** Only an EXPLICIT pick during this edit. The stored primary is read from
+     *  props on every render instead of latched into state — `useState(props)`
+     *  runs once at mount, and reopening the editor right after a save mounts
+     *  it before `router.refresh()` lands, which left the photo just chosen
+     *  rendering as unchosen until the form was closed and opened again. */
+    const [mainPick, setMainPick] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
 
     /** Photos uploaded during THIS save that have already landed. Kept apart
@@ -453,7 +458,8 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
      *  primary set the surfaces disagree about which photo leads (the animal
      *  page shows the newest, the cards and public page the oldest), so
      *  badging one of them would promise a hero the rest of the app ignores. */
-    const shownMain = mainId;
+    const storedPrimary = images.find(i => i.isPrimary)?.id ?? null;
+    const shownMain = mainPick ?? (storedPrimary && !removed.has(storedPrimary) ? storedPrimary : null);
     const totalAfter = kept.length + keptNew.length + added.length;
     /** Removing the last photo un-lists an available animal — say so BEFORE saving. */
     const warnsEmpty = isAvailable && totalAfter === 0 && images.length > 0;
@@ -485,7 +491,7 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
         const { addAnimalPhoto, deleteAnimalPhoto, setAnimalPrimaryPhoto } = await import('@/app/actions');
         // Tracked locally too: React state set inside this loop isn't readable
         // back before it ends, and a retry must see the effect of what landed.
-        let effectiveMain = mainId;
+        let effectiveMain = mainPick;
         for (const item of added) {
             const res = await addAnimalPhoto(animal.id, item.dataUrl);
             if ('error' in res) return res.error;
@@ -495,7 +501,7 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
             setJustUploaded(prev => [...prev, { id: res.id, dataUrl: item.dataUrl }]);
             if (effectiveMain === item.key) {
                 effectiveMain = res.id;   // the choice follows the real id
-                setMainId(res.id);
+                setMainPick(res.id);
             }
         }
         for (const id of removed) {
@@ -506,8 +512,7 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
             setJustUploaded(prev => prev.filter(x => x.id !== id));
         }
         if (effectiveMain && !effectiveMain.startsWith('new:')) {
-            const wasPrimary = images.find(i => i.isPrimary)?.id;
-            if (effectiveMain !== wasPrimary) {
+            if (effectiveMain !== storedPrimary) {
                 const res = await setAnimalPrimaryPhoto(animal.id, effectiveMain);
                 if ('error' in res) return res.error;
             }
@@ -621,7 +626,7 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
                                 <img src={im.thumbnailUrl || im.url} alt={im.caption || ''}
                                     className={`w-20 h-20 rounded-xl object-cover border-2 ${isMain ? 'border-teal-500' : 'border-stone-200'}`} />
                                 <button
-                                    type="button" onClick={() => setMainId(im.id)}
+                                    type="button" onClick={() => setMainPick(im.id)}
                                     aria-pressed={isMain}
                                     aria-label={t('animalProfile.photo_make_main') || 'Hacer principal'}
                                     title={t('animalProfile.photo_make_main') || 'Hacer principal'}
@@ -636,7 +641,7 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
                                     type="button"
                                     onClick={() => {
                                         setRemoved(prev => new Set(prev).add(im.id));
-                                        setMainId(cur => cur === im.id ? null : cur);
+                                        setMainPick(cur => cur === im.id ? null : cur);
                                     }}
                                     aria-label={t('animalProfile.photo_remove') || 'Quitar foto'}
                                     className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-stone-800 text-white text-xs leading-none grid place-items-center"
@@ -651,7 +656,7 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
                             <div key={im.id} className="relative">
                                 <img src={im.dataUrl} alt="" className={`w-20 h-20 rounded-xl object-cover border-2 ${isMain ? 'border-teal-500' : 'border-stone-200'}`} />
                                 <button
-                                    type="button" onClick={() => setMainId(im.id)} aria-pressed={isMain}
+                                    type="button" onClick={() => setMainPick(im.id)} aria-pressed={isMain}
                                     aria-label={t('animalProfile.photo_make_main') || 'Hacer principal'}
                                     title={t('animalProfile.photo_make_main') || 'Hacer principal'}
                                     className={`absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors ${isMain ? 'bg-teal-600 text-white' : 'bg-white/90 text-stone-600 hover:bg-white'}`}
@@ -665,7 +670,7 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
                                     type="button"
                                     onClick={() => {
                                         setRemoved(prev => new Set(prev).add(im.id));
-                                        setMainId(cur => cur === im.id ? null : cur);
+                                        setMainPick(cur => cur === im.id ? null : cur);
                                     }}
                                     aria-label={t('animalProfile.photo_remove') || 'Quitar foto'}
                                     className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-stone-800 text-white text-xs leading-none grid place-items-center"
@@ -680,7 +685,7 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
                             <div key={key} className="relative">
                                 <img src={dataUrl} alt="" className={`w-20 h-20 rounded-xl object-cover border-2 ${isMain ? 'border-teal-500' : 'border-teal-200'}`} />
                                 <button
-                                    type="button" onClick={() => setMainId(key)} aria-pressed={isMain}
+                                    type="button" onClick={() => setMainPick(key)} aria-pressed={isMain}
                                     aria-label={t('animalProfile.photo_make_main') || 'Hacer principal'}
                                     title={t('animalProfile.photo_make_main') || 'Hacer principal'}
                                     className={`absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors ${isMain ? 'bg-teal-600 text-white' : 'bg-white/90 text-stone-600 hover:bg-white'}`}
@@ -693,7 +698,7 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
                                     type="button"
                                     onClick={() => {
                                         setAdded(prev => prev.filter(x => x.key !== key));
-                                        setMainId(cur => cur === key ? null : cur);
+                                        setMainPick(cur => cur === key ? null : cur);
                                     }}
                                     aria-label={t('animalProfile.photo_remove') || 'Quitar foto'}
                                     className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-stone-800 text-white text-xs leading-none grid place-items-center"

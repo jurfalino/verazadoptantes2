@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.90] - 2026-09-27
+
+### Fixed — the chosen main photo showed as unchosen right after saving
+
+`useState(props)` runs once at mount. Reopening the editor immediately after a
+save mounted the form before `router.refresh()` landed, so the stored primary
+was captured as `null` and never re-read — the photo just chosen rendered
+unpicked until the form was closed and opened again. The stored primary is now
+derived from props on every render; only an explicit pick is held in state.
+
+Also: **Cancelar now refreshes.** After a partial failure some photos really had
+saved, but cancelling kept the stale props and dropped the in-memory record of
+them, so a saved photo vanished from the editor and would be added again as a
+duplicate — the same defect 2.56.89 fixed on the retry path, reached through
+Cancelar instead.
+
+The e2e now makes primary the photo that is *not* already on top, so the
+assertion can only pass if `is_primary` actually reorders the gallery.
+
 ## [2.56.89] - 2026-09-27
 
 ### Fixed — review findings on the photo editor (self-review before production)

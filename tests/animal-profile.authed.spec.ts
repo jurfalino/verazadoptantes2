@@ -230,7 +230,13 @@ test.describe('Animal detail page', () => {
         await expect(editor.locator('img')).toHaveCount(before + 2, { timeout: 30000 });
         const mine = (await idsOf()).filter(id => !idsBefore.includes(id));
         expect(mine).toHaveLength(2);
-        const chosen = mine[1];
+        // Whichever of the two is NOT already on top. Picking by position is
+        // unsafe (uploaded_at has one-second resolution, so two uploads in one
+        // save usually tie), and picking the one already first would satisfy
+        // "is first" without is_primary doing any work at all.
+        const firstNow = (await page.locator('[data-testid^="photo-main-"]').first()
+            .getAttribute('data-testid'))!.replace('photo-main-', '');
+        const chosen = mine.find(id => id !== firstNow)!;
         await page.getByTestId(`photo-main-${chosen}`).click();
         await page.getByTestId('inline-edit-save').click();
         await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
