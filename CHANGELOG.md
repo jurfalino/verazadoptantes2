@@ -2,6 +2,57 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.86] - 2026-09-27
+
+### Added — an animal's photos can finally be changed after it is created
+
+Until now photos could only be set while creating the animal. The animal's page
+showed them read-only and the in-place edit carried the text fields only, so a
+wrong or missing photo meant deleting and re-creating the animal — losing its
+whole line of life with it. Worse, a photoless animal is hidden from the public
+catalogue (`/api/showcase/animal/[id]` 404s without one), so an animal created
+without photos could never be listed publicly at all.
+
+The edit mode on `/my-animals/[id]` now has a photos section: add, remove, and
+pick which one leads the ficha.
+
+- **Staged, not applied on click.** The section lives inside a Guardar/Cancelar
+  form, so nothing reaches the server until Guardar — a Cancelar that left a
+  photo deleted would break the promise those buttons make. On save, uploads run
+  first, so a photo added in the same session can be chosen as the main one.
+- **Removing the last photo warns first**, naming the consequence: the animal
+  drops off the public adoption page.
+
+### Added — `adopter_images.is_primary` (migration 0071)
+
+Deliberately NOT `is_profile_picture`: that column means "the avatar for
+`adopter_id`" and carries an exactly-one-per-ADOPTER invariant. Animal photos
+are keyed by `adoption_id`, and every available animal's rows share the
+`'__available__'` adopter sentinel — so reusing it would have made a single flag
+fight over every available animal in the system, and would have hijacked the
+adopter's avatar once the animal was placed. The new flag is scoped to
+`adoption_id`, and demotion is scoped the same way.
+
+**Every animal-photo reader is now ordered** `is_primary DESC, rowid ASC` —
+seven sites: the animal page, the list cards, the public showcase, the
+adopter-side record photos, the single-thumbnail picker, `/my-adoptions`, and
+both contract routes. This is load-bearing rather than cosmetic: three of those
+readers apply a `LIMIT`, so without ordering the chosen photo could be cut off
+entirely by `LIMIT 5`. `rowid` is the secondary key, not `uploaded_at`, because
+it is the order unordered readers already returned — so no existing hero moves —
+while `uploaded_at` has second resolution, ties across one upload loop, and can
+be NULL on imported rows.
+
+### Security
+
+The three new actions enforce what the generic image actions cannot: the photo
+must belong to the animal (`adoption_id === animalId`), so a caller with parity
+on one animal cannot reach another animal's rows — or an adopter's avatar — by
+passing a foreign image id. The gate is the animal's (owner ∨ org-mate ∨ admin)
+rather than `deleteImage`'s uploader-or-admin rule, which would otherwise stop a
+teammate from removing a photo on an animal they can already fully edit and even
+delete.
+
 ## [2.56.85] - 2026-09-26
 
 ### Added — PostHog sees what rescuers do, not just which pages they open

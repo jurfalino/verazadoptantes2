@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { getFeatureFlag } from '@/config/features';
+import { animalImagesOrder } from '@/lib/showcase';
 
 export const runtime = 'edge';
 
@@ -222,6 +223,7 @@ export async function GET(request: NextRequest) {
                 })
                     .from(adopterImages)
                     .where(eq(adopterImages.adoptionId, animal.id))
+                    .orderBy(animalImagesOrder())
                     .limit(5)
                     .all()
                     .catch((e: unknown) => {

@@ -324,6 +324,12 @@ async function attachAdoptionThumbnails<T extends { id: string }>(
                 .from(adopterImages)
                 .where(eq(adopterImages.adoptionId, r.id))
                 .orderBy(
+                    // v2.56.86: the chosen lead photo wins outright. Only the
+                    // flag is prepended — animalImagesOrder() ends in `rowid
+                    // ASC`, which is unique and would make the existing
+                    // "newest upload" tiebreakers below dead code, silently
+                    // flipping this thumbnail to the OLDEST photo.
+                    sql`${adopterImages.isPrimary} DESC`,
                     sql`${adopterImages.isProfilePicture} DESC`,
                     sql`${adopterImages.uploadedAt} DESC`,
                 )

@@ -72,6 +72,7 @@ export const adopterImages = sqliteTable("adopter_images", {
     uploadedAt: integer("uploaded_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     addedBy: text("added_by").default("anonymous"),
     isProfilePicture: integer("is_profile_picture").default(0), // 1 if this is the profile picture
+    isPrimary: integer("is_primary").default(0), // v2.56.86: lead photo for adoption_id (an ANIMAL, not an adopter)
     mediaType: text("media_type").default("image"), // 'image' or 'video'
     thumbnailUrl: text("thumbnail_url"), // Video thumbnail URL (R2)
 });

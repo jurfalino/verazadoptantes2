@@ -18,7 +18,7 @@
  */
 
 import { adoptions, adopterImages, users, organizations, orgMembers, userProfiles } from '@/db/schema';
-import { eq, and, isNull, desc } from 'drizzle-orm';
+import { eq, and, isNull, desc, sql } from 'drizzle-orm';
 
 export interface PublicAnimal {
     id: string;
@@ -132,6 +132,19 @@ export async function buildPublicRescuer(
 /** Fetch up to 5 images for a list of animal IDs. D1-safe: fan-out per id
  *  with eq() rather than inArray() per CLAUDE.md.
  */
+/** Ordering for an ANIMAL's photos (rows keyed by adoption_id = animals.id).
+ *
+ *  The chosen lead photo first, then rowid — insertion order, which is what
+ *  every unordered reader returned before v2.56.86, so no existing hero moves.
+ *  NOT uploaded_at: it has second resolution and ties across one create-form
+ *  upload loop, and imported rows can carry NULL (which sorts first in SQLite).
+ *
+ *  Load-bearing wherever a reader takes the FIRST image or applies a LIMIT —
+ *  without it the chosen photo can be cut off entirely by `LIMIT 5`. */
+export function animalImagesOrder() {
+    return sql`is_primary DESC, rowid ASC`;
+}
+
 export async function fetchAnimalImages(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     db: any,
@@ -147,6 +160,7 @@ export async function fetchAnimalImages(
                 caption: adopterImages.caption,
             }).from(adopterImages)
                 .where(eq(adopterImages.adoptionId, id))
+                .orderBy(animalImagesOrder())
                 .limit(5)
                 .all();
             map.set(id, imgs);

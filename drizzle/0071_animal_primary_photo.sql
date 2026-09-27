@@ -1,0 +1,13 @@
+-- v2.56.86: which photo leads an animal's ficha.
+--
+-- NOT `is_profile_picture`: that column means "this is the avatar for
+-- adopter_id" and carries an exactly-one-per-ADOPTER invariant. Animal photos
+-- are keyed by adoption_id, and an available animal's rows all share the
+-- '__available__' adopter sentinel — so reusing it would make one flag fight
+-- over every available animal in the system, and would hijack the adopter's
+-- avatar once the animal is placed.
+--
+-- This flag is scoped to adoption_id instead: at most one row per animal.
+-- 0 everywhere on existing rows, so every current hero (the first row by
+-- rowid) stays exactly where it is.
+ALTER TABLE adopter_images ADD COLUMN is_primary INTEGER DEFAULT 0;

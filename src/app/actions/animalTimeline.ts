@@ -28,6 +28,7 @@ import { buildWaMeUrl, buildTelegramUrl } from '@/lib/whatsapp';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
 import { z } from 'zod';
+import { animalImagesOrder } from '@/lib/showcase';
 
 export type AnimalTimelineItem = {
     /** Stable per-item id (placement id, `${placement.id}-end`, event id, or `${animalId}-created`). */
@@ -46,7 +47,7 @@ export type AnimalTimelineItem = {
     recordedBy: string | null;
     /** Ended spans: length in days (placement_end items). */
     spanDays: number | null;
-    images: { id: string; url: string; mediaType: string | null; thumbnailUrl: string | null; caption: string | null }[];
+    images: { id: string; url: string; mediaType: string | null; thumbnailUrl: string | null; caption: string | null; isPrimary?: boolean }[];
 };
 
 /** A projected follow-up slot, serialized for the client (dates as epoch ms). */
@@ -82,7 +83,7 @@ export type AnimalProfileData = {
     /** Current custody, if any. */
     activePlacement: { id: string; recordType: string; adopterId: string; adopterName: string | null; startedAt: number | null } | null;
     items: AnimalTimelineItem[];
-    images: { id: string; url: string; mediaType: string | null; thumbnailUrl: string | null; caption: string | null }[];
+    images: { id: string; url: string; mediaType: string | null; thumbnailUrl: string | null; caption: string | null; isPrimary?: boolean }[];
     /** ENABLE_FOLLOWUPS is on for this deployment/user. */
     followupsEnabled: boolean;
     /** Projected follow-up slots for the ACTIVE placement (empty when none/flag off). */
@@ -162,7 +163,7 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
             .orderBy(desc(adopterEvents.date)).all().catch(fallback('adopterEvents')),
         db.select().from(animalEvents).where(eq(animalEvents.animalId, animalId))
             .orderBy(desc(animalEvents.date)).all().catch(fallback('animalEvents')),
-        db.select().from(adopterImages).where(eq(adopterImages.adoptionId, animalId))
+        db.select().from(adopterImages).where(eq(adopterImages.adoptionId, animalId)).orderBy(animalImagesOrder())
             .orderBy(sql`${adopterImages.uploadedAt} DESC`).all().catch(fallback('images')),
     ]);
 
@@ -201,6 +202,7 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const mapImages = (rows: any[]) => rows.map((im: any) => ({
         id: im.id, url: im.url, mediaType: im.mediaType ?? null, thumbnailUrl: im.thumbnailUrl ?? null, caption: im.caption ?? null,
+        isPrimary: im.isPrimary === 1,
     }));
 
     const items: AnimalTimelineItem[] = [];
@@ -540,5 +542,126 @@ export async function deleteAnimalEvent(eventId: string): Promise<{ success: tru
     } catch (error) {
         const errorId = logger.error('deleteAnimalEvent failed', error, { eventId, userEmail });
         return { error: `Failed to delete event (${errorId})` };
+    }
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Photos (v2.56.86)
+ *
+ * Until now an animal's photos could only be set while creating it: the page
+ * rendered them read-only and the in-place edit carried the text fields only,
+ * so a wrong or missing photo meant deleting and re-creating the animal — and
+ * losing its whole line of life with it. A photoless animal is also invisible
+ * to the public catalogue, so this was the difference between listable and not.
+ *
+ * Three rules these actions exist to enforce, none of which the generic
+ * image actions apply:
+ *  - the photo must BELONG to this animal (`adoption_id === animalId`), so a
+ *    caller with parity on one animal can't reach another's rows — or an
+ *    adopter's avatar — by passing a foreign image id;
+ *  - the gate is the ANIMAL's (owner ∨ org-mate ∨ admin), not `deleteImage`'s
+ *    uploader-or-admin rule, which would stop a teammate from removing a photo
+ *    on an animal they can otherwise fully edit, delete included;
+ *  - "primary" is demoted per ADOPTION_ID. Scoping it by adopter_id — what
+ *    `saveImage` does for avatars — would clear the lead photo of every
+ *    available animal in the system, since they all share '__available__'.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/** Owner ∨ org-mate ∨ admin on the animal, plus the animal's current holder. */
+async function assertCanEditAnimal(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, animalId: string, userEmail: string) {
+    const animal = await db.select({ id: animals.id, addedBy: animals.addedBy, deletedAt: animals.deletedAt })
+        .from(animals).where(eq(animals.id, animalId)).get();
+    if (!animal || animal.deletedAt) return null;
+    const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+    const { checkIsAdminAsync } = await import('@/app/actions/_db');
+    if (!(await isOwnerOrOrgMate(userEmail, animal.addedBy)) && !(await checkIsAdminAsync(userEmail))) return null;
+    return animal;
+}
+
+/** The photo exists AND hangs off this animal. Guards against a caller with
+ *  parity on animal A passing an image id belonging to anything else. */
+async function loadOwnPhoto(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, animalId: string, imageId: string) {
+    const img = await db.select({ id: adopterImages.id, adoptionId: adopterImages.adoptionId, caption: adopterImages.caption })
+        .from(adopterImages).where(eq(adopterImages.id, imageId)).get();
+    if (!img || img.adoptionId !== animalId) return null;
+    return img;
+}
+
+export async function addAnimalPhoto(animalId: string, dataUrl: string): Promise<{ success: true; id: string } | { error: string }> {
+    const { getUser } = await import('@/app/actions/_db');
+    const userEmail = await getUser();
+    try {
+        if (!userEmail) return { error: 'Unauthorized' };
+        if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return { error: 'Invalid image' };
+        const db = await getDb();
+        if (!db) return { error: 'Database not available' };
+        const animal = await assertCanEditAnimal(db, animalId, userEmail);
+        if (!animal) return { error: 'Not found' };
+
+        // `adopter_images.adopter_id` is NOT NULL, so an animal with no current
+        // holder uses the same '__available__' sentinel the create form writes.
+        const active = await db.select({ adopterId: placements.adopterId })
+            .from(placements).where(sql`${placements.animalId} = ${animalId} AND ${placements.endedAt} IS NULL`).get();
+        const owner = active?.adopterId || '__available__';
+
+        const { saveImage } = await import('@/app/actions/images');
+        const res = await saveImage(owner, dataUrl, undefined, animalId, 'image');
+        const id = (res as { id?: string })?.id;
+        if (!id) return { error: 'Upload failed' };
+
+        await db.update(animals).set({ updatedAt: new Date(), updatedBy: userEmail }).where(eq(animals.id, animalId));
+        logAudit({ userEmail, action: 'animal_photo_added', target: animalId, details: { imageId: id } });
+        revalidatePath(`/my-animals/${animalId}`);
+        return { success: true, id };
+    } catch (error) {
+        const errorId = logger.error('addAnimalPhoto failed', error, { animalId, userEmail });
+        return { error: `Failed to add photo (${errorId})` };
+    }
+}
+
+export async function deleteAnimalPhoto(animalId: string, imageId: string): Promise<{ success: true } | { error: string }> {
+    const { getUser } = await import('@/app/actions/_db');
+    const userEmail = await getUser();
+    try {
+        if (!userEmail) return { error: 'Unauthorized' };
+        const db = await getDb();
+        if (!db) return { error: 'Database not available' };
+        if (!(await assertCanEditAnimal(db, animalId, userEmail))) return { error: 'Not found' };
+        const img = await loadOwnPhoto(db, animalId, imageId);
+        if (!img) return { error: 'Not found' };
+
+        await db.delete(adopterImages).where(eq(adopterImages.id, imageId));
+        await db.update(animals).set({ updatedAt: new Date(), updatedBy: userEmail }).where(eq(animals.id, animalId));
+        logAudit({ userEmail, action: 'animal_photo_deleted', target: animalId, details: { imageId } });
+        revalidatePath(`/my-animals/${animalId}`);
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('deleteAnimalPhoto failed', error, { animalId, imageId, userEmail });
+        return { error: `Failed to remove photo (${errorId})` };
+    }
+}
+
+export async function setAnimalPrimaryPhoto(animalId: string, imageId: string): Promise<{ success: true } | { error: string }> {
+    const { getUser } = await import('@/app/actions/_db');
+    const userEmail = await getUser();
+    try {
+        if (!userEmail) return { error: 'Unauthorized' };
+        const db = await getDb();
+        if (!db) return { error: 'Database not available' };
+        if (!(await assertCanEditAnimal(db, animalId, userEmail))) return { error: 'Not found' };
+        const img = await loadOwnPhoto(db, animalId, imageId);
+        if (!img) return { error: 'Not found' };
+
+        // Scoped to THIS animal — never to adopter_id (see the note above).
+        await db.update(adopterImages).set({ isPrimary: 0 }).where(eq(adopterImages.adoptionId, animalId));
+        await db.update(adopterImages).set({ isPrimary: 1 }).where(eq(adopterImages.id, imageId));
+
+        await db.update(animals).set({ updatedAt: new Date(), updatedBy: userEmail }).where(eq(animals.id, animalId));
+        logAudit({ userEmail, action: 'animal_photo_primary_set', target: animalId, details: { imageId } });
+        revalidatePath(`/my-animals/${animalId}`);
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('setAnimalPrimaryPhoto failed', error, { animalId, imageId, userEmail });
+        return { error: `Failed to set the main photo (${errorId})` };
     }
 }

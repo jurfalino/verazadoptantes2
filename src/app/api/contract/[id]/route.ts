@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { withCors, corsPreflightResponse } from '@/lib/cors';
+import { animalImagesOrder } from '@/lib/showcase';
 
 export const runtime = 'edge';
 
@@ -33,6 +34,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             caption: adopterImages.caption
         }).from(adopterImages)
             .where(eq(adopterImages.adoptionId, id))
+            .orderBy(animalImagesOrder())
             .limit(5)
             .all();
 

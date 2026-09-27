@@ -7,6 +7,7 @@ import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { processImageForStorage } from '@/lib/r2';
+import { animalImagesOrder } from '@/lib/showcase';
 
 /**
  * v2.26.2: changing an adopter's PROFILE PHOTO (setting an existing image as the
@@ -198,6 +199,7 @@ export async function getAdoptionImages(adoptionId: string) {
         if (!db) return [];
         return await db.select().from(adopterImages)
             .where(eq(adopterImages.adoptionId, adoptionId))
+            .orderBy(animalImagesOrder())
             .orderBy(sql`${adopterImages.uploadedAt} DESC`)
             .all();
     } catch (error) {

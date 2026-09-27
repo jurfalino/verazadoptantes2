@@ -187,6 +187,61 @@ test.describe('Animal detail page', () => {
         await expect(body.getByRole('link')).toHaveAttribute('href', '/settings#followups');
     });
 
+    test('photos: add, choose the main one, remove — staged until Guardar', async ({ page }) => {
+        // v2.56.86: before this, an animal's photos could only be set at creation.
+        // A 1x1 PNG is enough — data: image URLs are stored inline, no R2 needed.
+        const png = Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+            'base64',
+        );
+        const file = { name: 'p.png', mimeType: 'image/png', buffer: png };
+        const editor = page.getByTestId('animal-photo-editor');
+
+        await page.goto(`/my-animals/${ANIMAL_ID}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+        await page.getByTestId('profile-edit').click();
+        await expect(editor).toBeVisible();
+        const before = await editor.locator('img').count();
+
+        // Cancelar must really cancel: nothing may reach the server.
+        await page.getByTestId('animal-photo-input').setInputFiles(file);
+        await expect(editor.locator('img')).toHaveCount(before + 1, { timeout: 15000 });
+        await page.getByTestId('inline-edit-cancel').click();
+        await expect(page.getByTestId('inline-edit-form')).not.toBeVisible();
+        await page.getByTestId('profile-edit').click();
+        await expect(editor.locator('img')).toHaveCount(before);
+
+        // Add TWO, so "which one leads" is a real choice.
+        await page.getByTestId('animal-photo-input').setInputFiles(file);
+        await expect(editor.locator('img')).toHaveCount(before + 1);
+        await page.getByTestId('animal-photo-input').setInputFiles(file);
+        await expect(editor.locator('img')).toHaveCount(before + 2);
+        await page.getByTestId('inline-edit-save').click();
+        await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
+
+        // Both persisted. Make the LAST one the main photo and save.
+        await page.getByTestId('profile-edit').click();
+        await expect(editor.locator('img')).toHaveCount(before + 2, { timeout: 30000 });
+        const lastMainBtn = page.locator('[data-testid^="photo-main-"]').last();
+        const chosen = await lastMainBtn.getAttribute('data-testid');
+        await lastMainBtn.click();
+        await page.getByTestId('inline-edit-save').click();
+        await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
+
+        // The choice survived the round trip AND reordered the gallery: the
+        // chosen photo is now FIRST, which is what is_primary ordering buys.
+        await page.getByTestId('profile-edit').click();
+        const firstMainBtn = page.locator('[data-testid^="photo-main-"]').first();
+        await expect(firstMainBtn).toHaveAttribute('data-testid', chosen!, { timeout: 30000 });
+        await expect(firstMainBtn).toHaveAttribute('aria-pressed', 'true');
+
+        // Clean the fixture up: remove both photos this test added.
+        for (let i = 0; i < 2; i++) await page.locator('[data-testid^="photo-remove-"]').last().click();
+        await expect(editor.locator('img')).toHaveCount(before);
+        await page.getByTestId('inline-edit-save').click();
+        await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
+    });
+
     test('in-place edit updates identity without touching custody', async ({ page }) => {
         await page.goto(`/my-animals/${ANIMAL_ID}`);
         await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });

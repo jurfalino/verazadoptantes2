@@ -1434,6 +1434,11 @@ export const es = {
         profile_pending_dup_other_tooltip: 'El sistema detectó otro registro similar. Solo el responsable del registro puede revisarlo.',
     },
     animalProfile: {
+        field_photos: 'Fotos',
+        photo_make_main: 'Hacer principal',
+        photo_main: 'Principal',
+        photo_remove: 'Quitar foto',
+        photos_none_warning: 'Sin fotos el animal no aparece en la página pública de adopciones.',
         share_intent_public: 'Si querés compartir su ficha con un adoptante interesado',
         share_intent_form: 'Si querés evaluar adoptantes',
         share_intent_contract: 'Si ya tenés un adoptante y querés que firme un contrato digital',
