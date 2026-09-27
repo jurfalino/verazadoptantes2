@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { getDb } from '@/app/actions';
-import { adoptions, adopters } from '@/db/schema';
+import { adoptions, adopters, animals } from '@/db/schema';
 import { eq, and, isNull, inArray, count } from 'drizzle-orm';
 import { getFeatureFlag } from '@/config/features';
 import { getOrgMemberEmails } from '@/app/actions/organizations';
@@ -46,13 +46,19 @@ export async function GET() {
         const animalsEnabled = await getFeatureFlag('ENABLE_ANIMALS_FOR_ADOPTION');
         
         if (animalsEnabled) {
-            // Using logic from api/my-animals ?view=available
+            // Every ACTIVE animal this person created — fostered and adopted
+            // ones included. It counted only `available` before, so an animal
+            // silently left the tally the moment it was placed, which made the
+            // chip disagree with the page it links to.
+            //
+            // Counted off `animals`, NOT the `adoptions` view: the view UNIONs
+            // adopter_events, and without the old `recordType='available'`
+            // filter those event rows would be counted as animals.
             const [ac] = await db.select({ value: count() })
-                .from(adoptions)
+                .from(animals)
                 .where(and(
-                    eq(adoptions.addedBy, session.user.email), // animals are usually personal, not org scope in my-animals route
-                    isNull(adoptions.adopterId),
-                    eq(adoptions.recordType, 'available')
+                    eq(animals.addedBy, session.user.email),
+                    isNull(animals.deletedAt)
                 ));
             animalCount = ac;
         }

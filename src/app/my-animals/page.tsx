@@ -149,7 +149,7 @@ export default function MyAnimalsPage() {
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                         </Link>
                         <h1 className="text-3xl font-extrabold text-stone-900 tracking-tight">
-                            🐾 {t('dashboard.my_animals') || 'My Animals for Adoption'}
+                            🐾 {t('dashboard.my_animals') || 'My Animals'}
                         </h1>
                     </div>
 

@@ -1176,7 +1176,7 @@ export const pt = {
         request: 'solicitação',
         requests: 'solicitações',
         // Animals for adoption
-        my_animals: 'Meus Animais para Adoção',
+        my_animals: 'Meus Animais',
         add_animal: 'Adicionar Animal',
         animal_details_placeholder: 'Personalidade, estado de saúde, necessidades especiais...',
         animal_saved: 'Animal publicado para adoção!',

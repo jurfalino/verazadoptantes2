@@ -1171,7 +1171,7 @@ export const en = {
         request: 'request',
         requests: 'requests',
         // Animals for adoption
-        my_animals: 'My Animals for Adoption',
+        my_animals: 'My Animals',
         add_animal: 'Add Animal',
         animal_details_placeholder: 'Personality, health status, any special needs...',
         animal_saved: 'Animal listed for adoption!',

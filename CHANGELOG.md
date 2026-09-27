@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.91] - 2026-09-27
+
+### Fixed — the «Mis Animales» counter ignored every animal that had a home
+
+The menu chip counted only animals still `available` with no adopter, so an
+animal dropped out of the tally the moment it went into tránsito or was adopted
+— the chip read 0 while the page it links to listed 12. It now counts every
+active animal the person created, placed or not, excluding soft-deleted ones.
+
+Counted off `animals` rather than the `adoptions` view: the view UNIONs
+`adopter_events`, and without the old `record_type='available'` filter those
+event rows would have been counted as animals.
+
+### Changed — the menu reads «Mis Animales»
+
+Was «Mis Animales en Adopción», which stopped being true once the page started
+showing fostered and adopted animals too. Renamed in all three locales; the same
+key titles the page heading and the quick-access strip, so all three agree.
+
 ## [2.56.90] - 2026-09-27
 
 ### Fixed — the chosen main photo showed as unchosen right after saving
