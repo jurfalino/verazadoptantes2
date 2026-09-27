@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { withCors, corsPreflightResponse } from '@/lib/cors';
-import { animalImagesOrder } from '@/lib/showcase';
+import { animalPrimaryFirst } from '@/lib/showcase';
 
 export const runtime = 'edge';
 
@@ -19,7 +19,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         if (!db) return withCors(NextResponse.json({ error: 'Database unavailable' }, { status: 500 }), origin);
 
         const { adoptions, adopterImages, users } = await import('@/db/schema');
-        const { eq } = await import('drizzle-orm');
+        const { eq, sql } = await import('drizzle-orm');
 
         const animal = await db.select().from(adoptions).where(eq(adoptions.id, id)).get();
 
@@ -34,7 +34,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             caption: adopterImages.caption
         }).from(adopterImages)
             .where(eq(adopterImages.adoptionId, id))
-            .orderBy(animalImagesOrder())
+            .orderBy(animalPrimaryFirst(), sql`rowid ASC`)
             .limit(5)
             .all();
 

@@ -11,6 +11,7 @@ import { saveAdoptionSchema } from './validation';
 import { insertRecord, updateRecord, deleteRecordById, softDeleteAnimal, isAnimalBacked, countAnimalLinks, deletePlacementForAdopter } from './_recordWrite';
 import { decideAnimalFate, NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
 import { closePendingSearchesForAdopter } from '@/lib/pendingSearchLog';
+import { animalPrimaryFirst } from '@/lib/showcase';
 
 export async function saveAdoption(data: typeof adoptions.$inferInsert) {
     // Validate input
@@ -329,7 +330,7 @@ async function attachAdoptionThumbnails<T extends { id: string }>(
                     // ASC`, which is unique and would make the existing
                     // "newest upload" tiebreakers below dead code, silently
                     // flipping this thumbnail to the OLDEST photo.
-                    sql`${adopterImages.isPrimary} DESC`,
+                    animalPrimaryFirst(),
                     sql`${adopterImages.isProfilePicture} DESC`,
                     sql`${adopterImages.uploadedAt} DESC`,
                 )

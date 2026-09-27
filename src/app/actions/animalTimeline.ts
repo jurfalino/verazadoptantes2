@@ -28,7 +28,7 @@ import { buildWaMeUrl, buildTelegramUrl } from '@/lib/whatsapp';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
 import { z } from 'zod';
-import { animalImagesOrder } from '@/lib/showcase';
+import { animalPrimaryFirst } from '@/lib/showcase';
 
 export type AnimalTimelineItem = {
     /** Stable per-item id (placement id, `${placement.id}-end`, event id, or `${animalId}-created`). */
@@ -163,8 +163,7 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
             .orderBy(desc(adopterEvents.date)).all().catch(fallback('adopterEvents')),
         db.select().from(animalEvents).where(eq(animalEvents.animalId, animalId))
             .orderBy(desc(animalEvents.date)).all().catch(fallback('animalEvents')),
-        db.select().from(adopterImages).where(eq(adopterImages.adoptionId, animalId)).orderBy(animalImagesOrder())
-            .orderBy(sql`${adopterImages.uploadedAt} DESC`).all().catch(fallback('images')),
+        db.select().from(adopterImages).where(eq(adopterImages.adoptionId, animalId)).orderBy(animalPrimaryFirst(), sql`${adopterImages.uploadedAt} DESC`).all().catch(fallback('images')),
     ]);
 
     // Adopter names: dedup ids, fan out one query per id (D1 can't expand IN()).

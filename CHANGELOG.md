@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.88] - 2026-09-27
+
+### Fixed — the chosen main photo was being discarded by two readers
+
+Caught by the new e2e before it reached staging, and worth recording because
+the mistake is invisible to the type checker: **Drizzle's second `.orderBy()`
+replaces the first, it does not append.** `animalImagesOrder()` was applied as
+its own `.orderBy()` call at two sites that already ordered by `uploaded_at
+DESC` — the animal page itself and `getAdoptionImages` — so the primary flag was
+dropped outright and the photo you picked stayed wherever it was.
+
+The helper is now `animalPrimaryFirst()`, contributing only `is_primary DESC`,
+with every call site passing its own tiebreaker in the same call. That also
+fixes the second half of the error: the old helper's `rowid ASC` would have
+flipped those two readers from newest-first to oldest-first, silently reordering
+every existing animal's gallery.
+
 ## [2.56.87] - 2026-09-27
 
 ### Security — sign-off for the three photo actions (completes 2.56.86)
@@ -53,15 +70,18 @@ fight over every available animal in the system, and would have hijacked the
 adopter's avatar once the animal was placed. The new flag is scoped to
 `adoption_id`, and demotion is scoped the same way.
 
-**Every animal-photo reader is now ordered** `is_primary DESC, rowid ASC` —
-seven sites: the animal page, the list cards, the public showcase, the
-adopter-side record photos, the single-thumbnail picker, `/my-adoptions`, and
-both contract routes. This is load-bearing rather than cosmetic: three of those
-readers apply a `LIMIT`, so without ordering the chosen photo could be cut off
-entirely by `LIMIT 5`. `rowid` is the secondary key, not `uploaded_at`, because
-it is the order unordered readers already returned — so no existing hero moves —
-while `uploaded_at` has second resolution, ties across one upload loop, and can
-be NULL on imported rows.
+**All eight animal-photo readers now put the chosen photo first** — the animal
+page, the list cards, the public showcase, the adopter-side record photos, the
+single-thumbnail picker, `/my-adoptions`, and both contract routes. This is
+load-bearing rather than cosmetic: four of them apply a `LIMIT`, so without it
+the chosen photo could be cut off outright by `LIMIT 5`.
+
+`animalPrimaryFirst()` contributes **only** that rule; each site keeps its own
+existing tiebreaker, so nothing else about their order changes. The first cut
+of the helper also supplied `rowid ASC`, which was wrong twice over: Drizzle's
+second `.orderBy()` REPLACES the first, so the two readers that already ordered
+by `uploaded_at DESC` silently dropped the primary flag altogether, and a third
+would have flipped from newest-first to oldest-first. The new e2e caught it.
 
 ### Security
 
