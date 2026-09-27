@@ -567,6 +567,13 @@ export async function deleteAnimalEvent(eventId: string): Promise<{ success: tru
  *    available animal in the system, since they all share '__available__'.
  * ──────────────────────────────────────────────────────────────────────── */
 
+/** Ids arrive from the browser, so they are shaped before they reach a query —
+ *  same convention as addAnimalEventSchema above. */
+const animalPhotoIdSchema = z.string().min(1).max(64);
+/** A compressed 1200px JPEG lands well under 1 MB; the cap only exists so a
+ *  browser-callable endpoint can't be used to push arbitrary bulk into D1. */
+const MAX_PHOTO_DATA_URL = 8_000_000;
+
 /** Owner ∨ org-mate ∨ admin on the animal, plus the animal's current holder. */
 async function assertCanEditAnimal(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, animalId: string, userEmail: string) {
     const animal = await db.select({ id: animals.id, addedBy: animals.addedBy, deletedAt: animals.deletedAt })
@@ -592,7 +599,9 @@ export async function addAnimalPhoto(animalId: string, dataUrl: string): Promise
     const userEmail = await getUser();
     try {
         if (!userEmail) return { error: 'Unauthorized' };
+        if (!animalPhotoIdSchema.safeParse(animalId).success) return { error: 'Not found' };
         if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return { error: 'Invalid image' };
+        if (dataUrl.length > MAX_PHOTO_DATA_URL) return { error: 'Image too large' };
         const db = await getDb();
         if (!db) return { error: 'Database not available' };
         const animal = await assertCanEditAnimal(db, animalId, userEmail);
@@ -624,6 +633,8 @@ export async function deleteAnimalPhoto(animalId: string, imageId: string): Prom
     const userEmail = await getUser();
     try {
         if (!userEmail) return { error: 'Unauthorized' };
+        if (!animalPhotoIdSchema.safeParse(animalId).success) return { error: 'Not found' };
+        if (!animalPhotoIdSchema.safeParse(imageId).success) return { error: 'Not found' };
         const db = await getDb();
         if (!db) return { error: 'Database not available' };
         if (!(await assertCanEditAnimal(db, animalId, userEmail))) return { error: 'Not found' };
@@ -646,6 +657,8 @@ export async function setAnimalPrimaryPhoto(animalId: string, imageId: string): 
     const userEmail = await getUser();
     try {
         if (!userEmail) return { error: 'Unauthorized' };
+        if (!animalPhotoIdSchema.safeParse(animalId).success) return { error: 'Not found' };
+        if (!animalPhotoIdSchema.safeParse(imageId).success) return { error: 'Not found' };
         const db = await getDb();
         if (!db) return { error: 'Database not available' };
         if (!(await assertCanEditAnimal(db, animalId, userEmail))) return { error: 'Not found' };

@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.87] - 2026-09-27
+
+### Security — sign-off for the three photo actions (completes 2.56.86)
+
+2.56.86 never deployed: CI's `check-action-surface` ratchet caught that it added
+three browser-callable endpoints (150 → 153) without the sign-off that guard
+exists to force. Raising the number is the sign-off, so each new door is
+documented in `scripts/check-action-surface.mjs` against the question the guard
+asks — what a stranger can do with arguments they choose:
+
+- all three take an `animalId`, now shaped by zod and gated by
+  `assertCanEditAnimal` (owner ∨ org-mate ∨ admin, animal not soft-deleted);
+- the two that take an `imageId` require `adoption_id === animalId`, so a
+  guessed id belonging to another animal — or to an adopter's **avatar**, which
+  lives in the same table — matches nothing;
+- `addAnimalPhoto`'s data URL must be `data:image/` and is now capped at 8 MB,
+  so a browser-callable endpoint cannot be used to push bulk into D1. It is
+  strictly narrower than the `saveImage` door already on the wire, which takes
+  any `adopterId` with no ownership check at all.
+
 ## [2.56.86] - 2026-09-27
 
 ### Added — an animal's photos can finally be changed after it is created

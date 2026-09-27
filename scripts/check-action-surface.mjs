@@ -41,7 +41,25 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                         allowed values, and the array is length-capped.
 // The writes themselves (recording a search, closing asks after a record) stay
 // in src/lib/pendingSearchLog.ts precisely so they never become endpoints.
-const EXPECTED_ACTIONS = 150;
+// 153 since v2.56.86: `addAnimalPhoto`, `deleteAnimalPhoto` and
+// `setAnimalPrimaryPhoto` (src/app/actions/animalTimeline.ts) — the only way to
+// change an animal's photos after it is created. Checked against the rule above
+// — what a stranger can do with arguments they choose:
+//   all three        take an `animalId`, shaped by zod, then gated by
+//                    assertCanEditAnimal (owner ∨ org-mate ∨ admin, and the
+//                    animal must not be soft-deleted). A stranger, or a member
+//                    of another org, gets `Not found` either way.
+//   the two that     also take an `imageId`, and loadOwnPhoto requires
+//   take an image    `adoption_id === animalId`. A guessed id belonging to
+//                    another animal — or to an adopter's AVATAR, which lives in
+//                    the same table — matches nothing. setAnimalPrimaryPhoto's
+//                    demotion UPDATE is scoped `WHERE adoption_id = animalId`
+//                    for the same reason.
+//   addAnimalPhoto   takes a data URL: required to be `data:image/` and capped
+//                    at 8 MB, so it cannot be used to push bulk into D1. It is
+//                    strictly NARROWER than the `saveImage` door already on the
+//                    wire, which takes any adopterId with no ownership check.
+const EXPECTED_ACTIONS = 153;
 
 let manifest;
 try {
