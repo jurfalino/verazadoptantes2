@@ -20,6 +20,7 @@ import { adopters } from '@/db/schema';
 import { eq, and, isNull } from 'drizzle-orm';
 import { enrichAdopters } from './enrichAdopters';
 import { assembleDiscoveryMatch } from '@/lib/discoveryMatch';
+import { toGuestMatch } from '@/lib/guestMatch';
 import { NO_ACCESS_VISIBILITY } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
 import { logger } from '@/lib/logger';
@@ -39,6 +40,11 @@ interface HydrateOpts {
     isUnauthenticated: boolean;
     /** When set, drop rows in a different country unless the viewer owns them. */
     userCountry?: string | null;
+    /**
+     * ENABLE_GUEST_NAME_MASK for a logged-out viewer: what they typed. When set,
+     * each result goes through `toGuestMatch` (masked name, card fields only).
+     */
+    guestMaskQuery?: string;
 }
 
 export async function hydrateDuplicateMatches(
@@ -104,7 +110,8 @@ export async function hydrateDuplicateMatches(
         };
         const vis = opts.isUnauthenticated ? NO_ACCESS_VISIBILITY : visibilityMap?.get(row.id);
         const maskOpts = maskOptionsFor(publicProfilesFlag, row);
-        results.push(assembleDiscoveryMatch({ ...row }, enrichmentVals, meta, vis, undefined, maskOpts));
+        const match = assembleDiscoveryMatch({ ...row }, enrichmentVals, meta, vis, undefined, maskOpts);
+        results.push(opts.guestMaskQuery !== undefined ? toGuestMatch(match, row, opts.guestMaskQuery) : match);
     }
 
     results.sort((a, b) => b.relevancePercent - a.relevancePercent);

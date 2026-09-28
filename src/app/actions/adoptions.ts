@@ -10,6 +10,8 @@ import { tokenizeAdopter } from './duplicates';
 import { saveAdoptionSchema } from './validation';
 import { insertRecord, updateRecord, deleteRecordById, softDeleteAnimal, isAnimalBacked, countAnimalLinks, deletePlacementForAdopter } from './_recordWrite';
 import { decideAnimalFate, NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
+import { closePendingSearchesForAdopter } from '@/lib/pendingSearchLog';
+import { animalPrimaryFirst } from '@/lib/showcase';
 
 export async function saveAdoption(data: typeof adoptions.$inferInsert) {
     // Validate input
@@ -172,6 +174,10 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
                 await tokenizeAdopter(data.adopterId).catch(e => { logger.error('Tokenize adopter failed (adoption create)', e, { adopterId: data.adopterId }); });
             }
 
+            // The work is done, so the homepage must stop asking about it
+            // (ENABLE_PENDING_SEARCHES). Best-effort inside the helper.
+            if (data.adopterId) await closePendingSearchesForAdopter(db, changedBy, data.adopterId);
+
             return { success: true, id };
         }
     } catch (error) {
@@ -319,6 +325,12 @@ async function attachAdoptionThumbnails<T extends { id: string }>(
                 .from(adopterImages)
                 .where(eq(adopterImages.adoptionId, r.id))
                 .orderBy(
+                    // v2.56.86: the chosen lead photo wins outright. Only the
+                    // flag is prepended — animalImagesOrder() ends in `rowid
+                    // ASC`, which is unique and would make the existing
+                    // "newest upload" tiebreakers below dead code, silently
+                    // flipping this thumbnail to the OLDEST photo.
+                    animalPrimaryFirst(),
                     sql`${adopterImages.isProfilePicture} DESC`,
                     sql`${adopterImages.uploadedAt} DESC`,
                 )

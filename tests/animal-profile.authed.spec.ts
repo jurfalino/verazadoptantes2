@@ -136,6 +136,24 @@ test.describe('Animal detail page', () => {
         await expect(meta).toContainText(/Updated by|Actualizado por|Added by|Agregado por/);
     });
 
+    test('adopted animals are grouped by the year they were adopted', async ({ page }) => {
+        // v2.56.92: the adopted list is an archive that only grows; the year is
+        // how a rescuer remembers them.
+        await page.goto('/my-animals?view=adopted');
+        await expect(page.getByTestId(`animal-card-${ANIMAL_ID}`)).toBeVisible({ timeout: 30000 });
+        const year = String(new Date().getFullYear());
+        const heading = page.getByRole('heading', { name: year, exact: true });
+        await expect(heading).toBeVisible();
+        // The card sits under its year, not in one flat grid.
+        const section = page.locator('section').filter({ has: heading });
+        await expect(section.getByTestId(`animal-card-${ANIMAL_ID}`)).toBeVisible();
+
+        // Available animals stay one flat list — no year headings there.
+        await page.goto('/my-animals?view=available');
+        await expect(page.getByTestId('animal-card-test-animal-fixture-2')).toBeVisible({ timeout: 30000 });
+        await expect(page.getByRole('heading', { name: year, exact: true })).toHaveCount(0);
+    });
+
     test('list card navigates to the detail page', async ({ page }) => {
         await page.goto('/my-animals?view=adopted');
         const card = page.getByTestId(`animal-card-${ANIMAL_ID}`);
@@ -185,6 +203,74 @@ test.describe('Animal detail page', () => {
         await expect(body).toContainText(/remind you on|Te avisamos el/);
         // Email is off by default → the section offers the settings deep link.
         await expect(body.getByRole('link')).toHaveAttribute('href', '/settings#followups');
+    });
+
+    test('photos: add, choose the main one, remove — staged until Guardar', async ({ page }) => {
+        // v2.56.86: before this, an animal's photos could only be set at creation.
+        // A 1x1 PNG is enough — data: image URLs are stored inline, no R2 needed.
+        const png = Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+            'base64',
+        );
+        const file = { name: 'p.png', mimeType: 'image/png', buffer: png };
+        const editor = page.getByTestId('animal-photo-editor');
+
+        await page.goto(`/my-animals/${ANIMAL_ID}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+        await page.getByTestId('profile-edit').click();
+        await expect(editor).toBeVisible();
+        const before = await editor.locator('img').count();
+
+        // Cancelar must really cancel: nothing may reach the server.
+        await page.getByTestId('animal-photo-input').setInputFiles(file);
+        await expect(editor.locator('img')).toHaveCount(before + 1, { timeout: 15000 });
+        await page.getByTestId('inline-edit-cancel').click();
+        await expect(page.getByTestId('inline-edit-form')).not.toBeVisible();
+        await page.getByTestId('profile-edit').click();
+        await expect(editor.locator('img')).toHaveCount(before);
+
+        // Add TWO, so "which one leads" is a real choice. Ids are read from the
+        // DOM rather than picked by position: the surfaces disagree about which
+        // photo comes first when none is primary, and a retry that left debris
+        // on this shared fixture would silently target a seeded photo.
+        const idsOf = async () => (await page.locator('[data-testid^="photo-main-"]').all())
+            .reduce(async (acc, el) => [...(await acc), (await el.getAttribute('data-testid'))!.replace('photo-main-', '')], Promise.resolve([] as string[]));
+        const idsBefore = await idsOf();
+        await page.getByTestId('animal-photo-input').setInputFiles(file);
+        await expect(editor.locator('img')).toHaveCount(before + 1);
+        await page.getByTestId('animal-photo-input').setInputFiles(file);
+        await expect(editor.locator('img')).toHaveCount(before + 2);
+        await page.getByTestId('inline-edit-save').click();
+        await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
+
+        // Both persisted. Take the ids THIS test created and make one main.
+        await page.getByTestId('profile-edit').click();
+        await expect(editor.locator('img')).toHaveCount(before + 2, { timeout: 30000 });
+        const mine = (await idsOf()).filter(id => !idsBefore.includes(id));
+        expect(mine).toHaveLength(2);
+        // Whichever of the two is NOT already on top. Picking by position is
+        // unsafe (uploaded_at has one-second resolution, so two uploads in one
+        // save usually tie), and picking the one already first would satisfy
+        // "is first" without is_primary doing any work at all.
+        const firstNow = (await page.locator('[data-testid^="photo-main-"]').first()
+            .getAttribute('data-testid'))!.replace('photo-main-', '');
+        const chosen = mine.find(id => id !== firstNow)!;
+        await page.getByTestId(`photo-main-${chosen}`).click();
+        await page.getByTestId('inline-edit-save').click();
+        await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
+
+        // The choice survived the round trip AND reordered the gallery: the
+        // chosen photo is now FIRST, which is what is_primary ordering buys.
+        await page.getByTestId('profile-edit').click();
+        const firstMainBtn = page.locator('[data-testid^="photo-main-"]').first();
+        await expect(firstMainBtn).toHaveAttribute('data-testid', `photo-main-${chosen}`, { timeout: 30000 });
+        await expect(firstMainBtn).toHaveAttribute('aria-pressed', 'true');
+
+        // Clean up exactly the two this test added — never by position.
+        for (const id of mine) await page.getByTestId(`photo-remove-${id}`).click();
+        await expect(editor.locator('img')).toHaveCount(before);
+        await page.getByTestId('inline-edit-save').click();
+        await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
     });
 
     test('in-place edit updates identity without touching custody', async ({ page }) => {

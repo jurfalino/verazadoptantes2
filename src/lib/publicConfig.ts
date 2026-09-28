@@ -19,6 +19,8 @@ import { logger } from '@/lib/logger';
 
 export const PUBLIC_FLAG_KEYS = [
     'ENABLE_HOUSEHOLD_MEMBERS',
+    // Homepage deck asking about searches that never became a record.
+    'ENABLE_PENDING_SEARCHES',
     'ENABLE_CONTENT_IMPORT',
     'ENABLE_CONTACT_IMPORT',
     'ENABLE_GOOGLE_CONTACTS_IMPORT',
@@ -46,9 +48,12 @@ export const PUBLIC_FLAG_KEYS = [
     'ENABLE_GUIDED_WALKTHROUGH',
     // Email OTP login — the login modal renders the email option only when on.
     'ENABLE_EMAIL_OTP',
+    // The install bar pinned to the bottom of every page (InstallPrompt).
+    'ENABLE_PWA_INSTALL_PROMPT',
 ] as const;
 
 export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
+    ENABLE_PENDING_SEARCHES: 'false',
     ENABLE_CONTENT_IMPORT: 'false',
     ENABLE_CONTACT_IMPORT: 'false',
     ENABLE_GOOGLE_CONTACTS_IMPORT: 'false',
@@ -66,6 +71,7 @@ export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
     INSTAGRAM_URL: '',
     ENABLE_GUIDED_WALKTHROUGH: 'false',
     ENABLE_EMAIL_OTP: 'false',
+    ENABLE_PWA_INSTALL_PROMPT: 'false',
 };
 
 const CACHE_TTL_MS = 30 * 1000;

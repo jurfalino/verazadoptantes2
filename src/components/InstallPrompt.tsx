@@ -13,6 +13,21 @@ export default function InstallPrompt() {
     const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
     const [isVisible, setIsVisible] = useState(false);
     const [isInstalled, setIsInstalled] = useState(false);
+    // ENABLE_PWA_INSTALL_PROMPT (admin-togglable, default off). Unknown until
+    // /api/config answers, and treated as off if it can't be read.
+    const [flagOn, setFlagOn] = useState(false);
+
+    useEffect(() => {
+        fetch('/api/config')
+            .then(res => res.json())
+            .then((data) => {
+                const cfg = data as { config?: Record<string, string> };
+                setFlagOn(cfg.config?.ENABLE_PWA_INSTALL_PROMPT === 'true');
+            })
+            .catch((e) => {
+                console.warn('InstallPrompt: /api/config read failed, install bar stays hidden', e instanceof Error ? e.message : String(e));
+            });
+    }, []);
 
     useEffect(() => {
         // Check if already installed (standalone mode)
@@ -56,7 +71,7 @@ export default function InstallPrompt() {
         localStorage.setItem('pwa-install-dismissed', Date.now().toString());
     };
 
-    if (!isVisible || isInstalled) return null;
+    if (!flagOn || !isVisible || isInstalled) return null;
 
     return (
         <div className="fixed bottom-4 left-4 right-4 z-50 mx-auto max-w-md animate-slide-up">

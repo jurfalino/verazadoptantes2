@@ -14,6 +14,7 @@ import { computeAvgRating } from '@/domain/ratings';
 import { buildFlags } from '@/domain/flags';
 import { RECORD_TYPES } from '@/domain/constants';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
+import { animalPrimaryFirst } from '@/lib/showcase';
 
 export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
     let userEmail: string | undefined;
@@ -464,6 +465,7 @@ export async function getMyAdoptions(filter: 'all' | 'adoption' | 'adoption_requ
             })
                 .from(adopterImages)
                 .where(sql`${adopterImages.adoptionId} IN (${inList})`)
+                .orderBy(animalPrimaryFirst(), sql`rowid ASC`)
                 .all()
                 .catch((e: unknown) => {
                     logger.warn('getMyAdoptions: images chunk fallback', { userEmail, error: e instanceof Error ? e.message : String(e) });

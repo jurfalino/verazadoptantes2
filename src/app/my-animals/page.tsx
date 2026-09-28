@@ -8,6 +8,7 @@ import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useDateFormat, useRelativeTime } from '@/context/TimezoneContext';
 import { emailHandle } from '@/lib/userDisplay';
+import { interpolate } from '@/lib/interpolate';
 import { formatAge } from '@/lib/ageUtils';
 import ShareFormMenu from '@/components/ShareFormMenu';
 import AnimalShareSheet from '@/components/AnimalShareSheet';
@@ -48,6 +49,8 @@ interface Animal {
     /** v2.55.18: team visibility — who added this animal. */
     addedBy?: string | null;
     addedByName?: string | null;
+    /** v2.56.92: the soonest overdue follow-up, so the badge can name it. */
+    dueTop?: { copyKey: string; offsetDays?: number; dueDate: number } | null;
     /** v2.56.16: last identified touch (ficha edit, placement or event). */
     lastUpdate?: { by: string; at: number; kind: 'updated' | 'added'; name?: string | null } | null;
 }
@@ -119,6 +122,26 @@ export default function MyAnimalsPage() {
 
     const speciesEmoji: Record<string, string> = { cat: '🐱', dog: '🐶', bird: '🐦' };
 
+    /* v2.56.92: adopted animals are a growing archive — an unbroken grid of
+       every animal ever placed is unreadable, and the year is how a rescuer
+       actually remembers them. Every other view stays one flat list. */
+    const animalGroups = (() => {
+        if (view !== 'adopted') return [{ key: 'all', label: null as string | null, animals: filteredAnimals }];
+        const byYear = new Map<string, Animal[]>();
+        for (const a of filteredAnimals) {
+            const y = a.date ? String(new Date(a.date < 1e12 ? a.date * 1000 : a.date).getFullYear()) : '';
+            (byYear.get(y) ?? byYear.set(y, []).get(y)!).push(a);
+        }
+        return [...byYear.entries()]
+            // Newest year first; undated last, never sorted in among the years.
+            .sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : Number(b) - Number(a)))
+            .map(([y, animals]) => ({
+                key: y || 'undated',
+                label: y || (t('dashboard.no_date') || 'Sin fecha'),
+                animals,
+            }));
+    })();
+
     if (loading) {
         return (
             <div className="min-h-screen bg-stone-50 py-12 px-4 flex items-center justify-center">
@@ -149,7 +172,7 @@ export default function MyAnimalsPage() {
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                         </Link>
                         <h1 className="text-3xl font-extrabold text-stone-900 tracking-tight">
-                            🐾 {t('dashboard.my_animals') || 'My Animals for Adoption'}
+                            🐾 {t('dashboard.my_animals') || 'My Animals'}
                         </h1>
                     </div>
 
@@ -281,8 +304,18 @@ export default function MyAnimalsPage() {
                         )}
                     </div>
                 ) : (
+                    <>
+                    {animalGroups.map((group) => (
+                    <section key={group.key} className="mb-8 last:mb-0">
+                        {group.label && (
+                            <div className="flex items-baseline gap-2 mb-3">
+                                <h2 className="text-lg font-bold text-stone-900 tabular-nums">{group.label}</h2>
+                                <span className="text-xs font-semibold text-stone-500">{group.animals.length}</span>
+                                <span className="flex-1 h-px bg-stone-200" aria-hidden />
+                            </div>
+                        )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {filteredAnimals.map((animal) => {
+                        {group.animals.map((animal) => {
                             // A fostered ("Tránsito") animal carries an adopterId
                             // (the foster home) but recordType='foster'. It lives
                             // in the Available tab, so the card can't treat
@@ -429,6 +462,33 @@ export default function MyAnimalsPage() {
                                         per-card contract flows moved to the animal's page —
                                         here only a count that deep-links to that section. */}
                                     <div className="pt-3 border-t border-stone-100 space-y-2">
+                                    {!!animal.dueFollowups && (
+                                        <Link
+                                            href={`/my-animals/${animal.id}#next-action`}
+                                            className="flex items-start gap-1.5 w-full px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
+                                            data-testid={`due-badge-${animal.id}`}
+                                        >
+                                            {(() => {
+                                                // Name the action instead of only counting it: "1 pendiente"
+                                                // made the rescuer open the animal just to find out what.
+                                                const top = animal.dueTop;
+                                                const extra = animal.dueFollowups - 1;
+                                                if (!top) {
+                                                    return `${animal.dueFollowups} ${animal.dueFollowups === 1
+                                                        ? (t('followups.pending_one') || 'pendiente')
+                                                        : (t('followups.pending_many') || 'pendientes')}`;
+                                                }
+                                                const label = (top.copyKey === 'checkin_custom' || top.copyKey === 'foster_checkin')
+                                                    ? interpolate(t(`followups.${top.copyKey}`) || '{days}', { days: top.offsetDays ?? '' })
+                                                    : (t(`followups.${top.copyKey}`) || top.copyKey);
+                                                const lateDays = Math.max(0, Math.floor((Date.now() - top.dueDate) / 86400000));
+                                                const when = lateDays === 0
+                                                    ? (t('followups.due_today') || 'vence hoy')
+                                                    : interpolate(t('followups.overdue_days') || 'vencía hace {days} días', { days: lateDays });
+                                                return `${label} · ${when}${extra > 0 ? ` +${extra}` : ''}`;
+                                            })()}
+                                        </Link>
+                                    )}
                                         <div className="flex items-center gap-2">
                                             <div className="text-xs text-stone-500 flex-1 min-w-0 space-y-0.5">
                                                 {animal.date && (
@@ -460,17 +520,6 @@ export default function MyAnimalsPage() {
                                                     </p>
                                                 )}
                                             </div>
-                                            {!!animal.dueFollowups && (
-                                                <Link
-                                                    href={`/my-animals/${animal.id}#next-action`}
-                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors whitespace-nowrap"
-                                                    data-testid={`due-badge-${animal.id}`}
-                                                >
-                                                    {animal.dueFollowups} {animal.dueFollowups === 1
-                                                        ? (t('followups.pending_one') || 'pendiente')
-                                                        : (t('followups.pending_many') || 'pendientes')}
-                                                </Link>
-                                            )}
                                             {!animal.adopterId && animal.applicants && animal.applicants.length > 0 && (
                                                 <Link
                                                     href={`/my-animals/${animal.id}#applicants`}
@@ -499,6 +548,9 @@ export default function MyAnimalsPage() {
                             );
                         })}
                     </div>
+                    </section>
+                    ))}
+                    </>
                 )}
             </div>
         </div>

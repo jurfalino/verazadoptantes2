@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { getFeatureFlag } from '@/config/features';
+import { animalPrimaryFirst } from '@/lib/showcase';
 
 export const runtime = 'edge';
 
@@ -222,6 +223,7 @@ export async function GET(request: NextRequest) {
                 })
                     .from(adopterImages)
                     .where(eq(adopterImages.adoptionId, animal.id))
+                    .orderBy(animalPrimaryFirst(), sql`rowid ASC`)
                     .limit(5)
                     .all()
                     .catch((e: unknown) => {
@@ -252,6 +254,9 @@ export async function GET(request: NextRequest) {
                 // Due follow-up count for the badge — only animals with an
                 // active placement (the view row's adopterId marks it).
                 let dueFollowups = 0;
+                /** The soonest-overdue slot, so the card can name the action
+                 *  instead of only counting it. */
+                let dueTop: { copyKey: string; offsetDays?: number; dueDate: number } | null = null;
                 if (followupCtx && bulk && animal.adopterId && animal.date) {
                     try {
                         // v2.55.20: pure map lookups — zero extra subrequests per row.
@@ -274,7 +279,14 @@ export async function GET(request: NextRequest) {
                                 ],
                                 now: new Date(),
                             });
-                            dueFollowups = slots.filter(s => s.status === 'due').length;
+                            const due = slots.filter(s => s.status === 'due')
+                                .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+                            dueFollowups = due.length;
+                            if (due[0]) dueTop = {
+                                copyKey: due[0].copyKey,
+                                offsetDays: due[0].offsetDays,
+                                dueDate: due[0].dueDate.getTime(),
+                            };
                         }
                     } catch (e) {
                         logger.warn('my-animals: due-followups fallback', { animalId: animal.id, userEmail, view, error: e instanceof Error ? e.message : String(e) });
@@ -314,7 +326,7 @@ export async function GET(request: NextRequest) {
                 }
 
                 return {
-                    ...animal, images, adopterName, applicants, dueFollowups,
+                    ...animal, images, adopterName, applicants, dueFollowups, dueTop,
                     // v2.55.18: who added this animal, resolved for display.
                     addedByName: (animal.addedBy && teamNameMap[animal.addedBy]) || null,
                     lastUpdate,

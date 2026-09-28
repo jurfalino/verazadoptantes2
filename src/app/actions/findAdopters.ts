@@ -14,6 +14,7 @@
  */
 
 import { adopters, searches, adopterHistory, adoptions, adopterStats, duplicateTokens, piiAccessGrants } from '@/db/schema';
+import { recordPendingSearch } from '@/lib/pendingSearchLog';
 import { or, like, sql, and, isNull, eq, ne, desc } from 'drizzle-orm';
 import { logger, withTrace } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
@@ -34,6 +35,8 @@ import { normalizeText, extractPhones, extractEmails, extractSocials, isPlacehol
 import { count } from 'drizzle-orm';
 import { matchSearchEntries, matchSearchNameTokens, hashNameToken, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
 import { assembleDiscoveryMatch } from '@/lib/discoveryMatch';
+import { toGuestMatch } from '@/lib/guestMatch';
+import { getFeatureFlag } from '@/config/features';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
 import { deserializeContactEntries, TYPE_LABEL } from '@/lib/contactEntries';
 import { deserializeHouseholdMembers } from '@/lib/householdMembers';
@@ -959,7 +962,12 @@ async function runDiscoveryMode(
     }
 
     const allProfiles = [...directResults, ...extraProfiles];
-    if (allProfiles.length === 0) return { results: [] };
+    if (allProfiles.length === 0) {
+        // Nobody matched — the most interesting case to ask about later, since
+        // the rescuer knows someone the registry does not.
+        if (options.trackPending) await recordPendingSearch(db, { userEmail: user, query: normalizedQuery });
+        return { results: [] };
+    }
 
     // PII access gating: resolve per-result visibility once for the whole batch.
     const piiGatingOn = !isUnauthenticated && await isPiiGatingEnabled();
@@ -1312,6 +1320,18 @@ async function runDiscoveryMode(
         ? allResults.length : undefined;
 
     const totalCount = mainResults.length;
+    if (options.trackPending) {
+        // Only THIS search's own single match may identify the person later, and
+        // only with its relevance carried along: the deck has to be able to tell
+        // a certain match from a lucky one before it names anybody.
+        const only = mainResults.length === 1 ? mainResults[0] : null;
+        await recordPendingSearch(db, {
+            userEmail: user,
+            query: normalizedQuery,
+            adopterId: only?.adopterId ?? null,
+            matchConfidence: only ? Math.round(only.relevancePercent) : null,
+        });
+    }
     logger.info('findAdopters:discovery', { query: normalizedQuery, tokens: tokens.length, resultCount: Math.min(totalCount, limit), user });
     logAudit({ userEmail: user, action: 'search', details: { query: normalizedQuery, resultCount: Math.min(totalCount, limit) } });
 
@@ -1343,10 +1363,29 @@ async function runDiscoveryMode(
         }
     }
 
+    // ENABLE_GUEST_NAME_MASK: a logged-out visitor gets the names masked and
+    // nothing the card doesn't show — done here so the names never leave the
+    // server, not just the screen. The flag is read only for a guest search.
+    const guestNameMasked = isUnauthenticated && await getFeatureFlag('ENABLE_GUEST_NAME_MASK');
+    const rawById = new Map<string, typeof adopters.$inferSelect>(allProfiles.map((a: typeof adopters.$inferSelect) => [a.id, a]));
+    const forViewer = (list: DiscoveryMatch[]) => guestNameMasked
+        ? list.map(r => {
+            const raw = rawById.get(r.adopterId);
+            // Every result is built from allProfiles, so a miss is a bug; drop the
+            // row rather than send it unmasked.
+            if (!raw) {
+                logger.error('findAdopters: guest mask found no source row; result dropped', null, { adopterId: r.adopterId });
+                return null;
+            }
+            return toGuestMatch(r, raw, normalizedQuery);
+        }).filter((r): r is DiscoveryMatch => r !== null)
+        : list;
+
     const response: FindAdoptersResponse = {
-        results: mainResults.slice(0, limit),
-        ...(lowRelevanceResults.length > 0 && { lowRelevanceResults: lowRelevanceResults.slice(0, limit) }),
+        results: forViewer(mainResults.slice(0, limit)),
+        ...(lowRelevanceResults.length > 0 && { lowRelevanceResults: forViewer(lowRelevanceResults.slice(0, limit)) }),
         ...(singleTokenResultCount !== undefined && { singleTokenResultCount }),
+        ...(guestNameMasked && { guestNameMasked: true }),
     };
     if (totalCount > limit) { response.truncated = true; response.totalCount = totalCount; }
     return response;

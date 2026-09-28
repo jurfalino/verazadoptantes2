@@ -72,6 +72,7 @@ export const adopterImages = sqliteTable("adopter_images", {
     uploadedAt: integer("uploaded_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     addedBy: text("added_by").default("anonymous"),
     isProfilePicture: integer("is_profile_picture").default(0), // 1 if this is the profile picture
+    isPrimary: integer("is_primary").default(0), // v2.56.86: lead photo for adoption_id (an ANIMAL, not an adopter)
     mediaType: text("media_type").default("image"), // 'image' or 'video'
     thumbnailUrl: text("thumbnail_url"), // Video thumbnail URL (R2)
 });
@@ -105,6 +106,34 @@ export const searches = sqliteTable("searches", {
     count: integer("count").default(1),
     lastSearchedAt: integer("last_searched_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
 });
+
+/**
+ * Searches a signed-in rescuer made that never turned into a record, so the
+ * homepage can ask "¿qué pasó?" on their next visit. A row is closed when they
+ * answer it, dismiss it, or record anything about that adopter elsewhere.
+ * Searches that refine one another are collapsed into one ask at read time
+ * (`src/domain/pendingSearches.ts`), not here — the raw searches stay.
+ */
+export const pendingSearches = sqliteTable("pending_searches", {
+    id: text("id").primaryKey(),
+    userEmail: text("user_email").notNull(),
+    query: text("query").notNull(),
+    /** Set when the search matched exactly one adopter, so the ask can name them. */
+    adopterId: text("adopter_id"),
+    /**
+     * Relevance % of that single match. The deck only names the adopter, and
+     * only offers to open their profile, above HIGH_CONFIDENCE_PERCENT — a weak
+     * single match is a coincidence, not an identification.
+     */
+    matchConfidence: integer("match_confidence"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+    /** 'recorded' | 'dismissed' — null while the ask is still open. */
+    resolution: text("resolution"),
+}, (table) => ({
+    openIdx: index("idx_pending_searches_open").on(table.userEmail, table.resolvedAt),
+    adopterIdx: index("idx_pending_searches_adopter").on(table.adopterId),
+}));
 
 export const adoptions = sqliteTable("adoptions", {
     id: text("id").primaryKey(),

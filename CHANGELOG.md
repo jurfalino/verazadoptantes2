@@ -2,6 +2,366 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.94] - 2026-09-28
+
+### Fixed — the pending badge stretched the cards
+
+2.56.92 put a whole sentence («Control del primer mes · vencía hace 3 días»)
+into a `whitespace-nowrap` pill sitting in a flex row beside the date. It could
+neither shrink nor wrap, so it pushed the row — and the card — wider than its
+grid column.
+
+The pending action now has its own full-width row above the dates, as a block
+that wraps. It is the most important thing on the card, so a squeezed pill was
+the wrong home for it regardless.
+
+Measured rather than eyeballed: with 8 badges rendered, no badge or card
+overflows its box and the page has no horizontal scroll at 1280px or 390px.
+
+## [2.56.93] - 2026-09-28
+
+### Fixed — every nav counter was wrong for anyone on a team
+
+`/api/quick-counts` bound an array to `IN (…)` for all three chips (animals,
+adoptions, adopters). D1 renders that as `IN (?)` with a **single** bound value
+however long the array is, so each count silently reflected one member instead
+of the team. Local SQLite expands it correctly, which is exactly why no test
+ever caught it — and why 2.56.92's team-wide animals counter would have shipped
+still showing a personal number. All three now fan out with `or(...eq)`, and
+`d1ArrayParams`'s violation list drops from three files to two.
+
+## [2.56.92] - 2026-09-27
+
+### Changed — /my-animals reads like a work queue, not an inventory
+
+- **The pending badge names the action.** «1 pendiente» made the rescuer open
+  the animal just to find out what was pending. It now reads «Control del primer
+  mes · vencía hace 3 días», with «+2» when more are waiting behind it. The list
+  API returns the soonest-overdue slot alongside the count.
+- **Adopted animals are grouped by the year they were adopted.** That view is an
+  archive that only grows, and the year is how a rescuer actually remembers an
+  animal. Undated rows sort last under «Sin fecha» rather than among the years.
+  Every other view stays one flat list.
+- **The menu counter is team-wide**, matching the page it links to. 2.56.91
+  fixed it counting only unplaced animals (0 against a page of 12) but left it
+  scoped to one person (12 against a page of 28) — the same disagreement, one
+  scope up.
+
+## [2.56.91] - 2026-09-27
+
+### Fixed — the «Mis Animales» counter ignored every animal that had a home
+
+The menu chip counted only animals still `available` with no adopter, so an
+animal dropped out of the tally the moment it went into tránsito or was adopted
+— the chip read 0 while the page it links to listed 12. It now counts every
+active animal the person created, placed or not, excluding soft-deleted ones.
+
+Counted off `animals` rather than the `adoptions` view: the view UNIONs
+`adopter_events`, and without the old `record_type='available'` filter those
+event rows would have been counted as animals.
+
+### Changed — the menu reads «Mis Animales»
+
+Was «Mis Animales en Adopción», which stopped being true once the page started
+showing fostered and adopted animals too. Renamed in all three locales; the same
+key titles the page heading and the quick-access strip, so all three agree.
+
+## [2.56.90] - 2026-09-27
+
+### Fixed — the chosen main photo showed as unchosen right after saving
+
+`useState(props)` runs once at mount. Reopening the editor immediately after a
+save mounted the form before `router.refresh()` landed, so the stored primary
+was captured as `null` and never re-read — the photo just chosen rendered
+unpicked until the form was closed and opened again. The stored primary is now
+derived from props on every render; only an explicit pick is held in state.
+
+Also: **Cancelar now refreshes.** After a partial failure some photos really had
+saved, but cancelling kept the stale props and dropped the in-memory record of
+them, so a saved photo vanished from the editor and would be added again as a
+duplicate — the same defect 2.56.89 fixed on the retry path, reached through
+Cancelar instead.
+
+The e2e now makes primary the photo that is *not* already on top, so the
+assertion can only pass if `is_primary` actually reorders the gallery.
+
+## [2.56.89] - 2026-09-27
+
+### Fixed — review findings on the photo editor (self-review before production)
+
+- **«Principal» was a false label on every existing animal.** With no primary
+  chosen, the editor badged the first photo *as the animal page orders them*
+  (newest first) — but the cards, the public page and the contract lead with the
+  oldest. So the badge named one photo while adopters saw another. No photo is
+  badged now until someone actually picks one; the split fallback order itself
+  is older than this feature and is left alone deliberately.
+- **A partial failure could hide a photo that was already saved, and silently
+  drop the main choice.** Uploads were removed from the staging list as they
+  landed, but nothing rendered them until the page refreshed — so if a later
+  delete failed, a photo that existed vanished from the editor and the user
+  would add it again. Worse, a «main» pointing at a staged photo resolved to
+  nothing on retry, so the choice was skipped without a word. Landed uploads are
+  now promoted to real photos in place, carrying the main choice onto their real
+  id as they go.
+- **The file input had no accessible name** — its label holds only an icon.
+- **The e2e picked and cleaned up photos by position**, on a fixture shared with
+  other specs. It now diffs the ids it created and cleans up exactly those.
+
+## [2.56.88] - 2026-09-27
+
+### Fixed — the chosen main photo was being discarded by two readers
+
+Caught by the new e2e before it reached staging, and worth recording because
+the mistake is invisible to the type checker: **Drizzle's second `.orderBy()`
+replaces the first, it does not append.** `animalImagesOrder()` was applied as
+its own `.orderBy()` call at two sites that already ordered by `uploaded_at
+DESC` — the animal page itself and `getAdoptionImages` — so the primary flag was
+dropped outright and the photo you picked stayed wherever it was.
+
+The helper is now `animalPrimaryFirst()`, contributing only `is_primary DESC`,
+with every call site passing its own tiebreaker in the same call. That also
+fixes the second half of the error: the old helper's `rowid ASC` would have
+flipped those two readers from newest-first to oldest-first, silently reordering
+every existing animal's gallery.
+
+## [2.56.87] - 2026-09-27
+
+### Security — sign-off for the three photo actions (completes 2.56.86)
+
+2.56.86 never deployed: CI's `check-action-surface` ratchet caught that it added
+three browser-callable endpoints (150 → 153) without the sign-off that guard
+exists to force. Raising the number is the sign-off, so each new door is
+documented in `scripts/check-action-surface.mjs` against the question the guard
+asks — what a stranger can do with arguments they choose:
+
+- all three take an `animalId`, now shaped by zod and gated by
+  `assertCanEditAnimal` (owner ∨ org-mate ∨ admin, animal not soft-deleted);
+- the two that take an `imageId` require `adoption_id === animalId`, so a
+  guessed id belonging to another animal — or to an adopter's **avatar**, which
+  lives in the same table — matches nothing;
+- `addAnimalPhoto`'s data URL must be `data:image/` and is now capped at 8 MB,
+  so a browser-callable endpoint cannot be used to push bulk into D1. It is
+  strictly narrower than the `saveImage` door already on the wire, which takes
+  any `adopterId` with no ownership check at all.
+
+## [2.56.86] - 2026-09-27
+
+### Added — an animal's photos can finally be changed after it is created
+
+Until now photos could only be set while creating the animal. The animal's page
+showed them read-only and the in-place edit carried the text fields only, so a
+wrong or missing photo meant deleting and re-creating the animal — losing its
+whole line of life with it. Worse, a photoless animal is hidden from the public
+catalogue (`/api/showcase/animal/[id]` 404s without one), so an animal created
+without photos could never be listed publicly at all.
+
+The edit mode on `/my-animals/[id]` now has a photos section: add, remove, and
+pick which one leads the ficha.
+
+- **Staged, not applied on click.** The section lives inside a Guardar/Cancelar
+  form, so nothing reaches the server until Guardar — a Cancelar that left a
+  photo deleted would break the promise those buttons make. On save, uploads run
+  first, so a photo added in the same session can be chosen as the main one.
+- **Removing the last photo warns first**, naming the consequence: the animal
+  drops off the public adoption page.
+
+### Added — `adopter_images.is_primary` (migration 0071)
+
+Deliberately NOT `is_profile_picture`: that column means "the avatar for
+`adopter_id`" and carries an exactly-one-per-ADOPTER invariant. Animal photos
+are keyed by `adoption_id`, and every available animal's rows share the
+`'__available__'` adopter sentinel — so reusing it would have made a single flag
+fight over every available animal in the system, and would have hijacked the
+adopter's avatar once the animal was placed. The new flag is scoped to
+`adoption_id`, and demotion is scoped the same way.
+
+**All eight animal-photo readers now put the chosen photo first** — the animal
+page, the list cards, the public showcase, the adopter-side record photos, the
+single-thumbnail picker, `/my-adoptions`, and both contract routes. This is
+load-bearing rather than cosmetic: four of them apply a `LIMIT`, so without it
+the chosen photo could be cut off outright by `LIMIT 5`.
+
+`animalPrimaryFirst()` contributes **only** that rule; each site keeps its own
+existing tiebreaker, so nothing else about their order changes. The first cut
+of the helper also supplied `rowid ASC`, which was wrong twice over: Drizzle's
+second `.orderBy()` REPLACES the first, so the two readers that already ordered
+by `uploaded_at DESC` silently dropped the primary flag altogether, and a third
+would have flipped from newest-first to oldest-first. The new e2e caught it.
+
+### Security
+
+The three new actions enforce what the generic image actions cannot: the photo
+must belong to the animal (`adoption_id === animalId`), so a caller with parity
+on one animal cannot reach another animal's rows — or an adopter's avatar — by
+passing a foreign image id. The gate is the animal's (owner ∨ org-mate ∨ admin)
+rather than `deleteImage`'s uploader-or-admin rule, which would otherwise stop a
+teammate from removing a photo on an animal they can already fully edit and even
+delete.
+
+## [2.56.85] - 2026-09-26
+
+### Added — PostHog sees what rescuers do, not just which pages they open
+
+Groundwork for a PostHog funnel: landed → signed in → searched → saved an
+adopter → listed an animal. Until now PostHog only received page loads and
+logins; every product event went to Amplitude alone.
+
+- **Every `zarazTrack` event is mirrored to PostHog** (`search_performed`,
+  `adopter_created`, `import_completed`, …). Events fired before PostHog's
+  deferred init are queued and sent once it loads, instead of being dropped.
+- **New events:** `adopter_updated` (full edit, inline field edit, "continue
+  with this existing profile") and `animal_listed` (new animal in Mis animales,
+  not edits). Both also reach Amplitude.
+- **`signed_in_visit`** (PostHog only), once per browser session for a logged-in
+  user. `signed_in` fires only on a fresh login, so it misses rescuers whose
+  session carried over.
+- **Fixed:** a user whose session loaded before PostHog initialised was never
+  identified until the session object changed.
+
+## [2.56.84] - 2026-09-26
+
+### Fixed — the deck named a person it had not identified, and wrote to them
+
+Reported on staging: searching "Maria", then "Maria Ornella", then "Maria
+Ornella Capri", then "Maria Ornella Capri Otto" produced a single ask titled
+**"Ornella"**, and tapping "Me pidió un animal" recorded an adoption request
+against that adopter with no confirmation, no indication of which record, and no
+way to review it.
+
+Two defects, both in 2.56.81:
+
+- **Identity was inherited from a broader search in the group.** Only the second
+  search matched one adopter (a record called "Ornella"); the two narrower ones
+  matched nobody, which is evidence the person is *not* that record. The lead now
+  keeps its own match or none — `groupPendingSearches` no longer copies another
+  search's adopter — and a match must also clear `HIGH_CONFIDENCE_PERCENT` (80)
+  before the ask names anyone. `pending_searches.match_confidence` (migration
+  `0070`) carries the relevance of a single match so that test can exist at all.
+- **The deck wrote activity records.** It no longer writes anything. A reason
+  now carries the rescuer to where the person is on screen: their profile with
+  the reason preselected when the search identified them beyond doubt, and the
+  search itself ("Buscar de nuevo") when it did not. The save happens there,
+  deliberately, with the name, rating and history in view.
+
+Cards are now titled with what the rescuer typed — always true — and name the
+matched person only on a second line, when it is certain.
+
+### Added — logged-out search can hide who the results are (`ENABLE_GUEST_NAME_MASK`, off)
+
+With the flag on, someone searching without signing in still gets every result
+card as it is today, but the name is masked: the words they typed stay and each
+other word keeps its first letter, so "María Rosa Rodríguez López" searched as
+"maria" reads "María R•••• R•••• L••••" (the same bullet the contact line uses,
+fixed length so it gives nothing away). The same name and alias words are masked
+inside the contact line too ("Conocido/a como: …", a profile named after the
+person). The login box is pinned under the search box over a lightly blurred
+list; closing it with the X leaves the masked list, and signing in comes back to
+the same search with the names.
+
+The masking happens on the server (`src/lib/guestMatch.ts`, rules in
+`src/domain/guestNameMask.ts`), for the main list and the "Otras posibles
+coincidencias" tier, and the response also drops what the card never shows
+(contact entries, address, household, notes, source link), so the names are not
+in what the browser receives either. Signed-in searches are unchanged. Admin
+toggle: "Ocultar nombres sin sesión".
+
+Not covered by this flag: an adopter profile opened directly by URL, and the
+duplicate-detection mode of `findAdopters`, which a logged-out caller can still
+reach.
+
+### Added — the pinned "install the app" bar is behind `ENABLE_PWA_INSTALL_PROMPT` (off)
+
+The bar at the bottom of every page inviting people to install BuenAdoptante now
+shows only when an admin turns it on. The homepage's own install section is
+unchanged.
+
+### Fixed — `next dev` kept serving the first build of a page
+
+Dev chunk URLs aren't content-hashed, so the service worker's cache-first route
+kept answering with whatever it cached first and a refresh couldn't get past it.
+Under `next dev` the layout now removes the worker and its caches (reloading once
+if it was in control). Production registration is unchanged.
+
+## [2.56.83] - 2026-09-26
+
+### Added — logged-out search can hide who the results are (`ENABLE_GUEST_NAME_MASK`, off)
+
+With the flag on, someone searching without signing in still gets every result
+card as it is today, but the name is masked: the words they typed stay and each
+other word keeps its first letter, so "María Rosa Rodríguez López" searched as
+"maria" reads "María R•••• R•••• L••••" (the same bullet the contact line uses,
+fixed length so it gives nothing away). The same name and alias words are masked
+inside the contact line too ("Conocido/a como: …", a profile named after the
+person). The login box is pinned under the search box over a lightly blurred
+list; closing it with the X leaves the masked list, and signing in comes back to
+the same search with the names.
+
+The masking happens on the server (`src/lib/guestMatch.ts`, rules in
+`src/domain/guestNameMask.ts`), for the main list and the "Otras posibles
+coincidencias" tier, and the response also drops what the card never shows
+(contact entries, address, household, notes, source link), so the names are not
+in what the browser receives either. Signed-in searches are unchanged. Admin
+toggle: "Ocultar nombres sin sesión".
+
+Not covered by this flag: an adopter profile opened directly by URL, and the
+duplicate-detection mode of `findAdopters`, which a logged-out caller can still
+reach.
+
+### Added — the pinned "install the app" bar is behind `ENABLE_PWA_INSTALL_PROMPT` (off)
+
+The bar at the bottom of every page inviting people to install BuenAdoptante now
+shows only when an admin turns it on. The homepage's own install section is
+unchanged.
+
+### Fixed — `next dev` kept serving the first build of a page
+
+Dev chunk URLs aren't content-hashed, so the service worker's cache-first route
+kept answering with whatever it cached first and a refresh couldn't get past it.
+Under `next dev` the layout now removes the worker and its caches (reloading once
+if it was in control). Production registration is unchanged.
+
+## [2.56.82] - 2026-09-26
+
+### Changed — the browser-callable surface ratchet now expects 150
+
+2.56.81 added `getPendingAsks` and `resolvePendingAsk`, so CI's endpoint count
+moved 148 → 150 and `build-and-lint` failed, exactly as that guard is meant to:
+a new door has to be signed off in the same commit. Both were checked against
+what a stranger can do with arguments they choose. `getPendingAsks` takes none
+and filters every row by the caller's own session email. `resolvePendingAsk`
+takes ids, but each UPDATE carries `user_email = <session>`, so a guessed id
+closes nothing; the resolution is checked against its two allowed values and the
+array is length-capped. The writes stay in `src/lib/pendingSearchLog.ts` so they
+never become endpoints.
+
+## [2.56.81] - 2026-09-26
+
+### Added — "Quedó pendiente": asking about searches that never became a record
+
+A third of the searches that find someone (47 of 149 over 60 days in
+production) never open a profile, so the "¿Qué pasó?" card on the profile page
+cannot reach those rescuers at all. Behind `ENABLE_PENDING_SEARCHES` (off by
+default), the homepage now asks about the searches that produced nothing.
+
+- **One ask per person, not per search.** A rescuer usually searches the same
+  person two or three times, each more specific ("Maria" → "Maria Perez" →
+  "Maria Perez 11-6666666"). `src/domain/pendingSearches.ts` collapses those
+  into a single ask carried by the most complete search. An added surname or
+  phone folds in; a half-typed name folds in only when it was typed minutes
+  earlier, so "Ana" and "Anabel" a week apart stay two asks. 16 unit tests.
+- **Swiped, not stacked.** The asks are a scroll-snap deck with a counter and
+  dots, so ten pending people cost one screen instead of ten.
+- **Answering costs one tap.** When the search matched exactly one adopter the
+  ask names them and records straight onto that profile; when it matched nobody
+  it opens the create form carrying the query and the answer.
+- **An ask retires** when it is answered, dismissed, or when the rescuer
+  records anything about that adopter anywhere else.
+- Only the rescuer's own search box files these searches; the adopter picker,
+  the flag dialog and back-navigation re-runs do not.
+
+New table `pending_searches` (migration `0069`), server actions
+`getPendingAsks` / `resolvePendingAsk`, and `tests/pending-searches.authed.spec.ts`.
+
 ## [2.56.80] - 2026-09-24
 
 ### Fixed — the last two protected routes with no loading boundary

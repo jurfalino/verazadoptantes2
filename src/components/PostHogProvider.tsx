@@ -1,8 +1,14 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import posthog from 'posthog-js';
+import { flushPostHogQueue, posthogTrack } from '@/lib/zaraz';
+
+// One `signed_in_visit` per browser session per user: the funnel's "signed in"
+// step. `signed_in` alone only fires on a fresh login, so a rescuer whose
+// session is still valid from last week would never count as signed in.
+const SIGNED_IN_VISIT_KEY = 'posthog_signed_in_visit';
 
 /**
  * PostHog session replay + product analytics (v2.49.0).
@@ -41,6 +47,10 @@ export default function PostHogProvider({
 }) {
     const { data: session } = useSession();
     const initialized = useRef(false);
+    // State, not just the ref: the session usually resolves BEFORE the deferred
+    // init runs, and a ref change doesn't re-run the identify effect — so those
+    // users were never identified until the session object happened to change.
+    const [ready, setReady] = useState(false);
     const lastIdentifiedUserId = useRef<string | null>(null);
 
     useEffect(() => {
@@ -62,6 +72,8 @@ export default function PostHogProvider({
                     maskAllInputs: false,
                 },
             });
+            flushPostHogQueue();
+            setReady(true);
         };
 
         const w = window as Window & {
@@ -76,7 +88,7 @@ export default function PostHogProvider({
     }, [enabled, projectKey]);
 
     useEffect(() => {
-        if (!enabled || !initialized.current) return;
+        if (!enabled || !ready) return;
 
         const userId = (session?.user as { id?: string } | undefined)?.id;
         const isAdmin = (session?.user as { isAdmin?: boolean } | undefined)?.isAdmin;
@@ -97,7 +109,14 @@ export default function PostHogProvider({
             name: name ?? undefined,
             role: isAdmin ? 'admin' : 'viewer',
         });
-    }, [session, enabled]);
+
+        try {
+            if (sessionStorage.getItem(SIGNED_IN_VISIT_KEY) !== userId) {
+                posthogTrack('signed_in_visit', { role: isAdmin ? 'admin' : 'viewer' });
+                sessionStorage.setItem(SIGNED_IN_VISIT_KEY, userId);
+            }
+        } catch { /* sessionStorage may be unavailable (Safari private mode) — analytics is best-effort */ }
+    }, [session, enabled, ready]);
 
     return null;
 }

@@ -18,10 +18,11 @@ import { join, relative } from 'node:path';
  * per value, chunked under D1's 100-parameter cap.
  */
 
+// One fewer since v2.56.93: quick-counts now fans out with `or(...eq)`. Its
+// three counts were wrong on D1 for anyone on a team of more than one.
 const KNOWN_VIOLATIONS = [
     'src/app/actions/duplicates.ts',
     'src/app/actions/userNames.ts',
-    'src/app/api/quick-counts/route.ts',
 ];
 
 const walk = (dir: string, out: string[] = []): string[] => {

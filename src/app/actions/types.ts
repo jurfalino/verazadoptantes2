@@ -154,6 +154,13 @@ export interface FindAdoptersOptions {
     minRelevance?: number;
     /** Max results returned. Default: SEARCH_RESULT_LIMIT. */
     limit?: number;
+    /**
+     * Remember this search so the homepage can ask what came of it
+     * (ENABLE_PENDING_SEARCHES). Opt-in, and only the rescuer's own search box
+     * sets it: searching inside "record an adoption" or the flag dialog is
+     * already an answer, so asking about it later would be noise.
+     */
+    trackPending?: boolean;
 }
 
 export interface FindAdoptersResponse {
@@ -165,4 +172,7 @@ export interface FindAdoptersResponse {
     truncated?: boolean;
     totalCount?: number;
     validationError?: 'min_digits' | 'invalid_query' | 'login_required';
+    /** Discovery mode, logged-out viewer, ENABLE_GUEST_NAME_MASK on: the names in
+     * these results are masked, and the page asks the visitor to sign in. */
+    guestNameMasked?: boolean;
 }

@@ -19,6 +19,7 @@ import { findAdopters } from './findAdopters';
 import { hydrateDuplicateMatches } from './hydrateDuplicateMatches';
 import { getUserCountry } from './userCountry';
 import { logger } from '@/lib/logger';
+import { getFeatureFlag } from '@/config/features';
 import type { DiscoveryMatch, DuplicateMatch } from './types';
 
 const WEAK_LIMIT = 20;
@@ -49,10 +50,12 @@ export async function findWeakNameMatches(
         const isUnauthenticated = user === 'unknown';
         const userCountry = await getUserCountry(user);
 
+        const guestNameMasked = isUnauthenticated && await getFeatureFlag('ENABLE_GUEST_NAME_MASK');
         const results = await hydrateDuplicateMatches(db, matches, {
             viewer: user,
             isUnauthenticated,
             userCountry,
+            ...(guestNameMasked && { guestMaskQuery: name }),
         });
         return { results };
     } catch (e) {

@@ -88,6 +88,7 @@ export const FEATURE_FLAGS = {
     // Structured household/family members (name+relationship+own contacts) —
     // replaces the free-text family section. Household redesign (2026-08).
     ENABLE_HOUSEHOLD_MEMBERS: false,
+    ENABLE_PENDING_SEARCHES: false,
     // Pins the "¿Qué pasó con X?" visit-intent card to the bottom of the screen on
     // adopter profiles, so recording activity is one tap from anywhere instead of
     // below the whole adopter card. Read server-side by the profile page, so it
@@ -98,6 +99,17 @@ export const FEATURE_FLAGS = {
     // sending domain) before enabling anywhere real. Client-visible (login
     // modal) → also in PUBLIC_FLAG_KEYS. Default off.
     ENABLE_EMAIL_OTP: false,
+    // The "Instalar BuenAdoptante" bar pinned to the bottom of every page when
+    // the browser offers a home-screen install. Client-visible (InstallPrompt)
+    // → also in PUBLIC_FLAG_KEYS. Default off. The homepage's inline install
+    // section (InstallCTA) is not gated by this.
+    ENABLE_PWA_INSTALL_PROMPT: false,
+    // Logged-out search: names in the results are masked on the server (the
+    // typed words stay, the rest "R••••"), the same words are masked in the
+    // contact line, and the login box is pinned over the list. Read server-side
+    // by findAdopters / findWeakNameMatches, which tell the page via
+    // `guestNameMasked`, so it needs no public-config entry. Default off.
+    ENABLE_GUEST_NAME_MASK: false,
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
@@ -179,6 +191,8 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_ANIMALS_FOR_ADOPTION: false,
         ENABLE_FOLLOWUPS: true,
         ENABLE_EMAIL_OTP: false,
+        ENABLE_PWA_INSTALL_PROMPT: false,
+        ENABLE_GUEST_NAME_MASK: false,
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
         ENABLE_POSTHOG: false,
@@ -195,6 +209,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         SHOWCASE_USER_VISIBLE: false,
         ENABLE_GUIDED_WALKTHROUGH: false,
         ENABLE_HOUSEHOLD_MEMBERS: false,
+    ENABLE_PENDING_SEARCHES: false,
         ENABLE_PINNED_VISIT_INTENT: false,
     };
 
