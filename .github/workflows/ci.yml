@@ -335,7 +335,18 @@ jobs:
           case "$OK" in 2*|3*) ;; *) echo "::error::normal request failed with $OK"; exit 1;; esac
           # A tab from the PREVIOUS build must be served by that build, not rejected.
           if [ -z "$APP_PREVIOUS_BUILD_ID" ]; then echo "::warning::no previous build in the deploy map; skipping the forwarding check"; exit 0; fi
-          curl -s -o /dev/null -D prev.txt -w '%{http_code}' -X POST "$URL/" -H "x-deployment-id: $APP_PREVIOUS_BUILD_ID" -H 'Next-Action: ci-probe' > prevcode.txt || true
+          # The PREVIOUS deployment needs its own readiness wait. The stale probe
+          # above only proves the NEW worker is live; Cloudflare can still be a
+          # few seconds from routing the just-superseded deployment at its own
+          # URL, and the forward then finds nothing. Probing 0.1s after `wrangler
+          # pages deploy` returned is what reddened 2026-09-25 and 2026-09-28 —
+          # both times the guard itself was fine (verified by hand afterwards).
+          # Retry the PROBE, assert ONCE: a genuinely dead forwarder still fails.
+          for i in $(seq 1 10); do
+            curl -s -o /dev/null -D prev.txt -w '%{http_code}' -X POST "$URL/" -H "x-deployment-id: $APP_PREVIOUS_BUILD_ID" -H 'Next-Action: ci-probe' > prevcode.txt || true
+            grep -qi '^x-deployment-skew-proxied:' prev.txt && break
+            sleep 6
+          done
           PCODE=$(cat prevcode.txt)
           PROXIED=$(grep -i '^x-deployment-skew-proxied:' prev.txt | tr -d '\r' | awk '{print $2}' || true)
           echo "previous-build request -> $PCODE, served by build: ${PROXIED:-<not forwarded>}"
@@ -428,7 +439,18 @@ jobs:
           case "$OK" in 2*|3*) ;; *) echo "::error::normal request failed with $OK"; exit 1;; esac
           # A tab from the PREVIOUS build must be served by that build, not rejected.
           if [ -z "$APP_PREVIOUS_BUILD_ID" ]; then echo "::warning::no previous build in the deploy map; skipping the forwarding check"; exit 0; fi
-          curl -s -o /dev/null -D prev.txt -w '%{http_code}' -X POST "$URL/" -H "x-deployment-id: $APP_PREVIOUS_BUILD_ID" -H 'Next-Action: ci-probe' > prevcode.txt || true
+          # The PREVIOUS deployment needs its own readiness wait. The stale probe
+          # above only proves the NEW worker is live; Cloudflare can still be a
+          # few seconds from routing the just-superseded deployment at its own
+          # URL, and the forward then finds nothing. Probing 0.1s after `wrangler
+          # pages deploy` returned is what reddened 2026-09-25 and 2026-09-28 —
+          # both times the guard itself was fine (verified by hand afterwards).
+          # Retry the PROBE, assert ONCE: a genuinely dead forwarder still fails.
+          for i in $(seq 1 10); do
+            curl -s -o /dev/null -D prev.txt -w '%{http_code}' -X POST "$URL/" -H "x-deployment-id: $APP_PREVIOUS_BUILD_ID" -H 'Next-Action: ci-probe' > prevcode.txt || true
+            grep -qi '^x-deployment-skew-proxied:' prev.txt && break
+            sleep 6
+          done
           PCODE=$(cat prevcode.txt)
           PROXIED=$(grep -i '^x-deployment-skew-proxied:' prev.txt | tr -d '\r' | awk '{print $2}' || true)
           echo "previous-build request -> $PCODE, served by build: ${PROXIED:-<not forwarded>}"

@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.95] - 2026-09-28
+
+### Fixed — CI reddened deploys that had actually succeeded
+
+The post-deploy skew check probed the forwarding path 0.1s after `wrangler pages
+deploy` returned. The new worker has a readiness loop; the **previous**
+deployment had none, and Cloudflare can still be seconds from routing the
+just-superseded deployment at its own URL — so the forward found nothing and the
+job failed after the deploy had already gone live. It reddened 2026-09-25 and
+2026-09-28; both times the guard itself was fine, confirmed by hand against
+production afterwards.
+
+The probe now retries, the assertion still runs **once**: a genuinely dead
+forwarder fails as loudly as before.
+
 ## [2.56.94] - 2026-09-28
 
 ### Fixed — the pending badge stretched the cards
