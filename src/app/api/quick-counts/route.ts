@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { getDb } from '@/app/actions';
 import { adoptions, adopters, animals } from '@/db/schema';
-import { eq, and, isNull, inArray, count } from 'drizzle-orm';
+import { eq, and, isNull, or, count } from 'drizzle-orm';
 import { getFeatureFlag } from '@/config/features';
 import { getOrgMemberEmails } from '@/app/actions/organizations';
 import { logger } from '@/lib/logger';
@@ -22,12 +22,20 @@ export async function GET() {
             return NextResponse.json({ animals: 0, adoptions: 0, adopters: 0 }, { status: 500 });
         }
 
+        // Never empty — getOrgMemberEmailsFor falls back to [callerEmail] on
+        // every path — so the `or(...)` below can't collapse to `undefined` and
+        // silently drop the filter.
+        //
+        // `or(...map(eq))`, never `inArray`: D1 renders `IN (?)` with a single
+        // bound value no matter how long the array is, so all three counts here
+        // were wrong for anyone on a team of more than one. Local sqlite expands
+        // it properly, which is exactly why the tests never caught it.
         const memberEmails = await getOrgMemberEmails();
         
         // 1. My Adopters (all adopters created by org members)
         const [adopterCount] = await db.select({ value: count() })
             .from(adopters)
-            .where(inArray(adopters.addedBy, memberEmails));
+            .where(or(...memberEmails.map(e => eq(adopters.addedBy, e))));
 
         // 2. My Adoptions — strictly recordType='adoption'.
         // The chip is labeled "Mis Adopciones" — it should count true adoptions only,
@@ -37,7 +45,7 @@ export async function GET() {
         const [adoptionCount] = await db.select({ value: count() })
             .from(adoptions)
             .where(and(
-                inArray(adoptions.addedBy, memberEmails),
+                or(...memberEmails.map(e => eq(adoptions.addedBy, e))),
                 eq(adoptions.recordType, RECORD_TYPES.ADOPTION)
             ));
 
@@ -59,7 +67,7 @@ export async function GET() {
             const [ac] = await db.select({ value: count() })
                 .from(animals)
                 .where(and(
-                    inArray(animals.addedBy, memberEmails),
+                    or(...memberEmails.map(e => eq(animals.addedBy, e))),
                     isNull(animals.deletedAt)
                 ));
             animalCount = ac;

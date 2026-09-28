@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.93] - 2026-09-28
+
+### Fixed — every nav counter was wrong for anyone on a team
+
+`/api/quick-counts` bound an array to `IN (…)` for all three chips (animals,
+adoptions, adopters). D1 renders that as `IN (?)` with a **single** bound value
+however long the array is, so each count silently reflected one member instead
+of the team. Local SQLite expands it correctly, which is exactly why no test
+ever caught it — and why 2.56.92's team-wide animals counter would have shipped
+still showing a personal number. All three now fan out with `or(...eq)`, and
+`d1ArrayParams`'s violation list drops from three files to two.
+
 ## [2.56.92] - 2026-09-27
 
 ### Changed — /my-animals reads like a work queue, not an inventory
