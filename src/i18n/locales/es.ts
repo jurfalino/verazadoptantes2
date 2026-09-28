@@ -1110,6 +1110,7 @@ export const es = {
         },
     },
     dashboard: {
+        no_date: 'Sin fecha',
         edit_animal: 'Editar Animal',
         table_view: 'Ver Reporte',
         my_adopters: 'Mis Adoptantes',
@@ -1528,6 +1529,8 @@ export const es = {
         read_more: 'leer más',
     },
     followups: {
+        due_today: 'vence hoy',
+        overdue_days: 'vencía hace {days} días',
         reminder_explain: '¿Cuándo me avisan?',
         reminder_when: 'Te avisamos el {date}.',
         reminder_until: 'Vas a poder registrarlo hasta el {date}.',

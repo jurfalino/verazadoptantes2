@@ -136,6 +136,24 @@ test.describe('Animal detail page', () => {
         await expect(meta).toContainText(/Updated by|Actualizado por|Added by|Agregado por/);
     });
 
+    test('adopted animals are grouped by the year they were adopted', async ({ page }) => {
+        // v2.56.92: the adopted list is an archive that only grows; the year is
+        // how a rescuer remembers them.
+        await page.goto('/my-animals?view=adopted');
+        await expect(page.getByTestId(`animal-card-${ANIMAL_ID}`)).toBeVisible({ timeout: 30000 });
+        const year = String(new Date().getFullYear());
+        const heading = page.getByRole('heading', { name: year, exact: true });
+        await expect(heading).toBeVisible();
+        // The card sits under its year, not in one flat grid.
+        const section = page.locator('section').filter({ has: heading });
+        await expect(section.getByTestId(`animal-card-${ANIMAL_ID}`)).toBeVisible();
+
+        // Available animals stay one flat list — no year headings there.
+        await page.goto('/my-animals?view=available');
+        await expect(page.getByTestId('animal-card-test-animal-fixture-2')).toBeVisible({ timeout: 30000 });
+        await expect(page.getByRole('heading', { name: year, exact: true })).toHaveCount(0);
+    });
+
     test('list card navigates to the detail page', async ({ page }) => {
         await page.goto('/my-animals?view=adopted');
         const card = page.getByTestId(`animal-card-${ANIMAL_ID}`);

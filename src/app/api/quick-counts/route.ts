@@ -46,10 +46,12 @@ export async function GET() {
         const animalsEnabled = await getFeatureFlag('ENABLE_ANIMALS_FOR_ADOPTION');
         
         if (animalsEnabled) {
-            // Every ACTIVE animal this person created — fostered and adopted
-            // ones included. It counted only `available` before, so an animal
-            // silently left the tally the moment it was placed, which made the
-            // chip disagree with the page it links to.
+            // Every ACTIVE animal the TEAM has, fostered and adopted included.
+            // Two bugs lived here: it counted only `available`, so an animal
+            // left the tally the moment it was placed; and it was scoped to one
+            // person while /my-animals lists the whole org. Either way the chip
+            // disagreed with the page it links to — 0 against 12, then 12
+            // against 28.
             //
             // Counted off `animals`, NOT the `adoptions` view: the view UNIONs
             // adopter_events, and without the old `recordType='available'`
@@ -57,7 +59,7 @@ export async function GET() {
             const [ac] = await db.select({ value: count() })
                 .from(animals)
                 .where(and(
-                    eq(animals.addedBy, session.user.email),
+                    inArray(animals.addedBy, memberEmails),
                     isNull(animals.deletedAt)
                 ));
             animalCount = ac;

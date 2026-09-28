@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.92] - 2026-09-27
+
+### Changed — /my-animals reads like a work queue, not an inventory
+
+- **The pending badge names the action.** «1 pendiente» made the rescuer open
+  the animal just to find out what was pending. It now reads «Control del primer
+  mes · vencía hace 3 días», with «+2» when more are waiting behind it. The list
+  API returns the soonest-overdue slot alongside the count.
+- **Adopted animals are grouped by the year they were adopted.** That view is an
+  archive that only grows, and the year is how a rescuer actually remembers an
+  animal. Undated rows sort last under «Sin fecha» rather than among the years.
+  Every other view stays one flat list.
+- **The menu counter is team-wide**, matching the page it links to. 2.56.91
+  fixed it counting only unplaced animals (0 against a page of 12) but left it
+  scoped to one person (12 against a page of 28) — the same disagreement, one
+  scope up.
+
 ## [2.56.91] - 2026-09-27
 
 ### Fixed — the «Mis Animales» counter ignored every animal that had a home

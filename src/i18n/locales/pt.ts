@@ -1110,6 +1110,7 @@ export const pt = {
         },
     },
     dashboard: {
+        no_date: 'Sem data',
         edit_animal: 'Editar Animal',
         table_view: 'Ver Relatório',
         my_adopters: 'Meus Adotantes',
@@ -1528,6 +1529,8 @@ export const pt = {
         read_more: 'ler mais',
     },
     followups: {
+        due_today: 'vence hoje',
+        overdue_days: 'venceu há {days} dias',
         reminder_explain: 'Quando vou ser avisado?',
         reminder_when: 'Avisamos você em {date}.',
         reminder_until: 'Você vai poder registrar até {date}.',
