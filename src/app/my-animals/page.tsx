@@ -462,6 +462,33 @@ export default function MyAnimalsPage() {
                                         per-card contract flows moved to the animal's page —
                                         here only a count that deep-links to that section. */}
                                     <div className="pt-3 border-t border-stone-100 space-y-2">
+                                    {!!animal.dueFollowups && (
+                                        <Link
+                                            href={`/my-animals/${animal.id}#next-action`}
+                                            className="flex items-start gap-1.5 w-full px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
+                                            data-testid={`due-badge-${animal.id}`}
+                                        >
+                                            {(() => {
+                                                // Name the action instead of only counting it: "1 pendiente"
+                                                // made the rescuer open the animal just to find out what.
+                                                const top = animal.dueTop;
+                                                const extra = animal.dueFollowups - 1;
+                                                if (!top) {
+                                                    return `${animal.dueFollowups} ${animal.dueFollowups === 1
+                                                        ? (t('followups.pending_one') || 'pendiente')
+                                                        : (t('followups.pending_many') || 'pendientes')}`;
+                                                }
+                                                const label = (top.copyKey === 'checkin_custom' || top.copyKey === 'foster_checkin')
+                                                    ? interpolate(t(`followups.${top.copyKey}`) || '{days}', { days: top.offsetDays ?? '' })
+                                                    : (t(`followups.${top.copyKey}`) || top.copyKey);
+                                                const lateDays = Math.max(0, Math.floor((Date.now() - top.dueDate) / 86400000));
+                                                const when = lateDays === 0
+                                                    ? (t('followups.due_today') || 'vence hoy')
+                                                    : interpolate(t('followups.overdue_days') || 'vencía hace {days} días', { days: lateDays });
+                                                return `${label} · ${when}${extra > 0 ? ` +${extra}` : ''}`;
+                                            })()}
+                                        </Link>
+                                    )}
                                         <div className="flex items-center gap-2">
                                             <div className="text-xs text-stone-500 flex-1 min-w-0 space-y-0.5">
                                                 {animal.date && (
@@ -493,33 +520,6 @@ export default function MyAnimalsPage() {
                                                     </p>
                                                 )}
                                             </div>
-                                            {!!animal.dueFollowups && (
-                                                <Link
-                                                    href={`/my-animals/${animal.id}#next-action`}
-                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors whitespace-nowrap"
-                                                    data-testid={`due-badge-${animal.id}`}
-                                                >
-                                                    {(() => {
-                                                        // Name the action instead of only counting it: "1 pendiente"
-                                                        // made the rescuer open the animal just to find out what.
-                                                        const top = animal.dueTop;
-                                                        const extra = animal.dueFollowups - 1;
-                                                        if (!top) {
-                                                            return `${animal.dueFollowups} ${animal.dueFollowups === 1
-                                                                ? (t('followups.pending_one') || 'pendiente')
-                                                                : (t('followups.pending_many') || 'pendientes')}`;
-                                                        }
-                                                        const label = (top.copyKey === 'checkin_custom' || top.copyKey === 'foster_checkin')
-                                                            ? interpolate(t(`followups.${top.copyKey}`) || '{days}', { days: top.offsetDays ?? '' })
-                                                            : (t(`followups.${top.copyKey}`) || top.copyKey);
-                                                        const lateDays = Math.max(0, Math.floor((Date.now() - top.dueDate) / 86400000));
-                                                        const when = lateDays === 0
-                                                            ? (t('followups.due_today') || 'vence hoy')
-                                                            : interpolate(t('followups.overdue_days') || 'vencía hace {days} días', { days: lateDays });
-                                                        return `${label} · ${when}${extra > 0 ? ` +${extra}` : ''}`;
-                                                    })()}
-                                                </Link>
-                                            )}
                                             {!animal.adopterId && animal.applicants && animal.applicants.length > 0 && (
                                                 <Link
                                                     href={`/my-animals/${animal.id}#applicants`}

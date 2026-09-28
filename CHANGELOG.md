@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.94] - 2026-09-28
+
+### Fixed — the pending badge stretched the cards
+
+2.56.92 put a whole sentence («Control del primer mes · vencía hace 3 días»)
+into a `whitespace-nowrap` pill sitting in a flex row beside the date. It could
+neither shrink nor wrap, so it pushed the row — and the card — wider than its
+grid column.
+
+The pending action now has its own full-width row above the dates, as a block
+that wraps. It is the most important thing on the card, so a squeezed pill was
+the wrong home for it regardless.
+
+Measured rather than eyeballed: with 8 badges rendered, no badge or card
+overflows its box and the page has no horizontal scroll at 1280px or 390px.
+
 ## [2.56.93] - 2026-09-28
 
 ### Fixed — every nav counter was wrong for anyone on a team
