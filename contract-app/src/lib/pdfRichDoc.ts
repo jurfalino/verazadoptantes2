@@ -7,12 +7,51 @@
  * `LaidWord.x` is relative to the LINE's left edge AFTER `LaidLine.indent` is
  * applied — i.e. the caller draws each word at `pageLeft + line.indent + word.x`.
  */
-import type { RichDoc, Inline, Mark } from './adoptionDocs'
+import type { RichDoc, Block, Inline, Mark } from './adoptionDocs'
+import { stripAccents } from '../i18n/contractContent'
 
 export type Style = 'normal' | 'bold' | 'italic' | 'bolditalic'
 export type Measure = (text: string, style: Style) => number
 export type LaidWord = { text: string; x: number; style: Style; underline: boolean; width: number }
 export type LaidLine = { words: LaidWord[]; indent: number; bullet: boolean }
+
+// ── Text the built-in helvetica font can draw ─────────────────────
+// Rescuer-typed text (pasted from Word/WhatsApp) carries typographic quotes,
+// dashes, NBSPs and emoji. helvetica's WinAnsi encoding can't draw most of
+// them, and jsPDF then mis-measures/mis-draws the whole word. Fold the common
+// ones to ASCII, strip accents exactly like the standard path, then drop any
+// remaining code point above Latin-1. Custom sections only — the standard
+// text path keeps using stripAccents alone.
+const TYPOGRAPHIC: Array<[RegExp, string]> = [
+    [/[\u201C\u201D\u201E\u201F\u00AB\u00BB]/g, '"'],
+    [/[\u2018\u2019\u201A\u201B]/g, "'"],
+    [/[\u2010-\u2015\u2212]/g, '-'],
+    [/\u2026/g, '...'],
+    [/[\u2022\u2023\u2043\u25CF\u25E6]/g, '-'],
+    [/[\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/g, ' '],
+]
+
+export function pdfSafeText(s: string): string {
+    let out = s
+    for (const [re, rep] of TYPOGRAPHIC) out = out.replace(re, rep)
+    out = stripAccents(out)
+    let kept = ''
+    for (const ch of out) if (ch.codePointAt(0)! <= 0xFF) kept += ch
+    return kept
+}
+
+/** Same document with every inline's text passed through pdfSafeText (marks and shape kept). */
+export function pdfSafeRichDoc(doc: RichDoc): RichDoc {
+    const fold = (runs: Inline[]): Inline[] => runs.map(r => ({ ...r, text: pdfSafeText(r.text) }))
+    return {
+        type: 'doc',
+        content: doc.content.map((b): Block => {
+            if (b?.type === 'bulletList') return { type: 'bulletList', items: b.items.map(fold) }
+            if (b?.type === 'paragraph') return { type: 'paragraph', content: fold(b.content) }
+            return b // unknown block: left as-is, layoutRichDoc skips it
+        }),
+    }
+}
 
 function styleOf(marks: Mark[] | undefined): Style {
     const bold = !!marks?.includes('bold')
@@ -65,8 +104,12 @@ function groupWidth(group: WordGroup, measure: Measure): number {
  * Greedy-fills `groups` into lines no wider than `width`. Every line is
  * tagged with `indent`; only the first line gets `bullet: true` when
  * `firstLineBullet` is set (subsequent wrapped lines of the same item are
- * `bullet: false`, still indented). A word group wider than `width` is
- * always placed — alone, on its own line — so layout can never loop forever.
+ * `bullet: false`, still indented). A word group wider than `width` starts
+ * on a fresh line and is broken by characters across as many lines as it
+ * needs (consecutive characters of one style merge into one LaidWord per
+ * line); the text after it continues on its last line. A line always takes
+ * at least one character, so layout can never loop forever even if a single
+ * glyph is wider than the line.
  */
 function layoutWords(groups: WordGroup[], width: number, measure: Measure, indent: number, firstLineBullet: boolean): LaidLine[] {
     const lines: LaidLine[] = []
@@ -79,8 +122,37 @@ function layoutWords(groups: WordGroup[], width: number, measure: Measure, inden
         x = 0
         lineWidth = 0
     }
+    const placeByChars = (group: WordGroup) => {
+        if (words.length > 0) flush()
+        for (const piece of group) {
+            for (const ch of Array.from(piece.text)) {
+                const last = words[words.length - 1]
+                const merge = !!last && last.style === piece.style && last.underline === piece.underline
+                const nextRight = merge ? last.x + measure(last.text + ch, piece.style) : x + measure(ch, piece.style)
+                if (lineWidth > 0 && nextRight > width) {
+                    flush()
+                    const w = measure(ch, piece.style)
+                    words.push({ text: ch, x: 0, style: piece.style, underline: piece.underline, width: w })
+                    x = w
+                } else if (merge) {
+                    last.text += ch
+                    last.width = nextRight - last.x
+                    x = nextRight
+                } else {
+                    const w = nextRight - x
+                    words.push({ text: ch, x, style: piece.style, underline: piece.underline, width: w })
+                    x = nextRight
+                }
+                lineWidth = x
+            }
+        }
+    }
     for (const group of groups) {
         const gWidth = groupWidth(group, measure)
+        if (gWidth > width) {
+            placeByChars(group)
+            continue
+        }
         const firstStyle = group[0].style
         const spaceWidth = words.length > 0 ? measure(' ', firstStyle) : 0
         const needed = spaceWidth + gWidth
@@ -102,19 +174,25 @@ function layoutWords(groups: WordGroup[], width: number, measure: Measure, inden
     return lines
 }
 
+/**
+ * Lays out only the known block types (paragraph, bulletList). Anything else
+ * is skipped entirely — no lines and no 'gap' for it — so a document from a
+ * newer editor degrades instead of throwing mid-PDF.
+ */
 export function layoutRichDoc(doc: RichDoc, maxWidth: number, measure: Measure, opts: { bulletIndent: number }): Array<LaidLine | 'gap'> {
     const out: Array<LaidLine | 'gap'> = []
-    doc.content.forEach((block, i) => {
+    const blocks = doc.content.filter(b => !!b && (b.type === 'paragraph' || b.type === 'bulletList'))
+    blocks.forEach((block, i) => {
         if (block.type === 'paragraph') {
             const groups = tokenize(block.content)
             out.push(...layoutWords(groups, maxWidth, measure, 0, false))
-        } else {
+        } else if (block.type === 'bulletList') {
             for (const item of block.items) {
                 const groups = tokenize(item)
                 out.push(...layoutWords(groups, maxWidth - opts.bulletIndent, measure, opts.bulletIndent, true))
             }
         }
-        if (i < doc.content.length - 1) out.push('gap')
+        if (i < blocks.length - 1) out.push('gap')
     })
     return out
 }

@@ -14,6 +14,18 @@ function extractErrorId(msg?: string | null): string | null {
     return match ? match[1] : null
 }
 
+/**
+ * The server's customContract, or null. A present-but-malformed payload is
+ * logged and treated as the standard contract — the adopter then sees and
+ * signs the standard text, and no contractVersionId is sent with it.
+ */
+function acceptCustomContract(raw: unknown): CustomContract | null {
+    if (raw == null) return null
+    if (isValidCustomContract(raw)) return raw
+    console.warn('[CONTRACT] customContract failed validation — showing the standard contract')
+    return null
+}
+
 interface AnimalImage {
     id: string
     url: string
@@ -100,7 +112,7 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
                     setResolvedAnimalId(data.animal.id)
                     setIntendedAdopterName(data.adopterName)
                     setForm(prev => ({ ...prev, ...data.prefill }))
-                    if (isValidCustomContract(data.customContract)) setCustomContract(data.customContract)
+                    setCustomContract(acceptCustomContract(data.customContract))
                     // Adopt the invite's stored language when the URL carried no
                     // ?lang= (the record is the authoritative backstop).
                     const hasLangParam = new URLSearchParams(window.location.search).has('lang')
@@ -110,7 +122,7 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
                 } else {
                     const json = await res.json() as AnimalData & { customContract?: unknown }
                     setAnimal(json)
-                    if (isValidCustomContract(json.customContract)) setCustomContract(json.customContract)
+                    setCustomContract(acceptCustomContract(json.customContract))
                 }
             } catch (err) {
                 console.error('[CONTRACT] Network error loading contract:', err)
@@ -158,7 +170,9 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
                     screenshot: contractDataUrl,
                     token: token || undefined,
                     contractVersionId: customContract?.versionId,
-                    standardVersion: customContract ? undefined : STANDARD_CONTRACT_VERSION,
+                    // Always sent: a custom contract still carries standard
+                    // text (section 5, and any of 2–4 left unedited).
+                    standardVersion: STANDARD_CONTRACT_VERSION,
                     locale,
                 }),
             })

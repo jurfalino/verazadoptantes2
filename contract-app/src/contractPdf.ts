@@ -11,7 +11,7 @@ import { jsPDF } from 'jspdf'
 import { CONTRACT_CONTENT, stripAccents } from './i18n/contractContent'
 import type { Locale } from './i18n/types'
 import { contractVersionLabel, customSectionFor, type CustomContract, type RichDoc } from './lib/adoptionDocs'
-import { layoutRichDoc, type Style } from './lib/pdfRichDoc'
+import { layoutRichDoc, pdfSafeRichDoc, type Style } from './lib/pdfRichDoc'
 
 interface AnimalData {
     animalName: string
@@ -113,8 +113,11 @@ export function generateContractPdf(animal: AnimalData, form: FormData, locale: 
             const size = 10
             const lineH = size * 0.45
             const x0 = MARGIN_LEFT + 4
-            const measure = (t: string, st: Style) => { doc.setFont('helvetica', styleOf(st)); doc.setFontSize(size); return doc.getTextWidth(stripAccents(t)) }
-            const lines = layoutRichDoc(rd, CONTENT_WIDTH - 4, measure, { bulletIndent: 5 })
+            // Fold rescuer-typed text to what helvetica can draw (quotes,
+            // dashes, NBSP, emoji...) BEFORE layout, so measuring, wrapping
+            // and drawing all see the exact same string.
+            const measure = (t: string, st: Style) => { doc.setFont('helvetica', styleOf(st)); doc.setFontSize(size); return doc.getTextWidth(t) }
+            const lines = layoutRichDoc(pdfSafeRichDoc(rd), CONTENT_WIDTH - 4, measure, { bulletIndent: 5 })
             // A leading 'gap' (from an edge empty paragraph) must not add
             // visible space before the first real line; only count gaps that
             // follow something we actually drew.
@@ -125,8 +128,7 @@ export function generateContractPdf(animal: AnimalData, form: FormData, locale: 
                 if (line.bullet) { doc.setFont('helvetica', 'normal'); doc.text('-', x0 + 1, y) }
                 for (const w of line.words) {
                     doc.setFont('helvetica', w.style); doc.setFontSize(size)
-                    const t = stripAccents(w.text)
-                    doc.text(t, x0 + line.indent + w.x, y)
+                    doc.text(w.text, x0 + line.indent + w.x, y)
                     if (w.underline) {
                         // divider()/section headings before this block leave the
                         // draw color at light gray — reset to black so the

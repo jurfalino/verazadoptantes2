@@ -94,8 +94,43 @@ describe('custom contract', () => {
         expect(isValidCustomContract({ versionId: 'v', sections: { '5': { type: 'doc', content: [] } } })).toBe(false)
         expect(isValidCustomContract({ versionId: 'v', sections: { '2': { type: 'doc', content: [] } } })).toBe(true)
     })
-    it('labels versions', () => {
-        expect(contractVersionLabel({ versionId: 'abcdef1234567', sections: {} })).toBe('v:abcdef12')
+    it('accepts a full well-formed document', () => {
+        expect(isValidCustomContract({
+            versionId: 'v',
+            sections: {
+                '2': { type: 'doc', content: [{ type: 'paragraph', content: [{ text: 'a' }, { text: 'b', marks: ['bold', 'italic', 'underline'] }] }] },
+                '3': { type: 'doc', content: [{ type: 'bulletList', items: [[{ text: 'uno' }], []] }] },
+                '4': { type: 'doc', content: [{ type: 'paragraph', content: [] }] },
+            },
+        })).toBe(true)
+    })
+    describe('rejects deep invalid shapes', () => {
+        const withDoc = (doc: unknown) => ({ versionId: 'v', sections: { '2': doc } })
+        const withBlocks = (blocks: unknown[]) => withDoc({ type: 'doc', content: blocks })
+        const cases: Array<[string, unknown]> = [
+            ['empty versionId', { versionId: '', sections: {} }],
+            ['sections is an array', { versionId: 'v', sections: [] }],
+            ['doc with wrong type', withDoc({ type: 'para', content: [] })],
+            ['doc content not an array', withDoc({ type: 'doc', content: 'x' })],
+            ['unknown block type', withBlocks([{ type: 'heading', content: [{ text: 'x' }] }])],
+            ['block is not an object', withBlocks(['x'])],
+            ['paragraph content not an array', withBlocks([{ type: 'paragraph', content: 'x' }])],
+            ['paragraph missing content', withBlocks([{ type: 'paragraph' }])],
+            ['inline text not a string', withBlocks([{ type: 'paragraph', content: [{ text: 5 }] }])],
+            ['inline missing text', withBlocks([{ type: 'paragraph', content: [{ marks: ['bold'] }] }])],
+            ['inline is null', withBlocks([{ type: 'paragraph', content: [null] }])],
+            ['unknown mark', withBlocks([{ type: 'paragraph', content: [{ text: 'x', marks: ['strike'] }] }])],
+            ['marks not an array', withBlocks([{ type: 'paragraph', content: [{ text: 'x', marks: 'bold' }] }])],
+            ['bulletList items not an array', withBlocks([{ type: 'bulletList', items: 'x' }])],
+            ['bulletList item not an array', withBlocks([{ type: 'bulletList', items: [{ text: 'x' }] }])],
+            ['bulletList inline invalid', withBlocks([{ type: 'bulletList', items: [[{ text: 1 }]] }])],
+        ]
+        for (const [name, value] of cases) {
+            it(name, () => expect(isValidCustomContract(value)).toBe(false))
+        }
+    })
+    it('labels versions — a custom contract also carries the standard code', () => {
+        expect(contractVersionLabel({ versionId: 'abcdef1234567', sections: {} })).toBe(`v:abcdef12 · std-${STANDARD_CONTRACT_VERSION}`)
         expect(contractVersionLabel(null)).toBe(`v:std-${STANDARD_CONTRACT_VERSION}`)
     })
     it('fnv1a is 8 hex chars and stable', () => {

@@ -135,22 +135,48 @@ const SECTION_KEYS: readonly SectionKey[] = ['2', '3', '4']
 
 export type CustomContract = { versionId: string; sections: Partial<Record<SectionKey, RichDoc>> }
 
+const MARKS: readonly Mark[] = ['bold', 'italic', 'underline']
+
+function isPlainObject(x: unknown): x is Record<string, unknown> {
+    return !!x && typeof x === 'object' && !Array.isArray(x)
+}
+
+function isInline(x: unknown): x is Inline {
+    if (!isPlainObject(x) || typeof x.text !== 'string') return false
+    if (x.marks === undefined) return true
+    return Array.isArray(x.marks) && x.marks.every(m => MARKS.includes(m as Mark))
+}
+
+function isInlineList(x: unknown): x is Inline[] {
+    return Array.isArray(x) && x.every(isInline)
+}
+
+/** Exactly a paragraph or a bulletList — any other block type is invalid. */
+function isBlock(x: unknown): x is Block {
+    if (!isPlainObject(x)) return false
+    if (x.type === 'paragraph') return isInlineList(x.content)
+    if (x.type === 'bulletList') return Array.isArray(x.items) && x.items.every(isInlineList)
+    return false
+}
+
 function isRichDoc(x: unknown): x is RichDoc {
-    if (!x || typeof x !== 'object') return false
-    const d = x as { type?: unknown; content?: unknown }
-    return d.type === 'doc' && Array.isArray(d.content)
+    if (!isPlainObject(x)) return false
+    return x.type === 'doc' && Array.isArray(x.content) && x.content.every(isBlock)
 }
 
 /**
  * `versionId` is a non-empty string; `sections` is an object whose keys are
- * a subset of 2, 3 and 4, each value a RichDoc.
+ * a subset of 2, 3 and 4, each value a RichDoc validated all the way down:
+ * blocks are exactly paragraph {content: Inline[]} or bulletList
+ * {items: Inline[][]}, and each Inline is {text: string, marks?: subset of
+ * bold|italic|underline}. Anything else — an unknown block type included —
+ * makes the whole contract invalid, and the caller falls back to standard.
  */
 export function isValidCustomContract(x: unknown): x is CustomContract {
-    if (!x || typeof x !== 'object') return false
-    const c = x as { versionId?: unknown; sections?: unknown }
-    if (typeof c.versionId !== 'string' || c.versionId.length === 0) return false
-    if (!c.sections || typeof c.sections !== 'object' || Array.isArray(c.sections)) return false
-    const sections = c.sections as Record<string, unknown>
+    if (!isPlainObject(x)) return false
+    if (typeof x.versionId !== 'string' || x.versionId.length === 0) return false
+    if (!isPlainObject(x.sections)) return false
+    const sections = x.sections
     for (const key of Object.keys(sections)) {
         if (!SECTION_KEYS.includes(key as SectionKey)) return false
         if (!isRichDoc(sections[key])) return false
@@ -170,9 +196,14 @@ export function customSectionFor(custom: CustomContract | null | undefined, si: 
     return custom.sections[String(si + 2) as SectionKey]
 }
 
-/** 'v:<first 8 of versionId>' for a custom contract, else 'v:std-<STANDARD_CONTRACT_VERSION>'. */
+/**
+ * PDF footer code. Standard: 'v:std-<STANDARD_CONTRACT_VERSION>'. Custom:
+ * 'v:<first 8 of versionId> · std-<STANDARD_CONTRACT_VERSION>' — section 5
+ * (and 2–4 left unedited) is still the standard text, so both codes identify
+ * what was signed.
+ */
 export function contractVersionLabel(custom: CustomContract | null): string {
-    if (custom) return `v:${custom.versionId.slice(0, 8)}`
+    if (custom) return `v:${custom.versionId.slice(0, 8)} · std-${STANDARD_CONTRACT_VERSION}`
     return `v:std-${STANDARD_CONTRACT_VERSION}`
 }
 
