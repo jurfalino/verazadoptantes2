@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.96] - 2026-09-28
+
+### Fixed — opening one animal flashed the animals LIST skeleton
+
+`/my-animals/[id]` had no `loading.tsx`, so it inherited the list's, and every
+animal opened with a 1/2/3-column grid of card placeholders before resolving
+into a single profile. The skeleton promised a layout the page never has, which
+reads as the wrong page loading rather than this one.
+
+It now mirrors the profile: the `max-w-3xl` column, the header card's 2:1 hero
+with its caption block, the action row, and the timeline rail with its beacons.
+
 ## [2.56.95] - 2026-09-28
 
 ### Fixed — CI reddened deploys that had actually succeeded
