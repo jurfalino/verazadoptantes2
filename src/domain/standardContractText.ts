@@ -5,7 +5,7 @@
  * two drift. Used by the editor (pre-fill + read-only preview) only — the
  * public contract still renders from contract-app's own copy.
  */
-import type { RichDoc, SectionKey } from './adoptionDocs';
+import { SECTION_KEYS, normalizeSections, canonicalSectionsJson, type ContractSections, type RichDoc, type SectionKey } from './adoptionDocs';
 
 export interface StdClause { title?: string; body: string }
 export interface StdSection { title: string; intro?: string; clauses: StdClause[] }
@@ -61,3 +61,21 @@ export const STANDARD_RICH_DOCS: Record<SectionKey, RichDoc> = {
     '3': standardSectionToRichDoc(STANDARD_SECTIONS_ES['3']),
     '4': standardSectionToRichDoc(STANDARD_SECTIONS_ES['4']),
 };
+
+/**
+ * What the editor sends on save: every section normalized, minus those whose
+ * text equals the standard one — an unchanged section stays standard, so it
+ * keeps following the adopter's language. A section left blank normalizes
+ * away too and so reverts to the standard text.
+ */
+export function sectionsToSave(draft: ContractSections): ContractSections {
+    const normalized = normalizeSections(draft);
+    const out: ContractSections = {};
+    for (const k of SECTION_KEYS) {
+        const d = normalized[k];
+        if (!d) continue;
+        const std = canonicalSectionsJson(normalizeSections({ [k]: STANDARD_RICH_DOCS[k] }));
+        if (canonicalSectionsJson({ [k]: d }) !== std) out[k] = d;
+    }
+    return out;
+}
