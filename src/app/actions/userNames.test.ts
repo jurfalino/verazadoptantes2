@@ -1,13 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core';
+import type { SQL } from 'drizzle-orm';
 
 /**
  * resolveUserNames on D1. D1 binds an array as ONE parameter, so the old
- * `inArray(users.email, batch)` became `IN (?)` and matched at most one
- * email: every other caller's name silently fell back to the email handle
- * (adopter profile editors, animal timeline recorders, /my-animals "de {name}").
+ * `inArray(users.email, batch)` matched at most one email: every other
+ * caller's name silently fell back to the email handle (adopter profile
+ * editors, animal timeline recorders, /my-animals "de {name}").
  *
- * The fake db below behaves like D1: an `IN` list only sees its first value.
- * `eq` works as normal.
+ * It is also a `'use server'` export, i.e. a public POST endpoint, so the
+ * work per call must stay bounded: at most 200 unique emails, looked up in
+ * chunks of ≤90 explicit binds (D1 caps a statement at 100 parameters).
+ *
+ * The fake db compiles the REAL drizzle condition and behaves like D1: an
+ * array bound as one parameter only sees its first value; more than 100
+ * parameters in one statement is an error.
  */
 
 const USERS: Record<string, string | null> = {
@@ -16,27 +23,25 @@ const USERS: Record<string, string | null> = {
     'caro@example.com': 'Caro',
     'noname@example.com': null,
 };
+const many = (n: number) => Array.from({ length: n }, (_, i) => `user${i}@example.com`);
+for (const e of many(250)) USERS[e] = `Name ${e}`;
 
-type Cond = { op: 'eq'; value: string } | { op: 'in'; values: string[] };
+const dialect = new SQLiteSyncDialect();
+const statements: Array<{ sql: string; params: unknown[] }> = [];
+const failWhen = { email: '' };
 
-vi.mock('drizzle-orm', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('drizzle-orm')>()),
-    eq: (_col: unknown, value: string): Cond => ({ op: 'eq', value }),
-    inArray: (_col: unknown, values: string[]): Cond => ({ op: 'in', values }),
-}));
-
-const where = vi.fn();
-const failFor = new Set<string>();
-function rowsFor(cond: Cond) {
-    // D1 quirk: an array bound to IN (?) is one value — only the first survives.
-    const emails = cond.op === 'eq' ? [cond.value] : cond.values.slice(0, 1);
-    if (emails.some(e => failFor.has(e))) return Promise.reject(new Error('D1_ERROR: boom'));
+function runD1(cond: SQL) {
+    const q = dialect.sqlToQuery(cond);
+    statements.push(q);
+    if (q.params.length > 100) return Promise.reject(new Error('D1_ERROR: too many SQL variables'));
+    // D1 quirk: an array bound as a single parameter is one value — only the first survives.
+    const emails = q.params.flatMap(p => (Array.isArray(p) ? p.slice(0, 1) : [p])) as string[];
+    if (failWhen.email && emails.includes(failWhen.email)) return Promise.reject(new Error('D1_ERROR: boom'));
     return Promise.resolve(emails.filter(e => e in USERS).map(email => ({ email, name: USERS[email] })));
 }
 const fakeDb = {
-    select: () => ({ from: () => ({ where: (cond: Cond) => { where(cond); return rowsFor(cond); } }) }),
+    select: () => ({ from: () => ({ where: (cond: SQL) => runD1(cond) }) }),
 };
-vi.mock('@/app/actions', () => ({ getDb: async () => fakeDb }));
 vi.mock('./_db', () => ({ getDb: async () => fakeDb }));
 
 const warn = vi.fn();
@@ -44,7 +49,7 @@ vi.mock('@/lib/logger', () => ({ logger: { warn: (...a: unknown[]) => warn(...a)
 
 import { resolveUserNames } from './userNames';
 
-beforeEach(() => { where.mockClear(); warn.mockClear(); failFor.clear(); });
+beforeEach(() => { statements.length = 0; warn.mockClear(); failWhen.email = ''; });
 
 describe('resolveUserNames (D1)', () => {
     it('resolves every email, not just the first', async () => {
@@ -56,9 +61,11 @@ describe('resolveUserNames (D1)', () => {
         });
     });
 
-    it('looks each distinct email up once and skips blanks', async () => {
+    it('binds every email as its own parameter, in one statement per chunk', async () => {
         await resolveUserNames(['ana@example.com', '', 'ana@example.com', 'beto@example.com']);
-        expect(where).toHaveBeenCalledTimes(2);
+        expect(statements).toHaveLength(1);
+        expect(statements[0].params).toEqual(['ana@example.com', 'beto@example.com']);
+        expect(statements[0].sql).toMatch(/in \(\?, \?\)/i);
     });
 
     it('omits users without a name and unknown emails', async () => {
@@ -67,14 +74,29 @@ describe('resolveUserNames (D1)', () => {
 
     it('returns {} for no emails without touching the db', async () => {
         expect(await resolveUserNames([])).toEqual({});
-        expect(where).not.toHaveBeenCalled();
+        expect(statements).toHaveLength(0);
     });
 
-    it('one failing lookup is logged and does not lose the others', async () => {
-        failFor.add('beto@example.com');
-        const names = await resolveUserNames(['ana@example.com', 'beto@example.com', 'caro@example.com']);
-        expect(names).toEqual({ 'ana@example.com': 'Ana Rescatista', 'caro@example.com': 'Caro' });
+    it('splits more than 90 emails into chunks of at most 90 binds', async () => {
+        const emails = many(150);
+        const names = await resolveUserNames(emails);
+        expect(Object.keys(names)).toHaveLength(150);
+        expect(statements.map(s => s.params.length)).toEqual([90, 60]);
+    });
+
+    it('caps the work at 200 unique emails and says so', async () => {
+        const names = await resolveUserNames(many(250));
+        expect(Object.keys(names)).toHaveLength(200);
+        expect(statements.reduce((n, s) => n + s.params.length, 0)).toBe(200);
+        expect(statements.every(s => s.params.length <= 90)).toBe(true);
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('resolveUserNames'), expect.objectContaining({ requested: 250, kept: 200 }));
+    });
+
+    it('a failing chunk is logged and does not lose the other chunks', async () => {
+        failWhen.email = 'user100@example.com'; // lands in the second chunk
+        const names = await resolveUserNames(many(150));
+        expect(Object.keys(names)).toHaveLength(90);
         expect(warn).toHaveBeenCalledTimes(1);
-        expect(JSON.stringify(warn.mock.calls[0])).not.toContain('beto@example.com');
+        expect(JSON.stringify(warn.mock.calls[0])).not.toContain('@example.com');
     });
 });
