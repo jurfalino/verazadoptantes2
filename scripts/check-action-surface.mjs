@@ -59,7 +59,31 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                    at 8 MB, so it cannot be used to push bulk into D1. It is
 //                    strictly NARROWER than the `saveImage` door already on the
 //                    wire, which takes any adopterId with no ownership check.
-const EXPECTED_ACTIONS = 153;
+// 158 since v2.56.101: the five actions in src/app/actions/adoptionDocs.ts
+// behind the custom adoption form + contract (/settings card and editor).
+// Checked against the rule above — what a stranger can do with arguments they
+// choose. All five call getUser() first (throws with no session) and return
+// `disabled` while ENABLE_CUSTOM_ADOPTION_DOCS is off, so today none does
+// anything at all:
+//   getAdoptionDocsOverview()  takes nothing; reads only the caller's own
+//                              settings and the groups the caller's session
+//                              email is a member of.
+//   setAdoptionDocsSource()    takes 'self' | 'org:<id>'; anything else is
+//                              `invalid`, and an org the caller is not a member
+//                              of is `forbidden`. Writes only the caller's own
+//                              user_profiles row, only that one column.
+//   getAdoptionDocs(owner)     `self` is always the session email — no email
+//   saveFormSteps(owner, …)    argument exists anywhere; `org` requires an
+//   saveContractSections(…)    org_members row for the session email, else
+//                              `forbidden`. Step ids are filtered to the known,
+//                              non-locked set; contract text must pass a strict
+//                              zod schema (three section keys, paragraph and
+//                              bullet-list blocks, bold/italic/underline marks,
+//                              ≤ 8,000 chars and ≤ 200 blocks per section) and
+//                              is stored as JSON, never HTML. A stranger can
+//                              read or edit only their own docs; a member can
+//                              edit their group's, which is the product rule.
+const EXPECTED_ACTIONS = 158;
 
 let manifest;
 try {

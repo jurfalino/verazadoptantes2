@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.102] - 2026-09-29
+
+### Security — sign-off for the five adoption-docs actions (completes 2.56.101)
+
+2.56.101 never deployed: CI's `check-action-surface` ratchet caught five new
+browser-callable endpoints (153 → 158) without a sign-off. Each is now
+documented in `scripts/check-action-surface.mjs` against what a stranger can do
+with arguments they choose: all five need a session and return `disabled` while
+`ENABLE_CUSTOM_ADOPTION_DOCS` is off; `self` is always the session email; a
+group needs an `org_members` row for that email; contract text must pass a
+strict schema and is stored as JSON, never HTML.
+
 ## [2.56.101] - 2026-09-29
 
 ### Added — rescuers and groups can shape their own form and contract (`ENABLE_CUSTOM_ADOPTION_DOCS`, off by default)
