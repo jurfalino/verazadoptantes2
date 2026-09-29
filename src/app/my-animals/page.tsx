@@ -70,6 +70,8 @@ export default function MyAnimalsPage() {
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [speciesFilter, setSpeciesFilter] = useState<string>('all');
+    /** Both tabs' totals, so the tab you are not on shows a number, not "...". */
+    const [tabCounts, setTabCounts] = useState<{ available: number; adopted: number } | null>(null);
 
     useEffect(() => {
         async function fetchAnimals() {
@@ -95,7 +97,22 @@ export default function MyAnimalsPage() {
                 setLoading(false);
             }
         }
+        async function fetchCounts() {
+            try {
+                const res = await fetch('/api/my-animals?counts=1');
+                if (!res.ok) {
+                    // The list itself reports errors; the other tab just keeps its placeholder.
+                    console.warn('my-animals: tab counts unavailable', { view, status: res.status });
+                    return;
+                }
+                setTabCounts(await res.json() as { available: number; adopted: number });
+            } catch (e) {
+                console.warn('my-animals: tab counts failed', { view, error: e instanceof Error ? e.message : String(e) });
+            }
+        }
         fetchAnimals();
+        // Re-read on every tab switch: the tabs are links, so the page does not remount.
+        fetchCounts();
         // Reset filters when switching tabs
         setSearchQuery('');
         setSpeciesFilter('all');
@@ -215,7 +232,7 @@ export default function MyAnimalsPage() {
                             : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'
                             }`}
                     >
-                        🏠 {t('dashboard.available') || 'Available'} ({view === 'available' ? animals.length : '...'})
+                        🏠 {t('dashboard.available') || 'Available'} ({view === 'available' ? animals.length : (tabCounts?.available ?? '...')})
                     </Link>
                     <Link
                         href="/my-animals?view=adopted"
@@ -224,7 +241,7 @@ export default function MyAnimalsPage() {
                             : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'
                             }`}
                     >
-                        ✅ {t('dashboard.already_adopted') || 'Already Adopted'} ({view === 'adopted' ? animals.length : '...'})
+                        ✅ {t('dashboard.already_adopted') || 'Already Adopted'} ({view === 'adopted' ? animals.length : (tabCounts?.adopted ?? '...')})
                     </Link>
                 </div>
 

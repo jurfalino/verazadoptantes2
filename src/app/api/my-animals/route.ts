@@ -55,19 +55,46 @@ export async function GET(request: NextRequest) {
         const scopeEmails = teamEmails.length > 0 ? teamEmails : [userEmail];
         const teamMatch = or(...scopeEmails.map((e: string) => eq(adoptions.addedBy, e)));
 
+        // The two tabs' filters, shared by the list queries and ?counts=1 so a
+        // tab's count can never disagree with its list.
+        // Adopted: recordType = 'adoption', linked to an adopter.
+        const adoptedWhere = and(
+            teamMatch,
+            isNotNull(adoptions.adopterId),
+            eq(adoptions.recordType, 'adoption')
+        );
+        // Available (not yet adopted) PLUS animals currently in a foster home
+        // ("Tránsito"). Foster rows have an adopterId (the foster home) +
+        // recordType='foster', so the isNull(adopterId) guard applies only to
+        // plain 'available' rows — otherwise a fostered animal falls through
+        // both /my-animals tabs and vanishes.
+        const availableWhere = and(
+            teamMatch,
+            or(
+                and(isNull(adoptions.adopterId), eq(adoptions.recordType, 'available')),
+                eq(adoptions.recordType, 'foster')
+            )
+        );
+
+        // ?counts=1 — both tab counts in one call, so the tab you are not on
+        // shows a number instead of "(...)". DISTINCT id: the compat view can
+        // repeat an id (two open placements), and the list dedupes by id.
+        if (searchParams.get('counts') === '1') {
+            const countOf = (where: typeof availableWhere) =>
+                db.select({ n: sql<number>`count(DISTINCT ${adoptions.id})` }).from(adoptions).where(where).get()
+                    .then((r: { n: number } | undefined) => Number(r?.n ?? 0));
+            const [available, adopted] = await Promise.all([countOf(availableWhere), countOf(adoptedWhere)]);
+            return NextResponse.json({ available, adopted });
+        }
+
         let results;
         if (idParam) {
             results = await db.select().from(adoptions)
                 .where(and(teamMatch, eq(adoptions.id, idParam)))
                 .all();
         } else if (view === 'adopted') {
-            // Animals that have been adopted (recordType = 'adoption', linked to an adopter)
             results = await db.select().from(adoptions)
-                .where(and(
-                    teamMatch,
-                    isNotNull(adoptions.adopterId),
-                    eq(adoptions.recordType, 'adoption')
-                ))
+                .where(adoptedWhere)
                 .orderBy(sql`${adoptions.date} DESC`)
                 .all();
         } else if (view === 'all') {
@@ -77,19 +104,8 @@ export async function GET(request: NextRequest) {
                 .orderBy(sql`${adoptions.date} DESC`)
                 .all();
         } else {
-            // Available animals (not yet adopted) PLUS animals currently in a
-            // foster home ("Tránsito"). Foster rows have an adopterId (the foster
-            // home) + recordType='foster', so the isNull(adopterId) guard applies
-            // only to plain 'available' rows — otherwise a fostered animal falls
-            // through both /my-animals tabs and vanishes.
             results = await db.select().from(adoptions)
-                .where(and(
-                    teamMatch,
-                    or(
-                        and(isNull(adoptions.adopterId), eq(adoptions.recordType, 'available')),
-                        eq(adoptions.recordType, 'foster')
-                    )
-                ))
+                .where(availableWhere)
                 .orderBy(sql`${adoptions.date} DESC`)
                 .all();
         }
@@ -364,7 +380,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json(deduped);
     } catch (error) {
-        const errorId = logger.error('API my-animals error', error, { userEmail, view });
+        const errorId = logger.error('API my-animals error', error, { userEmail, view, counts: searchParams.get('counts') === '1' });
         return NextResponse.json({ error: 'Failed to load animals', errorId }, { status: 500 });
     }
 }
