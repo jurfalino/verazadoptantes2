@@ -5,7 +5,7 @@
  * two drift. Used by the editor (pre-fill + read-only preview) only — the
  * public contract still renders from contract-app's own copy.
  */
-import { SECTION_KEYS, normalizeSections, canonicalSectionsJson, type ContractSections, type RichDoc, type SectionKey } from './adoptionDocs';
+import { SECTION_KEYS, normalizeSections, canonicalSectionsJson, sanitizeHiddenSteps, type ContractSections, type RichDoc, type SectionKey } from './adoptionDocs';
 
 export interface StdClause { title?: string; body: string }
 export interface StdSection { title: string; intro?: string; clauses: StdClause[] }
@@ -78,4 +78,19 @@ export function sectionsToSave(draft: ContractSections): ContractSections {
         if (canonicalSectionsJson({ [k]: d }) !== std) out[k] = d;
     }
     return out;
+}
+
+/**
+ * Unsaved changes in the editor, per tab. Compares what a save WOULD send
+ * against the last saved state, so an editor echoing the standard text (or
+ * normalizing whitespace) on mount never reads as a change, and neither does
+ * reordering the hidden steps.
+ */
+export function isDocsDraftDirty(input: {
+    savedHidden: readonly string[]; hidden: readonly string[];
+    savedSections: ContractSections; sections: ContractSections;
+}): { form: boolean; contract: boolean } {
+    const form = JSON.stringify(sanitizeHiddenSteps([...input.savedHidden])) !== JSON.stringify(sanitizeHiddenSteps([...input.hidden]));
+    const contract = canonicalSectionsJson(sectionsToSave(input.savedSections)) !== canonicalSectionsJson(sectionsToSave(input.sections));
+    return { form, contract };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { STANDARD_SECTIONS_ES, standardSectionToRichDoc, STANDARD_RICH_DOCS, sectionsToSave } from './standardContractText';
+import { STANDARD_SECTIONS_ES, standardSectionToRichDoc, STANDARD_RICH_DOCS, sectionsToSave, isDocsDraftDirty } from './standardContractText';
 import { normalizeRichDoc, canonicalSectionsJson } from './adoptionDocs';
 import { CONTRACT_CONTENT } from '../../contract-app/src/i18n/contractContent';
 
@@ -59,5 +59,25 @@ describe('sectionsToSave', () => {
     });
     it('an emptied section is left out — it goes back to the standard text', () => {
         expect(sectionsToSave({ '2': { type: 'doc', content: [{ type: 'paragraph', content: [] }] } })).toEqual({});
+    });
+});
+
+describe('isDocsDraftDirty', () => {
+    const custom = { '2': { type: 'doc' as const, content: [{ type: 'paragraph' as const, content: [{ text: 'Mi texto' }] }] } };
+    const clean = { savedHidden: ['children'], hidden: ['children'], savedSections: {}, sections: {} };
+    it('nothing changed → clean', () => {
+        expect(isDocsDraftDirty(clean)).toEqual({ form: false, contract: false });
+    });
+    it('hidden steps: order and locked/unknown ids do not count as a change', () => {
+        expect(isDocsDraftDirty({ ...clean, savedHidden: ['selfie', 'children'], hidden: ['children', 'selfie', 'legal'] }).form).toBe(false);
+        expect(isDocsDraftDirty({ ...clean, hidden: ['children', 'selfie'] }).form).toBe(true);
+        expect(isDocsDraftDirty({ ...clean, hidden: [] }).form).toBe(true);
+    });
+    it('an editor that echoes the standard text on mount is not a change', () => {
+        expect(isDocsDraftDirty({ ...clean, sections: { ...STANDARD_RICH_DOCS } }).contract).toBe(false);
+    });
+    it('editing a section is a change; typing it back to the saved text is not', () => {
+        expect(isDocsDraftDirty({ ...clean, sections: custom }).contract).toBe(true);
+        expect(isDocsDraftDirty({ ...clean, savedSections: custom, sections: { ...STANDARD_RICH_DOCS, ...custom } }).contract).toBe(false);
     });
 });

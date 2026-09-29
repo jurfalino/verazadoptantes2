@@ -261,8 +261,12 @@ export async function getOrgActivity(filters: ActivityFilters = {}): Promise<Act
                 .map(r => r.target)
                 .filter((t): t is string => !!t),
         ));
+        // Only pages that actually contain adoption_docs_* rows pay for the
+        // viewer-org and org-name lookups below.
+        const docsRows = rows.filter(r => (ADOPTION_DOCS_ACTIVITY_ACTIONS as readonly string[]).includes(r.action));
+        const hasDocsRows = docsRows.length > 0;
         const distinctDocsOrgIds = Array.from(new Set(
-            rows
+            docsRows
                 .map(r => detailsByRowId.get(r.id)?.orgId)
                 .filter((v): v is string => typeof v === 'string' && !!v),
         ));
@@ -277,8 +281,8 @@ export async function getOrgActivity(filters: ActivityFilters = {}): Promise<Act
             resolveAdopters(distinctTargets, env.DB),
             resolveAttribution(distinctActors, viewer),
             wantActors ? resolveActorNames(fullActorEmails, env.DB) : Promise.resolve(new Map<string, string>()),
-            getViewerOrgIds(viewer),
-            resolveOrgNames(distinctDocsOrgIds, env.DB),
+            hasDocsRows ? getViewerOrgIds(viewer) : Promise.resolve([] as string[]),
+            hasDocsRows ? resolveOrgNames(distinctDocsOrgIds, env.DB) : Promise.resolve(new Map<string, string>()),
         ]);
 
         const entries: OrgActivityEntry[] = rows

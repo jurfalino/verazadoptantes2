@@ -200,11 +200,11 @@ function VerbLine({ entry, t, isEs }: VerbLineProps) {
         case 'verification_added':
             return <span>{isEs ? 'verificó ' : 'verified '}{adopterNode}</span>;
         case ADOPTION_DOCS_FORM_SAVED: {
-            const org = entry.extra.orgName || (isEs ? 'el grupo' : 'the group');
+            const org = entry.extra.orgName || t('activity.adoption_docs_group_fallback');
             return <span>{t('activity.adoption_docs_form_saved').replace('{org}', org)}</span>;
         }
         case ADOPTION_DOCS_CONTRACT_SAVED: {
-            const org = entry.extra.orgName || (isEs ? 'el grupo' : 'the group');
+            const org = entry.extra.orgName || t('activity.adoption_docs_group_fallback');
             return <span>{t('activity.adoption_docs_contract_saved').replace('{org}', org)}</span>;
         }
         default:

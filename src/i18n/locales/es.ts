@@ -2097,6 +2097,7 @@ export const es = {
     activity: {
         adoption_docs_form_saved: 'cambió las preguntas del formulario de {org}',
         adoption_docs_contract_saved: 'editó el contrato de {org}',
+        adoption_docs_group_fallback: 'el grupo',
     },
     features: {
         meta_title: 'Funcionalidades — BuenAdoptante',

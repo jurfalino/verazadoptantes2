@@ -21,7 +21,7 @@ import {
     getAdoptionDocs, saveFormSteps, saveContractSections, type OwnerRef,
 } from '@/app/actions/adoptionDocs';
 import { SECTION_KEYS, canonicalSectionsJson, type ContractSections, type SectionKey } from '@/domain/adoptionDocs';
-import { sectionsToSave } from '@/domain/standardContractText';
+import { sectionsToSave, isDocsDraftDirty } from '@/domain/standardContractText';
 import FormStepsEditor from '@/components/adoptionDocs/FormStepsEditor';
 import ContractSectionsEditor from '@/components/adoptionDocs/ContractSectionsEditor';
 
@@ -64,6 +64,9 @@ function AdoptionDocsEditor() {
     const [meta, setMeta] = useState<Meta | null>(null);
     const [hidden, setHidden] = useState<string[]>([]);
     const [sections, setSections] = useState<ContractSections>({});
+    // Last-saved state of each tab — the baseline for the unsaved-changes guard.
+    const [savedHidden, setSavedHidden] = useState<string[]>([]);
+    const [savedSections, setSavedSections] = useState<ContractSections>({});
     const [tab, setTab] = useState<Tab>('form');
     const [saving, setSaving] = useState(false);
     // Per-section remount counters, bumped after a save changes what an editor shows.
@@ -114,6 +117,8 @@ function AdoptionDocsEditor() {
             if (full) {
                 setHidden(d.hiddenSteps);
                 setSections(d.sections);
+                setSavedHidden(d.hiddenSteps);
+                setSavedSections(d.sections);
                 setStatus('ready');
             }
         } catch (error) {
@@ -124,6 +129,22 @@ function AdoptionDocsEditor() {
     }, [owner, toast]);
 
     useEffect(() => { void load(true); }, [load]);
+
+    // Unsaved changes in either tab → the browser asks before a reload,
+    // tab close or off-site navigation throws them away.
+    const dirty = useMemo(() => {
+        const d = isDocsDraftDirty({ savedHidden, hidden, savedSections, sections });
+        return d.form || d.contract;
+    }, [savedHidden, hidden, savedSections, sections]);
+    useEffect(() => {
+        if (!dirty) return;
+        const onBeforeUnload = (e: BeforeUnloadEvent) => {
+            e.preventDefault();
+            e.returnValue = ''; // required by Chrome/Safari to show the prompt
+        };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        return () => window.removeEventListener('beforeunload', onBeforeUnload);
+    }, [dirty]);
 
     /** Toasts the outcome; true when the save succeeded. */
     const handleResult = async (res: { success: boolean; error?: string; errorId?: string } | undefined): Promise<boolean> => {
@@ -143,7 +164,8 @@ function AdoptionDocsEditor() {
     const saveForm = async () => {
         setSaving(true);
         try {
-            await handleResult(await saveFormSteps(owner, hidden));
+            const saved = hidden;
+            if (await handleResult(await saveFormSteps(owner, saved))) setSavedHidden(saved);
         } catch (error) {
             failToast(resolveErrorId(error, SOURCE));
         } finally {
@@ -163,6 +185,7 @@ function AdoptionDocsEditor() {
                 const changed = SECTION_KEYS.filter(k =>
                     canonicalSectionsJson(sections[k] ? { [k]: sections[k] } : {}) !== canonicalSectionsJson(toSave[k] ? { [k]: toSave[k] } : {}));
                 setSections(toSave);
+                setSavedSections(toSave);
                 if (changed.length) {
                     setRemounts(r => {
                         const next = { ...r };

@@ -98,8 +98,10 @@ INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
 INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
 ('ENABLE_HOUSEHOLD_MEMBERS', 'true', strftime('%s','now'), 'test-seed');
 
--- Custom adoption form + contract per user/group: ON so E2E can exercise the
--- settings UI, form-step editor and contract-section editor.
+-- Custom adoption form + contract per user/group: ON so the API-level checks
+-- in tests/adoption-docs.spec.ts (public form/contract resolution, signed
+-- versions) run against real SQL. No spec drives the settings UI or the
+-- form-step / contract-section editors yet.
 INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
 ('ENABLE_CUSTOM_ADOPTION_DOCS', 'true', strftime('%s','now'), 'test-seed');
 

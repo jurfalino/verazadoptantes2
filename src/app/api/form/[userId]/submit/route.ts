@@ -33,6 +33,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         // §3.3 and src/domain/adoptionDocs.ts:deriveSpecialNeeds.
         const specialNeeds = deriveSpecialNeeds(body);
         const shownSteps = sanitizeShownSteps(body.shownSteps);
+        // The adopter's answers, minus submission metadata: shownSteps has its
+        // own column, so it isn't stored again in answers_json / the
+        // notification's submittedData (where it would read as an "answer").
+        const answers: Record<string, unknown> = { ...body };
+        delete answers.shownSteps;
         const intent = body.intent as string || null;
         const household = Array.isArray(body.household) ? JSON.stringify(body.household) : null;
         // v2.14.10-2: form launched from the public showcase pre-selected
@@ -102,7 +107,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             specialNeeds,
             intent,
             household,
-            answersJson: JSON.stringify({ ...body, selfie: selfieUrl || '[removed]' }),
+            answersJson: JSON.stringify({ ...answers, selfie: selfieUrl || '[removed]' }),
             notificationId,
             selectedAnimalId,
             createdAt: new Date(),
@@ -190,7 +195,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     metadata: {
                         submissionId,
                         matchCount,
-                        submittedData: { ...body, selfie: selfieUrl || '[removed]' },
+                        submittedData: { ...answers, selfie: selfieUrl || '[removed]' },
                         matchedAdopters: matches.map(m => ({
                             id: m.adopterId,
                             name: m.adopterName,
@@ -212,7 +217,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     metadata: {
                         submissionId,
                         matchCount: 0,
-                        submittedData: { ...body, selfie: selfieUrl || '[removed]' },
+                        submittedData: { ...answers, selfie: selfieUrl || '[removed]' },
                         selectedAnimalId,
                         selectedAnimalName,
                     },
