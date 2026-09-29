@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { FORM_STEP_IDS, applyHiddenSteps, restoreStepIndex, stripHiddenAnswers, draftKey, isValidCustomContract, contractVersionLabel, STANDARD_CONTRACT_VERSION, fnv1a } from './adoptionDocs'
+import { FORM_STEP_IDS, applyHiddenSteps, restoreStepIndex, stripHiddenAnswers, buildSubmitBody, draftKey, resolveDraft, isValidCustomContract, contractVersionLabel, STANDARD_CONTRACT_VERSION, fnv1a } from './adoptionDocs'
 
 const schema = FORM_STEP_IDS.map(id => ({ id }))
 
@@ -35,6 +35,56 @@ describe('drafts and answers', () => {
     it('strips answers of hidden steps, with their companion keys', () => {
         expect(stripHiddenAnswers({ species: 'other', speciesOther: 'x', geo: 'yes', latitude: '1', longitude: '2', name: 'A' }, ['species', 'geo']))
             .toEqual({ name: 'A' })
+    })
+})
+
+describe('resolveDraft', () => {
+    it('neither key present → null', () => {
+        expect(resolveDraft(null, null)).toBeNull()
+    })
+    it('scoped key wins and legacy is left untouched (caller does not need to read it)', () => {
+        const scoped = JSON.stringify({ answers: { name: 'A' }, stepId: 'hoursAlone' })
+        const legacy = JSON.stringify({ answers: { name: 'STALE' }, step: 3 })
+        expect(resolveDraft(scoped, legacy)).toEqual({ draft: { answers: { name: 'A' }, stepId: 'hoursAlone' }, migrated: false })
+    })
+    it('legacy only → answers kept, no stepId (index becomes 0 via restoreStepIndex), migrated: true', () => {
+        const legacy = JSON.stringify({ answers: { name: 'A' }, step: 14 })
+        const resolved = resolveDraft(null, legacy)
+        expect(resolved?.migrated).toBe(true)
+        expect(resolved?.draft).toEqual({ answers: { name: 'A' } })
+        expect(resolved && restoreStepIndex(schema, resolved.draft, FORM_STEP_IDS)).toBe(0)
+    })
+    it('legacy with no answers → empty object, still migrates', () => {
+        expect(resolveDraft(null, JSON.stringify({ step: 2 }))).toEqual({ draft: { answers: {} }, migrated: true })
+    })
+    it('malformed JSON throws (caller wraps in try/catch)', () => {
+        expect(() => resolveDraft('{not json', null)).toThrow()
+        expect(() => resolveDraft(null, '{not json')).toThrow()
+    })
+})
+
+describe('buildSubmitBody', () => {
+    const shortSchema = schema.filter(s => !['children', 'existingPets'].includes(s.id))
+    it('no customization → answers pass through unchanged, plus shownSteps', () => {
+        const answers = { name: 'A', email: 'a@a.com' }
+        expect(buildSubmitBody(answers, null, null, schema)).toEqual({
+            ...answers,
+            shownSteps: schema.map(s => s.id),
+        })
+    })
+    it('omits animalId when absent, includes it when present', () => {
+        expect(buildSubmitBody({ name: 'A' }, null, null, schema)).not.toHaveProperty('animalId')
+        expect(buildSubmitBody({ name: 'A' }, null, undefined, schema)).not.toHaveProperty('animalId')
+        expect(buildSubmitBody({ name: 'A' }, null, 'animal-1', schema)).toMatchObject({ animalId: 'animal-1' })
+    })
+    it('strips hidden-step answers and lists only the shown steps', () => {
+        const answers = { children: '2', name: 'A' }
+        const out = buildSubmitBody(answers, ['children'], null, shortSchema)
+        expect(out).toEqual({ name: 'A', shownSteps: shortSchema.map(s => s.id) })
+    })
+    it('null hiddenSteps behaves like an empty array', () => {
+        const answers = { name: 'A' }
+        expect(buildSubmitBody(answers, null, null, schema)).toEqual(buildSubmitBody(answers, [], null, schema))
     })
 })
 

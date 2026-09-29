@@ -36,6 +36,26 @@ export function draftKey(userId: string | null, animalId: string | null | undefi
 
 export type Draft = { answers: Record<string, unknown>; stepId?: string; step?: number }
 
+export type ResolvedDraft = { draft: Draft; migrated: boolean }
+
+/**
+ * Decides which draft to hydrate from, given the two raw `localStorage`
+ * strings (as `getItem` returns them — `null` when absent). The scoped key
+ * always wins over the legacy one. `migrated: true` tells the caller a
+ * legacy draft was found and must now be written under the scoped key (and
+ * the legacy key cleared) — this function is pure and performs no storage
+ * side effects itself. Throws on malformed JSON, matching `JSON.parse`
+ * (callers already wrap draft hydration in try/catch).
+ */
+export function resolveDraft(scopedRaw: string | null, legacyRaw: string | null): ResolvedDraft | null {
+    if (scopedRaw) return { draft: JSON.parse(scopedRaw) as Draft, migrated: false }
+    if (legacyRaw) {
+        const legacy = JSON.parse(legacyRaw) as { answers?: Record<string, unknown>; step?: number }
+        return { draft: { answers: legacy.answers ?? {} }, migrated: true }
+    }
+    return null
+}
+
 /**
  * Restores where a draft should resume in `schema`:
  * - `draft.stepId` present in `schema` → its index there.
@@ -83,6 +103,26 @@ export function stripHiddenAnswers(answers: Record<string, unknown>, hiddenSteps
         if (!drop.has(k)) out[k] = v
     }
     return out
+}
+
+/**
+ * Builds the POST /submit request body: strips answers belonging to hidden
+ * steps (in case a stale draft carried them), attaches `animalId` only when
+ * present (unchanged shape on the no-customization path — no `animalId: null`
+ * ever sent), and always lists the step ids the adopter actually saw.
+ */
+export function buildSubmitBody(
+    finalAnswers: Record<string, unknown>,
+    hiddenSteps: readonly string[] | null,
+    animalId: string | null | undefined,
+    schema: readonly { id: string }[],
+): Record<string, unknown> {
+    const cleaned = stripHiddenAnswers(finalAnswers, hiddenSteps ?? [])
+    return {
+        ...cleaned,
+        ...(animalId ? { animalId } : {}),
+        shownSteps: schema.map(s => s.id),
+    }
 }
 
 // ── Rich text (structurally identical to the Next app's) ─────────────

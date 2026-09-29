@@ -1,6 +1,9 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
 import './petshield.css'
 import { useT } from './i18n/LocaleContext'
+import {
+    FORM_STEP_IDS, applyHiddenSteps, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody,
+} from './lib/adoptionDocs'
 
 // ══════════════════════════════════════════════
 // TYPES — JSON Schema
@@ -315,11 +318,6 @@ const VALIDATORS: Record<string, (v: string) => boolean> = {
     'phone-ar': (v) => /^[\d+\s()-]{7,}$/.test(v),
 }
 
-// ══════════════════════════════════════════════
-// STORAGE KEY
-// ══════════════════════════════════════════════
-const STORAGE_KEY = 'petshield_draft'
-
 const API_URL = import.meta.env.VITE_API_URL || ''
 
 // ══════════════════════════════════════════════
@@ -504,6 +502,26 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         },
     ], [t])
 
+    // ── Rescuer's saved form config (which steps to hide) ──
+    // Fetched async so it can never block the adopter: while it's in flight
+    // (or on failure/timeout) the standard schema applies — the safe default.
+    const [hiddenSteps, setHiddenSteps] = useState<string[] | null>(null)
+    useEffect(() => {
+        if (!userId) return
+        const ctrl = new AbortController()
+        const timer = setTimeout(() => ctrl.abort(), 3000)
+        fetch(`${API_URL}/api/form/${encodeURIComponent(userId)}`, { signal: ctrl.signal })
+            .then(r => (r.ok ? r.json() : null))
+            .then((data: { formConfig?: { hiddenSteps?: unknown } | null } | null) => {
+                const hs = data?.formConfig?.hiddenSteps
+                if (Array.isArray(hs)) setHiddenSteps(hs.filter((x): x is string => typeof x === 'string'))
+            })
+            // Standard form is the safe fallback — never block the adopter.
+            .catch(err => console.warn('[PetShield] form config unavailable, using standard form', err))
+            .finally(() => clearTimeout(timer))
+        return () => { clearTimeout(timer); ctrl.abort() }
+    }, [userId])
+
     // When the form was launched from the public showcase (animalId present),
     // skip the three steps that ask about the desired animal — the choice is
     // already made. The animalId travels with the submission so the rescuer's
@@ -514,10 +532,14 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     // id rather than index so future schema reordering doesn't silently
     // skip the wrong steps.
     const ANIMAL_QUESTION_STEPS = ['species', 'lifeStage', 'specialNeeds'] as const
-    const schema = animalId
+    const baseSchema = animalId
         ? DEFAULT_SCHEMA.filter(s => !ANIMAL_QUESTION_STEPS.includes(s.id as typeof ANIMAL_QUESTION_STEPS[number]))
         : DEFAULT_SCHEMA
+    // Same reference when hiddenSteps is null/empty (no config, or flag off) —
+    // never removes a locked step even if the server sends a bad/forged one.
+    const schema = applyHiddenSteps(baseSchema, hiddenSteps)
     const totalSteps = schema.length
+    const DRAFT_KEY = draftKey(userId, animalId)
 
     // ── State ──
     const [step, setStep] = useState(0)
@@ -533,23 +555,45 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     const [dragOver, setDragOver] = useState(false)
 
     // ── Hydrate from localStorage ──
+    // Runs once the draft key (userId + animalId) is known. `schema` is read
+    // here but intentionally left out of the dependency array: hydration
+    // should happen once per draft key, not re-run on every hiddenSteps
+    // update — the effect below re-maps `step` by id once config arrives.
     useEffect(() => {
         try {
-            const saved = localStorage.getItem(STORAGE_KEY)
-            if (saved) {
-                const parsed = JSON.parse(saved)
-                if (parsed.answers) setAnswers(parsed.answers)
-                if (typeof parsed.step === 'number') setStep(parsed.step)
+            const resolved = resolveDraft(localStorage.getItem(DRAFT_KEY), localStorage.getItem(LEGACY_DRAFT_KEY))
+            if (!resolved) return
+            if (resolved.migrated) {
+                // Write the migrated draft under the scoped key immediately —
+                // otherwise it lives only in memory and a reload before the
+                // adopter finishes a single step loses it. `stepId` is the
+                // first step (`legal`, locked); restoreStepIndex sends a
+                // draft with no stepId there too, this just makes the write
+                // explicit so a re-run of this effect (e.g. StrictMode) is a
+                // no-op the second time (scopedRaw would already be set).
+                try {
+                    localStorage.setItem(DRAFT_KEY, JSON.stringify({ answers: resolved.draft.answers, stepId: schema[0].id }))
+                    localStorage.removeItem(LEGACY_DRAFT_KEY)
+                } catch (e) {
+                    console.warn('[PetShield] legacy draft migration failed', e)
+                }
             }
-        } catch { /* ignore */ }
-    }, [])
+            if (resolved.draft.answers) setAnswers(resolved.draft.answers)
+            setStep(restoreStepIndex(schema, resolved.draft, FORM_STEP_IDS))
+        } catch (e) {
+            console.warn('[PetShield] draft restore failed', e)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [DRAFT_KEY])
 
     // ── Persist to localStorage ──
-    const persist = useCallback((currentStep: number, currentAnswers: Record<string, any>) => {
+    const persist = useCallback((stepId: string, currentAnswers: Record<string, any>) => {
         try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ step: currentStep, answers: currentAnswers }))
-        } catch { /* ignore */ }
-    }, [])
+            localStorage.setItem(DRAFT_KEY, JSON.stringify({ answers: currentAnswers, stepId }))
+        } catch (e) {
+            console.warn('[PetShield] draft persist failed', e)
+        }
+    }, [DRAFT_KEY])
 
     // ── Toast auto-dismiss ──
     useEffect(() => {
@@ -564,6 +608,31 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     const currentStep = schema[step]
     const isLastStep = step === totalSteps - 1
     const progress = ((step + 1) / totalSteps) * 100
+
+    // ── Track the step id the adopter is on ──
+    // Updated only when `step` itself changes, so while hiddenSteps is still
+    // arriving this ref keeps the id from whichever schema was current the
+    // last time the adopter navigated — exactly what the re-map effect below
+    // needs to resolve the equivalent position in the new schema.
+    const currentStepIdRef = useRef<string | undefined>(currentStep?.id)
+    useEffect(() => {
+        currentStepIdRef.current = currentStep?.id
+    }, [step])
+
+    // ── Re-map the current step when hidden-step config arrives late ──
+    // Config normally arrives while the adopter is still on step 0 (`legal`,
+    // locked and always first in both schemas), so this is a no-op in the
+    // common case. If they've already advanced, keep them on the same
+    // question by id (or the nearest surviving one) instead of a now-wrong
+    // index. useLayoutEffect (not useEffect) so the corrected step commits
+    // before paint — otherwise one frame briefly renders the stale index
+    // against the new (possibly shorter) schema.
+    useLayoutEffect(() => {
+        if (step > 0) {
+            setStep(restoreStepIndex(schema, { answers, stepId: currentStepIdRef.current }, FORM_STEP_IDS))
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [hiddenSteps])
 
     // ── Answer helpers ──
     function setAnswer(key: string, value: any) {
@@ -637,7 +706,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             handleSubmit(nextAnswers)
         } else {
             setStep(nextStep)
-            persist(nextStep, nextAnswers)
+            persist(schema[nextStep].id, nextAnswers)
         }
     }
 
@@ -657,11 +726,11 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         setSubmitting(true)
         try {
             // When the form was launched from the showcase, attach the
-            // animalId so the backend can store it in form_submissions
-            // and the rescuer's notification can name the specific animal.
-            const submitBody = animalId
-                ? { ...finalAnswers, animalId }
-                : finalAnswers
+            // animalId so the backend can store it in form_submissions and
+            // the rescuer's notification can name the specific animal.
+            // Hidden-step answers are stripped in case a stale draft carried
+            // them, and shownSteps records what the adopter actually saw.
+            const submitBody = buildSubmitBody(finalAnswers, hiddenSteps, animalId, schema)
             const res = await fetch(`${API_URL}/api/form/${encodeURIComponent(userId)}/submit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -674,7 +743,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                 return
             }
             // Success
-            localStorage.removeItem(STORAGE_KEY)
+            localStorage.removeItem(DRAFT_KEY)
             setSubmitted(true)
         } catch (err) {
             console.error('[PetShield submit]', err)
@@ -940,7 +1009,11 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                                     setAnswer(currentStep.id, opt.value)
                                     // Auto-advance for simple single choice; skip when species "other" (has follow-up input)
                                     const isSpeciesOther = currentStep.id === 'species' && opt.value === 'other'
-                                    if (!isSpeciesOther) goNext({ [currentStep.id]: opt.value })
+                                    if (!isSpeciesOther) {
+                                        // No tap-to-submit: on the last step, tapping only selects — "Enviar" submits.
+                                        if (isLastStep) setAnswer(currentStep.id, opt.value)
+                                        else goNext({ [currentStep.id]: opt.value })
+                                    }
                                 }}
                                 tabIndex={0}
                             >
@@ -986,7 +1059,9 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                                 className={`ps-segmented__item ${answers[currentStep.id] === opt.value ? 'ps-segmented__item--selected' : ''}`}
                                 onClick={() => {
                                     setAnswer(currentStep.id, opt.value)
-                                    goNext({ [currentStep.id]: opt.value })
+                                    // No tap-to-submit: on the last step, tapping only selects — "Enviar" submits.
+                                    if (isLastStep) setAnswer(currentStep.id, opt.value)
+                                    else goNext({ [currentStep.id]: opt.value })
                                 }}
                                 tabIndex={0}
                             >
