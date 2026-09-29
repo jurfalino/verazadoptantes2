@@ -124,7 +124,7 @@ export default async function AdminDataRequestsPage() {
                                                 <div className="truncate" title={r.details || ''}>{r.details || '-'}</div>
                                             </td>
                                             <td className="p-4 text-xs text-stone-500">
-                                                {r.createdAt ? formatShortDate(new Date(r.createdAt), timeZone) : '-'}
+                                                {r.createdAt ? formatShortDate(new Date(r.createdAt), timeZone, 'en') : '-'}
                                             </td>
                                             <td className="p-4 text-right space-x-2">
                                                 <form className="inline-flex gap-2">
@@ -178,7 +178,7 @@ export default async function AdminDataRequestsPage() {
                                     )}
                                     {r.details && <p className="text-sm text-stone-600 mb-2">{r.details}</p>}
                                     <div className="text-xs text-stone-500 mb-3">
-                                        {r.createdAt ? formatShortDate(new Date(r.createdAt), timeZone) : '-'}
+                                        {r.createdAt ? formatShortDate(new Date(r.createdAt), timeZone, 'en') : '-'}
                                     </div>
                                     <form className="flex gap-2">
                                         <button
@@ -246,7 +246,7 @@ export default async function AdminDataRequestsPage() {
                                                 </span>
                                             </td>
                                             <td className="p-4 text-xs text-stone-500">
-                                                {r.resolvedAt ? formatShortDate(new Date(r.resolvedAt), timeZone) : '-'}
+                                                {r.resolvedAt ? formatShortDate(new Date(r.resolvedAt), timeZone, 'en') : '-'}
                                             </td>
                                         </tr>
                                     ))}
@@ -275,7 +275,7 @@ export default async function AdminDataRequestsPage() {
                                         </a>
                                     )}
                                     <div className="text-xs text-stone-500">
-                                        {r.resolvedAt ? formatShortDate(new Date(r.resolvedAt), timeZone) : '-'}
+                                        {r.resolvedAt ? formatShortDate(new Date(r.resolvedAt), timeZone, 'en') : '-'}
                                     </div>
                                 </div>
                             ))}
