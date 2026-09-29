@@ -74,6 +74,17 @@ describe('tiptapToRichDoc', () => {
         expect(tiptapToRichDoc({ type: 'doc' })).toEqual({ type: 'doc', content: [] });
     });
 
+    // A pasted <br> with hardBreak disabled arrives as a "\n" text node
+    // (ProseMirror leafFallback); the contract PDF must never see a newline.
+    it('turns newlines inside text into single spaces', () => {
+        const tt = { type: 'doc', content: [
+            { type: 'paragraph', content: [{ type: 'text', text: 'uno\ndos  \n  tres\r\ncuatro', marks: [{ type: 'bold' }] }] },
+        ] };
+        expect(tiptapToRichDoc(tt)).toEqual({ type: 'doc', content: [
+            { type: 'paragraph', content: [{ text: 'uno dos tres cuatro', marks: ['bold'] }] },
+        ] });
+    });
+
     it('an ordered list inside a list item and a heading inside a list item stay items', () => {
         const tt = { type: 'doc', content: [{ type: 'orderedList', content: [
             { type: 'listItem', content: [{ type: 'heading', content: [{ type: 'text', text: 'h' }] }, { type: 'orderedList', content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'n' }] }] }] }] },

@@ -20,7 +20,7 @@ import { fetchCustomAdoptionDocsFlag } from '@/lib/adoptionDocsFlag';
 import {
     getAdoptionDocs, saveFormSteps, saveContractSections, type OwnerRef,
 } from '@/app/actions/adoptionDocs';
-import type { ContractSections } from '@/domain/adoptionDocs';
+import { SECTION_KEYS, canonicalSectionsJson, type ContractSections, type SectionKey } from '@/domain/adoptionDocs';
 import { sectionsToSave } from '@/domain/standardContractText';
 import FormStepsEditor from '@/components/adoptionDocs/FormStepsEditor';
 import ContractSectionsEditor from '@/components/adoptionDocs/ContractSectionsEditor';
@@ -66,6 +66,8 @@ function AdoptionDocsEditor() {
     const [sections, setSections] = useState<ContractSections>({});
     const [tab, setTab] = useState<Tab>('form');
     const [saving, setSaving] = useState(false);
+    // Per-section remount counters, bumped after a save changes what an editor shows.
+    const [remounts, setRemounts] = useState<Partial<Record<SectionKey, number>>>({});
 
     // Tab lives in the hash (#contrato) so a reload or shared link keeps it.
     useEffect(() => {
@@ -123,16 +125,19 @@ function AdoptionDocsEditor() {
 
     useEffect(() => { void load(true); }, [load]);
 
-    const handleResult = async (res: { success: boolean; error?: string; errorId?: string } | undefined) => {
+    /** Toasts the outcome; true when the save succeeded. */
+    const handleResult = async (res: { success: boolean; error?: string; errorId?: string } | undefined): Promise<boolean> => {
         if (res?.success) {
             toast.success(t('settings.saved'));
             await load(false); // refresh "Última edición"
-            return;
+            return true;
         }
-        if (res?.error === 'disabled') toast.error(t('errors.generic'), t('adoptionDocs.disabled'));
-        else if (res?.error === 'forbidden') toast.error(t('errors.generic'), t('adoptionDocs.forbidden'));
-        else if (res?.error === 'invalid') toast.error(t('errors.generic'), t('adoptionDocs.too_long'), res.errorId || resolveErrorId(res, SOURCE));
-        else failToast(res?.errorId || resolveErrorId(res, SOURCE));
+        const errorId = res?.errorId || resolveErrorId(res, SOURCE);
+        if (res?.error === 'disabled') toast.error(t('errors.generic'), t('adoptionDocs.disabled'), errorId);
+        else if (res?.error === 'forbidden') toast.error(t('errors.generic'), t('adoptionDocs.forbidden'), errorId);
+        else if (res?.error === 'invalid') toast.error(t('errors.generic'), t('adoptionDocs.too_long'), errorId);
+        else failToast(errorId);
+        return false;
     };
 
     const saveForm = async () => {
@@ -149,7 +154,23 @@ function AdoptionDocsEditor() {
     const saveContract = async () => {
         setSaving(true);
         try {
-            await handleResult(await saveContractSections(owner, sectionsToSave(sections)));
+            const toSave = sectionsToSave(sections);
+            if (await handleResult(await saveContractSections(owner, toSave))) {
+                // Show exactly what was saved: a section equal to the standard
+                // text, or emptied, was sent as absent and now reads as the
+                // standard text again; a kept one is shown normalized. Remount
+                // only the editors whose content changed.
+                const changed = SECTION_KEYS.filter(k =>
+                    canonicalSectionsJson(sections[k] ? { [k]: sections[k] } : {}) !== canonicalSectionsJson(toSave[k] ? { [k]: toSave[k] } : {}));
+                setSections(toSave);
+                if (changed.length) {
+                    setRemounts(r => {
+                        const next = { ...r };
+                        for (const k of changed) next[k] = (next[k] ?? 0) + 1;
+                        return next;
+                    });
+                }
+            }
         } catch (error) {
             failToast(resolveErrorId(error, SOURCE));
         } finally {
@@ -213,7 +234,7 @@ function AdoptionDocsEditor() {
                 </div>
             ) : (
                 <div role="tabpanel" id="panel-contract" aria-labelledby="tab-contract" className="space-y-6">
-                    <ContractSectionsEditor sections={sections} onChange={setSections} />
+                    <ContractSectionsEditor sections={sections} onChange={setSections} remounts={remounts} />
                     <div className="space-y-2">
                         <button type="button" onClick={saveContract} disabled={saving} className={btnPrimary} data-testid="adoption-docs-save-contract">
                             {saving ? t('animalProfile.saving') : t('common.save')}

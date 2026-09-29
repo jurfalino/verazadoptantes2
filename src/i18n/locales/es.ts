@@ -2316,6 +2316,7 @@ export const es = {
         save_failed: 'No se pudo guardar.',
         forbidden: 'No sos miembro de este grupo.',
         disabled: 'Esta función todavía no está disponible.',
+        toolbar_label: 'Formato',
         toolbar_bold: 'Negrita',
         toolbar_italic: 'Cursiva',
         toolbar_underline: 'Subrayado',

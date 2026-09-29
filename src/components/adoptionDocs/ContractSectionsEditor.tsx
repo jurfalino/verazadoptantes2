@@ -13,9 +13,14 @@ import { STANDARD_SECTIONS_ES, STANDARD_RICH_DOCS } from '@/domain/standardContr
 import RichTextEditor from './RichTextEditor';
 import { StandardSectionPreview } from './RichDocPreview';
 
-type Props = { sections: ContractSections; onChange: (s: ContractSections) => void };
+type Props = {
+    sections: ContractSections;
+    onChange: (s: ContractSections) => void;
+    /** Bumped by the page after a save changes a section's content (e.g. an emptied one back to standard). */
+    remounts?: Partial<Record<SectionKey, number>>;
+};
 
-export default function ContractSectionsEditor({ sections, onChange }: Props) {
+export default function ContractSectionsEditor({ sections, onChange, remounts }: Props) {
     const { t } = useLanguage();
     // Bumped per section by "Restaurar texto original" to remount its editor
     // (RichTextEditor reads `value` only at mount).
@@ -43,7 +48,7 @@ export default function ContractSectionsEditor({ sections, onChange }: Props) {
                 <section key={k} className="space-y-2" data-testid={`contract-section-${k}`}>
                     <h3 className={heading}>{STANDARD_SECTIONS_ES[k].title}</h3>
                     <RichTextEditor
-                        key={`${k}-${resets[k]}`}
+                        key={`${k}-${resets[k]}-${remounts?.[k] ?? 0}`}
                         value={sections[k] ?? STANDARD_RICH_DOCS[k]}
                         onChange={doc => edit(k, doc)}
                         ariaLabel={t('adoptionDocs.section_editor_label').replace('{n}', k)}

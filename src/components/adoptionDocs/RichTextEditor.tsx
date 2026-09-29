@@ -93,7 +93,7 @@ export default function RichTextEditor({ value, onChange, ariaLabel }: Props) {
 
     return (
         <div className="rounded-xl border border-stone-200 bg-white focus-within:border-teal-400 transition-colors">
-            <div role="toolbar" aria-label={ariaLabel} className="flex gap-1 border-b border-stone-100 p-1">
+            <div role="toolbar" aria-label={t('adoptionDocs.toolbar_label')} className="flex gap-1 border-b border-stone-100 p-1">
                 {buttons.map(b => {
                     const pressed = !!active?.[b.key];
                     return (

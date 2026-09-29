@@ -2316,6 +2316,7 @@ export const pt = {
         save_failed: 'Não foi possível salvar.',
         forbidden: 'Você não é membro deste grupo.',
         disabled: 'Esta função ainda não está disponível.',
+        toolbar_label: 'Formatação',
         toolbar_bold: 'Negrito',
         toolbar_italic: 'Itálico',
         toolbar_underline: 'Sublinhado',

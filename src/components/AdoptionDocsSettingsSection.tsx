@@ -87,8 +87,8 @@ export default function AdoptionDocsSettingsSection() {
                 return;
             }
             setSource(previous);
-            if (res?.error === 'disabled') toast.error(t('errors.generic'), t('adoptionDocs.disabled'));
-            else if (res?.error === 'forbidden') toast.error(t('errors.generic'), t('adoptionDocs.forbidden'));
+            if (res?.error === 'disabled') toast.error(t('errors.generic'), t('adoptionDocs.disabled'), res.errorId || resolveErrorId(res, SOURCE));
+            else if (res?.error === 'forbidden') toast.error(t('errors.generic'), t('adoptionDocs.forbidden'), res.errorId || resolveErrorId(res, SOURCE));
             else toast.error(t('errors.generic'), t('adoptionDocs.save_failed'), res?.errorId || resolveErrorId(res, SOURCE));
         } catch (error) {
             setSource(previous);

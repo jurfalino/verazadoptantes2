@@ -36,9 +36,12 @@ function toInlines(nodes: TipTapNode[]): Inline[] {
             // line break is a space, never '\n'.
             out.push({ text: ' ' });
         } else if (n.type === 'text' && typeof n.text === 'string' && n.text.length > 0) {
+            // A pasted <br> (hardBreak is disabled) arrives as "\n"; same rule
+            // as hardBreak — the contract never carries a newline.
+            const text = n.text.replace(/\s*[\r\n]+\s*/g, ' ');
             const present = new Set((n.marks ?? []).map(m => m?.type));
             const marks = MARK_ORDER.filter(m => present.has(m));
-            out.push(marks.length ? { text: n.text, marks } : { text: n.text });
+            out.push(marks.length ? { text, marks } : { text });
         } else if (!isInline(n) && children(n).length) {
             // An unexpected wrapper inside inline content: keep its text.
             out.push(...toInlines(children(n)));

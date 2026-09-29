@@ -2311,6 +2311,7 @@ export const en = {
         save_failed: 'Couldn\'t save.',
         forbidden: 'You\'re not a member of this group.',
         disabled: 'This feature isn\'t available yet.',
+        toolbar_label: 'Formatting',
         toolbar_bold: 'Bold',
         toolbar_italic: 'Italic',
         toolbar_underline: 'Underline',
