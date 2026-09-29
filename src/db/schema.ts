@@ -512,6 +512,11 @@ export const userProfiles = sqliteTable("user_profiles", {
     // Kebab-cased, integer suffix on collision (no hash). Auto-assigned by
     // ensureUserProfile() on first sign-in via generateUniqueSlug(); stable thereafter.
     handle: text("handle").unique(),
+    // Custom adoption docs (2026-09): which owner's settings this user's public
+    // form/contract read from. NULL|'self' = own adoption_doc_settings row;
+    // 'org:<orgId>' = the named organization's row. See
+    // docs/superpowers/specs/2026-09-29-custom-adoption-docs-design.md §1.3.
+    adoptionDocsSource: text("adoption_docs_source"),
 });
 
 export const auditLog = sqliteTable("audit_log", {
@@ -659,6 +664,10 @@ export const formSubmissions = sqliteTable("form_submissions", {
     // Null when the form was shared generically (no animal pre-selected).
     selectedAnimalId: text("selected_animal_id"),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    // Custom adoption docs (2026-09): the form-step ids this submission actually
+    // showed (JSON string[]), so the rescuer's dashboard can render legacy and
+    // hidden-step rows correctly. NULL for legacy rows / old SPA clients.
+    shownSteps: text("shown_steps"),
 }, (table) => ({
     userIdx: index("idx_form_user").on(table.userId),
     statusIdx: index("idx_form_status").on(table.status),
@@ -686,6 +695,49 @@ export const contractInvitations = sqliteTable("contract_invitations", {
 }, (table) => ({
     animalIdx: index("idx_contract_inv_animal").on(table.animalId),
 }));
+
+// ── Custom Adoption Docs (2026-09) ──────────────────────────────
+// Per-owner (user or org) customization of the public form's steps and the
+// contract's editable sections. See
+// docs/superpowers/specs/2026-09-29-custom-adoption-docs-design.md §1.
+
+export const adoptionDocSettings = sqliteTable('adoption_doc_settings', {
+    id: text('id').primaryKey(),
+    ownerType: text('owner_type').notNull(),       // 'user' | 'org'
+    ownerId: text('owner_id').notNull(),           // lower-cased email | organizations.id
+    hiddenSteps: text('hidden_steps'),             // JSON string[]
+    contractVersionId: text('contract_version_id'),
+    updatedAt: integer('updated_at').notNull(),    // unix seconds
+    updatedBy: text('updated_by').notNull(),
+}, (t) => ({ ownerIdx: uniqueIndex('idx_adoption_doc_settings_owner').on(t.ownerType, t.ownerId) }));
+
+// Append-only while signed: a save while an adopter has the contract open
+// inserts a new row and sets replacedAt on the old one rather than mutating
+// it in place, so their signature still records the version they saw.
+export const contractVersions = sqliteTable('contract_versions', {
+    id: text('id').primaryKey(),
+    ownerType: text('owner_type').notNull(),
+    ownerId: text('owner_id').notNull(),
+    sectionsJson: text('sections_json').notNull(), // {"2"?: RichDoc, "3"?: RichDoc, "4"?: RichDoc}; absent key = standard text
+    contentHash: text('content_hash').notNull(),   // sha256 hex of canonical sectionsJson
+    createdAt: integer('created_at').notNull(),
+    createdBy: text('created_by').notNull(),
+    firstSignedAt: integer('first_signed_at'),     // NULL until first signature; once set, row is immutable & never deleted
+    replacedAt: integer('replaced_at'),            // set when a newer version becomes current
+}, (t) => ({ ownerIdx: index('idx_contract_versions_owner').on(t.ownerType, t.ownerId) }));
+
+export const signedContracts = sqliteTable('signed_contracts', {
+    id: text('id').primaryKey(),
+    animalId: text('animal_id').notNull(),
+    adopterId: text('adopter_id'),                 // adopter the signature was attached to
+    contractVersionId: text('contract_version_id'), // NULL = standard contract
+    standardVersion: text('standard_version'),     // STANDARD_CONTRACT_VERSION the page reported (NULL if an old SPA sent nothing)
+    locale: text('locale'),
+    contentHash: text('content_hash'),             // contractVersions.contentHash when custom; NULL for standard
+    fileKey: text('file_key'),                     // R2 key of the uploaded PDF/image
+    via: text('via').notNull(),                    // 'token' | 'open'
+    signedAt: integer('signed_at').notNull(),
+}, (t) => ({ animalIdx: index('idx_signed_contracts_animal').on(t.animalId) }));
 
 // ── Organizations ────────────────────────────────────────────────
 

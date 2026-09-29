@@ -167,6 +167,8 @@ export const pt = {
         flag_desc_pinned_visit_intent: 'Fixa o cartão "O que aconteceu com…?" na parte de baixo da tela nos perfis, para registrar o que aconteceu com um toque de qualquer lugar, em vez de abaixo de toda a ficha. Sai da frente enquanto um campo é editado. Desligado por padrão.',
         flag_label_followups: 'Acompanhamentos de adoção',
         flag_desc_followups: 'Ativa a linha de vida projetada: lembretes de controle pós-adoção e de lar temporário, a seção «Seguimientos» em Configurações, os selos de pendências em Meus animais e o envio diário de lembretes.',
+        flag_label_custom_adoption_docs: 'Formulário e contrato personalizados',
+        flag_desc_custom_adoption_docs: 'Permite que cada resgatista e grupo escolha quais perguntas o formulário faz e edite as seções 2–4 do contrato.',
         flag_label_email_otp: 'Acesso com código por e-mail',
         flag_desc_email_otp: 'Adiciona uma opção de "entrar com e-mail" ao modal de acesso: um código de 6 dígitos é enviado por e-mail e digitado, sem necessidade de conta Google. Requer Resend configurado (API key + domínio verificado). Desligado por padrão.',
         flag_label_pwa_install_prompt: 'Barra "Instalar o app"',

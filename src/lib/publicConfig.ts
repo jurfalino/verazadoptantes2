@@ -50,6 +50,9 @@ export const PUBLIC_FLAG_KEYS = [
     'ENABLE_EMAIL_OTP',
     // The install bar pinned to the bottom of every page (InstallPrompt).
     'ENABLE_PWA_INSTALL_PROMPT',
+    // Custom adoption form + contract per user/group — settings card, editor,
+    // and the /organizations button are all client-rendered.
+    'ENABLE_CUSTOM_ADOPTION_DOCS',
 ] as const;
 
 export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
@@ -72,6 +75,7 @@ export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
     ENABLE_GUIDED_WALKTHROUGH: 'false',
     ENABLE_EMAIL_OTP: 'false',
     ENABLE_PWA_INSTALL_PROMPT: 'false',
+    ENABLE_CUSTOM_ADOPTION_DOCS: 'false',
 };
 
 const CACHE_TTL_MS = 30 * 1000;

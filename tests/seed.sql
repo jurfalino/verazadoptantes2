@@ -98,6 +98,11 @@ INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
 INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
 ('ENABLE_HOUSEHOLD_MEMBERS', 'true', strftime('%s','now'), 'test-seed');
 
+-- Custom adoption form + contract per user/group: ON so E2E can exercise the
+-- settings UI, form-step editor and contract-section editor.
+INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
+('ENABLE_CUSTOM_ADOPTION_DOCS', 'true', strftime('%s','now'), 'test-seed');
+
 -- ============================================================
 -- USER (admin account for authenticated tests)
 -- ============================================================
