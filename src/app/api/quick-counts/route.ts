@@ -13,13 +13,13 @@ export const runtime = 'edge';
 export async function GET() {
     const session = await auth();
     if (!session?.user?.email) {
-        return NextResponse.json({ animals: 0, adoptions: 0, adopters: 0 }, { status: 401 });
+        return NextResponse.json({ animals: 0, adoptions: 0, adopters: 0, adoptionsEnabled: false }, { status: 401 });
     }
 
     try {
         const db = await getDb();
         if (!db) {
-            return NextResponse.json({ animals: 0, adoptions: 0, adopters: 0 }, { status: 500 });
+            return NextResponse.json({ animals: 0, adoptions: 0, adopters: 0, adoptionsEnabled: false }, { status: 500 });
         }
 
         // Never empty — getOrgMemberEmailsFor falls back to [callerEmail] on
@@ -52,6 +52,9 @@ export async function GET() {
         // 3. My Animals (Pending)
         let animalCount = { value: 0 };
         const animalsEnabled = await getFeatureFlag('ENABLE_ANIMALS_FOR_ADOPTION');
+        // Same channel the menus already use for the animals entry, so the
+        // adoptions entry needs no second round trip.
+        const adoptionsEnabled = await getFeatureFlag('ENABLE_MY_ADOPTIONS').catch(() => false);
         
         if (animalsEnabled) {
             // Every ACTIVE animal the TEAM has, fostered and adopted included.
@@ -77,10 +80,11 @@ export async function GET() {
             animals: animalCount.value,
             adoptions: adoptionCount.value,
             adopters: adopterCount.value,
-            animalsEnabled
+            animalsEnabled,
+            adoptionsEnabled
         });
     } catch (e) {
         logger.error('Quick counts API error', e);
-        return NextResponse.json({ animals: 0, adoptions: 0, adopters: 0 }, { status: 500 });
+        return NextResponse.json({ animals: 0, adoptions: 0, adopters: 0, adoptionsEnabled: false }, { status: 500 });
     }
 }

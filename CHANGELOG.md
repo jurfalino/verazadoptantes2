@@ -2,6 +2,86 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.99] - 2026-09-29
+
+### Added — `ENABLE_MY_ADOPTIONS`, off by default
+
+«Mis Adopciones» no longer appears in the user menu or the quick-access strip
+unless an admin switches it on from `/admin/config`. The route itself still
+works for anyone who has the link or a bookmark; only the navigation entries are
+hidden.
+
+Registered at all of this repo's plumbing sites — code defaults, the hardcoded
+`getAllFeatureFlags` list, `PUBLIC_FLAG_KEYS` and its default, the admin type,
+toggle row, initial state and hydration line, and the config API's echoed
+response. The parity test in `src/config/featureFlagRegistration.test.ts` covers
+most of these; a flag missing from the API echo hydrates as OFF and flips the
+wrong way on first click, which is the v2.19.48 incident.
+
+The menus learn the flag through `/api/quick-counts`, the same channel that
+already carries `animalsEnabled`, so no extra round trip. Its three error
+returns carry `adoptionsEnabled: false` too — otherwise the client reads
+`undefined` and the entry flashes in before disappearing.
+
+Verified both ways against the running app: with the flag off the entry is
+absent while every neighbouring item still renders, and with it on it appears in
+both the menu and the strip.
+
+## [2.56.98] - 2026-09-29
+
+### Fixed — the gallery test assumed an empty fixture
+
+2.56.97's e2e hardcoded «4 / 4», so it only passed on an animal with no photos.
+CI ran it against a fixture carrying 7 — debris left by a sibling test that
+failed mid-way — and it reported «4 / 7». The feature was fine; the test was
+wrong.
+
+Counts are relative now: it reads the fixture's starting photos, asserts against
+that baseline, and removes exactly the ids it created rather than the last four
+in the list. Reproduced the CI condition locally by seeding three stray photos
+before the run, which is how this was confirmed rather than guessed.
+
+## [2.56.97] - 2026-09-28
+
+### Fixed — only the first photo could be seen full size
+
+Add five photos to an animal and four of them were unreachable. The thumbnails
+beside the hero were plain images with no click handler, and anything past the
+third appeared only inside a «+3» count that did nothing. The photo was stored,
+shown at 48px, and could never be opened.
+
+The hero, every thumbnail and the «+N» now open the app's existing lightbox at
+that photo, with previous/next, a counter, arrow-key navigation and Escape to
+close. Covered by an e2e that adds four photos, opens the last one through the
+«+N», walks the whole gallery in both directions, and cleans up after itself.
+
+## [2.56.96] - 2026-09-28
+
+### Fixed — opening one animal flashed the animals LIST skeleton
+
+`/my-animals/[id]` had no `loading.tsx`, so it inherited the list's, and every
+animal opened with a 1/2/3-column grid of card placeholders before resolving
+into a single profile. The skeleton promised a layout the page never has, which
+reads as the wrong page loading rather than this one.
+
+It now mirrors the profile: the `max-w-3xl` column, the header card's 2:1 hero
+with its caption block, the action row, and the timeline rail with its beacons.
+
+## [2.56.95] - 2026-09-28
+
+### Fixed — CI reddened deploys that had actually succeeded
+
+The post-deploy skew check probed the forwarding path 0.1s after `wrangler pages
+deploy` returned. The new worker has a readiness loop; the **previous**
+deployment had none, and Cloudflare can still be seconds from routing the
+just-superseded deployment at its own URL — so the forward found nothing and the
+job failed after the deploy had already gone live. It reddened 2026-09-25 and
+2026-09-28; both times the guard itself was fine, confirmed by hand against
+production afterwards.
+
+The probe now retries, the assertion still runs **once**: a genuinely dead
+forwarder fails as loudly as before.
+
 ## [2.56.94] - 2026-09-28
 
 ### Fixed — the pending badge stretched the cards

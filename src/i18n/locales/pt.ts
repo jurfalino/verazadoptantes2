@@ -136,6 +136,8 @@ export const pt = {
         flag_label_posthog: 'PostHog (gravação de sessões)',
         flag_desc_posthog: 'Grava sessões e análise de produto. Roda em paralelo com o Clarity, não o substitui. Requer POSTHOG_PROJECT_KEY configurado no Cloudflare Pages. A gravação NÃO mascara o que é digitado.',
         flag_label_milestone_badge: 'Insígnia de marcos',
+        flag_label_my_adoptions: 'Minhas Adoções no menu',
+        flag_desc_my_adoptions: 'Mostra o acesso a «Minhas Adoções» no menu do usuário e na barra de acessos rápidos.',
         flag_desc_milestone_badge: 'Mostrar a barra de progresso "Você concluiu X adoções" na página inicial para usuários autenticados.',
         flag_label_quick_access_strip: 'Faixa de acesso rápido',
         flag_desc_quick_access_strip: 'Mostrar as pastilhas "Meus Animais / Minhas Adoções / Meus Adotantes" com contadores na página inicial. Se estiver desativada, os mesmos contadores continuam disponíveis no menu do usuário. Ativado por padrão.',
@@ -1435,6 +1437,8 @@ export const pt = {
         profile_pending_dup_other_tooltip: 'O sistema detectou outro registro parecido. Apenas o responsável pelo registro pode revisá-lo.',
     },
     animalProfile: {
+        photo_view: 'Ver a foto',
+        photo_view_all: 'Ver todas as fotos',
         photo_add: 'Adicionar foto',
         field_photos: 'Fotos',
         photo_make_main: 'Tornar principal',

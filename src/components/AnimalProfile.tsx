@@ -10,7 +10,7 @@
  * dated events live exactly once, on the timeline; labels live in the edit form.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
@@ -23,6 +23,7 @@ import { emailHandle } from '@/lib/userDisplay';
 import { saveAdoption, deleteAnimalForAdoption } from '@/app/actions';
 import AnimalTimeline from '@/components/AnimalTimeline';
 import AddAnimalEventModal from '@/components/AddAnimalEventModal';
+import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import AnimalShareSheet from '@/components/AnimalShareSheet';
 import PickAdopterForAnimalModal from '@/components/PickAdopterForAnimalModal';
 import AnimalApplicants from '@/components/AnimalApplicants';
@@ -52,6 +53,11 @@ export default function AnimalProfile({ profile, applicants, userId }: {
 
     const [editing, setEditing] = useState(false);
     const [eventModal, setEventModal] = useState<{ type?: string; followupKey?: string; subtype?: ProjectedSlot['subtype'] } | null>(null);
+    /** Which photo the lightbox is showing. Before this, only the hero could be
+     *  opened full size — the thumbnails were inert and photos past the third
+     *  existed only inside a «+N» count, so a rescuer could add five photos and
+     *  never see four of them. */
+    const [photoIdx, setPhotoIdx] = useState<number | null>(null);
     const [pickOpen, setPickOpen] = useState<null | 'adoption' | 'foster'>(null);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -78,6 +84,17 @@ export default function AnimalProfile({ profile, applicants, userId }: {
             : null;
 
     const heroUrl = images[0]?.thumbnailUrl || images[0]?.url || null;
+
+    // ← → step through the gallery; MediaLightbox already handles Escape.
+    useEffect(() => {
+        if (photoIdx === null || images.length < 2) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'ArrowRight') setPhotoIdx(i => i === null ? i : (i + 1) % images.length);
+            if (e.key === 'ArrowLeft') setPhotoIdx(i => i === null ? i : (i - 1 + images.length) % images.length);
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [photoIdx, images.length]);
 
     // ── projected follow-ups (flag-gated server-side; [] when off) ──
     const dueSlots = projected.filter(s => s.status === 'due');
@@ -156,7 +173,14 @@ export default function AnimalProfile({ profile, applicants, userId }: {
             <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden" data-testid="animal-header">
                 <div className="relative" style={{ aspectRatio: '2 / 1' }}>
                     {heroUrl ? (
-                        <img src={heroUrl} alt={animal.name || 'Animal'} className="absolute inset-0 w-full h-full object-cover" />
+                        <button
+                            type="button" onClick={() => setPhotoIdx(0)}
+                            aria-label={t('animalProfile.photo_view') || 'Ver la foto'}
+                            className="absolute inset-0 w-full h-full cursor-zoom-in"
+                            data-testid="hero-photo"
+                        >
+                            <img src={heroUrl} alt={animal.name || 'Animal'} className="absolute inset-0 w-full h-full object-cover" />
+                        </button>
                     ) : (
                         <div className="absolute inset-0 bg-stone-100 flex items-center justify-center">
                             <img src={placeholderFor(animal.species)} alt={animal.species || 'Animal'} className="w-full h-full object-contain p-10 opacity-40" />
@@ -172,11 +196,23 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                     </div>
                     {images.length > 1 && (
                         <div className="absolute top-3 right-3 flex gap-1.5">
-                            {images.slice(1, 3).map(im => (
-                                <img key={im.id} src={im.thumbnailUrl || im.url} alt="" className="w-12 h-12 rounded-xl object-cover border border-white/40" />
+                            {images.slice(1, 3).map((im, i) => (
+                                <button
+                                    key={im.id} type="button" onClick={() => setPhotoIdx(i + 1)}
+                                    aria-label={t('animalProfile.photo_view') || 'Ver la foto'}
+                                    className="w-12 h-12 rounded-xl overflow-hidden border border-white/40 cursor-zoom-in hover:border-white transition-colors"
+                                    data-testid={`hero-thumb-${i + 1}`}
+                                >
+                                    <img src={im.thumbnailUrl || im.url} alt="" className="w-full h-full object-cover" />
+                                </button>
                             ))}
                             {images.length > 3 && (
-                                <span className="w-12 h-12 rounded-xl bg-black/40 backdrop-blur-sm text-white text-xs font-semibold flex items-center justify-center">+{images.length - 3}</span>
+                                <button
+                                    type="button" onClick={() => setPhotoIdx(3)}
+                                    aria-label={t('animalProfile.photo_view_all') || 'Ver todas las fotos'}
+                                    className="w-12 h-12 rounded-xl bg-black/40 backdrop-blur-sm text-white text-xs font-semibold flex items-center justify-center hover:bg-black/55 transition-colors"
+                                    data-testid="hero-thumb-more"
+                                >+{images.length - 3}</button>
                             )}
                         </div>
                     )}
@@ -358,6 +394,43 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                 onAddEvent={() => setEventModal({})}
                 reminder={reminder}
             />
+
+            {/* Full-size gallery. MediaLightbox shows one item, so prev/next and
+                the counter ride in its `actions` slot. */}
+            {photoIdx !== null && images[photoIdx] && (
+                <MediaLightbox
+                    item={{
+                        url: images[photoIdx].url,
+                        caption: images[photoIdx].caption ?? undefined,
+                        mediaType: images[photoIdx].mediaType === 'video' ? 'video' : 'image',
+                        thumbnailUrl: images[photoIdx].thumbnailUrl ?? undefined,
+                    }}
+                    onClose={() => setPhotoIdx(null)}
+                    actions={images.length > 1 ? (
+                        <div className="flex items-center gap-2 text-white">
+                            <button
+                                type="button"
+                                onClick={() => setPhotoIdx(i => i === null ? i : (i - 1 + images.length) % images.length)}
+                                aria-label={t('common.previous') || 'Anterior'}
+                                className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 grid place-items-center transition-colors"
+                                data-testid="photo-prev"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" /></svg>
+                            </button>
+                            <span className="text-xs font-semibold tabular-nums" data-testid="photo-counter">{photoIdx + 1} / {images.length}</span>
+                            <button
+                                type="button"
+                                onClick={() => setPhotoIdx(i => i === null ? i : (i + 1) % images.length)}
+                                aria-label={t('common.next') || 'Siguiente'}
+                                className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 grid place-items-center transition-colors"
+                                data-testid="photo-next"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" /></svg>
+                            </button>
+                        </div>
+                    ) : undefined}
+                />
+            )}
 
             {/* modals */}
             {eventModal && (

@@ -35,6 +35,9 @@ export const FEATURE_FLAGS = {
     // Default off — server-side only, deliberately NOT in PUBLIC_FLAG_KEYS.
     ENABLE_POSTHOG: false,
     ENABLE_MILESTONE_BADGE: true,
+    /** «Mis Adopciones» in the user menu and quick-access strip. Off until the
+     *  page earns its place beside /my-animals — see the 2026-09-28 review. */
+    ENABLE_MY_ADOPTIONS: false,
     ENABLE_QUICK_ACCESS_STRIP: true,
     // Paste box in the adopter contact editor (bulk paste + auto-categorize).
     // When off, contact info is entered only via the manual typed fields.
@@ -197,6 +200,9 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_CHAT_WIDGET: false,
         ENABLE_POSTHOG: false,
         ENABLE_MILESTONE_BADGE: true,
+    /** «Mis Adopciones» in the user menu and quick-access strip. Off until the
+     *  page earns its place beside /my-animals — see the 2026-09-28 review. */
+    ENABLE_MY_ADOPTIONS: false,
         ENABLE_QUICK_ACCESS_STRIP: true,
         ENABLE_CONTACT_PASTE: true,
         ENABLE_PII_ACCESS_GATING: false,

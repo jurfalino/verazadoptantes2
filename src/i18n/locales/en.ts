@@ -136,6 +136,8 @@ export const en = {
         flag_label_posthog: 'PostHog (session recording)',
         flag_desc_posthog: 'Records sessions and product analytics. Runs in parallel with Clarity, does not replace it. Requires POSTHOG_PROJECT_KEY set in Cloudflare Pages. Recording does NOT mask typed input.',
         flag_label_milestone_badge: 'Milestone Badge',
+        flag_label_my_adoptions: 'My Adoptions in the menu',
+        flag_desc_my_adoptions: 'Shows the «My Adoptions» entry in the user menu and the quick-access strip.',
         flag_desc_milestone_badge: 'Show the "Completed X adoptions" progress bar on the homepage for authenticated users.',
         flag_label_quick_access_strip: 'Quick Access Strip',
         flag_desc_quick_access_strip: 'Show the "My Animals / My Adoptions / My Adopters" pills with counters on the homepage. When off, the same counters remain available in the user menu. Default ON.',
@@ -1430,6 +1432,8 @@ export const en = {
         profile_pending_dup_other_tooltip: 'The system detected another similar record. Only the responsible rescuer can review.',
     },
     animalProfile: {
+        photo_view: 'View photo',
+        photo_view_all: 'View all photos',
         photo_add: 'Add photo',
         field_photos: 'Photos',
         photo_make_main: 'Make main photo',
