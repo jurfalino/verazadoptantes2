@@ -39,7 +39,7 @@ In `/settings`, each rescuer chooses whose form and contract they use when shari
 
 ## 1. Data model
 
-These are hand-written migrations. The next numbers are `0069` and `0070`.
+These are hand-written migrations. The next numbers are `0072` and `0073`.
 
 ### 1.1 `adoption_doc_settings` (one row per owner)
 

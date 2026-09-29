@@ -9,8 +9,8 @@ CREATE TABLE IF NOT EXISTS adoption_doc_settings (
   id TEXT PRIMARY KEY,
   owner_type TEXT NOT NULL,          -- 'user' | 'org'
   owner_id TEXT NOT NULL,            -- user email (lower-cased) | organizations.id
-  hidden_steps TEXT,                 -- JSON string[] of step ids; NULL = none hidden
-  contract_version_id TEXT,          -- current contract_versions.id; NULL = standard contract
+  hidden_steps TEXT,                 -- JSON string[] of step ids — NULL = none hidden
+  contract_version_id TEXT,          -- current contract_versions.id — NULL = standard contract
   updated_at INTEGER NOT NULL,
   updated_by TEXT NOT NULL           -- actor email
 );
@@ -20,11 +20,11 @@ CREATE TABLE IF NOT EXISTS contract_versions (
   id TEXT PRIMARY KEY,
   owner_type TEXT NOT NULL,
   owner_id TEXT NOT NULL,
-  sections_json TEXT NOT NULL,       -- {"2"?: RichDoc, "3"?: RichDoc, "4"?: RichDoc}; absent key = standard text
+  sections_json TEXT NOT NULL,       -- {"2"?: RichDoc, "3"?: RichDoc, "4"?: RichDoc} — absent key = standard text
   content_hash TEXT NOT NULL,        -- sha256 hex of canonical sections_json
   created_at INTEGER NOT NULL,
   created_by TEXT NOT NULL,
-  first_signed_at INTEGER,           -- NULL until first signature; once set, row is immutable & never deleted
+  first_signed_at INTEGER,           -- NULL until first signature — once set, row is immutable & never deleted
   replaced_at INTEGER                -- set when a newer version becomes current
 );
 CREATE INDEX IF NOT EXISTS idx_contract_versions_owner ON contract_versions(owner_type, owner_id);
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS signed_contracts (
   contract_version_id TEXT,          -- NULL = standard contract
   standard_version TEXT,             -- STANDARD_CONTRACT_VERSION the page reported (NULL if an old SPA sent nothing)
   locale TEXT,
-  content_hash TEXT,                 -- contract_versions.content_hash when custom; NULL for standard
+  content_hash TEXT,                 -- contract_versions.content_hash when custom — NULL for standard
   file_key TEXT,                     -- R2 key of the uploaded PDF/image
   via TEXT NOT NULL,                 -- 'token' | 'open'
   signed_at INTEGER NOT NULL

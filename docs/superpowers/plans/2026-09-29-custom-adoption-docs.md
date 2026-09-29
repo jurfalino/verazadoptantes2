@@ -51,8 +51,8 @@
 ## File Structure
 
 **Next app (create):**
-- `drizzle/0069_adoption_docs.sql`: `adoption_doc_settings`, `contract_versions`, `signed_contracts`
-- `drizzle/0070_adoption_docs_columns.sql`: `user_profiles.adoption_docs_source`, `form_submissions.shown_steps`
+- `drizzle/0072_adoption_docs.sql`: `adoption_doc_settings`, `contract_versions`, `signed_contracts`
+- `drizzle/0073_adoption_docs_columns.sql`: `user_profiles.adoption_docs_source`, `form_submissions.shown_steps`
 - `src/domain/adoptionDocs.ts` + `src/domain/adoptionDocs.test.ts`: pure rules
 - `src/domain/standardContractText.ts` + `src/domain/standardContractText.test.ts`: es sections 2 to 5 and conversion to RichDoc; mirror test against contract-app
 - `src/lib/adoptionDocsRepo.ts`: D1 reads and writes, resolution for public routes
@@ -624,7 +624,7 @@ git commit -m "feat(adoption-docs): mirror standard contract sections for the ed
 ## Task 3: Migrations, schema, and flag registration
 
 **Files:**
-- Create: `drizzle/0069_adoption_docs.sql`, `drizzle/0070_adoption_docs_columns.sql`
+- Create: `drizzle/0072_adoption_docs.sql`, `drizzle/0073_adoption_docs_columns.sql`
 - Modify:
   - `src/db/schema.ts`
   - `src/config/features.ts` (both `FEATURE_FLAGS` and the `getAllFeatureFlags` literal)
@@ -722,7 +722,7 @@ Expected: both pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add drizzle/0069_adoption_docs.sql drizzle/0070_adoption_docs_columns.sql src/db/schema.ts src/config/features.ts src/lib/publicConfig.ts "src/app/admin/(admin-only)/config/page.tsx" src/app/api/admin/config/route.ts src/i18n/locales/es.ts src/i18n/locales/en.ts src/i18n/locales/pt.ts
+git add drizzle/0072_adoption_docs.sql drizzle/0073_adoption_docs_columns.sql src/db/schema.ts src/config/features.ts src/lib/publicConfig.ts "src/app/admin/(admin-only)/config/page.tsx" src/app/api/admin/config/route.ts src/i18n/locales/es.ts src/i18n/locales/en.ts src/i18n/locales/pt.ts
 # plus tests/seed.sql if changed
 git commit -m "feat(adoption-docs): tables, columns and ENABLE_CUSTOM_ADOPTION_DOCS flag"
 ```
