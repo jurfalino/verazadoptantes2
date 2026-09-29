@@ -2,6 +2,33 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.103] - 2026-09-29
+
+### Fixed — screens that showed codes, handles and English to Spanish users
+
+- **Duplicate-match cards** (form results, the admin merge window, flagging, and the
+  pending-duplicates list in Mis Adoptantes) showed raw codes such as
+  `formResults.like_fallback_name` for matches found by name or contact. Every match
+  type now comes from one shared label list (`src/lib/matchTypeLabels.ts`), and a test
+  fails if any type the search can produce has no label in es, en or pt.
+- **Rescuers appear by name, not by email handle**, in the group member list, the
+  applicant panel's «Agregado por» and teammate attribution in Mis Adopciones — the
+  handle is only the fallback when there is no name.
+- **Names silently missing in production:** the shared name lookup behind the adopter
+  page, the animal life line and Mis Animales bound an array in an `IN` clause, which
+  D1 reads as its first value only — so every name but the first was dropped. It now
+  looks names up in explicit-bind chunks of 90 (capped at 200 per call).
+- **Mis Animales:** the species badge reads «Gato»/«Perro» in the app's language, and
+  «Ya Adoptados (…)» / «Disponibles (…)» show real counts on both tabs, from the same
+  filters as the lists.
+
+### Changed
+
+- **Short dates follow the app language everywhere** (about 25 screens): «9 sept '26»
+  in Spanish, «9 set '26» in Portuguese; English is unchanged («Sep 9 '26»). Built from
+  a fixed month table rather than `Intl`, so server and browser render the same text.
+  The admin data-requests page stays in English.
+
 ## [2.56.102] - 2026-09-29
 
 ### Security — sign-off for the five adoption-docs actions (completes 2.56.101)
