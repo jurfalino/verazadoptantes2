@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { FORM_STEP_IDS, applyHiddenSteps, restoreStepIndex, stripHiddenAnswers, buildSubmitBody, draftKey, resolveDraft, isValidCustomContract, contractVersionLabel, STANDARD_CONTRACT_VERSION, fnv1a } from './adoptionDocs'
+import { FORM_STEP_IDS, applyHiddenSteps, restoreStepIndex, stripHiddenAnswers, buildSubmitBody, draftKey, resolveDraft, isValidCustomContract, contractVersionLabel, customSectionFor, STANDARD_CONTRACT_VERSION, fnv1a, type CustomContract, type RichDoc } from './adoptionDocs'
 
 const schema = FORM_STEP_IDS.map(id => ({ id }))
 
@@ -104,6 +104,29 @@ describe('custom contract', () => {
     })
     it('STANDARD_CONTRACT_VERSION is pinned — bump deliberately when the standard text changes', () => {
         expect(STANDARD_CONTRACT_VERSION).toBe('582a1a83')
+    })
+})
+
+describe('customSectionFor', () => {
+    const doc2: RichDoc = { type: 'doc', content: [{ type: 'paragraph', content: [{ text: 'Custom 2' }] }] }
+    const doc4: RichDoc = { type: 'doc', content: [{ type: 'paragraph', content: [{ text: 'Custom 4' }] }] }
+    const custom: CustomContract = { versionId: 'v1', sections: { '2': doc2, '4': doc4 } }
+
+    it('no custom contract → undefined for any index', () => {
+        expect(customSectionFor(null, 0)).toBeUndefined()
+        expect(customSectionFor(undefined, 1)).toBeUndefined()
+    })
+    it('maps si 0/1/2 to section keys 2/3/4', () => {
+        expect(customSectionFor(custom, 0)).toBe(doc2)
+        expect(customSectionFor(custom, 1)).toBeUndefined() // section '3' not customized
+        expect(customSectionFor(custom, 2)).toBe(doc4)
+    })
+    it('index ≥ 3 (section 5+) is never customizable', () => {
+        expect(customSectionFor(custom, 3)).toBeUndefined()
+        expect(customSectionFor(custom, 4)).toBeUndefined()
+    })
+    it('negative index → undefined', () => {
+        expect(customSectionFor(custom, -1)).toBeUndefined()
     })
 })
 

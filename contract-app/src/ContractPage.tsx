@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, Fragment } from 'react'
 import { generateContractPdf, blobToBase64 } from './contractPdf'
 import { useT } from './i18n/LocaleContext'
 import { CONTRACT_CONTENT } from './i18n/contractContent'
+import { isValidCustomContract, customSectionFor, STANDARD_CONTRACT_VERSION, type CustomContract } from './lib/adoptionDocs'
+import RichDocView from './components/RichDocView'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -57,6 +59,7 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
     const [contractPdfData, setContractPdfData] = useState<string | null>(null)
     const [retrying, setRetrying] = useState(false)
     const [copied, setCopied] = useState(false)
+    const [customContract, setCustomContract] = useState<CustomContract | null>(null)
 
     const [form, setForm] = useState({
         name: '',
@@ -92,11 +95,12 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
                     return
                 }
                 if (token) {
-                    const data = await res.json() as { animal: AnimalData; adopterName: string; locale?: string | null; prefill: { name: string; lastName: string; email: string; phone: string; address: string; dni: string } }
+                    const data = await res.json() as { animal: AnimalData; adopterName: string; locale?: string | null; prefill: { name: string; lastName: string; email: string; phone: string; address: string; dni: string }; customContract?: unknown }
                     setAnimal(data.animal)
                     setResolvedAnimalId(data.animal.id)
                     setIntendedAdopterName(data.adopterName)
                     setForm(prev => ({ ...prev, ...data.prefill }))
+                    if (isValidCustomContract(data.customContract)) setCustomContract(data.customContract)
                     // Adopt the invite's stored language when the URL carried no
                     // ?lang= (the record is the authoritative backstop).
                     const hasLangParam = new URLSearchParams(window.location.search).has('lang')
@@ -104,7 +108,9 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
                         setLocale(data.locale)
                     }
                 } else {
-                    setAnimal(await res.json())
+                    const json = await res.json() as AnimalData & { customContract?: unknown }
+                    setAnimal(json)
+                    if (isValidCustomContract(json.customContract)) setCustomContract(json.customContract)
                 }
             } catch (err) {
                 console.error('[CONTRACT] Network error loading contract:', err)
@@ -126,7 +132,7 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
             let contractDataUrl = contractPdfData
             if (!contractDataUrl) {
                 try {
-                    const pdfBlob = generateContractPdf(animal!, form, locale)
+                    const pdfBlob = generateContractPdf(animal!, form, locale, customContract)
                     if (pdfBlob) {
                         contractDataUrl = await blobToBase64(pdfBlob)
                         setContractPdfData(contractDataUrl)
@@ -147,7 +153,14 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
             const res = await fetch(`${API_URL}/api/contract/${targetAnimalId}/submit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...form, screenshot: contractDataUrl, token: token || undefined }),
+                body: JSON.stringify({
+                    ...form,
+                    screenshot: contractDataUrl,
+                    token: token || undefined,
+                    contractVersionId: customContract?.versionId,
+                    standardVersion: customContract ? undefined : STANDARD_CONTRACT_VERSION,
+                    locale,
+                }),
             })
 
             if (res.ok) {
@@ -419,24 +432,35 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
                             </div>
                         </section>
 
-                        {/* Prose sections 2–5 — single source (i18n/contractContent.ts) */}
-                        {c.sections.map((section, si) => (
-                            <Fragment key={si}>
-                                <hr className="border-stone-200" />
-                                <section>
-                                    <h2 className="font-bold text-stone-900 mb-3">{section.title}</h2>
-                                    {section.intro && <p className="mb-3">{section.intro}</p>}
-                                    <div className="space-y-3 pl-4">
-                                        {section.clauses.map((clause, ci) => (
-                                            <div key={ci}>
-                                                {clause.title && <p className="font-bold text-stone-800 text-xs uppercase tracking-wide mb-0.5">{clause.title}</p>}
-                                                <p>{clause.body}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </section>
-                            </Fragment>
-                        ))}
+                        {/* Prose sections 2–5 — single source (i18n/contractContent.ts).
+                            Sections 2–4 (si 0–2) may be replaced by a rescuer's
+                            custom RichDoc; section 5 (si 3) is always standard. */}
+                        {c.sections.map((section, si) => {
+                            const custom = customSectionFor(customContract, si)
+                            return (
+                                <Fragment key={si}>
+                                    <hr className="border-stone-200" />
+                                    <section>
+                                        <h2 className="font-bold text-stone-900 mb-3">{section.title}</h2>
+                                        {custom ? (
+                                            <RichDocView doc={custom} />
+                                        ) : (
+                                            <>
+                                                {section.intro && <p className="mb-3">{section.intro}</p>}
+                                                <div className="space-y-3 pl-4">
+                                                    {section.clauses.map((clause, ci) => (
+                                                        <div key={ci}>
+                                                            {clause.title && <p className="font-bold text-stone-800 text-xs uppercase tracking-wide mb-0.5">{clause.title}</p>}
+                                                            <p>{clause.body}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </>
+                                        )}
+                                    </section>
+                                </Fragment>
+                            )
+                        })}
 
                         <hr className="border-stone-300 border-t-2 my-8" />
 

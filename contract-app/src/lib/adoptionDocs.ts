@@ -158,6 +158,18 @@ export function isValidCustomContract(x: unknown): x is CustomContract {
     return true
 }
 
+/**
+ * Picks the custom RichDoc for contract section index `si` (0-based against
+ * `CONTRACT_CONTENT[locale].sections`), where indices 0, 1, 2 map to section
+ * keys '2', '3', '4'. Index 3 (section 5) is never customizable, and a
+ * missing key (section not edited by the rescuer) falls back to `undefined`
+ * so the caller renders the standard text.
+ */
+export function customSectionFor(custom: CustomContract | null | undefined, si: number): RichDoc | undefined {
+    if (!custom || si >= 3 || si < 0) return undefined
+    return custom.sections[String(si + 2) as SectionKey]
+}
+
 /** 'v:<first 8 of versionId>' for a custom contract, else 'v:std-<STANDARD_CONTRACT_VERSION>'. */
 export function contractVersionLabel(custom: CustomContract | null): string {
     if (custom) return `v:${custom.versionId.slice(0, 8)}`
