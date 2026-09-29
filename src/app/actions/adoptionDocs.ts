@@ -26,9 +26,10 @@ import {
 } from '@/lib/adoptionDocsRepo';
 import {
     normalizeEmail, resolveDocsOwner, sanitizeHiddenSteps, contractSectionsSchema,
-    serializeDocsSource, ADOPTION_DOCS_FORM_SAVED, ADOPTION_DOCS_CONTRACT_SAVED,
+    serializeDocsSource,
     type DocsSource, type DocsOwner, type ContractSections,
 } from '@/domain/adoptionDocs';
+import { ADOPTION_DOCS_FORM_SAVED, ADOPTION_DOCS_CONTRACT_SAVED } from '@/domain/adoptionDocsActivity';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 

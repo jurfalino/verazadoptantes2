@@ -12,7 +12,7 @@ import {
     type AuditSeverity,
     type AuditFieldSummary,
 } from '@/lib/auditRow';
-import { ADOPTION_DOCS_ACTIVITY_ACTIONS, isDocsActivityVisible } from '@/domain/adoptionDocs';
+import { ADOPTION_DOCS_ACTIVITY_ACTIONS, isDocsActivityVisible } from '@/domain/adoptionDocsActivity';
 
 export type ActivitySeverity = AuditSeverity;
 
@@ -207,16 +207,26 @@ export async function getOrgActivity(filters: ActivityFilters = {}): Promise<Act
             ? [cursor.createdAt, cursor.createdAt, cursor.id]
             : [];
 
+        // A self docs-edit (adoption_docs_* with no orgId → target NULL) is
+        // never visible to anyone — isDocsActivityVisible always drops it —
+        // so it's excluded here at the SQL level rather than only in memory.
+        // Without this, a user who saves their own form/contract repeatedly
+        // could fill an entire page with rows nobody will ever see, making
+        // the feed (and "Cargar más") look emptier than it is. An edit of an
+        // org the viewer isn't in still has a non-NULL target and can only
+        // be filtered in memory (needs the viewer's own org ids), same as
+        // before — that risk remains and is documented in the report.
         const sql =
             `SELECT id, user_email, action, target, details, created_at
              FROM audit_log
              WHERE user_email IN (${emailPh})
              AND action IN (${actionPh})
+             AND NOT (action IN (?, ?) AND target IS NULL)
              ${cursorSql}ORDER BY created_at DESC, id DESC
              LIMIT ?`;
 
         const result = await env.DB.prepare(sql)
-            .bind(...emailList, ...allowedActions, ...cursorBinds, fetchLimit)
+            .bind(...emailList, ...allowedActions, ...ADOPTION_DOCS_ACTIVITY_ACTIONS, ...cursorBinds, fetchLimit)
             .all<{
                 id: string;
                 user_email: string;

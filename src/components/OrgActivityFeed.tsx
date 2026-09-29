@@ -14,7 +14,7 @@ import {
     ADOPTION_DOCS_ACTIVITY_ACTIONS,
     ADOPTION_DOCS_FORM_SAVED,
     ADOPTION_DOCS_CONTRACT_SAVED,
-} from '@/domain/adoptionDocs';
+} from '@/domain/adoptionDocsActivity';
 
 /**
  * v2.18.14 — team activity feed redesign.
