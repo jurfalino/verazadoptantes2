@@ -62,6 +62,22 @@ test.describe('Organizations & Multi-Tenancy', () => {
         await expect(pageB).toHaveURL(/\/organizations/);
         await expect(pageB.getByRole('heading', { name: orgName })).toBeVisible({ timeout: 30000 });
 
+        // 3b. The owner sees the new member by NAME ("Test User" in seed.sql),
+        // never by email handle. getMyOrganizations used to omit displayName,
+        // so every member rendered as their handle ("testuser").
+        // A second tab, so pageA keeps the owner-only Delete button for cleanup
+        // (with two members a fresh render offers "Leave" instead).
+        const pageA2 = await contextA.newPage();
+        await pageA2.goto('/organizations');
+        await dismissCountryBanner(pageA2);
+        const members = pageA2.locator('.bg-white', { has: pageA2.getByRole('heading', { name: orgName }) }).getByRole('listitem');
+        // Soft: a failure here must still reach the cleanup below, or the stray
+        // org changes the admin's attribution org in animal-profile.authed.spec.
+        await expect.soft(members.filter({ hasText: 'Test User' })).toHaveCount(1, { timeout: 30000 });
+        await expect.soft(members.filter({ hasText: 'Test Admin' })).toHaveCount(1);
+        await expect.soft(members.filter({ hasText: /^testuser/ })).toHaveCount(0);
+        await pageA2.close();
+
         // 4. Verify Cross-Context Data Modification (Activity Feed/Shared Data)
         // User B modifies or adds a record, User A should see it if necessary.
         // For now, let's verify User B can see the org in their list.
