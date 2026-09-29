@@ -22,6 +22,8 @@ const EMITTED_TYPES = [
     // Written by flagDuplicate (duplicates.ts) into duplicate_candidates, which
     // the merge modal and the flagging dialog read back.
     'flagged_by_user',
+    // The admin duplicates panel's own tag for a user-flagged pair.
+    'user_flagged',
 ];
 
 /** Older taxonomies still sitting in stored notifications. */

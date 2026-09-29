@@ -38,6 +38,7 @@ export const MATCH_TYPE_LABEL_KEYS: Readonly<Record<string, string>> = {
     source_url: 'duplicates.match_source_url',
     id_number: 'duplicates.match_id_number',
     flagged_by_user: 'duplicates.match_flagged',
+    user_flagged: 'duplicates.match_flagged', // admin DuplicatesPanel's tag for the same thing
 };
 
 /** The i18n key for a match type, or null when it has none. */
