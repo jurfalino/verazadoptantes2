@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.97] - 2026-09-28
+
+### Fixed — only the first photo could be seen full size
+
+Add five photos to an animal and four of them were unreachable. The thumbnails
+beside the hero were plain images with no click handler, and anything past the
+third appeared only inside a «+3» count that did nothing. The photo was stored,
+shown at 48px, and could never be opened.
+
+The hero, every thumbnail and the «+N» now open the app's existing lightbox at
+that photo, with previous/next, a counter, arrow-key navigation and Escape to
+close. Covered by an e2e that adds four photos, opens the last one through the
+«+N», walks the whole gallery in both directions, and cleans up after itself.
+
 ## [2.56.96] - 2026-09-28
 
 ### Fixed — opening one animal flashed the animals LIST skeleton

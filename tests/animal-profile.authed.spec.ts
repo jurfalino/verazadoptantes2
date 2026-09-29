@@ -273,6 +273,45 @@ test.describe('Animal detail page', () => {
         await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
     });
 
+    test('every added photo can be opened full size', async ({ page }) => {
+        const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==','base64');
+        const file = { name: 'p.png', mimeType: 'image/png', buffer: png };
+        await page.goto(`/my-animals/${ANIMAL_ID}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+
+        // Add four photos in one edit.
+        await page.getByTestId('profile-edit').click();
+        for (let i = 0; i < 4; i++) await page.getByTestId('animal-photo-input').setInputFiles(file);
+        await page.getByTestId('inline-edit-save').click();
+        await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
+
+        // The 4th photo is only reachable through «+N» — that was the bug.
+        await expect(page.getByTestId('hero-thumb-more')).toBeVisible({ timeout: 30000 });
+        await page.getByTestId('hero-thumb-more').click();
+        await expect(page.getByTestId('photo-counter')).toHaveText('4 / 4');
+
+        // Step through the whole gallery and back to the hero.
+        await page.getByTestId('photo-next').click();
+        await expect(page.getByTestId('photo-counter')).toHaveText('1 / 4');
+        await page.getByTestId('photo-prev').click();
+        await expect(page.getByTestId('photo-counter')).toHaveText('4 / 4');
+        await page.keyboard.press('ArrowLeft');
+        await expect(page.getByTestId('photo-counter')).toHaveText('3 / 4');
+        await page.keyboard.press('Escape');
+        await expect(page.getByTestId('photo-counter')).toHaveCount(0);
+
+        // Hero opens at the first photo.
+        await page.getByTestId('hero-photo').click();
+        await expect(page.getByTestId('photo-counter')).toHaveText('1 / 4');
+        await page.keyboard.press('Escape');
+
+        // Clean the fixture: remove the four this test added.
+        await page.getByTestId('profile-edit').click();
+        for (let i = 0; i < 4; i++) await page.locator('[data-testid^="photo-remove-"]').last().click();
+        await page.getByTestId('inline-edit-save').click();
+        await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
+    });
+
     test('in-place edit updates identity without touching custody', async ({ page }) => {
         await page.goto(`/my-animals/${ANIMAL_ID}`);
         await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
