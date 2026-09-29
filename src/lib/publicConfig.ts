@@ -30,6 +30,7 @@ export const PUBLIC_FLAG_KEYS = [
     'ENABLE_FOLLOWUPS',
     'ENABLE_SEARCH_CARD_METADATA',
     'ENABLE_MILESTONE_BADGE',
+    'ENABLE_MY_ADOPTIONS',
     'ENABLE_QUICK_ACCESS_STRIP',
     'ENABLE_CONTACT_PASTE',
     // v2.16.0-16: hides the two activity cards from the homepage; the
@@ -60,6 +61,7 @@ export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
     ENABLE_ANIMALS_FOR_ADOPTION: 'false',
     ENABLE_SEARCH_CARD_METADATA: 'true',
     ENABLE_MILESTONE_BADGE: 'true',
+    ENABLE_MY_ADOPTIONS: 'false',
     ENABLE_QUICK_ACCESS_STRIP: 'true',
     ENABLE_CONTACT_PASTE: 'true',
     ENABLE_CLEAN_HOMEPAGE: 'false',

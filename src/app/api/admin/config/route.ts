@@ -51,6 +51,7 @@ export async function GET() {
             ENABLE_CHAT_WIDGET: config['ENABLE_CHAT_WIDGET'] || 'false',
             ENABLE_POSTHOG: config['ENABLE_POSTHOG'] || 'false',
             ENABLE_MILESTONE_BADGE: config['ENABLE_MILESTONE_BADGE'] || 'true',
+            ENABLE_MY_ADOPTIONS: config['ENABLE_MY_ADOPTIONS'] || 'false',
             ENABLE_QUICK_ACCESS_STRIP: config['ENABLE_QUICK_ACCESS_STRIP'] || 'true',
             ENABLE_CONTACT_PASTE: config['ENABLE_CONTACT_PASTE'] || 'true',
             ENABLE_PII_ACCESS_GATING: config['ENABLE_PII_ACCESS_GATING'] || 'false',

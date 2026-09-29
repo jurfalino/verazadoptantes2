@@ -33,6 +33,7 @@ interface ConfigData {
         ENABLE_CHAT_WIDGET?: string;
         ENABLE_POSTHOG?: string;
         ENABLE_MILESTONE_BADGE?: string;
+        ENABLE_MY_ADOPTIONS?: string;
         ENABLE_QUICK_ACCESS_STRIP?: string;
         ENABLE_CONTACT_PASTE?: string;
         ENABLE_PII_ACCESS_GATING?: string;
@@ -76,6 +77,7 @@ const FEATURE_FLAGS = [
     { key: 'ENABLE_CHAT_WIDGET', labelKey: 'flag_label_chat_widget', descKey: 'flag_desc_chat_widget' },
     { key: 'ENABLE_POSTHOG', labelKey: 'flag_label_posthog', descKey: 'flag_desc_posthog' },
     { key: 'ENABLE_MILESTONE_BADGE', labelKey: 'flag_label_milestone_badge', descKey: 'flag_desc_milestone_badge' },
+    { key: 'ENABLE_MY_ADOPTIONS', labelKey: 'flag_label_my_adoptions', descKey: 'flag_desc_my_adoptions' },
     { key: 'ENABLE_QUICK_ACCESS_STRIP', labelKey: 'flag_label_quick_access_strip', descKey: 'flag_desc_quick_access_strip' },
     { key: 'ENABLE_CONTACT_PASTE', labelKey: 'flag_label_contact_paste', descKey: 'flag_desc_contact_paste' },
     { key: 'ENABLE_PII_ACCESS_GATING', labelKey: 'flag_label_pii_access_gating', descKey: 'flag_desc_pii_access_gating' },
@@ -113,6 +115,7 @@ export default function AdminConfigPage() {
         ENABLE_CHAT_WIDGET: false,
         ENABLE_POSTHOG: false,
         ENABLE_MILESTONE_BADGE: true,
+        ENABLE_MY_ADOPTIONS: false,
         ENABLE_QUICK_ACCESS_STRIP: true,
         ENABLE_CONTACT_PASTE: true,
         ENABLE_PII_ACCESS_GATING: false,
@@ -180,6 +183,7 @@ export default function AdminConfigPage() {
                         ENABLE_CHAT_WIDGET: data.config?.ENABLE_CHAT_WIDGET === 'true',
                         ENABLE_POSTHOG: data.config?.ENABLE_POSTHOG === 'true',
                         ENABLE_MILESTONE_BADGE: data.config?.ENABLE_MILESTONE_BADGE !== 'false',
+                        ENABLE_MY_ADOPTIONS: data.config?.ENABLE_MY_ADOPTIONS === 'true',
                         ENABLE_QUICK_ACCESS_STRIP: data.config?.ENABLE_QUICK_ACCESS_STRIP !== 'false',
                         ENABLE_CONTACT_PASTE: data.config?.ENABLE_CONTACT_PASTE !== 'false',
                         ENABLE_PII_ACCESS_GATING: data.config?.ENABLE_PII_ACCESS_GATING === 'true',

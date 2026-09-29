@@ -2,6 +2,31 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.99] - 2026-09-29
+
+### Added — `ENABLE_MY_ADOPTIONS`, off by default
+
+«Mis Adopciones» no longer appears in the user menu or the quick-access strip
+unless an admin switches it on from `/admin/config`. The route itself still
+works for anyone who has the link or a bookmark; only the navigation entries are
+hidden.
+
+Registered at all of this repo's plumbing sites — code defaults, the hardcoded
+`getAllFeatureFlags` list, `PUBLIC_FLAG_KEYS` and its default, the admin type,
+toggle row, initial state and hydration line, and the config API's echoed
+response. The parity test in `src/config/featureFlagRegistration.test.ts` covers
+most of these; a flag missing from the API echo hydrates as OFF and flips the
+wrong way on first click, which is the v2.19.48 incident.
+
+The menus learn the flag through `/api/quick-counts`, the same channel that
+already carries `animalsEnabled`, so no extra round trip. Its three error
+returns carry `adoptionsEnabled: false` too — otherwise the client reads
+`undefined` and the entry flashes in before disappearing.
+
+Verified both ways against the running app: with the flag off the entry is
+absent while every neighbouring item still renders, and with it on it appears in
+both the menu and the strip.
+
 ## [2.56.98] - 2026-09-29
 
 ### Fixed — the gallery test assumed an empty fixture

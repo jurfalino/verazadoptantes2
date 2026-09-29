@@ -24,6 +24,7 @@ interface QuickCounts {
     adoptions: number;
     adopters: number;
     animalsEnabled: boolean;
+    adoptionsEnabled: boolean;
 }
 
 export default function UserMenu({ user, isAdmin: isAdminFromServer }: UserMenuProps) {
@@ -167,10 +168,14 @@ export default function UserMenu({ user, isAdmin: isAdminFromServer }: UserMenuP
                                     )}
                                 </Link>
                             )}
+                            {/* ENABLE_MY_ADOPTIONS — off by default. Hidden until the
+                                counts arrive, so the entry never flashes in and out. */}
+                            {counts?.adoptionsEnabled && (
                             <Link
                                 href="/my-adoptions"
                                 className="flex items-center gap-2 px-4 py-2.5 text-sm text-stone-700 hover:bg-stone-50 hover:text-teal-700 font-medium transition-colors"
                                 onClick={() => setIsOpen(false)}
+                                data-testid="menu-my-adoptions"
                             >
                                 <svg className="w-4 h-4 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
                                 <span className="flex-1">{t('dashboard.my_adoptions') || 'My Adoptions'}</span>
@@ -178,6 +183,7 @@ export default function UserMenu({ user, isAdmin: isAdminFromServer }: UserMenuP
                                     <span className="px-1.5 py-0.5 bg-stone-100 text-stone-500 rounded-full text-xs font-semibold tabular-nums">{counts.adoptions}</span>
                                 )}
                             </Link>
+                            )}
                             <Link
                                 href="/organizations"
                                 className="flex items-center gap-2 px-4 py-2.5 text-sm text-stone-700 hover:bg-stone-50 hover:text-teal-700 font-medium transition-colors"

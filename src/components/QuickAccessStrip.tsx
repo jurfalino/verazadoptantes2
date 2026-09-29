@@ -10,6 +10,7 @@ interface QuickCounts {
     adoptions: number;
     adopters: number;
     animalsEnabled: boolean;
+    adoptionsEnabled: boolean;
 }
 
 export default function QuickAccessStrip() {
@@ -67,8 +68,10 @@ export default function QuickAccessStrip() {
                     </Link>
                 )}
 
-                {/* My Adoptions */}
-                <Link 
+                {/* My Adoptions — ENABLE_MY_ADOPTIONS, off by default. */}
+                {counts?.adoptionsEnabled && (
+                <Link
+                    data-testid="strip-my-adoptions" 
                     href="/my-adoptions"
                     className="flex items-center gap-2 px-4 py-2 bg-white rounded-full border border-stone-200 hover:border-stone-300 shadow-sm hover:shadow-md transition-all text-sm font-semibold text-stone-700 shrink-0 group"
                 >
@@ -80,6 +83,7 @@ export default function QuickAccessStrip() {
                         </span>
                     )}
                 </Link>
+                )}
 
                 {/* My Adopters */}
                 <Link 
