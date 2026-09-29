@@ -1,0 +1,15 @@
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { FORM_STEP_IDS, LOCKED_FORM_STEPS } from './adoptionDocs';
+
+const src = readFileSync(join(__dirname, '../../contract-app/src/lib/adoptionDocs.ts'), 'utf8');
+const ids = (name: string) => {
+    const m = src.match(new RegExp(`export const ${name} = \\[([\\s\\S]*?)\\]`));
+    return m ? [...m[1].matchAll(/'([^']+)'/g)].map(x => x[1]) : null;
+};
+
+describe('contract-app mirror', () => {
+    it('FORM_STEP_IDS match', () => expect(ids('FORM_STEP_IDS')).toEqual([...FORM_STEP_IDS]));
+    it('LOCKED_FORM_STEPS match', () => expect(ids('LOCKED_FORM_STEPS')).toEqual([...LOCKED_FORM_STEPS]));
+});
