@@ -2089,6 +2089,10 @@ export const en = {
         activity_adopter_deletion_requested: 'requested a deletion',
         activity_verification_added: 'verified an adopter',
     },
+    activity: {
+        adoption_docs_form_saved: 'changed the form questions of {org}',
+        adoption_docs_contract_saved: 'edited the contract of {org}',
+    },
     features: {
         meta_title: 'Features — BuenAdoptante',
         meta_description: 'Discover all the tools BuenAdoptante offers to protect animals and manage responsible adoptions.',

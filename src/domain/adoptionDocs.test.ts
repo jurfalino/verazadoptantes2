@@ -4,7 +4,8 @@ import {
     sanitizeHiddenSteps, sanitizeShownSteps, parseDocsSource, serializeDocsSource,
     resolveDocsOwner, normalizeRichDoc, normalizeSections, isStandardSections,
     canonicalSectionsJson, planContractSave, deriveSpecialNeeds, richDocSchema,
-    contractSectionsSchema, type RichDoc,
+    contractSectionsSchema, isDocsActivityVisible, ADOPTION_DOCS_FORM_SAVED,
+    ADOPTION_DOCS_CONTRACT_SAVED, type RichDoc,
 } from './adoptionDocs';
 
 const doc = (...texts: string[]): RichDoc => ({ type: 'doc', content: texts.map(t => ({ type: 'paragraph', content: [{ text: t }] })) });
@@ -120,5 +121,25 @@ describe('deriveSpecialNeeds', () => {
     it('old client, generic form: behavior from old code', () => {
         expect(deriveSpecialNeeds({ specialNeeds: true })).toBe(1);
         expect(deriveSpecialNeeds({})).toBe(0);
+    });
+});
+
+describe('isDocsActivityVisible', () => {
+    it('shows every non-docs action unconditionally', () => {
+        expect(isDocsActivityVisible('adopter_created', {}, [])).toBe(true);
+        expect(isDocsActivityVisible('flag_created', { orgId: 'org-2' }, ['org-1'])).toBe(true);
+    });
+    it('hides a self edit — no orgId in details', () => {
+        expect(isDocsActivityVisible(ADOPTION_DOCS_FORM_SAVED, {}, ['org-1'])).toBe(false);
+    });
+    it('hides an edit of an org the viewer is not (or no longer) a member of', () => {
+        expect(isDocsActivityVisible(ADOPTION_DOCS_CONTRACT_SAVED, { orgId: 'org-2' }, ['org-1'])).toBe(false);
+    });
+    it('shows an edit of an org the viewer belongs to', () => {
+        expect(isDocsActivityVisible(ADOPTION_DOCS_FORM_SAVED, { orgId: 'org-1' }, ['org-1', 'org-3'])).toBe(true);
+    });
+    it('hides on a non-string or empty orgId (forged/malformed row)', () => {
+        expect(isDocsActivityVisible(ADOPTION_DOCS_CONTRACT_SAVED, { orgId: 42 }, ['org-1'])).toBe(false);
+        expect(isDocsActivityVisible(ADOPTION_DOCS_CONTRACT_SAVED, { orgId: '' }, ['org-1'])).toBe(false);
     });
 });

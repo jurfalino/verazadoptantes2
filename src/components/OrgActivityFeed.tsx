@@ -10,6 +10,11 @@ import {
     type ActivityCategory,
     type ActivityCursor,
 } from '@/app/actions/activity';
+import {
+    ADOPTION_DOCS_ACTIVITY_ACTIONS,
+    ADOPTION_DOCS_FORM_SAVED,
+    ADOPTION_DOCS_CONTRACT_SAVED,
+} from '@/domain/adoptionDocs';
 
 /**
  * v2.18.14 — team activity feed redesign.
@@ -48,6 +53,24 @@ const ACTION_ICON: Record<string, string> = {
     adopter_deletion_requested: '📋',
     verification_added: '✅',
 };
+
+/**
+ * adoption_docs_form_saved / adoption_docs_contract_saved (Task 5) use an
+ * inline SVG document glyph instead of joining ACTION_ICON's emoji set —
+ * global constraint: SVG icons, never emoji. Left as the one exception in
+ * this row-icon map rather than converting the pre-existing eight, which is
+ * out of this task's scope.
+ */
+function ActivityRowIcon({ action }: { action: string }) {
+    if ((ADOPTION_DOCS_ACTIVITY_ACTIONS as readonly string[]).includes(action)) {
+        return (
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden style={{ color: 'var(--text-muted)' }}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h4m-7 5h10a2 2 0 002-2V7.414a1 1 0 00-.293-.707l-4.414-4.414A1 1 0 0012.586 2H6a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+        );
+    }
+    return <span aria-hidden>{ACTION_ICON[action] || '📌'}</span>;
+}
 
 function timeAgo(ts: number, isEs: boolean): string {
     const now = Date.now() / 1000;
@@ -176,6 +199,14 @@ function VerbLine({ entry, t, isEs }: VerbLineProps) {
             return <span>{isEs ? 'pidió eliminar ' : 'requested deletion of '}{adopterNode}</span>;
         case 'verification_added':
             return <span>{isEs ? 'verificó ' : 'verified '}{adopterNode}</span>;
+        case ADOPTION_DOCS_FORM_SAVED: {
+            const org = entry.extra.orgName || (isEs ? 'el grupo' : 'the group');
+            return <span>{t('activity.adoption_docs_form_saved').replace('{org}', org)}</span>;
+        }
+        case ADOPTION_DOCS_CONTRACT_SAVED: {
+            const org = entry.extra.orgName || (isEs ? 'el grupo' : 'the group');
+            return <span>{t('activity.adoption_docs_contract_saved').replace('{org}', org)}</span>;
+        }
         default:
             return <span>{t(`organizations.activity_${entry.action}`) || entry.action}</span>;
     }
@@ -436,7 +467,6 @@ export default function OrgActivityFeed() {
                             </div>
                         ) : (
                             entries.map((entry) => {
-                                const icon = ACTION_ICON[entry.action] || '📌';
                                 return (
                                     <article
                                         key={entry.id}
@@ -461,7 +491,7 @@ export default function OrgActivityFeed() {
 
                                         {/* Verb line with icon */}
                                         <div className="flex items-start gap-2 text-sm leading-snug" style={{ color: 'var(--text-primary)' }}>
-                                            <span className="flex-shrink-0 mt-0.5" aria-hidden>{icon}</span>
+                                            <span className="flex-shrink-0 mt-0.5"><ActivityRowIcon action={entry.action} /></span>
                                             <div className="flex-1 min-w-0">
                                                 <VerbLine entry={entry} t={t} isEs={isEs} />
                                                 <DetailLine entry={entry} isEs={isEs} />

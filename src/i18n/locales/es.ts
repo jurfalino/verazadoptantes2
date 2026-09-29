@@ -2094,6 +2094,10 @@ export const es = {
         activity_adopter_deletion_requested: 'solicitó una eliminación',
         activity_verification_added: 'verificó un adoptante',
     },
+    activity: {
+        adoption_docs_form_saved: 'cambió las preguntas del formulario de {org}',
+        adoption_docs_contract_saved: 'editó el contrato de {org}',
+    },
     features: {
         meta_title: 'Funcionalidades — BuenAdoptante',
         meta_description: 'Conocé todas las herramientas que BuenAdoptante ofrece para proteger animales y gestionar adopciones responsables.',
