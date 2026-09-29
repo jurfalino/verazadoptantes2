@@ -232,10 +232,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             await recordSignature(db, {
                 animalId, adopterId,
                 contractVersionId: contractVersionId || null,
-                standardVersion: contractVersionId ? null : (standardVersion || null),
+                // Always stored: a custom contract still carries standard text
+                // (section 5, and any of 2–4 the rescuer left unedited).
+                standardVersion: standardVersion || null,
                 locale: locale || null,
                 fileKey: contractKey,
                 via: invitation ? 'token' : 'open',
+                // Only a version owned by this animal's rescuer (or one of
+                // their groups) gets its hash recorded / is stamped as signed.
+                ownerEmail: animal.addedBy ?? null,
             });
         } catch (e) {
             logger.error('Contract submit: signed_contracts insert failed', e, { animalId, adopterId, contractVersionId });

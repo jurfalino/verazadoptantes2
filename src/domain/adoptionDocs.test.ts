@@ -4,7 +4,7 @@ import {
     sanitizeHiddenSteps, sanitizeShownSteps, parseDocsSource, serializeDocsSource,
     resolveDocsOwner, normalizeRichDoc, normalizeSections, isStandardSections,
     canonicalSectionsJson, planContractSave, deriveSpecialNeeds, richDocSchema,
-    contractSectionsSchema, type RichDoc,
+    contractSectionsSchema, isContractVersionOwnedBy, parseStoredHiddenSteps, type RichDoc,
 } from './adoptionDocs';
 
 const doc = (...texts: string[]): RichDoc => ({ type: 'doc', content: texts.map(t => ({ type: 'paragraph', content: [{ text: t }] })) });
@@ -120,5 +120,47 @@ describe('deriveSpecialNeeds', () => {
     it('old client, generic form: behavior from old code', () => {
         expect(deriveSpecialNeeds({ specialNeeds: true })).toBe(1);
         expect(deriveSpecialNeeds({})).toBe(0);
+    });
+});
+
+describe('isContractVersionOwnedBy', () => {
+    const userVersion = { ownerType: 'user', ownerId: 'rescuer@example.com' };
+    const orgVersion = { ownerType: 'org', ownerId: 'org-1' };
+    it('user version: owned by the same (normalized) email', () => {
+        expect(isContractVersionOwnedBy(userVersion, '  Rescuer@Example.COM ', [])).toBe(true);
+        expect(isContractVersionOwnedBy(userVersion, 'someone@example.com', [])).toBe(false);
+    });
+    it('org version: owned when the animal owner is a member of that org', () => {
+        expect(isContractVersionOwnedBy(orgVersion, 'rescuer@example.com', ['org-1'])).toBe(true);
+        expect(isContractVersionOwnedBy(orgVersion, 'rescuer@example.com', ['org-2'])).toBe(false);
+        expect(isContractVersionOwnedBy(orgVersion, 'rescuer@example.com', [])).toBe(false);
+    });
+    it('an org version is never matched by the owner email itself', () => {
+        expect(isContractVersionOwnedBy({ ownerType: 'org', ownerId: 'rescuer@example.com' }, 'rescuer@example.com', [])).toBe(false);
+    });
+    it('missing / anonymous owner, or unknown owner type → not owned', () => {
+        expect(isContractVersionOwnedBy(userVersion, null, [])).toBe(false);
+        expect(isContractVersionOwnedBy(userVersion, undefined, [])).toBe(false);
+        expect(isContractVersionOwnedBy(userVersion, '', [])).toBe(false);
+        expect(isContractVersionOwnedBy({ ownerType: 'user', ownerId: 'anonymous' }, 'anonymous', [])).toBe(false);
+        expect(isContractVersionOwnedBy({ ownerType: 'team', ownerId: 'org-1' }, 'rescuer@example.com', ['org-1'])).toBe(false);
+    });
+});
+
+describe('parseStoredHiddenSteps', () => {
+    it('null / empty → no steps, not malformed', () => {
+        expect(parseStoredHiddenSteps(null)).toEqual({ steps: [], malformed: false });
+        expect(parseStoredHiddenSteps(undefined)).toEqual({ steps: [], malformed: false });
+        expect(parseStoredHiddenSteps('')).toEqual({ steps: [], malformed: false });
+    });
+    it('valid JSON is sanitized (locked + unknown dropped, form order)', () => {
+        expect(parseStoredHiddenSteps('["selfie","legal","bogus","children"]')).toEqual({ steps: ['children', 'selfie'], malformed: false });
+    });
+    it('malformed JSON → no steps, flagged malformed (never throws)', () => {
+        expect(parseStoredHiddenSteps('{not json')).toEqual({ steps: [], malformed: true });
+    });
+    it('valid JSON of the wrong shape → no steps, flagged malformed', () => {
+        expect(parseStoredHiddenSteps('{"a":1}')).toEqual({ steps: [], malformed: true });
+        expect(parseStoredHiddenSteps('"selfie"')).toEqual({ steps: [], malformed: true });
     });
 });

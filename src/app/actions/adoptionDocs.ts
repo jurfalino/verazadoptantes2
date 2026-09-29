@@ -17,16 +17,16 @@ import { getUser, getDb } from './_db';
 import { getFeatureFlag } from '@/config/features';
 import { logAudit } from '@/lib/audit';
 import { logger } from '@/lib/logger';
+import { maskEmail } from '@/lib/dates';
 import { eq } from 'drizzle-orm';
 import { organizations, users } from '@/db/schema';
-import { getOrgsForEmail } from '@/lib/orgMembership';
 import {
     getMemberOrgIds, getUserDocsSource, getSettingsRow, getContractVersion,
     saveHiddenSteps, saveContract,
 } from '@/lib/adoptionDocsRepo';
 import {
     normalizeEmail, resolveDocsOwner, sanitizeHiddenSteps, contractSectionsSchema,
-    serializeDocsSource,
+    serializeDocsSource, parseStoredHiddenSteps,
     type DocsSource, type DocsOwner, type ContractSections,
 } from '@/domain/adoptionDocs';
 import { ADOPTION_DOCS_FORM_SAVED, ADOPTION_DOCS_CONTRACT_SAVED } from '@/domain/adoptionDocsActivity';
@@ -49,17 +49,23 @@ async function resolveDisplayName(db: Db, email: string): Promise<string> {
         const name = row?.name?.trim();
         return name || email.split('@')[0];
     } catch (e) {
+        // `email` is whoever last edited — possibly another group member.
         logger.warn('adoptionDocs.resolveDisplayName: D1 fallback hit', {
-            email, error: e instanceof Error ? e.message : String(e),
+            email: maskEmail(email), error: e instanceof Error ? e.message : String(e),
         });
         return email.split('@')[0];
     }
 }
 
+/** organizations.name, or null when the org row doesn't exist. Throws on a DB error. */
+async function findOrgName(db: Db, orgId: string): Promise<string | null> {
+    const row = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, orgId)).get();
+    return row ? row.name : null;
+}
+
 async function resolveOrgName(db: Db, orgId: string): Promise<string> {
     try {
-        const row = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, orgId)).get();
-        return row?.name ?? '';
+        return (await findOrgName(db, orgId)) ?? '';
     } catch (e) {
         logger.warn('adoptionDocs.resolveOrgName: D1 fallback hit', {
             orgId, error: e instanceof Error ? e.message : String(e),
@@ -72,9 +78,13 @@ async function summarizeSettingsRow(
     db: Db, row: Awaited<ReturnType<typeof getSettingsRow>>,
 ): Promise<DocsSummary> {
     if (!row) return { customized: false, updatedAt: null, updatedByName: null };
-    // Same "customized" test resolveDocsForRescuer uses to decide standard vs custom.
-    const hiddenCount: number = row.hiddenSteps ? (JSON.parse(row.hiddenSteps) as unknown[]).length : 0;
-    const customized = hiddenCount > 0 || !!row.contractVersionId;
+    // Same "customized" test resolveDocsForRescuer uses to decide standard vs
+    // custom — and the same guarded parse, so a bad row can't fail the card.
+    const { steps, malformed } = parseStoredHiddenSteps(row.hiddenSteps);
+    if (malformed) {
+        logger.warn('adoptionDocs.summarize: malformed hidden_steps, treating as none', { settingsId: row.id });
+    }
+    const customized = steps.length > 0 || !!row.contractVersionId;
     return {
         customized,
         updatedAt: row.updatedAt,
@@ -127,15 +137,34 @@ export async function getAdoptionDocsOverview(): Promise<{
         const db = await getDb();
         if (!db) throw new Error('Database not available');
 
-        const [rawSource, selfRow, orgs] = await Promise.all([
-            getUserDocsSource(db, actorEmail),
-            getSettingsRow(db, { ownerType: 'user', ownerId: normalizeEmail(actorEmail) }),
-            getOrgsForEmail(actorEmail),
+        const email = actorEmail;
+        const [rawSource, selfRow, memberOrgIds] = await Promise.all([
+            getUserDocsSource(db, email),
+            getSettingsRow(db, { ownerType: 'user', ownerId: normalizeEmail(email) }),
+            // Same case-tolerant membership lookup the public resolution uses,
+            // so the card and the public form always agree on the groups.
+            getMemberOrgIds(db, email),
         ]);
+
+        // Names by single-row lookups (no inArray on D1). A membership whose
+        // org row is gone is dropped, as before; a failed lookup keeps the
+        // (verified) membership with an empty name rather than hiding it.
+        const named = await Promise.all(memberOrgIds.map(async id => {
+            try {
+                const name = await findOrgName(db, id);
+                return name === null ? null : { id, name };
+            } catch (e) {
+                logger.warn('adoptionDocs.getOverview: org name lookup failed', {
+                    actorEmail: email, orgId: id, error: e instanceof Error ? e.message : String(e),
+                });
+                return { id, name: '' };
+            }
+        }));
+        const orgs = named.filter((o): o is { id: string; name: string } => o !== null);
 
         // Effective source — same fallback resolveDocsForRescuer applies, so
         // the settings card never shows an org the caller has since left.
-        const effectiveOwner = resolveDocsOwner(actorEmail, rawSource, orgs.map(o => o.id));
+        const effectiveOwner = resolveDocsOwner(actorEmail, rawSource, memberOrgIds);
         const source = effectiveOwner.ownerType === 'org' ? `org:${effectiveOwner.ownerId}` : 'self';
 
         const [self, orgSummaries] = await Promise.all([
@@ -168,7 +197,7 @@ export async function setAdoptionDocsSource(source: string): Promise<{ success: 
 
         const parsed = parseSourceInput(source);
         if (!parsed) {
-            logger.warn('adoptionDocs.setSource: invalid source', { actorEmail, source });
+            logger.warn('adoptionDocs.setSource: invalid source', { actorEmail, source: String(source).slice(0, 64) });
             return { success: false, error: 'invalid' };
         }
         if (parsed.type === 'org') {
@@ -206,7 +235,7 @@ export async function setAdoptionDocsSource(source: string): Promise<{ success: 
     } catch (e) {
         return {
             success: false, error: 'generic',
-            errorId: logger.error('adoptionDocs.setSource failed', e, { actorEmail, source }),
+            errorId: logger.error('adoptionDocs.setSource failed', e, { actorEmail, source: String(source).slice(0, 64) }),
         };
     }
 }
@@ -237,7 +266,14 @@ export async function getAdoptionDocs(owner: OwnerRef): Promise<{
             owner.type === 'org' ? resolveOrgName(db, owner.orgId) : Promise.resolve(''),
         ]);
 
-        const hiddenSteps: string[] = settingsRow?.hiddenSteps ? JSON.parse(settingsRow.hiddenSteps) : [];
+        // Each stored JSON column parsed on its own and guarded: a bad row
+        // opens the editor with defaults for that part instead of failing.
+        const { steps: hiddenSteps, malformed } = parseStoredHiddenSteps(settingsRow?.hiddenSteps);
+        if (malformed) {
+            logger.warn('adoptionDocs.get: malformed hidden_steps, showing none hidden', {
+                actorEmail, owner, settingsId: settingsRow?.id,
+            });
+        }
 
         let sections: ContractSections = {};
         if (settingsRow?.contractVersionId) {
@@ -247,10 +283,21 @@ export async function getAdoptionDocs(owner: OwnerRef): Promise<{
                     actorEmail, owner, contractVersionId: settingsRow.contractVersionId,
                 });
             } else {
-                const parsed = contractSectionsSchema.safeParse(JSON.parse(versionRow.sectionsJson));
-                if (parsed.success) {
+                let raw: unknown = undefined;
+                let jsonOk = true;
+                try {
+                    raw = JSON.parse(versionRow.sectionsJson);
+                } catch (e) {
+                    jsonOk = false;
+                    logger.warn('adoptionDocs.get: malformed stored sections_json', {
+                        actorEmail, owner, contractVersionId: versionRow.id,
+                        error: e instanceof Error ? e.message : String(e),
+                    });
+                }
+                const parsed = jsonOk ? contractSectionsSchema.safeParse(raw) : null;
+                if (parsed?.success) {
                     sections = parsed.data;
-                } else {
+                } else if (parsed) {
                     logger.warn('adoptionDocs.get: invalid stored sections', {
                         actorEmail, owner, issues: parsed.error.issues.map(i => i.path.join('.')),
                     });

@@ -46,6 +46,24 @@ export function sanitizeShownSteps(input: unknown): string[] | null {
     return inFormOrder(keep);
 }
 
+/**
+ * adoption_doc_settings.hidden_steps as stored → sanitized step ids. Never
+ * throws: malformed JSON, or JSON that isn't an array, yields no steps and
+ * `malformed: true` so the caller can log it (a bad row must not break the
+ * public form, the settings card or the editor).
+ */
+export function parseStoredHiddenSteps(raw: string | null | undefined): { steps: string[]; malformed: boolean } {
+    if (!raw) return { steps: [], malformed: false };
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        return { steps: [], malformed: true };
+    }
+    if (!Array.isArray(parsed)) return { steps: [], malformed: true };
+    return { steps: sanitizeHiddenSteps(parsed), malformed: false };
+}
+
 export type DocsSource = { type: 'self' } | { type: 'org'; orgId: string };
 
 export function parseDocsSource(raw: string | null | undefined): DocsSource {
@@ -67,6 +85,26 @@ export function normalizeEmail(e: string): string {
 export function resolveDocsOwner(userEmail: string, source: DocsSource, memberOrgIds: readonly string[]): DocsOwner {
     if (source.type === 'org' && memberOrgIds.includes(source.orgId)) return { ownerType: 'org', ownerId: source.orgId };
     return { ownerType: 'user', ownerId: normalizeEmail(userEmail) };
+}
+
+/**
+ * Whether a signed contract version belongs to the animal's owner (spec §1.4):
+ * a user version owned by that same (normalized) email, or an org version of
+ * an org the owner is a member of. A missing/anonymous owner never owns one.
+ * Only an owned version gets its content hash recorded and first_signed_at
+ * stamped — a client can't pin or "lock" someone else's version by sending
+ * its id.
+ */
+export function isContractVersionOwnedBy(
+    version: { ownerType: string; ownerId: string },
+    ownerEmail: string | null | undefined,
+    ownerOrgIds: readonly string[],
+): boolean {
+    const email = ownerEmail ? normalizeEmail(ownerEmail) : '';
+    if (!email || email === 'anonymous') return false;
+    if (version.ownerType === 'user') return version.ownerId === email;
+    if (version.ownerType === 'org') return ownerOrgIds.includes(version.ownerId);
+    return false;
 }
 
 // ── Rich text ──────────────────────────────────────────────────────

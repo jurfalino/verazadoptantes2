@@ -15,8 +15,9 @@ import { adoptionDocSettings, contractVersions, signedContracts, userProfiles, u
 import { getDb } from '@/lib/db';
 import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
+import { maskEmail } from '@/lib/dates';
 import {
-    normalizeEmail, resolveDocsOwner, parseDocsSource,
+    normalizeEmail, resolveDocsOwner, parseDocsSource, parseStoredHiddenSteps, isContractVersionOwnedBy,
     contractSectionsSchema, normalizeSections, isStandardSections, canonicalSectionsJson,
     planContractSave, UNSIGNED_VERSION_TTL_SECONDS,
     type DocsSource, type DocsOwner, type ContractSections,
@@ -79,14 +80,29 @@ export async function resolveDocsForRescuer(db: Db, rescuerEmail: string | null 
     const email = rescuerEmail?.trim();
     if (!email || email === 'anonymous') return null;
 
+    // Never log the rescuer's full email here — this runs on public,
+    // unauthenticated routes. Masked is enough to correlate.
+    const who = maskEmail(normalizeEmail(email));
     try {
         if (!(await getFeatureFlag('ENABLE_CUSTOM_ADOPTION_DOCS'))) return null;
 
-        const owner = resolveDocsOwner(email, await getUserDocsSource(db, email), await getMemberOrgIds(db, email));
+        const [source, memberOrgIds] = await Promise.all([
+            getUserDocsSource(db, email),
+            getMemberOrgIds(db, email),
+        ]);
+        const owner = resolveDocsOwner(email, source, memberOrgIds);
         const settingsRow = await getSettingsRow(db, owner);
         if (!settingsRow) return null;
 
-        const hiddenSteps: string[] = settingsRow.hiddenSteps ? JSON.parse(settingsRow.hiddenSteps) : [];
+        // Each stored JSON column is parsed on its own: a bad hidden_steps
+        // value drops only the hidden steps, a bad sections_json drops only
+        // the contract — never both, never the whole page.
+        const { steps: hiddenSteps, malformed } = parseStoredHiddenSteps(settingsRow.hiddenSteps);
+        if (malformed) {
+            logger.warn('resolveDocsForRescuer: malformed hidden_steps, showing every step', {
+                rescuer: who, settingsId: settingsRow.id,
+            });
+        }
         if (!hiddenSteps.length && !settingsRow.contractVersionId) return null;
 
         let contract: ResolvedDocs['contract'] = null;
@@ -94,17 +110,30 @@ export async function resolveDocsForRescuer(db: Db, rescuerEmail: string | null 
             const versionRow = await getContractVersion(db, settingsRow.contractVersionId);
             if (!versionRow) {
                 logger.warn('resolveDocsForRescuer: contract version missing', {
-                    rescuerEmail: email, contractVersionId: settingsRow.contractVersionId,
+                    rescuer: who, contractVersionId: settingsRow.contractVersionId,
                 });
             } else {
-                const parsed = contractSectionsSchema.safeParse(JSON.parse(versionRow.sectionsJson));
-                if (!parsed.success) {
-                    logger.warn('resolveDocsForRescuer: invalid contract sections', {
-                        rescuerEmail: email, contractVersionId: versionRow.id,
-                        issues: parsed.error.issues.map(i => i.path.join('.')),
+                let raw: unknown;
+                let jsonOk = true;
+                try {
+                    raw = JSON.parse(versionRow.sectionsJson);
+                } catch (e) {
+                    jsonOk = false;
+                    logger.warn('resolveDocsForRescuer: malformed sections_json, standard contract', {
+                        rescuer: who, contractVersionId: versionRow.id,
+                        error: e instanceof Error ? e.message : String(e),
                     });
-                } else {
-                    contract = { versionId: versionRow.id, sections: parsed.data };
+                }
+                if (jsonOk) {
+                    const parsed = contractSectionsSchema.safeParse(raw);
+                    if (!parsed.success) {
+                        logger.warn('resolveDocsForRescuer: invalid contract sections', {
+                            rescuer: who, contractVersionId: versionRow.id,
+                            issues: parsed.error.issues.map(i => i.path.join('.')),
+                        });
+                    } else {
+                        contract = { versionId: versionRow.id, sections: parsed.data };
+                    }
                 }
             }
         }
@@ -112,7 +141,7 @@ export async function resolveDocsForRescuer(db: Db, rescuerEmail: string | null 
         return { hiddenSteps, contract };
     } catch (error) {
         logger.warn('resolveDocsForRescuer: fell back to standard', {
-            rescuerEmail: email, error: error instanceof Error ? error.message : String(error),
+            rescuer: who, error: error instanceof Error ? error.message : String(error),
         });
         return null;
     }
@@ -210,6 +239,15 @@ export async function saveContract(
     return { action: 'insert', versionId: newId };
 }
 
+/**
+ * Records which contract text an adopter signed (spec §1.4). The version id
+ * the client sent is always stored as given, but it only counts — content
+ * hash recorded, first_signed_at stamped (which makes it undeletable) — when
+ * it belongs to the animal's owner (`ownerEmail`, i.e. animal.addedBy): their
+ * own version, or one of an org they're a member of. Anything else (unknown
+ * id, someone else's version, a failed lookup) is warned about and stored
+ * with content_hash NULL. The lookups never stop the row being written.
+ */
 export async function recordSignature(db: Db, row: {
     animalId: string;
     adopterId: string | null;
@@ -218,20 +256,40 @@ export async function recordSignature(db: Db, row: {
     locale: string | null;
     fileKey: string | null;
     via: 'token' | 'open';
+    /** animal.addedBy — whose version this may legitimately be. */
+    ownerEmail: string | null;
 }): Promise<void> {
     const now = nowSeconds();
     let contentHash: string | null = null;
 
     if (row.contractVersionId) {
-        const versionRow = await getContractVersion(db, row.contractVersionId);
-        if (versionRow) {
-            contentHash = versionRow.contentHash;
-            await db.update(contractVersions)
-                .set({ firstSignedAt: now })
-                .where(and(eq(contractVersions.id, versionRow.id), isNull(contractVersions.firstSignedAt)));
-        } else {
-            logger.warn('recordSignature: unknown contract version', {
+        try {
+            const versionRow = await getContractVersion(db, row.contractVersionId);
+            if (!versionRow) {
+                logger.warn('recordSignature: unknown contract version', {
+                    animalId: row.animalId, contractVersionId: row.contractVersionId,
+                });
+            } else {
+                const ownerOrgIds = versionRow.ownerType === 'org' && row.ownerEmail
+                    ? await getMemberOrgIds(db, row.ownerEmail)
+                    : [];
+                if (isContractVersionOwnedBy(versionRow, row.ownerEmail, ownerOrgIds)) {
+                    contentHash = versionRow.contentHash;
+                    await db.update(contractVersions)
+                        .set({ firstSignedAt: now })
+                        .where(and(eq(contractVersions.id, versionRow.id), isNull(contractVersions.firstSignedAt)));
+                } else {
+                    logger.warn('recordSignature: contract version not owned by the animal owner', {
+                        animalId: row.animalId, contractVersionId: row.contractVersionId,
+                        versionOwnerType: versionRow.ownerType,
+                    });
+                }
+            }
+        } catch (e) {
+            contentHash = null;
+            logger.warn('recordSignature: version ownership lookup failed, storing without hash', {
                 animalId: row.animalId, contractVersionId: row.contractVersionId,
+                error: e instanceof Error ? e.message : String(e),
             });
         }
     }
