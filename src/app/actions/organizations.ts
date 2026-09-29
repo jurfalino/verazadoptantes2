@@ -158,6 +158,21 @@ export async function getMyOrganizations(): Promise<Organization[]> {
                 }),
         ))).flat();
 
+        // Members show by name, falling back to the email handle. One batched,
+        // D1-safe lookup (explicit binds, chunked) for every member of every org.
+        let names = new Map<string, string>();
+        try {
+            const { resolveDisplayNames } = await import('./notifications');
+            names = await resolveDisplayNames(
+                (allMembers as Array<{ userEmail: string }>).map(m => m.userEmail),
+            );
+        } catch (e) {
+            // Members degrade to their email handle at render; never lose the list.
+            logger.warn('getMyOrganizations: member name lookup fallback', {
+                user, error: e instanceof Error ? e.message : String(e),
+            });
+        }
+
         type OrgRow = { id: string; name: string; createdBy: string; createdAt: Date | null };
         type MemberRow = { id: string; orgId: string; userEmail: string; role: string | null; joinedAt: Date | null };
         return (orgs as OrgRow[]).map((org: OrgRow) => ({
@@ -170,6 +185,7 @@ export async function getMyOrganizations(): Promise<Organization[]> {
                     userEmail: m.userEmail,
                     role: m.role,
                     joinedAt: m.joinedAt,
+                    displayName: names.get(m.userEmail.toLowerCase()) ?? undefined,
                 })),
         }));
     } catch (error) {

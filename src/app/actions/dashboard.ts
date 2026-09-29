@@ -495,10 +495,31 @@ export async function getMyAdoptions(filter: 'all' | 'adoption' | 'adoption_requ
             for (const n of names) { if (n.name) nameByAdopter.set(n.id, n.name); }
         }
 
+        // "Agregado por {name}" on teammates' records: the rescuer's name, not
+        // their email handle. One batched, D1-safe lookup for the distinct
+        // teammates (the viewer's own records show no attribution).
+        const teammateEmails: string[] = Array.from(new Set<string>(
+            results.map((r: typeof results[number]) => r.addedBy)
+                .filter((e: string | null): e is string => !!e && e !== userEmail),
+        ));
+        let addedByNames = new Map<string, string>();
+        if (teammateEmails.length > 0) {
+            try {
+                const { resolveDisplayNames } = await import('./notifications');
+                addedByNames = await resolveDisplayNames(teammateEmails);
+            } catch (e) {
+                logger.warn('getMyAdoptions: addedBy name lookup fallback', {
+                    userEmail, count: teammateEmails.length,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            }
+        }
+
         const adoptionsWithDetails = results.map((adoption: typeof results[number]) => ({
             ...adoption,
             images: imagesByAdoption.get(adoption.id) ?? [],
             adopterName: adoption.adopterId ? (nameByAdopter.get(adoption.adopterId) ?? null) : null,
+            addedByName: adoption.addedBy ? (addedByNames.get(adoption.addedBy.toLowerCase()) ?? null) : null,
         }));
 
         return adoptionsWithDetails;

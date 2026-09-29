@@ -31,6 +31,8 @@ interface Adoption {
     comments: string | null;
     images: AdoptionImage[];
     addedBy?: string | null;
+    /** Rescuer's display name for `addedBy` (email handle when they have none). */
+    addedByName?: string | null;
 }
 
 function getContractUrl(comments: string | null | undefined): string | null {
@@ -228,7 +230,7 @@ export default function MyAdoptionsPage() {
                                                         )}
                                                         <div className="text-xs text-stone-500 capitalize">{adoption.species || t('dashboard.unknown_species')}</div>
                                                         {adoption.addedBy && adoption.addedBy !== currentEmail && (
-                                                            <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', emailHandle(adoption.addedBy))}</div>
+                                                            <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adoption.addedByName || emailHandle(adoption.addedBy))}</div>
                                                         )}
                                                     </div>
                                                 </div>
@@ -318,7 +320,7 @@ export default function MyAdoptionsPage() {
                                             )}
                                             <div className="text-xs text-stone-500 capitalize">{adoption.species || t('dashboard.unknown_species')}</div>
                                             {adoption.addedBy && adoption.addedBy !== currentEmail && (
-                                                <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', emailHandle(adoption.addedBy))}</div>
+                                                <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adoption.addedByName || emailHandle(adoption.addedBy))}</div>
                                             )}
                                             {/* Type Badge */}
                                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold mt-1 ${getTypeBadgeStyle(adoption.recordType)}`}>

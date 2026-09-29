@@ -258,7 +258,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
                                 </p>
                                 {applicant.adopterContext?.addedBy && (
                                     <p className="text-xs text-stone-500 truncate">
-                                        👤 {(t('myAnimals.applicants_panel_added_by') || 'Agregado por {email}').replace('{email}', emailHandle(applicant.adopterContext.addedBy))}
+                                        👤 {(t('myAnimals.applicants_panel_added_by') || 'Agregado por {email}').replace('{email}', applicant.adopterContext.addedByName || emailHandle(applicant.adopterContext.addedBy))}
                                     </p>
                                 )}
                                 <a
