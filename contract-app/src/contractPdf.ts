@@ -115,17 +115,29 @@ export function generateContractPdf(animal: AnimalData, form: FormData, locale: 
             const x0 = MARGIN_LEFT + 4
             const measure = (t: string, st: Style) => { doc.setFont('helvetica', styleOf(st)); doc.setFontSize(size); return doc.getTextWidth(stripAccents(t)) }
             const lines = layoutRichDoc(rd, CONTENT_WIDTH - 4, measure, { bulletIndent: 5 })
+            // A leading 'gap' (from an edge empty paragraph) must not add
+            // visible space before the first real line; only count gaps that
+            // follow something we actually drew.
+            let drewLine = false
             for (const line of lines) {
-                if (line === 'gap') { y += 2; continue }
+                if (line === 'gap') { if (drewLine) y += 2; continue }
                 checkPage(lineH)
                 if (line.bullet) { doc.setFont('helvetica', 'normal'); doc.text('-', x0 + 1, y) }
                 for (const w of line.words) {
                     doc.setFont('helvetica', w.style); doc.setFontSize(size)
                     const t = stripAccents(w.text)
                     doc.text(t, x0 + line.indent + w.x, y)
-                    if (w.underline) { doc.setLineWidth(0.2); doc.line(x0 + line.indent + w.x, y + 0.6, x0 + line.indent + w.x + w.width, y + 0.6) }
+                    if (w.underline) {
+                        // divider()/section headings before this block leave the
+                        // draw color at light gray — reset to black so the
+                        // underline matches the black text it sits under.
+                        doc.setDrawColor(0, 0, 0)
+                        doc.setLineWidth(0.2)
+                        doc.line(x0 + line.indent + w.x, y + 0.6, x0 + line.indent + w.x + w.width, y + 0.6)
+                    }
                 }
                 y += lineH + 1
+                drewLine = true
             }
         }
 
