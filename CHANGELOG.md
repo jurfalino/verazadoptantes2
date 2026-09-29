@@ -2,6 +2,39 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.101] - 2026-09-29
+
+### Added — rescuers and groups can shape their own form and contract (`ENABLE_CUSTOM_ADOPTION_DOCS`, off by default)
+
+With the flag on, `/settings` gets a «Formulario y contrato de adopción» card:
+each rescuer picks whose documents they share — their own or one of their
+groups'. The editor (`/settings/adoption-docs`, also reachable from each group
+card) turns form questions on or off (terms, name, email, phone and address stay
+locked) and rewrites contract sections 2–4 with bold, italics, underline and
+bullets. Sections 1 and 5 never change. Any group member can edit the group's
+version; edits show in the group's activity feed.
+
+The public form hides switched-off questions; the contract and its PDF show the
+rescuer's text for sections 2–4. A version is kept for good once someone signs
+it; replaced versions nobody signed are purged after 30 days.
+
+### Changed — every signature records what was signed
+
+Each signed contract now writes a `signed_contracts` row (standard version code,
+custom version if any, language, text hash, PDF key). The PDF footer carries a
+small version code. Recording never blocks a signature.
+
+### Fixed — an unasked question is no longer stored as «no»
+
+A form opened for a specific animal never asks about special needs, yet the
+adoption request read «No busca animales con necesidades especiales». Unasked
+answers are now stored empty, and each submission records which questions were
+shown. Half-filled forms are remembered per rescuer and animal and reopen on the
+right question; tapping an answer on the last question no longer sends the form.
+
+Migrations `0072_adoption_docs.sql`, `0073_adoption_docs_columns.sql` (additive).
+The public form/contract app gets its first unit tests, run in its CI.
+
 ## [2.56.100] - 2026-09-29
 
 ### Fixed — the gallery test raced the photo compression on slower machines
