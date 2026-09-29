@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.100] - 2026-09-29
+
+### Fixed — the gallery test raced the photo compression on slower machines
+
+It blocked the production deploy: E2E went red on master and the deploy job was
+skipped, so 2.56.99 reached master but never shipped.
+
+2.56.98's rewrite dropped the per-pick assertions, so the test picked four files
+in a row and clicked Guardar immediately. Each pick compresses on the main
+thread and disables Guardar while it runs, so on CI's slower machine the click
+landed mid-compression and fewer than four photos were ever staged — the «+N»
+never appeared.
+
+Measured rather than guessed: under 6× CPU throttling the old pattern staged
+**0 of 4** photos at the moment it clicked Guardar; the new one, which waits for
+each thumbnail before picking the next, stages all four and renders the «+N»
+under the same load.
+
 ## [2.56.99] - 2026-09-29
 
 ### Added — `ENABLE_MY_ADOPTIONS`, off by default

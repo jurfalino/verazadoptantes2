@@ -289,8 +289,19 @@ test.describe('Animal detail page', () => {
         await page.getByTestId('profile-edit').click();
         await expect(page.getByTestId('animal-photo-editor')).toBeVisible();
         const idsBefore = await photoIds();
+        const editor = page.getByTestId('animal-photo-editor');
+        const staged = editor.locator('img');
+        const imgsBefore = await staged.count();
 
-        for (let i = 0; i < 4; i++) await page.getByTestId('animal-photo-input').setInputFiles(file);
+        // Wait for each thumbnail to appear before picking the next. Each pick
+        // compresses on the main thread and disables Save while it runs, so
+        // firing four in a row and clicking Save immediately raced on CI: the
+        // click landed mid-compression and only some photos were staged.
+        for (let i = 0; i < 4; i++) {
+            await page.getByTestId('animal-photo-input').setInputFiles(file);
+            await expect(staged).toHaveCount(imgsBefore + i + 1, { timeout: 20000 });
+        }
+        await expect(page.getByTestId('inline-edit-save')).toBeEnabled();
         await page.getByTestId('inline-edit-save').click();
         await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
         const total = idsBefore.length + 4;
@@ -315,7 +326,7 @@ test.describe('Animal detail page', () => {
 
         // Remove exactly the ids this test created — never by position.
         await page.getByTestId('profile-edit').click();
-        await expect(page.getByTestId('animal-photo-editor')).toBeVisible();
+        await expect(editor).toBeVisible();
         const mine = (await photoIds()).filter(id => !idsBefore.includes(id));
         expect(mine).toHaveLength(4);
         for (const id of mine) await page.getByTestId(`photo-remove-${id}`).click();
