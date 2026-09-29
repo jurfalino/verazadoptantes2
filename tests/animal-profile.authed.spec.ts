@@ -274,40 +274,51 @@ test.describe('Animal detail page', () => {
     });
 
     test('every added photo can be opened full size', async ({ page }) => {
-        const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==','base64');
+        // v2.56.97: thumbnails were inert and anything past the third lived only
+        // inside a «+N» count, so photos could be stored and never viewed.
+        //
+        // Counts are RELATIVE: this fixture is shared, and a sibling test that
+        // fails mid-way leaves photos behind (CI saw 7 where a clean run has 0).
+        const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
         const file = { name: 'p.png', mimeType: 'image/png', buffer: png };
+        const photoIds = async () => (await page.locator('[data-testid^="photo-main-"]').all())
+            .reduce(async (acc, el) => [...(await acc), (await el.getAttribute('data-testid'))!.replace('photo-main-', '')], Promise.resolve([] as string[]));
+
         await page.goto(`/my-animals/${ANIMAL_ID}`);
         await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
-
-        // Add four photos in one edit.
         await page.getByTestId('profile-edit').click();
+        await expect(page.getByTestId('animal-photo-editor')).toBeVisible();
+        const idsBefore = await photoIds();
+
         for (let i = 0; i < 4; i++) await page.getByTestId('animal-photo-input').setInputFiles(file);
         await page.getByTestId('inline-edit-save').click();
         await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
+        const total = idsBefore.length + 4;
 
-        // The 4th photo is only reachable through «+N» — that was the bug.
+        // The 4th photo is reachable ONLY through «+N» — that was the bug.
         await expect(page.getByTestId('hero-thumb-more')).toBeVisible({ timeout: 30000 });
         await page.getByTestId('hero-thumb-more').click();
-        await expect(page.getByTestId('photo-counter')).toHaveText('4 / 4');
+        await expect(page.getByTestId('photo-counter')).toHaveText(`4 / ${total}`);
 
-        // Step through the whole gallery and back to the hero.
-        await page.getByTestId('photo-next').click();
-        await expect(page.getByTestId('photo-counter')).toHaveText('1 / 4');
+        // Step back through the gallery with the button, then the keyboard.
         await page.getByTestId('photo-prev').click();
-        await expect(page.getByTestId('photo-counter')).toHaveText('4 / 4');
+        await expect(page.getByTestId('photo-counter')).toHaveText(`3 / ${total}`);
         await page.keyboard.press('ArrowLeft');
-        await expect(page.getByTestId('photo-counter')).toHaveText('3 / 4');
+        await expect(page.getByTestId('photo-counter')).toHaveText(`2 / ${total}`);
         await page.keyboard.press('Escape');
         await expect(page.getByTestId('photo-counter')).toHaveCount(0);
 
-        // Hero opens at the first photo.
+        // The hero opens at the first photo.
         await page.getByTestId('hero-photo').click();
-        await expect(page.getByTestId('photo-counter')).toHaveText('1 / 4');
+        await expect(page.getByTestId('photo-counter')).toHaveText(`1 / ${total}`);
         await page.keyboard.press('Escape');
 
-        // Clean the fixture: remove the four this test added.
+        // Remove exactly the ids this test created — never by position.
         await page.getByTestId('profile-edit').click();
-        for (let i = 0; i < 4; i++) await page.locator('[data-testid^="photo-remove-"]').last().click();
+        await expect(page.getByTestId('animal-photo-editor')).toBeVisible();
+        const mine = (await photoIds()).filter(id => !idsBefore.includes(id));
+        expect(mine).toHaveLength(4);
+        for (const id of mine) await page.getByTestId(`photo-remove-${id}`).click();
         await page.getByTestId('inline-edit-save').click();
         await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
     });

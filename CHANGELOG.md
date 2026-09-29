@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.98] - 2026-09-29
+
+### Fixed — the gallery test assumed an empty fixture
+
+2.56.97's e2e hardcoded «4 / 4», so it only passed on an animal with no photos.
+CI ran it against a fixture carrying 7 — debris left by a sibling test that
+failed mid-way — and it reported «4 / 7». The feature was fine; the test was
+wrong.
+
+Counts are relative now: it reads the fixture's starting photos, asserts against
+that baseline, and removes exactly the ids it created rather than the last four
+in the list. Reproduced the CI condition locally by seeding three stray photos
+before the run, which is how this was confirmed rather than guessed.
+
 ## [2.56.97] - 2026-09-28
 
 ### Fixed — only the first photo could be seen full size
