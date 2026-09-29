@@ -2,6 +2,63 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.100] - 2026-09-29
+
+### Fixed — the gallery test raced the photo compression on slower machines
+
+It blocked the production deploy: E2E went red on master and the deploy job was
+skipped, so 2.56.99 reached master but never shipped.
+
+2.56.98's rewrite dropped the per-pick assertions, so the test picked four files
+in a row and clicked Guardar immediately. Each pick compresses on the main
+thread and disables Guardar while it runs, so on CI's slower machine the click
+landed mid-compression and fewer than four photos were ever staged — the «+N»
+never appeared.
+
+Measured rather than guessed: under 6× CPU throttling the old pattern staged
+**0 of 4** photos at the moment it clicked Guardar; the new one, which waits for
+each thumbnail before picking the next, stages all four and renders the «+N»
+under the same load.
+
+## [2.56.99] - 2026-09-29
+
+### Added — `ENABLE_MY_ADOPTIONS`, off by default
+
+«Mis Adopciones» no longer appears in the user menu or the quick-access strip
+unless an admin switches it on from `/admin/config`. The route itself still
+works for anyone who has the link or a bookmark; only the navigation entries are
+hidden.
+
+Registered at all of this repo's plumbing sites — code defaults, the hardcoded
+`getAllFeatureFlags` list, `PUBLIC_FLAG_KEYS` and its default, the admin type,
+toggle row, initial state and hydration line, and the config API's echoed
+response. The parity test in `src/config/featureFlagRegistration.test.ts` covers
+most of these; a flag missing from the API echo hydrates as OFF and flips the
+wrong way on first click, which is the v2.19.48 incident.
+
+The menus learn the flag through `/api/quick-counts`, the same channel that
+already carries `animalsEnabled`, so no extra round trip. Its three error
+returns carry `adoptionsEnabled: false` too — otherwise the client reads
+`undefined` and the entry flashes in before disappearing.
+
+Verified both ways against the running app: with the flag off the entry is
+absent while every neighbouring item still renders, and with it on it appears in
+both the menu and the strip.
+
+## [2.56.98] - 2026-09-29
+
+### Fixed — the gallery test assumed an empty fixture
+
+2.56.97's e2e hardcoded «4 / 4», so it only passed on an animal with no photos.
+CI ran it against a fixture carrying 7 — debris left by a sibling test that
+failed mid-way — and it reported «4 / 7». The feature was fine; the test was
+wrong.
+
+Counts are relative now: it reads the fixture's starting photos, asserts against
+that baseline, and removes exactly the ids it created rather than the last four
+in the list. Reproduced the CI condition locally by seeding three stray photos
+before the run, which is how this was confirmed rather than guessed.
+
 ## [2.56.97] - 2026-09-28
 
 ### Fixed — only the first photo could be seen full size

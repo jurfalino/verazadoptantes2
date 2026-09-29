@@ -136,6 +136,8 @@ export const es = {
         flag_label_posthog: 'PostHog (grabación de sesiones)',
         flag_desc_posthog: 'Graba sesiones y analítica de producto. Corre en paralelo con Clarity, no lo reemplaza. Requiere POSTHOG_PROJECT_KEY configurado en Cloudflare Pages. La grabación NO enmascara lo que se escribe.',
         flag_label_milestone_badge: 'Insignia de hitos',
+        flag_label_my_adoptions: 'Mis Adopciones en el menú',
+        flag_desc_my_adoptions: 'Muestra el acceso a «Mis Adopciones» en el menú de usuario y en la barra de accesos rápidos.',
         flag_desc_milestone_badge: 'Mostrar la barra de progreso "Completaste X adopciones" en la portada para usuarios autenticados.',
         flag_label_quick_access_strip: 'Tira de acceso rápido',
         flag_desc_quick_access_strip: 'Mostrar las pastillas "Mis Animales / Mis Adopciones / Mis Adoptantes" con contadores en la portada. Si está apagada, los mismos contadores siguen disponibles en el menú de usuario. Por defecto activado.',
