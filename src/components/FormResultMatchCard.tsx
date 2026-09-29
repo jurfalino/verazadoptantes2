@@ -8,27 +8,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { useState } from 'react';
 import { en } from '@/i18n/locales/en';
-
-const MATCH_TYPE_KEYS: Record<string, string> = {
-    // Legacy prefixed taxonomy (notifications written by the bespoke matcher pre-v2.14.7-12)
-    'token:name_full': 'match_name_full',
-    'token:name_word': 'match_name_word',
-    'token:phone': 'match_phone',
-    'token:phone_suffix': 'match_phone_suffix',
-    'token:email': 'match_email',
-    'token:social': 'match_social',
-    'like:name': 'match_like_name',
-    'like:contact': 'match_like_contact',
-    // Unprefixed taxonomy emitted by findAdopters duplicate-mode (v2.14.7-12+)
-    name_full: 'match_name_full',
-    name_word: 'match_name_word',
-    name_word_fuzzy: 'match_name_word',
-    phone: 'match_phone',
-    phone_suffix: 'match_phone_suffix',
-    email: 'match_email',
-    social: 'match_social',
-    like_fallback: 'match_like_contact',
-};
+import { matchTypeLabel } from '@/lib/matchTypeLabels';
 
 // Single source of truth: fallbacks from English locale
 const formResultsFallbacks = en.formResults as Record<string, string>;
@@ -80,7 +60,7 @@ export default function FormResultMatchCard({
     const L = (key: string) => (t(`formResults.${key}`) || '').trim() || formResultsFallbacks[key] || key;
 
     const matchLabels = matchTypes
-        .map((mt) => L(MATCH_TYPE_KEYS[mt] ?? mt) || mt)
+        .map((mt) => matchTypeLabel(mt, t))
         .filter(Boolean);
     const strongMatch = isStrongMatch(matchTypes);
 

@@ -11,6 +11,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { zarazTrack } from '@/lib/zaraz';
 import { useDateFormat } from '@/context/TimezoneContext';
+import { matchTypeLabel } from '@/lib/matchTypeLabels';
 
 export interface AdopterFlaggingHandle {
     openAction: (action: string) => void;
@@ -22,6 +23,7 @@ function ShowLowConfidenceSuggestions({ suppressed, targetAdopter, setTargetAdop
     targetAdopter: { id: string; name: string } | null;
     setTargetAdopter: (v: { id: string; name: string }) => void;
 }) {
+    const { t } = useLanguage();
     const [expanded, setExpanded] = useState(false);
     return (
         <div>
@@ -52,7 +54,7 @@ function ShowLowConfidenceSuggestions({ suppressed, targetAdopter, setTargetAdop
                             </div>
                             <div className="flex flex-wrap gap-1 mt-1">
                                 {sug.matchTypes.map(type => (
-                                    <span key={type} className="text-xs px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500">{type.replace('_', ' ')}</span>
+                                    <span key={type} className="text-xs px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500">{matchTypeLabel(type, t)}</span>
                                 ))}
             </div>
                         </div>
@@ -522,7 +524,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                                                 </div>
                                                                 <div className="flex flex-wrap gap-1 mt-1">
                                                                     {sug.matchTypes.map(type => (
-                                                                        <span key={type} className="text-xs px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600">{type.replace('_', ' ')}</span>
+                                                                        <span key={type} className="text-xs px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600">{matchTypeLabel(type, t)}</span>
                                                                     ))}
                                                                 </div>
                                                             </div>

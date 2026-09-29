@@ -29,6 +29,26 @@ export const PRACTICAL_MAX_DUPLICATE = 12;
  */
 export const SEARCH_SCORE_CEILING = 150;
 
+/**
+ * Per-type weight of a duplicate-mode match in `findAdopters`. Its keys are
+ * every match type duplicate detection can record, bar the fuzzy-name bonus
+ * below. It lives here rather than in the `'use server'` module so
+ * `src/lib/matchTypeLabels.test.ts` can read it and prove each type has a label.
+ */
+export const DUPLICATE_MATCH_WEIGHTS: Readonly<Record<string, number>> = {
+    phone: 3, phone_suffix: 2, email: 3, social: 3, social_handle: 3,
+    name_full: 2, name_phonetic: 1.5, name_word: 1,
+    address_word: 1, source_url: 3,
+    // v2.19.24: split former 'like_fallback'. Contact-info fallback is a
+    // strong signal (phone/email digits found in the contactInfo blob),
+    // name fallback is a weak coincidence.
+    like_fallback_name: 0.5, like_fallback_contact: 1.5,
+    id_number: 3, // unique identity, same tier as phone/email
+};
+
+/** Match type added when a Levenshtein near-miss on a name word scores. */
+export const FUZZY_NAME_MATCH_TYPE = 'name_word_fuzzy';
+
 // ── Normalisation ────────────────────────────────────────────────────────────
 
 /**
