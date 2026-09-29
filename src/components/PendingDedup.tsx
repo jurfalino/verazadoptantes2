@@ -29,6 +29,7 @@ import {
 import { AdopterName } from '@/components/AdopterName';
 import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
 import { collapseNameEvidence } from '@/domain/matchEvidence';
+import { matchTypeLabel } from '@/lib/matchTypeLabels';
 
 /** Opens-in-new-tab affordance. Inline SVG with currentColor per the icon
  *  convention — an emoji would not inherit the link's hover colour. */
@@ -80,7 +81,9 @@ function MatchedOn({ pair, t }: { pair: PendingDedupPair; t: (k: string) => stri
             </span>
             {types.map(type => {
                 const vals = values[type] || [];
-                const label = LABEL[type] || type;
+                // Types without a local label (like_fallback_*, name_word_fuzzy, …)
+                // go through the shared map instead of showing the raw code.
+                const label = LABEL[type] || matchTypeLabel(type, t);
                 return (
                     <span key={type}
                         className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-100">
