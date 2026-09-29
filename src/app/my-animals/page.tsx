@@ -121,6 +121,12 @@ export default function MyAnimalsPage() {
     });
 
     const speciesEmoji: Record<string, string> = { cat: '🐱', dog: '🐶', bird: '🐦' };
+    /** "Perro" / "Dog" / "Cão"; an unlisted species shows as typed, never as a key path. */
+    const speciesLabel = (species: string) => {
+        const key = `species.${species.toLowerCase()}`;
+        const label = t(key);
+        return label && label !== key ? label : species;
+    };
 
     /* v2.56.92: adopted animals are a growing archive — an unbroken grid of
        every animal ever placed is unreadable, and the year is how a rescuer
@@ -263,7 +269,7 @@ export default function MyAnimalsPage() {
                                         ? 'bg-stone-800 text-white shadow-sm'
                                         : 'bg-white border border-stone-200 text-stone-500 hover:border-stone-300 hover:text-stone-700'}`}
                                 >
-                                    {speciesEmoji[species] || '🐾'} {t(`species.${species}`) || species}
+                                    {speciesEmoji[species] || '🐾'} {speciesLabel(species)}
                                 </button>
                             ))}
                         </div>
@@ -348,7 +354,7 @@ export default function MyAnimalsPage() {
                                         {/* Species badge */}
                                         {animal.species && (
                                             <span className="absolute top-2 left-2 px-2 py-0.5 bg-white/90 backdrop-blur-sm rounded-full text-xs font-semibold text-stone-700 capitalize">
-                                                {animal.species === 'cat' ? '🐱' : animal.species === 'dog' ? '🐶' : '🐾'} {animal.species}
+                                                {animal.species === 'cat' ? '🐱' : animal.species === 'dog' ? '🐶' : '🐾'} {speciesLabel(animal.species)}
                                             </span>
                                         )}
                                         {/* Photo count */}
