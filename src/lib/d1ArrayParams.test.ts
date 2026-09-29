@@ -20,9 +20,10 @@ import { join, relative } from 'node:path';
 
 // One fewer since v2.56.93: quick-counts now fans out with `or(...eq)`. Its
 // three counts were wrong on D1 for anyone on a team of more than one.
+// One fewer again: resolveUserNames fans out one `eq` per email — it had been
+// dropping every name but the first for all of its callers.
 const KNOWN_VIOLATIONS = [
     'src/app/actions/duplicates.ts',
-    'src/app/actions/userNames.ts',
 ];
 
 const walk = (dir: string, out: string[] = []): string[] => {
