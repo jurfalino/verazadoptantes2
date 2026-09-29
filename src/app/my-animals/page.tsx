@@ -15,6 +15,7 @@ import AnimalShareSheet from '@/components/AnimalShareSheet';
 import ShowcaseUrlChips from '@/components/ShowcaseUrlChips';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { myAnimalsTabCount } from '@/lib/myAnimalsTabCount';
 
 interface AnimalImage {
     id: string;
@@ -66,6 +67,8 @@ export default function MyAnimalsPage() {
     const userId = session?.user?.id || '';
 
     const [animals, setAnimals] = useState<Animal[]>([]);
+    /** Which tab `animals` belongs to — right after a tab switch it is still the old one. */
+    const [loadedView, setLoadedView] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
@@ -87,6 +90,7 @@ export default function MyAnimalsPage() {
                     // Deduplicate by id to prevent React key warnings
                     const unique = Array.from(new Map(data.map(a => [a.id, a])).values());
                     setAnimals(unique);
+                    setLoadedView(view);
                 } else {
                     const body = await res.json().catch(() => ({})) as { error?: string; errorId?: string };
                     toast.error(t('errors.generic') || 'Error', body.error || 'Failed to load animals.', body.errorId);
@@ -232,7 +236,7 @@ export default function MyAnimalsPage() {
                             : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'
                             }`}
                     >
-                        🏠 {t('dashboard.available') || 'Available'} ({view === 'available' ? animals.length : (tabCounts?.available ?? '...')})
+                        🏠 {t('dashboard.available') || 'Available'} ({myAnimalsTabCount('available', view, loadedView, animals.length, tabCounts)})
                     </Link>
                     <Link
                         href="/my-animals?view=adopted"
@@ -241,7 +245,7 @@ export default function MyAnimalsPage() {
                             : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'
                             }`}
                     >
-                        ✅ {t('dashboard.already_adopted') || 'Already Adopted'} ({view === 'adopted' ? animals.length : (tabCounts?.adopted ?? '...')})
+                        ✅ {t('dashboard.already_adopted') || 'Already Adopted'} ({myAnimalsTabCount('adopted', view, loadedView, animals.length, tabCounts)})
                     </Link>
                 </div>
 
