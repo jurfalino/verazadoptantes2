@@ -123,6 +123,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
             }
         }
 
+        // Custom adoption docs (2026-09, additive): null unless the owning
+        // rescuer has customized their contract AND the flag is on. Never throws.
+        const { resolveDocsForRescuer } = await import('@/lib/adoptionDocsRepo');
+        const resolved = await resolveDocsForRescuer(db, animal.addedBy);
+
         const { first, last } = splitName(adopter.name);
         const prefill: PrefillPayload = {
             name: first,
@@ -157,6 +162,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
             // Language the rescuer shared this in; the contract-app uses it as
             // the backstop when the URL carries no ?lang=. Null for legacy rows.
             locale: invite.locale ?? null,
+            customContract: resolved?.contract ?? null,
         }), origin);
     } catch (e) {
         const errorId = logger.error('Contract by-token fetch failed', e, { token });

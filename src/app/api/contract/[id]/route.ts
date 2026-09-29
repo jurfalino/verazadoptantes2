@@ -59,6 +59,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             }
         }
 
+        // Custom adoption docs (2026-09, additive): null unless the owning
+        // rescuer has customized their contract AND the flag is on. Never throws.
+        const { resolveDocsForRescuer } = await import('@/lib/adoptionDocsRepo');
+        const resolved = await resolveDocsForRescuer(db, animal.addedBy);
+
         // Return only safe public fields (no PII)
         return withCors(NextResponse.json({
             id: animal.id,
@@ -74,6 +79,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             microchip: animal.microchip,
             rescuerName: rescuerDisplay,
             images,
+            customContract: resolved?.contract ?? null,
         }), origin);
     } catch (error) {
         logger.error('Contract data fetch failed', error);

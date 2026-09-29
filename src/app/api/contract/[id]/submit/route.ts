@@ -10,13 +10,23 @@ export async function OPTIONS(request: Request) {
     return corsPreflightResponse(request.headers.get('origin'));
 }
 
+/** A string of at most `maxLen` chars, else undefined — never throws on bad input. */
+function sanitizedPublicStr(v: unknown, maxLen = 100): string | undefined {
+    return typeof v === 'string' && v.length > 0 && v.length <= maxLen ? v : undefined;
+}
+
+const CONTRACT_LOCALES = new Set(['es', 'en', 'pt']);
+
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id: animalId } = await params;
     const origin = request.headers.get('origin');
 
     try {
         const body = await request.json();
-        const { name, lastName, dni, email, phone, address, socialNetworks, screenshot, token } = body as {
+        const {
+            name, lastName, dni, email, phone, address, socialNetworks, screenshot, token,
+            contractVersionId: rawContractVersionId, standardVersion: rawStandardVersion, locale: rawLocale,
+        } = body as {
             name: string;
             lastName: string;
             dni: string;
@@ -29,7 +39,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
               * specific adopter — we resolve the token, link the existing adopter
               * instead of creating a new one, and mark the invitation used. */
             token?: string;
+            // Custom adoption docs (2026-09, additive): which contract text the
+            // adopter actually saw and signed. Optional — old contract-app
+            // builds never send these. See spec §1.4 / §3.3.
+            contractVersionId?: string;
+            standardVersion?: string;
+            locale?: string;
         };
+
+        const contractVersionId = sanitizedPublicStr(rawContractVersionId);
+        const standardVersion = sanitizedPublicStr(rawStandardVersion);
+        const locale = typeof rawLocale === 'string' && rawLocale.length <= 100 && CONTRACT_LOCALES.has(rawLocale) ? rawLocale : undefined;
 
         if (!name || !lastName) {
             return withCors(NextResponse.json({ error: 'Name and last name are required' }, { status: 400 }), origin);
@@ -77,6 +97,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         // 2. Upload contract document to R2 FIRST — adoption only proceeds if this succeeds
         let contractUrl: string | null = null;
+        // Custom adoption docs (2026-09, additive): the R2 key, so it can be
+        // passed to recordSignature below (fileKey) once the adoption is recorded.
+        let contractKey: string | null = null;
         if (screenshot && screenshot.startsWith('data:')) {
             const match = screenshot.match(/^data:([^;]+);base64,([\s\S]+)$/);
             if (!match) {
@@ -93,6 +116,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             // Convert base64 to a native ArrayBuffer via Blob (miniflare-compatible)
             const blobFromBase64 = await fetch(`data:${contentType};base64,${base64Data}`).then(r => r.arrayBuffer());
             const key = `contracts/${animalId}/signed-contract.${ext}`;
+            contractKey = key;
             // This will throw on failure — intentionally NOT caught here.
             // If the upload fails, the entire submission fails and nothing is persisted.
             contractUrl = await uploadToR2(key, blobFromBase64, contentType);
@@ -199,6 +223,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }, animal, 'contract');
 
         logger.info('Contract adoption submitted', { animalId, adopterId, adopterName: fullName, contractUrl });
+
+        // Record exactly which contract text was signed (spec §1.4). Never fails
+        // the signature: the adopter has signed and the PDF is stored. NOT
+        // flag-gated — records standard signatures too (spec D10).
+        try {
+            const { recordSignature } = await import('@/lib/adoptionDocsRepo');
+            await recordSignature(db, {
+                animalId, adopterId,
+                contractVersionId: contractVersionId || null,
+                standardVersion: contractVersionId ? null : (standardVersion || null),
+                locale: locale || null,
+                fileKey: contractKey,
+                via: invitation ? 'token' : 'open',
+            });
+        } catch (e) {
+            logger.error('Contract submit: signed_contracts insert failed', e, { animalId, adopterId, contractVersionId });
+        }
 
         // 6. Notification for the rescuer using the matches the factory
         // already computed (no second findAdopters call).

@@ -29,14 +29,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
         const { eq } = await import('drizzle-orm');
 
         const user = await db
-            .select({ name: users.name })
+            .select({ name: users.name, email: users.email })
             .from(users)
             .where(eq(users.id, userId))
             .get();
 
+        // Custom adoption docs (2026-09, additive): resolves to null unless the
+        // rescuer has customized steps/contract AND the flag is on. Never throws.
+        const { resolveDocsForRescuer } = await import('@/lib/adoptionDocsRepo');
+        const resolved = await resolveDocsForRescuer(db, user?.email);
+        const formConfig = resolved ? { hiddenSteps: resolved.hiddenSteps } : null;
+
         return withCors(NextResponse.json({
             valid: !!user,
             userName: user?.name || null,
+            formConfig,
         }), origin);
     } catch (e) {
         const errorId = logger.error('api/form/[userId] failed', e, { userId });

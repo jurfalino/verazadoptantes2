@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { withCors, corsPreflightResponse } from '@/lib/cors';
 import { runAfterResponse } from '@/lib/background';
+import { deriveSpecialNeeds, sanitizeShownSteps } from '@/domain/adoptionDocs';
 
 export const runtime = 'edge';
 
@@ -26,7 +27,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         const selfieData = body.selfie as string || null;
         const species = body.species as string || null;
         const lifeStage = body.lifeStage as string || null;
-        const specialNeeds = body.specialNeeds ? 1 : 0;
+        // Custom adoption docs (2026-09, additive): NULL when the step wasn't
+        // asked (hidden by rescuer config, or an old SPA opened for a specific
+        // animal that always hid this step) — "unasked" is not "no". See spec
+        // §3.3 and src/domain/adoptionDocs.ts:deriveSpecialNeeds.
+        const specialNeeds = deriveSpecialNeeds(body);
+        const shownSteps = sanitizeShownSteps(body.shownSteps);
         const intent = body.intent as string || null;
         const household = Array.isArray(body.household) ? JSON.stringify(body.household) : null;
         // v2.14.10-2: form launched from the public showcase pre-selected
@@ -100,6 +106,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             notificationId,
             selectedAnimalId,
             createdAt: new Date(),
+            shownSteps: shownSteps ? JSON.stringify(shownSteps) : null,
         });
 
         // If the submission targeted a specific animal (showcase flow), look
@@ -158,7 +165,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             });
         }
 
-        logger.info('PetShield form submission stored', { submissionId, rescuerEmail, name, adopterId });
+        logger.info('PetShield form submission stored', { submissionId, rescuerEmail, name, adopterId, shownCount: shownSteps ? shownSteps.length : null });
 
         // Notification + org fan-out. Helper above already ran duplicate
         // detection and returned the matches; we just plug them into the
