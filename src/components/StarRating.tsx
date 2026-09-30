@@ -23,7 +23,6 @@ export function StarRating({ value, onChange, size = 'md', showLabel = false }: 
     const interactive = !!onChange;
     // 0 = not rated yet: five empty stars, no label (never clamp up to level 1).
     const level = getRatingDisplayLevel(value);
-    const clamped = level;
     const colors = getRatingColors(Math.max(1, level));
     const config = sizeConfig[size];
 
@@ -35,7 +34,7 @@ export function StarRating({ value, onChange, size = 'md', showLabel = false }: 
         <div className={`inline-flex items-center ${config.gap}`}>
             <div className={`flex items-center ${config.gap}`}>
                 {[1, 2, 3, 4, 5].map((star) => {
-                    const filled = star <= clamped;
+                    const filled = star <= level;
                     return (
                         <button
                             key={star}

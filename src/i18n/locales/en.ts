@@ -1532,6 +1532,7 @@ export const en = {
     followups: {
         due_today: 'due today',
         overdue_days: '{days} days overdue',
+        overdue_day_one: '1 day overdue',
         reminder_explain: 'When will I be reminded?',
         reminder_when: "We'll remind you on {date}.",
         reminder_until: "You'll be able to log it until {date}.",

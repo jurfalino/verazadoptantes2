@@ -1537,6 +1537,7 @@ export const pt = {
     followups: {
         due_today: 'vence hoje',
         overdue_days: 'venceu há {days} dias',
+        overdue_day_one: 'venceu há 1 dia',
         reminder_explain: 'Quando vou ser avisado?',
         reminder_when: 'Avisamos você em {date}.',
         reminder_until: 'Você vai poder registrar até {date}.',
