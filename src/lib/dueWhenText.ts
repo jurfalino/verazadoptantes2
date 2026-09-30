@@ -17,8 +17,8 @@ export function dueWhenText(
     const due = dueWhen(dueDateMs, nowMs);
     if (due.kind === 'overdue') {
         return due.days === 1
-            ? (t('followups.overdue_day_one') || 'vencía hace 1 día')
-            : interpolate(t('followups.overdue_days') || 'vencía hace {days} días', { days: due.days });
+            ? (t('followups.overdue_day_one') || 'venció hace 1 día')
+            : interpolate(t('followups.overdue_days') || 'venció hace {days} días', { days: due.days });
     }
     if (due.kind === 'future') return `${t('followups.vence_el') || 'vence el'} ${formatDate(dueDateMs)}`.trim();
     return t('followups.due_today') || 'vence hoy';

@@ -1536,8 +1536,8 @@ export const es = {
     },
     followups: {
         due_today: 'vence hoy',
-        overdue_days: 'vencía hace {days} días',
-        overdue_day_one: 'vencía hace 1 día',
+        overdue_days: 'venció hace {days} días',
+        overdue_day_one: 'venció hace 1 día',
         reminder_explain: '¿Cuándo me avisan?',
         reminder_when: 'Te avisamos el {date}.',
         reminder_until: 'Vas a poder registrarlo hasta el {date}.',

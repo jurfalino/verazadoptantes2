@@ -3,8 +3,8 @@ import { dueWhenText } from './dueWhenText';
 
 const es: Record<string, string> = {
     'followups.due_today': 'vence hoy',
-    'followups.overdue_day_one': 'vencía hace 1 día',
-    'followups.overdue_days': 'vencía hace {days} días',
+    'followups.overdue_day_one': 'venció hace 1 día',
+    'followups.overdue_days': 'venció hace {days} días',
     'followups.vence_el': 'vence el',
 };
 const t = (k: string) => es[k] ?? '';
@@ -13,7 +13,7 @@ const D = 86400000;
 
 describe('dueWhenText', () => {
     it('today', () => expect(dueWhenText(t, NOW - 3600000, NOW)).toBe('vence hoy'));
-    it('1 day is singular', () => expect(dueWhenText(t, NOW - D, NOW)).toBe('vencía hace 1 día'));
-    it('3 days is plural', () => expect(dueWhenText(t, NOW - 3 * D, NOW)).toBe('vencía hace 3 días'));
+    it('1 day is singular', () => expect(dueWhenText(t, NOW - D, NOW)).toBe('venció hace 1 día'));
+    it('3 days is plural', () => expect(dueWhenText(t, NOW - 3 * D, NOW)).toBe('venció hace 3 días'));
     it('future uses the date', () => expect(dueWhenText(t, NOW + D, NOW, () => '1 oct')).toBe('vence el 1 oct'));
 });

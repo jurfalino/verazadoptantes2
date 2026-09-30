@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.104] - 2026-09-30
+
+### Fixed — follow-up wording and an empty rating that read as «Peligroso»
+
+- **«Para hacer ahora» on an animal's page** said «vencía el 30 sept» for a check-in due
+  today. It now uses the same wording as the card in Mis Animales («vence hoy»,
+  «venció hace 2 días»), from one shared helper (`src/lib/dueWhenText.ts`), so the two
+  can't disagree. Overdue by one day reads «venció hace 1 día» (was «… 1 días»; same
+  fix in English and Portuguese).
+- **«Agregar evento» opened with one red star and «Peligroso»** on adopted animals before
+  anything was picked: an empty rating was drawn as level 1. It now shows five empty
+  stars and no label until a rating is chosen; saving without one still stores no rating.
+
+### Changed
+
+- Overdue follow-ups read «venció hace N días» instead of «vencía hace N días».
+
 ## [2.56.103] - 2026-09-29
 
 ### Fixed — screens that showed codes, handles and English to Spanish users
