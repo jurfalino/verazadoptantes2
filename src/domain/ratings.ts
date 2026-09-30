@@ -28,3 +28,14 @@ export function getRatingLabelKey(rating: number): string {
     const r = Math.max(1, Math.min(5, Math.round(Number(rating) || 0))) as RatingLevel;
     return RATING_LABEL_KEYS[r];
 }
+
+/**
+ * How many stars to show filled. 0 (or null/NaN/negative) means "not rated
+ * yet" and must show NO star and no label — never clamp it up to level 1
+ * ("Peligroso").
+ */
+export function getRatingDisplayLevel(rating: number): 0 | RatingLevel {
+    const r = Math.round(Number(rating) || 0);
+    if (r < 1) return 0;
+    return Math.min(5, r) as RatingLevel;
+}
