@@ -9,6 +9,7 @@ import { useSession } from 'next-auth/react';
 import { useDateFormat, useRelativeTime } from '@/context/TimezoneContext';
 import { emailHandle } from '@/lib/userDisplay';
 import { interpolate } from '@/lib/interpolate';
+import { dueWhen } from '@/domain/dueWhen';
 import { formatAge } from '@/lib/ageUtils';
 import ShareFormMenu from '@/components/ShareFormMenu';
 import AnimalShareSheet from '@/components/AnimalShareSheet';
@@ -508,10 +509,10 @@ export default function MyAnimalsPage() {
                                                 const label = (top.copyKey === 'checkin_custom' || top.copyKey === 'foster_checkin')
                                                     ? interpolate(t(`followups.${top.copyKey}`) || '{days}', { days: top.offsetDays ?? '' })
                                                     : (t(`followups.${top.copyKey}`) || top.copyKey);
-                                                const lateDays = Math.max(0, Math.floor((Date.now() - top.dueDate) / 86400000));
-                                                const when = lateDays === 0
-                                                    ? (t('followups.due_today') || 'vence hoy')
-                                                    : interpolate(t('followups.overdue_days') || 'vencía hace {days} días', { days: lateDays });
+                                                const due = dueWhen(top.dueDate, Date.now());
+                                                const when = due.kind === 'overdue'
+                                                    ? interpolate(t('followups.overdue_days') || 'vencía hace {days} días', { days: due.days })
+                                                    : (t('followups.due_today') || 'vence hoy');
                                                 return `${label} · ${when}${extra > 0 ? ` +${extra}` : ''}`;
                                             })()}
                                         </Link>

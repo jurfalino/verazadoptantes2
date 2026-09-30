@@ -1562,6 +1562,7 @@ export const es = {
         status_upcoming: 'Programado',
         para_hacer: 'Para hacer ahora',
         vencia: 'vencía el',
+        vence_el: 'vence el',
         registrable_hasta: 'podés registrarlo hasta el',
         register: 'Registrar',
         missed_one: 'recordatorio vencido',

@@ -1557,6 +1557,7 @@ export const en = {
         status_upcoming: 'Scheduled',
         para_hacer: 'To do now',
         vencia: 'was due on',
+        vence_el: 'due on',
         registrable_hasta: 'you can record it until',
         register: 'Record',
         missed_one: 'expired reminder',

@@ -30,6 +30,7 @@ import AnimalApplicants from '@/components/AnimalApplicants';
 import type { AnimalProfileData, ProjectedSlot } from '@/app/actions/animalTimeline';
 import type { ApplicantSummary } from '@/app/actions/applicants';
 import { interpolate } from '@/lib/interpolate';
+import { dueWhen } from '@/domain/dueWhen';
 
 function placeholderFor(species: string | null): string {
     const s = (species || '').toLowerCase();
@@ -108,6 +109,14 @@ export default function AnimalProfile({ profile, applicants, userId }: {
         return n === 0
             ? (t('followups.last_day') || 'último día para registrarlo')
             : interpolate(t('followups.days_left') || 'te quedan {days} días para registrarlo', { days: n });
+    };
+
+    /** Same wording rule as the /my-animals card (shared `dueWhen`). */
+    const dueWhenCopy = (s: ProjectedSlot) => {
+        const due = dueWhen(s.dueDate, Date.now());
+        if (due.kind === 'overdue') return interpolate(t('followups.overdue_days') || 'vencía hace {days} días', { days: due.days });
+        if (due.kind === 'future') return `${t('followups.vence_el') || 'vence el'} ${formatShortDate(s.dueDate)}`;
+        return t('followups.due_today') || 'vence hoy';
     };
 
     const slotLabel = (s: ProjectedSlot) =>
@@ -341,7 +350,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                                 <div className="flex-1 min-w-[180px]">
                                     <p className="text-sm font-semibold text-stone-800">{slotLabel(s)}</p>
                                     <p className="text-xs text-stone-500">
-                                        {(t('followups.vencia') || 'vencía el')} {formatShortDate(s.dueDate)} · {windowCopy(s)}
+                                        {dueWhenCopy(s)} · {windowCopy(s)}
                                     </p>
                                 </div>
                                 {contactButton(s)}

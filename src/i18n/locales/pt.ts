@@ -1562,6 +1562,7 @@ export const pt = {
         status_upcoming: 'Programado',
         para_hacer: 'Para fazer agora',
         vencia: 'vencia em',
+        vence_el: 'vence em',
         registrable_hasta: 'você pode registrar até',
         register: 'Registrar',
         missed_one: 'lembrete vencido',
