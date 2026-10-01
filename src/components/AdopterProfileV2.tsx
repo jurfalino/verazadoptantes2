@@ -120,6 +120,9 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     const router = useRouter();
 
     const isOwner = adopter?.addedBy === currentUser;
+    // Weak (`low`) pairs never appear in the /my-adopters review queue the
+    // banner links to, so they don't earn a banner either.
+    const reviewableDups = duplicateCandidates.filter(c => c.confidence !== 'low');
 
     // Masked adopter for preview mode. Pass-through when not in preview.
     // Memoised so the children's prop reference is stable while the toggle
@@ -373,7 +376,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     "Revisar" affordance straight to /my-adopters#pending-dedup
                     where the merge UI lives. Everyone else sees the same flag
                     informationally — non-owners can't act on someone else's record. */}
-                {!isNew && adopter && duplicateCandidates && duplicateCandidates.length > 0 && (
+                {!isNew && adopter && reviewableDups.length > 0 && (
                     (isOwner || isAdmin) ? (
                         <a
                             href="/my-adopters#pending-dedup"
@@ -382,9 +385,9 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             <span className="flex items-center gap-2 min-w-0">
                                 <span aria-hidden>🔍</span>
                                 <span className="font-semibold">
-                                    {duplicateCandidates.length === 1
+                                    {reviewableDups.length === 1
                                         ? (t('myAdopters.profile_pending_dup_one') || 'Posible duplicado detectado')
-                                        : (t('myAdopters.profile_pending_dup_many') || '{n} posibles duplicados detectados').replace('{n}', String(duplicateCandidates.length))}
+                                        : (t('myAdopters.profile_pending_dup_many') || '{n} posibles duplicados detectados').replace('{n}', String(reviewableDups.length))}
                                 </span>
                             </span>
                             <span className="text-xs font-medium text-amber-800 flex-shrink-0">

@@ -2,7 +2,7 @@
 
 All notable changes to BuenAdoptante are documented here.
 
-## [2.56.111] - 2026-10-01
+## [2.56.112] - 2026-10-01
 
 ### Fixed — two visual defects in the record form
 
@@ -23,6 +23,27 @@ now nested inside the track, so its width is a share of the track: measured
 overflow **0px**, fill width equal to track width.
 
 Both verified by measurement — contrast ratio and bounding boxes — not by eye.
+
+## [2.56.111] - 2026-09-30
+
+### Removed — "Ver N coincidencias débiles" in Pendientes de revisar
+
+Weak (`low`) duplicate pairs are no longer offered in the /my-adopters review
+queue at all; the toggle surfaced pairs nobody acted on.
+
+### Fixed — "Posible duplicado" pointed at pairs the queue never lists
+
+The per-row chip on /my-adopters and the banner on the adopter profile counted
+weak pairs too, so a record could say "Posible duplicado" and the queue it links
+to had nothing for it. Both now ignore weak pairs, matching the queue. The
+profile's lookup also takes the strongest pairs first, so five weak ones can no
+longer crowd a strong one out of its cap of five.
+
+### Added — "Importar planilla" on /my-adopters (flag `ENABLE_SHEET_IMPORT`, off)
+
+A header link to `/import/sheet`, beside "Agregar adoptante". The flag gates the
+link only — the page stays reachable by URL. The header now wraps on narrow
+screens so the two buttons never overflow.
 
 ## [2.56.110] - 2026-09-30
 

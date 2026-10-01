@@ -840,6 +840,8 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
                     eq(duplicateCandidates.adopter2Id, adopterId),
                 ),
             ))
+            // Strongest first, so weak pairs can't crowd a strong one out of the cap.
+            .orderBy(sql`${duplicateCandidates.score} DESC`)
             .limit(5);
 
         if (candidates.length === 0) return [];

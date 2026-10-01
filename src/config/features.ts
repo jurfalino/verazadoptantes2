@@ -118,6 +118,10 @@ export const FEATURE_FLAGS = {
     // even when customizations exist. Client-visible (settings card, editor,
     // /organizations button) → also in PUBLIC_FLAG_KEYS. Default off.
     ENABLE_CUSTOM_ADOPTION_DOCS: false,
+    // "Importar planilla" link on /my-adopters → /import/sheet. Gates only the
+    // entry point; the page itself stays reachable by URL. Client-visible →
+    // also in PUBLIC_FLAG_KEYS. Default off.
+    ENABLE_SHEET_IMPORT: false,
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
@@ -202,6 +206,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_PWA_INSTALL_PROMPT: false,
         ENABLE_GUEST_NAME_MASK: false,
         ENABLE_CUSTOM_ADOPTION_DOCS: false,
+        ENABLE_SHEET_IMPORT: false,
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
         ENABLE_POSTHOG: false,
