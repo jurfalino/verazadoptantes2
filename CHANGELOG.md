@@ -2,6 +2,38 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.115] - 2026-10-01
+
+### Fixed — a return or follow-up never pre-selected its animal, anywhere
+
+`?animalId=` was matched only against `availableAnimals` — unlinked inventory
+plus fosters. A devolución or follow-up is always about an animal the adopter
+**already has**, which by definition is not in that list, so the parameter was
+silently ignored and the rescuer had to find the animal again by hand. True on
+the adopter page too, long before this week's work; it surfaced only while
+moving the entry point. Those two types now match the adopter's own records,
+and a return whose animal resolves skips the identity step like an adoption.
+
+### Internal — reconciled two parallel fixes for the same race
+
+2.56.113 (another session) and this change both addressed the form mounting
+before `router.replace` had published its parameters. Its `presetAnimalId` prop
+is the better answer — nothing to wait for — so the URL-readiness gate added
+here is gone, and the duplicated `initialRecordType` the merge left behind is
+removed. Only the inventory is still awaited.
+
+### Known gap — devolución still navigates to the adopter
+
+Mounted on the animal page the form enters its dual-date «two separate records»
+mode and saves nothing. Adoption and tránsito stay in place; this keeps its old
+navigation until a save is proven end to end.
+
+**Worth a product decision: recording a devolución has never ended the
+placement.** The event narrates the ending — the timeline suppresses its
+synthetic "span ended" item because of it — but `ended_at` stays NULL, so the
+animal still reads as adopted and never returns to the available list.
+Pre-existing, and a data decision rather than a bug fix.
+
 ## [2.56.113] - 2026-10-01
 
 ### Fixed — «Registrar adopción» on an animal could open without the animal (intermittent)
