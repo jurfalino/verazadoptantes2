@@ -7,6 +7,7 @@ import { eq, and } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { availableAnimalsBase, buildPublicRescuer, fetchAnimalImages, pickPublicAnimal } from '@/lib/showcase';
 import { getPublicConfig } from '@/lib/publicConfig';
+import { isPubliclyListed } from '@/domain/animalAccess';
 
 /** GET /api/showcase/animal/[id] — single-animal detail page data.
  *  Used by the Vite /animal/[id] route: hero, gallery, badges, Adoptar CTA.
@@ -43,7 +44,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         // — surface a 404 here too so a direct-link share to an uncataloged
         // animal doesn't leak data the list routes hide. Once the rescuer
         // adds an image, the page becomes reachable again.
-        if (animalImages.length === 0) {
+        if (!isPubliclyListed(animalRow, animalImages.length)) {
             return withCors(NextResponse.json({ error: 'Animal not found' }, { status: 404 }), origin);
         }
 
