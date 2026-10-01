@@ -8,8 +8,8 @@ import { eq } from 'drizzle-orm';
 import { animals, adoptions } from '@/db/schema';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { isOwnerOrOrgMate } from '@/lib/orgMembership';
-import { isAdminAsync } from '@/config/admins';
+import { isOrgMateStrict, normEmail } from '@/lib/orgMembership';
+import { isAdminAsyncStrict } from '@/config/admins';
 import { buildPublicRescuer, fetchAnimalImages } from '@/lib/showcase';
 import { getContractBaseUrl } from '@/lib/contractUrl';
 import { decideAnimalAccess, isPubliclyListed } from '@/domain/animalAccess';
@@ -27,8 +27,14 @@ export async function getAnimalAccess(animalId: string, viewerEmail: string): Pr
     if (!db) return { kind: 'missing' };
 
     const row = await db.select().from(animals).where(eq(animals.id, animalId)).get();
+    // Strict checks: a failing lookup throws (page logs + 404s) instead of
+    // reading as "stranger" and showing a teammate/admin the wrong screen.
+    const viewer = normEmail(viewerEmail);
+    const ownerNorm = normEmail(row?.addedBy);
     const viewerCanSee = !!row && (
-        (await isOwnerOrOrgMate(viewerEmail, row.addedBy)) || (await isAdminAsync(viewerEmail))
+        (!!ownerNorm && viewer === ownerNorm) ||
+        (await isOrgMateStrict(viewerEmail, row.addedBy)) ||
+        (await isAdminAsyncStrict(viewerEmail))
     );
     const kind = decideAnimalAccess({ exists: !!row, deleted: !!row?.deletedAt, viewerCanSee });
 

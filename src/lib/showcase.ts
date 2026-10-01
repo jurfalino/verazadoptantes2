@@ -18,6 +18,7 @@
  */
 
 import { adoptions, adopterImages, users, organizations, orgMembers, userProfiles } from '@/db/schema';
+import { logger } from '@/lib/logger';
 import { eq, and, isNull, desc, sql } from 'drizzle-orm';
 
 export interface PublicAnimal {
@@ -102,7 +103,10 @@ export async function buildPublicRescuer(
                 .get();
             if (profile?.handle) userHandle = profile.handle;
         }
-    } catch { /* fall through to email-prefix fallback */ }
+    } catch (e) {
+        // Fall through to the email-prefix fallback; no addedBy/email in the log.
+        logger.warn('buildPublicRescuer: user lookup fallback', { error: e instanceof Error ? e.message : String(e) });
+    }
 
     if (!displayName) {
         const at = addedBy.indexOf('@');
@@ -124,7 +128,10 @@ export async function buildPublicRescuer(
                 .get();
             if (org) { orgName = org.name; orgSlug = org.slug ?? undefined; }
         }
-    } catch { /* no org affiliation, fine */ }
+    } catch (e) {
+        // No org affiliation shown; no addedBy/email in the log.
+        logger.warn('buildPublicRescuer: org lookup fallback', { error: e instanceof Error ? e.message : String(e) });
+    }
 
     return { displayName, orgName, orgSlug, userHandle, userId };
 }
