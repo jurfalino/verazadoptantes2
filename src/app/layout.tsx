@@ -25,6 +25,8 @@ import ClarityScript from '@/components/ClarityScript';
 import PostHogProvider from '@/components/PostHogProvider';
 import { WebApplicationJsonLd, OrganizationJsonLd } from '@/components/JsonLd';
 import ChatWidget from '@/components/ChatWidget';
+import { ViewAsBanner } from '@/components/ViewAsBanner';
+import { isViewingAs } from '@/lib/viewAsClient';
 import { getFeatureFlag } from '@/config/features';
 
 export const runtime = "edge";
@@ -178,8 +180,12 @@ export default async function RootLayout({
                   <div className="min-h-screen flex flex-col bg-stone-50">
                     <nav className="bg-white/80 border-b border-stone-200 sticky top-0 z-50 backdrop-blur-md">
                       <NavBar user={session?.user} isAdmin={(session?.user as { isAdmin?: boolean } | undefined)?.isAdmin} />
+                      <ViewAsBanner />
                     </nav>
-                    <CountryConfirmBanner key={session?.user?.email || 'anon'} userEmail={session?.user?.email || null} />
+                    {/* The viewed user's own country prompt would block the page and can't be saved. */}
+                    {!isViewingAs(session) && (
+                      <CountryConfirmBanner key={session?.user?.email || 'anon'} userEmail={session?.user?.email || null} />
+                    )}
                     <LoginModal />
                     <InstallPrompt />
                     {children}

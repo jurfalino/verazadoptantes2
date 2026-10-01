@@ -83,7 +83,18 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                              is stored as JSON, never HTML. A stranger can
 //                              read or edit only their own docs; a member can
 //                              edit their group's, which is the product rule.
-const EXPECTED_ACTIONS = 158;
+// 160 since v2.56.119: startViewAs(userId) and stopViewAs() in
+// src/app/actions/viewAs.ts — an admin browsing as another user, read-only.
+// Both only forward a session update; what a stranger can do with them is
+// exactly what they can already do by POSTing that update to
+// /api/auth/session, and the jwt callback (src/lib/viewAsSession.ts) decides:
+//   startViewAs(userId)  refused unless the session's own email is an admin
+//                        (bootstrap list or DB role, re-checked every request)
+//                        and the target exists, is not an admin and is not
+//                        them. Writes one audit_log row; nothing else.
+//   stopViewAs()         takes nothing; only ever drops the caller's own claim.
+// While a claim is active every D1 write fails (src/lib/readOnlyGuard.ts).
+const EXPECTED_ACTIONS = 160;
 
 let manifest;
 try {

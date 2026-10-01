@@ -6,6 +6,43 @@ import { getCountryByCode } from '@/config/countries';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import OrphanSubmissionsSection from '@/components/OrphanSubmissionsSection';
+import { useSession } from 'next-auth/react';
+import { startViewAs } from '@/app/actions/viewAs';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
+
+/**
+ * "View as" (src/domain/viewAs.ts): browse the app as this user, read-only.
+ * Not offered for admins or yourself — the session would refuse it anyway.
+ */
+function ViewAsButton({ user, className }: { user: { id: string; email: string; role: string | null }; className: string }) {
+    const { data: session } = useSession();
+    const { t } = useLanguage();
+    const toast = useShowToast();
+    const [starting, setStarting] = useState(false);
+    if (user.role === 'admin' || user.email === session?.user?.email) return null;
+
+    const start = async () => {
+        setStarting(true);
+        try {
+            const res = await startViewAs(user.id);
+            if (res.ok) {
+                // A full load, so nothing rendered for the admin survives.
+                window.location.assign('/');
+                return;
+            }
+            toast.error(t('admin.view_as_failed'), undefined, res.errorId);
+        } catch (e) {
+            toast.error(t('admin.view_as_failed'), undefined, resolveErrorId(e, 'view-as-start'));
+        }
+        setStarting(false);
+    };
+
+    return (
+        <button type="button" onClick={start} disabled={starting} title={t('admin.view_as_title')} className={className}>
+            {t('admin.view_as')}
+        </button>
+    );
+}
 
 function CopyIdButton({ id, className = '' }: { id: string; className?: string }) {
     const [copied, setCopied] = useState(false);
@@ -572,6 +609,10 @@ export default function AdminUsersPage() {
                                             >
                                                 Edit
                                             </button>
+                                            <ViewAsButton
+                                                user={user}
+                                                className="text-stone-500 hover:text-stone-700 text-xs underline underline-offset-2 whitespace-nowrap disabled:opacity-60"
+                                            />
                                             {deletingId === user.id ? (
                                                 <>
                                                     <button
@@ -730,6 +771,10 @@ export default function AdminUsersPage() {
                                     >
                                         Edit
                                     </button>
+                                    <ViewAsButton
+                                        user={user}
+                                        className="flex-1 py-2 text-xs font-semibold text-stone-500 bg-stone-50 rounded-lg hover:bg-stone-100 disabled:opacity-60"
+                                    />
                                     {deletingId === user.id ? (
                                         <>
                                             <button

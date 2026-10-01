@@ -2,6 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useEffect, useRef } from 'react';
+import { isViewingAs } from '@/lib/viewAsClient';
 
 /**
  * Microsoft Clarity identity sync (v2.19.29).
@@ -51,6 +52,8 @@ export default function ClarityScript() {
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
+        // Viewing as another user: keep the admin's own identity (src/lib/viewAsClient.ts).
+        if (isViewingAs(session)) return;
 
         const userId = (session?.user as { id?: string } | undefined)?.id;
         const isAdmin = (session?.user as { isAdmin?: boolean } | undefined)?.isAdmin;

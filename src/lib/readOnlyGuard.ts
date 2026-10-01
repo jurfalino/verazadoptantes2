@@ -6,14 +6,17 @@
  * Every request that acts as a user resolves the session first, so a write that
  * would be credited to the viewed user always comes after the mark.
  *
- * The mark is keyed by the Cloudflare ExecutionContext, which next-on-pages
- * keeps per request in AsyncLocalStorage — so it still holds inside
- * `waitUntil` / runAfterResponse work, where cookies and headers are already
- * gone. In local dev (no Cloudflare context) it is keyed by the request's
- * headers object instead, and getDb() applies it when it hands out the DB.
+ * The mark is keyed by two per-request objects, and either one counts:
+ *  - the promise `headers()` returns, which Next caches per request — present
+ *    in pages, route handlers and server actions, locally and on Cloudflare;
+ *  - on Cloudflare, the ExecutionContext, which next-on-pages keeps per request
+ *    in AsyncLocalStorage. It is what still matches inside `waitUntil` /
+ *    runAfterResponse work. Not used in `next dev`: the dev platform hands
+ *    every request the SAME ctx object, so marking it would lock the server.
  */
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
+import { headers } from 'next/headers';
 import { isReadOnlySql } from '@/domain/viewAs';
 
 export const READ_ONLY_ERROR_NAME = 'ViewAsReadOnlyError';
@@ -27,42 +30,31 @@ export class ViewAsReadOnlyError extends Error {
 
 const readOnlyRequests = new WeakSet<object>();
 
-function cloudflareRequestKey(): object | null {
+function requestKeys(): object[] {
+    const keys: object[] = [];
     try {
-        const { ctx } = getRequestContext();
-        return ctx && typeof ctx === 'object' ? ctx : null;
-    } catch {
-        return null;
+        const h = headers();
+        if (h && typeof h === 'object') keys.push(h);
+    } catch { /* outside a request (build, middleware, background work) */ }
+    if (process.env.NODE_ENV === 'production') {
+        try {
+            const { ctx } = getRequestContext();
+            if (ctx && typeof ctx === 'object') keys.push(ctx);
+        } catch { /* not on Cloudflare */ }
     }
-}
-
-async function requestKey(): Promise<object | null> {
-    const cf = cloudflareRequestKey();
-    if (cf) return cf;
-    try {
-        const { headers } = await import('next/headers');
-        return await headers();
-    } catch {
-        return null;
-    }
+    return keys;
 }
 
 /** Called by the jwt callback with the outcome of every session resolution. */
 export async function setRequestReadOnly(readOnly: boolean): Promise<void> {
-    const key = await requestKey();
-    if (!key) return;
-    if (readOnly) readOnlyRequests.add(key);
-    else readOnlyRequests.delete(key);
+    for (const key of requestKeys()) {
+        if (readOnly) readOnlyRequests.add(key);
+        else readOnlyRequests.delete(key);
+    }
 }
 
-export async function isRequestReadOnly(): Promise<boolean> {
-    const key = await requestKey();
-    return !!key && readOnlyRequests.has(key);
-}
-
-function isRequestReadOnlyNow(): boolean {
-    const key = cloudflareRequestKey();
-    return !!key && readOnlyRequests.has(key);
+export function isRequestReadOnly(): boolean {
+    return requestKeys().some(key => readOnlyRequests.has(key));
 }
 
 const REFUSED = Symbol('viewAsRefused');
@@ -78,7 +70,7 @@ function refusedStatement(): D1PreparedStatement {
  * Wraps a D1 binding so writes fail while the current request is read-only.
  * `isReadOnly` is injectable for tests; production checks the request mark.
  */
-export function guardD1(d1: D1Database, isReadOnly: () => boolean = isRequestReadOnlyNow): D1Database {
+export function guardD1(d1: D1Database, isReadOnly: () => boolean = isRequestReadOnly): D1Database {
     return new Proxy(d1, {
         get(target, prop, receiver) {
             if (prop === 'prepare') {
