@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.106] - 2026-09-30
+
+### Fixed — the post-deploy check still had one probe with no readiness wait
+
+v2.56.105 deployed fine and the job went red anyway: `normal request -> 404`.
+A plain GET of `/` fired immediately after `wrangler pages deploy` returned.
+The stale probe before it proves the **worker** is live, but Pages can still be
+seconds from serving the static asset for `/`.
+
+2.56.95 gave the forwarding probe a readiness wait and missed this one, which
+runs earlier in the same step — so the same class of false alarm that reddened
+25 Sep reddened 30 Sep too. It now retries the probe and asserts once, exactly
+like the other two; a genuinely broken deploy still fails on the first pass.
+
 ## [2.56.105] - 2026-09-30
 
 ### Fixed — «Registrar» on a check-in threw you onto the adopter's page

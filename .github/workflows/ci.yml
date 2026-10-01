@@ -330,7 +330,17 @@ jobs:
           [ "$CODE" = "409" ] || { echo "::error::deploy-skew guard is NOT active (got $CODE, expected 409)"; exit 1; }
           [ "$SKEW" = "1" ] || { echo "::error::409 without the x-deployment-skew marker"; exit 1; }
           [ "$SERVER" = "${{ github.sha }}" ] || { echo "::error::server build id $SERVER != ${{ github.sha }}"; exit 1; }
-          OK=$(curl -s -o /dev/null -w '%{http_code}' "$URL/")
+          # The stale probe above proves the WORKER is live, but Pages can still
+          # be seconds from serving the static asset for `/` — a plain GET then
+          # 404s. That is what reddened 2026-09-25 and 2026-09-30, both times on
+          # a deploy that had succeeded. 2.56.95 gave the forwarding probe a
+          # readiness wait and missed this one, which runs before it.
+          # Retry the PROBE, assert ONCE: a genuinely broken deploy still fails.
+          for i in $(seq 1 10); do
+            OK=$(curl -s -o /dev/null -w '%{http_code}' "$URL/")
+            case "$OK" in 2*|3*) break;; esac
+            sleep 6
+          done
           echo "normal request -> $OK"
           case "$OK" in 2*|3*) ;; *) echo "::error::normal request failed with $OK"; exit 1;; esac
           # A tab from the PREVIOUS build must be served by that build, not rejected.
@@ -434,7 +444,17 @@ jobs:
           [ "$CODE" = "409" ] || { echo "::error::deploy-skew guard is NOT active (got $CODE, expected 409)"; exit 1; }
           [ "$SKEW" = "1" ] || { echo "::error::409 without the x-deployment-skew marker"; exit 1; }
           [ "$SERVER" = "${{ github.sha }}" ] || { echo "::error::server build id $SERVER != ${{ github.sha }}"; exit 1; }
-          OK=$(curl -s -o /dev/null -w '%{http_code}' "$URL/")
+          # The stale probe above proves the WORKER is live, but Pages can still
+          # be seconds from serving the static asset for `/` — a plain GET then
+          # 404s. That is what reddened 2026-09-25 and 2026-09-30, both times on
+          # a deploy that had succeeded. 2.56.95 gave the forwarding probe a
+          # readiness wait and missed this one, which runs before it.
+          # Retry the PROBE, assert ONCE: a genuinely broken deploy still fails.
+          for i in $(seq 1 10); do
+            OK=$(curl -s -o /dev/null -w '%{http_code}' "$URL/")
+            case "$OK" in 2*|3*) break;; esac
+            sleep 6
+          done
           echo "normal request -> $OK"
           case "$OK" in 2*|3*) ;; *) echo "::error::normal request failed with $OK"; exit 1;; esac
           # A tab from the PREVIOUS build must be served by that build, not rejected.
