@@ -65,6 +65,38 @@ test.describe.serial('admin view as', () => {
         await exitViewing(page);
     });
 
+    test('search, an adopter profile and notifications work while viewing', async ({ page }) => {
+        test.setTimeout(120000);
+        // These read paths also write in the background (search analytics,
+        // profile views, read state). Refused writes must not break the page.
+        const noErrorToast = async (step: string) => {
+            const alerts = page.locator('[role="alert"]');
+            for (let i = 0; i < await alerts.count(); i++) {
+                const text = (await alerts.nth(i).textContent())?.trim();
+                expect(text, `error toast during ${step}`).toBeFalsy();
+            }
+        };
+
+        await startViewingTestUser(page);
+
+        await page.fill('input#search', 'María');
+        await page.getByRole('button', { name: /search records|buscar registros/i }).click();
+        await expect(page.getByText(/found \d+ match|\d+ coincidencia/i)).toBeVisible({ timeout: 30000 });
+        await noErrorToast('search');
+
+        await page.goto('/adopter/test-adopter-1');
+        await expect(page.getByTestId('rating-badge')).toBeVisible({ timeout: 30000 });
+        await expect(banner(page)).toBeVisible();
+        await noErrorToast('profile');
+
+        await page.getByRole('button', { name: /Notifications|Notificaciones/i }).click();
+        await expect(page.getByText(/Mark all read|Marcar todo leído|No notifications|Sin notificaciones/i).first()).toBeVisible({ timeout: 30000 });
+        await noErrorToast('notifications');
+
+        await page.goto('/');
+        await exitViewing(page);
+    });
+
     test('exit restores the admin', async ({ page }) => {
         const adminName = await settingsName(page);
         await startViewingTestUser(page);

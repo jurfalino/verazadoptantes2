@@ -127,8 +127,10 @@ export async function viewAsDeps(): Promise<ViewAsDeps> {
                          VALUES (?, ?, ?, ?, ?, ?, strftime('%s','now'))`
                     ).bind(row.id, row.userId, row.userEmail, row.action, row.target, row.details).run();
                 } else {
-                    // No Cloudflare context (local `next start`): the read-write local file.
-                    const db = await getDb();
+                    // No Cloudflare context (local `next start`): the read-write local
+                    // file directly — getDb() hands a marked request the read-only one.
+                    const { createLocalDb } = await import('@/db/local');
+                    const db = await createLocalDb('local.db');
                     if (!db) throw new Error('DB unavailable');
                     await db.insert(auditLog).values(row);
                 }

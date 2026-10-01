@@ -111,4 +111,11 @@ describe('no direct @cloudflare/next-on-pages imports', () => {
             .filter(p => !ALLOWED.has(p) && pattern.test(readFileSync(join(root, p), 'utf8')));
         expect(offenders).toEqual([]);
     });
+
+    it('only the view-as audit row uses the guard\'s bypass', () => {
+        const users = walk(join(root, 'src'))
+            .map(p => relative(root, p))
+            .filter(p => p !== 'src/lib/readOnlyGuard.ts' && readFileSync(join(root, p), 'utf8').includes('unguardedD1ForViewAsAudit'));
+        expect(users).toEqual(['src/lib/viewAsSession.ts']);
+    });
 });
