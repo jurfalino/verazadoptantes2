@@ -230,6 +230,9 @@ export async function isOwnerOrOrgMate(
     return isOrgMate(v, o);
 }
 
+/** Defensive cap on a team list (self + org-mates); orgs are small in practice. */
+const TEAM_EMAILS_CAP = 30;
+
 /**
  * v2.55.18: the emails whose animals the viewer can see — self + every
  * org-mate (deduped, capped defensively; orgs are small in practice). Fails
@@ -241,7 +244,15 @@ export async function getTeamEmails(email: string | null | undefined): Promise<s
     if (!e) return [];
     try {
         const mates = await getOrgMatesOf(e);
-        return [e, ...mates.map(m => m.email)].slice(0, 30);
+        const team = [e, ...mates.map(m => m.email)];
+        if (team.length > TEAM_EMAILS_CAP) {
+            // The cap silently drops members #31+ from every team-scoped list
+            // (animals, applicants). Leave a trace so it is noticed.
+            logger.warn('getTeamEmails: team truncated at cap', {
+                email: e, teamSize: team.length, cap: TEAM_EMAILS_CAP,
+            });
+        }
+        return team.slice(0, TEAM_EMAILS_CAP);
     } catch (err) {
         logger.warn('getTeamEmails failed — solo visibility fallback', {
             email: e, error: err instanceof Error ? err.message : String(err),

@@ -27,11 +27,13 @@ export function emailHandle(email: string | null | undefined): string {
  * actors with approved copy belong here; 'anonymous' keeps its own handling at
  * each call site.
  */
-const SYSTEM_ACTOR_LABEL_KEYS: Readonly<Record<string, string>> = {
-    contract: 'common.actor_contract',
-    'contract-signed-via-invitation': 'common.actor_contract',
-    'contract-submission': 'common.actor_contract',
-};
+// A Map, not an object literal: `obj[actor]` would resolve inherited keys
+// ('constructor', 'toString', …) through the prototype and hand t() a function.
+const SYSTEM_ACTOR_LABEL_KEYS: ReadonlyMap<string, string> = new Map([
+    ['contract', 'common.actor_contract'],
+    ['contract-signed-via-invitation', 'common.actor_contract'],
+    ['contract-submission', 'common.actor_contract'],
+]);
 
 /**
  * How an actor (the person or system that recorded/changed something) is shown:
@@ -48,7 +50,7 @@ export function actorLabel(
     resolvedName: string | null | undefined,
     t: (path: string) => string,
 ): string {
-    const systemKey = actor ? SYSTEM_ACTOR_LABEL_KEYS[actor] : undefined;
+    const systemKey = actor ? SYSTEM_ACTOR_LABEL_KEYS.get(actor) : undefined;
     if (systemKey) return t(systemKey);
     return resolvedName || emailHandle(actor);
 }

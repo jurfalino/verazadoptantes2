@@ -49,4 +49,13 @@ describe('actorLabel', () => {
     it('unrecognized non-email values still fall back unchanged', () => {
         expect(actorLabel('anonymous', null, tEs)).toBe('anonymous');
     });
+
+    it('inherited object keys are not system actors (own keys only)', () => {
+        // A plain-object lookup resolves 'constructor' / 'toString' through the
+        // prototype and would hand a FUNCTION to t(). They are ordinary actors.
+        for (const actor of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+            expect(actorLabel(actor, null, tEs)).toBe(actor);
+            expect(actorLabel(actor, 'Nombre Real', tEs)).toBe('Nombre Real');
+        }
+    });
 });
