@@ -254,6 +254,22 @@ export default function MyAdoptersPage() {
     const currentEmail = session?.user?.email || '';
     const [adopters, setAdopters] = useState<Adopter[]>([]);
     const [loading, setLoading] = useState(true);
+    // ENABLE_SHEET_IMPORT: the "Importar planilla" header link. Hidden until
+    // the flag says otherwise, so it never flashes in for users without it.
+    const [sheetImportEnabled, setSheetImportEnabled] = useState(false);
+
+    useEffect(() => {
+        let active = true;
+        fetch('/api/config')
+            .then(r => r.json())
+            .then(d => {
+                const config = (d as { config?: Record<string, string> }).config;
+                if (active) setSheetImportEnabled(config?.ENABLE_SHEET_IMPORT === 'true');
+            })
+            // Unreadable flag → link stays hidden (the default); report it.
+            .catch(e => { resolveErrorId(e, 'MyAdopters.sheetImportFlag'); });
+        return () => { active = false; };
+    }, []);
 
     useEffect(() => {
         // v2.14.10-20: unlinked form submissions don't exist anymore — Phase 1
@@ -294,8 +310,8 @@ export default function MyAdoptersPage() {
     return (
         <div className="min-h-screen bg-stone-50 py-8 px-4">
             <div className="max-w-6xl mx-auto">
-                {/* Header */}
-                <div className="flex items-center justify-between mb-6">
+                {/* Header — wraps on narrow screens once the import link shows. */}
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
                     <div className="flex items-center gap-3">
                         <Link
                             href="/"
@@ -307,12 +323,22 @@ export default function MyAdoptersPage() {
                         <h1 className="text-2xl font-semibold text-stone-900">{t('dashboard.my_adopters')}</h1>
                         <span className="text-sm text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full">{adopters.length}</span>
                     </div>
-                    <Link
-                        href="/adopter/create"
-                        className="px-4 py-2 bg-teal-700 text-white font-semibold rounded-lg hover:bg-teal-600 transition-colors shadow-sm text-sm"
-                    >
-                        {t('dashboard.add_new_adopter')}
-                    </Link>
+                    <div className="flex items-center gap-2">
+                        {sheetImportEnabled && (
+                            <Link
+                                href="/import/sheet"
+                                className="px-4 py-2 bg-stone-100 text-stone-700 font-semibold rounded-lg hover:bg-stone-200 transition-colors text-sm"
+                            >
+                                {t('dashboard.import_sheet') || 'Importar planilla'}
+                            </Link>
+                        )}
+                        <Link
+                            href="/adopter/create"
+                            className="px-4 py-2 bg-teal-700 text-white font-semibold rounded-lg hover:bg-teal-600 transition-colors shadow-sm text-sm"
+                        >
+                            {t('dashboard.add_new_adopter')}
+                        </Link>
+                    </div>
                 </div>
 
                 {/* Pending-dedup pairs (replaces the old "Unlinked Forms" section

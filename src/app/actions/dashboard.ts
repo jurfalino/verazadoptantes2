@@ -1,7 +1,7 @@
 'use server';
 
 import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions, duplicateCandidates, contractInvitations, adopterHistory } from '@/db/schema';
-import { eq, sql, and, isNull, isNotNull, or } from 'drizzle-orm';
+import { eq, ne, sql, and, isNull, isNotNull, or } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { chunk, D1_IN_CHUNK } from '@/lib/chunk';
@@ -169,10 +169,13 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 // v38: pending dedup pairs where either side is in this chunk —
                 // drives the per-row "Posible duplicado" indicator. This is the
                 // query that binds the id list TWICE (see D1_IN_CHUNK note).
+                // Weak (`low`) pairs are excluded: the chip links to the
+                // pending-dedup queue, which never lists them.
                 db.select({ a1: duplicateCandidates.adopter1Id, a2: duplicateCandidates.adopter2Id })
                     .from(duplicateCandidates)
                     .where(and(
                         eq(duplicateCandidates.status, 'pending'),
+                        ne(duplicateCandidates.confidence, 'low'),
                         sql`(${duplicateCandidates.adopter1Id} IN (${inList}) OR ${duplicateCandidates.adopter2Id} IN (${inList}))`,
                     ))
                     .all(),
