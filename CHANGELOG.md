@@ -2,6 +2,38 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.116] - 2026-10-01
+
+### Fixed — a returned animal is available again (product decision)
+
+Recording a devolución logged an event and nothing else: the custody span stayed
+open, so the animal still read as adopted, never came back to the available
+list, could not be re-homed through the normal flow, and kept drawing follow-up
+reminders for an adoption that had ended.
+
+Two causes, both long-standing:
+
+1. **The form was forced to invent a second adoption.** Opening it from a link
+   hid the mode switcher and pinned it to «new» — and «Registrar devolución» is
+   always a link. So every return created a *fresh* adoption record, attached
+   the event to that, and left the real placement untouched. It now stays in
+   «existing» mode whenever the animal resolved to a record we already have.
+2. **Nothing closed the span.** A `returned_pet` write now sets `ended_at` on
+   the active placement, dated to the event rather than to now, so a return
+   logged a week late lands on the day it happened. `adoptions` derives its
+   record type and adopter from the ACTIVE placement, so with none the animal
+   falls back to `available`.
+
+Verified end to end on the real flow: the event is written, the placement
+closes, and the animal's record type flips to `available` with no adopter.
+
+### Note — 2 animals in production are affected
+
+Two animals have a recorded return but a still-open placement. They will keep
+reading as adopted until their spans are closed; new returns behave correctly
+from this release. A one-line backfill would fix them, but it rewrites custody
+history, so it is left as a decision rather than bundled in.
+
 ## [2.56.115] - 2026-10-01
 
 ### Fixed — a return or follow-up never pre-selected its animal, anywhere

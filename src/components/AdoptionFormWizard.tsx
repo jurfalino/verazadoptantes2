@@ -401,7 +401,14 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
         : [];
     const effectiveAnimalsList = isFollowUpOrReturn ? previousAdoptionsForAdopter : safeAvailableAnimals;
     const showModeSwitcher = !shouldOpenFromWizard && effectiveAnimalsList.length > 0 && !isObservation && !isRequest;
-    const effectiveMode = showModeSwitcher ? mode : 'new';
+    /* v2.56.116: a URL-driven open hid the mode switcher and forced 'new' — so
+       «Registrar devolución», which is always a link, always took the
+       dual-record path: invent a SECOND adoption, log the event against it, and
+       leave the real placement open. That is why a return never made the animal
+       available again. When the animal actually resolved to an existing record
+       (inventory for an adoption, the adopter's own records for a return) this
+       is an existing relationship, not a new one. */
+    const effectiveMode = showModeSwitcher ? mode : (prefillAnimalId ? 'existing' : 'new');
 
     // Dual-record flow: user is logging a follow_up/returned_pet for an animal
     // that wasn't previously in the system — we'll create the parent adoption

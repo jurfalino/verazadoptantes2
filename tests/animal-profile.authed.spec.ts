@@ -494,6 +494,49 @@ test.describe('Animal detail page', () => {
         }
     });
 
+    test('a devolución returns the animal to the available list', async ({ page }) => {
+        const ANIMAL = 'test-animal-fixture-1';
+        const before = q<{ rt: string; ad: string | null }>('SELECT record_type rt, adopter_id ad FROM adoptions WHERE id=?', ANIMAL);
+        console.log('::BEFORE:: ' + JSON.stringify(before));
+        expect(before?.rt).toBe('adoption');
+    
+        await page.goto(`/my-animals/${ANIMAL}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+        await page.getByRole('button', { name: /Registrar devoluci|Record return/i }).first().click();
+    
+        // Current behaviour: this navigates to the adopter's wizard.
+        await page.waitForURL(/\/adopter\//, { timeout: 30000 });
+        const dlg = page.locator('[role="dialog"], .fixed.inset-0').last();
+        await expect(dlg).toContainText(/What happened|Qué pasó|Details|Detalles/, { timeout: 20000 });
+        for (let i = 0; i < 4; i++) {
+            const b = dlg.getByRole('button', { name: /Next|Siguiente/ }).first();
+            if (await b.count() && await b.isEnabled()) { await b.click(); await page.waitForTimeout(1200); }
+            else break;
+        }
+        const save = dlg.getByRole('button', { name: /Save|Guardar|Registrar/ }).first();
+        if (await save.count()) await save.click();
+        await page.waitForTimeout(5000);
+    
+        const after = q<{ rt: string; ad: string | null }>('SELECT record_type rt, adopter_id ad FROM adoptions WHERE id=?', ANIMAL);
+        const open = q<{ n: number }>('SELECT COUNT(*) n FROM placements WHERE animal_id=? AND ended_at IS NULL', ANIMAL)?.n;
+        const ev = q<{ n: number }>("SELECT COUNT(*) n FROM adopter_events WHERE animal_id=? AND event_type='returned_pet'", ANIMAL)?.n;
+        console.log(`::AFTER:: ${JSON.stringify(after)}  openPlacements=${open}  returnEvents=${ev}`);
+        expect(ev).toBeGreaterThan(0);
+        expect(open).toBe(0);
+        expect(after?.rt).toBe('available');
+        expect(after?.ad).toBeNull();
+    
+        // Put Timon back: four sibling tests expect him adopted.
+        for (const f of DBS) {
+            try {
+                const db = new Database(f);
+                db.prepare("UPDATE placements SET ended_at = NULL WHERE animal_id = ? AND record_type = 'adoption'").run(ANIMAL);
+                db.prepare("DELETE FROM adopter_events WHERE animal_id = ? AND event_type = 'returned_pet'").run(ANIMAL);
+                db.close();
+            } catch { /* ignore */ }
+        }
+    });
+
     test('in-place edit updates identity without touching custody', async ({ page }) => {
         await page.goto(`/my-animals/${ANIMAL_ID}`);
         await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
