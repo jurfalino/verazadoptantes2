@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.111] - 2026-10-01
+
+### Fixed — two visual defects in the record form
+
+**«¿Entregado en casa del adoptante?» was barely readable.** The question sat at
+`text-blue-800` on a panel the theme remaps to a translucent sky tint —
+measured **3.79:1**, under the 4.5 minimum for body text. It and its sibling
+«¿Verificaste su identidad?» now use the themed stone text, which measures
+**7.86:1**. The panels keep their accent; only the copy changed.
+
+The same panel also carried `text-blue-800/80`. Opacity variants are never
+remapped by `[data-theme]`, so that one rendered raw in every theme — replaced
+rather than left as a latent version of the same bug.
+
+**The step line overshot the last step.** The progress fill was a sibling of the
+track with only `left: 16.6%`, so `width: 100%` at step 3 measured the whole
+header and ran 16.6% past the third circle, under the close button. The fill is
+now nested inside the track, so its width is a share of the track: measured
+overflow **0px**, fill width equal to track width.
+
+Both verified by measurement — contrast ratio and bounding boxes — not by eye.
+
 ## [2.56.110] - 2026-09-30
 
 ### Changed — the form no longer re-asks what the entry point already answered

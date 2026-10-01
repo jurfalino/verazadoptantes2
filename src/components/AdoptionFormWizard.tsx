@@ -742,8 +742,16 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                             );
                         })}
                         {/* Connecting lines */}
-                        <div className="absolute top-[13px] left-[16.6%] right-[16.6%] h-0.5 bg-stone-200 z-0 hidden sm:block" />
-                        <div className={`absolute top-[13px] left-[16.6%] h-0.5 bg-teal-400 z-0 transition-all duration-300 hidden sm:block`} style={{ width: step === 1 ? '0%' : step === 2 ? '50%' : '100%' }} />
+                        {/* The fill is a share of the TRACK, so it is nested inside it.
+                            It used to be a sibling with only `left:16.6%`, so `width:100%`
+                            at step 3 measured the whole header and ran 16.6% past the last
+                            circle, under the close button. */}
+                        <div className="absolute top-[13px] left-[16.6%] right-[16.6%] h-0.5 bg-stone-200 z-0 hidden sm:block">
+                            <div
+                                className="h-full bg-teal-400 transition-all duration-300"
+                                style={{ width: step === 1 ? '0%' : step === 2 ? '50%' : '100%' }}
+                            />
+                        </div>
                     </div>
                 </div>
 
@@ -921,7 +929,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-2">
                                             <span className="text-lg">🚗</span>
-                                            <label className="text-sm font-medium text-blue-800">{t('adoption.delivered_to_home')}</label>
+                                            <label className="text-sm font-medium text-stone-800">{t('adoption.delivered_to_home')}</label>
                                         </div>
                                         {/* Pre-fill behaviour: when turning the toggle ON, seed the
                                             street field with whatever address we can derive from the
@@ -944,7 +952,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                     </div>
                                     {formData.deliveredToHome && (
                                         <div className="mt-4 pt-4 border-t border-blue-100 space-y-2">
-                                            <label className="block text-xs font-semibold text-blue-800 mb-1.5 uppercase tracking-wider flex items-center gap-1"><span>📍</span> {t('adoption.verify_address')}</label>
+                                            <label className="block text-xs font-semibold text-stone-700 mb-1.5 uppercase tracking-wider flex items-center gap-1"><span>📍</span> {t('adoption.verify_address')}</label>
                                             {/* v2.19.40: two structured inputs mirroring the
                                                 contact-entries address composer (street + locality).
                                                 Saved as separate fields on the new ContactEntry below
@@ -964,7 +972,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                                 placeholder={t('adopter.ce_input_ph_locality')}
                                                 className="w-full p-3 rounded-lg border border-blue-200 bg-white text-blue-950 placeholder-blue-800/40 font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none text-base md:text-sm"
                                             />
-                                            <p className="text-xs text-blue-800/80 flex items-start gap-1.5 pt-1">
+                                            <p className="text-xs text-stone-600 flex items-start gap-1.5 pt-1">
                                                 <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
                                                     <rect x="5" y="11" width="14" height="9" rx="2" />
                                                     <path strokeLinecap="round" d="M8 11V8a4 4 0 118 0v3" />
@@ -981,7 +989,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-2">
                                             <span className="text-lg">🪪</span>
-                                            <label className="text-sm font-medium text-teal-800">{t('adoption.identity_verified')}</label>
+                                            <label className="text-sm font-medium text-stone-800">{t('adoption.identity_verified')}</label>
                                         </div>
                                         <button type="button" onClick={() => setFormData(d => ({ ...d, identityVerified: !d.identityVerified }))} className={`relative w-12 h-6 rounded-full transition-colors ${formData.identityVerified ? 'bg-teal-500' : 'bg-stone-200'}`}>
                                             <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${formData.identityVerified ? 'translate-x-6' : 'translate-x-0'}`} />
