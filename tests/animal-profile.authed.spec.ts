@@ -454,6 +454,10 @@ test.describe('Animal detail page', () => {
         await expect(dlg).toBeVisible({ timeout: 15000 });
         // The wizard mounts only once its inventory has loaded.
         await expect(dlg).toContainText(/What happened|Qué pasó/, { timeout: 20000 });
+        // v2.56.110: the entry point already chose the record type and the
+        // animal, so the form opens on Details — step 1 is marked done.
+        await expect(dlg).toContainText(/✓\s*(What happened|Qué pasó)/, { timeout: 10000 });
+        await expect(dlg).toContainText(/Rating|Calificaci/i);
         console.log('::OPENED:: ' + (await dlg.innerText()).replace(/\s+/g, ' ').slice(0, 120));
         console.log('::URL:: ' + page.url().replace(/^https?:\/\/[^/]+/, ''));
     

@@ -227,7 +227,18 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     const initialDraft = draftConflictsWithIntent ? null : rawDraft;
 
     const [isOpen, setIsOpen] = useState(shouldOpenFromWizard || autoOpen);
-    const [step, setStep] = useState(() => initialDraft?.step ?? 1);
+    /* v2.56.110: step 1 asks WHICH record and WHICH animal. When the entry point
+       already answered both — «Registrar adopción» on an animal page, or any
+       ?newAdoption=…&animalId=… link — re-asking is a dead screen the rescuer
+       has to click past, and it invites them to change an answer they just
+       gave. Open on step 2 instead; Back still reaches step 1 to change it.
+       Only when the animal actually RESOLVED against inventory: an unmatched id
+       means step 1 is where they pick one, so it must not be skipped. A saved
+       draft still wins — it knows where the user left off. */
+    const skipsIdentityStep = !initialDraft
+        && !!matchedInventory
+        && (prefillRecordType === 'adoption' || prefillRecordType === 'foster');
+    const [step, setStep] = useState(() => initialDraft?.step ?? (skipsIdentityStep ? 2 : 1));
     const [loading, setLoading] = useState(false);
     const [requestPiiAccessOptIn, setRequestPiiAccessOptIn] = useState(false);
     const [uploading, setUploading] = useState(false);

@@ -2,6 +2,30 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.110] - 2026-09-30
+
+### Changed — the form no longer re-asks what the entry point already answered
+
+Step 1 asks WHICH record and WHICH animal. Coming from «Registrar adopción» on
+an animal, both are already settled — yet the rescuer still landed on a screen
+asking for the animal's name and species, and had to click past it. Worse, it
+invited them to change an answer they had just given.
+
+It now opens on step 2 (Details) whenever the entry point supplied both, with
+step 1 marked done; Back still reaches it to change the record type.
+
+Fixed in the form itself rather than at one entry point, so every
+`?newAdoption=adoption|foster&animalId=…` link behaves the same — including the
+older links from the `/my-animals` cards.
+
+Deliberately narrow:
+
+- only when the animal **resolved** against the rescuer's inventory. An
+  unmatched id means step 1 is where they pick one, so it is never skipped;
+- only for adoption and tránsito. A follow-up, return, observation or request
+  either has no animal yet or matches it from a different list;
+- a saved draft still wins, because it knows where the user actually left off.
+
 ## [2.56.109] - 2026-09-30
 
 ### Changed — registering an adoption or tránsito no longer leaves the animal
