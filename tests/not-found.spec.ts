@@ -18,4 +18,9 @@ test.describe('404 page', () => {
         await page.goto('/adopter/no-existe-404-fixture');
         await expect(page.getByTestId('not-found-page')).toBeVisible({ timeout: 30000 });
     });
+
+    test('an unknown form result 404s instead of the old grey box', async ({ page }) => {
+        await page.goto('/form-results/no-existe-404-fixture');
+        await expect(page.getByTestId('not-found-page')).toBeVisible({ timeout: 30000 });
+    });
 });

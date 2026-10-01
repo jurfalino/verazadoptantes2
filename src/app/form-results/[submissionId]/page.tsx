@@ -1,6 +1,6 @@
 export const runtime = 'edge';
 
-import { redirect } from 'next/navigation';
+import { redirect, notFound } from 'next/navigation';
 import { getDb } from '@/lib/db';
 import { notifications, adopters, formSubmissions, adopterImages } from '@/db/schema';
 import { eq, or, and, isNull } from 'drizzle-orm';
@@ -86,8 +86,9 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
     ]);
 
     // Auth: verify the current user owns this submission (is the rescuer)
-    if (!ownerCheck) return <ErrorState message="Formulario no encontrado" />;
-    if (ownerCheck.userId !== currentUser) return <ErrorState message="No tenés permiso para ver este formulario" />;
+    // Not found and not yours both 404: these hold applicants' PII, so we don't
+    // confirm the submission exists.
+    if (!ownerCheck || ownerCheck.userId !== currentUser) notFound();
 
     // Notification → mark as read (best-effort) + parse match metadata
     let metadata: NotificationMetadata = { submissionId, matchCount: 0 };

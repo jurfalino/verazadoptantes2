@@ -1,6 +1,6 @@
 export const runtime = 'edge';
 
-import { redirect } from 'next/navigation';
+import { redirect, notFound } from 'next/navigation';
 import { getDb } from '@/lib/db';
 import { notifications, adopters } from '@/db/schema';
 import { eq, or, and, isNull } from 'drizzle-orm';
@@ -79,14 +79,8 @@ export default async function ContractResultsPage({ params }: { params: Promise<
     // Find notification by ID
     const notification = await db.select().from(notifications).where(eq(notifications.id, notificationId)).get();
 
-    if (!notification) {
-        return <ErrorState message="Notificación no encontrada" />;
-    }
-
-    // Security: only the recipient can view
-    if (notification.userId !== currentUser) {
-        return <ErrorState message="No tenés permiso para ver esta notificación" />;
-    }
+    // Not found and not the recipient both 404 (PII: don't confirm it exists).
+    if (!notification || notification.userId !== currentUser) notFound();
 
     // Mark as read
     await markNotificationRead(notificationId, currentUser);
