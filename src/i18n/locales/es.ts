@@ -2333,6 +2333,14 @@ export const es = {
         load_failed: 'No se pudo cargar. Probá de nuevo en un rato.',
         too_long: 'Una sección es demasiado larga. Acortala e intentá de nuevo.',
     },
-
+    notFound: {
+        dog_title: 'Un perro se comió esta página',
+        dog_body: 'Estamos bastante seguros de que fue él. Lo que buscabas no está, o cambió de lugar.',
+        cat_title: 'Un gato tiró esta página de la mesa',
+        cat_body: 'La miró fijo, la empujó despacito y no se arrepiente. Lo que buscabas ya no está acá.',
+        home: 'Volver al inicio',
+        back: 'Volver atrás',
+        code: 'Error 404',
+    },
 };
 

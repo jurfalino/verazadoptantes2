@@ -2328,5 +2328,13 @@ export const en = {
         load_failed: 'Couldn\'t load. Please try again in a moment.',
         too_long: 'One section is too long. Shorten it and try again.',
     },
-
+    notFound: {
+        dog_title: 'A dog ate this page',
+        dog_body: "We're pretty sure it was him. What you were looking for isn't here, or it moved.",
+        cat_title: 'A cat knocked this page off the table',
+        cat_body: 'It stared at it, nudged it slowly, and has no regrets. What you were looking for is gone.',
+        home: 'Back to home',
+        back: 'Go back',
+        code: 'Error 404',
+    },
 };

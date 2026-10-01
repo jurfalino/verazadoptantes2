@@ -1,10 +1,13 @@
 export const runtime = 'edge';
 
-export default function NotFound() {
-    return (
-        <div className="flex flex-col items-center justify-center min-h-screen">
-            <h2 className="text-2xl font-semibold mb-4">Not Found</h2>
-            <p>Could not find requested resource</p>
-        </div>
-    );
+import { connection } from 'next/server';
+import NotFoundView, { type NotFoundVariant } from '@/components/notFound/NotFoundView';
+
+/** Dog or cat, picked per request on the server (picking on the client would
+ *  mismatch hydration). connection() keeps this out of build-time prerender,
+ *  which would freeze one variant forever. */
+export default async function NotFound() {
+    await connection();
+    const variant: NotFoundVariant = Math.random() < 0.5 ? 'dog' : 'cat';
+    return <NotFoundView variant={variant} />;
 }
