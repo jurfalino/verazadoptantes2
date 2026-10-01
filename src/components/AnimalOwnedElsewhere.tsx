@@ -16,7 +16,8 @@ function initials(name: string): string {
 }
 
 export default function AnimalOwnedElsewhere({ animal, owner, publicUrl }: Props) {
-    const { t } = useLanguage();
+    const { t, locale } = useLanguage();
+    const publicHref = publicUrl ? `${publicUrl}${publicUrl.includes('?') ? '&' : '?'}lang=${locale}` : null;
     const name = animal.name?.trim() || '';
     const shownName = name || t('ownedElsewhere.unnamed');
     const primary = 'min-h-11 flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-bold bg-teal-700 text-white shadow-sm transition-all duration-200 hover:-translate-y-px';
@@ -51,15 +52,15 @@ export default function AnimalOwnedElsewhere({ animal, owner, publicUrl }: Props
             )}
 
             <div className="flex flex-col gap-2 w-full max-w-xs mt-2">
-                {publicUrl && (
-                    <a href={publicUrl} target="_blank" rel="noopener noreferrer" className={primary} data-testid="owned-elsewhere-public-link">
+                {publicHref && (
+                    <a href={publicHref} target="_blank" rel="noopener noreferrer" className={primary} data-testid="owned-elsewhere-public-link">
                         {name ? t('ownedElsewhere.public_link').replace('{name}', name) : t('ownedElsewhere.public_link_unnamed')}
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><path d="M15 3h6v6" /><path d="M10 14 21 3" />
                         </svg>
                     </a>
                 )}
-                <Link href="/my-animals" className={publicUrl ? secondary : primary}>{t('ownedElsewhere.back')}</Link>
+                <Link href="/my-animals" className={publicHref ? secondary : primary}>{t('ownedElsewhere.back')}</Link>
             </div>
         </main>
     );

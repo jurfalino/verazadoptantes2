@@ -17,6 +17,7 @@ import ShowcaseUrlChips from '@/components/ShowcaseUrlChips';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { myAnimalsTabCount } from '@/lib/myAnimalsTabCount';
+import { isPubliclyListed } from '@/domain/animalAccess';
 
 interface AnimalImage {
     id: string;
@@ -562,7 +563,7 @@ export default function MyAnimalsPage() {
                                                     animalId={animal.id}
                                                     animalName={animal.animalName || 'Animal'}
                                                     adopted={!!animal.adopterId && !isFoster}
-                                                    publicFiche={animal.recordType === 'available' && !animal.adopterId && animal.images.length > 0}
+                                                    publicFiche={isPubliclyListed(animal, animal.images.length)}
                                                     compact
                                                 />
                                             )}

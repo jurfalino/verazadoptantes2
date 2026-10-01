@@ -25,7 +25,7 @@ export default function ContractPage() {
     const [animal, setAnimal] = useState<AnimalData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [notFoundHit, setNotFoundHit] = useState(false);
+    const [notFoundHit, setNotFoundHit] = useState<'dog' | 'cat' | null>(null);
     const [submitted, setSubmitted] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
@@ -45,7 +45,7 @@ export default function ContractPage() {
             try {
                 const animalRes = await fetch(`/api/contract/${id}`);
                 if (!animalRes.ok) {
-                    if (animalRes.status === 404) setNotFoundHit(true);
+                    if (animalRes.status === 404) setNotFoundHit(Math.random() < 0.5 ? 'dog' : 'cat');
                     else setError('Error al cargar');
                     return;
                 }
@@ -116,7 +116,7 @@ export default function ContractPage() {
         );
     }
 
-    if (notFoundHit) return <NotFoundView variant="dog" />;
+    if (notFoundHit) return <NotFoundView variant={notFoundHit} />;
 
     if (error) {
         return (

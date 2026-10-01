@@ -9,6 +9,9 @@ import { getUser } from '@/app/actions/_db';
 import { markNotificationRead } from '@/app/actions/notifications';
 import FormResultsContent from '@/components/FormResultsContent';
 import Link from 'next/link';
+import { logger } from '@/lib/logger';
+import { isOrgMate } from '@/lib/orgMembership';
+import { isAdminAsync } from '@/config/admins';
 
 interface MatchedAdopter {
     id: string;
@@ -64,7 +67,10 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
                 sql`json_extract(${notifications.metadata}, '$.submissionId') = ${submissionId}`,
             ))
             .get()
-            .catch(() => null),
+            .catch((e: unknown) => {
+                logger.warn('form-results: notification lookup fallback', { submissionId, userEmail: currentUser, error: e instanceof Error ? e.message : String(e) });
+                return null;
+            }),
         db.select({
             id: formSubmissions.id,
             selfieUrl: formSubmissions.selfieUrl,
@@ -86,9 +92,16 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
     ]);
 
     // Auth: verify the current user owns this submission (is the rescuer)
-    // Not found and not yours both 404: these hold applicants' PII, so we don't
-    // confirm the submission exists.
-    if (!ownerCheck || ownerCheck.userId !== currentUser) notFound();
+    // Missing → 404. Not yours → teammates/admins (who get notification links
+    // here) keep the "no permission" screen; strangers get the 404 so we don't
+    // confirm the submission exists (applicant PII). `userId` holds the owner's email.
+    if (!ownerCheck) notFound();
+    if (ownerCheck.userId !== currentUser) {
+        const teammateOrAdmin = (await isOrgMate(currentUser, ownerCheck.userId)) || (await isAdminAsync(currentUser));
+        logger.info('form-results: denied', { submissionId, userEmail: currentUser, teammateOrAdmin });
+        if (!teammateOrAdmin) notFound();
+        return <ErrorState message="No tenés permiso para ver este formulario" />;
+    }
 
     // Notification → mark as read (best-effort) + parse match metadata
     let metadata: NotificationMetadata = { submissionId, matchCount: 0 };

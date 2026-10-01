@@ -173,7 +173,8 @@ export async function fetchAnimalImages(
                 .limit(5)
                 .all();
             map.set(id, imgs);
-        } catch {
+        } catch (e) {
+            logger.warn('fetchAnimalImages: fallback', { animalId: id, error: e instanceof Error ? e.message : String(e) });
             map.set(id, []);
         }
     }));

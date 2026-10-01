@@ -1,12 +1,11 @@
 export const runtime = 'edge';
 
 /**
- * v2.55.15 (animal-timeline PR2): the animal's page. Owner-gated exactly like
- * /api/my-animals (addedBy === session email, no admin bypass) and behind the
- * same ENABLE_ANIMALS_FOR_ADOPTION flag as the rest of the surface. Denial for
- * an animal that exists but belongs to someone else renders the "en buenas
- * manos" screen (owner name + group, never an email) instead of a 404; only a
- * truly missing animal 404s.
+ * v2.55.15 (animal-timeline PR2): the animal's page. Visible to the owner,
+ * their org-mates and admins (via getAnimalProfile), behind the same
+ * ENABLE_ANIMALS_FOR_ADOPTION flag as the rest of the surface. Anyone else
+ * signed in sees the owned-elsewhere screen (owner name + group, never an
+ * email); a missing or deleted animal 404s.
  */
 
 import { redirect, notFound } from 'next/navigation';

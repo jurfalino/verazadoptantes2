@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 vi.mock('@/context/LanguageContext', () => ({
-    useLanguage: () => ({ t: (k: string) => k }),
+    useLanguage: () => ({ t: (k: string) => k, locale: 'es' }),
 }));
 
 import AnimalOwnedElsewhere from './AnimalOwnedElsewhere';
@@ -17,7 +17,7 @@ describe('AnimalOwnedElsewhere', () => {
         expect(html).toContain('Vero E2E');
         // mock t() returns keys, so the org-name substitution is asserted in e2e
         expect(html).toContain('ownedElsewhere.group');
-        expect(html).toContain('href="https://adopta.example/animal/x"');
+        expect(html).toContain('href="https://adopta.example/animal/x?lang=es"');
         expect(html).toContain('target="_blank"');
         expect(html).toContain('data-kind="dog"');
         expect(html).toContain('href="/my-animals"');

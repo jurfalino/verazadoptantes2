@@ -19,7 +19,7 @@ test.describe('Animal owned by another rescuer', () => {
         await expect(page.getByTestId('owned-elsewhere')).toBeVisible({ timeout: 30000 });
         await expect(page.getByTestId('owned-illustration')).toHaveAttribute('data-kind', 'dog');
         const link = page.getByTestId('owned-elsewhere-public-link');
-        await expect(link).toHaveAttribute('href', /\/animal\/test-animal-fixture-owned-2$/);
+        await expect(link).toHaveAttribute('href', /\/animal\/test-animal-fixture-owned-2(\?lang=\w+)?$/);
         await expect(link).toHaveAttribute('target', '_blank');
     });
 

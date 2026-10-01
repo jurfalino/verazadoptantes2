@@ -1,4 +1,5 @@
 import { getRequestContext } from '@cloudflare/next-on-pages';
+import { logger } from '@/lib/logger';
 
 // Bootstrap admin — this email always has admin access even before
 // the database is available (e.g. first deploy, build time).
@@ -27,8 +28,9 @@ export function isAdmin(email: string | null | undefined): boolean {
 export async function isAdminAsync(email: string | null | undefined): Promise<boolean> {
     try {
         return await isAdminAsyncStrict(email);
-    } catch {
+    } catch (e) {
         // DB unavailable (build time, local dev) — fall back to bootstrap list only
+        logger.warn('isAdminAsync: query failed, treating as non-admin', { error: e instanceof Error ? e.message : String(e) });
         return false;
     }
 }

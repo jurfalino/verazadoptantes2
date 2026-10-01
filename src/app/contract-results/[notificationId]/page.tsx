@@ -8,6 +8,9 @@ import { getUser } from '@/app/actions/_db';
 import { markNotificationRead } from '@/app/actions/notifications';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import Link from 'next/link';
+import { logger } from '@/lib/logger';
+import { isOrgMate } from '@/lib/orgMembership';
+import { isAdminAsync } from '@/config/admins';
 import ContractResultsMatchCard from '@/components/ContractResultsMatchCard';
 import ContractResultsKeepNewButton from '@/components/ContractResultsKeepNewButton';
 
@@ -79,8 +82,15 @@ export default async function ContractResultsPage({ params }: { params: Promise<
     // Find notification by ID
     const notification = await db.select().from(notifications).where(eq(notifications.id, notificationId)).get();
 
-    // Not found and not the recipient both 404 (PII: don't confirm it exists).
-    if (!notification || notification.userId !== currentUser) notFound();
+    // Missing → 404. Not the recipient → teammates/admins keep the "no permission"
+    // screen; strangers get the 404 (PII: don't confirm it exists). `userId` is the recipient email.
+    if (!notification) notFound();
+    if (notification.userId !== currentUser) {
+        const teammateOrAdmin = (await isOrgMate(currentUser, notification.userId)) || (await isAdminAsync(currentUser));
+        logger.info('contract-results: denied', { notificationId, userEmail: currentUser, teammateOrAdmin });
+        if (!teammateOrAdmin) notFound();
+        return <ErrorState message="No tenés permiso para ver esta notificación" />;
+    }
 
     // Mark as read
     await markNotificationRead(notificationId, currentUser);

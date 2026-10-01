@@ -225,3 +225,12 @@ INSERT OR REPLACE INTO adoptions (id, adopter_id, animal_name, species, details,
 
 INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type) VALUES
 ('test-img-fixture-owned-2', '__available__', 'test-animal-fixture-owned-2', 'https://api.dicebear.com/7.x/shapes/svg?seed=canela', NULL, strftime('%s','now'), 'e2e-teammate@example.com', 0, 1, 'image');
+
+-- Shared-link fixtures (friendly-404 final review): a form submission and a
+-- contract notification owned by the teammate. The admin (an org-mate) must see
+-- the "no permission" screen on them, not the 404. Read-only.
+INSERT OR REPLACE INTO form_submissions (id, user_id, name, status, created_at) VALUES
+('test-formsub-fixture-teammate-1', 'e2e-teammate@example.com', 'Solicitante Fixture', 'pending', strftime('%s','now'));
+
+INSERT OR REPLACE INTO notifications (id, user_id, type, title, body, url, icon, read, metadata, created_at) VALUES
+('test-notif-fixture-teammate-1', 'e2e-teammate@example.com', 'contract_result', 'Fixture contrato', 'Fixture', '/contract-results/test-notif-fixture-teammate-1', '📋', 1, '{}', strftime('%s','now'));

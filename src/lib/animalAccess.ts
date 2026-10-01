@@ -24,7 +24,10 @@ export type AnimalAccess = { kind: 'missing' } | OwnedElsewhere;
 
 export async function getAnimalAccess(animalId: string, viewerEmail: string): Promise<AnimalAccess> {
     const db = await getDb();
-    if (!db) return { kind: 'missing' };
+    if (!db) {
+        logger.warn('getAnimalAccess: no db', { animalId, userEmail: viewerEmail });
+        return { kind: 'missing' };
+    }
 
     const row = await db.select().from(animals).where(eq(animals.id, animalId)).get();
     // Strict checks: a failing lookup throws (page logs + 404s) instead of
