@@ -89,6 +89,7 @@ export const en = {
         no_contact: 'No contact info',
         untitled: 'Untitled',
         anonymous: 'anonymous',
+        actor_contract: 'digital contract',
         unknown: 'Unknown',
         good_record: 'Good Record',
         added: 'Added',

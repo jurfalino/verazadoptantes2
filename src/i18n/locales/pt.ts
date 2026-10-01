@@ -89,6 +89,7 @@ export const pt = {
         no_contact: 'Sem informações de contato',
         untitled: 'Sem título',
         anonymous: 'anônimo',
+        actor_contract: 'contrato digital',
         unknown: 'Desconhecido',
         good_record: 'Bom Histórico',
         added: 'Adicionado',

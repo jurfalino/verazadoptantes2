@@ -15,7 +15,7 @@ import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import { useLanguage } from '@/context/LanguageContext';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { interpolate } from '@/lib/interpolate';
-import { emailHandle } from '@/lib/userDisplay';
+import { actorLabel } from '@/lib/userDisplay';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import type { AnimalTimelineItem } from '@/app/actions/animalTimeline';
 
@@ -392,7 +392,7 @@ export default function AnimalTimeline({ items, animalSex, userNameMap = {}, org
                                     own records — team parity makes authorship the ledger). */}
                                 {item.recordedBy && item.recordedBy !== 'anonymous' && (
                                     <div className="mt-2 text-[11px] text-stone-500">
-                                        {t('common.added_by') || 'Agregado por'} {userNameMap[item.recordedBy] || emailHandle(item.recordedBy)}
+                                        {t('common.added_by') || 'Agregado por'} {actorLabel(item.recordedBy, userNameMap[item.recordedBy], t)}
                                     </div>
                                 )}
                             </div>

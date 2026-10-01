@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useDateFormat, useRelativeTime } from '@/context/TimezoneContext';
-import { emailHandle } from '@/lib/userDisplay';
+import { actorLabel } from '@/lib/userDisplay';
 import { interpolate } from '@/lib/interpolate';
 import { dueWhenText } from '@/lib/dueWhenText';
 import { formatAge } from '@/lib/ageUtils';
@@ -561,7 +561,7 @@ export default function MyAnimalsPage() {
                                                             : (t('common.added_by') || 'Agregado por')}
                                                         {' '}
                                                         <span className="font-medium text-stone-600">
-                                                            {animal.lastUpdate.name || emailHandle(animal.lastUpdate.by)}
+                                                            {actorLabel(animal.lastUpdate.by, animal.lastUpdate.name, t)}
                                                         </span>
                                                         {/* Relative time is client-only (it reads the wall clock, which
                                                             SSR and hydration disagree on), so it is null on first paint.
