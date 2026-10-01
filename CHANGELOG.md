@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.117] - 2026-10-01
+
+### Fixed — the animal picker no longer degrades silently
+
+When one of its three loaders failed (the adopter's records, their rating, the
+rescuer's inventory), the picker fell back to an empty value and said nothing.
+An inventory that failed to load reads exactly like "no animals", which is how
+the animal prefill gets dropped. Each fallback now reports a `warn` with the
+adopter and animal ids.
+
+### Changed — /import/sheet requires sign-in
+
+Every save behind it already rejected anonymous callers, so a logged-out visitor
+could fill in the whole wizard and only then fail. The page is now a protected
+route: logged-out visitors go to sign in and come back.
+
 ## [2.56.116] - 2026-10-01
 
 ### Fixed — a returned animal is available again (product decision)

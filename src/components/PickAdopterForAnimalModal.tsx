@@ -81,10 +81,22 @@ export default function PickAdopterForAnimalModal({
         (async () => {
             try {
                 const { getAdoptions, getAverageRating, getAvailableAnimals } = await import('@/app/actions');
+                // Each loader degrades on its own, but never silently: an
+                // inventory that failed to load reads exactly like "no
+                // animals", which is how the animal prefill gets dropped.
+                const degraded = <T,>(part: string, fallback: T) => (e: unknown): T => {
+                    void reportClientError({
+                        message: e instanceof Error ? e.message : String(e),
+                        source: `PickAdopterForAnimalModal.wizardContext.${part}`,
+                        extra: { adopterId: wizard.adopterId, animalId },
+                        level: 'warn',
+                    });
+                    return fallback;
+                };
                 const [adoptions, avgRating, availableAnimals] = await Promise.all([
-                    getAdoptions(wizard.adopterId).catch(() => []),
-                    getAverageRating(wizard.adopterId).catch(() => null),
-                    getAvailableAnimals().catch(() => []),
+                    getAdoptions(wizard.adopterId).catch(degraded<unknown[]>('adoptions', [])),
+                    getAverageRating(wizard.adopterId).catch(degraded<number | null>('avgRating', null)),
+                    getAvailableAnimals().catch(degraded<unknown[]>('availableAnimals', [])),
                 ]);
                 if (!cancelled) setCtx({ adoptions: adoptions ?? [], avgRating: avgRating ?? null, availableAnimals: availableAnimals ?? [] });
             } catch (e) {
@@ -99,7 +111,7 @@ export default function PickAdopterForAnimalModal({
             }
         })();
         return () => { cancelled = true; };
-    }, [wizard]);
+    }, [wizard, animalId]);
 
     const density = (type: 'adoption' | 'adoption_request', periodDays: number, threshold: number) => {
         if (!ctx) return null;

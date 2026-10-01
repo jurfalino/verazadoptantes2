@@ -3,6 +3,15 @@ import { dismissCountryBanner } from './helpers';
 
 test.setTimeout(60000);
 
+test.describe('Unauthenticated User — protected pages', () => {
+    test('the spreadsheet import sends a logged-out visitor to sign in', async ({ page }) => {
+        // Every save behind /import/sheet rejects anonymous callers; letting the
+        // page load meant filling in the whole wizard only to fail at the end.
+        await page.goto('/import/sheet');
+        await page.waitForURL(u => !u.pathname.startsWith('/import/sheet'), { timeout: 30000 });
+    });
+});
+
 test.describe('Unauthenticated User — PII Masking', () => {
 
     test.beforeEach(async ({ page }) => {
