@@ -359,6 +359,40 @@ test.describe('Animal detail page', () => {
         await expect(page.getByTestId('timeline-item')).toHaveCount(before + 1, { timeout: 30000 });
     });
 
+    test('photos attached to a timeline event can be opened full size', async ({ page }) => {
+        const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+        const file = { name: 'p.png', mimeType: 'image/png', buffer: png };
+        const DUE_ID = 'test-animal-fixture-due';
+        await page.goto(`/my-animals/${DUE_ID}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+        const before = await page.getByTestId('timeline-item').count();
+    
+        await page.getByTestId('add-animal-event').click();
+        await page.getByTestId('animal-event-type').selectOption('vaccination');
+        await page.getByTestId('animal-event-details').fill(`E2E foto evento ${Date.now()}`);
+        const thumbs = page.locator('[role="dialog"] img');
+        const n0 = await thumbs.count();
+        for (let i = 0; i < 2; i++) {
+            await page.getByTestId('animal-event-photo').setInputFiles(file);
+            await expect(thumbs).toHaveCount(n0 + i + 1, { timeout: 20000 });
+        }
+        await page.getByTestId('animal-event-save').click();
+        await expect(page.getByTestId('timeline-item')).toHaveCount(before + 1, { timeout: 30000 });
+    
+        // The event's thumbnails must be openable — this is what was inert.
+        const firstThumb = page.locator('[data-testid^="event-photo-"][data-testid$="-0"]').first();
+        await expect(firstThumb).toBeVisible({ timeout: 30000 });
+        await firstThumb.click();
+        await expect(page.getByTestId('event-photo-counter')).toHaveText('1 / 2');
+        await page.getByTestId('event-photo-next').click();
+        await expect(page.getByTestId('event-photo-counter')).toHaveText('2 / 2');
+        await page.keyboard.press('ArrowLeft');
+        await expect(page.getByTestId('event-photo-counter')).toHaveText('1 / 2');
+        await page.keyboard.press('Escape');
+        await expect(page.getByTestId('event-photo-counter')).toHaveCount(0);
+        console.log('::OK:: event photos open, navigate, and close');
+    });
+
     test('in-place edit updates identity without touching custody', async ({ page }) => {
         await page.goto(`/my-animals/${ANIMAL_ID}`);
         await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });

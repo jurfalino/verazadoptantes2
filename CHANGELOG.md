@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.107] - 2026-09-30
+
+### Fixed — photos attached to a timeline event could not be opened
+
+Adding a photo to a vaccination, a vet visit or a follow-up stored it and showed
+it at 48px, and that was all: the thumbnails had no click handler, and anything
+past the fourth existed only inside a «+N» count. The same defect the animal's
+hero photo had until v2.56.97, in the second place it occurs — fixed the same
+way rather than differently.
+
+Every event thumbnail and its «+N» now open the shared lightbox at that photo,
+with previous/next, a counter, arrow keys and Escape.
+
+The new test uses `test-animal-fixture-due`, not the shared timeline fixture:
+adding an event to the latter changes a count four sibling tests assert on.
+
 ## [2.56.106] - 2026-09-30
 
 ### Fixed — the post-deploy check still had one probe with no readiness wait
