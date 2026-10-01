@@ -90,6 +90,7 @@ export const en = {
         untitled: 'Untitled',
         anonymous: 'anonymous',
         actor_contract: 'digital contract',
+        actor_form_submission: 'adoption form',
         unknown: 'Unknown',
         good_record: 'Good Record',
         added: 'Added',

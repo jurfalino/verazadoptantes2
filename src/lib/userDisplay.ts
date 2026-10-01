@@ -33,6 +33,7 @@ const SYSTEM_ACTOR_LABEL_KEYS: ReadonlyMap<string, string> = new Map([
     ['contract', 'common.actor_contract'],
     ['contract-signed-via-invitation', 'common.actor_contract'],
     ['contract-submission', 'common.actor_contract'],
+    ['form-submission', 'common.actor_form_submission'],
 ]);
 
 /**

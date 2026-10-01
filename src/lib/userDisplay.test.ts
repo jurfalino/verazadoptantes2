@@ -26,6 +26,17 @@ describe('actorLabel', () => {
         expect(actorLabel('contract-submission', null, tEn)).toBe('digital contract');
     });
 
+    it("shows the 'form-submission' system actor as «formulario de adopción» in every locale", () => {
+        expect(actorLabel('form-submission', null, tEs)).toBe('formulario de adopción');
+        expect(actorLabel('form-submission', null, tEn)).toBe('adoption form');
+        expect(actorLabel('form-submission', null, tPt)).toBe('formulário de adoção');
+        expect(actorLabel('form-submission', 'form-submission', tEs)).toBe('formulario de adopción');
+    });
+
+    it("leaves 'system' unmapped (needs product wording)", () => {
+        expect(actorLabel('system', null, tEs)).toBe('system');
+    });
+
     it('a system label wins even if a name lookup returned something for it', () => {
         expect(actorLabel('contract', 'contract', tEs)).toBe('contrato digital');
     });
