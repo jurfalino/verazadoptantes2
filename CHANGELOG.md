@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.113] - 2026-10-01
+
+### Fixed — «Registrar adopción» on an animal could open without the animal (intermittent)
+
+The picker opens the record form in place (v2.56.109) and tells it which animal
+via `?animalId=`, set by `router.replace` just before the form mounts. The form
+matches that id against the inventory exactly once, as it mounts.
+
+On the 2.56.111 CI run the form opened on step 1 with a blank animal name even
+though the inventory response contained the animal — the state in which an
+adoption saves with no animal. It is intermittent: the next run passed the same
+test first time, and it never reproduced locally (an artificially delayed URL
+update did not trigger it either), so the exact cause is unproven.
+
+The picker now hands the form the animal and the record type as props, so the
+match no longer depends on reading the URL at mount. The URL params stay, for
+reload and Back.
+
 ## [2.56.112] - 2026-10-01
 
 ### Fixed — two visual defects in the record form
