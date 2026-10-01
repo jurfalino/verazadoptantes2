@@ -334,6 +334,31 @@ test.describe('Animal detail page', () => {
         await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
     });
 
+    test('registering a due check-in stays on the animal', async ({ page }) => {
+        // v2.56.105: check-ins used to push to /adopter/<id>, throwing the rescuer
+        // onto a different person's page mid-task. Uses its OWN fixture — an
+        // adoption 35 days old with no follow-up, so the 30-day check-in is due.
+        const DUE_ID = 'test-animal-fixture-due';
+        await page.goto(`/my-animals/${DUE_ID}`);
+        await expect(page.getByTestId('animal-name')).toHaveText('Pendiente', { timeout: 30000 });
+
+        const due = page.getByTestId('due-slot-checkin_30d');
+        await expect(due).toBeVisible({ timeout: 30000 });
+        const before = await page.getByTestId('timeline-item').count();
+        await due.getByRole('button', { name: /^(Registrar|Record|Register)$/ }).first().click();
+
+        // It must NOT navigate away.
+        await expect(page).toHaveURL(new RegExp(`/my-animals/${DUE_ID}`));
+        await expect(page.getByTestId('animal-event-type')).toHaveValue('follow_up');
+        // The rating is the reason the redirect existed; the modal carries it.
+        await expect(page.getByRole('button', { name: /^[1-5] stars?$/ })).toHaveCount(5);
+
+        await page.getByRole('button', { name: '4 stars' }).click();
+        await page.getByTestId('animal-event-details').fill(`E2E control ${Date.now()}`);
+        await page.getByTestId('animal-event-save').click();
+        await expect(page.getByTestId('timeline-item')).toHaveCount(before + 1, { timeout: 30000 });
+    });
+
     test('in-place edit updates identity without touching custody', async ({ page }) => {
         await page.goto(`/my-animals/${ANIMAL_ID}`);
         await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });

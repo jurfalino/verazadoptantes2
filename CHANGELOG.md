@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.105] - 2026-09-30
+
+### Fixed — «Registrar» on a check-in threw you onto the adopter's page
+
+From the animal's «Para hacer ahora» list, registering a health reminder opened
+a small form in place, but registering a check-in navigated to
+`/adopter/<id>` — the same button behaving two different ways, and the rescuer
+losing the animal's pending list mid-task.
+
+The redirect existed because only the adopter's wizard captured a star rating.
+`AddAnimalEventModal` has carried the rating, notes and photos since v2.56.9, so
+the detour was leftover habit. Every slot type now opens that modal, prefilled
+with the `followupKey` the matcher needs.
+
+### Added — a fixture whose check-in is actually due
+
+There was no test covering the due-slot path, because producing one on
+`test-animal-fixture-1` means aging its placement and deleting its seeded
+follow-up — which four sibling tests assert on. `test-animal-fixture-due` is its
+own animal with its own adopter, adopted 35 days ago with no follow-up, so the
+30-day check-in is due on sight. Shared-fixture coupling has cost four red
+pipelines this week; this does not add to it.
+
 ## [2.56.104] - 2026-09-30
 
 ### Fixed — follow-up wording and an empty rating that read as «Peligroso»

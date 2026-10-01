@@ -167,6 +167,21 @@ INSERT OR REPLACE INTO placements (id, animal_id, adopter_id, record_type, start
 ('test-plc-fixture-1f', 'test-animal-fixture-1', 'test-adopter-fixture-tl2', 'foster', strftime('%s','now','-120 days'), strftime('%s','now','-80 days'), 'completed', NULL, 'gatitosolivos@gmail.com'),
 ('test-plc-fixture-1a', 'test-animal-fixture-1', 'test-adopter-fixture-tl1', 'adoption', strftime('%s','now','-80 days'), NULL, 'completed', 5, 'gatitosolivos@gmail.com');
 
+-- v2.56.105: an animal whose 30-day check-in is DUE right now — adopted 35 days
+-- ago (window is 30+21) with NO follow-up to satisfy it. Its own animal and its
+-- own adopter, because making a due slot on `test-animal-fixture-1` means aging
+-- its placement and deleting its seeded follow-up, which four sibling tests
+-- assert on.
+INSERT OR REPLACE INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES
+('test-adopter-fixture-due', 'Due Timeline', 'Tel: 555-0203', '5', 'test-seed', strftime('%s','now'), strftime('%s','now'));
+UPDATE adopters SET country = 'AR' WHERE id = 'test-adopter-fixture-due';
+
+INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered, added_by, created_at, updated_at) VALUES
+('test-animal-fixture-due', 'Pendiente', 'cat', 'Fixture con un control vencido', 'hembra', 'gris', 1, 'gatitosolivos@gmail.com', strftime('%s','now','-40 days'), strftime('%s','now'));
+
+INSERT OR REPLACE INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by) VALUES
+('test-plc-fixture-due', 'test-animal-fixture-due', 'test-adopter-fixture-due', 'adoption', strftime('%s','now','-35 days'), NULL, 'completed', 5, 'gatitosolivos@gmail.com');
+
 -- A follow-up LINKED to the animal (the 0062 backfill is a no-op on the empty
 -- CI database, so the linkage is seeded directly).
 INSERT OR REPLACE INTO adopter_events (id, adopter_id, event_type, animal_id, placement_id, animal_name, species, rating, details, date, recorded_by) VALUES

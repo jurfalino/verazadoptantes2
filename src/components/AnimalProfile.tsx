@@ -118,13 +118,21 @@ export default function AnimalProfile({ profile, applicants, userId }: {
 
     /** A slot's Registrar CTA: check-ins route to the adopter wizard (rating +
      *  notes captured there); health slots open the event modal prefilled. */
+    /** Register a due slot WITHOUT leaving the animal.
+     *
+     *  Check-ins used to push to the adopter's wizard because only that form
+     *  captured a rating. The in-place modal has carried the rating, notes and
+     *  photos since v2.56.9, so the redirect only survived as a habit — and it
+     *  threw the rescuer onto a different person's page mid-task, with the
+     *  animal's «Para hacer ahora» list left behind. Every slot type now opens
+     *  the same modal, prefilled with the key the matcher needs. */
     const registerSlot = (s: ProjectedSlot) => {
         if (!activePlacement) return;
-        if (s.subtype === 'adaptation') {
-            router.push(`/adopter/${activePlacement.adopterId}?newAdoption=follow_up&animalId=${animal.id}&followupKey=${encodeURIComponent(s.key)}&followupSubtype=adaptation`);
-        } else {
-            setEventModal({ type: s.subtype === 'neuter' ? 'neuter' : 'vaccination', followupKey: s.key, subtype: s.subtype });
-        }
+        setEventModal({
+            type: s.subtype === 'adaptation' ? 'follow_up' : s.subtype === 'neuter' ? 'neuter' : 'vaccination',
+            followupKey: s.key,
+            subtype: s.subtype,
+        });
     };
 
     /** Telegram can't prefill text — copy the message alongside opening the chat. */
