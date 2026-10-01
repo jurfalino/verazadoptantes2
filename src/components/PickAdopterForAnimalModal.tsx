@@ -166,7 +166,15 @@ export default function PickAdopterForAnimalModal({
        against an empty list, and the animal is dropped silently — the adoption
        then saves with no animal at all. So hold the mount until the context is
        in hand. */
-    if (wizard && !ctx) {
+    /* The form reads BOTH its record type and its animal from the URL, once, at
+       mount. `router.replace` is not synchronous, so mounting straight after it
+       can read the OLD params — the type falls back to «adoption» and the animal
+       is dropped. Wait for the URL to actually carry them, exactly as we wait
+       for the inventory. */
+    const paramsReady = searchParams.get('animalId') === animalId
+        && searchParams.get('newAdoption') === recordType;
+
+    if (wizard && (!ctx || !paramsReady)) {
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'var(--overlay-bg)' }} aria-busy="true">
                 <div className="bg-white rounded-2xl border border-stone-200 shadow-xl px-6 py-5 flex items-center gap-3">
@@ -182,6 +190,7 @@ export default function PickAdopterForAnimalModal({
             <AdoptionFormWizard
                 adopterId={wizard.adopterId}
                 adopterName={wizard.adopterName}
+                initialRecordType={recordType}
                 avgRating={ctx?.avgRating ?? null}
                 tooManyAdoptions={density('adoption', 90, 5)}
                 tooManyRequests={density('adoption_request', 30, 3)}

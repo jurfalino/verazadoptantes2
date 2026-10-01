@@ -186,7 +186,17 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     const matchedInventory = prefillAnimalIdRaw
         ? availableAnimals.find((a: { id: string }) => a?.id === prefillAnimalIdRaw)
         : null;
-    const prefillAnimalId = matchedInventory ? prefillAnimalIdRaw : '';
+    /* v2.56.113: a devolución (and a follow-up) is about an animal the adopter
+       ALREADY has, which by definition is not in `availableAnimals` — that list
+       is unlinked inventory plus fosters. So `?animalId=` was silently ignored
+       for those two types and the rescuer had to find the animal again by hand,
+       on the adopter page as much as anywhere. Match them against the adopter's
+       own records instead. */
+    const matchedPrevious = prefillAnimalIdRaw && !matchedInventory
+        ? (Array.isArray(adopterAdoptions) ? adopterAdoptions : [])
+            .find((a: { id?: string; recordType?: string }) => a?.id === prefillAnimalIdRaw && a?.recordType === 'adoption')
+        : null;
+    const prefillAnimalId = matchedInventory ? prefillAnimalIdRaw : (matchedPrevious ? prefillAnimalIdRaw : '');
     // Honor the record type carried on ?newAdoption=<type> so entry points can
     // pre-select the right chip. The /my-animals foster card uses this to open
     // straight into 'foster' ("move to another foster home") vs 'adoption'
@@ -236,8 +246,8 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
        means step 1 is where they pick one, so it must not be skipped. A saved
        draft still wins — it knows where the user left off. */
     const skipsIdentityStep = !initialDraft
-        && !!matchedInventory
-        && (prefillRecordType === 'adoption' || prefillRecordType === 'foster');
+        && (!!matchedInventory || !!matchedPrevious)
+        && ['adoption', 'foster', 'returned_pet'].includes(prefillRecordType);
     const [step, setStep] = useState(() => initialDraft?.step ?? (skipsIdentityStep ? 2 : 1));
     const [loading, setLoading] = useState(false);
     const [requestPiiAccessOptIn, setRequestPiiAccessOptIn] = useState(false);
@@ -276,19 +286,19 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 ...(prefillAnimalId && matchedInventory
                     ? {
                         animalId: prefillAnimalId,
-                        animalName: matchedInventory.animalName || initialDraft.formData.animalName,
-                        species: matchedInventory.species || initialDraft.formData.species,
+                        animalName: (matchedInventory || matchedPrevious)?.animalName || initialDraft.formData.animalName,
+                        species: (matchedInventory || matchedPrevious)?.species || initialDraft.formData.species,
                     }
                     : {}),
             };
         }
         return {
-            animalName: matchedInventory?.animalName || prefillAnimalName,
+            animalName: (matchedInventory || matchedPrevious)?.animalName || prefillAnimalName,
             details: prefillDetails,
             status: 'completed',
             rating: prefillRating ? Number(prefillRating) : 5,
             comments: '',
-            species: matchedInventory?.species || prefillSpecies,
+            species: (matchedInventory || matchedPrevious)?.species || prefillSpecies,
             adopterId: adopterId,
             recordType: prefillRecordType,
             date: prefillDate || todayISO,
