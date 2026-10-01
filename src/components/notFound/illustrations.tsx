@@ -36,14 +36,14 @@ export function DogAtePage() {
 export function CatKnockedPage() {
     return (
         <svg viewBox="0 0 180 140" className="w-44 h-auto" {...base}>
-            <path d="M10 76 H112" strokeWidth="3" />
-            <path d="M24 76 V132" /><path d="M98 76 V132" />
+            <path d="M10 76 H112" stroke="var(--illo-bare)" strokeWidth="3" />
+            <path d="M24 76 V132" stroke="var(--illo-bare)" /><path d="M98 76 V132" stroke="var(--illo-bare)" />
             <path d="M40 76 C34 56 40 40 56 38 C72 40 78 56 72 76Z" fill="var(--illo-fur-cat)" />
-            <path d="M40 72 C26 70 22 56 30 50" />
+            <path d="M40 72 C26 70 22 56 30 50" stroke="var(--illo-bare)" />
             <path d="M44 34 L46 16 L56 26 L66 16 L68 34 C70 46 42 46 44 34Z" fill="var(--illo-fur-cat)" />
             <path d="M50 30 h5" /><path d="M59 30 h5" />
             <path d="M54 37 q2 2 4 0" />
-            <path d="M70 60 C80 58 88 62 94 64" />
+            <path d="M70 60 C80 58 88 62 94 64" stroke="var(--illo-bare)" />
             <circle cx="96" cy="64" r="4" fill="var(--illo-fur-cat)" />
             <g transform="rotate(28 136 100)">
                 <rect x="118" y="80" width="36" height="44" rx="4" fill="var(--illo-paper)" stroke="var(--illo-mark)" />
@@ -80,7 +80,7 @@ export function TaggedPet({ kind, label }: { kind: AnimalIllustration; label: st
                     <path d="M72 53 q3 3 6 0" />
                     <path d="M56 62 Q75 70 94 62" stroke="var(--illo-mark)" strokeWidth="4" />
                     <HeartTag cx={75} cy={74} />
-                    <path d="M102 96 C120 96 124 80 116 72" />
+                    <path d="M102 96 C120 96 124 80 116 72" stroke="var(--illo-bare)" />
                 </>
             )}
             {kind === 'dog' && (
@@ -95,7 +95,7 @@ export function TaggedPet({ kind, label }: { kind: AnimalIllustration; label: st
                     <path d="M75 47 v3 M70 52 q5 3 10 0" />
                     <path d="M56 64 Q75 72 94 64" stroke="var(--illo-mark)" strokeWidth="4" />
                     <HeartTag cx={75} cy={77} />
-                    <path d="M104 92 q14 -4 12 -20" />
+                    <path d="M104 92 q14 -4 12 -20" stroke="var(--illo-bare)" />
                 </>
             )}
             {kind === 'bird' && (
@@ -106,7 +106,7 @@ export function TaggedPet({ kind, label }: { kind: AnimalIllustration; label: st
                     <path d="M66 50 C64 64 72 74 86 74 C82 62 78 54 66 50Z" fill="var(--illo-feather-dark)" />
                     <circle cx="86" cy="36" r="3" fill="var(--illo-line)" stroke="none" />
                     <path d="M96 38 L108 42 L96 46Z" fill="var(--illo-beak)" />
-                    <path d="M72 80 V90 M84 80 V90" />
+                    <path d="M72 80 V90 M84 80 V90" stroke="var(--illo-bare)" />
                     <rect x="80" y="82" width="8" height="5" rx="1.5" fill="var(--illo-paper)" stroke="var(--illo-mark)" strokeWidth="2" />
                 </>
             )}
@@ -116,7 +116,7 @@ export function TaggedPet({ kind, label }: { kind: AnimalIllustration; label: st
                     <circle cx="75" cy="58" r="36" fill="var(--illo-paper)" stroke="var(--illo-mark)" strokeWidth="3" />
                     <circle cx="75" cy="58" r="29" stroke="var(--illo-feather)" strokeWidth="2" />
                     <path d="M69 40 a4 4 0 0 1 6 -3 a4 4 0 0 1 6 3 q0 4 -6 8 q-6 -4 -6 -8z" fill="var(--illo-mark)" stroke="none" />
-                    <text x="75" y="70" textAnchor="middle" fontSize="14" fontWeight="800" fill="var(--illo-line)" stroke="none">{label}</text>
+                    <text x="75" y="70" textAnchor="middle" fontSize="14" fontWeight="800" fill="var(--illo-line)" stroke="none" {...(label.length > 6 ? { textLength: 56, lengthAdjust: 'spacingAndGlyphs' } : {})}>{label}</text>
                 </>
             )}
         </svg>
