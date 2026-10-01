@@ -22,7 +22,7 @@ Jon opened `/my-animals/911ffc00-…` (Frido) on staging and got a bare "Not Fou
 
 ## 1. The 404 page
 
-- `src/components/NotFoundView.tsx`: illustration + heading + one line + buttons "Volver al inicio" (primary) and "Buscar un adoptante" (secondary), plus a small "Error 404" label.
+- `src/components/NotFoundView.tsx`: illustration + heading + one line + buttons "Volver al inicio" (primary) and "Volver atrás" (secondary: `history.back()`, or `/` when there is no history). The approved mockup had "Buscar un adoptante", but the home page *is* the search, so both buttons would have gone to `/`, plus a small "Error 404" label.
 - `src/app/not-found.tsx` picks the variant (`'dog' | 'cat'`) with `Math.random()` on the server and passes it as a prop. Picking on the client would cause a hydration mismatch.
 - The copy goes through `t()`, with keys in **es, en and pt**. The two illustrations are inline SVG (`currentColor` and theme-safe tokens only, no raw hex), so they work in both themes.
 - Layout: centered column, 8px grid, type scale from `design-style-guide.md`, tap targets ≥44px. Lives under the sticky h-16 nav.
