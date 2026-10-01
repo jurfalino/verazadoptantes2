@@ -2342,5 +2342,14 @@ export const pt = {
         back: 'Voltar',
         code: 'Erro 404',
     },
+    ownedElsewhere: {
+        title: '{name} está em boas mãos',
+        unnamed: 'Este animal',
+        body: 'A ficha pertence a outro resgatista. Só essa pessoa e o grupo dela podem ver e editar. Se precisar de algo, fale com eles.',
+        group: 'Grupo: {org}',
+        public_link: 'Ver a ficha pública de {name}',
+        public_link_unnamed: 'Ver a ficha pública',
+        back: 'Voltar aos meus animais',
+    },
 };
 

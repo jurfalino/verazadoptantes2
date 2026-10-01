@@ -2337,4 +2337,13 @@ export const en = {
         back: 'Go back',
         code: 'Error 404',
     },
+    ownedElsewhere: {
+        title: '{name} is in good hands',
+        unnamed: 'This animal',
+        body: 'Their record belongs to another rescuer. Only that person and their group can see and edit it. If you need anything, talk to them.',
+        group: 'Group: {org}',
+        public_link: "See {name}'s public page",
+        public_link_unnamed: 'See the public page',
+        back: 'Back to my animals',
+    },
 };

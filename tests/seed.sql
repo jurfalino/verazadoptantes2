@@ -210,3 +210,18 @@ INSERT OR REPLACE INTO org_members (id, org_id, user_email, role, joined_at) VAL
 -- An AVAILABLE animal owned by the teammate — appears in the admin's list.
 INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered, added_by, created_at, updated_at) VALUES
 ('test-animal-fixture-2', 'Nube', 'cat', 'Gata fixture del equipo', 'hembra', 'blanca', 0, 'e2e-teammate@example.com', strftime('%s','now','-20 days'), strftime('%s','now'));
+
+-- ============================================================
+-- Owned-elsewhere fixtures (friendly-404). Owned by the teammate; the `user`
+-- project (testuser@example.com, in no org) is NOT allowed to see them.
+-- Read-only: no spec mutates these.
+-- ============================================================
+INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered, added_by, created_at, updated_at) VALUES
+('test-animal-fixture-owned-1', 'Pirata', 'other', 'Fixture: ficha ajena sin publicar', NULL, NULL, 0, 'e2e-teammate@example.com', strftime('%s','now','-10 days'), strftime('%s','now')),
+('test-animal-fixture-owned-2', 'Canela', 'dog', 'Fixture: ficha ajena publicada', 'hembra', 'canela', 1, 'e2e-teammate@example.com', strftime('%s','now','-10 days'), strftime('%s','now'));
+
+INSERT OR REPLACE INTO adoptions (id, adopter_id, animal_name, species, details, status, record_type, date, added_by) VALUES
+('test-animal-fixture-owned-2', NULL, 'Canela', 'dog', 'Fixture: ficha ajena publicada', 'completed', 'available', strftime('%s','now','-10 days'), 'e2e-teammate@example.com');
+
+INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type) VALUES
+('test-img-fixture-owned-2', '__available__', 'test-animal-fixture-owned-2', 'https://api.dicebear.com/7.x/shapes/svg?seed=canela', NULL, strftime('%s','now'), 'e2e-teammate@example.com', 0, 1, 'image');
