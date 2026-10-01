@@ -188,6 +188,12 @@ export default function PickAdopterForAnimalModal({
                 availableAnimals={ctx?.availableAnimals ?? []}
                 adopterAdoptions={ctx?.adoptions ?? []}
                 currentUser={currentUser}
+                // Handed over directly, not only via the URL: the wizard
+                // matches the animal ONCE as it mounts, and on 2.56.111's CI
+                // run it mounted before router.replace's ?animalId= was
+                // visible — step 1, no animal, inventory notwithstanding.
+                initialRecordType={recordType}
+                presetAnimalId={animalId}
                 autoOpen
                 onClose={closeWizard}
             />

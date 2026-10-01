@@ -123,7 +123,7 @@ function clearDraft(adopterId: string): void {
     try { window.localStorage.removeItem(draftKey(adopterId)); } catch { /* ignore */ }
 }
 
-export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRating = null, tooManyAdoptions = null, tooManyRequests = null, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, onClose, piiOptInEligible = false }: {
+export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRating = null, tooManyAdoptions = null, tooManyRequests = null, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, presetAnimalId, autoOpen = false, onClose, piiOptInEligible = false }: {
     adopterId: string;
     /** Display name of the adopter — used in step-1 guidance copy. */
     adopterName?: string;
@@ -153,6 +153,13 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
      * click "next".
      */
     initialRecordType?: 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet' | 'foster';
+    /**
+     * The inventory animal to pre-select, handed over directly by a caller that
+     * already knows it (PickAdopterForAnimalModal). Wins over `?animalId=`:
+     * the URL copy can still be the pre-navigation one when the wizard mounts,
+     * and the match below runs only once.
+     */
+    presetAnimalId?: string;
     /** Open the wizard immediately on mount (paired with initialRecordType). */
     autoOpen?: boolean;
     /** Called when the wizard closes (cancel or save). */
@@ -182,7 +189,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     // already known, only the adopter is found mid-flow. Falls back to the
     // existing dropdown picker when the id doesn't match anything in
     // availableAnimals (e.g. the animal was claimed by a concurrent save).
-    const prefillAnimalIdRaw = searchParams.get('animalId') || '';
+    const prefillAnimalIdRaw = presetAnimalId || searchParams.get('animalId') || '';
     const matchedInventory = prefillAnimalIdRaw
         ? availableAnimals.find((a: { id: string }) => a?.id === prefillAnimalIdRaw)
         : null;
