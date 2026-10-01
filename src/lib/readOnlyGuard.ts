@@ -45,12 +45,14 @@ function requestKeys(): object[] {
     return keys;
 }
 
-/** Called by the jwt callback with the outcome of every session resolution. */
-export async function setRequestReadOnly(readOnly: boolean): Promise<void> {
-    for (const key of requestKeys()) {
-        if (readOnly) readOnlyRequests.add(key);
-        else readOnlyRequests.delete(key);
-    }
+/**
+ * Called by the jwt callback when a view-as claim is in force. Add-only: once
+ * a request has acted as the viewed user, a later session resolution in the
+ * same request (one that drops the claim on a D1 hiccup, say) must not make
+ * it writable again — the request may already hold the viewed user's identity.
+ */
+export function markRequestReadOnly(): void {
+    for (const key of requestKeys()) readOnlyRequests.add(key);
 }
 
 export function isRequestReadOnly(): boolean {
@@ -96,6 +98,19 @@ export function guardD1(d1: D1Database, isReadOnly: () => boolean = isRequestRea
             return typeof value === 'function' ? value.bind(target) : value;
         },
     });
+}
+
+/**
+ * The raw binding, for the one write allowed in a read-only request: the
+ * view-as start/stop audit row, which records the admin's own action
+ * (src/lib/viewAsSession.ts). Nothing else may use this.
+ */
+export function unguardedD1ForViewAsAudit(): D1Database | null {
+    try {
+        return (getRequestContext().env as { DB?: D1Database }).DB ?? null;
+    } catch {
+        return null;
+    }
 }
 
 const guardedBindings = new WeakMap<D1Database, D1Database>();

@@ -12,7 +12,7 @@ vi.mock('next/headers', () => ({
 }));
 
 import { getRequestContext } from './requestContext';
-import { setRequestReadOnly, ViewAsReadOnlyError } from './readOnlyGuard';
+import { markRequestReadOnly, ViewAsReadOnlyError } from './readOnlyGuard';
 
 function fakeRequest() {
     const ran: string[] = [];
@@ -37,7 +37,7 @@ describe('getRequestContext (guarded)', () => {
         const viewingHeaders = {};
         current.context = viewing.context;
         current.headers = viewingHeaders;
-        await setRequestReadOnly(true);
+        markRequestReadOnly();
         await expect(getRequestContext().env.DB.prepare('INSERT INTO t VALUES (1)').run()).rejects.toBeInstanceOf(ViewAsReadOnlyError);
         expect(viewing.ran).toEqual([]);
 
@@ -48,12 +48,11 @@ describe('getRequestContext (guarded)', () => {
         await getRequestContext().env.DB.prepare('INSERT INTO t VALUES (2)').run();
         expect(other.ran).toEqual(['INSERT INTO t VALUES (2)']);
 
-        // And the marked request can write again once the mark is cleared (stopping "view as").
+        // And the marked request stays read-only for good: nothing can clear the mark.
         current.context = viewing.context;
         current.headers = viewingHeaders;
-        await setRequestReadOnly(false);
-        await getRequestContext().env.DB.prepare('INSERT INTO t VALUES (3)').run();
-        expect(viewing.ran).toEqual(['INSERT INTO t VALUES (3)']);
+        await expect(getRequestContext().env.DB.prepare('INSERT INTO t VALUES (3)').run()).rejects.toBeInstanceOf(ViewAsReadOnlyError);
+        expect(viewing.ran).toEqual([]);
     });
 
     it('on Cloudflare, still refuses in background work after the response, when headers() is gone', async () => {
@@ -61,7 +60,7 @@ describe('getRequestContext (guarded)', () => {
         const viewing = fakeRequest();
         current.context = viewing.context;
         current.headers = {};
-        await setRequestReadOnly(true);
+        markRequestReadOnly();
         current.headers = null; // waitUntil: no request store any more
         await expect(getRequestContext().env.DB.prepare('INSERT INTO audit_log VALUES (1)').run()).rejects.toBeInstanceOf(ViewAsReadOnlyError);
         expect(viewing.ran).toEqual([]);
@@ -72,7 +71,7 @@ describe('getRequestContext (guarded)', () => {
         const shared = fakeRequest();
         current.context = shared.context;
         current.headers = {};
-        await setRequestReadOnly(true);
+        markRequestReadOnly();
         current.headers = {}; // the next request, same shared ctx
         await getRequestContext().env.DB.prepare('INSERT INTO t VALUES (1)').run();
         expect(shared.ran).toEqual(['INSERT INTO t VALUES (1)']);
@@ -103,8 +102,10 @@ describe('no direct @cloudflare/next-on-pages imports', () => {
         });
     }
 
-    it('only the guard and its wrapper import it', () => {
-        const pattern = /(from\s+|import\s*\(\s*|require\s*\(\s*)['"]@cloudflare\/next-on-pages['"]/;
+    it('only the guard and its wrapper import it, and nothing reaches the raw binding another way', () => {
+        // In production next-on-pages also copies bindings onto process.env, and
+        // the context sits on a global symbol; both hand out the raw DB.
+        const pattern = /(from\s+|import\s*\(\s*|require\s*\(\s*)['"`]@cloudflare\/next-on-pages['"`]|process\.env\.DB\b|process\.env\[['"`]DB['"`]\]|__cloudflare-request-context__/;
         const offenders = walk(join(root, 'src'))
             .map(p => relative(root, p))
             .filter(p => !ALLOWED.has(p) && pattern.test(readFileSync(join(root, p), 'utf8')));

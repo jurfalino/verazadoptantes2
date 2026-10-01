@@ -16,6 +16,7 @@ function deps(overrides: Partial<ViewAsDeps> = {}) {
     const d: ViewAsDeps = {
         now: () => NOW,
         isAdmin: async (email) => email === ADMIN || email === OTHER_ADMIN,
+        isAdminStrict: async (email) => email === ADMIN || email === OTHER_ADMIN,
         findUser: async (id) => [MARIA, BOSS].find(u => u.id === id) ?? null,
         record: async (e) => { recorded.push(`${e.action}:${e.actorEmail}`); return true; },
         ...overrides,
@@ -48,6 +49,13 @@ describe('resolveViewAs — start', () => {
         const { d } = deps();
         const token: Record<string, unknown> = { email: ADMIN };
         expect(await resolveViewAs(token, 'update', { viewAs: { userId: BOSS.id } }, d)).toBeNull();
+        expect(token.viewAs).toBeUndefined();
+    });
+
+    it('a failed role lookup on the target refuses, rather than reading as "not an admin"', async () => {
+        const { d } = deps({ isAdminStrict: async () => { throw new Error('D1 down'); } });
+        const token: Record<string, unknown> = { email: ADMIN };
+        expect(await resolveViewAs(token, 'update', { viewAs: { userId: MARIA.id } }, d)).toBeNull();
         expect(token.viewAs).toBeUndefined();
     });
 

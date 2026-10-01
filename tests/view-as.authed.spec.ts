@@ -91,8 +91,8 @@ test('a regular user cannot start viewing as someone, even by posting the sessio
     // A bare same-origin page: the app shell may reload itself mid-fetch.
     await page.goto('/api/ready');
 
-    const session = await page.evaluate(async () => {
-        const { csrfToken } = await (await fetch('/api/auth/csrf')).json();
+    const session: { user?: { email?: string }; viewingAs?: unknown } = await page.evaluate(async () => {
+        const { csrfToken } = (await (await fetch('/api/auth/csrf')).json()) as { csrfToken: string };
         const res = await fetch('/api/auth/session', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },

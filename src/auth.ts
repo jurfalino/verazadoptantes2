@@ -7,7 +7,7 @@ import { users, userProfiles } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 import { activeViewAs, VIEW_AS_MAX_MS, type ViewAsClaim } from "@/domain/viewAs";
-import { setRequestReadOnly } from "@/lib/readOnlyGuard";
+import { markRequestReadOnly } from "@/lib/readOnlyGuard";
 
 export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth({
     ...authConfig,
@@ -99,10 +99,10 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth({
             }
 
             // "View as" (src/domain/viewAs.ts): an admin's token may carry a
-            // claim to another user. token.email stays the admin's; only sub,
-            // isAdmin and the session's user switch. Every resolution also
-            // sets the request's read-only mark, so nothing saves under the
-            // viewed user's name (src/lib/readOnlyGuard.ts).
+            // claim to another user. The token itself stays the admin's (email,
+            // sub, isAdmin); only the session callback below reports the viewed
+            // user. A claim in force marks the request read-only, so nothing
+            // saves under the viewed user's name (src/lib/readOnlyGuard.ts).
             let viewAs: ViewAsClaim | null = null;
             if (trigger === 'update' || token.viewAs !== undefined) {
                 try {
@@ -114,11 +114,7 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth({
                     delete token.viewAs;
                 }
             }
-            if (viewAs) {
-                token.sub = viewAs.userId;
-                token.isAdmin = false;
-            }
-            await setRequestReadOnly(!!viewAs);
+            if (viewAs) markRequestReadOnly();
             return token;
         },
         session: async ({ session, token }) => {
