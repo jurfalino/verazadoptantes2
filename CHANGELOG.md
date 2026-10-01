@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.118] - 2026-10-01
+
+### Changed — a friendly 404, and "this animal has another rescuer"
+
+Dead ends now land on a 404 with a dog that ate the page or a cat that knocked it
+off the table, at random. Form and contract results that aren't yours or don't
+exist use it too, instead of a grey box.
+
+Opening another rescuer's animal no longer says "not found". It says the animal
+is in good hands, names the rescuer and their group (never their email), and
+links to the public page when the animal is up for adoption.
+
 ## [2.56.117] - 2026-10-01
 
 ### Fixed — the animal picker no longer degrades silently
