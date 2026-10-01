@@ -8,10 +8,9 @@ import { sql } from 'drizzle-orm';
 import { getUser } from '@/app/actions/_db';
 import { markNotificationRead } from '@/app/actions/notifications';
 import FormResultsContent from '@/components/FormResultsContent';
-import Link from 'next/link';
+import { isOwnerOrgMateOrAdmin } from '@/app/actions/_applicants';
 import { logger } from '@/lib/logger';
-import { isOrgMate } from '@/lib/orgMembership';
-import { isAdminAsync } from '@/config/admins';
+import Link from 'next/link';
 import { formLinkKind } from '@/domain/formLink';
 import { computeAvgRating } from '@/domain/ratings';
 import { maskMatchCardsForViewer } from '@/lib/piiAccessServer';
@@ -54,26 +53,31 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
     const db = await getDb();
     if (!db) return <ErrorState message="Database unavailable" />;
 
-    // The ownership check, the match-metadata notification, and the full
-    // submission are mutually independent — fetch them in one parallel wave
-    // instead of three sequential D1 round-trips. (The extra two reads for a
-    // non-owner are harmless: we still gate on ownerCheck before rendering.)
+    // The access check, the viewer's own notification (to mark it read), and
+    // the full submission are mutually independent — fetch them in one
+    // parallel wave instead of three sequential D1 round-trips. (The extra
+    // reads for a stranger are harmless: we still gate before rendering.)
+    const notifFor = (recipient: string, role: 'viewer' | 'formOwner') =>
+        db.select({ id: notifications.id, metadata: notifications.metadata })
+            .from(notifications)
+            .where(and(
+                eq(notifications.userId, recipient),
+                sql`json_extract(${notifications.metadata}, '$.submissionId') = ${submissionId}`,
+            ))
+            .get()
+            .catch((e: unknown) => {
+                logger.warn('form-results: notification read fallback', {
+                    submissionId, currentUser, role,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+                return null;
+            });
     const [ownerCheck, notif, submission] = await Promise.all([
         db.select({ userId: formSubmissions.userId })
             .from(formSubmissions)
             .where(eq(formSubmissions.id, submissionId))
             .get(),
-        db.select({ id: notifications.id, metadata: notifications.metadata })
-            .from(notifications)
-            .where(and(
-                eq(notifications.userId, currentUser),
-                sql`json_extract(${notifications.metadata}, '$.submissionId') = ${submissionId}`,
-            ))
-            .get()
-            .catch((e: unknown) => {
-                logger.warn('form-results: notification lookup fallback', { submissionId, userEmail: currentUser, error: e instanceof Error ? e.message : String(e) });
-                return null;
-            }),
+        notifFor(currentUser, 'viewer'),
         db.select({
             id: formSubmissions.id,
             selfieUrl: formSubmissions.selfieUrl,
@@ -95,32 +99,50 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
             .get(),
     ]);
 
-    // Auth: verify the current user owns this submission (is the rescuer)
-    // Missing → 404. Not yours → teammates/admins (who get notification links
-    // here) keep the "no permission" screen; strangers get the 404 so we don't
-    // confirm the submission exists (applicant PII). `userId` holds the owner's email.
+    // Auth: the form-link owner, any org-mate of theirs (2026-09-30 — the team
+    // sees its applicants; the teammate notification links here), or an admin
+    // (same rule as the animal page). Missing or a stranger → 404, so we never
+    // confirm a submission exists (applicant PII). `userId` holds the owner's email.
     if (!ownerCheck) notFound();
-    if (ownerCheck.userId !== currentUser) {
-        const teammateOrAdmin = (await isOrgMate(currentUser, ownerCheck.userId)) || (await isAdminAsync(currentUser));
-        logger.info('form-results: denied', { submissionId, userEmail: currentUser, teammateOrAdmin });
-        if (!teammateOrAdmin) notFound();
-        return <ErrorState message="No tenés permiso para ver este formulario" />;
+    const isFormOwner = ownerCheck.userId.trim().toLowerCase() === currentUser.trim().toLowerCase();
+    if (!isFormOwner && !(await isOwnerOrgMateOrAdmin(currentUser, ownerCheck.userId))) {
+        logger.info('form-results: denied', { submissionId, userEmail: currentUser });
+        notFound();
     }
+
+    // The duplicate-match data lives on the FORM-LINK OWNER's notification;
+    // the teammate copy carries only the submitter's name. Read the owner's
+    // (raw user_id, exactly what the submit route stored) so a teammate sees
+    // the same matches block. The viewer's own notification is still the one
+    // marked read.
+    const metaNotif = isFormOwner ? notif : await notifFor(ownerCheck.userId, 'formOwner');
 
     // Notification → mark as read (best-effort) + parse match metadata
     let metadata: NotificationMetadata = { submissionId, matchCount: 0 };
     if (notif) {
-        try { await markNotificationRead(notif.id, currentUser); } catch { /* non-blocking */ }
-        if (notif.metadata) {
-            try {
-                const parsed = JSON.parse(notif.metadata);
-                metadata = {
-                    submissionId,
-                    matchCount: parsed.matchCount ?? 0,
-                    submittedData: parsed.submittedData,
-                    matchedAdopters: parsed.matchedAdopters,
-                };
-            } catch { /* keep defaults */ }
+        try {
+            await markNotificationRead(notif.id, currentUser);
+        } catch (e) {
+            logger.warn('form-results: mark-read failed (non-blocking)', {
+                submissionId, currentUser, notificationId: notif.id,
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+    }
+    if (metaNotif?.metadata) {
+        try {
+            const parsed = JSON.parse(metaNotif.metadata);
+            metadata = {
+                submissionId,
+                matchCount: parsed.matchCount ?? 0,
+                submittedData: parsed.submittedData,
+                matchedAdopters: parsed.matchedAdopters,
+            };
+        } catch (e) {
+            logger.warn('form-results: notification metadata unparseable — no match block', {
+                submissionId, currentUser, notificationId: metaNotif.id,
+                error: e instanceof Error ? e.message : String(e),
+            });
         }
     }
 

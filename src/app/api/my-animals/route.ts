@@ -127,9 +127,17 @@ export async function GET(request: NextRequest) {
         }
         logger.info('my-animals query', { view, userEmail, resultCount: results.length, uniqueCount: new Set(queryIds).size });
 
-        // v2.14.10-21: applicants for the per-animal disclosure on /my-animals.
-        // Loaded once via getApplicantsForAnimal (D1-safe per-row enrichment).
-        const { getApplicantsForAnimal } = await import('@/app/actions/applicants');
+        // «N interesadas» chip: applicants of each AVAILABLE animal, scoped to
+        // the animal OWNER's team — the exact rule the animal page lists with
+        // (src/lib/applicantScope.ts), so the chip and the page never disagree.
+        // Access is already implied: every row here passed `teamMatch`, so the
+        // viewer is the owner or an org-mate. Each distinct owner's team is
+        // resolved ONCE per request, and the card only needs the count, so this
+        // is one id-select per available animal — no per-card auth/org checks
+        // and no per-applicant enrichment (that payload, with contact details,
+        // is the animal page's job).
+        const { createOwnerTeamResolver, listApplicantIdsForAnimal } = await import('@/app/actions/_applicants');
+        const ownerTeam = createOwnerTeamResolver();
 
         // v2.55.16: «N pendientes» badge — due follow-ups per placed animal, so
         // the list works as the follow-through triage board. Flag-gated; the
@@ -269,10 +277,12 @@ export async function GET(request: NextRequest) {
 
                 // Only fetch applicants for "available" animals — the card
                 // disclosure isn't useful once the animal has been adopted.
-                const applicants = animal.adopterId ? [] : await getApplicantsForAnimal(animal.id).catch((e: unknown) => {
-                    logger.warn('my-animals: applicants fallback', { animalId: animal.id, userEmail, view, error: e instanceof Error ? e.message : String(e) });
-                    return [];
-                });
+                const applicants: Array<{ submissionId: string }> = animal.adopterId ? [] : await ownerTeam(animal.addedBy)
+                    .then(team => listApplicantIdsForAnimal(db, animal.id, team))
+                    .catch((e: unknown) => {
+                        logger.warn('my-animals: applicants fallback', { animalId: animal.id, userEmail, view, error: e instanceof Error ? e.message : String(e) });
+                        return [];
+                    });
 
                 // Due follow-up count for the badge — only animals with an
                 // active placement (the view row's adopterId marks it).

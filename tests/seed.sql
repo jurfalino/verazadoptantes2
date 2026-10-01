@@ -343,6 +343,7 @@ INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered
 -- Owned-elsewhere fixtures (friendly-404). Owned by the teammate; the `user`
 -- project (testuser@example.com, in no org) is NOT allowed to see them.
 -- Read-only: no spec mutates these.
+-- =====================================================
 -- ============================================================
 INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered, added_by, created_at, updated_at) VALUES
 ('test-animal-fixture-owned-1', 'Pirata', 'other', 'Fixture: ficha ajena sin publicar', NULL, NULL, 0, 'e2e-teammate@example.com', strftime('%s','now','-10 days'), strftime('%s','now')),
@@ -362,3 +363,45 @@ INSERT OR REPLACE INTO form_submissions (id, user_id, name, status, created_at) 
 
 INSERT OR REPLACE INTO notifications (id, user_id, type, title, body, url, icon, read, metadata, created_at) VALUES
 ('test-notif-fixture-teammate-1', 'e2e-teammate@example.com', 'contract_result', 'Fixture contrato', 'Fixture', '/contract-results/test-notif-fixture-teammate-1', '📋', 1, '{}', strftime('%s','now'));
+=======
+-- TEAM APPLICANTS FIXTURES (2026-09-30)
+-- Applicants of a team animal are visible to the whole team, whichever
+-- member's form link the person used. Scope = the animal OWNER's team, so a
+-- row whose form-link owner is outside that team (a forged
+-- /form?u=<stranger>&animal=<ours>) never shows. Used by
+-- tests/team-applicants.spec.ts.
+-- ============================================================
+
+-- The teammate signs in during that spec: profile row so no country/terms
+-- banner blocks the page.
+INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms_version, terms_accepted_at) VALUES
+('test-teammate-id', 'AR', 1, 1, strftime('%s','now'));
+
+-- An AVAILABLE animal owned by the admin (Vero is an org-mate, not the owner).
+INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered, added_by, created_at, updated_at) VALUES
+('test-animal-fixture-apl', 'Lupa', 'dog', 'Perra fixture con postulantes del equipo', 'hembra', 'negra', 0, 'gatitosolivos@gmail.com', strftime('%s','now','-10 days'), strftime('%s','now'));
+
+-- The adopter the match notifications point at (and that the link test links to).
+INSERT OR REPLACE INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES
+('test-adopter-fixture-apl-match', 'Zulema Coincidefixture', 'Tel: 555-0377', '4', 'test-seed', strftime('%s','now'), strftime('%s','now'));
+
+-- Applicants of Lupa:
+--   via the owner's link   (user_id = admin)
+--   via the teammate's link (mixed-case user_id: matching is case-insensitive)
+--   via an OUTSIDER's link (forged ?animal= — must never show or count)
+-- plus one owner-link submission with no animal, reserved for the link test.
+INSERT OR REPLACE INTO form_submissions (id, user_id, name, email, phone, status, selected_animal_id, created_at) VALUES
+('test-sub-fixture-apl-owner', 'gatitosolivos@gmail.com', 'Postulante Duenafixture', 'apl-owner@example.com', '555-0371', 'pending', 'test-animal-fixture-apl', strftime('%s','now','-3 days')),
+('test-sub-fixture-apl-mate', 'E2E-Teammate@example.com', 'Postulante Equipofixture', 'apl-mate@example.com', '555-0372', 'pending', 'test-animal-fixture-apl', strftime('%s','now','-2 days')),
+('test-sub-fixture-apl-outsider', 'e2e-outsider@example.com', 'Postulante Forasterafixture', 'apl-outsider@example.com', '555-0373', 'pending', 'test-animal-fixture-apl', strftime('%s','now','-1 days')),
+('test-sub-fixture-apl-link', 'gatitosolivos@gmail.com', 'Postulante Vinculofixture', 'apl-link@example.com', '555-0374', 'pending', NULL, strftime('%s','now','-1 days'));
+
+-- The form-link owner's notifications carry the duplicate-match data (the
+-- teammate copy does not). read = 1 so they never light the admin's bell.
+INSERT OR REPLACE INTO notifications (id, user_id, type, title, body, url, icon, read, dismissed, metadata, created_at) VALUES
+('test-notif-fixture-apl-owner', 'gatitosolivos@gmail.com', 'form_submission', 'Postulante Duenafixture aplicó para Lupa — 1 coincidencia', 'Se encontraron posibles registros previos.', '/form-results/test-sub-fixture-apl-owner', '⚠️', 1, 0,
+ '{"submissionId":"test-sub-fixture-apl-owner","matchCount":1,"submittedData":{"name":"Postulante Duenafixture","email":"apl-owner@example.com","phone":"555-0371"},"matchedAdopters":[{"id":"test-adopter-fixture-apl-match","name":"Zulema Coincidefixture","matchTypes":["phone"]}],"selectedAnimalId":"test-animal-fixture-apl","selectedAnimalName":"Lupa"}',
+ strftime('%s','now','-3 days')),
+('test-notif-fixture-apl-link', 'gatitosolivos@gmail.com', 'form_submission', 'Postulante Vinculofixture completó el formulario — 1 coincidencia', 'Se encontraron posibles registros previos.', '/form-results/test-sub-fixture-apl-link', '⚠️', 1, 0,
+ '{"submissionId":"test-sub-fixture-apl-link","matchCount":1,"submittedData":{"name":"Postulante Vinculofixture","email":"apl-link@example.com","phone":"555-0374"},"matchedAdopters":[{"id":"test-adopter-fixture-apl-match","name":"Zulema Coincidefixture","matchTypes":["phone"]}]}',
+ strftime('%s','now','-1 days'));

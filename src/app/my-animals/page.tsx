@@ -32,7 +32,6 @@ interface AnimalImage {
     scope?: string | null;
 }
 
-import type { ApplicantSummary as Applicant } from '@/app/actions/applicants';
 
 interface Animal {
     id: string;
@@ -52,8 +51,9 @@ interface Animal {
     sex: string | null;
     color: string | null;
     images: AnimalImage[];
-    /** v2.14.10-21: form-submission applicants targeted at this animal. */
-    applicants?: Applicant[];
+    /** Applicants of this animal (owner's-team scope) — ids only; the card
+     *  shows the count and deep-links to the animal page for the list. */
+    applicants?: Array<{ submissionId: string }>;
     /** v2.55.16: due follow-ups (ENABLE_FOLLOWUPS; 0 when off/none). */
     dueFollowups?: number;
     /** v2.56.128: the rescuer's public-catalogue switch. NULL = listed. */

@@ -37,7 +37,9 @@ export interface FormSubmissionPrefill {
 
 /**
  * Fetch form submission data for pre-filling the "create adopter" form.
- * Only returns data if the submission belongs to the current user (rescuer).
+ * Only returns data to the form-link owner, an org-mate of theirs, or an
+ * admin — the same rule as /form-results (2026-09-30: the team sees its
+ * applicants).
  */
 export async function getFormSubmissionPrefill(submissionId: string): Promise<FormSubmissionPrefill | null> {
     if (!submissionId?.trim()) return null;
@@ -45,6 +47,9 @@ export async function getFormSubmissionPrefill(submissionId: string): Promise<Fo
         const db = await getDb();
         const currentUser = await getUser();
         if (!db || !currentUser) return null;
+
+        const { canAccessFormSubmission } = await import('./_applicants');
+        if (!(await canAccessFormSubmission(db, submissionId, currentUser))) return null;
 
         const row = await db
             .select({
@@ -59,10 +64,7 @@ export async function getFormSubmissionPrefill(submissionId: string): Promise<Fo
                 answersJson: formSubmissions.answersJson,
             })
             .from(formSubmissions)
-            .where(and(
-                eq(formSubmissions.id, submissionId),
-                eq(formSubmissions.userId, currentUser),
-            ))
+            .where(eq(formSubmissions.id, submissionId))
             .get();
 
         if (!row) return null;
@@ -120,7 +122,9 @@ function revalidateFormLink(submissionId: string, adopterId: string): void {
  * Link a form submission to a profile the rescuer just created from it
  * ("Crear perfil con estos datos" → AdopterForm). Sets linkedAdopterId and
  * status = 'linked', and adds the form's adoption request to the profile.
- * Only updates if the submission belongs to the current user (rescuer).
+ * Only the form-link owner, an org-mate of theirs, or an admin may link — the
+ * same rule as /form-results, whose buttons call this (team applicants,
+ * Jon 2026-09-30).
  *
  * Choosing one of the form's MATCHES goes through linkFormToExistingAdopter,
  * which also folds the auto-created profile in.
@@ -136,13 +140,25 @@ export async function linkFormSubmissionToAdopter(submissionId: string, adopterI
         // this submission, or one she already sees in full (normally the one
         // she just created from the form). Being linked makes the person an
         // «applicant» — which unlocks a contract invitation and its pre-fill.
+        // Gate on the submission's form-link owner (read by id first, so the
+        // UPDATE below is keyed by id alone — a `user_id = <viewer>` clause
+        // would silently no-op for a teammate).
+        const owner = await db.select({ userId: formSubmissions.userId })
+            .from(formSubmissions).where(eq(formSubmissions.id, submissionId)).get();
+        const { isOwnerOrgMateOrAdmin } = await import('./_applicants');
+        if (!owner || !(await isOwnerOrgMateOrAdmin(currentUser, owner.userId))) {
+            return { success: false, error: 'Submission not found or not owned' };
+        }
+
         const [target, notif] = await Promise.all([
             db.select({ id: adopters.id, addedBy: adopters.addedBy, deletedAt: adopters.deletedAt })
                 .from(adopters).where(eq(adopters.id, adopterId)).get(),
             db.select({ metadata: notifications.metadata })
                 .from(notifications)
                 .where(and(
-                    eq(notifications.userId, currentUser),
+                    // The matches recorded at submit time live on the form-link
+                    // OWNER's notification; a teammate reads that one.
+                    eq(notifications.userId, owner.userId),
                     eq(notifications.type, 'form_submission'),
                     sql`json_extract(${notifications.metadata}, '$.submissionId') = ${submissionId}`,
                 ))
@@ -186,7 +202,6 @@ export async function linkFormSubmissionToAdopter(submissionId: string, adopterI
             })
             .where(and(
                 eq(formSubmissions.id, submissionId),
-                eq(formSubmissions.userId, currentUser),
                 or(isNull(formSubmissions.linkedAdopterId), eq(formSubmissions.linkedAdopterId, adopterId)),
             ))
             .returning({ id: formSubmissions.id });
@@ -219,7 +234,7 @@ const LINKING = 'linking';
  * The form counterpart of attachContractToExistingAdopter.
  *
  * Every refusal is decided by planFormLink (src/domain/formLink.ts): only the
- * submission's owner, only a match recorded for it at submit time (never an
+ * submission's owner or their team (or an admin), only a match recorded for it at submit time (never an
  * arbitrary profile), never moving a form off a profile the rescuer already
  * chose. Idempotent — a retry after a timeout succeeds without re-merging.
  */
@@ -242,14 +257,18 @@ export async function linkFormToExistingAdopter(
             linkedAdopterId: formSubmissions.linkedAdopterId,
             autoAdopterId: formSubmissions.autoAdopterId,
         }).from(formSubmissions).where(eq(formSubmissions.id, submissionId)).get();
-        // Owner only — same rule the page applies before rendering the cards.
-        if (!sub || sub.userId !== actorEmail) return { success: false, error: 'Submission not found or not owned' };
+        // The form-link owner, an org-mate of theirs, or an admin — the same
+        // rule the page applies before rendering the cards (team applicants,
+        // Jon 2026-09-30).
+        const { isOwnerOrgMateOrAdmin } = await import('./_applicants');
+        if (!sub || !(await isOwnerOrgMateOrAdmin(actorEmail, sub.userId))) return { success: false, error: 'Submission not found or not owned' };
 
         const [notif, target, auto] = await Promise.all([
             db.select({ metadata: notifications.metadata })
                 .from(notifications)
                 .where(and(
-                    eq(notifications.userId, actorEmail),
+                    // Matches recorded at submit time: on the form-link OWNER's notification.
+                    eq(notifications.userId, sub.userId),
                     eq(notifications.type, 'form_submission'),
                     sql`json_extract(${notifications.metadata}, '$.submissionId') = ${submissionId}`,
                 ))
