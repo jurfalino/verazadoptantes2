@@ -31,7 +31,7 @@ export async function getUserSettings(): Promise<UserSettings | null> {
         userEmail = await getUser();
         if (!userEmail || userEmail === 'unknown') return null;
 
-        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        const { env } = (await import('@/lib/requestContext')).getRequestContext();
         if (!env?.DB) return null;
 
         const row = await env.DB.prepare(
@@ -96,7 +96,7 @@ export async function updateUserCountry(country: string): Promise<{ success: boo
         userEmail = await getUser();
         if (!userEmail || userEmail === 'unknown') throw new Error('Not authenticated');
 
-        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        const { env } = (await import('@/lib/requestContext')).getRequestContext();
         if (!env?.DB) throw new Error('Database not available');
 
         const user = await env.DB.prepare(
@@ -147,7 +147,7 @@ export async function updateUserTimezone(timezone: string): Promise<{ success: b
         userEmail = await getUser();
         if (!userEmail || userEmail === 'unknown') throw new Error('Not authenticated');
 
-        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        const { env } = (await import('@/lib/requestContext')).getRequestContext();
         if (!env?.DB) throw new Error('Database not available');
 
         const user = await env.DB.prepare(
@@ -193,7 +193,7 @@ export async function acceptTermsAndCountry(
             throw new Error('Not authenticated');
         }
 
-        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        const { env } = (await import('@/lib/requestContext')).getRequestContext();
         if (!env?.DB) throw new Error('Database not available');
 
         const user = await env.DB.prepare(
@@ -248,7 +248,7 @@ export async function acceptTerms(version: number): Promise<{ success: boolean }
             throw new Error('Not authenticated');
         }
 
-        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        const { env } = (await import('@/lib/requestContext')).getRequestContext();
         if (!env?.DB) throw new Error('Database not available');
 
         const user = await env.DB.prepare(
@@ -295,7 +295,7 @@ export async function getUserName(): Promise<string | null> {
         userEmail = await getUser();
         if (!userEmail || userEmail === 'unknown') return null;
 
-        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        const { env } = (await import('@/lib/requestContext')).getRequestContext();
         if (!env?.DB) return null;
 
         const row = await env.DB.prepare(
@@ -325,7 +325,7 @@ export async function updateUserName(name: string): Promise<{ success: boolean; 
             throw new Error('Not authenticated');
         }
 
-        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        const { env } = (await import('@/lib/requestContext')).getRequestContext();
         if (!env?.DB) throw new Error('Database not available');
 
         await env.DB.prepare(
@@ -389,7 +389,7 @@ export async function getFollowupSettings(): Promise<FollowupSettings | null> {
         userEmail = await getUser();
         if (!userEmail || userEmail === 'unknown') return null;
 
-        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        const { env } = (await import('@/lib/requestContext')).getRequestContext();
         if (!env?.DB) return null;
 
         const row = await env.DB.prepare(
@@ -423,7 +423,7 @@ export async function saveFollowupSettings(input: FollowupSettings | null): Prom
             throw new Error(`Invalid followup settings: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join(', ')}`);
         }
 
-        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        const { env } = (await import('@/lib/requestContext')).getRequestContext();
         if (!env?.DB) throw new Error('Database not available');
 
         const user = await env.DB.prepare(`SELECT id FROM user WHERE email = ? LIMIT 1`)

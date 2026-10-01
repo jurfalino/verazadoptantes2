@@ -22,7 +22,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 let row: { id: string; role: string | null } | undefined;
 
                 try {
-                    const { getRequestContext } = await import('@cloudflare/next-on-pages');
+                    const { getRequestContext } = await import('@/lib/requestContext');
                     const { env } = getRequestContext();
                     if (env?.DB) {
                         const r = await env.DB.prepare(
@@ -76,7 +76,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
                             if (province || city || tz) {
                                 try {
-                                    const { getRequestContext: grc } = await import('@cloudflare/next-on-pages');
+                                    const { getRequestContext: grc } = await import('@/lib/requestContext');
                                     const { env: e } = grc();
                                     if (e?.DB) {
                                         await e.DB.prepare(

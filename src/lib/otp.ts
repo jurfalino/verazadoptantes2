@@ -12,7 +12,7 @@
  * AUTH_SECRET makes stored hashes useless without the secret.
  */
 
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { getRequestContext } from '@/lib/requestContext';
 
 // Code lifetime. Raised from 10 minutes to an hour (v2.56.5) so a slow inbox
 // or a user who steps away mid-sign-in doesn't have to start over. This costs

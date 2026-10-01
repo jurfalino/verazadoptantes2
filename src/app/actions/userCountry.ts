@@ -13,7 +13,7 @@ import { logger } from '@/lib/logger';
 export async function getUserCountry(user: string | null | undefined): Promise<string | null> {
     if (!user || user === 'unknown') return null;
     try {
-        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        const { env } = (await import('@/lib/requestContext')).getRequestContext();
         if (!env?.DB) return null;
         const row = await env.DB.prepare(
             `SELECT up.country FROM user_profiles up JOIN user u ON u.id = up.user_id WHERE u.email = ? LIMIT 1`

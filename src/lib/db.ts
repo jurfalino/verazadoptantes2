@@ -7,7 +7,7 @@
  * Server actions re-export this via `actions/_db.ts` for convenience.
  */
 
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { getRequestContext } from '@/lib/requestContext';
 import { createDb } from '@/db';
 import { logger } from '@/lib/logger';
 

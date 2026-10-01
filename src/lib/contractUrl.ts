@@ -12,7 +12,7 @@
 export async function getContractBaseUrl(): Promise<string> {
     let value: string | undefined;
     try {
-        const { getRequestContext } = await import('@cloudflare/next-on-pages');
+        const { getRequestContext } = await import('@/lib/requestContext');
         const { env } = getRequestContext();
         value = (env as unknown as Record<string, string | undefined>).CONTRACT_BASE_URL;
     } catch {

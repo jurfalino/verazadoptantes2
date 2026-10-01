@@ -174,7 +174,7 @@ export async function getOrgActivity(filters: ActivityFilters = {}): Promise<Act
         // If user has no org or is the only member, no team activity to show
         if (emails.length <= 1) return empty;
 
-        const { getRequestContext } = await import('@cloudflare/next-on-pages');
+        const { getRequestContext } = await import('@/lib/requestContext');
         const { env } = getRequestContext();
         if (!env?.DB) return empty;
 
@@ -342,7 +342,7 @@ export async function getNewActivityCount(sinceTimestamp: number): Promise<numbe
         const emails = await getOrgMemberEmails();
         if (emails.length <= 1) return 0;
 
-        const { getRequestContext } = await import('@cloudflare/next-on-pages');
+        const { getRequestContext } = await import('@/lib/requestContext');
         const { env } = getRequestContext();
         if (!env?.DB) return 0;
 

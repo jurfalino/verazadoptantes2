@@ -23,7 +23,7 @@ export async function resolveViewerTimezone(userEmail: string | null | undefined
     if (!userEmail || userEmail === 'unknown') return DEFAULT_TIMEZONE;
 
     try {
-        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        const { env } = (await import('@/lib/requestContext')).getRequestContext();
         if (!env?.DB) return DEFAULT_TIMEZONE;
 
         const row = await env.DB.prepare(

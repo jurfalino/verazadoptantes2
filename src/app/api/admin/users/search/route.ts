@@ -2,7 +2,7 @@ export const runtime = 'edge';
 import { auth } from "@/auth";
 import { isAdminAsync } from "@/config/admins";
 import { NextRequest, NextResponse } from "next/server";
-import { getRequestContext } from "@cloudflare/next-on-pages";
+import { getRequestContext } from "@/lib/requestContext";
 import { logger } from '@/lib/logger';
 
 /**

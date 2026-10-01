@@ -7,7 +7,7 @@
  * - Edge Runtime compatible (HTTP API, no SDK)
  */
 
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { getRequestContext } from '@/lib/requestContext';
 
 // Generate short unique error ID (8 chars)
 export function generateErrorId(): string {

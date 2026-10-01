@@ -20,7 +20,7 @@
  * the user's browser, so the admin's IP cannot leak to the user.
  */
 
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { getRequestContext } from '@/lib/requestContext';
 import { eq } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { appConfig } from '@/db/schema';
