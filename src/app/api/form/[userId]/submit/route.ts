@@ -246,16 +246,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             const { createNotification } = await import('@/app/actions/notifications');
             const matchCount = matches.length;
 
-            // When the submission targets a specific animal, prepend the
-            // animal-application framing to the title so the notification reads
-            // "Juana aplicó para Luna" with the match-count appended.
-            const animalPrefix = selectedAnimalName ? `${name} aplicó para ${selectedAnimalName}` : `${name} completó el formulario`;
+            // When the submission targets a specific animal the title reads
+            // "Juana aplicó para Luna", with the match count appended
+            // (src/domain/formNotification.ts — shared with the teammate copy).
+            const { formSubmissionOwnerTitle, formSubmissionTeammateTitle } = await import('@/domain/formNotification');
+            const titleInput = { submitterName: name, animalName: selectedAnimalName, matchCount };
+            const ownerTitle = formSubmissionOwnerTitle(titleInput);
             if (matchCount > 0) {
                 await createNotification({
                     id: notificationId,
                     userId: rescuerEmail,
                     type: 'form_submission',
-                    title: `${animalPrefix} — ${matchCount} coincidencia${matchCount > 1 ? 's' : ''}`,
+                    title: ownerTitle,
                     body: `Se encontraron posibles registros previos. Tocá para revisar las respuestas y vincular.`,
                     url: `/form-results/${submissionId}`,
                     icon: '⚠️',
@@ -277,7 +279,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     id: notificationId,
                     userId: rescuerEmail,
                     type: 'form_submission',
-                    title: animalPrefix,
+                    title: ownerTitle,
                     body: `No se encontraron registros previos. Revisá las respuestas para continuar.`,
                     url: `/form-results/${submissionId}`,
                     icon: '📋',
@@ -293,19 +295,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
 
             logger.info('Form fuzzy search completed', { submissionId, matchCount });
 
-            // Fan-out to org members (after the response, kept alive — see src/lib/background.ts)
+            // Fan-out to org members (after the response, kept alive — see src/lib/background.ts).
+            // With an animal, teammates get the owner's title («Juana aplicó
+            // para Luna …») and the animal in metadata, like the owner's copy.
+            const teammateTitle = formSubmissionTeammateTitle(titleInput);
             await runAfterResponse('formSubmit.notifyOrgMembers', async () => {
                 const { notifyOrgMembers } = await import('@/app/actions/notifications');
                 await notifyOrgMembers({
                     actorEmail: rescuerEmail,
                     type: 'form_submission',
-                    title: `Nueva respuesta al formulario`,
+                    title: teammateTitle,
                     body: `${name} completó el formulario de adopción compartido por ${rescuerEmail}.`,
                     url: `/form-results/${submissionId}`,
                     icon: '📋',
-                    metadata: { submissionId, submitterName: name },
+                    metadata: { submissionId, submitterName: name, selectedAnimalId, selectedAnimalName },
                 });
-            }, { submissionId, rescuerEmail });
+            }, { submissionId, rescuerEmail, selectedAnimalId });
         } catch (searchErr) {
             logger.warn('Form fuzzy search/notification failed (non-blocking)', { error: (searchErr as Error).message, submissionId });
         }
