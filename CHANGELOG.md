@@ -2,6 +2,44 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.109] - 2026-09-30
+
+### Changed — registering an adoption or tránsito no longer leaves the animal
+
+Picking a person used to navigate to `/adopter/<id>`, ending the task somewhere
+else: the animal, its pending reminders and its timeline all left behind, with
+nothing bringing the rescuer back.
+
+The wizard reads its prefill from the URL, so rather than refactoring the
+1,080-line form that owns the app's most important write, the same params are
+now set on the page the user is already on and the form is mounted there. It
+already closed and `router.refresh()`ed instead of navigating, so finishing
+lands back on the animal with the new placement showing.
+
+Hosted in `PickAdopterForAnimalModal`, not in `AnimalProfile` — the picker also
+opens from the share sheet on every `/my-animals` card, and a fix in the profile
+alone would have left those cards still navigating away.
+
+**The form is held until its inventory loads.** It matches the animal prefill
+against `availableAnimals` exactly once, as it mounts; mounting before that
+arrived matched against an empty list and dropped the animal silently, saving an
+adoption with no animal attached. Caught by asserting the `placements` row, not
+that a modal appeared.
+
+No new endpoint: the four loaders it needs are already server actions, so the
+browser-callable surface stays at 158. `onClose` clears the prefill params —
+otherwise the form reopens on the record just saved, and Back or reload reopen
+it too.
+
+### Known gap — devolución still navigates
+
+A return matches its animal against the adopter's existing records rather than
+the rescuer's inventory, and that match does not resolve when the form is
+mounted here: the animal is dropped and **the placement never ends**. Ending
+custody wrongly is the worst failure this app has, so that path keeps its old
+navigation until it is proven. Creating a brand-new adopter also still leaves —
+that is a full profile form, not this one.
+
 ## [2.56.108] - 2026-09-30
 
 ### Added — adopter results say who vouched for them

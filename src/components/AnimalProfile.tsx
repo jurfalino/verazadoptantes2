@@ -307,6 +307,12 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                                 {adopted && activePlacement && (
                                     <button
                                         type="button"
+                                        /* Still navigates: the wizard matches a devolución's animal
+                                           against the adopter's existing records, not the rescuer's
+                                           inventory, and that match does not resolve when the form is
+                                           mounted here — the animal is dropped and the placement never
+                                           ends. Ending custody wrongly is the worst failure this app
+                                           has, so this path waits until it is proven. */
                                         onClick={() => router.push(`/adopter/${activePlacement.adopterId}?newAdoption=returned_pet&animalId=${animal.id}`)}
                                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors"
                                     >
@@ -459,6 +465,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                     animalName={animal.name || ''}
                     recordType={pickOpen}
                     open={!!pickOpen}
+                    currentUser={userId}
                     onClose={() => setPickOpen(null)}
                 />
             )}

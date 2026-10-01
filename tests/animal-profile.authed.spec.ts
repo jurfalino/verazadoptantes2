@@ -432,6 +432,64 @@ test.describe('Animal detail page', () => {
         }
     });
 
+    const DBS = ['.wrangler/state/v3/d1/miniflare-D1DatabaseObject/3e1a4f0276e8c62cda040b0ac336784f29a9472f81b9c52d99f1307686008885.sqlite', 'local.db'];
+    function q<T>(sql: string, ...args: unknown[]): T | undefined {
+        for (const f of DBS) { try { const db = new Database(f); const r = db.prepare(sql).get(...args as never[]); db.close(); return r as T; } catch { /* next */ } }
+        return undefined;
+    }
+
+    test('registering an adoption never leaves the animal, and custody really changes', async ({ page }) => {
+        const ANIMAL = 'test-animal-fixture-2';   // available, owned by the teammate
+        await page.goto(`/my-animals/${ANIMAL}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+    
+        await page.getByTestId('profile-record-adoption').click();
+        await page.locator('input').last().fill('Fátima');
+        await page.waitForTimeout(3500);
+        await page.locator('div.divide-y > div button').first().click();
+    
+        // The whole point: still on the animal.
+        await expect(page).toHaveURL(new RegExp(`/my-animals/${ANIMAL}`), { timeout: 15000 });
+        const dlg = page.locator('[role="dialog"], .fixed.inset-0').last();
+        await expect(dlg).toBeVisible({ timeout: 15000 });
+        // The wizard mounts only once its inventory has loaded.
+        await expect(dlg).toContainText(/What happened|Qué pasó/, { timeout: 20000 });
+        console.log('::OPENED:: ' + (await dlg.innerText()).replace(/\s+/g, ' ').slice(0, 120));
+        console.log('::URL:: ' + page.url().replace(/^https?:\/\/[^/]+/, ''));
+    
+        // Step 1 → 2: is the ANIMAL carried through? If the prefill did not match
+        // inventory the adoption saves with no animal — a silent, high-stakes loss.
+        const next = dlg.getByRole('button', { name: /Continue|Continuar|Siguiente|Next/ }).first();
+        if (await next.count()) { await next.click(); await page.waitForTimeout(1500); }
+        console.log('::STEP2:: ' + (await dlg.innerText()).replace(/\s+/g, ' ').slice(0, 220));
+    
+        const before = q<{ n: number }>('SELECT COUNT(*) n FROM placements WHERE animal_id = ?', ANIMAL)?.n ?? -1;
+    
+        // step 2 → 3 → save
+        for (let i = 0; i < 2; i++) {
+            const b = dlg.getByRole('button', { name: /Next|Siguiente|Continuar|Continue/ }).first();
+            if (await b.count()) { await b.click(); await page.waitForTimeout(1200); }
+        }
+        console.log('::STEP3:: ' + (await dlg.innerText()).replace(/\s+/g, ' ').slice(0, 160));
+        const save = dlg.getByRole('button', { name: /Save|Guardar|Registrar|Finish|Finalizar/ }).first();
+        await save.click();
+        await page.waitForTimeout(4000);
+    
+        const after = q<{ n: number }>('SELECT COUNT(*) n FROM placements WHERE animal_id = ?', ANIMAL)?.n ?? -1;
+        const row = q<{ adopter_id: string; record_type: string }>(
+            'SELECT adopter_id, record_type FROM placements WHERE animal_id = ? ORDER BY rowid DESC LIMIT 1', ANIMAL);
+        console.log(`::CUSTODY:: placements ${before} -> ${after}; newest ${JSON.stringify(row)}`);
+        console.log('::URL-AFTER:: ' + page.url().replace(/^https?:\/\/[^/]+/, ''));
+        expect(after).toBe(before + 1);
+        expect(page.url()).toContain(`/my-animals/${ANIMAL}`);
+        expect(page.url()).not.toContain('newAdoption');
+    
+        // Undo it: three sibling tests need this animal AVAILABLE.
+        for (const f of DBS) {
+            try { const db = new Database(f); db.prepare('DELETE FROM placements WHERE animal_id = ?').run(ANIMAL); db.close(); } catch { /* ignore */ }
+        }
+    });
+
     test('in-place edit updates identity without touching custody', async ({ page }) => {
         await page.goto(`/my-animals/${ANIMAL_ID}`);
         await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });

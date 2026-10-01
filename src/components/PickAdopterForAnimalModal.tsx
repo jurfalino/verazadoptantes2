@@ -1,10 +1,14 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import AdopterPicker from '@/components/AdopterPicker';
 import type { DiscoveryMatch } from '@/app/actions';
 import { appendCreatePrefill } from '@/lib/createPrefill';
+import AdoptionFormWizard from '@/components/AdoptionFormWizard';
+import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
+import { reportClientError } from '@/lib/clientErrorReporter';
 
 interface PickAdopterForAnimalModalProps {
     animalId: string;
@@ -16,7 +20,12 @@ interface PickAdopterForAnimalModalProps {
      * permanent adoption; 'foster' moves an in-transit animal to another foster
      * home. Both go through the wizard on the picked adopter's profile.
      */
-    recordType?: 'adoption' | 'foster';
+    recordType?: 'adoption' | 'foster' | 'returned_pet';
+    /** The signed-in user, forwarded to the wizard for audit stamping. */
+    currentUser?: string;
+    /** Skip the search entirely. A devolución is always about the animal's
+     *  CURRENT holder, so there is nobody to look up. */
+    presetAdopter?: { id: string; name: string } | null;
 }
 
 /**
@@ -39,26 +48,104 @@ interface PickAdopterForAnimalModalProps {
  * the existing wizard on the adopter profile — that's where the user lands.
  */
 export default function PickAdopterForAnimalModal({
-    animalId, animalName, open, onClose, recordType = 'adoption',
+    animalId, animalName, open, onClose, recordType = 'adoption', currentUser, presetAdopter = null,
 }: PickAdopterForAnimalModalProps) {
     const { t } = useLanguage();
     const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
+    const [wizard, setWizard] = useState<{ adopterId: string; adopterName: string } | null>(null);
+    /* The wizard's advisory context: the adopter's prior records (which drive
+       the "too many adoptions lately" warnings — a vetting signal that matters
+       most at exactly this moment), their average rating, and the rescuer's
+       inventory, which the animal prefill is matched against. All four are
+       EXISTING server actions, so this opens no new browser-callable door.
+       Fails open to the wizard's own defaults. */
+    const [ctx, setCtx] = useState<{ adoptions: unknown[]; avgRating: number | null; availableAnimals: unknown[] } | null>(null);
 
-    if (!open) return null;
+    // A preset adopter goes straight to the wizard; nothing to search for.
+    useEffect(() => {
+        if (open && presetAdopter && !wizard) {
+            const params = new URLSearchParams(searchParams.toString());
+            params.set('newAdoption', recordType);
+            params.set('animalId', animalId);
+            router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+            setWizard({ adopterId: presetAdopter.id, adopterName: presetAdopter.name });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, presetAdopter, wizard]);
+
+    useEffect(() => {
+        if (!wizard) { setCtx(null); return; }
+        let cancelled = false;
+        (async () => {
+            try {
+                const { getAdoptions, getAverageRating, getAvailableAnimals } = await import('@/app/actions');
+                const [adoptions, avgRating, availableAnimals] = await Promise.all([
+                    getAdoptions(wizard.adopterId).catch(() => []),
+                    getAverageRating(wizard.adopterId).catch(() => null),
+                    getAvailableAnimals().catch(() => []),
+                ]);
+                if (!cancelled) setCtx({ adoptions: adoptions ?? [], avgRating: avgRating ?? null, availableAnimals: availableAnimals ?? [] });
+            } catch (e) {
+                // Degraded, not fatal: the wizard still saves, it just loses the
+                // density warnings and the inventory prefill. Reported, never swallowed.
+                void reportClientError({
+                    message: e instanceof Error ? e.message : String(e),
+                    source: 'PickAdopterForAnimalModal.wizardContext',
+                    extra: { adopterId: wizard.adopterId },
+                });
+                if (!cancelled) setCtx({ adoptions: [], avgRating: null, availableAnimals: [] });
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [wizard]);
+
+    const density = (type: 'adoption' | 'adoption_request', periodDays: number, threshold: number) => {
+        if (!ctx) return null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const d = computeMaxDensityPeriod(ctx.adoptions as any, type, periodDays);
+        return d.count < threshold ? null : { count: d.count, actualSpanDays: d.timeSpanDays, periodDays };
+    };
+
+    if (!open && !wizard) return null;
 
     const isFoster = recordType === 'foster';
 
+    /* v2.56.109: the wizard opens HERE instead of on the adopter's page.
+     *
+     * Picking a person used to navigate to /adopter/<id>, which ended the task
+     * somewhere else — the animal, its pending reminders and its timeline all
+     * left behind, with nothing bringing the rescuer back. The wizard reads its
+     * prefill from the URL, so rather than refactoring a 1,080-line form that
+     * owns the app's most important write, the same params are set on the page
+     * the user is already on and the wizard is mounted here. It already closes
+     * and `router.refresh()`es instead of navigating, so finishing lands back
+     * on the animal with the new placement showing.
+     *
+     * Creating a BRAND-NEW adopter still leaves: that is a full profile form,
+     * not this one. */
     const handleSelectExisting = (adopter: DiscoveryMatch) => {
         const adopterId = adopter.adopterId;
         if (!adopterId) return;
-        const params = new URLSearchParams({
-            newAdoption: recordType,
-            animalId,
-        });
-        // Close before pushing so the overlay doesn't briefly stack on top of
-        // the destination page during the route transition.
-        onClose();
-        router.push(`/adopter/${adopterId}?${params.toString()}`);
+        const params = new URLSearchParams(searchParams.toString());
+        params.set('newAdoption', recordType);
+        params.set('animalId', animalId);
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+        setWizard({ adopterId, adopterName: adopter.adopterName || adopter.adopter?.name || '' });
+    };
+
+    /** Drop the prefill params. Without this the wizard re-opens on the record
+     *  that was just saved — it opens whenever `newAdoption` is in the URL, and
+     *  it calls router.refresh() right after onClose — and Back or a reload
+     *  would re-open it too. */
+    const closeWizard = () => {
+        const params = new URLSearchParams(searchParams.toString());
+        for (const k of ['newAdoption', 'animalId', 'animalName', 'species', 'rating', 'details', 'date', 'followupKey', 'followupSubtype']) params.delete(k);
+        const q = params.toString();
+        router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
+        setWizard(null);
+        onClose();   // only now may the parent unmount us
     };
 
     const handleCreateNew = (searchText: string) => {
@@ -73,6 +160,41 @@ export default function PickAdopterForAnimalModal({
         onClose();
         router.push(`/adopter/create?${params.toString()}`);
     };
+
+    /* The wizard matches the animalId prefill against `availableAnimals` ONCE,
+       as it mounts. Mounting it before the inventory arrives means matching
+       against an empty list, and the animal is dropped silently — the adoption
+       then saves with no animal at all. So hold the mount until the context is
+       in hand. */
+    if (wizard && !ctx) {
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'var(--overlay-bg)' }} aria-busy="true">
+                <div className="bg-white rounded-2xl border border-stone-200 shadow-xl px-6 py-5 flex items-center gap-3">
+                    <span className="w-4 h-4 border-2 border-stone-300 border-t-teal-600 rounded-full animate-spin" aria-hidden />
+                    <span className="text-sm font-semibold text-stone-600">{t('common.loading') || 'Cargando…'}</span>
+                </div>
+            </div>
+        );
+    }
+
+    if (wizard) {
+        return (
+            <AdoptionFormWizard
+                adopterId={wizard.adopterId}
+                adopterName={wizard.adopterName}
+                avgRating={ctx?.avgRating ?? null}
+                tooManyAdoptions={density('adoption', 90, 5)}
+                tooManyRequests={density('adoption_request', 30, 3)}
+                availableAnimals={ctx?.availableAnimals ?? []}
+                adopterAdoptions={ctx?.adoptions ?? []}
+                currentUser={currentUser}
+                autoOpen
+                onClose={closeWizard}
+            />
+        );
+    }
+
+    if (!open) return null;
 
     return (
         <div
