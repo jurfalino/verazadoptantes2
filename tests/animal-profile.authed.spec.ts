@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import Database from 'better-sqlite3';
 
 /**
  * v2.55.15 (animal-timeline PR2): the animal detail page.
@@ -391,6 +392,44 @@ test.describe('Animal detail page', () => {
         await page.keyboard.press('Escape');
         await expect(page.getByTestId('event-photo-counter')).toHaveCount(0);
         console.log('::OK:: event photos open, navigate, and close');
+    });
+
+    test('picker distinguishes my records, my team\'s, and everyone else\'s', async ({ page }) => {
+        // One adopter per ownership class, all matching the same query.
+        for (const f of ['local.db', '.wrangler/state/v3/d1/miniflare-D1DatabaseObject/3e1a4f0276e8c62cda040b0ac336784f29a9472f81b9c52d99f1307686008885.sqlite']) {
+            try {
+                const db = new Database(f);
+                const ins = db.prepare("INSERT OR REPLACE INTO adopters (id,name,contact_info,status,added_by,country,created_at,updated_at) VALUES (?,?,?,'5',?,'AR',strftime('%s','now'),strftime('%s','now'))");
+                ins.run('zz-own-mine', 'Zulema Ownership', 'Tel: 555-1001', 'gatitosolivos@gmail.com');
+                ins.run('zz-own-team', 'Zulema Teamwork', 'Tel: 555-1002', 'e2e-teammate@example.com');
+                ins.run('zz-own-other', 'Zulema Stranger', 'Tel: 555-1003', 'someone-else@example.com');
+                db.close();
+            } catch { /* one of the two may be unreadable */ }
+        }
+    
+        await page.goto('/my-animals/test-animal-fixture-2');
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+        await page.getByTestId('profile-record-adoption').click();
+        await page.locator('input').last().fill('Zulema');
+        await page.waitForTimeout(4000);
+    
+        const rows = await page.evaluate(() => [...document.querySelectorAll('div.divide-y > div')]
+            .map(r => (r as HTMLElement).innerText.replace(/\s+/g, ' ').slice(0, 60)));
+        console.log('::ROWS:: ' + JSON.stringify(rows));
+        const all = rows.join(' | ');
+        expect(all).toMatch(/Zulema Ownership[^|]*(Tuyo|Yours)/);
+        expect(all).toMatch(/Zulema Teamwork[^|]*(equipo|team)/i);
+        expect(all).not.toMatch(/Zulema Stranger[^|]*(Tuyo|Yours|equipo|team)/i);
+    
+        // Created by this test, so removed by it — they are not in seed.sql and
+        // must not drift into another spec's counts.
+        for (const f of ['local.db', '.wrangler/state/v3/d1/miniflare-D1DatabaseObject/3e1a4f0276e8c62cda040b0ac336784f29a9472f81b9c52d99f1307686008885.sqlite']) {
+            try {
+                const db = new Database(f);
+                db.prepare("DELETE FROM adopters WHERE id LIKE 'zz-own-%'").run();
+                db.close();
+            } catch { /* ignore */ }
+        }
     });
 
     test('in-place edit updates identity without touching custody', async ({ page }) => {

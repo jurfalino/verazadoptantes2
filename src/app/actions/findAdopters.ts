@@ -1305,6 +1305,29 @@ async function runDiscoveryMode(
         isNameLike: queryIsNameLike,
         minRelevance: LOW_RELEVANCE_PERCENT_THRESHOLD,
     });
+    /* v2.56.108: on a vetting tool, "who vouched for this" is most of the
+       trust, and a name search returns a mix of the viewer's own records, their
+       org-mates' and bulk imports with nothing to tell them apart. Resolved
+       here rather than client-side so the org's member list stays server-side;
+       one query per search, and it fails open to no badge. */
+    try {
+        const viewer = user && user !== 'unknown' ? user : null;
+        if (viewer) {
+            const { getOrgMemberEmailsFor } = await import('@/app/actions/organizations');
+            const team = new Set(await getOrgMemberEmailsFor(viewer));
+            for (const r of allResults) {
+                const owner = r.adopter?.addedBy;
+                if (!owner || owner === 'anonymous') continue;
+                if (owner === viewer) r.ownership = 'mine';
+                else if (team.has(owner)) r.ownership = 'team';
+            }
+        }
+    } catch (e) {
+        logger.warn('findAdopters: ownership tagging fallback', {
+            user, error: e instanceof Error ? e.message : String(e),
+        });
+    }
+
     const mainResults = allResults.filter(isStrong);
     const lowRelevanceResults = allResults.filter(r => !isStrong(r));
 

@@ -88,6 +88,11 @@ export interface DiscoveryMatch {
     source: 'token' | 'like' | 'both';
     /** Full adopter row — always populated in discovery mode. */
     adopter: typeof adopters.$inferSelect;
+    /** Who vouched for this record, from the VIEWER's position. Computed
+     *  server-side (discovery mode only) so the member list never ships to the
+     *  browser: 'mine' = added by the viewer, 'team' = by an org-mate.
+     *  Absent means neither — another rescuer, or an import. */
+    ownership?: 'mine' | 'team';
     matchSnippet: MatchSnippet | null;
     /** True when the viewer has NO access to this record's contact (it was masked
      * for them). Retained as the masking signal; the card badge now uses

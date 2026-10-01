@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.108] - 2026-09-30
+
+### Added — adopter results say who vouched for them
+
+A name search returns a mix of the rescuer's own records, their org-mates' and
+bulk imports, with nothing to tell them apart. On a vetting tool, who vouched
+for a record is most of its weight. «Tuyo» already existed; org-mates' records
+now carry «De tu equipo» in their own colour — the same trust, but not the same
+authorship.
+
+Resolved **server-side** inside `findAdopters` and attached to each match as
+`ownership: 'mine' | 'team'`, so the organisation's member list never ships to
+the browser and no new browser-callable endpoint appears. One query per search,
+failing open to no badge. `'anonymous'` rows are never tagged.
+
+Its test creates one adopter per ownership class and deletes them again: they
+are not in `seed.sql`, so they must not drift into another spec's counts.
+
 ## [2.56.107] - 2026-09-30
 
 ### Fixed — photos attached to a timeline event could not be opened

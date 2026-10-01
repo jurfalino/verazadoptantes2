@@ -1258,6 +1258,7 @@ export const pt = {
         select_this: 'Selecionar esta pessoa',
         adoptions_label: 'adoções',
         your_record: 'Seu',
+        team_record: 'Da sua equipe',
         back_to_results: '← Voltar aos resultados',
         type_to_search: 'Comece a digitar para buscar adotantes existentes',
         match_family: 'Corresponde a membros da família',

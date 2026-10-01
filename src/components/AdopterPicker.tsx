@@ -209,11 +209,15 @@ export default function AdopterPicker({
             {searchPerformed && results.length > 0 && (
                 <div className="max-h-72 overflow-y-auto border border-stone-200 rounded-xl divide-y">
                     {results.map(res => {
-                        const isMine = !!viewerEmail && res.adopter.addedBy === viewerEmail;
+                        // `ownership` is resolved server-side and knows the org;
+                        // the email comparison stays as the fallback for callers
+                        // that don't go through discovery search.
+                        const isMine = res.ownership === 'mine' || (!!viewerEmail && res.adopter.addedBy === viewerEmail);
+                        const isTeam = !isMine && res.ownership === 'team';
                         return (
                         <div
                             key={res.adopter.id}
-                            className={`flex items-center gap-3 p-3 hover:bg-teal-50 transition-colors ${isMine ? 'bg-teal-50/50' : ''}`}
+                            className={`flex items-center gap-3 p-3 hover:bg-teal-50 transition-colors ${isMine ? 'bg-teal-50/50' : isTeam ? 'bg-indigo-50/40' : ''}`}
                         >
                             {res.thumbnail ? (
                                 <img src={res.thumbnail} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
@@ -234,6 +238,14 @@ export default function AdopterPicker({
                                     {isMine && (
                                         <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-teal-100 text-teal-700 flex-shrink-0">
                                             {t('wizard.your_record') || 'Tuyo'}
+                                        </span>
+                                    )}
+                                    {/* An org-mate's record carries the same weight as
+                                        your own for vetting, but it isn't yours — so it
+                                        gets its own colour rather than borrowing «Tuyo». */}
+                                    {isTeam && (
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700 flex-shrink-0" data-testid="team-record-badge">
+                                            {t('wizard.team_record') || 'De tu equipo'}
                                         </span>
                                     )}
                                 </div>
