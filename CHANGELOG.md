@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.119] - 2026-10-01
+
+### Added — admins can view the app as another user, read-only
+
+On Admin → Users, "Ver como" opens the app as that user: their search, profiles,
+lists, settings and notifications, exactly as they see them. An amber strip under
+the top bar says who you are viewing, on every page, with a one-click Salir.
+
+Nothing is saved while viewing: every database write is refused for the request,
+including background ones, so nothing can be credited to the viewed user. Not
+offered for admins or yourself; ends after an hour or the moment the admin loses
+admin rights. Start and stop are recorded in the audit log under the admin.
+Analytics keep the admin's own identity.
+
+### Changed — homepage heading
+
+"Registro de Adopciones" is now "El Registro de Adoptantes de la Comunidad
+Rescatista" (EN "The Rescue Community's Adopter Registry", PT "O Registro de
+Adotantes da Comunidade de Resgate").
+
 ## [2.56.118] - 2026-10-01
 
 ### Changed — a friendly 404, and "this animal has another rescuer"
