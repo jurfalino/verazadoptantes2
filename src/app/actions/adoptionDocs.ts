@@ -208,7 +208,7 @@ export async function setAdoptionDocsSource(source: string): Promise<{ success: 
             }
         }
 
-        const { getRequestContext } = await import('@cloudflare/next-on-pages');
+        const { getRequestContext } = await import('@/lib/requestContext');
         const { env } = getRequestContext();
         if (!env?.DB) throw new Error('Database not available');
 

@@ -5,7 +5,7 @@
  * This solves the problem of social media CDN URLs expiring after a few days/weeks.
  */
 
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { getRequestContext } from '@/lib/requestContext';
 import { logger } from '@/lib/logger';
 
 const R2_PUBLIC_URL = 'https://pub-bb28dd8b1e674fc189252b0000a7b573.r2.dev';

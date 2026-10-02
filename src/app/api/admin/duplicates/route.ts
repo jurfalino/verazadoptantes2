@@ -11,7 +11,7 @@ import { extractTokens, computeTokenHash } from '@/lib/tokenizer';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { deserializeHouseholdMembers } from '@/lib/householdMembers';
 import { computeAvgRating } from '@/domain/ratings';
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { getRequestContext } from '@/lib/requestContext';
 
 /**
  * Compute the average activity rating for an adopter. Cheap D1-safe lookup —

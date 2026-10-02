@@ -9,7 +9,7 @@ import { logger } from '@/lib/logger';
 import { resolveDisplayNames } from '@/app/actions/notifications';
 import { notificationSeenState } from '@/domain/notificationState';
 
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { getRequestContext } from '@/lib/requestContext';
 
 export const runtime = 'edge';
 

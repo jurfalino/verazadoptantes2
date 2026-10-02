@@ -1,6 +1,6 @@
 'use server';
 
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { getRequestContext } from '@/lib/requestContext';
 import { adopters, adopterImages, adopterFlags, adopterHistory, adopterStats, searches, users, placements, adopterEvents, animals } from '@/db/schema';
 import { eq, sql, and, isNotNull, desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';

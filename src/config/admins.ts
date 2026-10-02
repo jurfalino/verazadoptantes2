@@ -1,4 +1,4 @@
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { getRequestContext } from '@/lib/requestContext';
 import { logger } from '@/lib/logger';
 
 // Bootstrap admin — this email always has admin access even before

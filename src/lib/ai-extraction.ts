@@ -5,7 +5,7 @@
  * and Llama for text extraction - both free on Cloudflare
  */
 
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { getRequestContext } from '@/lib/requestContext';
 import { logger } from '@/lib/logger';
 
 // Extracted adopter data from AI

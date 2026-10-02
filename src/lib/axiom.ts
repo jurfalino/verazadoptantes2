@@ -18,7 +18,7 @@
  * Cold start = 4 parallel API calls = ~300-500ms. After that, instant for 5min.
  */
 
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { getRequestContext } from '@/lib/requestContext';
 import { windowToBucket, bucketStartsMs, windowRangeIso, type Window } from './metricsTime';
 import { mapSeriesToPoints, type SeriesPoint } from './metricsSeries';
 

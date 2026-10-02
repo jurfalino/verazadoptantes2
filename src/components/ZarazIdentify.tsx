@@ -3,6 +3,7 @@
 import { useSession } from 'next-auth/react';
 import { useEffect, useRef } from 'react';
 import { zarazSet, zarazTrack } from '@/lib/zaraz';
+import { isViewingAs } from '@/lib/viewAsClient';
 
 const SIGNED_IN_TRACKED_KEY = 'signed_in_tracked';
 
@@ -26,6 +27,8 @@ export default function ZarazIdentify() {
     const lastUserId = useRef<string | null>(null);
 
     useEffect(() => {
+        // Viewing as another user: keep the admin's own identity (src/lib/viewAsClient.ts).
+        if (isViewingAs(session)) return;
         const userId = (session?.user as { id?: string } | undefined)?.id;
         const isAdmin = (session?.user as { isAdmin?: boolean } | undefined)?.isAdmin;
 

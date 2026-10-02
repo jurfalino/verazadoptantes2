@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import posthog from 'posthog-js';
 import { flushPostHogQueue, posthogTrack } from '@/lib/zaraz';
+import { isViewingAs } from '@/lib/viewAsClient';
 
 // One `signed_in_visit` per browser session per user: the funnel's "signed in"
 // step. `signed_in` alone only fires on a fresh login, so a rescuer whose
@@ -89,6 +90,8 @@ export default function PostHogProvider({
 
     useEffect(() => {
         if (!enabled || !ready) return;
+        // Viewing as another user: keep the admin's own identity (src/lib/viewAsClient.ts).
+        if (isViewingAs(session)) return;
 
         const userId = (session?.user as { id?: string } | undefined)?.id;
         const isAdmin = (session?.user as { isAdmin?: boolean } | undefined)?.isAdmin;

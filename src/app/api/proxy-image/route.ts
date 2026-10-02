@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
         // This works both locally (wrangler emulator) and in production
         if (url.includes('r2.dev')) {
             try {
-                const { getRequestContext } = await import('@cloudflare/next-on-pages');
+                const { getRequestContext } = await import('@/lib/requestContext');
                 const { env } = getRequestContext();
                 const bucket = (env as unknown as Record<string, unknown>).IMAGES_BUCKET as R2Bucket | undefined;
 

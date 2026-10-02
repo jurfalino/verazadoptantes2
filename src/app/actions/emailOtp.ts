@@ -14,7 +14,7 @@
  */
 
 import { headers } from 'next/headers';
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { getRequestContext } from '@/lib/requestContext';
 import { eq } from 'drizzle-orm';
 import { getDb } from './_db';
 import { appConfig } from '@/db/schema';
