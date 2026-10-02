@@ -448,8 +448,8 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
 
     return (
         <div className="w-full">
-            {/* Hero explainer — an always-visible line saying what this is, with the
-                "¿Cómo funciona?" steps one tap away. Replaces the old utility subtitle
+            {/* Hero explainer — the page's name and one always-visible paragraph
+                saying what it is for. Replaces the old utility subtitle
                 ("Busca adoptantes y Registra adopciones").
                 Hidden on mobile when results are visible (same pattern as before). */}
             {/* Above the list's blur while the login box is pinned, like the search

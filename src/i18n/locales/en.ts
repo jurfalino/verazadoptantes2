@@ -562,13 +562,7 @@ export const en = {
         hero_features: 'Features',
         what_is: {
             heading: 'The Rescue Community\'s Adopter Registry',
-            step1_lead: 'Search',
-            step1: 'by name, phone or address',
-            step2_lead: 'Read',
-            step2: 'the rating and what other rescuers wrote',
-            step3_lead: 'Record',
-            step3: 'what you know, for whoever searches next',
-            more: 'Read the full guide',
+            intro: 'A community tool to check backgrounds and ensure responsible adoptions. Search applicants by name, phone or address, see the ratings and comments from other rescuers, and record your experiences to protect the future of more animals.',
         },
     },
     faq: {

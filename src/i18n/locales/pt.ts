@@ -561,13 +561,7 @@ export const pt = {
         hero_features: 'Funcionalidades',
         what_is: {
             heading: 'O Registro de Adotantes da Comunidade de Resgate',
-            step1_lead: 'Busque',
-            step1: 'pelo nome, telefone ou endereço',
-            step2_lead: 'Veja',
-            step2: 'a avaliação e os comentários de outros resgatistas',
-            step3_lead: 'Registre',
-            step3: 'o que você sabe, para quem buscar depois',
-            more: 'Ver o guia completo',
+            intro: 'Uma ferramenta comunitária para verificar antecedentes e garantir adoções responsáveis. Busque candidatos por nome, telefone ou endereço, consulte as avaliações e comentários de outros resgatistas e registre suas experiências para proteger o futuro de mais animais.',
         },
     },
     faq: {
