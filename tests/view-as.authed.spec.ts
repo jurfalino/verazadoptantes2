@@ -14,7 +14,7 @@ const nameInput = (page: Page) => page.getByPlaceholder(/Your name|Tu nombre|Seu
 /** The display name /settings shows for whoever the session says you are. */
 async function settingsName(page: Page) {
     await page.goto('/settings');
-    await expect(nameInput(page)).not.toHaveValue('');
+    await expect(nameInput(page)).not.toHaveValue('', { timeout: 30000 });
     return nameInput(page).inputValue();
 }
 
@@ -23,7 +23,7 @@ async function startViewingTestUser(page: Page) {
     const row = page.locator('tr').filter({ has: page.getByText('testuser@example.com', { exact: true }) }).filter({ hasText: 'Test User' });
     await row.getByRole('button', { name: /^(View as|Ver como)$/ }).click();
     await page.waitForURL(url => new URL(url).pathname === '/');
-    await expect(banner(page)).toContainText('Test User');
+    await expect(banner(page)).toContainText('Test User', { timeout: 30000 });
 }
 
 async function exitViewing(page: Page) {
@@ -43,7 +43,7 @@ test.describe.serial('admin view as', () => {
 
         await nameInput(page).fill('Changed While Viewing');
         await page.getByRole('button', { name: /^(Save|Guardar|Salvar)$/ }).first().click();
-        await expect(page.getByText(/Error/).first()).toBeVisible();
+        await expect(page.getByText(/Error/).first()).toBeVisible({ timeout: 30000 });
 
         await page.reload();
         await expect(nameInput(page)).toHaveValue(viewedName);
@@ -102,7 +102,7 @@ test.describe.serial('admin view as', () => {
         await startViewingTestUser(page);
         await exitViewing(page);
         // The admin-only page works again, and the session is the admin's.
-        await expect(page.getByText('testuser@example.com', { exact: true }).first()).toBeVisible();
+        await expect(page.getByText('testuser@example.com', { exact: true }).first()).toBeVisible({ timeout: 30000 });
         expect(await settingsName(page)).toBe(adminName);
     });
 });

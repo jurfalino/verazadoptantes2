@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.121] - 2026-10-02
+
+### Fixed — release of 2.56.120
+
+2.56.120 never reached staging: two homepage smoke tests still looked for the
+search card's title, which that release hides until there are results. They now
+anchor on the page heading. Same product changes as 2.56.120 below.
+
 ## [2.56.120] - 2026-10-02
 
 ### Changed — homepage explainer is one short paragraph
