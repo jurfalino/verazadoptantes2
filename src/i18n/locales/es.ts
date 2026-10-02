@@ -553,7 +553,7 @@ export const es = {
         hero_guide: 'Guía de Adopción',
         hero_features: 'Funcionalidades',
         what_is: {
-            heading: 'Registro de Adopciones',
+            heading: 'El Registro de Adoptantes de la Comunidad Rescatista',
             step1_lead: 'Buscá',
             step1: 'el nombre, teléfono o dirección',
             step2_lead: 'Mirá',

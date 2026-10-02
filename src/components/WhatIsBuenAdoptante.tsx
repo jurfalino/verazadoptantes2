@@ -6,7 +6,7 @@ import { useLanguage } from '@/context/LanguageContext';
 /**
  * Homepage heading, above the search card.
  *
- * Names the page — "Registro de Adopciones" — and doubles as the disclosure for
+ * Names the page — "El Registro de Adoptantes de la Comunidad Rescatista" — and doubles as the disclosure for
  * how the thing works. One element instead of two: until v2.56.54 a sentence
  * carried a separate "¿Cómo funciona?" link at its end, which meant the page's
  * only heading was a line of body copy with a link stuck to it.

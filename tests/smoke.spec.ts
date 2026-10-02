@@ -15,7 +15,7 @@ test.describe('Smoke Tests', () => {
         // Since v2.56.54 the heading itself is the disclosure button — it was
         // "¿Cómo funciona?" before that, and "¿Qué es Buen Adoptante?" before
         // v2.56.48. Bilingual, because Chromium renders English with no locale set.
-        await expect(page.getByRole('button', { name: /Registro de Adopciones|Adoption Registry|Registro de Adoções/i })).toBeVisible({ timeout: 30000 });
+        await expect(page.getByRole('button', { name: /Registro de Adoptantes|Adopter Registry|Registro de Adotantes/i })).toBeVisible({ timeout: 30000 });
     });
 
     test('Authenticated user has access', async ({ page }) => {

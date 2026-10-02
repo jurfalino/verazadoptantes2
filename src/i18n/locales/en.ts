@@ -554,7 +554,7 @@ export const en = {
         hero_guide: 'Adoption Guide',
         hero_features: 'Features',
         what_is: {
-            heading: 'Adoption Registry',
+            heading: 'The Rescue Community\'s Adopter Registry',
             step1_lead: 'Search',
             step1: 'by name, phone or address',
             step2_lead: 'Read',

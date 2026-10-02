@@ -553,7 +553,7 @@ export const pt = {
         hero_guide: 'Guia de Adoção',
         hero_features: 'Funcionalidades',
         what_is: {
-            heading: 'Registro de Adoções',
+            heading: 'O Registro de Adotantes da Comunidade de Resgate',
             step1_lead: 'Busque',
             step1: 'pelo nome, telefone ou endereço',
             step2_lead: 'Veja',
