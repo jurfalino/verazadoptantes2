@@ -561,7 +561,7 @@ export const es = {
         hero_features: 'Funcionalidades',
         what_is: {
             heading: 'El Registro de Adoptantes de la Comunidad Rescatista',
-            intro: 'Una herramienta comunitaria para verificar antecedentes y asegurar adopciones responsables. Busca postulantes por nombre, teléfono o dirección, consulta las valoraciones y comentarios de otros rescatistas, y registra tus experiencias para proteger el futuro de más animales.',
+            intro: 'Busca adoptantes, consulta las valoraciones de otros rescatistas y registra tus experiencias para proteger a más animales.',
         },
     },
     faq: {

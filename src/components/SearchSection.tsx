@@ -470,16 +470,20 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                 {/* Condensed (desktop, after scrolling): keep the mobile row layout
                     instead of switching to the stacked one, so the button sits beside
                     the field and the sticky card gives ~100px back to the results. */}
-                {/* The card says what it is for, at every state including pinned: the
+                {/* With results the card says what it is for, including pinned: the
                     placeholder tells you what to type, never what happens when you do,
                     and a pinned instrument that loses its name is worse the further you
-                    scroll from the top. Condensed it keeps the words at a third of the
-                    height, because that header rides every screen of a long list. */}
-                <h3 className={hasResults && condensed
-                    ? 'text-[13px] font-semibold text-stone-600 mb-2'
-                    : 'text-base md:text-lg font-semibold text-stone-900 mb-3'}>
-                    {t('search.card_title')}
-                </h3>
+                    scroll from the top (on mobile the hero explainer is hidden then).
+                    Condensed it keeps the words at a third of the height, because that
+                    header rides every screen of a long list. Without results it is left
+                    out (v2.56.120): the explainer right above already says it. */}
+                {hasResults && (
+                    <h3 className={condensed
+                        ? 'text-[13px] font-semibold text-stone-600 mb-2'
+                        : 'text-base md:text-lg font-semibold text-stone-900 mb-3'}>
+                        {t('search.card_title')}
+                    </h3>
+                )}
 
                 {/* One shape in every state. The control used to restructure itself
                     the first time you searched — a full-width labeled button below the

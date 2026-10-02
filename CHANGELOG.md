@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.120] - 2026-10-02
+
+### Changed — homepage explainer is one short paragraph
+
+Under the heading, the tap-to-open steps and guide link are replaced by one
+always-visible line: "Busca adoptantes, consulta las valoraciones de otros
+rescatistas y registra tus experiencias para proteger a más animales." Three
+lines on a phone. The heading is plain text again, not a button.
+
+The search card's own title ("Buscá referencias de un adoptante") is left out
+until there are results; it still names the pinned search box while scrolling
+a result list.
+
 ## [2.56.119] - 2026-10-01
 
 ### Added — admins can view the app as another user, read-only

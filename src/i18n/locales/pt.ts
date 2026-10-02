@@ -561,7 +561,7 @@ export const pt = {
         hero_features: 'Funcionalidades',
         what_is: {
             heading: 'O Registro de Adotantes da Comunidade de Resgate',
-            intro: 'Uma ferramenta comunitária para verificar antecedentes e garantir adoções responsáveis. Busque candidatos por nome, telefone ou endereço, consulte as avaliações e comentários de outros resgatistas e registre suas experiências para proteger o futuro de mais animais.',
+            intro: 'Busque adotantes, consulte as avaliações de outros resgatistas e registre suas experiências para proteger mais animais.',
         },
     },
     faq: {
