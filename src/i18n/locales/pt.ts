@@ -1616,6 +1616,7 @@ export const pt = {
         updated_by: 'Atualizado por',
         listing_on: 'No catálogo público',
         listing_off: 'Fora do catálogo',
+        listing_off_short: 'Oculto',
         listing_on_hint: 'Qualquer pessoa pode encontrá-lo no catálogo e se candidatar para adotá-lo.',
         listing_off_hint: 'Não aparece no catálogo. Use enquanto estiver em tratamento ou já prometido — os dados e as fotos ficam como estão.',
         listing_needs_photo: 'Falta uma foto: até você adicionar uma, ele não vai aparecer no catálogo.',

@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.134] - 2026-10-03
+
+### Fixed — the catalogue switch no longer squeezes the animal cards
+
+On Mis animales the switch arrived as a toggle plus the words "En el catálogo
+público", which took more than half the width of every card and left the
+card's own date and «Actualizado por» as an ellipsis. Nothing overflowed, so
+it did not look broken — the cards had just stopped saying anything.
+
+A card now shows a small eye, and nothing else, when the animal is in the
+catalogue, which is the normal case. When it is NOT, the card shows "Oculto"
+in amber — so the exception is what catches your eye, instead of every card
+repeating the obvious. Hovering either one tells you what it does, and the
+full labelled switch is still on the animal's own page.
+
+The row can also wrap now, so a control can never silently crush the card's
+text again.
+
 ## [2.56.133] - 2026-10-03
 
 ### Fixed — form-results polish from the staging walkthrough of 2.56.129

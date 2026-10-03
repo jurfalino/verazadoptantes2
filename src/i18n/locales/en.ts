@@ -1611,6 +1611,7 @@ export const en = {
         updated_by: 'Updated by',
         listing_on: 'In the public catalogue',
         listing_off: 'Out of the catalogue',
+        listing_off_short: 'Hidden',
         listing_on_hint: 'Anyone can find them in the catalogue and apply to adopt them.',
         listing_off_hint: 'Not in the catalogue. Use it while they are under treatment or already promised — their details and photos stay as they are.',
         listing_needs_photo: 'No photo yet: until you add one they will not appear in the catalogue.',

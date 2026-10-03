@@ -99,12 +99,46 @@ export default function AnimalListingToggle({
         </button>
     );
 
+    // ── the card ──
+    // Measured: the labelled switch took 184px of a 339px row and squeezed the
+    // card's own date and «Actualizado por» to 31px — an ellipsis — without
+    // overflowing, so it degraded silently. A card is signals plus one quick
+    // action, not a form.
+    //
+    // So: quiet in the normal state, loud in the exceptional one. Nearly every
+    // animal is listed, and saying so on every card is 184px of noise; an
+    // animal that is HIDDEN is the thing worth seeing at a glance. Listed is a
+    // bare eye (~36px), hidden is eye-off plus the word, in amber. Both keep
+    // role="switch" and the full sentence in aria-label/title, so the meaning
+    // is one hover or one screen-reader stop away. The full labelled control
+    // lives on the animal's own page, where there is room for it.
     if (compact) {
         return (
-            <span className="inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()} role="presentation">
-                {Switch}
-                <span className={`text-xs font-semibold ${on ? 'text-teal-700' : 'text-stone-600'}`}>{label}</span>
-            </span>
+            <button
+                type="button"
+                role="switch"
+                aria-checked={on}
+                aria-label={label}
+                title={label}
+                disabled={busy}
+                onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggle(); }}
+                data-testid={`listing-toggle-${animalId}`}
+                className={`inline-flex flex-shrink-0 items-center gap-1.5 min-h-[36px] px-2 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 ${
+                    on ? 'text-stone-400 hover:text-stone-600 hover:bg-stone-100' : 'text-amber-700 bg-amber-50 hover:bg-amber-100'}`}
+            >
+                {on ? (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden>
+                        <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" />
+                    </svg>
+                ) : (
+                    <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden>
+                            <path d="M9.9 5.1A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.6 9.6 0 0 0 4.3-1M3 3l18 18" />
+                        </svg>
+                        {t('myAnimals.listing_off_short') || 'Oculto'}
+                    </>
+                )}
+            </button>
         );
     }
 

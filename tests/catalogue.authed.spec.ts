@@ -52,6 +52,40 @@ test.describe('The public-catalogue switch', () => {
         await expect(page.getByTestId(`listing-toggle-${ADOPTED}`)).toHaveCount(0);
     });
 
+    test('on a card it stays a signal — it must not squeeze the card out', async ({ page }) => {
+        // v2.56.133. The first version of this put a 44px switch and a
+        // 20-character label in the card's action row: measured at 1280 it took
+        // 184px of a 339px row and left the card's own date and «Actualizado
+        // por» 31px — an ellipsis. It did NOT overflow, so nothing looked
+        // broken; the card just stopped saying anything. A measurement is the
+        // only thing that catches that, hence this test rather than a snapshot.
+        for (const [w, h] of [[1280, 900], [390, 844]] as const) {
+            await page.setViewportSize({ width: w, height: h });
+            await page.goto('/my-animals?view=available');
+            await page.waitForSelector('[data-testid^="listing-toggle-"]', { timeout: 30000 });
+
+            const m = await page.evaluate(() => {
+                const tg = document.querySelector('[data-testid^="listing-toggle-"]')!;
+                const row = tg.closest('div')!;
+                const meta = row.querySelector('div.flex-1')!;
+                return {
+                    overflow: row.scrollWidth - Math.round(row.getBoundingClientRect().width),
+                    meta: Math.round(meta.getBoundingClientRect().width),
+                    toggle: Math.round(tg.getBoundingClientRect().width),
+                    pageScrollX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                };
+            });
+
+            // The card's own information keeps room to be read…
+            expect(m.meta, `meta column at ${w}px`).toBeGreaterThan(120);
+            // …and the control stays a signal, not a form.
+            expect(m.toggle, `toggle at ${w}px`).toBeLessThan(110);
+            // Nothing escapes the card or the page.
+            expect(m.overflow, `row overflow at ${w}px`).toBeLessThanOrEqual(0);
+            expect(m.pageScrollX, `page scroll at ${w}px`).toBeLessThanOrEqual(0);
+        }
+    });
+
     test('is on the card too, and flipping it changes what strangers see', async ({ page, request }) => {
         // Its own fixture, because this test writes: a sibling asserting on
         // the catalogue must not depend on the order it ran in.

@@ -524,8 +524,12 @@ export default function MyAnimalsPage() {
                                             })()}
                                         </Link>
                                     )}
-                                        <div className="flex items-center gap-2">
-                                            <div className="text-xs text-stone-500 flex-1 min-w-0 space-y-0.5">
+                                        {/* flex-wrap + a floor on the meta column: controls drop
+                                            to their own line rather than squeezing the card's date
+                                            and «Actualizado por» into an ellipsis (measured at 31px
+                                            before v2.56.133). */}
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <div className="text-xs text-stone-500 flex-1 min-w-[9rem] space-y-0.5">
                                                 {animal.date && (
                                                     <p className="truncate" data-testid={`card-date-${animal.id}`}>
                                                         {animal.adopterId && !isFoster
