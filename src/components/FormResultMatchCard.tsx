@@ -216,7 +216,7 @@ export default function FormResultMatchCard({
                         type="button"
                         onClick={() => setConfirmOpen(true)}
                         disabled={linking}
-                        className={buttonClasses({ variant: 'primary', size: 'compact' })}
+                        className={`${buttonClasses({ variant: 'primary', size: 'compact' })} w-full sm:w-auto`}
                     >
                         <CheckCircle2 className="w-4 h-4" strokeWidth={2} aria-hidden="true" />
                         {L('same_person')}
@@ -224,7 +224,7 @@ export default function FormResultMatchCard({
                 )}
                 <Link
                     href={`/adopter/${profile.id}`}
-                    className={buttonClasses({ variant: 'secondary', size: 'compact' })}
+                    className={`${buttonClasses({ variant: 'secondary', size: 'compact' })} w-full sm:w-auto`}
                 >
                     {L('view_full_profile')}
                     <ArrowRight className="w-4 h-4" strokeWidth={2} aria-hidden="true" />
@@ -234,7 +234,7 @@ export default function FormResultMatchCard({
                         type="button"
                         onClick={onDismiss}
                         disabled={linking}
-                        className="ml-auto min-h-[44px] px-2 text-[13px] font-semibold text-stone-500 hover:text-stone-700 transition-colors"
+                        className="w-full sm:w-auto sm:ml-auto min-h-[44px] px-2 text-[13px] font-semibold text-stone-500 hover:text-stone-700 transition-colors"
                     >
                         {L('not_this_person')}
                     </button>

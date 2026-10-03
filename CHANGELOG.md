@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.133] - 2026-10-03
+
+### Fixed — form-results polish from the staging walkthrough of 2.56.129
+
+- Long answers (an email, an address) wrapped past the card edge on phones and
+  were cut off ("…@example.co") in "Respuestas completas". They wrap now.
+- On phones, a match card's actions are full-width and stacked, with
+  "No es esta persona" below, instead of ragged half-width buttons.
+- The banner's buttons line up under its title on wider screens, not under
+  the photo.
+- Hovering a collapsible section header ("Perfiles coincidentes") no longer
+  turns it into a white bar in Azul Noche.
+
 ## [2.56.132] - 2026-10-03
 
 ### Changed — releases now take about ten minutes

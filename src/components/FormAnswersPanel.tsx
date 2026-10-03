@@ -101,7 +101,7 @@ export default function FormAnswersPanel({ fullAnswers, excludeSections = [] }: 
                                         <span className="font-semibold text-stone-600 min-w-[140px]">
                                             {t(`petshield.fields.${field}`)}:
                                         </span>
-                                        <span className="text-stone-800">
+                                        <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">
                                             {display}
                                         </span>
                                     </div>

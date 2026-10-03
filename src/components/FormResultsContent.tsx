@@ -44,7 +44,7 @@ function CollapsibleSection({
             <button
                 type="button"
                 onClick={onToggle}
-                className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left text-sm font-semibold text-stone-700 hover:bg-stone-50 transition-colors"
+                className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left text-sm font-semibold text-stone-700 hover:bg-[var(--accent-subtle-bg)] transition-colors"
                 aria-expanded={open}
             >
                 {open ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />}
@@ -259,25 +259,25 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                 {submitted?.name && (
                                     <div className="flex items-baseline gap-2 text-xs">
                                         <span className="font-semibold text-stone-600 min-w-[140px]">{L('name_label')}:</span>
-                                        <span className="text-stone-800">{submitted.name}</span>
+                                        <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{submitted.name}</span>
                                     </div>
                                 )}
                                 {submitted?.email && (
                                     <div className="flex items-baseline gap-2 text-xs">
                                         <span className="font-semibold text-stone-600 min-w-[140px]">{L('email_label')}:</span>
-                                        <span className="text-stone-800">{submitted.email}</span>
+                                        <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{submitted.email}</span>
                                     </div>
                                 )}
                                 {submitted?.phone && (
                                     <div className="flex items-baseline gap-2 text-xs">
                                         <span className="font-semibold text-stone-600 min-w-[140px]">{L('phone_label')}:</span>
-                                        <span className="text-stone-800">{submitted.phone}</span>
+                                        <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{submitted.phone}</span>
                                     </div>
                                 )}
                                 {submitted?.address && (
                                     <div className="flex items-baseline gap-2 text-xs">
                                         <span className="font-semibold text-stone-600 min-w-[140px]">{L('address_label')}:</span>
-                                        <span className="text-stone-800">{submitted.address}</span>
+                                        <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{submitted.address}</span>
                                     </div>
                                 )}
                                 {['ageRange', 'children', 'housingType', 'hasOutdoor', 'isSafe', 'hoursAlone'].map((field) => {
@@ -289,7 +289,7 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                             <span className="font-semibold text-stone-600 min-w-[140px]">
                                                 {t(`petshield.fields.${field}`)}:
                                             </span>
-                                            <span className="text-stone-800">{display}</span>
+                                            <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{display}</span>
                                         </div>
                                     );
                                 })}
@@ -324,7 +324,7 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                                 <span className="font-semibold text-stone-600 min-w-[140px]">
                                                     {t(`petshield.fields.${field}`)}:
                                                 </span>
-                                                <span className="text-stone-800">{display}</span>
+                                                <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{display}</span>
                                             </div>
                                         );
                                     })}
@@ -517,7 +517,9 @@ function StatusBanner({
                     )}
                 </div>
             </div>
-            <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 mt-4">
+            {/* From sm up the buttons line up under the title, not under the
+                photo: 48px photo / 40px tile + the 16px gap. */}
+            <div className={`flex flex-col sm:flex-row sm:flex-wrap gap-2 mt-4 ${photo ? 'sm:pl-16' : 'sm:pl-14'}`}>
                 {actions}
             </div>
         </section>
