@@ -113,7 +113,7 @@ export async function createAdopterFromSubmission(
     // out to the residual the admin backfill can sweep later.
     let country: string | null = null;
     try {
-        const { getRequestContext } = await import('@cloudflare/next-on-pages');
+        const { getRequestContext } = await import('@/lib/requestContext');
         const { env } = getRequestContext();
         const owner = (input.addedBy || '').trim();
         if (env?.DB && owner && owner !== 'anonymous') {

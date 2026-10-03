@@ -91,22 +91,50 @@ export function normalizeSpaces(text: string): string {
     return text.replace(/[\u00A0\u202F\u2009\u2007]/g, ' ');
 }
 
+/** Languages the short date is written in; anything else reads as Spanish. */
+export type ShortDateLocale = 'es' | 'en' | 'pt';
+
 /**
- * Format a date as "Feb 4 '26" — short month + day + 2-digit year.
- * Accepts Date objects, epoch-seconds (number), or ISO strings.
+ * Month abbreviations per app language. A static table on purpose: Intl month
+ * names come from ICU, and Node (SSR) and Chromium (hydration) ship different
+ * ICU versions — the same divergence `normalizeSpaces` exists for. A table
+ * makes the month a pure function of the locale on both sides.
+ */
+const SHORT_MONTHS: Record<ShortDateLocale, readonly string[]> = {
+    es: ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'],
+    en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+    pt: ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'],
+};
+
+/**
+ * Short date in the app language: es "9 sept '26", pt "9 set '26",
+ * en "Sep 9 '26". Accepts Date objects, epoch-seconds (number), or ISO strings.
  *
  * Civil dates (see `isCivilDate`) always render in UTC so every viewer reads
  * back the day that was picked; genuine instants render in `timeZone`.
+ *
+ * `locale` defaults to Spanish, the app default (and what the server renders
+ * before the client's saved language loads). Client code should go through
+ * `useDateFormat()`, which passes the current language.
  */
-export function formatShortDate(input: Date | number | string, timeZone: string = DEFAULT_TIMEZONE): string {
+export function formatShortDate(
+    input: Date | number | string,
+    timeZone: string = DEFAULT_TIMEZONE,
+    locale: string = 'es',
+): string {
     const date = toDate(input);
     if (!date) return '—';
     const zone = isCivilDate(date) ? 'UTC' : timeZone;
+    // Numeric parts only — digits are identical across ICU versions.
     const parts = getFormatter('en-US', {
-        timeZone: zone, month: 'short', day: 'numeric', year: 'numeric',
+        timeZone: zone, month: 'numeric', day: 'numeric', year: 'numeric',
     }).formatToParts(date);
     const get = (type: Intl.DateTimeFormatPartTypes) => parts.find(p => p.type === type)?.value ?? '';
-    return `${get('month')} ${get('day')} '${get('year').slice(-2)}`;
+    const lang: ShortDateLocale = locale === 'en' || locale === 'pt' ? locale : 'es';
+    const month = SHORT_MONTHS[lang][Number(get('month')) - 1] ?? get('month');
+    const day = get('day');
+    const year = get('year').slice(-2);
+    return lang === 'en' ? `${month} ${day} '${year}` : `${day} ${month} '${year}`;
 }
 
 /**

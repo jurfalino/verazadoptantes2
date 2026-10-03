@@ -52,6 +52,10 @@ function placementValues(animalId: string, data: RecordData, recordType: string,
         comments: data.comments ?? null,
         sourceUrl: data.sourceUrl ?? null,
         recordedBy: actor,
+        // The address of this adoption's shared health record (v2.56.126).
+        // Minted here so the column never has a hole: a placement without one
+        // would show the rescuer a share button with nothing behind it.
+        healthToken: crypto.randomUUID().replace(/-/g, ''),
     };
 }
 
@@ -73,9 +77,11 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
         // (animal, adopter) pair, else the most recent ended one.
         const animalId: string | null = data.animalId || null;
         let placementId: string | null = null;
+        let activePlacementId: string | null = null;
         if (animalId && data.adopterId) {
             const pair = and(eq(placements.animalId, animalId), eq(placements.adopterId, data.adopterId));
             const active = await db.select().from(placements).where(and(pair, isNull(placements.endedAt))).get();
+            activePlacementId = active?.id ?? null;
             const last = active ?? await db.select().from(placements).where(pair).orderBy(desc(placements.startedAt)).limit(1).get();
             placementId = last?.id ?? null;
         }
@@ -97,6 +103,26 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
             followupKey: data.followupKey ?? null,
             followupSubtype: data.followupSubtype ?? null,
         }).onConflictDoNothing();
+
+        /* v2.56.116 (product decision): a returned animal is AVAILABLE again.
+         *
+         * Until now a devolución only logged an event. The custody span stayed
+         * open, so the animal still read as adopted, never came back to the
+         * rescuer's available list, could not be re-homed through the normal
+         * flow, and kept drawing follow-up reminders for an adoption that had
+         * ended. Closing the span is what makes "returned" mean something:
+         * `adoptions` derives record_type and adopter_id from the ACTIVE
+         * placement, so with none the animal falls back to 'available'.
+         *
+         * Dated to the event, not to now — a return logged a week late belongs
+         * on the day it happened. The ended span IS the custody history; the
+         * timeline already suppresses its synthetic "span ended" item when a
+         * returned_pet event narrates the same moment. */
+        if (recordType === 'returned_pet' && activePlacementId) {
+            await db.update(placements)
+                .set({ endedAt: (date ?? new Date()) as any })
+                .where(eq(placements.id, activePlacementId));
+        }
         return id;
     }
 

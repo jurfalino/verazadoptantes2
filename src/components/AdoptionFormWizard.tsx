@@ -123,7 +123,7 @@ function clearDraft(adopterId: string): void {
     try { window.localStorage.removeItem(draftKey(adopterId)); } catch { /* ignore */ }
 }
 
-export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRating = null, tooManyAdoptions = null, tooManyRequests = null, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, autoOpen = false, onClose, piiOptInEligible = false }: {
+export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRating = null, tooManyAdoptions = null, tooManyRequests = null, availableAnimals = [], adopterAdoptions = [], currentUser, adopterAddress = '', initialRecordType, presetAnimalId, autoOpen = false, onClose, piiOptInEligible = false }: {
     adopterId: string;
     /** Display name of the adopter — used in step-1 guidance copy. */
     adopterName?: string;
@@ -153,6 +153,13 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
      * click "next".
      */
     initialRecordType?: 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet' | 'foster';
+    /**
+     * The inventory animal to pre-select, handed over directly by a caller that
+     * already knows it (PickAdopterForAnimalModal). Wins over `?animalId=`:
+     * the URL copy can still be the pre-navigation one when the wizard mounts,
+     * and the match below runs only once.
+     */
+    presetAnimalId?: string;
     /** Open the wizard immediately on mount (paired with initialRecordType). */
     autoOpen?: boolean;
     /** Called when the wizard closes (cancel or save). */
@@ -182,11 +189,21 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     // already known, only the adopter is found mid-flow. Falls back to the
     // existing dropdown picker when the id doesn't match anything in
     // availableAnimals (e.g. the animal was claimed by a concurrent save).
-    const prefillAnimalIdRaw = searchParams.get('animalId') || '';
+    const prefillAnimalIdRaw = presetAnimalId || searchParams.get('animalId') || '';
     const matchedInventory = prefillAnimalIdRaw
         ? availableAnimals.find((a: { id: string }) => a?.id === prefillAnimalIdRaw)
         : null;
-    const prefillAnimalId = matchedInventory ? prefillAnimalIdRaw : '';
+    /* v2.56.113: a devolución (and a follow-up) is about an animal the adopter
+       ALREADY has, which by definition is not in `availableAnimals` — that list
+       is unlinked inventory plus fosters. So `?animalId=` was silently ignored
+       for those two types and the rescuer had to find the animal again by hand,
+       on the adopter page as much as anywhere. Match them against the adopter's
+       own records instead. */
+    const matchedPrevious = prefillAnimalIdRaw && !matchedInventory
+        ? (Array.isArray(adopterAdoptions) ? adopterAdoptions : [])
+            .find((a: { id?: string; recordType?: string }) => a?.id === prefillAnimalIdRaw && a?.recordType === 'adoption')
+        : null;
+    const prefillAnimalId = matchedInventory ? prefillAnimalIdRaw : (matchedPrevious ? prefillAnimalIdRaw : '');
     // Honor the record type carried on ?newAdoption=<type> so entry points can
     // pre-select the right chip. The /my-animals foster card uses this to open
     // straight into 'foster' ("move to another foster home") vs 'adoption'
@@ -227,7 +244,18 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     const initialDraft = draftConflictsWithIntent ? null : rawDraft;
 
     const [isOpen, setIsOpen] = useState(shouldOpenFromWizard || autoOpen);
-    const [step, setStep] = useState(() => initialDraft?.step ?? 1);
+    /* v2.56.110: step 1 asks WHICH record and WHICH animal. When the entry point
+       already answered both — «Registrar adopción» on an animal page, or any
+       ?newAdoption=…&animalId=… link — re-asking is a dead screen the rescuer
+       has to click past, and it invites them to change an answer they just
+       gave. Open on step 2 instead; Back still reaches step 1 to change it.
+       Only when the animal actually RESOLVED against inventory: an unmatched id
+       means step 1 is where they pick one, so it must not be skipped. A saved
+       draft still wins — it knows where the user left off. */
+    const skipsIdentityStep = !initialDraft
+        && (!!matchedInventory || !!matchedPrevious)
+        && ['adoption', 'foster', 'returned_pet'].includes(prefillRecordType);
+    const [step, setStep] = useState(() => initialDraft?.step ?? (skipsIdentityStep ? 2 : 1));
     const [loading, setLoading] = useState(false);
     const [requestPiiAccessOptIn, setRequestPiiAccessOptIn] = useState(false);
     const [uploading, setUploading] = useState(false);
@@ -265,19 +293,19 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 ...(prefillAnimalId && matchedInventory
                     ? {
                         animalId: prefillAnimalId,
-                        animalName: matchedInventory.animalName || initialDraft.formData.animalName,
-                        species: matchedInventory.species || initialDraft.formData.species,
+                        animalName: (matchedInventory || matchedPrevious)?.animalName || initialDraft.formData.animalName,
+                        species: (matchedInventory || matchedPrevious)?.species || initialDraft.formData.species,
                     }
                     : {}),
             };
         }
         return {
-            animalName: matchedInventory?.animalName || prefillAnimalName,
+            animalName: (matchedInventory || matchedPrevious)?.animalName || prefillAnimalName,
             details: prefillDetails,
             status: 'completed',
             rating: prefillRating ? Number(prefillRating) : 5,
             comments: '',
-            species: matchedInventory?.species || prefillSpecies,
+            species: (matchedInventory || matchedPrevious)?.species || prefillSpecies,
             adopterId: adopterId,
             recordType: prefillRecordType,
             date: prefillDate || todayISO,
@@ -373,7 +401,14 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
         : [];
     const effectiveAnimalsList = isFollowUpOrReturn ? previousAdoptionsForAdopter : safeAvailableAnimals;
     const showModeSwitcher = !shouldOpenFromWizard && effectiveAnimalsList.length > 0 && !isObservation && !isRequest;
-    const effectiveMode = showModeSwitcher ? mode : 'new';
+    /* v2.56.116: a URL-driven open hid the mode switcher and forced 'new' — so
+       «Registrar devolución», which is always a link, always took the
+       dual-record path: invent a SECOND adoption, log the event against it, and
+       leave the real placement open. That is why a return never made the animal
+       available again. When the animal actually resolved to an existing record
+       (inventory for an adoption, the adopter's own records for a return) this
+       is an existing relationship, not a new one. */
+    const effectiveMode = showModeSwitcher ? mode : (prefillAnimalId ? 'existing' : 'new');
 
     // Dual-record flow: user is logging a follow_up/returned_pet for an animal
     // that wasn't previously in the system — we'll create the parent adoption
@@ -589,7 +624,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                         return fetch('/api/upload-media', { method: 'POST', body: fd });
                     } else {
                         const { saveImage } = await import('@/app/actions');
-                        return saveImage(adopterId, pending.data, `Photo for ${formData.animalName}`, result.id, 'image');
+                        return saveImage(adopterId, pending.data, `Photo for ${formData.animalName}`, result.id, 'image', false, 'placement');
                     }
                 });
                 await Promise.all(uploadPromises);
@@ -731,8 +766,16 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                             );
                         })}
                         {/* Connecting lines */}
-                        <div className="absolute top-[13px] left-[16.6%] right-[16.6%] h-0.5 bg-stone-200 z-0 hidden sm:block" />
-                        <div className={`absolute top-[13px] left-[16.6%] h-0.5 bg-teal-400 z-0 transition-all duration-300 hidden sm:block`} style={{ width: step === 1 ? '0%' : step === 2 ? '50%' : '100%' }} />
+                        {/* The fill is a share of the TRACK, so it is nested inside it.
+                            It used to be a sibling with only `left:16.6%`, so `width:100%`
+                            at step 3 measured the whole header and ran 16.6% past the last
+                            circle, under the close button. */}
+                        <div className="absolute top-[13px] left-[16.6%] right-[16.6%] h-0.5 bg-stone-200 z-0 hidden sm:block">
+                            <div
+                                className="h-full bg-teal-400 transition-all duration-300"
+                                style={{ width: step === 1 ? '0%' : step === 2 ? '50%' : '100%' }}
+                            />
+                        </div>
                     </div>
                 </div>
 
@@ -910,7 +953,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-2">
                                             <span className="text-lg">🚗</span>
-                                            <label className="text-sm font-medium text-blue-800">{t('adoption.delivered_to_home')}</label>
+                                            <label className="text-sm font-medium text-stone-800">{t('adoption.delivered_to_home')}</label>
                                         </div>
                                         {/* Pre-fill behaviour: when turning the toggle ON, seed the
                                             street field with whatever address we can derive from the
@@ -933,7 +976,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                     </div>
                                     {formData.deliveredToHome && (
                                         <div className="mt-4 pt-4 border-t border-blue-100 space-y-2">
-                                            <label className="block text-xs font-semibold text-blue-800 mb-1.5 uppercase tracking-wider flex items-center gap-1"><span>📍</span> {t('adoption.verify_address')}</label>
+                                            <label className="block text-xs font-semibold text-stone-700 mb-1.5 uppercase tracking-wider flex items-center gap-1"><span>📍</span> {t('adoption.verify_address')}</label>
                                             {/* v2.19.40: two structured inputs mirroring the
                                                 contact-entries address composer (street + locality).
                                                 Saved as separate fields on the new ContactEntry below
@@ -953,7 +996,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                                 placeholder={t('adopter.ce_input_ph_locality')}
                                                 className="w-full p-3 rounded-lg border border-blue-200 bg-white text-blue-950 placeholder-blue-800/40 font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none text-base md:text-sm"
                                             />
-                                            <p className="text-xs text-blue-800/80 flex items-start gap-1.5 pt-1">
+                                            <p className="text-xs text-stone-600 flex items-start gap-1.5 pt-1">
                                                 <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
                                                     <rect x="5" y="11" width="14" height="9" rx="2" />
                                                     <path strokeLinecap="round" d="M8 11V8a4 4 0 118 0v3" />
@@ -970,7 +1013,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-2">
                                             <span className="text-lg">🪪</span>
-                                            <label className="text-sm font-medium text-teal-800">{t('adoption.identity_verified')}</label>
+                                            <label className="text-sm font-medium text-stone-800">{t('adoption.identity_verified')}</label>
                                         </div>
                                         <button type="button" onClick={() => setFormData(d => ({ ...d, identityVerified: !d.identityVerified }))} className={`relative w-12 h-6 rounded-full transition-colors ${formData.identityVerified ? 'bg-teal-500' : 'bg-stone-200'}`}>
                                             <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${formData.identityVerified ? 'translate-x-6' : 'translate-x-0'}`} />

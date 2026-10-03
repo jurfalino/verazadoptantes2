@@ -2,7 +2,7 @@
 
 import { useLanguage } from '@/context/LanguageContext';
 import { getRatingColors } from '@/lib/ratingColors';
-import { getRatingLabelKey } from '@/domain/ratings';
+import { getRatingLabelKey, getRatingDisplayLevel } from '@/domain/ratings';
 import { StarIcon } from '@/components/StarIcon';
 
 interface StarRatingProps {
@@ -21,21 +21,20 @@ const sizeConfig = {
 export function StarRating({ value, onChange, size = 'md', showLabel = false }: StarRatingProps) {
     const { t } = useLanguage();
     const interactive = !!onChange;
-    const numValue = Math.round(Number(value) || 0);
-    const clamped = Math.max(1, Math.min(5, numValue));
-    const colors = getRatingColors(clamped);
+    // 0 = not rated yet: five empty stars, no label (never clamp up to level 1).
+    const level = getRatingDisplayLevel(value);
+    const colors = getRatingColors(Math.max(1, level));
     const config = sizeConfig[size];
 
     // We use the text color from getRatingColors to fill the stars for consistency
 
-    const labelKey = getRatingLabelKey(clamped);
-    const label = t(`ratings.${labelKey}` as any) || '';
+    const label = level === 0 ? '' : (t(`ratings.${getRatingLabelKey(level)}` as any) || '');
 
     return (
         <div className={`inline-flex items-center ${config.gap}`}>
             <div className={`flex items-center ${config.gap}`}>
                 {[1, 2, 3, 4, 5].map((star) => {
-                    const filled = star <= clamped;
+                    const filled = star <= level;
                     return (
                         <button
                             key={star}

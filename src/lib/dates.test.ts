@@ -46,20 +46,23 @@ describe('the test environment itself', () => {
 });
 
 describe('formatShortDate', () => {
+    // Zone behaviour, pinned to English so the expected strings stay the ones
+    // the #418 regression was written against.
     it('renders a civil date as the day that was picked, in every zone', () => {
         // This is the regression: the picker stored "2026-09-07", so every
         // viewer must read "Sep 7" — never "Sep 6" because they are west of UTC.
-        expect(formatShortDate(CIVIL_DATE_SECONDS, UTC)).toBe("Sep 7 '26");
-        expect(formatShortDate(CIVIL_DATE_SECONDS, AR)).toBe("Sep 7 '26");
-        expect(formatShortDate(CIVIL_DATE_SECONDS, 'Asia/Tokyo')).toBe("Sep 7 '26");
+        expect(formatShortDate(CIVIL_DATE_SECONDS, UTC, 'en')).toBe("Sep 7 '26");
+        expect(formatShortDate(CIVIL_DATE_SECONDS, AR, 'en')).toBe("Sep 7 '26");
+        expect(formatShortDate(CIVIL_DATE_SECONDS, 'Asia/Tokyo', 'en')).toBe("Sep 7 '26");
     });
 
     it('renders a genuine instant in the requested zone', () => {
-        expect(formatShortDate(INSTANT, UTC)).toBe("Sep 7 '26");
-        expect(formatShortDate(INSTANT, AR)).toBe("Sep 6 '26");
+        expect(formatShortDate(INSTANT, UTC, 'en')).toBe("Sep 7 '26");
+        expect(formatShortDate(INSTANT, AR, 'en')).toBe("Sep 6 '26");
+        expect(formatShortDate(INSTANT, AR, 'es')).toBe("6 sept '26");
     });
 
-    it('is a pure function of (value, zone) — the host zone never leaks in', () => {
+    it('is a pure function of (value, zone, locale) — the host zone never leaks in', () => {
         // Same inputs, same output, regardless of where this runs. This is the
         // property that makes SSR and hydration agree.
         expect(formatShortDate(INSTANT, AR)).toBe(formatShortDate(INSTANT, AR));
@@ -67,18 +70,54 @@ describe('formatShortDate', () => {
     });
 
     it('accepts Date, epoch-seconds and ISO strings alike', () => {
-        expect(formatShortDate(new Date(CIVIL_DATE_SECONDS * 1000), UTC)).toBe("Sep 7 '26");
-        expect(formatShortDate(CIVIL_DATE_SECONDS, UTC)).toBe("Sep 7 '26");
-        expect(formatShortDate('2026-09-07T00:00:00.000Z', UTC)).toBe("Sep 7 '26");
+        expect(formatShortDate(new Date(CIVIL_DATE_SECONDS * 1000), UTC, 'en')).toBe("Sep 7 '26");
+        expect(formatShortDate(CIVIL_DATE_SECONDS, UTC, 'en')).toBe("Sep 7 '26");
+        expect(formatShortDate('2026-09-07T00:00:00.000Z', UTC, 'en')).toBe("Sep 7 '26");
     });
 
     it('returns an em dash for unparseable input', () => {
         expect(formatShortDate('not a date', AR)).toBe('—');
-        expect(formatShortDate(NaN, AR)).toBe('—');
+        expect(formatShortDate(NaN, AR, 'pt')).toBe('—');
     });
 
     it('defaults to the app timezone when none is supplied', () => {
         expect(formatShortDate(INSTANT)).toBe(formatShortDate(INSTANT, DEFAULT_TIMEZONE));
+    });
+
+    // The short date follows the app language. Month abbreviations come from a
+    // static table, not Intl, so Node (SSR) and Chromium (hydration) can never
+    // disagree on them the way they do on spaces (see normalizeSpaces).
+    const MONTHS = {
+        es: ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'],
+        pt: ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'],
+        en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+    } as const;
+    const civil = (month: number, day: number) => Date.UTC(2026, month, day) / 1000;
+
+    it('Spanish: "9 sept \'26", all twelve months', () => {
+        expect(formatShortDate(civil(8, 9), AR, 'es')).toBe("9 sept '26");
+        MONTHS.es.forEach((m, i) => expect(formatShortDate(civil(i, 9), AR, 'es')).toBe(`9 ${m} '26`));
+    });
+
+    it('Portuguese: "9 set \'26", all twelve months', () => {
+        expect(formatShortDate(civil(8, 9), AR, 'pt')).toBe("9 set '26");
+        MONTHS.pt.forEach((m, i) => expect(formatShortDate(civil(i, 9), AR, 'pt')).toBe(`9 ${m} '26`));
+    });
+
+    it('English is unchanged: "Sep 9 \'26", all twelve months', () => {
+        expect(formatShortDate(civil(8, 9), AR, 'en')).toBe("Sep 9 '26");
+        MONTHS.en.forEach((m, i) => expect(formatShortDate(civil(i, 9), AR, 'en')).toBe(`${m} 9 '26`));
+    });
+
+    it('defaults to Spanish, the app default, and treats unknown locales as Spanish', () => {
+        expect(formatShortDate(civil(8, 9), AR)).toBe("9 sept '26");
+        expect(formatShortDate(civil(8, 9), AR, 'fr')).toBe("9 sept '26");
+    });
+
+    it('never contains the invisible ICU spaces', () => {
+        for (const locale of ['es', 'en', 'pt']) {
+            expect(formatShortDate(INSTANT, AR, locale)).not.toMatch(/[\u00A0\u202F\u2009\u2007]/);
+        }
     });
 });
 

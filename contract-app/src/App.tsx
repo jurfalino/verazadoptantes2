@@ -4,6 +4,7 @@ import PetShieldForm from './PetShieldForm'
 import TermsPage from './TermsPage'
 import Showcase from './Showcase'
 import AnimalDetail from './AnimalDetail'
+import HealthRecord from './HealthRecord'
 import HomePage from './HomePage'
 import { LocaleProvider, useT } from './i18n/LocaleContext'
 
@@ -54,6 +55,23 @@ function AppRoutes() {
         return (
             <ErrorBoundary>
                 <ContractPage animalId={path} />
+            </ErrorBoundary>
+        )
+    }
+
+    // ── /salud/:token ────────────────────────────────────────────────
+    // The animal's veterinary record, handed by the rescuer to the family that
+    // adopted or is fostering them. Unlike /animal/:id it keeps working while
+    // the animal IS placed — that is the whole point — and it carries no
+    // person other than the rescue that recorded it.
+    //
+    // The path is the placement's own token (v2.56.126), not the animal id: it
+    // dies when the animal comes home, and a later adoption mints a new one.
+    if (path.startsWith('salud/')) {
+        const token = path.slice('salud/'.length)
+        return (
+            <ErrorBoundary>
+                <HealthRecord token={token} />
             </ErrorBoundary>
         )
     }

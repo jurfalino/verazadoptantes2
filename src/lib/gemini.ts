@@ -7,7 +7,7 @@
  */
 
 import { GoogleGenerativeAI, Part } from "@google/generative-ai";
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { getRequestContext } from '@/lib/requestContext';
 import { logger } from '@/lib/logger';
 import { parseColumnMap, parseAiRows, TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE, type ColumnMap, type MappedRow } from '@/domain/importFields';
 

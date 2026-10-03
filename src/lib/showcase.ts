@@ -18,7 +18,8 @@
  */
 
 import { adoptions, adopterImages, users, organizations, orgMembers, userProfiles } from '@/db/schema';
-import { eq, and, isNull, desc, sql } from 'drizzle-orm';
+import { logger } from '@/lib/logger';
+import { eq, and, or, isNull, desc, sql } from 'drizzle-orm';
 
 export interface PublicAnimal {
     id: string;
@@ -32,8 +33,18 @@ export interface PublicAnimal {
     microchip: string | null;
     details: string | null;
     date: number | null;
-    images: { id: string; url: string; caption: string | null }[];
+    images: PublicMedia[];
     rescuer: PublicRescuer;
+}
+
+/** One photo or video on a public animal page. `thumbnailUrl` is the still a
+ *  video is represented by; for a photo it is null and `url` is the image. */
+export interface PublicMedia {
+    id: string;
+    url: string;
+    caption: string | null;
+    mediaType: string | null;
+    thumbnailUrl: string | null;
 }
 
 export interface PublicRescuer {
@@ -51,7 +62,7 @@ export interface PublicRescuer {
 /** Hard whitelist on which adoption columns become a `PublicAnimal`. */
 export function pickPublicAnimal(
     row: typeof adoptions.$inferSelect,
-    images: { id: string; url: string; caption: string | null }[],
+    images: PublicMedia[],
     rescuer: PublicRescuer,
 ): PublicAnimal {
     return {
@@ -102,7 +113,10 @@ export async function buildPublicRescuer(
                 .get();
             if (profile?.handle) userHandle = profile.handle;
         }
-    } catch { /* fall through to email-prefix fallback */ }
+    } catch (e) {
+        // Fall through to the email-prefix fallback; no addedBy/email in the log.
+        logger.warn('buildPublicRescuer: user lookup fallback', { error: e instanceof Error ? e.message : String(e) });
+    }
 
     if (!displayName) {
         const at = addedBy.indexOf('@');
@@ -124,7 +138,10 @@ export async function buildPublicRescuer(
                 .get();
             if (org) { orgName = org.name; orgSlug = org.slug ?? undefined; }
         }
-    } catch { /* no org affiliation, fine */ }
+    } catch (e) {
+        // No org affiliation shown; no addedBy/email in the log.
+        logger.warn('buildPublicRescuer: org lookup fallback', { error: e instanceof Error ? e.message : String(e) });
+    }
 
     return { displayName, orgName, orgSlug, userHandle, userId };
 }
@@ -151,8 +168,8 @@ export async function fetchAnimalImages(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     db: any,
     animalIds: string[],
-): Promise<Map<string, { id: string; url: string; caption: string | null }[]>> {
-    const map = new Map<string, { id: string; url: string; caption: string | null }[]>();
+): Promise<Map<string, PublicMedia[]>> {
+    const map = new Map<string, PublicMedia[]>();
     if (animalIds.length === 0) return map;
     await Promise.all(animalIds.map(async (id) => {
         try {
@@ -160,13 +177,32 @@ export async function fetchAnimalImages(
                 id: adopterImages.id,
                 url: adopterImages.url,
                 caption: adopterImages.caption,
+                // v2.56.127: a rescuer can attach video. Without these the
+                // card, the hero and the thumb strip put an .mp4 in an <img>.
+                mediaType: adopterImages.mediaType,
+                thumbnailUrl: adopterImages.thumbnailUrl,
             }).from(adopterImages)
-                .where(eq(adopterImages.adoptionId, id))
+                // v2.56.124: the animal key also carries photos attached while
+                // recording an adoption from the adopter's side — the handover,
+                // a document, the family. They used to reach this page, which
+                // matters most right after a devolución, when the animal is
+                // re-listed and those photos are the newest ones it has. Only
+                // the animal's own gallery is public (`scope = 'animal'`);
+                // anything unstamped is treated as not-public.
+                .where(and(
+                    eq(adopterImages.adoptionId, id),
+                    eq(adopterImages.scope, 'animal'),
+                    // A video with no poster is nothing any of these surfaces
+                    // can draw — it would be an unlabelled black tile in the
+                    // strip. Leave it out rather than serve a hole.
+                    sql`(COALESCE(${adopterImages.mediaType}, 'image') <> 'video' OR ${adopterImages.thumbnailUrl} IS NOT NULL)`,
+                ))
                 .orderBy(animalPrimaryFirst(), sql`rowid ASC`)
                 .limit(5)
                 .all();
             map.set(id, imgs);
-        } catch {
+        } catch (e) {
+            logger.warn('fetchAnimalImages: fallback', { animalId: id, error: e instanceof Error ? e.message : String(e) });
             map.set(id, []);
         }
     }));
@@ -178,10 +214,30 @@ export async function fetchAnimalImages(
  *  not soft-deleted. The `addedBy IS NOT NULL` check is defensive against
  *  orphan rows.
  */
+/**
+ * Who is in the public catalogue.
+ *
+ * v2.56.128, two changes. An animal in a FOSTER home is in it: it is still
+ * looking for a permanent home, which is the whole point of a tránsito, and
+ * removing it the moment someone records one was backwards. And the rescuer
+ * can take any animal out without adopting it away — `listed = 0` for one
+ * under treatment or already promised. NULL is listed, so nothing that
+ * existed before the switch changes.
+ *
+ * The 'available' branch keeps `adopter_id IS NULL`. The compat view unions
+ * animals with adopter EVENTS, and that guard is what keeps an event row from
+ * ever matching. The 'foster' branch needs no such guard — a foster row can
+ * only come from a placement — but it is written as its own branch rather
+ * than by widening the record-type test, so an event type can never slip into
+ * the catalogue by being named like a placement.
+ */
 export function availableAnimalsBase() {
     return and(
-        eq(adoptions.recordType, 'available'),
-        isNull(adoptions.adopterId),
+        or(
+            and(eq(adoptions.recordType, 'available'), isNull(adoptions.adopterId)),
+            eq(adoptions.recordType, 'foster'),
+        ),
+        sql`COALESCE(${adoptions.listed}, 1) = 1`,
     );
 }
 

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import Database from 'better-sqlite3';
 
 /**
  * v2.55.15 (animal-timeline PR2): the animal detail page.
@@ -102,7 +103,7 @@ test.describe('Animal detail page', () => {
         await expect(page.getByRole('button', { name: /^[1-5] stars?$/ })).toHaveCount(0);
     });
 
-    test('share sheet is intent-keyed and offers recording an adoption', async ({ page }) => {
+    test('share sheet is intent-keyed, and disappears once the animal is adopted', async ({ page }) => {
         // v2.56.15: rows lead with the situation, and the funnel now ends with
         // "an adoption that already happened" — the only door on a list card.
         await page.goto('/my-animals/test-animal-fixture-2'); // available, not adopted
@@ -112,11 +113,24 @@ test.describe('Animal detail page', () => {
         await expect(page.getByText(/If you want to vet adopters|Si querés evaluar adoptantes/)).toBeVisible();
         await expect(page.getByTestId('share-record-adoption-test-animal-fixture-2')).toBeVisible();
 
-        // On an already-adopted animal that row is gone — nothing to record.
+        // v2.56.122: Timon has an active adoption, so there is nothing left to
+        // share — vetting is over, and the contract link would hand out a form
+        // /api/contract/[id]/submit rejects with 409. The button itself is gone,
+        // on the profile AND on the list card.
         await page.goto(`/my-animals/${ANIMAL_ID}`);
         await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
-        await page.getByTestId(`share-sheet-${ANIMAL_ID}`).click();
-        await expect(page.getByTestId(`share-record-adoption-${ANIMAL_ID}`)).toHaveCount(0);
+        await expect(page.getByTestId(`share-sheet-${ANIMAL_ID}`)).toHaveCount(0);
+
+        // On the list the trigger hangs off `userId` from useSession(), so a bare
+        // toHaveCount(0) would also pass before the session hydrates. Anchor it:
+        // prove an AVAILABLE card renders the trigger first, then switch tabs
+        // client-side (a <Link>, so the session stays loaded) and assert Timon's
+        // adopted card has none.
+        await page.goto('/my-animals?view=available');
+        await expect(page.getByTestId('share-sheet-test-animal-fixture-2')).toBeVisible({ timeout: 30000 });
+        await page.locator('a[href="/my-animals?view=adopted"]').click();
+        await expect(page.getByTestId(`animal-card-${ANIMAL_ID}`)).toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId(`share-sheet-${ANIMAL_ID}`)).toHaveCount(0);
     });
 
     test('card meta says WHAT the date means and who last touched the animal', async ({ page }) => {
@@ -332,6 +346,208 @@ test.describe('Animal detail page', () => {
         for (const id of mine) await page.getByTestId(`photo-remove-${id}`).click();
         await page.getByTestId('inline-edit-save').click();
         await expect(page.getByTestId('inline-edit-form')).not.toBeVisible({ timeout: 30000 });
+    });
+
+    test('registering a due check-in stays on the animal', async ({ page }) => {
+        // v2.56.105: check-ins used to push to /adopter/<id>, throwing the rescuer
+        // onto a different person's page mid-task. Uses its OWN fixture — an
+        // adoption 35 days old with no follow-up, so the 30-day check-in is due.
+        const DUE_ID = 'test-animal-fixture-due';
+        await page.goto(`/my-animals/${DUE_ID}`);
+        await expect(page.getByTestId('animal-name')).toHaveText('Pendiente', { timeout: 30000 });
+
+        const due = page.getByTestId('due-slot-checkin_30d');
+        await expect(due).toBeVisible({ timeout: 30000 });
+        const before = await page.getByTestId('timeline-item').count();
+        await due.getByRole('button', { name: /^(Registrar|Record|Register)$/ }).first().click();
+
+        // It must NOT navigate away.
+        await expect(page).toHaveURL(new RegExp(`/my-animals/${DUE_ID}`));
+        await expect(page.getByTestId('animal-event-type')).toHaveValue('follow_up');
+        // The rating is the reason the redirect existed; the modal carries it.
+        await expect(page.getByRole('button', { name: /^[1-5] stars?$/ })).toHaveCount(5);
+
+        await page.getByRole('button', { name: '4 stars' }).click();
+        await page.getByTestId('animal-event-details').fill(`E2E control ${Date.now()}`);
+        await page.getByTestId('animal-event-save').click();
+        await expect(page.getByTestId('timeline-item')).toHaveCount(before + 1, { timeout: 30000 });
+    });
+
+    test('photos attached to a timeline event can be opened full size', async ({ page }) => {
+        const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+        const file = { name: 'p.png', mimeType: 'image/png', buffer: png };
+        const DUE_ID = 'test-animal-fixture-due';
+        await page.goto(`/my-animals/${DUE_ID}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+        const before = await page.getByTestId('timeline-item').count();
+    
+        await page.getByTestId('add-animal-event').click();
+        await page.getByTestId('animal-event-type').selectOption('vaccination');
+        await page.getByTestId('animal-event-details').fill(`E2E foto evento ${Date.now()}`);
+        const thumbs = page.locator('[role="dialog"] img');
+        const n0 = await thumbs.count();
+        for (let i = 0; i < 2; i++) {
+            await page.getByTestId('animal-event-photo').setInputFiles(file);
+            await expect(thumbs).toHaveCount(n0 + i + 1, { timeout: 20000 });
+        }
+        await page.getByTestId('animal-event-save').click();
+        await expect(page.getByTestId('timeline-item')).toHaveCount(before + 1, { timeout: 30000 });
+    
+        // The event's thumbnails must be openable — this is what was inert.
+        const firstThumb = page.locator('[data-testid^="event-photo-"][data-testid$="-0"]').first();
+        await expect(firstThumb).toBeVisible({ timeout: 30000 });
+        await firstThumb.click();
+        await expect(page.getByTestId('event-photo-counter')).toHaveText('1 / 2');
+        await page.getByTestId('event-photo-next').click();
+        await expect(page.getByTestId('event-photo-counter')).toHaveText('2 / 2');
+        await page.keyboard.press('ArrowLeft');
+        await expect(page.getByTestId('event-photo-counter')).toHaveText('1 / 2');
+        await page.keyboard.press('Escape');
+        await expect(page.getByTestId('event-photo-counter')).toHaveCount(0);
+        console.log('::OK:: event photos open, navigate, and close');
+    });
+
+    test('picker distinguishes my records, my team\'s, and everyone else\'s', async ({ page }) => {
+        // One adopter per ownership class, all matching the same query.
+        for (const f of ['local.db', '.wrangler/state/v3/d1/miniflare-D1DatabaseObject/3e1a4f0276e8c62cda040b0ac336784f29a9472f81b9c52d99f1307686008885.sqlite']) {
+            try {
+                const db = new Database(f);
+                const ins = db.prepare("INSERT OR REPLACE INTO adopters (id,name,contact_info,status,added_by,country,created_at,updated_at) VALUES (?,?,?,'5',?,'AR',strftime('%s','now'),strftime('%s','now'))");
+                ins.run('zz-own-mine', 'Zulema Ownership', 'Tel: 555-1001', 'gatitosolivos@gmail.com');
+                ins.run('zz-own-team', 'Zulema Teamwork', 'Tel: 555-1002', 'e2e-teammate@example.com');
+                ins.run('zz-own-other', 'Zulema Stranger', 'Tel: 555-1003', 'someone-else@example.com');
+                db.close();
+            } catch { /* one of the two may be unreadable */ }
+        }
+    
+        await page.goto('/my-animals/test-animal-fixture-2');
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+        await page.getByTestId('profile-record-adoption').click();
+        await page.locator('input').last().fill('Zulema');
+        await page.waitForTimeout(4000);
+    
+        const rows = await page.evaluate(() => [...document.querySelectorAll('div.divide-y > div')]
+            .map(r => (r as HTMLElement).innerText.replace(/\s+/g, ' ').slice(0, 60)));
+        console.log('::ROWS:: ' + JSON.stringify(rows));
+        const all = rows.join(' | ');
+        expect(all).toMatch(/Zulema Ownership[^|]*(Tuyo|Yours)/);
+        expect(all).toMatch(/Zulema Teamwork[^|]*(equipo|team)/i);
+        expect(all).not.toMatch(/Zulema Stranger[^|]*(Tuyo|Yours|equipo|team)/i);
+    
+        // Created by this test, so removed by it — they are not in seed.sql and
+        // must not drift into another spec's counts.
+        for (const f of ['local.db', '.wrangler/state/v3/d1/miniflare-D1DatabaseObject/3e1a4f0276e8c62cda040b0ac336784f29a9472f81b9c52d99f1307686008885.sqlite']) {
+            try {
+                const db = new Database(f);
+                db.prepare("DELETE FROM adopters WHERE id LIKE 'zz-own-%'").run();
+                db.close();
+            } catch { /* ignore */ }
+        }
+    });
+
+    const DBS = ['.wrangler/state/v3/d1/miniflare-D1DatabaseObject/3e1a4f0276e8c62cda040b0ac336784f29a9472f81b9c52d99f1307686008885.sqlite', 'local.db'];
+    function q<T>(sql: string, ...args: unknown[]): T | undefined {
+        for (const f of DBS) { try { const db = new Database(f); const r = db.prepare(sql).get(...args as never[]); db.close(); return r as T; } catch { /* next */ } }
+        return undefined;
+    }
+
+    test('registering an adoption never leaves the animal, and custody really changes', async ({ page }) => {
+        const ANIMAL = 'test-animal-fixture-2';   // available, owned by the teammate
+        await page.goto(`/my-animals/${ANIMAL}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+    
+        await page.getByTestId('profile-record-adoption').click();
+        await page.locator('input').last().fill('Fátima');
+        await page.waitForTimeout(3500);
+        await page.locator('div.divide-y > div button').first().click();
+    
+        // The whole point: still on the animal.
+        await expect(page).toHaveURL(new RegExp(`/my-animals/${ANIMAL}`), { timeout: 15000 });
+        const dlg = page.locator('[role="dialog"], .fixed.inset-0').last();
+        await expect(dlg).toBeVisible({ timeout: 15000 });
+        // The wizard mounts only once its inventory has loaded.
+        await expect(dlg).toContainText(/What happened|Qué pasó/, { timeout: 20000 });
+        // v2.56.110: the entry point already chose the record type and the
+        // animal, so the form opens on Details — step 1 is marked done.
+        await expect(dlg).toContainText(/✓\s*(What happened|Qué pasó)/, { timeout: 10000 });
+        await expect(dlg).toContainText(/Rating|Calificaci/i);
+        console.log('::OPENED:: ' + (await dlg.innerText()).replace(/\s+/g, ' ').slice(0, 120));
+        console.log('::URL:: ' + page.url().replace(/^https?:\/\/[^/]+/, ''));
+    
+        // Step 1 → 2: is the ANIMAL carried through? If the prefill did not match
+        // inventory the adoption saves with no animal — a silent, high-stakes loss.
+        const next = dlg.getByRole('button', { name: /Continue|Continuar|Siguiente|Next/ }).first();
+        if (await next.count()) { await next.click(); await page.waitForTimeout(1500); }
+        console.log('::STEP2:: ' + (await dlg.innerText()).replace(/\s+/g, ' ').slice(0, 220));
+    
+        const before = q<{ n: number }>('SELECT COUNT(*) n FROM placements WHERE animal_id = ?', ANIMAL)?.n ?? -1;
+    
+        // step 2 → 3 → save
+        for (let i = 0; i < 2; i++) {
+            const b = dlg.getByRole('button', { name: /Next|Siguiente|Continuar|Continue/ }).first();
+            if (await b.count()) { await b.click(); await page.waitForTimeout(1200); }
+        }
+        console.log('::STEP3:: ' + (await dlg.innerText()).replace(/\s+/g, ' ').slice(0, 160));
+        const save = dlg.getByRole('button', { name: /Save|Guardar|Registrar|Finish|Finalizar/ }).first();
+        await save.click();
+        await page.waitForTimeout(4000);
+    
+        const after = q<{ n: number }>('SELECT COUNT(*) n FROM placements WHERE animal_id = ?', ANIMAL)?.n ?? -1;
+        const row = q<{ adopter_id: string; record_type: string }>(
+            'SELECT adopter_id, record_type FROM placements WHERE animal_id = ? ORDER BY rowid DESC LIMIT 1', ANIMAL);
+        console.log(`::CUSTODY:: placements ${before} -> ${after}; newest ${JSON.stringify(row)}`);
+        console.log('::URL-AFTER:: ' + page.url().replace(/^https?:\/\/[^/]+/, ''));
+        expect(after).toBe(before + 1);
+        expect(page.url()).toContain(`/my-animals/${ANIMAL}`);
+        expect(page.url()).not.toContain('newAdoption');
+    
+        // Undo it: three sibling tests need this animal AVAILABLE.
+        for (const f of DBS) {
+            try { const db = new Database(f); db.prepare('DELETE FROM placements WHERE animal_id = ?').run(ANIMAL); db.close(); } catch { /* ignore */ }
+        }
+    });
+
+    test('a devolución returns the animal to the available list', async ({ page }) => {
+        const ANIMAL = 'test-animal-fixture-1';
+        const before = q<{ rt: string; ad: string | null }>('SELECT record_type rt, adopter_id ad FROM adoptions WHERE id=?', ANIMAL);
+        console.log('::BEFORE:: ' + JSON.stringify(before));
+        expect(before?.rt).toBe('adoption');
+    
+        await page.goto(`/my-animals/${ANIMAL}`);
+        await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
+        await page.getByRole('button', { name: /Registrar devoluci|Record return/i }).first().click();
+    
+        // Current behaviour: this navigates to the adopter's wizard.
+        await page.waitForURL(/\/adopter\//, { timeout: 30000 });
+        const dlg = page.locator('[role="dialog"], .fixed.inset-0').last();
+        await expect(dlg).toContainText(/What happened|Qué pasó|Details|Detalles/, { timeout: 20000 });
+        for (let i = 0; i < 4; i++) {
+            const b = dlg.getByRole('button', { name: /Next|Siguiente/ }).first();
+            if (await b.count() && await b.isEnabled()) { await b.click(); await page.waitForTimeout(1200); }
+            else break;
+        }
+        const save = dlg.getByRole('button', { name: /Save|Guardar|Registrar/ }).first();
+        if (await save.count()) await save.click();
+        await page.waitForTimeout(5000);
+    
+        const after = q<{ rt: string; ad: string | null }>('SELECT record_type rt, adopter_id ad FROM adoptions WHERE id=?', ANIMAL);
+        const open = q<{ n: number }>('SELECT COUNT(*) n FROM placements WHERE animal_id=? AND ended_at IS NULL', ANIMAL)?.n;
+        const ev = q<{ n: number }>("SELECT COUNT(*) n FROM adopter_events WHERE animal_id=? AND event_type='returned_pet'", ANIMAL)?.n;
+        console.log(`::AFTER:: ${JSON.stringify(after)}  openPlacements=${open}  returnEvents=${ev}`);
+        expect(ev).toBeGreaterThan(0);
+        expect(open).toBe(0);
+        expect(after?.rt).toBe('available');
+        expect(after?.ad).toBeNull();
+    
+        // Put Timon back: four sibling tests expect him adopted.
+        for (const f of DBS) {
+            try {
+                const db = new Database(f);
+                db.prepare("UPDATE placements SET ended_at = NULL WHERE animal_id = ? AND record_type = 'adoption'").run(ANIMAL);
+                db.prepare("DELETE FROM adopter_events WHERE animal_id = ? AND event_type = 'returned_pet'").run(ANIMAL);
+                db.close();
+            } catch { /* ignore */ }
+        }
     });
 
     test('in-place edit updates identity without touching custody', async ({ page }) => {

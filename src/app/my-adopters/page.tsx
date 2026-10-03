@@ -3,7 +3,9 @@ export const runtime = 'edge';
 
 import { useLanguage } from '@/context/LanguageContext';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { FileText, AlertCircle } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
@@ -59,6 +61,69 @@ interface Adopter {
     source?: string;
     /** v38: true when this adopter appears in a pending duplicate_candidates pair. */
     hasPendingDuplicate?: boolean;
+    /** One of the viewer's own forms still waits for "¿es la misma persona?". */
+    formNeedsReview?: boolean;
+    /** Newest form linked to this person (submittedAt: epoch seconds). */
+    latestForm?: { submissionId: string; submittedAt: number; animalName: string | null; ownedByViewer: boolean } | null;
+}
+
+/** `?filtro=formularios` — kept in the URL so Back and shared links keep the view. */
+const FORMS_FILTER = 'formularios';
+
+/**
+ * The person's newest form as a provenance event: "Formulario para Luna ·
+ * hace 2 d". Opens the form's results — only for the viewer's own forms,
+ * since form-results refuses everyone else (a teammate would land on "no
+ * permission"). The row itself links to the profile, so this stops the
+ * click from reaching it, like the "Posible duplicado" pill does.
+ */
+function FormLine({ form, onOpen, t }: {
+    form: NonNullable<Adopter['latestForm']>;
+    onOpen: (submissionId: string) => void;
+    t: (key: string) => string;
+}) {
+    const label = form.animalName
+        ? (t('myAdopters.form_line_for') || 'Formulario para {animal}').replace('{animal}', form.animalName)
+        : (t('myAdopters.form_line_general') || 'Formulario general');
+    const when = timeAgo(form.submittedAt, true);
+    const content = (
+        <>
+            <FileText className="w-3.5 h-3.5 flex-shrink-0 self-center" strokeWidth={2} aria-hidden="true" />
+            <span className="truncate">{label}</span>
+            {when && <span className="text-stone-400 flex-shrink-0 ml-auto">{when}</span>}
+        </>
+    );
+    if (!form.ownedByViewer) {
+        return <div className="flex items-baseline gap-1.5 min-w-0 text-teal-700 font-medium">{content}</div>;
+    }
+    return (
+        <a
+            href={`/form-results/${form.submissionId}`}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpen(form.submissionId); }}
+            className="flex items-baseline gap-1.5 min-w-0 text-teal-700 font-medium hover:underline underline-offset-2"
+        >
+            {content}
+        </a>
+    );
+}
+
+/** Amber "Por revisar" pill beside the name; opens the form to decide. */
+function NeedsReviewPill({ form, onOpen, t }: {
+    form: NonNullable<Adopter['latestForm']> | null | undefined;
+    onOpen: (submissionId: string) => void;
+    t: (key: string) => string;
+}) {
+    return (
+        <a
+            href={form ? `/form-results/${form.submissionId}` : '#'}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (form) onOpen(form.submissionId); }}
+            title={t('myAdopters.form_needs_review_tooltip') || 'Hay perfiles parecidos: decidí si es la misma persona'}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap hover:bg-amber-100 flex-shrink-0"
+        >
+            <AlertCircle className="w-3 h-3" strokeWidth={2} aria-hidden="true" />
+            {t('myAdopters.form_needs_review') || 'Por revisar'}
+        </a>
+    );
 }
 
 /**
@@ -250,10 +315,38 @@ function FlagBadges({ flags, t }: { flags: AdopterFlags; t: (key: string) => str
 export default function MyAdoptersPage() {
     const { t } = useLanguage();
     const { data: session } = useSession();
+    const router = useRouter();
     const toast = useShowToast();
+    const [formsOnly, setFormsOnly] = useState(false);
+    // Read once from the URL (not useSearchParams: that would force a
+    // Suspense boundary onto this whole client page).
+    useEffect(() => {
+        setFormsOnly(new URLSearchParams(window.location.search).get('filtro') === FORMS_FILTER);
+    }, []);
+    const setFilter = (on: boolean) => {
+        setFormsOnly(on);
+        router.replace(on ? `/my-adopters?filtro=${FORMS_FILTER}` : '/my-adopters', { scroll: false });
+    };
+    const openForm = (submissionId: string) => router.push(`/form-results/${submissionId}`);
     const currentEmail = session?.user?.email || '';
     const [adopters, setAdopters] = useState<Adopter[]>([]);
     const [loading, setLoading] = useState(true);
+    // ENABLE_SHEET_IMPORT: the "Importar planilla" header link. Hidden until
+    // the flag says otherwise, so it never flashes in for users without it.
+    const [sheetImportEnabled, setSheetImportEnabled] = useState(false);
+
+    useEffect(() => {
+        let active = true;
+        fetch('/api/config')
+            .then(r => r.json())
+            .then(d => {
+                const config = (d as { config?: Record<string, string> }).config;
+                if (active) setSheetImportEnabled(config?.ENABLE_SHEET_IMPORT === 'true');
+            })
+            // Unreadable flag → link stays hidden (the default); report it.
+            .catch(e => { resolveErrorId(e, 'MyAdopters.sheetImportFlag'); });
+        return () => { active = false; };
+    }, []);
 
     useEffect(() => {
         // v2.14.10-20: unlinked form submissions don't exist anymore — Phase 1
@@ -291,11 +384,19 @@ export default function MyAdoptersPage() {
         );
     }
 
+    // "Por formulario": everyone who filled a form — including people whose
+    // form was combined into a profile they already had, which the Origen
+    // pill (how the profile was CREATED) would miss. Newest form first.
+    const withForms = adopters
+        .filter(a => (a.formCount ?? 0) > 0)
+        .sort((a, b) => (b.latestForm?.submittedAt ?? 0) - (a.latestForm?.submittedAt ?? 0));
+    const visible = formsOnly ? withForms : adopters;
+
     return (
         <div className="min-h-screen bg-stone-50 py-8 px-4">
             <div className="max-w-6xl mx-auto">
-                {/* Header */}
-                <div className="flex items-center justify-between mb-6">
+                {/* Header — wraps on narrow screens once the import link shows. */}
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
                     <div className="flex items-center gap-3">
                         <Link
                             href="/"
@@ -307,12 +408,22 @@ export default function MyAdoptersPage() {
                         <h1 className="text-2xl font-semibold text-stone-900">{t('dashboard.my_adopters')}</h1>
                         <span className="text-sm text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full">{adopters.length}</span>
                     </div>
-                    <Link
-                        href="/adopter/create"
-                        className="px-4 py-2 bg-teal-700 text-white font-semibold rounded-lg hover:bg-teal-600 transition-colors shadow-sm text-sm"
-                    >
-                        {t('dashboard.add_new_adopter')}
-                    </Link>
+                    <div className="flex items-center gap-2">
+                        {sheetImportEnabled && (
+                            <Link
+                                href="/import/sheet"
+                                className="px-4 py-2 bg-stone-100 text-stone-700 font-semibold rounded-lg hover:bg-stone-200 transition-colors text-sm"
+                            >
+                                {t('dashboard.import_sheet') || 'Importar planilla'}
+                            </Link>
+                        )}
+                        <Link
+                            href="/adopter/create"
+                            className="px-4 py-2 bg-teal-700 text-white font-semibold rounded-lg hover:bg-teal-600 transition-colors shadow-sm text-sm"
+                        >
+                            {t('dashboard.add_new_adopter')}
+                        </Link>
+                    </div>
                 </div>
 
                 {/* Pending-dedup pairs (replaces the old "Unlinked Forms" section
@@ -322,6 +433,31 @@ export default function MyAdoptersPage() {
                     <PendingDedup />
                 </div>
 
+                {adopters.length > 0 && (
+                    <div role="group" aria-label={t('myAdopters.filter_label') || 'Filtrar'} className="flex flex-wrap gap-2 mb-4">
+                        {([
+                            [false, t('myAdopters.filter_all') || 'Todos', adopters.length],
+                            [true, t('myAdopters.filter_forms') || 'Por formulario', withForms.length],
+                        ] as const).map(([on, label, count]) => (
+                            <button
+                                key={String(on)}
+                                type="button"
+                                aria-pressed={formsOnly === on}
+                                onClick={() => setFilter(on)}
+                                className={`inline-flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-xl text-[13px] font-bold border transition-colors ${formsOnly === on
+                                    ? 'bg-teal-600 text-white border-transparent'
+                                    // Not hover:bg-stone-100: hover variants have no [data-theme]
+                                    // remap and flash a white chip in Azul Noche.
+                                    : 'bg-white text-stone-700 border-stone-200 hover:bg-[var(--accent-subtle-bg)]'}`}
+                            >
+                                {on && <FileText className="w-4 h-4" strokeWidth={2} aria-hidden="true" />}
+                                {label}
+                                <span className={`text-xs font-semibold px-1.5 rounded-full ${formsOnly === on ? 'bg-white/20' : 'bg-stone-100 text-stone-500'}`}>{count}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+
                 {adopters.length === 0 ? (
                     <div className="bg-white rounded-2xl p-12 text-center border border-stone-200 shadow-sm">
                         <div className="w-14 h-14 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4 text-stone-500">
@@ -329,6 +465,16 @@ export default function MyAdoptersPage() {
                         </div>
                         <h3 className="text-lg font-semibold text-stone-900 mb-2">{t('dashboard.no_adopters_title')}</h3>
                         <p className="text-stone-500 mb-6 text-sm">{t('dashboard.no_adopters_desc')}</p>
+                    </div>
+                ) : visible.length === 0 ? (
+                    <div className="bg-white rounded-2xl p-12 text-center border border-stone-200 shadow-sm">
+                        <div className="w-14 h-14 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4 text-stone-500">
+                            <FileText className="w-7 h-7" strokeWidth={1.5} aria-hidden="true" />
+                        </div>
+                        <p className="text-stone-600 mb-6 text-sm">{t('myAdopters.forms_empty') || 'Nadie completó tu formulario todavía.'}</p>
+                        <button type="button" onClick={() => setFilter(false)} className="px-4 py-2 rounded-xl text-sm font-bold bg-stone-100 text-stone-700 hover:bg-stone-200 min-h-[44px]">
+                            {t('myAdopters.forms_empty_cta') || 'Ver todos'}
+                        </button>
                     </div>
                 ) : (
                     <>
@@ -350,7 +496,7 @@ export default function MyAdoptersPage() {
 
                             {/* Table Rows */}
                             <div className="divide-y divide-stone-100">
-                                {adopters.map((adopter, i) => (
+                                {visible.map((adopter, i) => (
                                     <Link
                                         key={`adopter-${adopter.id}-${i}`}
                                         href={`/adopter/${adopter.id}?ref=my-adopters`}
@@ -376,7 +522,11 @@ export default function MyAdoptersPage() {
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-2 min-w-0">
                                                     <AdopterName adopter={adopter} className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate text-sm" title />
-                                                    {adopter.hasPendingDuplicate && (
+                                                    {/* One decision, one pill: when the person's form is waiting
+                                                        on "¿es la misma persona?", that is the pair the duplicate
+                                                        pill would point at — and the form path also files the
+                                                        request in the right history. */}
+                                                    {adopter.hasPendingDuplicate && !adopter.formNeedsReview && (
                                                         <a
                                                             href="#pending-dedup"
                                                             onClick={(e) => e.stopPropagation()}
@@ -386,6 +536,7 @@ export default function MyAdoptersPage() {
                                                             🔍 {t('myAdopters.row_pending_dup') || 'Posible duplicado'}
                                                         </a>
                                                     )}
+                                                    {adopter.formNeedsReview && <NeedsReviewPill form={adopter.latestForm} onOpen={openForm} t={t} />}
                                                 </div>
                                                 <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
                                                 {/* Inline addedBy was moved to its own column in v2.19.6 —
@@ -436,6 +587,7 @@ export default function MyAdoptersPage() {
                                             dominated by self-rows doesn't wall of teal: stone for
                                             "your org", teal for "teammate's org". */}
                                         <div className="col-span-4 text-xs text-stone-600 min-w-0 space-y-0.5">
+                                            {adopter.latestForm && <FormLine form={adopter.latestForm} onOpen={openForm} t={t} />}
                                             <ProvenanceLine
                                                 kind="created"
                                                 name={adopter.creatorName}
@@ -464,7 +616,7 @@ export default function MyAdoptersPage() {
 
                         {/* Mobile Cards - Hidden on desktop */}
                         <div className="md:hidden space-y-3">
-                            {adopters.map((adopter, i) => (
+                            {visible.map((adopter, i) => (
                                 <Link
                                     key={`adopter-${adopter.id}-${i}`}
                                     href={`/adopter/${adopter.id}?ref=my-adopters`}
@@ -487,7 +639,7 @@ export default function MyAdoptersPage() {
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 min-w-0 flex-wrap">
                                                 <AdopterName adopter={adopter} className="font-semibold text-stone-900 truncate" title />
-                                                {adopter.hasPendingDuplicate && (
+                                                {adopter.hasPendingDuplicate && !adopter.formNeedsReview && (
                                                     <a
                                                         href="#pending-dedup"
                                                         onClick={(e) => e.stopPropagation()}
@@ -497,6 +649,7 @@ export default function MyAdoptersPage() {
                                                         🔍 {t('myAdopters.row_pending_dup') || 'Posible duplicado'}
                                                     </a>
                                                 )}
+                                                {adopter.formNeedsReview && <NeedsReviewPill form={adopter.latestForm} onOpen={openForm} t={t} />}
                                             </div>
                                             <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
                                             {/* v2.19.13: inline addedBy + bottom dates row from
@@ -537,6 +690,7 @@ export default function MyAdoptersPage() {
 
                                     {/* Provenance lines — same component as desktop. */}
                                     <div className="mt-2 pt-2 border-t border-stone-100 text-xs text-stone-600 space-y-0.5">
+                                        {adopter.latestForm && <FormLine form={adopter.latestForm} onOpen={openForm} t={t} />}
                                         <ProvenanceLine
                                             kind="created"
                                             name={adopter.creatorName}

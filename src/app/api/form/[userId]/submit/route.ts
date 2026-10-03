@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { withCors, corsPreflightResponse } from '@/lib/cors';
 import { runAfterResponse } from '@/lib/background';
+import { deriveSpecialNeeds, sanitizeShownSteps } from '@/domain/adoptionDocs';
 
 export const runtime = 'edge';
 
@@ -26,7 +27,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         const selfieData = body.selfie as string || null;
         const species = body.species as string || null;
         const lifeStage = body.lifeStage as string || null;
-        const specialNeeds = body.specialNeeds ? 1 : 0;
+        // Custom adoption docs (2026-09, additive): NULL when the step wasn't
+        // asked (hidden by rescuer config, or an old SPA opened for a specific
+        // animal that always hid this step) — "unasked" is not "no". See spec
+        // §3.3 and src/domain/adoptionDocs.ts:deriveSpecialNeeds.
+        const specialNeeds = deriveSpecialNeeds(body);
+        const shownSteps = sanitizeShownSteps(body.shownSteps);
+        // The adopter's answers, minus submission metadata: shownSteps has its
+        // own column, so it isn't stored again in answers_json / the
+        // notification's submittedData (where it would read as an "answer").
+        const answers: Record<string, unknown> = { ...body };
+        delete answers.shownSteps;
         const intent = body.intent as string || null;
         const household = Array.isArray(body.household) ? JSON.stringify(body.household) : null;
         // v2.14.10-2: form launched from the public showcase pre-selected
@@ -96,10 +107,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             specialNeeds,
             intent,
             household,
-            answersJson: JSON.stringify({ ...body, selfie: selfieUrl || '[removed]' }),
+            answersJson: JSON.stringify({ ...answers, selfie: selfieUrl || '[removed]' }),
             notificationId,
             selectedAnimalId,
             createdAt: new Date(),
+            shownSteps: shownSteps ? JSON.stringify(shownSteps) : null,
         });
 
         // If the submission targeted a specific animal (showcase flow), look
@@ -147,8 +159,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
 
             // Link form submission to the new adopter and mark it linked
             // so the old "Unlinked Forms" surface stays empty post-launch.
+            // autoAdopterId records which profile that was, so form-results
+            // can tell "still on the new profile" from "rescuer chose an
+            // existing one" (src/domain/formLink.ts).
             await db.update(formSubmissions).set({
                 linkedAdopterId: adopterId,
+                autoAdopterId: adopterId,
                 status: 'linked',
             }).where(eq(formSubmissions.id, submissionId));
         } catch (e) {
@@ -158,7 +174,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             });
         }
 
-        logger.info('PetShield form submission stored', { submissionId, rescuerEmail, name, adopterId });
+        logger.info('PetShield form submission stored', { submissionId, rescuerEmail, name, adopterId, shownCount: shownSteps ? shownSteps.length : null });
 
         // Notification + org fan-out. Helper above already ran duplicate
         // detection and returned the matches; we just plug them into the
@@ -183,7 +199,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     metadata: {
                         submissionId,
                         matchCount,
-                        submittedData: { ...body, selfie: selfieUrl || '[removed]' },
+                        submittedData: { ...answers, selfie: selfieUrl || '[removed]' },
                         matchedAdopters: matches.map(m => ({
                             id: m.adopterId,
                             name: m.adopterName,
@@ -205,7 +221,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     metadata: {
                         submissionId,
                         matchCount: 0,
-                        submittedData: { ...body, selfie: selfieUrl || '[removed]' },
+                        submittedData: { ...answers, selfie: selfieUrl || '[removed]' },
                         selectedAnimalId,
                         selectedAnimalName,
                     },

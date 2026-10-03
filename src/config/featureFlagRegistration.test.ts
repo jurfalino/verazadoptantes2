@@ -46,7 +46,7 @@ describe('feature-flag registration parity', () => {
         const { PUBLIC_FLAG_KEYS } = await import('@/lib/publicConfig');
         // Flags whose UI is rendered client-side; a miss here means the browser
         // never learns the value and the feature stays invisible.
-        for (const f of ['ENABLE_ANIMALS_FOR_ADOPTION', 'ENABLE_FOLLOWUPS', 'ENABLE_EMAIL_OTP', 'ENABLE_PWA_INSTALL_PROMPT']) {
+        for (const f of ['ENABLE_ANIMALS_FOR_ADOPTION', 'ENABLE_FOLLOWUPS', 'ENABLE_EMAIL_OTP', 'ENABLE_PWA_INSTALL_PROMPT', 'ENABLE_CUSTOM_ADOPTION_DOCS']) {
             expect(PUBLIC_FLAG_KEYS as readonly string[]).toContain(f);
         }
     });

@@ -29,7 +29,7 @@ import type {
     DiscoveryMatch, DuplicateMatch, MatchSnippet,
 } from './types';
 import { enrichAdopters } from './enrichAdopters';
-import { normalizeConfidence, fuzzyNameScore, nameTokenMatches, SEARCH_SCORE_CEILING, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
+import { normalizeConfidence, fuzzyNameScore, nameTokenMatches, SEARCH_SCORE_CEILING, PRACTICAL_MAX_DUPLICATE, DUPLICATE_MATCH_WEIGHTS, FUZZY_NAME_MATCH_TYPE } from '@/lib/scoring';
 import { classifyNameMatch, NAME_MATCH_WEIGHT, NAME_MATCH_TYPE, isNameLikeQuery, qualifiesForMainList } from '@/lib/searchRanking';
 import { normalizeText, extractPhones, extractEmails, extractSocials, isPlaceholderPhone, extractIds, stripIdsFromText, normalizeSocialHandle, detectSocialPlatformFromValue } from '@/lib/tokenizer';
 import { count } from 'drizzle-orm';
@@ -667,16 +667,8 @@ async function runDuplicateMode(
         storedWordsByAdopter.get(r.adopterId)!.push(r.tokenValue);
     }
 
-    const weights: Record<string, number> = {
-        phone: 3, phone_suffix: 2, email: 3, social: 3, social_handle: 3,
-        name_full: 2, name_phonetic: 1.5, name_word: 1,
-        address_word: 1, source_url: 3,
-        // v2.19.24: split former 'like_fallback'. Contact-info fallback is a
-        // strong signal (phone/email digits found in the contactInfo blob),
-        // name fallback is a weak coincidence.
-        like_fallback_name: 0.5, like_fallback_contact: 1.5,
-        id_number: 3, // unique identity, same tier as phone/email
-    };
+    // Lives in src/lib/scoring.ts so the label test can enumerate every type.
+    const weights = DUPLICATE_MATCH_WEIGHTS;
 
     // v2.19.24: classification used by the false-positive suppression rule
     // below. "Strong" identity signals are ones the rescuer explicitly used
@@ -768,7 +760,7 @@ async function runDuplicateMode(
                 const f = fuzzyNameScore(inputWord, stored);
                 if (f > best) best = f;
             }
-            if (best > 0) { score += best; if (!types.includes('name_word_fuzzy')) types.push('name_word_fuzzy'); }
+            if (best > 0) { score += best; if (!types.includes(FUZZY_NAME_MATCH_TYPE)) types.push(FUZZY_NAME_MATCH_TYPE); }
         }
 
         // v2.19.24: false-positive suppression. When the rescuer provided a
@@ -838,7 +830,7 @@ async function runDiscoveryMode(
     // Geo-filtering
     let userCountry: string | null = null;
     try {
-        const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+        const { env } = (await import('@/lib/requestContext')).getRequestContext();
         if (env?.DB) {
             const row = await env.DB.prepare(
                 `SELECT up.country FROM user_profiles up JOIN user u ON u.id = up.user_id WHERE u.email = ? LIMIT 1`
@@ -1313,6 +1305,29 @@ async function runDiscoveryMode(
         isNameLike: queryIsNameLike,
         minRelevance: LOW_RELEVANCE_PERCENT_THRESHOLD,
     });
+    /* v2.56.108: on a vetting tool, "who vouched for this" is most of the
+       trust, and a name search returns a mix of the viewer's own records, their
+       org-mates' and bulk imports with nothing to tell them apart. Resolved
+       here rather than client-side so the org's member list stays server-side;
+       one query per search, and it fails open to no badge. */
+    try {
+        const viewer = user && user !== 'unknown' ? user : null;
+        if (viewer) {
+            const { getOrgMemberEmailsFor } = await import('@/app/actions/organizations');
+            const team = new Set(await getOrgMemberEmailsFor(viewer));
+            for (const r of allResults) {
+                const owner = r.adopter?.addedBy;
+                if (!owner || owner === 'anonymous') continue;
+                if (owner === viewer) r.ownership = 'mine';
+                else if (team.has(owner)) r.ownership = 'team';
+            }
+        }
+    } catch (e) {
+        logger.warn('findAdopters: ownership tagging fallback', {
+            user, error: e instanceof Error ? e.message : String(e),
+        });
+    }
+
     const mainResults = allResults.filter(isStrong);
     const lowRelevanceResults = allResults.filter(r => !isStrong(r));
 

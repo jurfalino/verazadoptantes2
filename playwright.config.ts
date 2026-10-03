@@ -15,8 +15,15 @@ export default defineConfig({
   timeout: 120000,
   testDir: './tests',
   // Database is now seeded natively during the webServer boot sequence to prevent lock conflicts
-  /* Run tests in files in parallel */
-  fullyParallel: true,
+  /* v2.56.131: FILE-level, not test-level.
+   *
+   * CI shards the suite across runners (.github/workflows/ci.yml). With
+   * `fullyParallel: true` Playwright shards by individual TEST, which can put
+   * two tests from the same file — and from the same fixture — on different
+   * runners with different databases. Sharding by FILE keeps a spec's tests
+   * together, so a shard split can only ever separate whole files. With
+   * `workers: 1` this changes nothing about how a single run executes. */
+  fullyParallel: false,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */

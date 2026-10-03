@@ -12,6 +12,7 @@ import {
     type AuditSeverity,
     type AuditFieldSummary,
 } from '@/lib/auditRow';
+import { ADOPTION_DOCS_ACTIVITY_ACTIONS, isDocsActivityVisible } from '@/domain/adoptionDocsActivity';
 
 export type ActivitySeverity = AuditSeverity;
 
@@ -58,10 +59,16 @@ export interface OrgActivityEntry {
         animalName?: string;
         species?: string;
         flagReason?: string;
+        /** adoption_docs_* only — the org the edit is attributed to. */
+        orgName?: string;
     };
 }
 
-// Actions that are meaningful for org activity feed
+// Actions that are meaningful for org activity feed. adoption_docs_form_saved
+// / adoption_docs_contract_saved (Task 5) don't fit any existing category —
+// they land in `all` only via ADOPTION_DOCS_ACTIVITY_ACTIONS below, and are
+// further gated per-row by isDocsActivityVisible (org-scoped, never shown
+// for a self edit — see that function's docstring).
 const ACTIVITY_ACTIONS = [
     'adopter_created',
     'adopter_updated',
@@ -72,7 +79,16 @@ const ACTIVITY_ACTIONS = [
     'adopter_deleted',
     'adopter_deletion_requested',
     'verification_added',
+    ...ADOPTION_DOCS_ACTIVITY_ACTIONS,
 ];
+
+// getNewActivityCount's "N nuevas" banner has no per-row visibility check
+// (it's a plain COUNT(*), no details to inspect) — so the adoption_docs_*
+// actions are excluded from it entirely rather than risk a phantom count
+// for a self edit or another org's edit that the main feed would then hide.
+const COUNTABLE_ACTIVITY_ACTIONS = ACTIVITY_ACTIONS.filter(
+    a => !(ADOPTION_DOCS_ACTIVITY_ACTIONS as readonly string[]).includes(a),
+);
 
 /**
  * v1.1 filter categories surfaced as chips above the feed. Each maps to a
@@ -118,7 +134,7 @@ const deriveSeverity = deriveSeverityShared;
 const deriveFieldSummary = (action: string, details: Record<string, unknown>): ActivityFieldSummary | null =>
     deriveFieldSummaryShared(action, details);
 
-function deriveExtra(action: string, details: Record<string, unknown>): OrgActivityEntry['extra'] {
+function deriveExtra(action: string, details: Record<string, unknown>, orgNames: Map<string, string>): OrgActivityEntry['extra'] {
     const out: OrgActivityEntry['extra'] = {};
     if (action === 'adoption_added' || action === 'adoption_created') {
         if (typeof details.animalName === 'string') out.animalName = details.animalName;
@@ -126,6 +142,10 @@ function deriveExtra(action: string, details: Record<string, unknown>): OrgActiv
     }
     if (action === 'flag_created') {
         if (typeof details.reason === 'string') out.flagReason = details.reason;
+    }
+    if ((ADOPTION_DOCS_ACTIVITY_ACTIONS as readonly string[]).includes(action) && typeof details.orgId === 'string') {
+        const name = orgNames.get(details.orgId);
+        if (name) out.orgName = name;
     }
     return out;
 }
@@ -154,7 +174,7 @@ export async function getOrgActivity(filters: ActivityFilters = {}): Promise<Act
         // If user has no org or is the only member, no team activity to show
         if (emails.length <= 1) return empty;
 
-        const { getRequestContext } = await import('@cloudflare/next-on-pages');
+        const { getRequestContext } = await import('@/lib/requestContext');
         const { env } = getRequestContext();
         if (!env?.DB) return empty;
 
@@ -187,16 +207,26 @@ export async function getOrgActivity(filters: ActivityFilters = {}): Promise<Act
             ? [cursor.createdAt, cursor.createdAt, cursor.id]
             : [];
 
+        // A self docs-edit (adoption_docs_* with no orgId → target NULL) is
+        // never visible to anyone — isDocsActivityVisible always drops it —
+        // so it's excluded here at the SQL level rather than only in memory.
+        // Without this, a user who saves their own form/contract repeatedly
+        // could fill an entire page with rows nobody will ever see, making
+        // the feed (and "Cargar más") look emptier than it is. An edit of an
+        // org the viewer isn't in still has a non-NULL target and can only
+        // be filtered in memory (needs the viewer's own org ids), same as
+        // before — that risk remains and is documented in the report.
         const sql =
             `SELECT id, user_email, action, target, details, created_at
              FROM audit_log
              WHERE user_email IN (${emailPh})
              AND action IN (${actionPh})
+             AND NOT (action IN (?, ?) AND target IS NULL)
              ${cursorSql}ORDER BY created_at DESC, id DESC
              LIMIT ?`;
 
         const result = await env.DB.prepare(sql)
-            .bind(...emailList, ...allowedActions, ...cursorBinds, fetchLimit)
+            .bind(...emailList, ...allowedActions, ...ADOPTION_DOCS_ACTIVITY_ACTIONS, ...cursorBinds, fetchLimit)
             .all<{
                 id: string;
                 user_email: string;
@@ -208,44 +238,77 @@ export async function getOrgActivity(filters: ActivityFilters = {}): Promise<Act
 
         const raw = result.results || [];
         const hasMore = raw.length > limit;
+        // hasMore / nextCursor are derived from this UNFILTERED `rows` below —
+        // the isDocsActivityVisible drop happens only when building `entries`,
+        // so a page that's mostly hidden adoption_docs_* rows still cursors
+        // forward correctly instead of stalling.
         const rows = hasMore ? raw.slice(0, limit) : raw;
 
-        // ── Enrichment: three independent batches in parallel ──
+        // Parsed once, reused for both the org-name batch below and the
+        // per-row map (parsing details twice per row was wasteful and risked
+        // the two parses drifting on a malformed JSON edge case).
+        const detailsByRowId = new Map<string, Record<string, unknown>>(
+            rows.map(r => [r.id, parseDetails(r.details)]),
+        );
+
+        // ── Enrichment: independent batches in parallel ──
         const distinctActors = Array.from(new Set(rows.map(r => r.user_email).filter(Boolean)));
-        const distinctTargets = Array.from(new Set(rows.map(r => r.target).filter((t): t is string => !!t)));
+        // adoption_docs_* rows point `target` at an org id, not an adopter —
+        // excluded here so resolveAdopters never queries `adopters` with one.
+        const distinctTargets = Array.from(new Set(
+            rows
+                .filter(r => !(ADOPTION_DOCS_ACTIVITY_ACTIONS as readonly string[]).includes(r.action))
+                .map(r => r.target)
+                .filter((t): t is string => !!t),
+        ));
+        // Only pages that actually contain adoption_docs_* rows pay for the
+        // viewer-org and org-name lookups below.
+        const docsRows = rows.filter(r => (ADOPTION_DOCS_ACTIVITY_ACTIONS as readonly string[]).includes(r.action));
+        const hasDocsRows = docsRows.length > 0;
+        const distinctDocsOrgIds = Array.from(new Set(
+            docsRows
+                .map(r => detailsByRowId.get(r.id)?.orgId)
+                .filter((v): v is string => typeof v === 'string' && !!v),
+        ));
 
         // On the first page, also resolve the full actor list across the org
         // (not just this page's actors) so the picker dropdown is complete.
         const wantActors = !cursor;
         const fullActorEmails = wantActors ? emails : [];
 
-        const [actorNames, adopterMap, attributionMap, allActorNames] = await Promise.all([
+        const [actorNames, adopterMap, attributionMap, allActorNames, viewerOrgIds, docsOrgNames] = await Promise.all([
             resolveActorNames(distinctActors, env.DB),
             resolveAdopters(distinctTargets, env.DB),
             resolveAttribution(distinctActors, viewer),
             wantActors ? resolveActorNames(fullActorEmails, env.DB) : Promise.resolve(new Map<string, string>()),
+            hasDocsRows ? getViewerOrgIds(viewer) : Promise.resolve([] as string[]),
+            hasDocsRows ? resolveOrgNames(distinctDocsOrgIds, env.DB) : Promise.resolve(new Map<string, string>()),
         ]);
 
-        const entries: OrgActivityEntry[] = rows.map(row => {
-            const details = parseDetails(row.details);
-            const adopter = row.target ? adopterMap.get(row.target) : null;
-            const orgInfo = attributionMap.get(row.user_email) ?? null;
-            return {
-                id: row.id,
-                userEmail: row.user_email,
-                action: row.action,
-                target: row.target,
-                details: row.details,
-                createdAt: row.created_at,
-                actorName: actorNames.get(row.user_email) || (row.user_email.split('@')[0] || row.user_email),
-                actorOrgName: orgInfo?.name ?? null,
-                adopterName: adopter?.name ?? null,
-                adopterDeleted: !!adopter?.deletedAt,
-                severity: deriveSeverity(row.action, details),
-                fieldSummary: deriveFieldSummary(row.action, details),
-                extra: deriveExtra(row.action, details),
-            };
-        });
+        const entries: OrgActivityEntry[] = rows
+            .map(row => {
+                const details = detailsByRowId.get(row.id) ?? {};
+                if (!isDocsActivityVisible(row.action, details, viewerOrgIds)) return null;
+                const adopter = row.target ? adopterMap.get(row.target) : null;
+                const orgInfo = attributionMap.get(row.user_email) ?? null;
+                const entry: OrgActivityEntry = {
+                    id: row.id,
+                    userEmail: row.user_email,
+                    action: row.action,
+                    target: row.target,
+                    details: row.details,
+                    createdAt: row.created_at,
+                    actorName: actorNames.get(row.user_email) || (row.user_email.split('@')[0] || row.user_email),
+                    actorOrgName: orgInfo?.name ?? null,
+                    adopterName: adopter?.name ?? null,
+                    adopterDeleted: !!adopter?.deletedAt,
+                    severity: deriveSeverity(row.action, details),
+                    fieldSummary: deriveFieldSummary(row.action, details),
+                    extra: deriveExtra(row.action, details, docsOrgNames),
+                };
+                return entry;
+            })
+            .filter((e): e is OrgActivityEntry => e !== null);
 
         const last = rows[rows.length - 1];
         const nextCursor = hasMore && last ? { createdAt: last.created_at, id: last.id } : null;
@@ -267,7 +330,10 @@ export async function getOrgActivity(filters: ActivityFilters = {}): Promise<Act
 /**
  * Lightweight count of activity rows newer than `sinceTimestamp`. Polled by
  * the client every 60s to drive the "N nuevas — actualizar" banner above
- * the feed. Same email + action filter as the main feed but no enrichment.
+ * the feed. Same email + action filter as the main feed but no enrichment —
+ * and no per-row `details.orgId` check is possible from a COUNT(*), so
+ * adoption_docs_* rows are excluded via COUNTABLE_ACTIVITY_ACTIONS rather
+ * than risk a phantom "N nuevas" for a row the refreshed feed then hides.
  */
 export async function getNewActivityCount(sinceTimestamp: number): Promise<number> {
     if (!Number.isFinite(sinceTimestamp) || sinceTimestamp <= 0) return 0;
@@ -276,19 +342,19 @@ export async function getNewActivityCount(sinceTimestamp: number): Promise<numbe
         const emails = await getOrgMemberEmails();
         if (emails.length <= 1) return 0;
 
-        const { getRequestContext } = await import('@cloudflare/next-on-pages');
+        const { getRequestContext } = await import('@/lib/requestContext');
         const { env } = getRequestContext();
         if (!env?.DB) return 0;
 
         const emailPh = emails.map(() => '?').join(',');
-        const actionPh = ACTIVITY_ACTIONS.map(() => '?').join(',');
+        const actionPh = COUNTABLE_ACTIVITY_ACTIONS.map(() => '?').join(',');
         const result = await env.DB.prepare(
             `SELECT COUNT(*) AS n
              FROM audit_log
              WHERE user_email IN (${emailPh})
              AND action IN (${actionPh})
              AND created_at > ?`
-        ).bind(...emails, ...ACTIVITY_ACTIONS, sinceTimestamp).first<{ n: number }>();
+        ).bind(...emails, ...COUNTABLE_ACTIVITY_ACTIONS, sinceTimestamp).first<{ n: number }>();
         return result?.n ?? 0;
     } catch (error) {
         logger.warn('getNewActivityCount failed', { error: error instanceof Error ? error.message : String(error) });
@@ -299,6 +365,46 @@ export async function getNewActivityCount(sinceTimestamp: number): Promise<numbe
 // ── Enrichment helpers ───────────────────────────────────────────
 
 interface D1Env { prepare(s: string): { bind(...a: unknown[]): { first<T>(): Promise<T | null>; all<T>(): Promise<{ results: T[] }> } } }
+
+/**
+ * The viewer's own org ids, used to gate adoption_docs_* rows (see
+ * isDocsActivityVisible). Fails CLOSED to `[]` on a DB hiccup — unlike most
+ * org-membership helpers in this codebase, which fail open, a lookup
+ * failure here should hide these two rows, not risk showing an edit outside
+ * the viewer's orgs.
+ */
+async function getViewerOrgIds(email: string): Promise<string[]> {
+    try {
+        const { getDb } = await import('@/lib/db');
+        const { getMemberOrgIds } = await import('@/lib/adoptionDocsRepo');
+        const db = await getDb();
+        if (!db) return [];
+        return await getMemberOrgIds(db, email);
+    } catch (e) {
+        logger.warn('getOrgActivity: viewer org lookup failed — hiding adoption_docs_* rows', {
+            error: e instanceof Error ? e.message : String(e),
+        });
+        return [];
+    }
+}
+
+/** organizations.name for the distinct org ids referenced by adoption_docs_* rows on this page. */
+async function resolveOrgNames(orgIds: string[], db: D1Env): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    if (orgIds.length === 0) return out;
+    await Promise.all(orgIds.map(async id => {
+        try {
+            const row = await db.prepare(`SELECT name FROM organizations WHERE id = ? LIMIT 1`)
+                .bind(id).first<{ name: string | null }>();
+            if (row?.name) out.set(id, row.name);
+        } catch (e) {
+            logger.warn('getOrgActivity: org name lookup failed', {
+                orgId: id, error: e instanceof Error ? e.message : String(e),
+            });
+        }
+    }));
+    return out;
+}
 
 async function resolveActorNames(emails: string[], db: D1Env): Promise<Map<string, string>> {
     const out = new Map<string, string>();

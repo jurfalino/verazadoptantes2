@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
+import NotFoundView from '@/components/notFound/NotFoundView';
 
 interface AnimalImage {
     id: string;
@@ -24,6 +25,7 @@ export default function ContractPage() {
     const [animal, setAnimal] = useState<AnimalData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [notFoundHit, setNotFoundHit] = useState<'dog' | 'cat' | null>(null);
     const [submitted, setSubmitted] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
@@ -43,7 +45,8 @@ export default function ContractPage() {
             try {
                 const animalRes = await fetch(`/api/contract/${id}`);
                 if (!animalRes.ok) {
-                    setError(animalRes.status === 404 ? 'Animal no encontrado' : 'Error al cargar');
+                    if (animalRes.status === 404) setNotFoundHit(Math.random() < 0.5 ? 'dog' : 'cat');
+                    else setError('Error al cargar');
                     return;
                 }
                 const animalData = await animalRes.json() as AnimalData;
@@ -112,6 +115,8 @@ export default function ContractPage() {
             </div>
         );
     }
+
+    if (notFoundHit) return <NotFoundView variant={notFoundHit} />;
 
     if (error) {
         return (

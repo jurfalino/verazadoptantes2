@@ -15,6 +15,7 @@ import { eq } from 'drizzle-orm';
 import { organizations, orgMembers } from '@/db/schema';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { maskEmail } from '@/lib/dates';
 
 export interface OrgRef {
     id: string;
@@ -22,7 +23,7 @@ export interface OrgRef {
     slug: string | null;
 }
 
-const normEmail = (e: string | null | undefined): string =>
+export const normEmail = (e: string | null | undefined): string =>
     (e ?? '').toLowerCase().trim();
 
 /**
@@ -30,10 +31,42 @@ const normEmail = (e: string | null | undefined): string =>
  * Returns false for empty / equal emails (equality is checked at the caller —
  * owner==viewer is `isOwner`, not `isOrgMate`).
  *
+ * `isOrgMateStrict` is the same check but throws on DB errors (for callers that
+ * must tell "lookup failed" from "stranger"); `isOrgMate` wraps it and fails closed.
  * Two queries: viewer's orgs, then existence check on (orgs ∩ owner's orgs).
  * Sized to drop straight through D1's read replica; never fetches member
  * lists.
  */
+export async function isOrgMateStrict(
+    viewerEmail: string | null | undefined,
+    ownerEmail: string | null | undefined,
+): Promise<boolean> {
+    const v = normEmail(viewerEmail);
+    const o = normEmail(ownerEmail);
+    if (!v || !o || v === o) return false;
+    const db = await getDb();
+    if (!db) return false;
+
+    const viewerOrgs = await db.select({ orgId: orgMembers.orgId })
+        .from(orgMembers)
+        .where(eq(orgMembers.userEmail, v));
+    if (viewerOrgs.length === 0) return false;
+
+    const orgIds = viewerOrgs.map((r: { orgId: string }) => r.orgId);
+    // inArray is documented-broken on D1 for large arrays (see
+    // docs/D1_COMPATIBILITY.md). Most users belong to <5 orgs in
+    // practice, so we loop — Promise.all keeps the cost flat.
+    const hits = await Promise.all(orgIds.map((orgId: string) =>
+        db.select({ userEmail: orgMembers.userEmail })
+            .from(orgMembers)
+            .where(eq(orgMembers.orgId, orgId))
+            .all()
+            .then((rows: { userEmail: string }[]) =>
+                rows.some(r => normEmail(r.userEmail) === o))
+    ));
+    return hits.some(Boolean);
+}
+
 export async function isOrgMate(
     viewerEmail: string | null | undefined,
     ownerEmail: string | null | undefined,
@@ -42,30 +75,10 @@ export async function isOrgMate(
     const o = normEmail(ownerEmail);
     if (!v || !o || v === o) return false;
     try {
-        const db = await getDb();
-        if (!db) return false;
-
-        const viewerOrgs = await db.select({ orgId: orgMembers.orgId })
-            .from(orgMembers)
-            .where(eq(orgMembers.userEmail, v));
-        if (viewerOrgs.length === 0) return false;
-
-        const orgIds = viewerOrgs.map((r: { orgId: string }) => r.orgId);
-        // inArray is documented-broken on D1 for large arrays (see
-        // docs/D1_COMPATIBILITY.md). Most users belong to <5 orgs in
-        // practice, so we loop — Promise.all keeps the cost flat.
-        const hits = await Promise.all(orgIds.map((orgId: string) =>
-            db.select({ userEmail: orgMembers.userEmail })
-                .from(orgMembers)
-                .where(eq(orgMembers.orgId, orgId))
-                .all()
-                .then((rows: { userEmail: string }[]) =>
-                    rows.some(r => normEmail(r.userEmail) === o))
-        ));
-        return hits.some(Boolean);
+        return await isOrgMateStrict(viewerEmail, ownerEmail);
     } catch (e) {
         logger.warn('isOrgMate failed — failing closed (treated as stranger)', {
-            viewer: v, owner: o,
+            viewer: v, owner: maskEmail(o),
             error: e instanceof Error ? e.message : String(e),
         });
         return false;

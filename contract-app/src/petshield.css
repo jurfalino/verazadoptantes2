@@ -1007,6 +1007,8 @@ body {
 }
 
 .ps-animal-thumb {
+  /* anchors .ps-media-badge on a video's thumbnail */
+  position: relative;
   width: 56px;
   height: 56px;
   padding: 0;
@@ -1423,4 +1425,26 @@ body {
 
 .ps-home-closing__cta:hover span {
   transform: translateX(4px);
+}
+
+/* ── v2.56.127: a video, drawn as its poster ─────────────────────────────
+   A rescuer can attach video as well as stills. Grids never autoplay — they
+   draw the poster and mark it, so the visitor knows there is something to
+   play before they open the animal. The parent is already positioned
+   (.ps-showcase-card__photo, .ps-animal-thumb), so this anchors to it. */
+.ps-media-badge {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.ps-media-badge svg {
+  color: #fff;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 8px;
+  box-sizing: content-box;
 }

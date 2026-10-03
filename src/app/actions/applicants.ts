@@ -35,6 +35,8 @@ export interface ApplicantSubmissionPayload {
 
 export interface ApplicantAdopterContext {
     addedBy: string | null;
+    /** Rescuer's display name for `addedBy` (email handle when they have none). */
+    addedByName: string | null;
     source: string | null;
     country: string | null;
 }
@@ -173,6 +175,7 @@ export async function getApplicantsForAnimal(animalId: string): Promise<Applican
                     adopterName = adopter.name;
                     adopterContext = {
                         addedBy: adopter.addedBy,
+                        addedByName: null, // filled below in one batched lookup
                         source: adopter.source,
                         country: adopter.country,
                     };
@@ -235,6 +238,28 @@ export async function getApplicantsForAnimal(animalId: string): Promise<Applican
                 adopterContext,
             } satisfies ApplicantSummary;
         }));
+
+        // "Agregado por": the rescuer's name, not their email handle. One
+        // batched, D1-safe lookup for every distinct addedBy on this animal.
+        const addedByEmails = enriched
+            .map(a => a.adopterContext?.addedBy)
+            .filter((e): e is string => !!e);
+        if (addedByEmails.length > 0) {
+            try {
+                const { resolveDisplayNames } = await import('./notifications');
+                const names = await resolveDisplayNames(addedByEmails);
+                for (const a of enriched) {
+                    const ctx = a.adopterContext;
+                    if (ctx?.addedBy) ctx.addedByName = names.get(ctx.addedBy.toLowerCase()) ?? null;
+                }
+            } catch (e) {
+                // Names degrade to the email handle at render; never lose the list.
+                logger.warn('getApplicantsForAnimal: addedBy name lookup fallback', {
+                    animalId, count: addedByEmails.length,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            }
+        }
 
         // Newest first.
         enriched.sort((a, b) => (b.appliedAt ?? 0) - (a.appliedAt ?? 0));

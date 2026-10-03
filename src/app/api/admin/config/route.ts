@@ -93,6 +93,8 @@ export async function GET() {
             ENABLE_PWA_INSTALL_PROMPT: config['ENABLE_PWA_INSTALL_PROMPT'] || 'false',
             ENABLE_GUEST_NAME_MASK: config['ENABLE_GUEST_NAME_MASK'] || 'false',
             ENABLE_FOLLOWUPS: config['ENABLE_FOLLOWUPS'] || 'true',
+            ENABLE_CUSTOM_ADOPTION_DOCS: config['ENABLE_CUSTOM_ADOPTION_DOCS'] || 'false',
+            ENABLE_SHEET_IMPORT: config['ENABLE_SHEET_IMPORT'] || 'false',
             // Telegram support chat — chat_id is non-sensitive and returned
             // verbatim. The bot token and webhook secret are sensitive: never
             // returned to the client. Instead we expose a *_SET indicator so

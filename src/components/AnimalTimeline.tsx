@@ -9,8 +9,9 @@
  * Images arrive as props (server-fetched) — no client-side N+1.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import { useLanguage } from '@/context/LanguageContext';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { interpolate } from '@/lib/interpolate';
@@ -103,6 +104,21 @@ export default function AnimalTimeline({ items, animalSex, userNameMap = {}, org
     const { formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
+    /** Photos attached to ONE timeline event, opened full size. They rendered
+     *  at 48px with no click handler, and anything past the fourth existed only
+     *  inside a «+N» count — the same defect the animal's hero had before
+     *  v2.56.97, in the second place it occurs. */
+    const [viewing, setViewing] = useState<{ images: AnimalTimelineItem['images']; idx: number } | null>(null);
+
+    useEffect(() => {
+        if (!viewing || viewing.images.length < 2) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'ArrowRight') setViewing(v => v && { ...v, idx: (v.idx + 1) % v.images.length });
+            if (e.key === 'ArrowLeft') setViewing(v => v && { ...v, idx: (v.idx - 1 + v.images.length) % v.images.length });
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [viewing]);
     const [showMissed, setShowMissed] = useState(false);
     const [explained, setExplained] = useState<string | null>(null);
 
@@ -350,11 +366,25 @@ export default function AnimalTimeline({ items, animalSex, userNameMap = {}, org
                                 )}
                                 {item.images.length > 0 && (
                                     <div className="flex gap-1.5 mt-2">
-                                        {item.images.slice(0, 4).map(im => (
-                                            <img key={im.id} src={im.thumbnailUrl || im.url} alt={im.caption || ''} className="w-12 h-12 rounded-lg object-cover border border-stone-200" />
+                                        {item.images.slice(0, 4).map((im, i) => (
+                                            <button
+                                                key={im.id} type="button"
+                                                onClick={(e) => { e.currentTarget.blur(); setViewing({ images: item.images, idx: i }); }}
+                                                aria-label={t('animalProfile.photo_view') || 'Ver la foto'}
+                                                className="w-12 h-12 rounded-lg overflow-hidden border border-stone-200 cursor-zoom-in hover:border-teal-400 transition-colors"
+                                                data-testid={`event-photo-${item.id}-${i}`}
+                                            >
+                                                <img src={im.thumbnailUrl || im.url} alt={im.caption || ''} className="w-full h-full object-cover" />
+                                            </button>
                                         ))}
                                         {item.images.length > 4 && (
-                                            <span className="w-12 h-12 rounded-lg bg-stone-100 text-stone-500 text-xs font-semibold flex items-center justify-center">+{item.images.length - 4}</span>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => { e.currentTarget.blur(); setViewing({ images: item.images, idx: 4 }); }}
+                                                aria-label={t('animalProfile.photo_view_all') || 'Ver todas las fotos'}
+                                                className="w-12 h-12 rounded-lg bg-stone-100 text-stone-500 text-xs font-semibold flex items-center justify-center hover:bg-stone-200 transition-colors"
+                                                data-testid={`event-photo-more-${item.id}`}
+                                            >+{item.images.length - 4}</button>
                                         )}
                                     </div>
                                 )}
@@ -375,6 +405,43 @@ export default function AnimalTimeline({ items, animalSex, userNameMap = {}, org
                     </p>
                 )}
             </div>
+
+            {/* One event's photos, full size. MediaLightbox shows a single item,
+                so prev/next and the counter ride in its `actions` slot. */}
+            {viewing && viewing.images[viewing.idx] && (
+                <MediaLightbox
+                    item={{
+                        url: viewing.images[viewing.idx].url,
+                        caption: viewing.images[viewing.idx].caption ?? undefined,
+                        mediaType: viewing.images[viewing.idx].mediaType === 'video' ? 'video' : 'image',
+                        thumbnailUrl: viewing.images[viewing.idx].thumbnailUrl ?? undefined,
+                    }}
+                    onClose={() => setViewing(null)}
+                    actions={viewing.images.length > 1 ? (
+                        <div className="flex items-center gap-2 text-white">
+                            <button
+                                type="button"
+                                onClick={() => setViewing(v => v && { ...v, idx: (v.idx - 1 + v.images.length) % v.images.length })}
+                                aria-label={t('common.previous') || 'Anterior'}
+                                className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 grid place-items-center transition-colors"
+                                data-testid="event-photo-prev"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" /></svg>
+                            </button>
+                            <span className="text-xs font-semibold tabular-nums" data-testid="event-photo-counter">{viewing.idx + 1} / {viewing.images.length}</span>
+                            <button
+                                type="button"
+                                onClick={() => setViewing(v => v && { ...v, idx: (v.idx + 1) % v.images.length })}
+                                aria-label={t('common.next') || 'Siguiente'}
+                                className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 grid place-items-center transition-colors"
+                                data-testid="event-photo-next"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" /></svg>
+                            </button>
+                        </div>
+                    ) : undefined}
+                />
+            )}
         </div>
     );
 }

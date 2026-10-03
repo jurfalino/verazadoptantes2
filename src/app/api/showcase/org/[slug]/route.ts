@@ -6,6 +6,7 @@ import { adoptions, organizations, orgMembers } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { availableAnimalsBase, availableAnimalsOrder, buildPublicRescuer, fetchAnimalImages, pickPublicAnimal } from '@/lib/showcase';
+import { showableCount } from '@/domain/animalAccess';
 
 /** GET /api/showcase/org/[slug] — public list of an org's available animals.
  *  Scoping: org slug → org id → members emails → adoptions.addedBy match.
@@ -67,7 +68,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
         const animals = [];
         for (const row of rows) {
             const animalImages = imagesByAnimal.get(row.id) || [];
-            if (animalImages.length === 0) continue;
+            // A video with no poster is nothing the grid can draw (v2.56.127).
+            if (showableCount(animalImages) === 0) continue;
             const key = row.addedBy || '';
             if (!rescuerCache.has(key)) rescuerCache.set(key, buildPublicRescuer(db, row.addedBy));
             const rescuer = await rescuerCache.get(key)!;

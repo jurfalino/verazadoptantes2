@@ -10,6 +10,8 @@
 import { jsPDF } from 'jspdf'
 import { CONTRACT_CONTENT, stripAccents } from './i18n/contractContent'
 import type { Locale } from './i18n/types'
+import { contractVersionLabel, customSectionFor, type CustomContract, type RichDoc } from './lib/adoptionDocs'
+import { layoutRichDoc, pdfSafeRichDoc, type Style } from './lib/pdfRichDoc'
 
 interface AnimalData {
     animalName: string
@@ -46,7 +48,7 @@ const PAGE_BOTTOM = 280 // Leave margin at bottom
  * Generates a contract PDF from structured form data in the given locale.
  * Returns a Blob or null on failure.
  */
-export function generateContractPdf(animal: AnimalData, form: FormData, locale: Locale = 'es'): Blob | null {
+export function generateContractPdf(animal: AnimalData, form: FormData, locale: Locale = 'es', custom: CustomContract | null = null): Blob | null {
     try {
         const c = CONTRACT_CONTENT[locale] ?? CONTRACT_CONTENT.es
         const doc = new jsPDF({ unit: 'mm', format: 'a4' })
@@ -103,6 +105,42 @@ export function generateContractPdf(animal: AnimalData, form: FormData, locale: 
             doc.setDrawColor(200, 200, 200)
             doc.line(MARGIN_LEFT, y, PAGE_WIDTH - MARGIN_RIGHT, y)
             y += SECTION_GAP
+        }
+
+        // Helper: render a rescuer-edited section body (RichDoc) run by run.
+        const styleOf = (s: 'normal' | 'bold' | 'italic' | 'bolditalic') => s
+        const addRichDoc = (rd: RichDoc) => {
+            const size = 10
+            const lineH = size * 0.45
+            const x0 = MARGIN_LEFT + 4
+            // Fold rescuer-typed text to what helvetica can draw (quotes,
+            // dashes, NBSP, emoji...) BEFORE layout, so measuring, wrapping
+            // and drawing all see the exact same string.
+            const measure = (t: string, st: Style) => { doc.setFont('helvetica', styleOf(st)); doc.setFontSize(size); return doc.getTextWidth(t) }
+            const lines = layoutRichDoc(pdfSafeRichDoc(rd), CONTENT_WIDTH - 4, measure, { bulletIndent: 5 })
+            // A leading 'gap' (from an edge empty paragraph) must not add
+            // visible space before the first real line; only count gaps that
+            // follow something we actually drew.
+            let drewLine = false
+            for (const line of lines) {
+                if (line === 'gap') { if (drewLine) y += 2; continue }
+                checkPage(lineH)
+                if (line.bullet) { doc.setFont('helvetica', 'normal'); doc.text('-', x0 + 1, y) }
+                for (const w of line.words) {
+                    doc.setFont('helvetica', w.style); doc.setFontSize(size)
+                    doc.text(w.text, x0 + line.indent + w.x, y)
+                    if (w.underline) {
+                        // divider()/section headings before this block leave the
+                        // draw color at light gray — reset to black so the
+                        // underline matches the black text it sits under.
+                        doc.setDrawColor(0, 0, 0)
+                        doc.setLineWidth(0.2)
+                        doc.line(x0 + line.indent + w.x, y + 0.6, x0 + line.indent + w.x + w.width, y + 0.6)
+                    }
+                }
+                y += lineH + 1
+                drewLine = true
+            }
         }
 
         // === HEADER ===
@@ -188,15 +226,22 @@ export function generateContractPdf(animal: AnimalData, form: FormData, locale: 
             checkPage(30)
             addText(section.title, MARGIN_LEFT, CONTENT_WIDTH, { bold: true, size: 11 })
             y += 1
-            if (section.intro) {
-                addText(section.intro, MARGIN_LEFT, CONTENT_WIDTH)
-                y += 2
-            }
-            for (const clause of section.clauses) {
-                checkPage(15)
-                if (clause.title) addText(clause.title, MARGIN_LEFT + 4, CONTENT_WIDTH - 4, { bold: true, size: 9 })
-                addText(clause.body, MARGIN_LEFT + 4, CONTENT_WIDTH - 4)
-                y += 1
+            // Sections 2–4 (i 0–2) may be replaced by a rescuer's custom RichDoc;
+            // section 5 (i 3) is always standard.
+            const customDoc = customSectionFor(custom, i)
+            if (customDoc) {
+                addRichDoc(customDoc)
+            } else {
+                if (section.intro) {
+                    addText(section.intro, MARGIN_LEFT, CONTENT_WIDTH)
+                    y += 2
+                }
+                for (const clause of section.clauses) {
+                    checkPage(15)
+                    if (clause.title) addText(clause.title, MARGIN_LEFT + 4, CONTENT_WIDTH - 4, { bold: true, size: 9 })
+                    addText(clause.body, MARGIN_LEFT + 4, CONTENT_WIDTH - 4)
+                    y += 1
+                }
             }
             y += 2
             // Divider between sections, but not after the last one (signatures follow).
@@ -261,6 +306,16 @@ export function generateContractPdf(animal: AnimalData, form: FormData, locale: 
         }
 
         doc.setTextColor(0, 0, 0)
+
+        // === FOOTER: contract version on every page ===
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(7)
+        doc.setTextColor(170, 170, 170)
+        for (let p = 1; p <= doc.getNumberOfPages(); p++) {
+            doc.setPage(p)
+            doc.text(contractVersionLabel(custom), PAGE_WIDTH - MARGIN_RIGHT, 292, { align: 'right' })
+        }
+
         return doc.output('blob')
     } catch (err) {
         console.error('[CONTRACT PDF] Generation failed:', err)

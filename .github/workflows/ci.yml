@@ -21,8 +21,16 @@ on:
 # `cancel-in-progress` is deliberately FALSE on master: a newer staging push
 # should replace an older one, but a production deploy already under way should
 # finish rather than be interrupted part-way through `wrangler pages deploy`.
+# v2.56.131: the group also keys on the EVENT. A push to staging and the
+# pull_request run for the open release PR are created seconds apart on the
+# same branch, and with only the ref in the key the PR run takes the slot and
+# cancels the push — which is what killed run 37148913122 four seconds after
+# it started, with the deploy still ahead of it. A cancelled run reads as
+# `cancelled`, not `failure`, so it looks like someone superseded it on
+# purpose. They are different pipelines (a PR run skips e2e, migrations and
+# both deploys) and have no business cancelling each other.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
@@ -195,19 +203,87 @@ jobs:
   e2e:
     name: 🎭 E2E Tests
     runs-on: ubuntu-latest
-    # The suite runs 10-15 minutes and the old 15-minute cap sat right on top of
-    # that, so it intermittently timed out. A timeout surfaces as
-    # "##[error]The operation was canceled" and the job's conclusion is
+    # ── Split by project, one server each (v2.56.129) ──────────────────────
+    #
+    # This ran as ONE `next dev` process for the whole suite, ~149 tests over
+    # ~25 minutes. Dev compiles routes on demand and its heap grows with every
+    # one it touches, so it reached --max-old-space-size and restarted itself
+    # rather than be OOM-killed — SIX times in run 37135478653. Each restart is
+    # seconds of dead server, and whichever test was in flight died with
+    # ERR_CONNECTION_REFUSED / RESET / EMPTY_RESPONSE or an assertion timing
+    # out on a page that never loaded. A different test each time, so it read
+    # as flaky tests rather than as one cause. v2.56.128 took FIVE attempts to
+    # land; 2026-10-03 cost five runs and ~3 hours for zero real bugs.
+    #
+    # Splitting fixes it by removing the condition rather than managing it: no
+    # server lives long enough to reach the ceiling. Wall clock drops with it,
+    # because the three groups run at once.
+    #
+    # Split along the EXISTING project boundary first — those groups already
+    # share auth state — then in half again inside `user` and `authed`, which
+    # are too big on their own to hit the time budget. Each leg gets its own
+    # seeded DB, so cross-FILE fixture coupling surfaces here: that is known to
+    # exist (tests/contract-link.spec.ts's history is one such fix) and is the
+    # remaining work in .agents/plans/e2e-shard-the-suite.md.
+    #
+    # Budget: deploy is a fixed ~4 min and the whole pipeline should be ~10,
+    # so e2e has ~6. A leg is ~3 min of fixed overhead (npm ci, browsers,
+    # seed, boot) plus its tests, which puts the ceiling near 40 tests a leg.
+    #
+    # Two fixes already tried and rejected — see
+    # .agents/plans/e2e-shard-the-suite.md before reaching for either:
+    #   · raising --max-old-space-size (moves the wall, and trades Next's
+    #     graceful restart for the kernel's OOM killer on a 7 GB runner)
+    #   · `next build && next start` (src/lib/db.ts only falls back to the
+    #     local SQLite DB when NODE_ENV !== 'production', so a built server has
+    #     no database and /api/ready never returns 200)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Balanced by TIME, not by test count — `--shard` divides files
+          # evenly, which is not the same thing. Measured on run 37149642645
+          # (five legs, 15.6 min): authed-2 took 11.8 min while `rest` took
+          # 3.0, because `authed` holds ~78% of the suite's test time
+          # (view-as 2.8, pending-searches 2.4, landing-pages 1.7 CI-minutes).
+          # One leg at 11.8 set the whole pipeline's length. Hence 4 legs for
+          # `authed`, 2 for `user`, 1 for the rest.
+          #
+          # `--shard` rather than naming files per leg: a new spec joins a
+          # shard automatically. Listing files by hand means a spec someone
+          # forgets to add runs NOWHERE, and silently passing by not running
+          # is the worst failure this pipeline could have.
+          - group: user-1
+            projects: --project=user --shard=1/2
+          - group: user-2
+            projects: --project=user --shard=2/2
+          - group: authed-1
+            projects: --project=authed --shard=1/4
+          - group: authed-2
+            projects: --project=authed --shard=2/4
+          - group: authed-3
+            projects: --project=authed --shard=3/4
+          - group: authed-4
+            projects: --project=authed --shard=4/4
+          - group: rest
+            projects: --project=unauthed --project=mobile
+    # Each group is now ~5-12 minutes, but the headroom stays: a timeout
+    # surfaces as "##[error]The operation was canceled" with conclusion
     # `cancelled` — indistinguishable at a glance from a concurrency
-    # cancellation, and NOT a test failure. Because both deploy jobs list e2e in
-    # `needs`, that skipped the deploy: on 2026-09-04 production merged green and
-    # silently stayed on the previous version. Headroom is cheap; a deploy that
-    # quietly does not happen is not.
+    # cancellation, and NOT a test failure. Because both deploy jobs list e2e
+    # in `needs`, that skips the deploy: on 2026-09-04 production merged green
+    # and silently stayed on the previous version.
     timeout-minutes: 30
     if: github.event_name == 'push'
-    needs: [build-and-lint]
+    # v2.56.131: deliberately NOT `needs: [build-and-lint]`. e2e installs its
+    # own dependencies and runs its own server; it consumes nothing the build
+    # produces, so waiting for it only added ~2 minutes to the critical path.
+    # Both deploys still list build-and-lint AND e2e in `needs`, so nothing
+    # ships without both. The cost is runner minutes spent on a run whose
+    # build was going to fail anyway, which is the cheaper of the two.
+    #
     # Deliberately a deploy gate: `continue-on-error` was removed to stop failures
-    # being masked. That makes the timeout above load-bearing.
+    # being masked. With a matrix, `needs: [e2e]` requires EVERY group to pass.
 
     steps:
       - name: Checkout code
@@ -219,7 +295,19 @@ jobs:
           node-version: '20.18'
           cache: 'npm'
 
+      # ~1 minute per leg, and with seven legs that is a minute off the
+      # critical path as well as six off the bill. Keyed on the lockfile and
+      # the Node version because node_modules carries compiled native modules
+      # (better-sqlite3) that are not portable across either.
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node20.18-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Cache Playwright browsers
@@ -238,7 +326,7 @@ jobs:
         run: npx playwright install-deps chromium webkit
 
       - name: Run Playwright tests
-        run: npx playwright test
+        run: npx playwright test ${{ matrix.projects }}
         env:
           CI: true
           SKIP_ENV_VALIDATION: 'true'
@@ -249,7 +337,9 @@ jobs:
         uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: playwright-report
+          # Unique per group — a matrix uploading the same artifact name twice
+          # fails the upload.
+          name: playwright-report-${{ matrix.group }}
           path: playwright-report/
           retention-days: 14
 
@@ -264,6 +354,30 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # v2.56.131: refuse to deploy a commit that is no longer the branch tip.
+      #
+      # Two sessions pushing minutes apart produce two runs. Concurrency is
+      # meant to cancel the older one, but it misfires (see the note at the top
+      # of this file), and on 2026-10-03 an older run was still in E2E while a
+      # newer commit sat on the branch. Had it finished, it would have deployed
+      # ITS tree — rolling staging back to the previous version with every job
+      # green and nothing to show for it. That is the same silent class of
+      # failure as a skipped deploy, and harder to notice because the pipeline
+      # says success.
+      #
+      # Fails loudly rather than skipping: the newer run deploys, and a red job
+      # that says why beats a green one that quietly shipped the wrong thing.
+      - name: Refuse to deploy a superseded commit
+        run: |
+          git fetch origin "${GITHUB_REF_NAME}" --depth=1 --quiet
+          TIP="$(git rev-parse "origin/${GITHUB_REF_NAME}")"
+          if [ "$TIP" != "$GITHUB_SHA" ]; then
+            echo "::error::${GITHUB_REF_NAME} has moved on — this run is for ${GITHUB_SHA:0:8}, the tip is ${TIP:0:8}. The newer run deploys; this one must not overwrite it."
+            exit 1
+          fi
+          echo "✓ ${GITHUB_SHA:0:8} is still the tip of ${GITHUB_REF_NAME}"
+
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -330,7 +444,17 @@ jobs:
           [ "$CODE" = "409" ] || { echo "::error::deploy-skew guard is NOT active (got $CODE, expected 409)"; exit 1; }
           [ "$SKEW" = "1" ] || { echo "::error::409 without the x-deployment-skew marker"; exit 1; }
           [ "$SERVER" = "${{ github.sha }}" ] || { echo "::error::server build id $SERVER != ${{ github.sha }}"; exit 1; }
-          OK=$(curl -s -o /dev/null -w '%{http_code}' "$URL/")
+          # The stale probe above proves the WORKER is live, but Pages can still
+          # be seconds from serving the static asset for `/` — a plain GET then
+          # 404s. That is what reddened 2026-09-25 and 2026-09-30, both times on
+          # a deploy that had succeeded. 2.56.95 gave the forwarding probe a
+          # readiness wait and missed this one, which runs before it.
+          # Retry the PROBE, assert ONCE: a genuinely broken deploy still fails.
+          for i in $(seq 1 10); do
+            OK=$(curl -s -o /dev/null -w '%{http_code}' "$URL/")
+            case "$OK" in 2*|3*) break;; esac
+            sleep 6
+          done
           echo "normal request -> $OK"
           case "$OK" in 2*|3*) ;; *) echo "::error::normal request failed with $OK"; exit 1;; esac
           # A tab from the PREVIOUS build must be served by that build, not rejected.
@@ -368,6 +492,20 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # Same guard as staging: never let an older run overwrite a newer deploy.
+      # It matters more here — production is the one nobody notices has gone
+      # backwards until a user reports it.
+      - name: Refuse to deploy a superseded commit
+        run: |
+          git fetch origin "${GITHUB_REF_NAME}" --depth=1 --quiet
+          TIP="$(git rev-parse "origin/${GITHUB_REF_NAME}")"
+          if [ "$TIP" != "$GITHUB_SHA" ]; then
+            echo "::error::${GITHUB_REF_NAME} has moved on — this run is for ${GITHUB_SHA:0:8}, the tip is ${TIP:0:8}. The newer run deploys; this one must not overwrite it."
+            exit 1
+          fi
+          echo "✓ ${GITHUB_SHA:0:8} is still the tip of ${GITHUB_REF_NAME}"
+
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -434,7 +572,17 @@ jobs:
           [ "$CODE" = "409" ] || { echo "::error::deploy-skew guard is NOT active (got $CODE, expected 409)"; exit 1; }
           [ "$SKEW" = "1" ] || { echo "::error::409 without the x-deployment-skew marker"; exit 1; }
           [ "$SERVER" = "${{ github.sha }}" ] || { echo "::error::server build id $SERVER != ${{ github.sha }}"; exit 1; }
-          OK=$(curl -s -o /dev/null -w '%{http_code}' "$URL/")
+          # The stale probe above proves the WORKER is live, but Pages can still
+          # be seconds from serving the static asset for `/` — a plain GET then
+          # 404s. That is what reddened 2026-09-25 and 2026-09-30, both times on
+          # a deploy that had succeeded. 2.56.95 gave the forwarding probe a
+          # readiness wait and missed this one, which runs before it.
+          # Retry the PROBE, assert ONCE: a genuinely broken deploy still fails.
+          for i in $(seq 1 10); do
+            OK=$(curl -s -o /dev/null -w '%{http_code}' "$URL/")
+            case "$OK" in 2*|3*) break;; esac
+            sleep 6
+          done
           echo "normal request -> $OK"
           case "$OK" in 2*|3*) ;; *) echo "::error::normal request failed with $OK"; exit 1;; esac
           # A tab from the PREVIOUS build must be served by that build, not rejected.

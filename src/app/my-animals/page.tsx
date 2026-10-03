@@ -9,17 +9,27 @@ import { useSession } from 'next-auth/react';
 import { useDateFormat, useRelativeTime } from '@/context/TimezoneContext';
 import { emailHandle } from '@/lib/userDisplay';
 import { interpolate } from '@/lib/interpolate';
+import { dueWhenText } from '@/lib/dueWhenText';
 import { formatAge } from '@/lib/ageUtils';
 import ShareFormMenu from '@/components/ShareFormMenu';
 import AnimalShareSheet from '@/components/AnimalShareSheet';
+import AnimalListingToggle from '@/components/AnimalListingToggle';
 import ShowcaseUrlChips from '@/components/ShowcaseUrlChips';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { myAnimalsTabCount } from '@/lib/myAnimalsTabCount';
+import { isPubliclyListed, showableCount } from '@/domain/animalAccess';
 
 interface AnimalImage {
     id: string;
     url: string;
     caption: string | null;
+    /** v2.56.127: 'image' | 'video'. A video counts toward the public listing
+     *  only when it has a poster — see showableCount. */
+    mediaType?: string | null;
+    thumbnailUrl?: string | null;
+    /** 'animal' is the only scope the public page serves — see the gate below. */
+    scope?: string | null;
 }
 
 import type { ApplicantSummary as Applicant } from '@/app/actions/applicants';
@@ -46,6 +56,8 @@ interface Animal {
     applicants?: Applicant[];
     /** v2.55.16: due follow-ups (ENABLE_FOLLOWUPS; 0 when off/none). */
     dueFollowups?: number;
+    /** v2.56.128: the rescuer's public-catalogue switch. NULL = listed. */
+    listed?: number | null;
     /** v2.55.18: team visibility — who added this animal. */
     addedBy?: string | null;
     addedByName?: string | null;
@@ -66,10 +78,14 @@ export default function MyAnimalsPage() {
     const userId = session?.user?.id || '';
 
     const [animals, setAnimals] = useState<Animal[]>([]);
+    /** Which tab `animals` belongs to — right after a tab switch it is still the old one. */
+    const [loadedView, setLoadedView] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [speciesFilter, setSpeciesFilter] = useState<string>('all');
+    /** Both tabs' totals, so the tab you are not on shows a number, not "...". */
+    const [tabCounts, setTabCounts] = useState<{ available: number; adopted: number } | null>(null);
 
     useEffect(() => {
         async function fetchAnimals() {
@@ -85,6 +101,7 @@ export default function MyAnimalsPage() {
                     // Deduplicate by id to prevent React key warnings
                     const unique = Array.from(new Map(data.map(a => [a.id, a])).values());
                     setAnimals(unique);
+                    setLoadedView(view);
                 } else {
                     const body = await res.json().catch(() => ({})) as { error?: string; errorId?: string };
                     toast.error(t('errors.generic') || 'Error', body.error || 'Failed to load animals.', body.errorId);
@@ -95,7 +112,22 @@ export default function MyAnimalsPage() {
                 setLoading(false);
             }
         }
+        async function fetchCounts() {
+            try {
+                const res = await fetch('/api/my-animals?counts=1');
+                if (!res.ok) {
+                    // The list itself reports errors; the other tab just keeps its placeholder.
+                    console.warn('my-animals: tab counts unavailable', { view, status: res.status });
+                    return;
+                }
+                setTabCounts(await res.json() as { available: number; adopted: number });
+            } catch (e) {
+                console.warn('my-animals: tab counts failed', { view, error: e instanceof Error ? e.message : String(e) });
+            }
+        }
         fetchAnimals();
+        // Re-read on every tab switch: the tabs are links, so the page does not remount.
+        fetchCounts();
         // Reset filters when switching tabs
         setSearchQuery('');
         setSpeciesFilter('all');
@@ -121,6 +153,12 @@ export default function MyAnimalsPage() {
     });
 
     const speciesEmoji: Record<string, string> = { cat: '🐱', dog: '🐶', bird: '🐦' };
+    /** "Perro" / "Dog" / "Cão"; an unlisted species shows as typed, never as a key path. */
+    const speciesLabel = (species: string) => {
+        const key = `species.${species.toLowerCase()}`;
+        const label = t(key);
+        return label && label !== key ? label : species;
+    };
 
     /* v2.56.92: adopted animals are a growing archive — an unbroken grid of
        every animal ever placed is unreadable, and the year is how a rescuer
@@ -209,7 +247,7 @@ export default function MyAnimalsPage() {
                             : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'
                             }`}
                     >
-                        🏠 {t('dashboard.available') || 'Available'} ({view === 'available' ? animals.length : '...'})
+                        🏠 {t('dashboard.available') || 'Available'} ({myAnimalsTabCount('available', view, loadedView, animals.length, tabCounts)})
                     </Link>
                     <Link
                         href="/my-animals?view=adopted"
@@ -218,7 +256,7 @@ export default function MyAnimalsPage() {
                             : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'
                             }`}
                     >
-                        ✅ {t('dashboard.already_adopted') || 'Already Adopted'} ({view === 'adopted' ? animals.length : '...'})
+                        ✅ {t('dashboard.already_adopted') || 'Already Adopted'} ({myAnimalsTabCount('adopted', view, loadedView, animals.length, tabCounts)})
                     </Link>
                 </div>
 
@@ -263,7 +301,7 @@ export default function MyAnimalsPage() {
                                         ? 'bg-stone-800 text-white shadow-sm'
                                         : 'bg-white border border-stone-200 text-stone-500 hover:border-stone-300 hover:text-stone-700'}`}
                                 >
-                                    {speciesEmoji[species] || '🐾'} {t(`species.${species}`) || species}
+                                    {speciesEmoji[species] || '🐾'} {speciesLabel(species)}
                                 </button>
                             ))}
                         </div>
@@ -348,7 +386,7 @@ export default function MyAnimalsPage() {
                                         {/* Species badge */}
                                         {animal.species && (
                                             <span className="absolute top-2 left-2 px-2 py-0.5 bg-white/90 backdrop-blur-sm rounded-full text-xs font-semibold text-stone-700 capitalize">
-                                                {animal.species === 'cat' ? '🐱' : animal.species === 'dog' ? '🐶' : '🐾'} {animal.species}
+                                                {animal.species === 'cat' ? '🐱' : animal.species === 'dog' ? '🐶' : '🐾'} {speciesLabel(animal.species)}
                                             </span>
                                         )}
                                         {/* Photo count */}
@@ -481,16 +519,31 @@ export default function MyAnimalsPage() {
                                                 const label = (top.copyKey === 'checkin_custom' || top.copyKey === 'foster_checkin')
                                                     ? interpolate(t(`followups.${top.copyKey}`) || '{days}', { days: top.offsetDays ?? '' })
                                                     : (t(`followups.${top.copyKey}`) || top.copyKey);
-                                                const lateDays = Math.max(0, Math.floor((Date.now() - top.dueDate) / 86400000));
-                                                const when = lateDays === 0
-                                                    ? (t('followups.due_today') || 'vence hoy')
-                                                    : interpolate(t('followups.overdue_days') || 'vencía hace {days} días', { days: lateDays });
+                                                const when = dueWhenText(t, top.dueDate, Date.now());
                                                 return `${label} · ${when}${extra > 0 ? ` +${extra}` : ''}`;
                                             })()}
                                         </Link>
                                     )}
-                                        <div className="flex items-center gap-2">
-                                            <div className="text-xs text-stone-500 flex-1 min-w-0 space-y-0.5">
+                                    {/* Sits with the card's other state rows («Adoptado por»,
+                                        «En tránsito con», the pendientes badge) rather than in
+                                        the action row below — guidelines §1.3, affordances for
+                                        the same job look the same. Only while the animal is
+                                        still looking for a home. */}
+                                    {(!animal.adopterId || isFoster) && (
+                                        <AnimalListingToggle
+                                            animalId={animal.id}
+                                            listed={animal.listed !== 0}
+                                            hasPhoto={showableCount(animal.images.filter(i => i.scope === 'animal')) > 0}
+                                            compact
+                                        />
+                                    )}
+
+                                        {/* flex-wrap + a floor on the meta column: controls drop
+                                            to their own line rather than squeezing the card's date
+                                            and «Actualizado por» into an ellipsis (measured at 31px
+                                            before v2.56.134). */}
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <div className="text-xs text-stone-500 flex-1 min-w-[9rem] space-y-0.5">
                                                 {animal.date && (
                                                     <p className="truncate" data-testid={`card-date-${animal.id}`}>
                                                         {animal.adopterId && !isFoster
@@ -537,7 +590,7 @@ export default function MyAnimalsPage() {
                                                     animalId={animal.id}
                                                     animalName={animal.animalName || 'Animal'}
                                                     adopted={!!animal.adopterId && !isFoster}
-                                                    publicFiche={animal.recordType === 'available' && !animal.adopterId && animal.images.length > 0}
+                                                    publicFiche={isPubliclyListed(animal, showableCount(animal.images.filter(i => i.scope === 'animal')))}
                                                     compact
                                                 />
                                             )}

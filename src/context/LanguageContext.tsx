@@ -92,6 +92,15 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     );
 }
 
+/**
+ * The current app language, or the default outside a provider. Unlike
+ * `useLanguage` it never throws, so shared hooks (e.g. `useDateFormat`) stay
+ * usable in isolated renders and tests.
+ */
+export function useLocale(): Locale {
+    return useContext(LanguageContext)?.locale ?? DEFAULT_LOCALE;
+}
+
 export function useLanguage() {
     const context = useContext(LanguageContext);
     if (context === undefined) {

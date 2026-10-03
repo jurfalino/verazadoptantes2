@@ -1,4 +1,5 @@
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { getRequestContext } from '@/lib/requestContext';
+import { logger } from '@/lib/logger';
 
 // Bootstrap admin — this email always has admin access even before
 // the database is available (e.g. first deploy, build time).
@@ -25,27 +26,42 @@ export function isAdmin(email: string | null | undefined): boolean {
  *   UPDATE user_profiles SET role = 'admin' WHERE user_id = (SELECT id FROM user WHERE email = 'user@example.com');
  */
 export async function isAdminAsync(email: string | null | undefined): Promise<boolean> {
+    try {
+        return await isAdminAsyncStrict(email);
+    } catch (e) {
+        // DB unavailable (build time, local dev) — fall back to bootstrap list only
+        logger.warn('isAdminAsync: query failed, treating as non-admin', { error: e instanceof Error ? e.message : String(e) });
+        return false;
+    }
+}
+
+/**
+ * Like `isAdminAsync`, but a failing D1 query is rethrown instead of read as
+ * "not an admin". No DB context at all (build time, local dev) still returns
+ * false. Use only where "lookup failed" must differ from "stranger".
+ */
+export async function isAdminAsyncStrict(email: string | null | undefined): Promise<boolean> {
     if (!email) return false;
 
     // Bootstrap admins always pass
     if (BOOTSTRAP_ADMIN_EMAILS.includes(email)) return true;
 
-    // Check DB role via raw D1 query (auth tables aren't in Drizzle schema)
+    let db: { prepare: (q: string) => { bind: (...a: unknown[]) => { first: <T>() => Promise<T | null> } } } | undefined;
     try {
-        const { env } = getRequestContext();
-        if (!env?.DB) return false;
-
-        const result = await env.DB.prepare(
-            `SELECT up.role FROM user_profiles up
-             INNER JOIN user u ON u.id = up.user_id
-             WHERE u.email = ? LIMIT 1`
-        ).bind(email).first<{ role: string }>();
-
-        return result?.role === 'admin';
+        db = getRequestContext().env?.DB as typeof db;
     } catch {
-        // DB unavailable (build time, local dev) — fall back to bootstrap list only
-        return false;
+        return false; // no request context: no DB admins
     }
+    if (!db) return false;
+
+    // Check DB role via raw D1 query (auth tables aren't in Drizzle schema)
+    const result = await db.prepare(
+        `SELECT up.role FROM user_profiles up
+         INNER JOIN user u ON u.id = up.user_id
+         WHERE u.email = ? LIMIT 1`
+    ).bind(email).first<{ role: string }>();
+
+    return result?.role === 'admin';
 }
 
 /**

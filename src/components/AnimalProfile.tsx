@@ -25,11 +25,15 @@ import AnimalTimeline from '@/components/AnimalTimeline';
 import AddAnimalEventModal from '@/components/AddAnimalEventModal';
 import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import AnimalShareSheet from '@/components/AnimalShareSheet';
+import AnimalListingToggle from '@/components/AnimalListingToggle';
 import PickAdopterForAnimalModal from '@/components/PickAdopterForAnimalModal';
+import ShareHealthRecordModal from '@/components/ShareHealthRecordModal';
 import AnimalApplicants from '@/components/AnimalApplicants';
 import type { AnimalProfileData, ProjectedSlot } from '@/app/actions/animalTimeline';
 import type { ApplicantSummary } from '@/app/actions/applicants';
 import { interpolate } from '@/lib/interpolate';
+import { showableCount } from '@/domain/animalAccess';
+import { dueWhenText } from '@/lib/dueWhenText';
 
 function placeholderFor(species: string | null): string {
     const s = (species || '').toLowerCase();
@@ -49,7 +53,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
     const { t, locale } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
-    const { animal, activePlacement, items, images, projected, reminder, addedByName, orgName, userNameMap } = profile;
+    const { animal, activePlacement, items, images, projected, reminder, addedByName, orgName, userNameMap, healthRecord } = profile;
 
     const [editing, setEditing] = useState(false);
     const [eventModal, setEventModal] = useState<{ type?: string; followupKey?: string; subtype?: ProjectedSlot['subtype'] } | null>(null);
@@ -60,6 +64,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
     const [photoIdx, setPhotoIdx] = useState<number | null>(null);
     const [pickOpen, setPickOpen] = useState<null | 'adoption' | 'foster'>(null);
     const [confirmDelete, setConfirmDelete] = useState(false);
+    const [healthOpen, setHealthOpen] = useState(false);
     const [busy, setBusy] = useState(false);
 
     const fem = animal.sex === 'hembra' || animal.sex === 'female' || animal.sex === 'Hembra';
@@ -117,13 +122,21 @@ export default function AnimalProfile({ profile, applicants, userId }: {
 
     /** A slot's Registrar CTA: check-ins route to the adopter wizard (rating +
      *  notes captured there); health slots open the event modal prefilled. */
+    /** Register a due slot WITHOUT leaving the animal.
+     *
+     *  Check-ins used to push to the adopter's wizard because only that form
+     *  captured a rating. The in-place modal has carried the rating, notes and
+     *  photos since v2.56.9, so the redirect only survived as a habit — and it
+     *  threw the rescuer onto a different person's page mid-task, with the
+     *  animal's «Para hacer ahora» list left behind. Every slot type now opens
+     *  the same modal, prefilled with the key the matcher needs. */
     const registerSlot = (s: ProjectedSlot) => {
         if (!activePlacement) return;
-        if (s.subtype === 'adaptation') {
-            router.push(`/adopter/${activePlacement.adopterId}?newAdoption=follow_up&animalId=${animal.id}&followupKey=${encodeURIComponent(s.key)}&followupSubtype=adaptation`);
-        } else {
-            setEventModal({ type: s.subtype === 'neuter' ? 'neuter' : 'vaccination', followupKey: s.key, subtype: s.subtype });
-        }
+        setEventModal({
+            type: s.subtype === 'adaptation' ? 'follow_up' : s.subtype === 'neuter' ? 'neuter' : 'vaccination',
+            followupKey: s.key,
+            subtype: s.subtype,
+        });
     };
 
     /** Telegram can't prefill text — copy the message alongside opening the chat. */
@@ -267,6 +280,19 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                                 ].filter(Boolean).join(' · ')}
                             </p>
 
+                            {/* The public catalogue is only a question while the animal
+                                is still looking for a home; once adopted there is
+                                nothing left to decide. */}
+                            {seeking && (
+                                <div className="mt-4 max-w-prose">
+                                    <AnimalListingToggle
+                                        animalId={animal.id}
+                                        listed={animal.listed !== 0}
+                                        hasPhoto={showableCount(images.filter(i => i.scope === 'animal')) > 0}
+                                    />
+                                </div>
+                            )}
+
                             {/* ── action row: one primary + state transition + share + ✎/🗑 ── */}
                             <div className="flex flex-wrap items-center gap-2 mt-4">
                                 {seeking && (
@@ -295,9 +321,25 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                                        animals with no active placement — anything else 404s. */
                                     publicFiche={!activePlacement && images.length > 0}
                                 />
+                                {healthRecord?.token && healthRecord.vetEventCount > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setHealthOpen(true)}
+                                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 shadow-sm transition-colors"
+                                        data-testid="profile-health-record"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l8.8 8.8 8.8-8.8a5.5 5.5 0 0 0 0-7.8z" /></svg>
+                                        {t('healthRecord.title') || 'Historial médico'}
+                                    </button>
+                                )}
                                 {adopted && activePlacement && (
                                     <button
                                         type="button"
+                                        /* Still navigates. Mounted here the form treats the return
+                                           as a brand-new animal (dual-date «two separate records»
+                                           mode) and saves nothing. The prefill below is fixed, so the
+                                           ADOPTER-page flow is better than it was, but moving this
+                                           button waits until a save is proven end to end. */
                                         onClick={() => router.push(`/adopter/${activePlacement.adopterId}?newAdoption=returned_pet&animalId=${animal.id}`)}
                                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors"
                                     >
@@ -341,7 +383,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                                 <div className="flex-1 min-w-[180px]">
                                     <p className="text-sm font-semibold text-stone-800">{slotLabel(s)}</p>
                                     <p className="text-xs text-stone-500">
-                                        {(t('followups.vencia') || 'vencía el')} {formatShortDate(s.dueDate)} · {windowCopy(s)}
+                                        {dueWhenText(t, s.dueDate, Date.now(), formatShortDate)} · {windowCopy(s)}
                                     </p>
                                 </div>
                                 {contactButton(s)}
@@ -444,12 +486,25 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                     initialSubtype={eventModal.subtype}
                 />
             )}
+            {healthRecord?.token && healthRecord.vetEventCount > 0 && (
+                <ShareHealthRecordModal
+                    open={healthOpen}
+                    onClose={() => setHealthOpen(false)}
+                    animalId={animal.id}
+                    token={healthRecord.token}
+                    animalName={animal.name || 'Animal'}
+                    vetEventCount={healthRecord.vetEventCount}
+                    familyName={healthRecord.familyName}
+                    contact={healthRecord.contact}
+                />
+            )}
             {pickOpen && (
                 <PickAdopterForAnimalModal
                     animalId={animal.id}
                     animalName={animal.name || ''}
                     recordType={pickOpen}
                     open={!!pickOpen}
+                    currentUser={userId}
                     onClose={() => setPickOpen(null)}
                 />
             )}

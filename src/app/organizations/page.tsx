@@ -15,6 +15,9 @@ import {
     type Organization,
 } from '@/app/actions/organizations';
 import OrgActivityFeed from '@/components/OrgActivityFeed';
+import Link from 'next/link';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { fetchCustomAdoptionDocsFlag } from '@/lib/adoptionDocsFlag';
 
 
 export default function OrganizationsPage() {
@@ -28,6 +31,17 @@ export default function OrganizationsPage() {
     const [creating, setCreating] = useState(false);
     const [newName, setNewName] = useState('');
     const [showCreateForm, setShowCreateForm] = useState(false);
+    // ENABLE_CUSTOM_ADOPTION_DOCS: shows the per-group "Formulario y contrato" button.
+    const [docsEnabled, setDocsEnabled] = useState(false);
+
+    useEffect(() => {
+        let cancelled = false;
+        fetchCustomAdoptionDocsFlag()
+            .then(on => { if (!cancelled) setDocsEnabled(on); })
+            // Unreadable flag → button stays hidden (the default); report it.
+            .catch(error => { resolveErrorId(error, 'OrganizationsPage.docsFlag'); });
+        return () => { cancelled = true; };
+    }, []);
 
     const loadOrgs = useCallback(async () => {
         try {
@@ -170,7 +184,7 @@ export default function OrganizationsPage() {
             ) : (
                 <div className="space-y-4">
                     {orgs.map((org) => (
-                        <OrgCard key={org.id} org={org} onRefresh={loadOrgs} />
+                        <OrgCard key={org.id} org={org} onRefresh={loadOrgs} docsEnabled={docsEnabled} />
                     ))}
                 </div>
             )}
@@ -225,7 +239,7 @@ function InfoBanner() {
     );
 }
 
-function OrgCard({ org, onRefresh }: { org: Organization; onRefresh: () => void }) {
+function OrgCard({ org, onRefresh, docsEnabled }: { org: Organization; onRefresh: () => void; docsEnabled: boolean }) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const [editing, setEditing] = useState(false);
@@ -388,13 +402,29 @@ function OrgCard({ org, onRefresh }: { org: Organization; onRefresh: () => void 
             )}
 
             {/* Actions */}
-            <div className="flex justify-between items-center px-5 py-3 border-t border-stone-100 bg-stone-50">
-                <button
-                    onClick={handleInvite}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 font-medium transition-colors"
-                >
-                    📨 {t('organizations.invite')}
-                </button>
+            <div className="flex flex-wrap justify-between items-center gap-2 px-5 py-3 border-t border-stone-100 bg-stone-50">
+                <div className="flex flex-wrap items-center gap-2">
+                    <button
+                        onClick={handleInvite}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 font-medium transition-colors"
+                    >
+                        📨 {t('organizations.invite')}
+                    </button>
+
+                    {docsEnabled && (
+                        <Link
+                            href={`/settings/adoption-docs?org=${encodeURIComponent(org.id)}`}
+                            className="inline-flex items-center gap-2 min-h-11 py-2 px-4 rounded-xl text-sm font-bold text-teal-700 bg-teal-50 border border-teal-200 hover:bg-teal-100 hover:border-teal-400 transition-colors"
+                            data-testid="org-adoption-docs"
+                        >
+                            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+                                <path d="M14 3v5h5M9 13h6M9 17h4" />
+                            </svg>
+                            {t('adoptionDocs.org_button')}
+                        </Link>
+                    )}
+                </div>
 
                 <button
                     onClick={handleLeave}

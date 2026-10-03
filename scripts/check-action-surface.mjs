@@ -59,7 +59,60 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                    at 8 MB, so it cannot be used to push bulk into D1. It is
 //                    strictly NARROWER than the `saveImage` door already on the
 //                    wire, which takes any adopterId with no ownership check.
-const EXPECTED_ACTIONS = 153;
+// 158 since v2.56.101: the five actions in src/app/actions/adoptionDocs.ts
+// behind the custom adoption form + contract (/settings card and editor).
+// Checked against the rule above — what a stranger can do with arguments they
+// choose. All five call getUser() first (throws with no session) and return
+// `disabled` while ENABLE_CUSTOM_ADOPTION_DOCS is off, so today none does
+// anything at all:
+//   getAdoptionDocsOverview()  takes nothing; reads only the caller's own
+//                              settings and the groups the caller's session
+//                              email is a member of.
+//   setAdoptionDocsSource()    takes 'self' | 'org:<id>'; anything else is
+//                              `invalid`, and an org the caller is not a member
+//                              of is `forbidden`. Writes only the caller's own
+//                              user_profiles row, only that one column.
+//   getAdoptionDocs(owner)     `self` is always the session email — no email
+//   saveFormSteps(owner, …)    argument exists anywhere; `org` requires an
+//   saveContractSections(…)    org_members row for the session email, else
+//                              `forbidden`. Step ids are filtered to the known,
+//                              non-locked set; contract text must pass a strict
+//                              zod schema (three section keys, paragraph and
+//                              bullet-list blocks, bold/italic/underline marks,
+//                              ≤ 8,000 chars and ≤ 200 blocks per section) and
+//                              is stored as JSON, never HTML. A stranger can
+//                              read or edit only their own docs; a member can
+//                              edit their group's, which is the product rule.
+// 160 since v2.56.119: startViewAs(userId) and stopViewAs() in
+// src/app/actions/viewAs.ts — an admin browsing as another user, read-only.
+// Both only forward a session update; what a stranger can do with them is
+// exactly what they can already do by POSTing that update to
+// /api/auth/session, and the jwt callback (src/lib/viewAsSession.ts) decides:
+//   startViewAs(userId)  refused unless the session's own email is an admin
+//                        (bootstrap list or DB role, re-checked every request)
+//                        and the target exists, is not an admin and is not
+//                        them. Writes one audit_log row; nothing else.
+//   stopViewAs()         takes nothing; only ever drops the caller's own claim.
+// While a claim is active every D1 write fails (src/lib/readOnlyGuard.ts).
+// 161 since v2.56.128: setAnimalListed(animalId, listed) in
+// src/app/actions/animalTimeline.ts — the rescuer's switch for the public
+// catalogue (an animal under treatment or already promised sits out without
+// being adopted away). Safe with arguments a stranger chooses: the id is
+// zod-shaped, assertCanEditAnimal gates on owner ∨ org-mate ∨ admin and is
+// the same gate the other five animal actions use, and the only writable
+// value is a boolean collapsed to 0/1. The worst a permitted caller can do is
+// hide or show their own team's animal, which is the feature. Audited.
+// 162 since v2.56.129: linkFormToExistingAdopter(submissionId, adopterId) in
+// src/app/actions/formSubmission.ts — "Es la misma persona" on form-results.
+// It merges profiles, so the guard is the point. Safe with arguments a
+// stranger chooses: only the submission's owner (form_submissions.user_id ==
+// session email) passes; the target must be a match recorded in THEIR
+// notification at submit time, live, and not the form's own auto-created
+// profile; the only profile ever absorbed is that auto-created one, and a
+// form already on an existing profile is refused rather than moved
+// (planFormLink in src/domain/formLink.ts, unit-tested). Retries are no-ops.
+// The merge is the shared, undoable mergeAdopters. Audited.
+const EXPECTED_ACTIONS = 162;
 
 let manifest;
 try {

@@ -57,6 +57,7 @@ const KNOWN_TYPES: Record<string, { label: string; description: string }> = {
     'member_joined': { label: 'Nuevo miembro', description: 'A los miembros de una organización cuando se suma alguien.' },
     'form_submission': { label: 'Respuesta al formulario', description: 'Cuando un posible adoptante completa el formulario compartido.' },
     'contract_attached': { label: 'Contrato vinculado', description: 'Cuando un contrato firmado se vincula a un perfil.' },
+    'form_attached': { label: 'Solicitud vinculada', description: 'Al creador de un perfil cuando otra persona le vincula una solicitud de adopción del formulario.' },
     'follow_up_due': { label: 'Follow-up Reminders', description: 'Daily cron reminder when an adoption/transit follow-up slot is due.' }
 };
 

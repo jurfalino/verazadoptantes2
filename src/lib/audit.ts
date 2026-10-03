@@ -5,7 +5,7 @@
  * Falls back to fire-and-forget if no request context.
  */
 
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { getRequestContext } from '@/lib/requestContext';
 import { headers } from 'next/headers';
 import { logger } from '@/lib/logger';
 

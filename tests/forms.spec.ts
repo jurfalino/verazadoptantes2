@@ -92,11 +92,11 @@ test.describe('External Form & Notifications Lifecycle', () => {
         await expect(pageA.getByText(testEmail).first()).toBeVisible({ timeout: 30000 });
         
         // Phase 1 of v2.14.10-18 auto-creates an adopter for every form submission
-        // and marks status='linked' synchronously. The form-results page now
-        // renders a "View linked profile" CTA instead of the old "Create new
-        // profile" link. Assert the new behavior — proves the auto-create flow
-        // ran end-to-end.
-        const viewProfileLink = pageA.getByRole('link', { name: /View linked adopter profile|Ver perfil del adoptante vinculado/i }).first();
+        // and links the form to it synchronously. Since v2.56.129 the page says
+        // so ("Ver perfil nuevo") rather than calling it linked — "linked" is
+        // reserved for the rescuer choosing an existing profile. Proves the
+        // auto-create flow ran end-to-end.
+        const viewProfileLink = pageA.getByRole('link', { name: /View new profile|Ver perfil nuevo|Ver perfil novo/i }).first();
         await expect(viewProfileLink).toBeVisible({ timeout: 30000 });
     });
 });

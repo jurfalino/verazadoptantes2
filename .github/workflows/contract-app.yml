@@ -36,6 +36,10 @@ jobs:
         working-directory: contract-app
         run: npm ci
 
+      - name: Test
+        working-directory: contract-app
+        run: npm test
+
       - name: Build
         working-directory: contract-app
         env:

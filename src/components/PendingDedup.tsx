@@ -29,6 +29,7 @@ import {
 import { AdopterName } from '@/components/AdopterName';
 import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
 import { collapseNameEvidence } from '@/domain/matchEvidence';
+import { matchTypeLabel } from '@/lib/matchTypeLabels';
 
 /** Opens-in-new-tab affordance. Inline SVG with currentColor per the icon
  *  convention — an emoji would not inherit the link's hover colour. */
@@ -80,7 +81,9 @@ function MatchedOn({ pair, t }: { pair: PendingDedupPair; t: (k: string) => stri
             </span>
             {types.map(type => {
                 const vals = values[type] || [];
-                const label = LABEL[type] || type;
+                // Types without a local label (like_fallback_*, name_word_fuzzy, …)
+                // go through the shared map instead of showing the raw code.
+                const label = LABEL[type] || matchTypeLabel(type, t);
                 return (
                     <span key={type}
                         className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-100">
@@ -174,27 +177,24 @@ export default function PendingDedup() {
     // wall of them above the actual adopter list buries the page.
     const [open, setOpen] = useState(false);
     const [busyCandidateId, setBusyCandidateId] = useState<string | null>(null);
-    // `low` pairs are ~80% of the queue and mostly weak name overlap. Hidden by
-    // default, with a count so the user knows they exist and can opt in.
-    const [showLow, setShowLow] = useState(false);
-    const [lowHidden, setLowHidden] = useState(0);
+    // `low` pairs are ~80% of the queue and mostly weak name overlap, so the
+    // server leaves them out. There is no opt-in: the "show weak matches"
+    // toggle surfaced pairs nobody was going to act on.
     const [accessTarget, setAccessTarget] = useState<PendingDedupPair['newAdopter'] | null>(null);
 
     const PAGE_SIZE = 10;
 
     const load = useCallback(async () => {
         try {
-            const data = await getPendingDuplicatesForUser(page, PAGE_SIZE, showLow);
+            const data = await getPendingDuplicatesForUser(page, PAGE_SIZE);
             setPairs(data.pairs);
             setTotal(data.total);
-            setLowHidden(data.lowHidden);
         } catch (e) {
             toast.error(t('errors.generic') || 'Error', t('errors.load_duplicates_failed') || undefined, resolveErrorId(e, 'PendingDedup'));
             setPairs([]);
             setTotal(0);
-            setLowHidden(0);
         }
-    }, [t, toast, page, showLow]);
+    }, [t, toast, page]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -262,7 +262,7 @@ export default function PendingDedup() {
     };
 
     if (pairs === null) return null; // not loaded yet
-    if (total === 0 && lowHidden === 0) return null;
+    if (total === 0) return null;
 
     return (
         <section className="mb-8">
@@ -344,20 +344,6 @@ export default function PendingDedup() {
                     );
                 })}
             </div>
-
-            {lowHidden > 0 && (
-                <div className="mt-3 text-center">
-                    <button
-                        type="button"
-                        onClick={() => { setShowLow(v => !v); setPage(1); }}
-                        className="text-sm font-medium text-teal-700 hover:text-teal-800 underline underline-offset-2"
-                    >
-                        {showLow
-                            ? (t('myAdopters.pending_dedup_hide_low') || 'Ocultar coincidencias débiles')
-                            : (t('myAdopters.pending_dedup_show_low') || 'Ver coincidencias débiles').replace('{count}', String(lowHidden))}
-                    </button>
-                </div>
-            )}
 
             {pageCount > 1 && (
                 <div className="flex items-center justify-center gap-3 mt-4 text-sm">

@@ -6,12 +6,14 @@ import { getDb } from "@/lib/db";
 import { users, userProfiles } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "@/lib/logger";
+import { activeViewAs, VIEW_AS_MAX_MS, type ViewAsClaim } from "@/domain/viewAs";
+import { markRequestReadOnly } from "@/lib/readOnlyGuard";
 
-export const { handlers, signIn, signOut, auth } = NextAuth({
+export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth({
     ...authConfig,
     callbacks: {
         ...authConfig.callbacks,
-        jwt: async ({ token, trigger }) => {
+        jwt: async ({ token, trigger, session }) => {
             if (trigger === 'signIn') {
                 token.sessionVersion = REQUIRED_SESSION_VERSION;
             }
@@ -22,7 +24,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 let row: { id: string; role: string | null } | undefined;
 
                 try {
-                    const { getRequestContext } = await import('@cloudflare/next-on-pages');
+                    const { getRequestContext } = await import('@/lib/requestContext');
                     const { env } = getRequestContext();
                     if (env?.DB) {
                         const r = await env.DB.prepare(
@@ -76,7 +78,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
                             if (province || city || tz) {
                                 try {
-                                    const { getRequestContext: grc } = await import('@cloudflare/next-on-pages');
+                                    const { getRequestContext: grc } = await import('@/lib/requestContext');
                                     const { env: e } = grc();
                                     if (e?.DB) {
                                         await e.DB.prepare(
@@ -95,6 +97,24 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                     }
                 }
             }
+
+            // "View as" (src/domain/viewAs.ts): an admin's token may carry a
+            // claim to another user. The token itself stays the admin's (email,
+            // sub, isAdmin); only the session callback below reports the viewed
+            // user. A claim in force marks the request read-only, so nothing
+            // saves under the viewed user's name (src/lib/readOnlyGuard.ts).
+            let viewAs: ViewAsClaim | null = null;
+            if (trigger === 'update' || token.viewAs !== undefined) {
+                try {
+                    const { resolveViewAs, viewAsDeps } = await import('@/lib/viewAsSession');
+                    viewAs = await resolveViewAs(token, trigger, session, await viewAsDeps());
+                } catch (e) {
+                    // Throwing here would sign the admin out; being themselves is the safe fallback.
+                    logger.error('viewAs: resolution failed, dropping claim', e, { actorEmail: token.email });
+                    delete token.viewAs;
+                }
+            }
+            if (viewAs) markRequestReadOnly();
             return token;
         },
         session: async ({ session, token }) => {
@@ -107,6 +127,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                     ...session.user,
                     id: token.sub ?? (session.user as { id?: string }).id,
                     isAdmin: !!(token.isAdmin),
+                };
+            }
+            // While viewing as someone, every reader of the session sees them.
+            const viewAs = activeViewAs(token.viewAs, Date.now());
+            if (viewAs && session.user) {
+                (session as any).user = { id: viewAs.userId, email: viewAs.email, name: viewAs.name, image: viewAs.image, isAdmin: false };
+                (session as any).viewingAs = {
+                    adminEmail: token.email ?? null,
+                    adminName: token.name ?? null,
+                    expiresAt: viewAs.startedAt + VIEW_AS_MAX_MS,
                 };
             }
             return session;

@@ -1,6 +1,6 @@
 'use server';
 
-import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, duplicateTokens, duplicateCandidates, auditLog, placements, adopterEvents } from '@/db/schema';
+import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, duplicateTokens, duplicateCandidates, auditLog, placements, adopterEvents, formSubmissions } from '@/db/schema';
 import { eq, or, and, gt, ne, inArray, sql, isNull } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
@@ -151,6 +151,7 @@ export async function mergeAdopters(
             flagIds: [],
             historyIds: [],
             statsIds: [],
+            formSubmissionIds: [],
             candidates: [],
             annotatedFlags: [],
         };
@@ -189,6 +190,19 @@ export async function mergeAdopters(
             .where(eq(adopterStats.adopterId, secondaryId))
             .returning({ id: adopterStats.id });
         undo.statsIds = movedStats.map((r: { id: string }) => r.id);
+
+        // 5b. Re-point adoption forms. Without this a form stays linked to the
+        // absorbed (soft-deleted) profile: form-results and the animal's
+        // applicant list keep pointing at a profile nobody can open.
+        // `auto_adopter_id` is deliberately left alone — it records which
+        // profile the form created, not where it lives now.
+        const movedForms = await db.update(formSubmissions)
+            .set({ linkedAdopterId: primaryId })
+            .where(eq(formSubmissions.linkedAdopterId, secondaryId))
+            .returning({ id: formSubmissions.id });
+        const movedFormIds = movedForms.map((r: { id: string }) => r.id);
+        undo.formSubmissionIds = movedFormIds;
+        mergeDetails.forms = movedFormIds.length;
 
         // 6. Append text fields (preserve secondary data with separators)
         const updates: Partial<typeof adopters.$inferInsert> = {};
@@ -438,6 +452,8 @@ interface MergeUndoPayload {
     flagIds: string[];
     historyIds: string[];
     statsIds: string[];
+    /** Absent in payloads written before v2.56.129 — those merges never moved forms. */
+    formSubmissionIds?: string[];
     candidates: Array<{ id: string; status: string }>;
     annotatedFlags: Array<{ id: string; details: string | null }>;
 }
@@ -543,6 +559,14 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
         await repointRows(db, adopterFlags, adopterFlags.id, undo.flagIds, secondaryId);
         await repointRows(db, adopterHistory, adopterHistory.id, undo.historyIds, secondaryId);
         await repointRows(db, adopterStats, adopterStats.id, undo.statsIds, secondaryId);
+        // Not repointRows: the form's column is linked_adopter_id, not adopter_id.
+        const formIds = undo.formSubmissionIds ?? [];
+        for (let i = 0; i < formIds.length; i += UNDO_CHUNK) {
+            const chunk = formIds.slice(i, i + UNDO_CHUNK);
+            await db.update(formSubmissions)
+                .set({ linkedAdopterId: secondaryId })
+                .where(or(...chunk.map(id => eq(formSubmissions.id, id))));
+        }
 
         // 3. Restore the survivor's pre-merge fields (drops the appended
         //    contact blob, the merged entries and the auto-alias in one go).
@@ -840,6 +864,8 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
                     eq(duplicateCandidates.adopter2Id, adopterId),
                 ),
             ))
+            // Strongest first, so weak pairs can't crowd a strong one out of the cap.
+            .orderBy(sql`${duplicateCandidates.score} DESC`)
             .limit(5);
 
         if (candidates.length === 0) return [];

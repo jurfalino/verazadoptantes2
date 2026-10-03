@@ -312,7 +312,7 @@ export async function dismissAllNotifications(userId: string): Promise<boolean> 
  */
 export async function resolveDisplayName(email: string): Promise<string> {
     try {
-        const { getRequestContext } = await import('@cloudflare/next-on-pages');
+        const { getRequestContext } = await import('@/lib/requestContext');
         const { env } = getRequestContext();
         if (env?.DB) {
             const row = await env.DB.prepare(
@@ -350,7 +350,7 @@ export async function resolveDisplayNames(emails: string[]): Promise<Map<string,
     // don't resolve to a `user` row.
     for (const e of lower) out.set(e, e.split('@')[0]);
     try {
-        const { getRequestContext } = await import('@cloudflare/next-on-pages');
+        const { getRequestContext } = await import('@/lib/requestContext');
         const { env } = getRequestContext();
         if (env?.DB) {
             // D1 caps a statement at 100 bound parameters. The admin notifications
@@ -401,7 +401,7 @@ export async function notifyAdmins(opts: {
 
         // DB-based admins via raw D1 query (user_profiles is not in Drizzle schema)
         try {
-            const { getRequestContext } = await import('@cloudflare/next-on-pages');
+            const { getRequestContext } = await import('@/lib/requestContext');
             const { env } = getRequestContext();
             if (env?.DB) {
                 const rows = await env.DB.prepare(

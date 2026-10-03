@@ -1,6 +1,6 @@
 'use server';
 
-import { adopterImages, adopterHistory, adopters } from '@/db/schema';
+import { adopterImages, adopterHistory, adopters, animals } from '@/db/schema';
 import { eq, sql, and, isNull } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { logger } from '@/lib/logger';
@@ -38,7 +38,57 @@ async function assertCanChangeProfilePhoto(db: any, adopterId: string, actor: st
     }
 }
 
-export async function saveImage(adopterId: string, url: string, caption?: string, adoptionId?: string, mediaType?: string, isProfilePicture?: boolean) {
+/**
+ * v2.56.125: pinning a photo to an ANIMAL requires the right to edit that
+ * animal (owner ∨ org-mate ∨ admin).
+ *
+ * Gallery contributions stay open by design — that is the collaborative
+ * vetting model — but an animal photo is not only a contribution: with
+ * `scope: 'animal'` it appears on the animal's PUBLIC adoption page and on the
+ * health record a rescuer hands to the adopting family. Before this, any
+ * signed-in account could pin an arbitrary image to any animal and have it
+ * served to strangers under that rescue's name.
+ *
+ * Scoped as narrowly as it can be: it fires only when `adoptionId` actually
+ * names a row in `animals`. An adopter-gallery photo (no adoptionId) and an
+ * event photo (adoptionId is an EVENT id, which is not in `animals`) take the
+ * same path they always did.
+ */
+async function assertCanPinToAnimal(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    db: any, adoptionId: string, actor: string,
+): Promise<void> {
+    const animal = await db.select({ id: animals.id, addedBy: animals.addedBy, deletedAt: animals.deletedAt })
+        .from(animals).where(eq(animals.id, adoptionId)).get();
+    // Not an animal id — an event id, or a legacy record id. Unchanged path.
+    if (!animal) return;
+    if (animal.deletedAt) {
+        logger.warn('saveImage: blocked — animal is deleted', { animalId: adoptionId, actor });
+        throw new Error('Not authorized to add a photo to this animal.');
+    }
+    const [{ isOwnerOrOrgMate }, { checkIsAdminAsync }] = await Promise.all([
+        import('@/lib/orgMembership'),
+        import('@/app/actions/_db'),
+    ]);
+    const allowed = (await isOwnerOrOrgMate(actor, animal.addedBy)) || (await checkIsAdminAsync(actor));
+    if (!allowed) {
+        logger.warn('saveImage: blocked — not owner/org-mate/admin of the animal', { animalId: adoptionId, actor });
+        throw new Error('Not authorized to add a photo to this animal.');
+    }
+}
+
+export async function saveImage(
+    adopterId: string, url: string, caption?: string, adoptionId?: string,
+    mediaType?: string, isProfilePicture?: boolean,
+    /** v2.56.124: what this photo is OF — see `adopterImages.scope`. Callers
+     *  that put a photo on an ANIMAL must say which: 'animal' reaches the
+     *  public showcase and the shared health record, 'placement' never does.
+     *  'event' is evidence for one timeline entry: it travels with that entry
+     *  (including onto the shared health record) but is never the animal's own
+     *  picture. Omitted means not-public, the safe default for a caller that
+     *  forgets to say. */
+    scope?: 'animal' | 'placement' | 'event',
+) {
     const db = await getDb();
     if (!db) throw new Error("No database");
     const addedBy = await getUser();
@@ -46,6 +96,10 @@ export async function saveImage(adopterId: string, url: string, caption?: string
     // gate it (owner ∨ admin ∨ org-mate). Plain gallery uploads stay open.
     if (isProfilePicture) {
         await assertCanChangeProfilePhoto(db, adopterId, addedBy);
+    }
+    // A photo pinned to an animal can reach strangers — gate it like an edit.
+    if (adoptionId) {
+        await assertCanPinToAnimal(db, adoptionId, addedBy);
     }
     try {
         const id = crypto.randomUUID();
@@ -70,6 +124,7 @@ export async function saveImage(adopterId: string, url: string, caption?: string
             adoptionId: adoptionId || null,
             url: persistedUrl,
             caption: caption || null,
+            scope: scope ?? null,
             uploadedAt: new Date(),
             addedBy,
             mediaType: mediaType || 'image',

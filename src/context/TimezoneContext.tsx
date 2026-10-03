@@ -8,6 +8,7 @@ import {
     formatDateTimeFull as formatDateTimeFullIn,
     formatRelativeTime as formatRelativeTimeIn,
 } from '@/lib/dates';
+import { useLocale } from '@/context/LanguageContext';
 
 /**
  * The zone every rendered date is formatted in, resolved once per request from
@@ -49,7 +50,8 @@ export function useTimezone(): string {
 }
 
 /**
- * The date formatters, pre-bound to the viewer's zone.
+ * The date formatters, pre-bound to the viewer's zone (and, for the short
+ * date, the app language).
  *
  * Call sites keep the same shape they had before the zone was threaded through
  * (`formatShortDate(value)`), so adopting this is a one-line change per
@@ -57,11 +59,15 @@ export function useTimezone(): string {
  */
 export function useDateFormat() {
     const timeZone = useTimezone();
+    // The short date is written in the app language ("9 sept '26" / "Sep 9 '26").
+    // SSR and the first client render both use the default locale, so this
+    // cannot cause a hydration mismatch; the saved language applies after mount.
+    const locale = useLocale();
     return useMemo(() => ({
-        formatShortDate: (input: Date | number | string) => formatShortDateIn(input, timeZone),
+        formatShortDate: (input: Date | number | string) => formatShortDateIn(input, timeZone, locale),
         formatDateTime: (input: Date | number | string) => formatDateTimeIn(input, timeZone),
         formatDateTimeFull: (input: Date | number | string) => formatDateTimeFullIn(input, timeZone),
-    }), [timeZone]);
+    }), [timeZone, locale]);
 }
 
 /**

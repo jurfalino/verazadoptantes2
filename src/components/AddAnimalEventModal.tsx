@@ -137,7 +137,7 @@ export default function AddAnimalEventModal({ animal, activePlacement, open, onC
                 const { saveImage } = await import('@/app/actions');
                 const owner = activePlacement?.adopterId || '__available__';
                 for (const data of photos) {
-                    await saveImage(owner, data, animal.name ? `${typeLabel(type)} — ${animal.name}` : typeLabel(type), recordId, 'image')
+                    await saveImage(owner, data, animal.name ? `${typeLabel(type)} — ${animal.name}` : typeLabel(type), recordId, 'image', false, 'event')
                         .catch((e) => {
                             // The event itself is saved; a failed photo must not
                             // discard it — surface with an errorId and continue.

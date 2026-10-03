@@ -73,6 +73,18 @@ export const adopterImages = sqliteTable("adopter_images", {
     addedBy: text("added_by").default("anonymous"),
     isProfilePicture: integer("is_profile_picture").default(0), // 1 if this is the profile picture
     isPrimary: integer("is_primary").default(0), // v2.56.86: lead photo for adoption_id (an ANIMAL, not an adopter)
+    /** v2.56.124: what the photo is OF, because `adoption_id` cannot say.
+     *  Full table of who writes each value and where it is shown:
+     *  docs/photo-scopes.md
+     *  'animal'    — the animal's own gallery (create form, "Editar" on the
+     *                animal page). Public: showcase + shared health record.
+     *  'placement' — attached while recording an adoption/tránsito from the
+     *                adopter's side. The handover, a document, the family.
+     *                Never public.
+     *  NULL        — written before this column existed, or a photo keyed to
+     *                an EVENT (seguimientos, care events), which the public
+     *                reads never look up. Treated as not-public. */
+    scope: text("scope"),
     mediaType: text("media_type").default("image"), // 'image' or 'video'
     thumbnailUrl: text("thumbnail_url"), // Video thumbnail URL (R2)
 });
@@ -158,6 +170,9 @@ export const adoptions = sqliteTable("adoptions", {
     sex: text("sex"), // macho, hembra
     color: text("color"), // Color/markings description
     microchip: text("microchip"), // Microchip number if available
+    /** v2.56.128: projected from `animals.listed`. NULL for adopter-event rows,
+     *  which are not animals and are never in the catalogue. */
+    listed: integer("listed"),
 });
 
 // ============================================================================
@@ -188,6 +203,12 @@ export const animals = sqliteTable("animals", {
     color: text("color"),
     microchip: text("microchip"),
     sourceUrl: text("source_url"), // Original post/source for the animal
+    /** v2.56.128: the rescuer's switch for the PUBLIC catalogue. NULL = listed
+     *  (every animal that existed before the switch), 0 = the rescuer took it
+     *  out — under treatment, already promised, not ready. It is not a state
+     *  of the animal: adopting it out is what ends a listing, this only hides
+     *  one. See docs/photo-scopes.md for the other half of "who can see it". */
+    listed: integer("listed"),
     addedBy: text("added_by").default("anonymous"), // Rescuer who owns it
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
@@ -217,6 +238,11 @@ export const placements = sqliteTable("placements", {
     comments: text("comments"), // contract screenshot JSON etc.
     sourceUrl: text("source_url"),
     recordedBy: text("recorded_by").default("anonymous"),
+    /** v2.56.126: the address of this adoption's shared health record. Random
+     *  and per-placement, so a later adoption of the same animal mints a new
+     *  one and the previous family's link stays dead. Never derived from the
+     *  animal id — that id is public, and 60 of the placement ids are. */
+    healthToken: text("health_token"),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
     animalIdx: index("idx_placements_animal").on(table.animalId),
@@ -512,6 +538,11 @@ export const userProfiles = sqliteTable("user_profiles", {
     // Kebab-cased, integer suffix on collision (no hash). Auto-assigned by
     // ensureUserProfile() on first sign-in via generateUniqueSlug(); stable thereafter.
     handle: text("handle").unique(),
+    // Custom adoption docs (2026-09): which owner's settings this user's public
+    // form/contract read from. NULL|'self' = own adoption_doc_settings row;
+    // 'org:<orgId>' = the named organization's row. See
+    // docs/superpowers/specs/2026-09-29-custom-adoption-docs-design.md §1.3.
+    adoptionDocsSource: text("adoption_docs_source"),
 });
 
 export const auditLog = sqliteTable("audit_log", {
@@ -651,6 +682,11 @@ export const formSubmissions = sqliteTable("form_submissions", {
     // Metadata
     status: text("status").default("pending"),   // pending, reviewed, linked
     linkedAdopterId: text("linked_adopter_id"),  // Set when rescuer links to profile
+    // v2.56.129: the profile auto-created from this submission. Never
+    // re-pointed, so linkedAdopterId === autoAdopterId means "still on the new
+    // profile" and anything else means the rescuer chose an existing one
+    // (src/domain/formLink.ts). Null when auto-create failed or predates it.
+    autoAdopterId: text("auto_adopter_id"),
     notificationId: text("notification_id"),     // Back-reference to notification
     // v2.14.10: when the form was launched from the public showcase
     // (`/animal/[id]` → "Adoptar"), this captures which animal the
@@ -659,6 +695,10 @@ export const formSubmissions = sqliteTable("form_submissions", {
     // Null when the form was shared generically (no animal pre-selected).
     selectedAnimalId: text("selected_animal_id"),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    // Custom adoption docs (2026-09): the form-step ids this submission actually
+    // showed (JSON string[]), so the rescuer's dashboard can render legacy and
+    // hidden-step rows correctly. NULL for legacy rows / old SPA clients.
+    shownSteps: text("shown_steps"),
 }, (table) => ({
     userIdx: index("idx_form_user").on(table.userId),
     statusIdx: index("idx_form_status").on(table.status),
@@ -686,6 +726,49 @@ export const contractInvitations = sqliteTable("contract_invitations", {
 }, (table) => ({
     animalIdx: index("idx_contract_inv_animal").on(table.animalId),
 }));
+
+// ── Custom Adoption Docs (2026-09) ──────────────────────────────
+// Per-owner (user or org) customization of the public form's steps and the
+// contract's editable sections. See
+// docs/superpowers/specs/2026-09-29-custom-adoption-docs-design.md §1.
+
+export const adoptionDocSettings = sqliteTable('adoption_doc_settings', {
+    id: text('id').primaryKey(),
+    ownerType: text('owner_type').notNull(),       // 'user' | 'org'
+    ownerId: text('owner_id').notNull(),           // lower-cased email | organizations.id
+    hiddenSteps: text('hidden_steps'),             // JSON string[]
+    contractVersionId: text('contract_version_id'),
+    updatedAt: integer('updated_at').notNull(),    // unix seconds
+    updatedBy: text('updated_by').notNull(),
+}, (t) => ({ ownerIdx: uniqueIndex('idx_adoption_doc_settings_owner').on(t.ownerType, t.ownerId) }));
+
+// Append-only while signed: a save while an adopter has the contract open
+// inserts a new row and sets replacedAt on the old one rather than mutating
+// it in place, so their signature still records the version they saw.
+export const contractVersions = sqliteTable('contract_versions', {
+    id: text('id').primaryKey(),
+    ownerType: text('owner_type').notNull(),
+    ownerId: text('owner_id').notNull(),
+    sectionsJson: text('sections_json').notNull(), // {"2"?: RichDoc, "3"?: RichDoc, "4"?: RichDoc}; absent key = standard text
+    contentHash: text('content_hash').notNull(),   // sha256 hex of canonical sectionsJson
+    createdAt: integer('created_at').notNull(),
+    createdBy: text('created_by').notNull(),
+    firstSignedAt: integer('first_signed_at'),     // NULL until first signature; once set, row is immutable & never deleted
+    replacedAt: integer('replaced_at'),            // set when a newer version becomes current
+}, (t) => ({ ownerIdx: index('idx_contract_versions_owner').on(t.ownerType, t.ownerId) }));
+
+export const signedContracts = sqliteTable('signed_contracts', {
+    id: text('id').primaryKey(),
+    animalId: text('animal_id').notNull(),
+    adopterId: text('adopter_id'),                 // adopter the signature was attached to
+    contractVersionId: text('contract_version_id'), // NULL = standard contract
+    standardVersion: text('standard_version'),     // STANDARD_CONTRACT_VERSION the page reported (NULL if an old SPA sent nothing)
+    locale: text('locale'),
+    contentHash: text('content_hash'),             // contractVersions.contentHash when custom; NULL for standard
+    fileKey: text('file_key'),                     // R2 key of the uploaded PDF/image
+    via: text('via').notNull(),                    // 'token' | 'open'
+    signedAt: integer('signed_at').notNull(),
+}, (t) => ({ animalIdx: index('idx_signed_contracts_animal').on(t.animalId) }));
 
 // ── Organizations ────────────────────────────────────────────────
 

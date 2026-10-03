@@ -43,6 +43,18 @@ const VARIANTS: Record<Variant, string> = {
     destructive: 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100',
 };
 
+/**
+ * The matrix classes on their own, for elements that must not be a `<button>`
+ * — chiefly a `next/link` that navigates but has to look like a CTA.
+ */
+export function buttonClasses({
+    variant = 'primary',
+    size = 'standard',
+    fullWidth = false,
+}: { variant?: Variant; size?: Size; fullWidth?: boolean } = {}): string {
+    return `${BASE} ${SIZES[size]} ${VARIANTS[variant]}${fullWidth ? ' w-full' : ''}`;
+}
+
 export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
     variant?: Variant;
     size?: Size;
@@ -72,7 +84,7 @@ export function Button({
             {...rest}
             disabled={disabled || loading}
             aria-busy={loading || undefined}
-            className={`${BASE} ${SIZES[size]} ${VARIANTS[variant]} ${fullWidth ? 'w-full' : ''} ${layoutClassName}`}
+            className={`${buttonClasses({ variant, size, fullWidth })} ${layoutClassName}`}
         >
             {loading ? (
                 <svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true">

@@ -6,6 +6,7 @@ import { StarIcon } from '@/components/StarIcon';
 import { getRatingColors } from '@/lib/ratingColors';
 import { AdopterName } from '@/components/AdopterName';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
+import { matchTypeLabel } from '@/lib/matchTypeLabels';
 
 /**
  * Render an i18n template that contains a single `{name}` placeholder,
@@ -89,7 +90,7 @@ export default function DuplicateMergeModal({
                             <span className="text-xs text-stone-500 font-medium">{t('admin.dmm_match_label')}</span>
                             {matchTypes.map(type => (
                                 <span key={type} className={`text-xs px-2 py-0.5 rounded-full font-medium ${getMatchBadgeStyle(type)}`}>
-                                    {getMatchLabel(type, t)}
+                                    {matchTypeLabel(type, t)}
                                 </span>
                             ))}
                         </div>
@@ -189,20 +190,6 @@ function ProfileCard({
             )}
         </button>
     );
-}
-
-function getMatchLabel(type: string, t: (k: string) => string): string {
-    const labelKeys: Record<string, string> = {
-        phone: 'admin.dmm_match_phone',
-        email: 'admin.dmm_match_email',
-        social: 'admin.dmm_match_social',
-        name_full: 'admin.dmm_match_name_full',
-        name_word: 'admin.dmm_match_name_word',
-        address_word: 'admin.dmm_match_address_word',
-        source_url: 'admin.dmm_match_source_url',
-    };
-    const key = labelKeys[type];
-    return key ? t(key) : type;
 }
 
 function getMatchBadgeStyle(type: string): string {

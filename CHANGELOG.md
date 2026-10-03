@@ -2,6 +2,770 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.139] - 2026-10-03
+
+### Changed — the Mis adoptantes filter reads "Por formulario"
+
+Was "Con formulario". "Por" says how the person reached you, which is what the
+filter is about. EN "Via form", PT "Por formulário".
+
+## [2.56.138] - 2026-10-03
+
+### Added — the form screen shows the rating of the person you linked it to
+
+"Solicitud vinculada a X" now carries X's rating badge (tap for the scale)
+right under the name, the same average the profile and Mis adoptantes show.
+A person with no rated activity reads "Todavía sin calificaciones" instead of
+a blank. Only for an existing profile you chose; a profile created from the
+form itself has no history to rate.
+
+## [2.56.137] - 2026-10-03
+
+### Added — see everyone who filled your adoption form, in Mis adoptantes
+
+"Con formulario" next to "Todos" on /my-adopters lists the people who
+completed a form, newest first. It is kept in the URL (`?filtro=formularios`),
+so Back and shared links keep the view.
+
+- Each row now says what they applied for and when — "Formulario para Luna ·
+  hace 2 d" or "Formulario general" — at the top of Procedencia; it opens the
+  form's results.
+- "Por revisar" marks a person whose form still waits for "¿es la misma
+  persona?" — the same rule as the form-results banner, so the two never
+  disagree. It replaces the "Posible duplicado" pill on that row (same pair,
+  and the form path also files the request in the right history).
+- The filter counts people with a linked form, not the Origen pill: someone
+  you already had who then applied keeps "Manual" as origin but is listed.
+- Only your own forms link and get "Por revisar"; a teammate's form shows
+  what and when, since only its owner can open its results.
+
+## [2.56.136] - 2026-10-03
+
+### Fixed — the catalogue control on the cards now says what it does
+
+It shipped as a switch with a long label crammed into the card's action row,
+which squeezed the card's own date and «Actualizado por» down to an ellipsis.
+The next attempt replaced it with a small eye icon, which fitted but told
+nobody what it meant — on a phone there is no hover, so the commonest state
+became an unexplained symbol.
+
+It is now a row like the card's others ("Adoptado por…", "En tránsito con…"),
+saying one of three things in plain words:
+
+- **En el catálogo público** — people looking to adopt can find this animal
+- **Fuera del catálogo** — you took it out; its photos and data are untouched
+- **Falta una foto para que aparezca** — it is meant to be listed but cannot
+  be, and now the card tells you why instead of leaving you to wonder
+
+The whole row is the switch, so it is easy to hit with a thumb.
+
+## [2.56.135] - 2026-10-03
+
+### Changed — "Ubicación verificada" is a map you open, not two raw coordinates
+
+The form-results page and the animal's applicant panel printed the location the
+applicant's phone shared as bare numbers ("-34.5185…, -58.4854…"). It is now a
+collapsed "Ubicación verificada" section that opens an OpenStreetMap map with a
+pin on the spot, plus "Abrir en Google Maps" — the same app the address links
+already open.
+
+- Nothing is fetched from the map provider until someone opens it, so viewing
+  a form doesn't send the applicant's location to a third party, and the page
+  loads exactly as fast as before.
+- Content-Security-Policy `frame-src` now allows `https://www.openstreetmap.org`
+  (the embed only; no scripts or images from it run on our pages).
+- Invalid or missing coordinates render nothing, as before.
+
+## [2.56.134] - 2026-10-03
+
+### Fixed — the catalogue switch no longer squeezes the animal cards
+
+On Mis animales the switch arrived as a toggle plus the words "En el catálogo
+público", which took more than half the width of every card and left the
+card's own date and «Actualizado por» as an ellipsis. Nothing overflowed, so
+it did not look broken — the cards had just stopped saying anything.
+
+A card now shows a small eye, and nothing else, when the animal is in the
+catalogue, which is the normal case. When it is NOT, the card shows "Oculto"
+in amber — so the exception is what catches your eye, instead of every card
+repeating the obvious. Hovering either one tells you what it does, and the
+full labelled switch is still on the animal's own page.
+
+The row can also wrap now, so a control can never silently crush the card's
+text again.
+
+## [2.56.133] - 2026-10-03
+
+### Fixed — form-results polish from the staging walkthrough of 2.56.129
+
+- Long answers (an email, an address) wrapped past the card edge on phones and
+  were cut off ("…@example.co") in "Respuestas completas". They wrap now.
+- On phones, a match card's actions are full-width and stacked, with
+  "No es esta persona" below, instead of ragged half-width buttons.
+- The banner's buttons line up under its title on wider screens, not under
+  the photo.
+- Hovering a collapsible section header ("Perfiles coincidentes") no longer
+  turns it into a white bar in Azul Noche.
+
+## [2.56.132] - 2026-10-03
+
+### Changed — releases now take about ten minutes
+
+The previous change cut a release from half an hour to sixteen minutes. The
+measurements showed one of the five test groups doing more than half the work
+on its own, which set the length of the whole thing while the others sat idle.
+The groups are now balanced by how long they actually take rather than by how
+many tests they hold, and they no longer reinstall the same dependencies from
+scratch each time.
+
+## [2.56.131] - 2026-10-03
+
+### Fixed — the release pipeline is faster, and stops dropping releases
+
+Three things that each cost a release today.
+
+**A pull-request check could kill a release.** Pushing to staging starts the
+release pipeline, and a second later starts the checks for the open release
+pull request. Only one was allowed to run per branch, and the pull-request one
+won — cancelling a release that was minutes from deploying. They are different
+pipelines and now run independently.
+
+**An older release could overwrite a newer one.** Two people pushing minutes
+apart produced two pipelines. If the older one finished last it deployed its
+own, older code — every step green, staging quietly back a version. Both
+deploys now refuse to run if the branch has moved on, and say so.
+
+**The tests no longer wait for the build.** They install and run everything
+they need themselves, so they start immediately. Nothing ships without both
+passing.
+
+Together with running the tests as five groups at once, a release goes from
+about half an hour to roughly ten minutes.
+
+## [2.56.130] - 2026-10-03
+
+### Fixed — releases stop failing for reasons that have nothing to do with the change
+
+The end-to-end tests ran as one long process that compiled pages as it went.
+Its memory grew with every page, until it hit its limit and restarted itself —
+six times in a single run. Each restart was a few seconds with no server, and
+whichever test was running at that moment failed. A different test each time,
+so it looked like random flakiness rather than one cause.
+
+It blocked four of five release attempts in one afternoon, for zero real
+problems, and it was getting worse as the suite grew.
+
+The tests now run as three groups at once — logged-out, regular user and admin
+— each with its own server. None lives long enough to run out of memory, and
+the whole stage finishes in a fraction of the time.
+
+## [2.56.129] - 2026-10-03
+
+### Fixed — linking an adoption form to an existing profile now shows, and leaves no duplicate
+
+Every form submission creates a profile for the applicant and links the form
+to it straight away. So the form-results page said "esta respuesta está
+vinculada" before the rescuer decided anything, and said exactly the same after
+they chose an existing profile — only the "Ver perfil" target changed. Coming
+Back from the profile also replayed the pre-link page from the browser's cache.
+
+The page now says where the form stands: "Encontramos N perfiles parecidos"
+while there are look-alikes to review, "Creamos un perfil para X" when there is
+nothing to decide, and "Solicitud vinculada a X" (with their photo, and that
+match card marked "Perfil vinculado") once the rescuer has chosen.
+
+"Es la misma persona" now works like it does for contracts: after a
+confirmation, the profile created from the form is combined into the chosen
+one (records, photos and contacts move over; undoable by an admin), the
+request is added to that profile's history, and whoever created it is
+notified. Before, linking left the new profile behind as a duplicate.
+
+- Merges from the duplicates queue now carry form links to the surviving
+  profile (and undo moves them back), so a form never points at a merged-away
+  profile.
+- The dead "Vincular a perfil existente" button (its page was removed in
+  v2.14) is gone; the matches carry the decision.
+- The mobile action bar no longer renders as a white slab in Azul Noche.
+- New column `form_submissions.auto_adopter_id` (migration 0077), backfilled
+  for existing rows.
+
+## [2.56.128] - 2026-10-03
+
+### Added — animals in a foster home are in the public catalogue
+
+Recording a tránsito used to take the animal out of the catalogue. That is
+backwards: an animal in a foster home is the clearest case of one still
+looking for a permanent home, and by then there are photos of it settled in
+and someone who knows what it is like to live with. It is listed now. The
+foster home is never named on the public page.
+
+### Added — a switch for whether an animal is in the catalogue
+
+On the animal's page and on its card: "En el catálogo público". Turn it off
+for an animal under treatment, or one already promised, without adopting it
+away or deleting its photos — everything else about it stays as it is.
+
+Being in the catalogue needs three things at once: no permanent home yet, a
+photo to show, and the rescuer wanting it seen. Only the last is a choice, so
+the switch says which of the other two is missing rather than appearing to do
+nothing — "le falta una foto" when that is the real reason. On an animal that
+already has a home it is not shown at all.
+
+Every animal is listed by default, so nothing changes until a rescuer turns
+something off.
+
+## [2.56.127] - 2026-10-03
+
+### Added — the public adoption pages play video
+
+A rescuer can attach video to an animal as well as photos. Until now the
+public catalog, the animal's adoption page and its thumbnail strip all tried
+to draw one as a still image, which showed a broken frame; the shared health
+record already handled it. Now the grid and the strip show the video's cover
+image with a play mark on it, and the animal's page plays it.
+
+Link previews — what Facebook and WhatsApp show when someone shares an animal
+— now skip past videos to the first real photo, instead of handing the video
+file over as the preview image.
+
+A video with no cover image can't be drawn at all, so it no longer counts as
+the animal's photo: an animal with nothing but one of those stays out of the
+public catalog rather than appearing as an empty tile. The «Compartir» options
+on Mis animales use the same rule, so they no longer offer a public page for
+an animal that wouldn't have one.
+
+### Added — docs/photo-scopes.md
+
+What each photo scope means, which part of the app writes it, and every screen
+it appears on.
+
+## [2.56.126] - 2026-10-03
+
+### Changed — the shared health record has one address per adoption
+
+The link a rescuer hands the family now belongs to that adoption, not to the
+animal. When the animal comes home the link stops opening, and if the animal is
+adopted again the new family gets a different address — the first family's link
+stays dead instead of coming back to life.
+
+The address is random. The adoption's own identifier could not be used: for
+animals created with a home already attached it is derived from the animal's
+id, which is public, so more than half of them would have been guessable.
+
+## [2.56.125] - 2026-10-03
+
+### Fixed — only the people who look after an animal can add photos to it
+
+Adding a photo to an animal now requires the right to edit that animal: its
+owner, their team, or an admin. Before, any signed-in account could attach an
+image to any animal — and since those photos appear on the animal's public
+adoption page and on the health record handed to the adopting family, that
+image would have been served to strangers under the rescue's name. Adding a
+photo to an adopter's profile is unchanged and stays open, as does attaching
+one to a timeline entry.
+
+### Changed — the shared health record stops working after a devolución
+
+The link is for the family that has the animal, so when the animal comes back,
+the link they were given stops opening. The handover screen now says so.
+(2.56.126 gives each adoption its own address, so a later adoption no longer
+revives the previous family's link.)
+
+### Fixed — videos no longer show as a broken frame
+
+A rescuer can attach video as well as stills. The shared health record now
+plays one, with its still as the cover. (2.56.127 does the same for the public adoption
+pages.) No animal in use has a video today.
+
+## [2.56.124] - 2026-10-03
+
+### Fixed — photos from an adoption no longer show on the animal's public page
+
+A photo is now recorded with what it is a photo OF, and only the animal's own
+photos are public.
+
+Until now the animal's gallery and the photos someone attaches while recording
+an adoption or a tránsito from the adopter's side were stored the same way, on
+the same key. That meant a photo taken at the handover — the family, a signed
+document — could appear on the animal's public adoption page. The case where
+it bites is a devolución: the animal goes back on the catalog, and by then
+those are the newest photos it has.
+
+Nothing a rescuer does changes. Photos added to the animal from «Editar» on
+its page are public, as they always were, and now stay public even when added
+while the animal is already in a home — they belong to the animal and survive
+a return. Photos attached from the adopter's side never are. Seguimiento and
+care-event photos are unaffected: they were never on the public page and still
+are not, but they do appear on the shared health record under their own entry.
+
+Photos saved before this release are public only where it is unambiguous
+(those added while the animal had no home). Three photos in production are
+ambiguous and are hidden until someone looks at them.
+
+## [2.56.123] - 2026-10-03
+
+### Added — share an animal's veterinary record with the family that has them
+
+On an animal that is adopted or in a foster home, "Historial médico" opens a
+handover: it says exactly what the family will receive, offers an editable
+message, and sends it over WhatsApp to the number already on the adopter's
+profile (about 80% of placed animals have one). Everyone else gets the link to
+paste wherever they already talk to that family.
+
+The link opens a page on the public site — the animal's photo, name and
+description, then its veterinary timeline: vaccinations, deworming, vet visits
+and neutering, each with its date, the rescuer's own note, and the photos
+attached to it. Any photo opens full size, carrying the entry and date it came
+from, and one tap shows every photo of the animal in a single grid.
+
+The page says nothing about the animal's adoption or its previous foster home,
+and names no person except the rescue that recorded it. The API never reads
+placements, adopters or follow-ups at all. Three kinds of content are left out
+for the same reason — a rescuer writes them for themselves, so they can name a
+household: free-text "notes", the animal's description (a third of the ones in
+use mention a family, an adoption or a foster home), and photos attached to an
+adoption record rather than to the animal itself (see 2.56.124).
+
+It also claims nothing it cannot know. There is no "vaccines up to date" and no
+next-dose date, because the app has no idea what a given species at a given age
+is due for. Every date shown is one somebody recorded, and the page closes by
+saying how far the record goes and sending the reader to their own vet.
+
+The button appears only once there is at least one veterinary entry, which is
+the same condition under which the page exists — so a rescuer can never send a
+link to an empty page. It is also not indexed by search engines.
+
+## [2.56.122] - 2026-10-03
+
+### Fixed — "Compartir" no longer appears on an animal that already has a home
+
+On an adopted animal the share sheet still offered to send the adoption form
+("Si querés evaluar adoptantes") and the contract link. Neither applies once
+the animal is placed, and the contract link was actually broken: an interested
+person could open it, fill the whole contract in and only then be told the
+animal "has already been adopted" (the submit endpoint rejects any animal with
+an adopter). The button is now hidden on adopted animals, on the animal's page
+and on the list card. The signed contract, where there is one, is unchanged —
+it still shows on the timeline and the card as «Ver contrato firmado».
+
+Fostered and available animals are untouched: they still get the full sheet.
+
+## [2.56.121] - 2026-10-02
+
+### Fixed — release of 2.56.120
+
+2.56.120 never reached staging: two homepage smoke tests still looked for the
+search card's title, which that release hides until there are results. They now
+anchor on the page heading. Same product changes as 2.56.120 below.
+
+## [2.56.120] - 2026-10-02
+
+### Changed — homepage explainer is one short paragraph
+
+Under the heading, the tap-to-open steps and guide link are replaced by one
+always-visible line: "Busca adoptantes, consulta las valoraciones de otros
+rescatistas y registra tus experiencias para proteger a más animales." Three
+lines on a phone. The heading is plain text again, not a button.
+
+The search card's own title ("Buscá referencias de un adoptante") is left out
+until there are results; it still names the pinned search box while scrolling
+a result list.
+
+## [2.56.119] - 2026-10-01
+
+### Added — admins can view the app as another user, read-only
+
+On Admin → Users, "Ver como" opens the app as that user: their search, profiles,
+lists, settings and notifications, exactly as they see them. An amber strip under
+the top bar says who you are viewing, on every page, with a one-click Salir.
+
+Nothing is saved while viewing: every database write is refused for the request,
+including background ones, so nothing can be credited to the viewed user. Not
+offered for admins or yourself; ends after an hour or the moment the admin loses
+admin rights. Start and stop are recorded in the audit log under the admin.
+Analytics keep the admin's own identity.
+
+### Changed — homepage heading
+
+"Registro de Adopciones" is now "El Registro de Adoptantes de la Comunidad
+Rescatista" (EN "The Rescue Community's Adopter Registry", PT "O Registro de
+Adotantes da Comunidade de Resgate").
+
+## [2.56.118] - 2026-10-01
+
+### Changed — a friendly 404, and "this animal has another rescuer"
+
+Dead ends now land on a 404 with a dog that ate the page or a cat that knocked it
+off the table, at random. Form and contract results that aren't yours or don't
+exist use it too, instead of a grey box.
+
+Opening another rescuer's animal no longer says "not found". It says the animal
+is in good hands, names the rescuer and their group (never their email), and
+links to the public page when the animal is up for adoption.
+
+## [2.56.117] - 2026-10-01
+
+### Fixed — the animal picker no longer degrades silently
+
+When one of its three loaders failed (the adopter's records, their rating, the
+rescuer's inventory), the picker fell back to an empty value and said nothing.
+An inventory that failed to load reads exactly like "no animals", which is how
+the animal prefill gets dropped. Each fallback now reports a `warn` with the
+adopter and animal ids.
+
+### Changed — /import/sheet requires sign-in
+
+Every save behind it already rejected anonymous callers, so a logged-out visitor
+could fill in the whole wizard and only then fail. The page is now a protected
+route: logged-out visitors go to sign in and come back.
+
+## [2.56.116] - 2026-10-01
+
+### Fixed — a returned animal is available again (product decision)
+
+Recording a devolución logged an event and nothing else: the custody span stayed
+open, so the animal still read as adopted, never came back to the available
+list, could not be re-homed through the normal flow, and kept drawing follow-up
+reminders for an adoption that had ended.
+
+Two causes, both long-standing:
+
+1. **The form was forced to invent a second adoption.** Opening it from a link
+   hid the mode switcher and pinned it to «new» — and «Registrar devolución» is
+   always a link. So every return created a *fresh* adoption record, attached
+   the event to that, and left the real placement untouched. It now stays in
+   «existing» mode whenever the animal resolved to a record we already have.
+2. **Nothing closed the span.** A `returned_pet` write now sets `ended_at` on
+   the active placement, dated to the event rather than to now, so a return
+   logged a week late lands on the day it happened. `adoptions` derives its
+   record type and adopter from the ACTIVE placement, so with none the animal
+   falls back to `available`.
+
+Verified end to end on the real flow: the event is written, the placement
+closes, and the animal's record type flips to `available` with no adopter.
+
+### Note — 2 animals in production are affected
+
+Two animals have a recorded return but a still-open placement. They will keep
+reading as adopted until their spans are closed; new returns behave correctly
+from this release. A one-line backfill would fix them, but it rewrites custody
+history, so it is left as a decision rather than bundled in.
+
+## [2.56.115] - 2026-10-01
+
+### Fixed — a return or follow-up never pre-selected its animal, anywhere
+
+`?animalId=` was matched only against `availableAnimals` — unlinked inventory
+plus fosters. A devolución or follow-up is always about an animal the adopter
+**already has**, which by definition is not in that list, so the parameter was
+silently ignored and the rescuer had to find the animal again by hand. True on
+the adopter page too, long before this week's work; it surfaced only while
+moving the entry point. Those two types now match the adopter's own records,
+and a return whose animal resolves skips the identity step like an adoption.
+
+### Internal — reconciled two parallel fixes for the same race
+
+2.56.113 (another session) and this change both addressed the form mounting
+before `router.replace` had published its parameters. Its `presetAnimalId` prop
+is the better answer — nothing to wait for — so the URL-readiness gate added
+here is gone, and the duplicated `initialRecordType` the merge left behind is
+removed. Only the inventory is still awaited.
+
+### Known gap — devolución still navigates to the adopter
+
+Mounted on the animal page the form enters its dual-date «two separate records»
+mode and saves nothing. Adoption and tránsito stay in place; this keeps its old
+navigation until a save is proven end to end.
+
+**Worth a product decision: recording a devolución has never ended the
+placement.** The event narrates the ending — the timeline suppresses its
+synthetic "span ended" item because of it — but `ended_at` stays NULL, so the
+animal still reads as adopted and never returns to the available list.
+Pre-existing, and a data decision rather than a bug fix.
+
+## [2.56.113] - 2026-10-01
+
+### Fixed — «Registrar adopción» on an animal could open without the animal (intermittent)
+
+The picker opens the record form in place (v2.56.109) and tells it which animal
+via `?animalId=`, set by `router.replace` just before the form mounts. The form
+matches that id against the inventory exactly once, as it mounts.
+
+On the 2.56.111 CI run the form opened on step 1 with a blank animal name even
+though the inventory response contained the animal — the state in which an
+adoption saves with no animal. It is intermittent: the next run passed the same
+test first time, and it never reproduced locally (an artificially delayed URL
+update did not trigger it either), so the exact cause is unproven.
+
+The picker now hands the form the animal and the record type as props, so the
+match no longer depends on reading the URL at mount. The URL params stay, for
+reload and Back.
+
+## [2.56.112] - 2026-10-01
+
+### Fixed — two visual defects in the record form
+
+**«¿Entregado en casa del adoptante?» was barely readable.** The question sat at
+`text-blue-800` on a panel the theme remaps to a translucent sky tint —
+measured **3.79:1**, under the 4.5 minimum for body text. It and its sibling
+«¿Verificaste su identidad?» now use the themed stone text, which measures
+**7.86:1**. The panels keep their accent; only the copy changed.
+
+The same panel also carried `text-blue-800/80`. Opacity variants are never
+remapped by `[data-theme]`, so that one rendered raw in every theme — replaced
+rather than left as a latent version of the same bug.
+
+**The step line overshot the last step.** The progress fill was a sibling of the
+track with only `left: 16.6%`, so `width: 100%` at step 3 measured the whole
+header and ran 16.6% past the third circle, under the close button. The fill is
+now nested inside the track, so its width is a share of the track: measured
+overflow **0px**, fill width equal to track width.
+
+Both verified by measurement — contrast ratio and bounding boxes — not by eye.
+
+## [2.56.111] - 2026-09-30
+
+### Removed — "Ver N coincidencias débiles" in Pendientes de revisar
+
+Weak (`low`) duplicate pairs are no longer offered in the /my-adopters review
+queue at all; the toggle surfaced pairs nobody acted on.
+
+### Fixed — "Posible duplicado" pointed at pairs the queue never lists
+
+The per-row chip on /my-adopters and the banner on the adopter profile counted
+weak pairs too, so a record could say "Posible duplicado" and the queue it links
+to had nothing for it. Both now ignore weak pairs, matching the queue. The
+profile's lookup also takes the strongest pairs first, so five weak ones can no
+longer crowd a strong one out of its cap of five.
+
+### Added — "Importar planilla" on /my-adopters (flag `ENABLE_SHEET_IMPORT`, off)
+
+A header link to `/import/sheet`, beside "Agregar adoptante". The flag gates the
+link only — the page stays reachable by URL. The header now wraps on narrow
+screens so the two buttons never overflow.
+
+## [2.56.110] - 2026-09-30
+
+### Changed — the form no longer re-asks what the entry point already answered
+
+Step 1 asks WHICH record and WHICH animal. Coming from «Registrar adopción» on
+an animal, both are already settled — yet the rescuer still landed on a screen
+asking for the animal's name and species, and had to click past it. Worse, it
+invited them to change an answer they had just given.
+
+It now opens on step 2 (Details) whenever the entry point supplied both, with
+step 1 marked done; Back still reaches it to change the record type.
+
+Fixed in the form itself rather than at one entry point, so every
+`?newAdoption=adoption|foster&animalId=…` link behaves the same — including the
+older links from the `/my-animals` cards.
+
+Deliberately narrow:
+
+- only when the animal **resolved** against the rescuer's inventory. An
+  unmatched id means step 1 is where they pick one, so it is never skipped;
+- only for adoption and tránsito. A follow-up, return, observation or request
+  either has no animal yet or matches it from a different list;
+- a saved draft still wins, because it knows where the user actually left off.
+
+## [2.56.109] - 2026-09-30
+
+### Changed — registering an adoption or tránsito no longer leaves the animal
+
+Picking a person used to navigate to `/adopter/<id>`, ending the task somewhere
+else: the animal, its pending reminders and its timeline all left behind, with
+nothing bringing the rescuer back.
+
+The wizard reads its prefill from the URL, so rather than refactoring the
+1,080-line form that owns the app's most important write, the same params are
+now set on the page the user is already on and the form is mounted there. It
+already closed and `router.refresh()`ed instead of navigating, so finishing
+lands back on the animal with the new placement showing.
+
+Hosted in `PickAdopterForAnimalModal`, not in `AnimalProfile` — the picker also
+opens from the share sheet on every `/my-animals` card, and a fix in the profile
+alone would have left those cards still navigating away.
+
+**The form is held until its inventory loads.** It matches the animal prefill
+against `availableAnimals` exactly once, as it mounts; mounting before that
+arrived matched against an empty list and dropped the animal silently, saving an
+adoption with no animal attached. Caught by asserting the `placements` row, not
+that a modal appeared.
+
+No new endpoint: the four loaders it needs are already server actions, so the
+browser-callable surface stays at 158. `onClose` clears the prefill params —
+otherwise the form reopens on the record just saved, and Back or reload reopen
+it too.
+
+### Known gap — devolución still navigates
+
+A return matches its animal against the adopter's existing records rather than
+the rescuer's inventory, and that match does not resolve when the form is
+mounted here: the animal is dropped and **the placement never ends**. Ending
+custody wrongly is the worst failure this app has, so that path keeps its old
+navigation until it is proven. Creating a brand-new adopter also still leaves —
+that is a full profile form, not this one.
+
+## [2.56.108] - 2026-09-30
+
+### Added — adopter results say who vouched for them
+
+A name search returns a mix of the rescuer's own records, their org-mates' and
+bulk imports, with nothing to tell them apart. On a vetting tool, who vouched
+for a record is most of its weight. «Tuyo» already existed; org-mates' records
+now carry «De tu equipo» in their own colour — the same trust, but not the same
+authorship.
+
+Resolved **server-side** inside `findAdopters` and attached to each match as
+`ownership: 'mine' | 'team'`, so the organisation's member list never ships to
+the browser and no new browser-callable endpoint appears. One query per search,
+failing open to no badge. `'anonymous'` rows are never tagged.
+
+Its test creates one adopter per ownership class and deletes them again: they
+are not in `seed.sql`, so they must not drift into another spec's counts.
+
+## [2.56.107] - 2026-09-30
+
+### Fixed — photos attached to a timeline event could not be opened
+
+Adding a photo to a vaccination, a vet visit or a follow-up stored it and showed
+it at 48px, and that was all: the thumbnails had no click handler, and anything
+past the fourth existed only inside a «+N» count. The same defect the animal's
+hero photo had until v2.56.97, in the second place it occurs — fixed the same
+way rather than differently.
+
+Every event thumbnail and its «+N» now open the shared lightbox at that photo,
+with previous/next, a counter, arrow keys and Escape.
+
+The new test uses `test-animal-fixture-due`, not the shared timeline fixture:
+adding an event to the latter changes a count four sibling tests assert on.
+
+## [2.56.106] - 2026-09-30
+
+### Fixed — the post-deploy check still had one probe with no readiness wait
+
+v2.56.105 deployed fine and the job went red anyway: `normal request -> 404`.
+A plain GET of `/` fired immediately after `wrangler pages deploy` returned.
+The stale probe before it proves the **worker** is live, but Pages can still be
+seconds from serving the static asset for `/`.
+
+2.56.95 gave the forwarding probe a readiness wait and missed this one, which
+runs earlier in the same step — so the same class of false alarm that reddened
+25 Sep reddened 30 Sep too. It now retries the probe and asserts once, exactly
+like the other two; a genuinely broken deploy still fails on the first pass.
+
+## [2.56.105] - 2026-09-30
+
+### Fixed — «Registrar» on a check-in threw you onto the adopter's page
+
+From the animal's «Para hacer ahora» list, registering a health reminder opened
+a small form in place, but registering a check-in navigated to
+`/adopter/<id>` — the same button behaving two different ways, and the rescuer
+losing the animal's pending list mid-task.
+
+The redirect existed because only the adopter's wizard captured a star rating.
+`AddAnimalEventModal` has carried the rating, notes and photos since v2.56.9, so
+the detour was leftover habit. Every slot type now opens that modal, prefilled
+with the `followupKey` the matcher needs.
+
+### Added — a fixture whose check-in is actually due
+
+There was no test covering the due-slot path, because producing one on
+`test-animal-fixture-1` means aging its placement and deleting its seeded
+follow-up — which four sibling tests assert on. `test-animal-fixture-due` is its
+own animal with its own adopter, adopted 35 days ago with no follow-up, so the
+30-day check-in is due on sight. Shared-fixture coupling has cost four red
+pipelines this week; this does not add to it.
+
+## [2.56.104] - 2026-09-30
+
+### Fixed — follow-up wording and an empty rating that read as «Peligroso»
+
+- **«Para hacer ahora» on an animal's page** said «vencía el 30 sept» for a check-in due
+  today. It now uses the same wording as the card in Mis Animales («vence hoy»,
+  «venció hace 2 días»), from one shared helper (`src/lib/dueWhenText.ts`), so the two
+  can't disagree. Overdue by one day reads «venció hace 1 día» (was «… 1 días»; same
+  fix in English and Portuguese).
+- **«Agregar evento» opened with one red star and «Peligroso»** on adopted animals before
+  anything was picked: an empty rating was drawn as level 1. It now shows five empty
+  stars and no label until a rating is chosen; saving without one still stores no rating.
+
+### Changed
+
+- Overdue follow-ups read «venció hace N días» instead of «vencía hace N días».
+
+## [2.56.103] - 2026-09-29
+
+### Fixed — screens that showed codes, handles and English to Spanish users
+
+- **Duplicate-match cards** (form results, the admin merge window, flagging, and the
+  pending-duplicates list in Mis Adoptantes) showed raw codes such as
+  `formResults.like_fallback_name` for matches found by name or contact. Every match
+  type now comes from one shared label list (`src/lib/matchTypeLabels.ts`), and a test
+  fails if any type the search can produce has no label in es, en or pt.
+- **Rescuers appear by name, not by email handle**, in the group member list, the
+  applicant panel's «Agregado por» and teammate attribution in Mis Adopciones — the
+  handle is only the fallback when there is no name.
+- **Names silently missing in production:** the shared name lookup behind the adopter
+  page, the animal life line and Mis Animales bound an array in an `IN` clause, which
+  D1 reads as its first value only — so every name but the first was dropped. It now
+  looks names up in explicit-bind chunks of 90 (capped at 200 per call).
+- **Mis Animales:** the species badge reads «Gato»/«Perro» in the app's language, and
+  «Ya Adoptados (…)» / «Disponibles (…)» show real counts on both tabs, from the same
+  filters as the lists.
+
+### Changed
+
+- **Short dates follow the app language everywhere** (about 25 screens): «9 sept '26»
+  in Spanish, «9 set '26» in Portuguese; English is unchanged («Sep 9 '26»). Built from
+  a fixed month table rather than `Intl`, so server and browser render the same text.
+  The admin data-requests page stays in English.
+
+## [2.56.102] - 2026-09-29
+
+### Security — sign-off for the five adoption-docs actions (completes 2.56.101)
+
+2.56.101 never deployed: CI's `check-action-surface` ratchet caught five new
+browser-callable endpoints (153 → 158) without a sign-off. Each is now
+documented in `scripts/check-action-surface.mjs` against what a stranger can do
+with arguments they choose: all five need a session and return `disabled` while
+`ENABLE_CUSTOM_ADOPTION_DOCS` is off; `self` is always the session email; a
+group needs an `org_members` row for that email; contract text must pass a
+strict schema and is stored as JSON, never HTML.
+
+## [2.56.101] - 2026-09-29
+
+### Added — rescuers and groups can shape their own form and contract (`ENABLE_CUSTOM_ADOPTION_DOCS`, off by default)
+
+With the flag on, `/settings` gets a «Formulario y contrato de adopción» card:
+each rescuer picks whose documents they share — their own or one of their
+groups'. The editor (`/settings/adoption-docs`, also reachable from each group
+card) turns form questions on or off (terms, name, email, phone and address stay
+locked) and rewrites contract sections 2–4 with bold, italics, underline and
+bullets. Sections 1 and 5 never change. Any group member can edit the group's
+version; edits show in the group's activity feed.
+
+The public form hides switched-off questions; the contract and its PDF show the
+rescuer's text for sections 2–4. A version is kept for good once someone signs
+it; replaced versions nobody signed are purged after 30 days.
+
+### Changed — every signature records what was signed
+
+Each signed contract now writes a `signed_contracts` row (standard version code,
+custom version if any, language, text hash, PDF key). The PDF footer carries a
+small version code. Recording never blocks a signature.
+
+### Fixed — an unasked question is no longer stored as «no»
+
+A form opened for a specific animal never asks about special needs, yet the
+adoption request read «No busca animales con necesidades especiales». Unasked
+answers are now stored empty, and each submission records which questions were
+shown. Half-filled forms are remembered per rescuer and animal and reopen on the
+right question; tapping an answer on the last question no longer sends the form.
+
+Migrations `0072_adoption_docs.sql`, `0073_adoption_docs_columns.sql` (additive).
+The public form/contract app gets its first unit tests, run in its CI.
+
 ## [2.56.100] - 2026-09-29
 
 ### Fixed — the gallery test raced the photo compression on slower machines

@@ -15,7 +15,7 @@ import { eq, desc, sql } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { revalidatePath } from 'next/cache';
-import { ANIMAL_EVENT_TYPES, type AnimalEventType } from '@/domain/constants';
+import { isVetEventType, ANIMAL_EVENT_TYPES, type AnimalEventType } from '@/domain/constants';
 import {
     computeFollowups, mergeSchedule, mergeFosterRule, parseFollowupSettings,
     getMessageTemplate, DEFAULT_SCHEDULE, FOLLOWUPS_EPOCH,
@@ -47,7 +47,7 @@ export type AnimalTimelineItem = {
     recordedBy: string | null;
     /** Ended spans: length in days (placement_end items). */
     spanDays: number | null;
-    images: { id: string; url: string; mediaType: string | null; thumbnailUrl: string | null; caption: string | null; isPrimary?: boolean }[];
+    images: { id: string; url: string; mediaType: string | null; thumbnailUrl: string | null; caption: string | null; isPrimary?: boolean; scope?: string | null }[];
 };
 
 /** A projected follow-up slot, serialized for the client (dates as epoch ms). */
@@ -79,11 +79,13 @@ export type AnimalProfileData = {
         microchip: string | null;
         createdAt: number | null;
         addedBy: string | null;
+        /** v2.56.128: the rescuer's public-catalogue switch. NULL = listed. */
+        listed: number | null;
     };
     /** Current custody, if any. */
     activePlacement: { id: string; recordType: string; adopterId: string; adopterName: string | null; startedAt: number | null } | null;
     items: AnimalTimelineItem[];
-    images: { id: string; url: string; mediaType: string | null; thumbnailUrl: string | null; caption: string | null; isPrimary?: boolean }[];
+    images: { id: string; url: string; mediaType: string | null; thumbnailUrl: string | null; caption: string | null; isPrimary?: boolean; scope?: string | null }[];
     /** ENABLE_FOLLOWUPS is on for this deployment/user. */
     followupsEnabled: boolean;
     /** Projected follow-up slots for the ACTIVE placement (empty when none/flag off). */
@@ -98,6 +100,24 @@ export type AnimalProfileData = {
     addedByName: string | null;
     orgName: string | null;
     userNameMap: Record<string, string>;
+    /**
+     * v2.56.123: what the «Historial médico» handover needs, or null when the
+     * animal is in nobody's house — there is no family to hand it to.
+     * `vetEventCount` is 0 when nothing clinical was ever recorded, and the UI
+     * hides the button in exactly the case /api/showcase/health 404s, so the
+     * rescuer can never send a link to an empty page.
+     */
+    healthRecord: {
+        /** This adoption's own address for the shared record — not the animal's
+         *  id, so the link dies with the placement (placements.healthToken). */
+        token: string | null;
+        vetEventCount: number;
+        /** First name of the family, for the message. */
+        familyName: string | null;
+        /** One-tap handover. Null when the viewer cannot see the adopter's
+         *  contact details, or no usable phone is on file. */
+        contact: { channel: 'whatsapp' | 'telegram'; phone: string } | null;
+    } | null;
 };
 
 const toMs = (d: unknown): number | null => (d instanceof Date ? d.getTime() : typeof d === 'number' ? d * 1000 : null);
@@ -202,6 +222,9 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
     const mapImages = (rows: any[]) => rows.map((im: any) => ({
         id: im.id, url: im.url, mediaType: im.mediaType ?? null, thumbnailUrl: im.thumbnailUrl ?? null, caption: im.caption ?? null,
         isPrimary: im.isPrimary === 1,
+        // v2.56.128: only 'animal' photos reach the catalogue, so the listing
+        // toggle needs it to say whether a photo is actually missing.
+        scope: im.scope ?? null,
     }));
 
     const items: AnimalTimelineItem[] = [];
@@ -284,6 +307,8 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
     let followupsEnabled = false;
     let projected: ProjectedSlot[] = [];
     let reminder = { email: false, toYou: true };
+    let healthRecord: AnimalProfileData['healthRecord'] = null;
+
     if (active) {
         try {
             followupsEnabled = await getFeatureFlag('ENABLE_FOLLOWUPS');
@@ -292,6 +317,27 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
                 animalId, userEmail, error: e instanceof Error ? e.message : String(e),
             });
         }
+
+        // The handover (v2.56.123) and a due follow-up both offer to message
+        // the same family, so the adopter's contact is resolved ONCE here and
+        // handed to both — resolving it twice on a page load would mean two
+        // extra round trips for one phone number. `careEvents` is already in
+        // hand, and the count applies exactly the filter
+        // /api/showcase/health applies, so the button and the page can never
+        // disagree about whether there is anything worth sending.
+        const vetEventCount = (careEvents as { eventType: string }[])
+            .filter(e => isVetEventType(e.eventType)).length;
+        const contact = (followupsEnabled || vetEventCount > 0)
+            ? await resolveAdopterContact(db, userEmail, active.adopterId, animalId, 'animalProfile')
+            : { phone: null, channel: 'whatsapp' as const, firstName: '' };
+
+        healthRecord = {
+            token: active.healthToken ?? null,
+            vetEventCount,
+            familyName: contact.firstName || null,
+            contact: contact.phone ? { channel: contact.channel, phone: contact.phone } : null,
+        };
+
         if (followupsEnabled) {
             const built = await buildProjectedSlots(db, {
                 animalId, userEmail,
@@ -302,6 +348,7 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
                 },
                 events: events as any[],
                 careEvents: careEvents as any[],
+                contact,
             }).catch((e) => {
                 logger.warn('getAnimalProfile: projected fallback', {
                     animalId, userEmail, error: e instanceof Error ? e.message : String(e),
@@ -320,6 +367,7 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
             estimatedBirthDate: toMs(animal.estimatedBirthDate), neutered: animal.neutered ?? null,
             sex: animal.sex ?? null, color: animal.color ?? null, microchip: animal.microchip ?? null,
             createdAt: toMs(animal.createdAt), addedBy: animal.addedBy ?? null,
+            listed: animal.listed ?? null,
         },
         activePlacement: active ? {
             id: active.id, recordType: active.recordType, adopterId: active.adopterId,
@@ -333,7 +381,58 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
         addedByName,
         orgName,
         userNameMap,
+        healthRecord,
     };
+}
+
+/**
+ * The adopter's reachable phone, for the one-tap contact affordances (a due
+ * follow-up, and the health-record handover).
+ *
+ * resolveAdopterVisibility is the single authority on whether this viewer may
+ * see the number at all, and this fails CLOSED: any error, any masking, and
+ * the caller gets `phone: null`, which every caller renders as "no contact
+ * shortcut" rather than as an error. The first name comes back regardless —
+ * it is already on screen next to the animal.
+ */
+async function resolveAdopterContact(
+    db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+    userEmail: string,
+    adopterId: string,
+    animalId: string,
+    op: string,
+): Promise<{ phone: string | null; channel: 'whatsapp' | 'telegram'; firstName: string }> {
+    let phone: string | null = null;
+    let channel: 'whatsapp' | 'telegram' = 'whatsapp';
+    let firstName = '';
+    try {
+        const adopter = await db.select({
+            id: adopters.id, name: adopters.name, addedBy: adopters.addedBy,
+            contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo,
+        }).from(adopters).where(eq(adopters.id, adopterId)).get();
+        if (adopter) {
+            firstName = (adopter.name || '').trim().split(/\s+/)[0] || '';
+            const visibility = await resolveAdopterVisibility(userEmail, { id: adopter.id, addedBy: adopter.addedBy });
+            if (visibility.nothingMasked) {
+                const entries = deserializeContactEntries(adopter.contactEntries);
+                const phones = entries.filter(en => en.type === 'phone' && en.value);
+                const tg = phones.find(en => en.apps?.includes('telegram') && !en.apps?.includes('whatsapp'));
+                const wa = phones.find(en => en.apps?.includes('whatsapp')) || phones[0];
+                if (wa) { phone = wa.value; channel = 'whatsapp'; }
+                else if (tg) { phone = tg.value; channel = 'telegram'; }
+                if (!phone && adopter.contactInfo) {
+                    const m = String(adopter.contactInfo).match(/\+?[\d][\d\s\-().]{7,}/);
+                    if (m) phone = m[0];
+                }
+            }
+        }
+    } catch (e) {
+        logger.warn(op + ': contact resolution fallback', {
+            animalId, adopterId, userEmail,
+            error: e instanceof Error ? e.message : String(e),
+        });
+    }
+    return { phone, channel, firstName };
 }
 
 /** The owner's FollowupSettings (user_profiles is keyed by NextAuth user id,
@@ -360,6 +459,8 @@ async function buildProjectedSlots(db: any, input: {
     animal: { name: string | null; estimatedBirthDate: Date | number | null; neutered: number | null; addedBy: string | null };
     events: any[];
     careEvents: any[];
+    /** Resolved once by the caller and shared with the health-record handover. */
+    contact: { phone: string | null; channel: 'whatsapp' | 'telegram'; firstName: string };
 }): Promise<{ slots: ProjectedSlot[]; reminder: { email: boolean; toYou: boolean } }> {
     const { placement, animal } = input;
     const settings = await getSettingsForEmail(db, input.userEmail);
@@ -404,39 +505,10 @@ async function buildProjectedSlots(db: any, input: {
         notBefore: resolveFollowupsEpoch(),
     });
 
-    // One-click contact: ONLY when the viewer has full PII access to the
-    // adopter (owner/org/admin/moderator or an approved all-contact grant) —
-    // resolveAdopterVisibility is the single authority; fail-closed.
-    let contactPhone: string | null = null;
-    let contactChannel: 'whatsapp' | 'telegram' = 'whatsapp';
-    let familia = '';
-    try {
-        const adopter = await db.select({
-            id: adopters.id, name: adopters.name, addedBy: adopters.addedBy,
-            contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo,
-        }).from(adopters).where(eq(adopters.id, placement.adopterId)).get();
-        if (adopter) {
-            familia = (adopter.name || '').trim().split(/\s+/)[0] || '';
-            const visibility = await resolveAdopterVisibility(input.userEmail, { id: adopter.id, addedBy: adopter.addedBy });
-            if (visibility.nothingMasked) {
-                const entries = deserializeContactEntries(adopter.contactEntries);
-                const phones = entries.filter(en => en.type === 'phone' && en.value);
-                const tg = phones.find(en => en.apps?.includes('telegram') && !en.apps?.includes('whatsapp'));
-                const wa = phones.find(en => en.apps?.includes('whatsapp')) || phones[0];
-                if (wa) { contactPhone = wa.value; contactChannel = 'whatsapp'; }
-                else if (tg) { contactPhone = tg.value; contactChannel = 'telegram'; }
-                if (!contactPhone && adopter.contactInfo) {
-                    const m = String(adopter.contactInfo).match(/\+?[\d][\d\s\-().]{7,}/);
-                    if (m) contactPhone = m[0];
-                }
-            }
-        }
-    } catch (e) {
-        logger.warn('followups: contact resolution fallback', {
-            animalId: input.animalId, adopterId: placement.adopterId, userEmail: input.userEmail,
-            error: e instanceof Error ? e.message : String(e),
-        });
-    }
+    // One-click contact, resolved by the caller (getAnimalProfile) so the page
+    // pays for it once: resolveAdopterContact is the single authority on
+    // whether this viewer may see the number, and it fails closed.
+    const { phone: contactPhone, channel: contactChannel, firstName: familia } = input.contact;
 
     const now = Date.now();
     const mapped = slots.map(s => {
@@ -613,7 +685,10 @@ export async function addAnimalPhoto(animalId: string, dataUrl: string): Promise
         const owner = active?.adopterId || '__available__';
 
         const { saveImage } = await import('@/app/actions/images');
-        const res = await saveImage(owner, dataUrl, undefined, animalId, 'image');
+        // 'animal': this is the animal's own gallery («Editar» on its page), so it
+        // reaches the public showcase and the shared health record — and it stays
+        // the animal's through a devolución, unlike the holder in `owner`.
+        const res = await saveImage(owner, dataUrl, undefined, animalId, 'image', false, 'animal');
         const id = (res as { id?: string })?.id;
         if (!id) return { error: 'Upload failed' };
 
@@ -648,6 +723,41 @@ export async function deleteAnimalPhoto(animalId: string, imageId: string): Prom
     } catch (error) {
         const errorId = logger.error('deleteAnimalPhoto failed', error, { animalId, imageId, userEmail });
         return { error: `Failed to remove photo (${errorId})` };
+    }
+}
+
+/**
+ * v2.56.128: the rescuer's switch for the public catalogue.
+ *
+ * Taking an animal out is not a state of the animal — it is still available,
+ * still fostered, still has its photos. It covers the cases the app has no
+ * other word for: under treatment, already promised, not ready to be seen.
+ * Adopting it away is what ENDS a listing; this only pauses one.
+ *
+ * Stored as NULL/1 = listed, 0 = hidden, so an animal that predates the
+ * switch keeps appearing without a backfill.
+ */
+export async function setAnimalListed(animalId: string, listed: boolean): Promise<{ success: true } | { error: string }> {
+    const { getUser } = await import('@/app/actions/_db');
+    const userEmail = await getUser();
+    try {
+        if (!userEmail) return { error: 'Unauthorized' };
+        if (!animalPhotoIdSchema.safeParse(animalId).success) return { error: 'Not found' };
+        const db = await getDb();
+        if (!db) return { error: 'Database not available' };
+        if (!(await assertCanEditAnimal(db, animalId, userEmail))) return { error: 'Not found' };
+
+        await db.update(animals)
+            .set({ listed: listed ? 1 : 0, updatedAt: new Date(), updatedBy: userEmail })
+            .where(eq(animals.id, animalId));
+
+        logAudit({ userEmail, action: 'animal_listing_set', target: animalId, details: { listed } });
+        revalidatePath(`/my-animals/${animalId}`);
+        revalidatePath('/my-animals');
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('setAnimalListed failed', error, { animalId, listed, userEmail });
+        return { error: `Failed to change the catalogue setting (${errorId})` };
     }
 }
 

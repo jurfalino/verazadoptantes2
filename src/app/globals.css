@@ -102,6 +102,20 @@
 
   /* Luminous Card Glow — RGB triplet (§2.2) */
   --accent-glow-rgb: 20, 184, 166;
+
+  /* Illustrations (404 + owned-elsewhere): sticker style, dark outline on light fills in both themes */
+  --illo-line: #042f2e;
+  --illo-paper: #ffffff;
+  --illo-mark: #0f766e;
+  --illo-fur-dog: #f5f5f4;
+  --illo-fur-cat: #fde68a;
+  --illo-ear: #a8a29e;
+  --illo-feather: #99f6e4;
+  --illo-feather-dark: #5eead4;
+  --illo-beak: #fbbf24;
+  --illo-ground: #d6d3d1;
+  --illo-motion: #a8a29e;
+  --illo-bare: #042f2e;
 }
 
 /* ── DARK (Midnight Blue) ── */
@@ -191,6 +205,20 @@
 
   /* Luminous Card Glow — brighter in dark mode (§2.2) */
   --accent-glow-rgb: 94, 234, 212;
+
+  /* Illustrations (404 + owned-elsewhere): sticker style, dark outline on light fills in both themes */
+  --illo-line: #042f2e;
+  --illo-paper: #f8fafc;
+  --illo-mark: #0f766e;
+  --illo-fur-dog: #e2e8f0;
+  --illo-fur-cat: #fcd34d;
+  --illo-ear: #94a3b8;
+  --illo-feather: #99f6e4;
+  --illo-feather-dark: #2dd4bf;
+  --illo-beak: #fbbf24;
+  --illo-ground: #334155;
+  --illo-motion: #64748b;
+  --illo-bare: #cbd5e1;
 }
 
 

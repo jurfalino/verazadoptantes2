@@ -3,32 +3,15 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
-import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
+import { linkFormToExistingAdopter } from '@/app/actions/formSubmission';
 import { useShowToast } from '@/components/ui/Toast';
+import { buttonClasses } from '@/components/ui/Button';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { useState } from 'react';
+import { CheckCircle2, ArrowRight } from 'lucide-react';
 import { en } from '@/i18n/locales/en';
-
-const MATCH_TYPE_KEYS: Record<string, string> = {
-    // Legacy prefixed taxonomy (notifications written by the bespoke matcher pre-v2.14.7-12)
-    'token:name_full': 'match_name_full',
-    'token:name_word': 'match_name_word',
-    'token:phone': 'match_phone',
-    'token:phone_suffix': 'match_phone_suffix',
-    'token:email': 'match_email',
-    'token:social': 'match_social',
-    'like:name': 'match_like_name',
-    'like:contact': 'match_like_contact',
-    // Unprefixed taxonomy emitted by findAdopters duplicate-mode (v2.14.7-12+)
-    name_full: 'match_name_full',
-    name_word: 'match_name_word',
-    name_word_fuzzy: 'match_name_word',
-    phone: 'match_phone',
-    phone_suffix: 'match_phone_suffix',
-    email: 'match_email',
-    social: 'match_social',
-    like_fallback: 'match_like_contact',
-};
+import { matchTypeLabel } from '@/lib/matchTypeLabels';
 
 // Single source of truth: fallbacks from English locale
 const formResultsFallbacks = en.formResults as Record<string, string>;
@@ -42,8 +25,13 @@ export interface FormResultMatchCardProps {
     profile: { id: string; name: string; contactInfo: string | null; addressInfo: string | null; status: string | null; profileImageUrl?: string | null };
     applicantSelfieUrl?: string | null;
     matchTypes: string[];
-    notificationId: string;
     submissionId: string;
+    /** Offer "Es la misma persona" (and "No es esta persona"). Off once the form is linked. */
+    canLink: boolean;
+    /** This is the profile the form is linked to. */
+    linked?: boolean;
+    /** Linking folds the profile auto-created from the form into this one. */
+    willMerge: boolean;
     onDismiss?: () => void;
 }
 
@@ -69,38 +57,54 @@ export default function FormResultMatchCard({
     profile,
     applicantSelfieUrl,
     matchTypes,
-    notificationId: _notificationId,
     submissionId,
+    canLink,
+    linked = false,
+    willMerge,
     onDismiss,
 }: FormResultMatchCardProps) {
     const { t } = useLanguage();
     const router = useRouter();
     const toast = useShowToast();
+    const [confirmOpen, setConfirmOpen] = useState(false);
     const [linking, setLinking] = useState(false);
     const L = (key: string) => (t(`formResults.${key}`) || '').trim() || formResultsFallbacks[key] || key;
 
     const matchLabels = matchTypes
-        .map((mt) => L(MATCH_TYPE_KEYS[mt] ?? mt) || mt)
+        .map((mt) => matchTypeLabel(mt, t))
         .filter(Boolean);
     const strongMatch = isStrongMatch(matchTypes);
 
-    const handleLinkToProfile = async () => {
+    const fail = (errorId: string, message: string) => {
+        toast.error(t('errors.generic'), message, errorId);
+        setLinking(false);
+        setConfirmOpen(false);
+    };
+
+    const handleConfirmLink = async () => {
         setLinking(true);
         try {
-            const result = await linkFormSubmissionToAdopter(submissionId, profile.id);
-            if (result.success) {
-                toast.success(
-                    L('link_success').replace('{name}', profile.name),
-                    undefined
-                );
-                setTimeout(() => router.push(`/adopter/${profile.id}`), 400);
-            } else {
-                toast.error(t('errors.generic'), L('link_error'), result.errorId);
-                setLinking(false);
+            const result = await linkFormToExistingAdopter(submissionId, profile.id);
+            if (!result) {
+                fail(resolveErrorId(new Error('linkFormToExistingAdopter returned undefined'), 'FormResultMatchCard'), L('link_error'));
+                return;
             }
+            if (result.success) {
+                toast.success(L('link_success').replace('{name}', result.adopterName ?? profile.name));
+                router.push(`/adopter/${profile.id}`);
+                return;
+            }
+            // Refusals (already linked elsewhere, match gone) are expected
+            // outcomes the server logs at warn without an id; mint one here so
+            // the toast still carries a code that matches an Axiom row.
+            const message =
+                result.error === 'already_linked' ? L('link_error_already_linked')
+                : result.error === 'busy' ? L('link_error_busy')
+                : result.error === 'target_unavailable' ? L('link_error_unavailable')
+                : L('link_error');
+            fail(result.errorId ?? resolveErrorId(new Error(`linkFormToExistingAdopter: ${result.error}`), 'FormResultMatchCard'), message);
         } catch (e) {
-            toast.error('Error', L('link_error'), resolveErrorId(e, 'FormResultMatchCard'));
-            setLinking(false);
+            fail(resolveErrorId(e, 'FormResultMatchCard'), L('link_error'));
         }
     };
 
@@ -108,9 +112,22 @@ export default function FormResultMatchCard({
 
     return (
         <article
-            className="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden"
+            // No border-stone-200: globals.css remaps it with !important, which
+            // would beat the success colour on the linked card.
+            className="bg-white rounded-2xl border shadow-sm overflow-hidden"
+            style={{ borderColor: linked ? 'var(--status-success-border)' : 'var(--border-default)' }}
             aria-describedby={`comparison-${profile.id}`}
         >
+            {/* The answer to "which one did I pick?" — first thing on the card. */}
+            {linked && (
+                <div
+                    className="px-4 py-2 flex items-center gap-2 text-sm font-bold border-b"
+                    style={{ background: 'var(--status-success-bg)', color: 'var(--status-success-text)', borderColor: 'var(--status-success-border)' }}
+                >
+                    <CheckCircle2 className="w-4 h-4 shrink-0" strokeWidth={2} aria-hidden="true" />
+                    {L('linked_badge')}
+                </div>
+            )}
             {/* Applicant vs profile photos (when available) */}
             {showPhotos && (
                 <div className="px-4 py-3 border-b border-stone-200 flex items-center justify-center gap-6 bg-stone-50">
@@ -165,18 +182,6 @@ export default function FormResultMatchCard({
                         ))}
                     </>
                 )}
-                {onDismiss && (
-                    <>
-                        <span className="flex-1" />
-                        <button
-                            type="button"
-                            onClick={onDismiss}
-                            className="text-xs font-medium text-stone-500 hover:text-stone-700"
-                        >
-                            {L('not_this_person')}
-                        </button>
-                    </>
-                )}
             </div>
 
             {/* Two-block comparison */}
@@ -203,23 +208,51 @@ export default function FormResultMatchCard({
                 </div>
             </div>
 
-            {/* Actions (min 44px tap targets) */}
-            <div className="px-4 py-3 border-t border-stone-200 flex flex-wrap gap-2">
+            {/* Actions. The decision pair sits together — "Es la misma persona"
+                first, "No es esta persona" last — with navigation between. */}
+            <div className="px-4 py-3 border-t border-stone-200 flex flex-wrap items-center gap-2">
+                {canLink && (
+                    <button
+                        type="button"
+                        onClick={() => setConfirmOpen(true)}
+                        disabled={linking}
+                        className={`${buttonClasses({ variant: 'primary', size: 'compact' })} w-full sm:w-auto`}
+                    >
+                        <CheckCircle2 className="w-4 h-4" strokeWidth={2} aria-hidden="true" />
+                        {L('same_person')}
+                    </button>
+                )}
                 <Link
                     href={`/adopter/${profile.id}`}
-                    className="inline-flex items-center gap-1.5 min-h-[44px] px-4 py-2.5 text-sm font-semibold text-stone-700 bg-stone-100 rounded-lg hover:bg-stone-200 transition-colors"
+                    className={`${buttonClasses({ variant: 'secondary', size: 'compact' })} w-full sm:w-auto`}
                 >
-                    {L('view_full_profile')} →
+                    {L('view_full_profile')}
+                    <ArrowRight className="w-4 h-4" strokeWidth={2} aria-hidden="true" />
                 </Link>
-                <button
-                    type="button"
-                    onClick={handleLinkToProfile}
-                    disabled={linking}
-                    className="inline-flex items-center gap-1.5 min-h-[44px] px-4 py-2.5 text-sm font-semibold text-teal-700 bg-teal-100 rounded-lg hover:bg-teal-200 disabled:opacity-50 transition-colors"
-                >
-                    {linking ? '…' : `🔗 ${L('link_to_this_profile')}`}
-                </button>
+                {canLink && onDismiss && (
+                    <button
+                        type="button"
+                        onClick={onDismiss}
+                        disabled={linking}
+                        className="w-full sm:w-auto sm:ml-auto min-h-[44px] px-2 text-[13px] font-semibold text-stone-500 hover:text-stone-700 transition-colors"
+                    >
+                        {L('not_this_person')}
+                    </button>
+                )}
             </div>
+
+            <ConfirmDialog
+                open={confirmOpen}
+                title={L('confirm_link_title').replace('{name}', profile.name)}
+                message={(willMerge ? L('confirm_link_body_merge') : L('confirm_link_body'))
+                    .replace('{applicant}', applicant.name || L('form_applicant'))
+                    .replace('{name}', profile.name)}
+                confirmLabel={linking ? L('linking') : L('confirm_link_action')}
+                destructive={false}
+                busy={linking}
+                onConfirm={handleConfirmLink}
+                onCancel={() => setConfirmOpen(false)}
+            />
         </article>
     );
 }

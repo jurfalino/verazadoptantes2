@@ -346,7 +346,7 @@ export async function saveAdopter(data: SaveAdopterInput) {
             // hasn't been geo-seeded yet.
             let userCountry: string | null = null;
             try {
-                const { env } = (await import('@cloudflare/next-on-pages')).getRequestContext();
+                const { env } = (await import('@/lib/requestContext')).getRequestContext();
                 if (env?.DB) {
                     const row = await env.DB.prepare(
                         `SELECT up.country FROM user_profiles up JOIN user u ON u.id = up.user_id WHERE u.email = ? LIMIT 1`

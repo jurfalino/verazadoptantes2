@@ -47,7 +47,7 @@ test.describe('Error Boundaries & Network Resilience', () => {
         // Current behavior: the app opens an empty profile form for unknown IDs
         // This is a valid graceful behavior — no raw error/crash
         const hasForm = await page.getByPlaceholder(/name|nombre/i).isVisible({ timeout: 5000 }).catch(() => false);
-        const hasNotFound = await page.getByText(/not found|no encontrado/i).first().isVisible({ timeout: 2000 }).catch(() => false);
+        const hasNotFound = await page.getByTestId('not-found-page').isVisible({ timeout: 5000 }).catch(() => false);
         const redirectedHome = page.url().endsWith('/');
 
         // At least one graceful behavior should occur (no crash/raw error)

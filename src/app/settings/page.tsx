@@ -10,6 +10,7 @@ import { timezoneOptionsFor } from '@/domain/timezones';
 import { DEFAULT_TIMEZONE } from '@/lib/dates';
 import { useShowToast } from '@/components/ui/Toast';
 import FollowupSettingsSection from '@/components/FollowupSettingsSection';
+import AdoptionDocsSettingsSection from '@/components/AdoptionDocsSettingsSection';
 
 export default function SettingsPage() {
     const { data: session, status } = useSession();
@@ -243,6 +244,10 @@ export default function SettingsPage() {
                 {/* v2.55.16: follow-up schedule + message templates (renders only
                     when the public ENABLE_FOLLOWUPS flag is on). */}
                 <FollowupSettingsSection />
+
+                {/* Custom adoption form + contract (renders only when the public
+                    ENABLE_CUSTOM_ADOPTION_DOCS flag is on). */}
+                <AdoptionDocsSettingsSection />
             </div>
         </main>
     );

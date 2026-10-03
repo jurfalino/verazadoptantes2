@@ -3,6 +3,7 @@ import { common } from './catalogs/common';
 import { home } from './catalogs/home';
 import { showcase } from './catalogs/showcase';
 import { animal } from './catalogs/animal';
+import { health } from './catalogs/health';
 import { form } from './catalogs/form';
 import { contract } from './catalogs/contract';
 
@@ -13,6 +14,7 @@ const SLICES: CatalogSlice[] = [
     home,
     showcase,
     animal,
+    health,
     form,
     contract,
 ];

@@ -56,7 +56,7 @@ function relativeDate(unixSec: number | null, locale: string, timeZone: string):
         const w = Math.floor(days / 7);
         return locale === 'en' ? `${w}w ago` : `hace ${w}sem`;
     }
-    return formatShortDate(unixSec, timeZone);
+    return formatShortDate(unixSec, timeZone, locale);
 }
 
 /** 1-line summary of the form submission for the disclosure row. */
