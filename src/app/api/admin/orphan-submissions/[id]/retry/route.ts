@@ -47,7 +47,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         });
 
         await db.update(formSubmissions)
-            .set({ linkedAdopterId: result.adopterId, status: 'linked' })
+            .set({ linkedAdopterId: result.adopterId, autoAdopterId: result.adopterId, status: 'linked' })
             .where(eq(formSubmissions.id, submissionId));
 
         logger.info('Admin orphan-submission recovered', {

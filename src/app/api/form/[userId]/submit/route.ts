@@ -159,8 +159,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
 
             // Link form submission to the new adopter and mark it linked
             // so the old "Unlinked Forms" surface stays empty post-launch.
+            // autoAdopterId records which profile that was, so form-results
+            // can tell "still on the new profile" from "rescuer chose an
+            // existing one" (src/domain/formLink.ts).
             await db.update(formSubmissions).set({
                 linkedAdopterId: adopterId,
+                autoAdopterId: adopterId,
                 status: 'linked',
             }).where(eq(formSubmissions.id, submissionId));
         } catch (e) {

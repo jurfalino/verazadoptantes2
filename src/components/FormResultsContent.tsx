@@ -6,8 +6,10 @@ import { useTimezone } from '@/context/TimezoneContext';
 import { useLanguage } from '@/context/LanguageContext';
 import FormAnswersPanel, { renderFormAnswerValue } from '@/components/FormAnswersPanel';
 import FormResultMatchCard from '@/components/FormResultMatchCard';
+import { buttonClasses } from '@/components/ui/Button';
 import { en } from '@/i18n/locales/en';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, CheckCircle2, Users, UserPlus, UserCheck, ArrowRight } from 'lucide-react';
+import { formResultsView, type FormLinkKind, type FormResultsAction, type FormResultsBanner } from '@/domain/formLink';
 
 // Single source of truth: fallbacks come from English locale so labels always render
 const formResultsFallbacks = en.formResults as Record<string, string>;
@@ -69,7 +71,6 @@ interface MatchedProfile {
 }
 
 interface FormResultsContentProps {
-    notificationId: string;
     submitted: {
         name: string;
         email: string;
@@ -92,6 +93,7 @@ interface FormResultsContentProps {
         longitude: string | null;
         status: string | null;
         linkedAdopterId: string | null;
+        autoAdopterId: string | null;
         answersJson: string | null;
         createdAt?: Date | null;
     } | undefined;
@@ -102,6 +104,22 @@ interface FormResultsContentProps {
     matchedAdopters: MatchedAdopter[] | undefined;
     matchedFormSubmissions?: Array<{ id: string; name: string; notificationId: string | null }>;
     matchedProfiles: MatchedProfile[];
+    linkKind: FormLinkKind;
+    /** The live profile the form points at — null when unlinked, or linked to a since-merged profile. */
+    linkedProfile: { id: string; name: string; profileImageUrl: string | null } | null;
+}
+
+/** Status tones map to the semantic tokens (style guide §1.2), which both themes define. */
+const BANNER_TONE: Record<FormResultsBanner, 'success' | 'warning' | 'info'> = {
+    linked_existing: 'success',
+    review_matches: 'warning',
+    unlinked_with_matches: 'warning',
+    new_profile: 'info',
+    unlinked: 'info',
+};
+
+function proxied(url: string): string {
+    return url.includes('r2.dev') ? `/api/proxy-image?url=${encodeURIComponent(url)}` : url;
 }
 
 export default function FormResultsContent(props: FormResultsContentProps) {
@@ -109,7 +127,6 @@ export default function FormResultsContent(props: FormResultsContentProps) {
     const { t } = useLanguage();
     const L = (key: string) => (t(`formResults.${key}`) || '').trim() || formResultsFallbacks[key] || key;
     const {
-        notificationId,
         submitted,
         submission,
         fullAnswers,
@@ -119,20 +136,61 @@ export default function FormResultsContent(props: FormResultsContentProps) {
         matchedAdopters,
         matchedFormSubmissions: _matchedFormSubmissions = [],
         matchedProfiles,
+        linkKind,
+        linkedProfile,
     } = props;
 
     const [completeAnswersOpen, setCompleteAnswersOpen] = useState(!hasMatches || (matchCount ?? 0) <= 1);
-    const [matchesOpen, setMatchesOpen] = useState(true);
     const [dismissedMatchIds, setDismissedMatchIds] = useState<string[]>([]);
     const matchesSectionRef = useRef<HTMLDivElement>(null);
 
-    const visibleMatches = (matchedAdopters ?? []).filter((m) => !dismissedMatchIds.includes(m.id));
+    // Matches that can still render a card: live profile, not dismissed.
+    // The linked one goes first, so "which did I pick?" is answered on open.
+    const linkedId = submission?.linkedAdopterId ?? null;
+    const visibleMatches = (matchedAdopters ?? [])
+        .filter((m) => !dismissedMatchIds.includes(m.id) && matchedProfiles.some((p) => p.id === m.id))
+        .sort((a, b) => Number(b.id === linkedId) - Number(a.id === linkedId));
+    const view = formResultsView(linkKind, visibleMatches.length);
+    const [matchesOpen, setMatchesOpen] = useState(view.matchesOpenByDefault);
+    // Only a live profile gets a link: one merged away before merges carried
+    // form links along would 404.
+    const profileHref = linkedProfile ? `/adopter/${linkedProfile.id}` : null;
+    const createHref = `/adopter/create?fromForm=${submission?.id ?? ''}`;
 
     const scrollToMatchingProfiles = () => {
         setMatchesOpen(true);
         setTimeout(() => {
             matchesSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 100);
+    };
+
+    /** One renderer for every placement, so banner, bottom and sticky bar can't drift. */
+    const renderAction = (action: FormResultsAction, variant: 'primary' | 'secondary', fullWidth = false) => {
+        const className = buttonClasses({ variant, fullWidth });
+        switch (action) {
+            case 'review_matches':
+                return (
+                    <button key={action} type="button" onClick={scrollToMatchingProfiles} className={className}>
+                        <Users className="w-5 h-5" strokeWidth={1.5} aria-hidden="true" />
+                        {L('action_review_matches')}
+                    </button>
+                );
+            case 'view_profile':
+                if (!profileHref) return null;
+                return (
+                    <Link key={action} href={profileHref} className={className}>
+                        {linkKind === 'new_profile' ? L('action_view_new_profile') : L('action_view_profile')}
+                        <ArrowRight className="w-5 h-5" strokeWidth={1.5} aria-hidden="true" />
+                    </Link>
+                );
+            case 'create_profile':
+                return (
+                    <Link key={action} href={createHref} className={className}>
+                        <UserPlus className="w-5 h-5" strokeWidth={1.5} aria-hidden="true" />
+                        {L('create_profile_cta')}
+                    </Link>
+                );
+        }
     };
 
     return (
@@ -160,60 +218,20 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                 </div>
             </div>
 
-            {/* Status Banner */}
-            {(() => {
-                const isLinked = submission?.status === 'linked' && submission?.linkedAdopterId;
-                if (isLinked && submission?.linkedAdopterId) {
-                    return (
-                        <div className="rounded-xl p-4 mb-6 bg-teal-50 border border-teal-200">
-                            <p className="text-sm font-semibold text-teal-800">
-                                {L('status_linked')}
-                            </p>
-                            <p className="text-xs mt-1 text-teal-700 mb-3">
-                                {L('status_linked_desc')}
-                            </p>
-                            <Link
-                                href={`/adopter/${submission.linkedAdopterId}`}
-                                className="inline-flex items-center gap-2 text-sm font-semibold text-teal-700 hover:text-teal-800 underline underline-offset-2"
-                            >
-                                👤 {L('view_linked_profile_cta')}
-                            </Link>
-                        </div>
-                    );
+            <StatusBanner
+                banner={view.banner}
+                count={visibleMatches.length}
+                applicantName={submitted?.name || null}
+                linkedProfile={linkedProfile}
+                hadMatches={matchCount > 0}
+                L={L}
+                actions={
+                    <>
+                        {renderAction(view.primary, 'primary')}
+                        {view.secondary && renderAction(view.secondary, 'secondary')}
+                    </>
                 }
-                return (
-                    <div className={`rounded-xl p-4 mb-6 ${hasMatches ? 'bg-amber-50 border border-amber-200' : 'bg-teal-50 border border-teal-200'}`}>
-                        <p className={`text-sm font-semibold ${hasMatches ? 'text-amber-800' : 'text-teal-800'}`}>
-                            {hasMatches
-                                ? L('status_found_matches').replace('{count}', String(matchCount))
-                                : L('status_no_matches')}
-                        </p>
-                        <p className={`text-xs mt-1 mb-3 ${hasMatches ? 'text-amber-600' : 'text-teal-700'}`}>
-                            {hasMatches
-                                ? L('status_found_desc')
-                                : L('status_no_matches_desc')}
-                        </p>
-                        {/* Primary CTAs in banner: Create profile; when matches exist, "See matching profiles" scrolls down */}
-                        <div className="flex flex-wrap gap-2">
-                            <Link
-                                href={`/adopter/create?fromForm=${submission?.id ?? ''}`}
-                                className="inline-flex items-center justify-center gap-2 min-h-[44px] px-4 py-3 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors"
-                            >
-                                ➕ {L('create_profile_cta')}
-                            </Link>
-                            {hasMatches && visibleMatches.length > 0 && (
-                                <button
-                                    type="button"
-                                    onClick={scrollToMatchingProfiles}
-                                    className="inline-flex items-center justify-center gap-2 min-h-[44px] px-4 py-3 bg-white rounded-xl border border-stone-300 text-sm font-semibold text-stone-700 hover:bg-stone-50 transition-colors"
-                                >
-                                    👤 {L('see_matching_profiles')}
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                );
-            })()}
+            />
 
             {/* Selfie */}
             {submission?.selfieUrl && (
@@ -335,7 +353,7 @@ export default function FormResultsContent(props: FormResultsContentProps) {
             )}
 
             {/* Matched Profiles – comparison cards (collapsible) */}
-            {hasMatches && visibleMatches.length > 0 && submission && (
+            {visibleMatches.length > 0 && submission && (
                 <div id="section-matching-profiles" ref={matchesSectionRef}>
                 <CollapsibleSection
                     title={`${L('section_matches')} (${visibleMatches.length})`}
@@ -359,8 +377,10 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                     profile={profile}
                                     applicantSelfieUrl={submission.selfieUrl}
                                     matchTypes={match.matchTypes ?? []}
-                                    notificationId={notificationId}
                                     submissionId={submission.id}
+                                    canLink={view.canLinkMatches}
+                                    linked={linkKind === 'linked_existing' && match.id === linkedId}
+                                    willMerge={linkKind === 'new_profile' && !!linkedProfile}
                                     onDismiss={() => setDismissedMatchIds((ids) => [...ids, match.id])}
                                 />
                             );
@@ -370,44 +390,137 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                 </div>
             )}
 
-            {/* Actions (scenario-based: primary = Create when no matches; both when has matches) */}
-            {submission?.status !== 'linked' && (
+            {/* Bottom actions + mobile sticky bar: only while there is no profile
+                yet. Once one exists the banner's "Ver perfil" is the only next
+                step, and matches carry their own decision buttons. */}
+            {view.primary === 'create_profile' && (
                 <>
-                    <div className="mt-6 pt-4 border-t border-stone-200 space-y-3">
-                        <p className="text-xs text-stone-500 font-medium mb-2">
+                    <div className="mt-6 pt-4 border-t border-stone-200">
+                        <p className="text-xs text-stone-500 font-semibold mb-2">
                             {L('actions_section')}
                         </p>
                         <div className="flex flex-col sm:flex-row gap-2">
-                            <Link
-                                href={`/adopter/create?fromForm=${submission?.id ?? ''}`}
-                                className="flex items-center justify-center gap-2 min-h-[44px] px-4 py-3 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors"
-                            >
-                                ➕ {L('create_profile_cta')}
-                            </Link>
-                            {hasMatches && (
-                                <Link
-                                    href={`/form-results/${notificationId}/link`}
-                                    prefetch={false}
-                                    className="flex items-center justify-center gap-2 min-h-[44px] px-4 py-3 bg-white rounded-xl border border-stone-300 text-sm font-semibold text-stone-700 hover:bg-stone-50 transition-colors"
-                                >
-                                    🔗 {L('link_to_existing_cta')}
-                                </Link>
-                            )}
+                            {renderAction('create_profile', 'primary')}
+                            {view.secondary && renderAction(view.secondary, 'secondary')}
                         </div>
                     </div>
-                    {/* Sticky CTA on mobile (same primary action) */}
-                    <div className="md:hidden fixed bottom-0 left-0 right-0 p-3 bg-white/95 border-t border-stone-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] safe-area-pb z-10">
-                        <Link
-                            href={`/adopter/create?fromForm=${submission?.id ?? ''}`}
-                            className="flex items-center justify-center gap-2 min-h-[48px] w-full px-4 py-3 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors"
-                        >
-                            ➕ {L('create_profile_cta')}
-                        </Link>
+                    {/* --surface-card, not bg-white/95: that opacity variant has no
+                        [data-theme] remap and rendered a white slab in Azul Noche. */}
+                    <div
+                        className="md:hidden fixed bottom-0 left-0 right-0 p-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] safe-area-pb z-10"
+                        style={{ background: 'var(--surface-card)', borderTop: '1px solid var(--border-default)' }}
+                    >
+                        {renderAction('create_profile', 'primary', true)}
                     </div>
                     <div className="md:hidden h-20" aria-hidden />
                 </>
             )}
         </main>
+    );
+}
+
+/**
+ * The page's answer to "where does this form stand?". One sentence of state,
+ * one of consequence, then the next step. The linked state names the profile
+ * and shows its photo — before v2.56.129 it read the same before and after the
+ * rescuer chose a match, which is the bug this exists to fix.
+ */
+function StatusBanner({
+    banner,
+    count,
+    applicantName,
+    linkedProfile,
+    hadMatches,
+    L,
+    actions,
+}: {
+    banner: FormResultsBanner;
+    count: number;
+    applicantName: string | null;
+    linkedProfile: { id: string; name: string; profileImageUrl: string | null } | null;
+    hadMatches: boolean;
+    L: (key: string) => string;
+    actions: React.ReactNode;
+}) {
+    const tone = BANNER_TONE[banner];
+    const reviewTitle = count === 1 ? L('banner_review_title_one') : L('banner_review_title').replace('{count}', String(count));
+    const newProfileName = applicantName || linkedProfile?.name;
+    const { title, desc } = (() => {
+        switch (banner) {
+            case 'review_matches':
+                return { title: reviewTitle, desc: L('banner_review_desc') };
+            case 'unlinked_with_matches':
+                return { title: reviewTitle, desc: L('banner_review_unlinked_desc') };
+            case 'new_profile':
+                return {
+                    title: newProfileName ? L('banner_new_profile_title').replace('{name}', newProfileName) : L('banner_new_profile_title_generic'),
+                    // "No previous records" is only true when nothing matched at
+                    // all — not when matches were dismissed or merged away.
+                    desc: hadMatches ? null : L('banner_new_profile_desc'),
+                };
+            case 'linked_existing':
+                return {
+                    // No "it's in their history" line: forms moved by a merge
+                    // from the duplicates queue never got a request record.
+                    title: linkedProfile ? L('banner_linked_title').replace('{name}', linkedProfile.name) : L('status_linked'),
+                    desc: null,
+                };
+            case 'unlinked':
+                return { title: L('banner_unlinked_title'), desc: L('banner_unlinked_desc') };
+        }
+    })();
+    const Icon = tone === 'success' ? CheckCircle2 : tone === 'warning' ? Users : UserCheck;
+    // The person, not an icon, once there is a profile to show.
+    const photo = (banner === 'linked_existing' || banner === 'new_profile') ? linkedProfile?.profileImageUrl : null;
+
+    return (
+        <section
+            aria-live="polite"
+            data-testid="form-status-banner"
+            data-state={banner}
+            className="rounded-2xl border p-4 mb-6"
+            style={{ background: `var(--status-${tone}-bg)`, borderColor: `var(--status-${tone}-border)` }}
+        >
+            <div className="flex items-start gap-4">
+                {photo ? (
+                    <span className="relative shrink-0">
+                        <img
+                            src={proxied(photo)}
+                            alt=""
+                            className="w-12 h-12 rounded-full object-cover bg-stone-100"
+                        />
+                        {tone === 'success' && (
+                            <span
+                                className="absolute -bottom-1 -right-1 rounded-full"
+                                style={{ background: 'var(--surface-card)', color: 'var(--status-success-text)' }}
+                            >
+                                <CheckCircle2 className="w-5 h-5" strokeWidth={2} aria-hidden="true" />
+                            </span>
+                        )}
+                    </span>
+                ) : (
+                    <span
+                        className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center"
+                        style={{ background: 'var(--surface-card)', color: `var(--status-${tone}-text)` }}
+                    >
+                        <Icon className="w-5 h-5" strokeWidth={2} aria-hidden="true" />
+                    </span>
+                )}
+                <div className="min-w-0 flex-1">
+                    <h2 className="text-base font-bold leading-snug break-words" style={{ color: 'var(--text-primary)' }}>
+                        {title}
+                    </h2>
+                    {desc && (
+                        <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+                            {desc}
+                        </p>
+                    )}
+                </div>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 mt-4">
+                {actions}
+            </div>
+        </section>
     );
 }
 

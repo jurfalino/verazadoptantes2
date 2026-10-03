@@ -682,6 +682,11 @@ export const formSubmissions = sqliteTable("form_submissions", {
     // Metadata
     status: text("status").default("pending"),   // pending, reviewed, linked
     linkedAdopterId: text("linked_adopter_id"),  // Set when rescuer links to profile
+    // v2.56.129: the profile auto-created from this submission. Never
+    // re-pointed, so linkedAdopterId === autoAdopterId means "still on the new
+    // profile" and anything else means the rescuer chose an existing one
+    // (src/domain/formLink.ts). Null when auto-create failed or predates it.
+    autoAdopterId: text("auto_adopter_id"),
     notificationId: text("notification_id"),     // Back-reference to notification
     // v2.14.10: when the form was launched from the public showcase
     // (`/animal/[id]` → "Adoptar"), this captures which animal the

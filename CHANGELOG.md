@@ -2,6 +2,36 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.129] - 2026-10-03
+
+### Fixed — linking an adoption form to an existing profile now shows, and leaves no duplicate
+
+Every form submission creates a profile for the applicant and links the form
+to it straight away. So the form-results page said "esta respuesta está
+vinculada" before the rescuer decided anything, and said exactly the same after
+they chose an existing profile — only the "Ver perfil" target changed. Coming
+Back from the profile also replayed the pre-link page from the browser's cache.
+
+The page now says where the form stands: "Encontramos N perfiles parecidos"
+while there are look-alikes to review, "Creamos un perfil para X" when there is
+nothing to decide, and "Solicitud vinculada a X" (with their photo, and that
+match card marked "Perfil vinculado") once the rescuer has chosen.
+
+"Es la misma persona" now works like it does for contracts: after a
+confirmation, the profile created from the form is combined into the chosen
+one (records, photos and contacts move over; undoable by an admin), the
+request is added to that profile's history, and whoever created it is
+notified. Before, linking left the new profile behind as a duplicate.
+
+- Merges from the duplicates queue now carry form links to the surviving
+  profile (and undo moves them back), so a form never points at a merged-away
+  profile.
+- The dead "Vincular a perfil existente" button (its page was removed in
+  v2.14) is gone; the matches carry the decision.
+- The mobile action bar no longer renders as a white slab in Azul Noche.
+- New column `form_submissions.auto_adopter_id` (migration 0077), backfilled
+  for existing rows.
+
 ## [2.56.128] - 2026-10-03
 
 ### Added — animals in a foster home are in the public catalogue

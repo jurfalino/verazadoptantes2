@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { logger } from '@/lib/logger';
 import { isOrgMate } from '@/lib/orgMembership';
 import { isAdminAsync } from '@/config/admins';
+import { formLinkKind } from '@/domain/formLink';
 
 interface MatchedAdopter {
     id: string;
@@ -83,6 +84,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
             longitude: formSubmissions.longitude,
             status: formSubmissions.status,
             linkedAdopterId: formSubmissions.linkedAdopterId,
+            autoAdopterId: formSubmissions.autoAdopterId,
             answersJson: formSubmissions.answersJson,
             createdAt: formSubmissions.createdAt,
         })
@@ -120,24 +122,29 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         }
     }
 
-    // Fetch matched adopter profiles (with addressInfo and profile image for comparison)
-    let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; addressInfo: string | null; status: string | null; profileImageUrl: string | null }> = [];
-    if (metadata.matchedAdopters && metadata.matchedAdopters.length > 0) {
-        const adopterIds = metadata.matchedAdopters.map(a => a.id);
-        // Profiles and their images are independent — fetch both in one wave.
-        // Both use the OR-of-eq id filter, never `inArray`: D1 does NOT expand
-        // array params in IN clauses (it binds `IN (?)` with a single value and
-        // silently returns wrong results — see docs/D1_COMPATIBILITY.md). The
-        // images query previously used `inArray(...)`, so matched-adopter avatars
-        // could come back missing/wrong on D1; this switches it to the same safe
-        // pattern the profile query already uses.
-        // Filter soft-deleted (merged-duplicate) adopters at read time so even legacy
-        // notifications whose stored matchedAdopters contains since-deleted IDs render correctly.
+    // Matched profiles (for the comparison cards) and the linked profile (for
+    // the banner) in one wave. The linked profile is usually one of the
+    // matches or the auto-created profile, so they share the queries.
+    const linkKind = formLinkKind({
+        linkedAdopterId: submission?.linkedAdopterId ?? null,
+        autoAdopterId: submission?.autoAdopterId ?? null,
+    });
+    const linkedId = submission?.linkedAdopterId ?? null;
+    const matchIds = (metadata.matchedAdopters ?? []).map(a => a.id);
+    const profileIds = [...new Set([...matchIds, ...(linkedId ? [linkedId] : [])])];
+
+    type ProfileRow = { id: string; name: string; contactInfo: string | null; addressInfo: string | null; status: string | null; profileImageUrl: string | null };
+    let matchedProfiles: ProfileRow[] = [];
+    let linkedProfile: { id: string; name: string; profileImageUrl: string | null } | null = null;
+    if (profileIds.length > 0) {
+        // OR-of-eq id filters, never `inArray`: D1 does NOT expand array params
+        // in IN clauses (it binds `IN (?)` with a single value and silently
+        // returns wrong results — see docs/D1_COMPATIBILITY.md).
         const [rows, imageRows] = await Promise.all([
             db
-                .select({ id: adopters.id, name: adopters.name, contactInfo: adopters.contactInfo, addressInfo: adopters.addressInfo, status: adopters.status })
+                .select({ id: adopters.id, name: adopters.name, contactInfo: adopters.contactInfo, addressInfo: adopters.addressInfo, status: adopters.status, deletedAt: adopters.deletedAt })
                 .from(adopters)
-                .where(and(or(...adopterIds.map(id => eq(adopters.id, id)))!, isNull(adopters.deletedAt)))
+                .where(or(...profileIds.map(id => eq(adopters.id, id)))!)
                 .all(),
             // v2.26.1: profile-level OR the flagged profile picture (an activity/
             // observation photo can be the avatar); isProfilePicture DESC wins.
@@ -145,7 +152,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
                 .select({ adopterId: adopterImages.adopterId, url: adopterImages.url, isProfilePicture: adopterImages.isProfilePicture })
                 .from(adopterImages)
                 .where(and(
-                    or(...adopterIds.map(id => eq(adopterImages.adopterId, id)))!,
+                    or(...profileIds.map(id => eq(adopterImages.adopterId, id)))!,
                     or(isNull(adopterImages.adoptionId), eq(adopterImages.isProfilePicture, 1)),
                 ))
                 .orderBy(sql`${adopterImages.isProfilePicture} DESC`, sql`${adopterImages.uploadedAt} DESC`),
@@ -154,17 +161,33 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         for (const row of imageRows) {
             if (!imageByAdopter.has(row.adopterId)) imageByAdopter.set(row.adopterId, row.url);
         }
+        type Row = Omit<ProfileRow, 'profileImageUrl'> & { deletedAt: Date | null };
+        const withImage = (r: Row): ProfileRow => {
+            const { deletedAt: _deletedAt, ...rest } = r;
+            return { ...rest, profileImageUrl: imageByAdopter.get(r.id) ?? null };
+        };
+
+        // Soft-deleted (merged-away) matches are dropped at read time, so a
+        // notification recorded before a merge still renders correctly.
         // Sort by match strength (more matchTypes first), preserving order of metadata.matchedAdopters for ties
-        const order = new Map(metadata.matchedAdopters.map((a, i) => [a.id, { count: a.matchTypes?.length ?? 0, index: i }]));
-        type ProfileRow = { id: string; name: string; contactInfo: string | null; addressInfo: string | null; status: string | null; profileImageUrl: string | null };
-        matchedProfiles = rows.map((r: Omit<ProfileRow, 'profileImageUrl'>) => ({
-            ...r,
-            profileImageUrl: imageByAdopter.get(r.id) ?? null,
-        })).sort((a: ProfileRow, b: ProfileRow) => {
-            const ac = order.get(a.id) ?? { count: 0, index: 999 };
-            const bc = order.get(b.id) ?? { count: 0, index: 999 };
-            return bc.count !== ac.count ? bc.count - ac.count : ac.index - bc.index;
-        });
+        const order = new Map((metadata.matchedAdopters ?? []).map((a, i) => [a.id, { count: a.matchTypes?.length ?? 0, index: i }]));
+        matchedProfiles = (rows as Row[])
+            .filter(r => order.has(r.id) && !r.deletedAt)
+            .map(withImage)
+            .sort((a, b) => {
+                const ac = order.get(a.id) ?? { count: 0, index: 999 };
+                const bc = order.get(b.id) ?? { count: 0, index: 999 };
+                return bc.count !== ac.count ? bc.count - ac.count : ac.index - bc.index;
+            });
+
+        // A form linked to a profile that was later merged away (before merges
+        // carried form links along, v2.56.129) has no live profile to name —
+        // the banner falls back to its generic wording then.
+        const linkedRow = (rows as Row[]).find(r => r.id === linkedId && !r.deletedAt);
+        if (linkedRow) {
+            const p = withImage(linkedRow);
+            linkedProfile = { id: p.id, name: p.name, profileImageUrl: p.profileImageUrl };
+        }
     }
 
     const hasMatches = (metadata.matchCount ?? 0) > 0;
@@ -187,7 +210,6 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
 
     return (
         <FormResultsContent
-            notificationId={submissionId}
             submitted={submitted}
             submission={submission}
             fullAnswers={fullAnswers}
@@ -196,6 +218,8 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
             matchCount={metadata.matchCount ?? 0}
             matchedAdopters={metadata.matchedAdopters}
             matchedProfiles={matchedProfiles}
+            linkKind={linkKind}
+            linkedProfile={linkedProfile}
         />
     );
 }

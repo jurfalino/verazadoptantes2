@@ -102,7 +102,17 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // the same gate the other five animal actions use, and the only writable
 // value is a boolean collapsed to 0/1. The worst a permitted caller can do is
 // hide or show their own team's animal, which is the feature. Audited.
-const EXPECTED_ACTIONS = 161;
+// 162 since v2.56.129: linkFormToExistingAdopter(submissionId, adopterId) in
+// src/app/actions/formSubmission.ts — "Es la misma persona" on form-results.
+// It merges profiles, so the guard is the point. Safe with arguments a
+// stranger chooses: only the submission's owner (form_submissions.user_id ==
+// session email) passes; the target must be a match recorded in THEIR
+// notification at submit time, live, and not the form's own auto-created
+// profile; the only profile ever absorbed is that auto-created one, and a
+// form already on an existing profile is refused rather than moved
+// (planFormLink in src/domain/formLink.ts, unit-tested). Retries are no-ops.
+// The merge is the shared, undoable mergeAdopters. Audited.
+const EXPECTED_ACTIONS = 162;
 
 let manifest;
 try {
