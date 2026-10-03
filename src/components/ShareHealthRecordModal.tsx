@@ -28,11 +28,13 @@ import { interpolate } from '@/lib/interpolate';
 import { buildWaMeUrl, buildTelegramUrl } from '@/lib/whatsapp';
 
 export default function ShareHealthRecordModal({
-    open, onClose, animalId, animalName, vetEventCount, familyName, contact,
+    open, onClose, animalId, token, animalName, vetEventCount, familyName, contact,
 }: {
     open: boolean;
     onClose: () => void;
+    /** For error reporting only — the shared address is `token`. */
     animalId: string;
+    token: string;
     animalName: string;
     vetEventCount: number;
     familyName: string | null;
@@ -48,7 +50,7 @@ export default function ShareHealthRecordModal({
      *  their own. */
     const seeded = useRef(false);
 
-    const url = contractBase ? `${contractBase}/salud/${animalId}?lang=${locale}` : '';
+    const url = contractBase ? `${contractBase}/salud/${token}?lang=${locale}` : '';
 
     useEffect(() => {
         if (!open) { seeded.current = false; return; }

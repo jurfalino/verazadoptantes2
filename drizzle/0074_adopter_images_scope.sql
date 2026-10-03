@@ -29,8 +29,21 @@ UPDATE adopter_images
  WHERE adopter_id = '__available__'
    AND adoption_id IS NOT NULL;
 
--- Everything else on an animal key stays NULL and is treated as NOT public:
--- a photo of the family shown to strangers is a far worse outcome than a photo
--- of the animal that a rescuer has to re-add. In production this is 3 rows.
+-- The second unambiguous case, from the other direction: an animal-keyed photo
+-- with NO caption. Every flow that writes one from the adopter's side stamps a
+-- caption automatically ("Photo for X", "Video for X"), as does the create
+-- form; the ONLY path that leaves it empty is addAnimalPhoto — «Editar» on the
+-- animal's own page. In production this is exactly the 3 rows that the
+-- adopter_id rule could not reach, all on one animal, confirmed by Jon on
+-- 2026-10-03 as photos of the animal.
+UPDATE adopter_images
+   SET scope = 'animal'
+ WHERE scope IS NULL
+   AND (caption IS NULL OR caption = '')
+   AND adoption_id IN (SELECT id FROM animals);
+
+-- Anything still NULL stays NOT public: a photo of the family shown to
+-- strangers is a far worse outcome than a photo of the animal that a rescuer
+-- has to re-add. In production, after both rules, that is zero rows.
 CREATE INDEX IF NOT EXISTS idx_adopter_images_adoption_scope
     ON adopter_images(adoption_id, scope);

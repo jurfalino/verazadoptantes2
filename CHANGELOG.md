@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.126] - 2026-10-03
+
+### Changed — the shared health record has one address per adoption
+
+The link a rescuer hands the family now belongs to that adoption, not to the
+animal. When the animal comes home the link stops opening, and if the animal is
+adopted again the new family gets a different address — the first family's link
+stays dead instead of coming back to life.
+
+The address is random. The adoption's own identifier could not be used: for
+animals created with a home already attached it is derived from the animal's
+id, which is public, so more than half of them would have been guessable.
+
 ## [2.56.125] - 2026-10-03
 
 ### Fixed — only the people who look after an animal can add photos to it
@@ -17,9 +30,9 @@ one to a timeline entry.
 ### Changed — the shared health record stops working after a devolución
 
 The link is for the family that has the animal, so when the animal comes back,
-the link they were given stops opening. The handover screen now says so. If the
-animal is adopted again the same address serves the new family, and the first
-family's old link starts working again with it.
+the link they were given stops opening. The handover screen now says so.
+(2.56.126 gives each adoption its own address, so a later adoption no longer
+revives the previous family's link.)
 
 ### Fixed — videos no longer show as a broken frame
 

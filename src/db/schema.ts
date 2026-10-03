@@ -227,6 +227,11 @@ export const placements = sqliteTable("placements", {
     comments: text("comments"), // contract screenshot JSON etc.
     sourceUrl: text("source_url"),
     recordedBy: text("recorded_by").default("anonymous"),
+    /** v2.56.126: the address of this adoption's shared health record. Random
+     *  and per-placement, so a later adoption of the same animal mints a new
+     *  one and the previous family's link stays dead. Never derived from the
+     *  animal id — that id is public, and 60 of the placement ids are. */
+    healthToken: text("health_token"),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
     animalIdx: index("idx_placements_animal").on(table.animalId),

@@ -106,6 +106,9 @@ export type AnimalProfileData = {
      * rescuer can never send a link to an empty page.
      */
     healthRecord: {
+        /** This adoption's own address for the shared record — not the animal's
+         *  id, so the link dies with the placement (placements.healthToken). */
+        token: string | null;
         vetEventCount: number;
         /** First name of the family, for the message. */
         familyName: string | null;
@@ -324,6 +327,7 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
             : { phone: null, channel: 'whatsapp' as const, firstName: '' };
 
         healthRecord = {
+            token: active.healthToken ?? null,
             vetEventCount,
             familyName: contact.firstName || null,
             contact: contact.phone ? { channel: contact.channel, phone: contact.phone } : null,

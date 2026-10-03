@@ -306,7 +306,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                                        animals with no active placement — anything else 404s. */
                                     publicFiche={!activePlacement && images.length > 0}
                                 />
-                                {healthRecord && healthRecord.vetEventCount > 0 && (
+                                {healthRecord?.token && healthRecord.vetEventCount > 0 && (
                                     <button
                                         type="button"
                                         onClick={() => setHealthOpen(true)}
@@ -471,11 +471,12 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                     initialSubtype={eventModal.subtype}
                 />
             )}
-            {healthRecord && healthRecord.vetEventCount > 0 && (
+            {healthRecord?.token && healthRecord.vetEventCount > 0 && (
                 <ShareHealthRecordModal
                     open={healthOpen}
                     onClose={() => setHealthOpen(false)}
                     animalId={animal.id}
+                    token={healthRecord.token}
                     animalName={animal.name || 'Animal'}
                     vetEventCount={healthRecord.vetEventCount}
                     familyName={healthRecord.familyName}

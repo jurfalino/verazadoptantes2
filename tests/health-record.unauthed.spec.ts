@@ -17,8 +17,10 @@ import { test, expect } from '@playwright/test';
  * that leaves the app.
  */
 
-const ADOPTED = 'test-animal-fixture-1';          // Timon: adopted, one vaccination, one event photo
-const NOTE_ONLY = 'test-animal-fixture-note';     // Soloanota: one `note`, nothing clinical
+// The address is the PLACEMENT's token, not the animal's id (v2.56.126).
+const ADOPTED = 'tok-fixture-1a-open';            // Timon's OPEN adoption
+const ENDED = 'tok-fixture-ret-closed';           // Vuelta's adoption, already ended
+const NOTE_ONLY = 'tok-fixture-note-open';        // Soloanota: nothing clinical
 
 // Seeded people and households that must never reach the family (seed.sql).
 const ADOPTER_NAME = 'Fátima';
@@ -32,7 +34,6 @@ test.describe('Health record API (anonymous visitor)', () => {
         expect(res.headers()['x-robots-tag']).toContain('noindex');
 
         const body = await res.json();
-        expect(body.animal.id).toBe(ADOPTED);
         expect(body.animal.name).toBe('Timon');
 
         const vac = body.events.find((e: { eventType: string }) => e.eventType === 'vaccination');
@@ -83,7 +84,10 @@ test.describe('Health record API (anonymous visitor)', () => {
         expect(raw).not.toContain(FOSTER_NAME);
         expect(raw).not.toContain('test-adopter-fixture-tl1');
         expect(raw).not.toContain('test-adopter-fixture-tl2');
+        // Resolving the token reads `placements`; nothing from it comes back,
+        // the row's own id and token included.
         expect(raw).not.toContain('test-plc-fixture-1a');
+        expect(raw).not.toContain(ADOPTED);
         // The seeded follow-up is a note ABOUT THE FAMILY, so it is not here.
         expect(raw).not.toContain('Muy bien adaptado');
         // Free-text description: a third of production ones name a household.
@@ -121,8 +125,15 @@ test.describe('Health record API (anonymous visitor)', () => {
         expect(await res.text()).not.toContain('Belgrano');
     });
 
-    test('a missing animal 404s', async ({ request }) => {
-        const res = await request.get('/api/showcase/health/test-animal-does-not-exist');
+    test('an unknown token 404s', async ({ request }) => {
+        const res = await request.get('/api/showcase/health/tok-does-not-exist');
+        expect(res.status()).toBe(404);
+    });
+
+    test('the animal\'s own id is not an address', async ({ request }) => {
+        // The whole point of the token: knowing the animal — which the public
+        // listing hands out — must not open its family's health record.
+        const res = await request.get('/api/showcase/health/test-animal-fixture-1');
         expect(res.status()).toBe(404);
     });
 });
@@ -134,13 +145,14 @@ test.describe('Public adoption listing of a RETURNED animal', () => {
     // `scope` is the only thing standing between a stranger and a photo of the
     // family — which is why this is asserted against the LIVE listing route,
     // not only against the health record.
-    const RETURNED = 'test-animal-fixture-ret';
+    const RETURNED = 'test-animal-fixture-ret';   // the ANIMAL id — the listing is still keyed on it
 
-    test('the health record link stops working once the animal is back', async ({ request }) => {
-        // Vuelta HAS a vaccination on file, so this 404 is about custody: the
-        // family that was handed this link no longer has the animal
-        // (product decision, 2026-10-03).
-        const res = await request.get(`/api/showcase/health/${RETURNED}`);
+    test('the link the family was given stops working once the animal is back', async ({ request }) => {
+        // Vuelta HAS a vaccination on file, so this 404 is about custody and
+        // not emptiness. Her adoption ended, so the address she was handed is
+        // dead — and because it belonged to THAT adoption, rehoming her mints
+        // a new one rather than reviving this.
+        const res = await request.get(`/api/showcase/health/${ENDED}`);
         expect(res.status()).toBe(404);
         expect(await res.text()).not.toContain('Triple felina');
     });

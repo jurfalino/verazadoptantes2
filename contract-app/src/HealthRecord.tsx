@@ -97,7 +97,10 @@ function setMetaTag(name: string, content: string, attr: 'name' | 'property' = '
 }
 
 /**
- * HealthRecord — /salud/:id, the page a rescuer hands to the family.
+ * HealthRecord — /salud/:token, the page a rescuer hands to the family.
+ *
+ * The token belongs to the ADOPTION, not the animal, so the link stops working
+ * when the animal comes home and a later adoption gets its own.
  *
  * It is the animal's clinical timeline and nothing else: no foster home, no
  * adopter, no rating, no follow-up. That is enforced by the API, which never
@@ -108,7 +111,7 @@ function setMetaTag(name: string, content: string, attr: 'name' | 'property' = '
  * every date on the page is one somebody recorded, and the footer says so and
  * points at the reader's own vet.
  */
-export default function HealthRecord({ animalId }: { animalId: string }) {
+export default function HealthRecord({ token }: { token: string }) {
     const { t, locale } = useT()
     const [data, setData] = useState<ApiResponse | null>(null)
     const [loading, setLoading] = useState(true)
@@ -126,7 +129,7 @@ export default function HealthRecord({ animalId }: { animalId: string }) {
             setLoading(true)
             setError(null)
             try {
-                const res = await fetch(`${API_URL}/api/showcase/health/${encodeURIComponent(animalId)}`)
+                const res = await fetch(`${API_URL}/api/showcase/health/${encodeURIComponent(token)}`)
                 if (cancelled) return
                 if (!res.ok) {
                     setError(res.status === 404 ? t('health.not_found_title') : t('common.network_error'))
@@ -141,7 +144,7 @@ export default function HealthRecord({ animalId }: { animalId: string }) {
         }
         load()
         return () => { cancelled = true }
-    }, [animalId, t])
+    }, [token, t])
 
     const fmtDate = useMemo(() => {
         const f = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' })

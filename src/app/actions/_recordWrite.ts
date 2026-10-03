@@ -52,6 +52,10 @@ function placementValues(animalId: string, data: RecordData, recordType: string,
         comments: data.comments ?? null,
         sourceUrl: data.sourceUrl ?? null,
         recordedBy: actor,
+        // The address of this adoption's shared health record (v2.56.126).
+        // Minted here so the column never has a hole: a placement without one
+        // would show the rescuer a share button with nothing behind it.
+        healthToken: crypto.randomUUID().replace(/-/g, ''),
     };
 }
 

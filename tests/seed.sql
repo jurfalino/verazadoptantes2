@@ -163,9 +163,9 @@ INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered
 ('test-animal-fixture-1', 'Timon', 'dog', 'Perro fixture para la línea de vida', 'macho', 'marrón', 0, 'gatitosolivos@gmail.com', strftime('%s','now','-120 days'), strftime('%s','now'));
 
 -- Custody trail: an ENDED foster span + the ACTIVE adoption.
-INSERT OR REPLACE INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by) VALUES
-('test-plc-fixture-1f', 'test-animal-fixture-1', 'test-adopter-fixture-tl2', 'foster', strftime('%s','now','-120 days'), strftime('%s','now','-80 days'), 'completed', NULL, 'gatitosolivos@gmail.com'),
-('test-plc-fixture-1a', 'test-animal-fixture-1', 'test-adopter-fixture-tl1', 'adoption', strftime('%s','now','-80 days'), NULL, 'completed', 5, 'gatitosolivos@gmail.com');
+INSERT OR REPLACE INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by, health_token) VALUES
+('test-plc-fixture-1f', 'test-animal-fixture-1', 'test-adopter-fixture-tl2', 'foster', strftime('%s','now','-120 days'), strftime('%s','now','-80 days'), 'completed', NULL, 'gatitosolivos@gmail.com', 'tok-fixture-1f-ended'),
+('test-plc-fixture-1a', 'test-animal-fixture-1', 'test-adopter-fixture-tl1', 'adoption', strftime('%s','now','-80 days'), NULL, 'completed', 5, 'gatitosolivos@gmail.com', 'tok-fixture-1a-open');
 
 -- v2.56.105: an animal whose 30-day check-in is DUE right now — adopted 35 days
 -- ago (window is 30+21) with NO follow-up to satisfy it. Its own animal and its
@@ -179,8 +179,8 @@ UPDATE adopters SET country = 'AR' WHERE id = 'test-adopter-fixture-due';
 INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered, added_by, created_at, updated_at) VALUES
 ('test-animal-fixture-due', 'Pendiente', 'cat', 'Fixture con un control vencido', 'hembra', 'gris', 1, 'gatitosolivos@gmail.com', strftime('%s','now','-40 days'), strftime('%s','now'));
 
-INSERT OR REPLACE INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by) VALUES
-('test-plc-fixture-due', 'test-animal-fixture-due', 'test-adopter-fixture-due', 'adoption', strftime('%s','now','-35 days'), NULL, 'completed', 5, 'gatitosolivos@gmail.com');
+INSERT OR REPLACE INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by, health_token) VALUES
+('test-plc-fixture-due', 'test-animal-fixture-due', 'test-adopter-fixture-due', 'adoption', strftime('%s','now','-35 days'), NULL, 'completed', 5, 'gatitosolivos@gmail.com', 'tok-fixture-due-open');
 
 -- A follow-up LINKED to the animal (the 0062 backfill is a no-op on the empty
 -- CI database, so the linkage is seeded directly).
@@ -243,8 +243,8 @@ UPDATE adopters SET country = 'AR' WHERE id = 'test-adopter-fixture-ret';
 INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered, added_by, created_at, updated_at) VALUES
 ('test-animal-fixture-ret', 'Vuelta', 'cat', 'Fixture devuelta y re-publicada', 'hembra', 'naranja', 1, 'gatitosolivos@gmail.com', strftime('%s','now','-200 days'), strftime('%s','now'));
 
-INSERT OR REPLACE INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by) VALUES
-('test-plc-fixture-ret', 'test-animal-fixture-ret', 'test-adopter-fixture-ret', 'adoption', strftime('%s','now','-150 days'), strftime('%s','now','-30 days'), 'completed', 3, 'gatitosolivos@gmail.com');
+INSERT OR REPLACE INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by, health_token) VALUES
+('test-plc-fixture-ret', 'test-animal-fixture-ret', 'test-adopter-fixture-ret', 'adoption', strftime('%s','now','-150 days'), strftime('%s','now','-30 days'), 'completed', 3, 'gatitosolivos@gmail.com', 'tok-fixture-ret-closed');
 
 -- A real clinical entry, so the 404 on this animal's health record proves the
 -- CUSTODY gate and not merely that there was nothing to show.
@@ -272,6 +272,17 @@ INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption
 -- custody, and an available animal keeps the adopted-by-year grouping intact.
 INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered, added_by, created_at, updated_at) VALUES
 ('test-animal-fixture-note', 'Soloanota', 'dog', 'Fixture sin eventos clínicos', 'macho', 'negro', 0, 'gatitosolivos@gmail.com', strftime('%s','now','-30 days'), strftime('%s','now'));
+
+-- In a FOSTER home: it needs an open placement to have a health-record address
+-- at all, and the 404 has to come from "nothing clinical", not from "no family
+-- to hand it to". Foster rather than adoption so the adopted-by-year grouping
+-- that a sibling test asserts on is untouched.
+INSERT OR REPLACE INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES
+('test-adopter-fixture-note', 'Nota Timeline', 'Tel: 555-0204', '5', 'test-seed', strftime('%s','now'), strftime('%s','now'));
+UPDATE adopters SET country = 'AR' WHERE id = 'test-adopter-fixture-note';
+
+INSERT OR REPLACE INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by, health_token) VALUES
+('test-plc-fixture-note', 'test-animal-fixture-note', 'test-adopter-fixture-note', 'foster', strftime('%s','now','-25 days'), NULL, 'completed', NULL, 'gatitosolivos@gmail.com', 'tok-fixture-note-open');
 
 INSERT OR REPLACE INTO animal_events (id, animal_id, event_type, date, details, recorded_by) VALUES
 ('test-aevent-fixture-note', 'test-animal-fixture-note', 'note', strftime('%s','now','-20 days'),

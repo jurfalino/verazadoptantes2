@@ -59,16 +59,19 @@ function AppRoutes() {
         )
     }
 
-    // ── /salud/:id ───────────────────────────────────────────────────
-    // v2.56.123: the animal's veterinary record, handed by the rescuer to the
-    // family that adopted or is fostering them. Unlike /animal/:id this one
-    // keeps working after the animal is placed — that is the whole point —
-    // and it carries no person other than the rescue that recorded it.
+    // ── /salud/:token ────────────────────────────────────────────────
+    // The animal's veterinary record, handed by the rescuer to the family that
+    // adopted or is fostering them. Unlike /animal/:id it keeps working while
+    // the animal IS placed — that is the whole point — and it carries no
+    // person other than the rescue that recorded it.
+    //
+    // The path is the placement's own token (v2.56.126), not the animal id: it
+    // dies when the animal comes home, and a later adoption mints a new one.
     if (path.startsWith('salud/')) {
-        const animalId = path.slice('salud/'.length)
+        const token = path.slice('salud/'.length)
         return (
             <ErrorBoundary>
-                <HealthRecord animalId={animalId} />
+                <HealthRecord token={token} />
             </ErrorBoundary>
         )
     }

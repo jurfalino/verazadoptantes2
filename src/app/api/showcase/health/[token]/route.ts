@@ -9,7 +9,7 @@ import { buildPublicRescuer, animalPrimaryFirst } from '@/lib/showcase';
 import { VET_EVENT_TYPES } from '@/domain/constants';
 
 /**
- * GET /api/showcase/health/[id] — the animal's shareable health record.
+ * GET /api/showcase/health/[token] — one adoption's shareable health record.
  * Consumed by the contract-app's /salud/:id page, which a rescuer hands to
  * the family that adopted or is fostering the animal.
  *
@@ -24,18 +24,24 @@ import { VET_EVENT_TYPES } from '@/domain/constants';
  *
  * Events are limited to VET_EVENT_TYPES; `note` is excluded (free text).
  *
+ * The address is the PLACEMENT's `health_token`, not the animal's id: one
+ * address per adoption. That is what makes the link expire. When the animal
+ * comes home the placement ends and this 404s forever; adopting it out again
+ * mints a fresh token for the new family, and the first family's link stays
+ * dead (product decision, 2026-10-03). The token is random — the placement id
+ * could not be used, since `_recordWrite` derives it from the animal id for
+ * animals created with a home attached, and the animal id is public.
+ *
  * Two gates, and both must hold or the link 404s:
  *
- *  1. The animal is in SOMEONE'S HOUSE right now. The record is handed to the
- *     family that has the animal, so when the animal comes back the link they
- *     were given stops working (product decision, 2026-10-03). `placements` is
- *     read for this check ONLY — nothing from it reaches the response, which
- *     is asserted in tests/health-record.unauthed.spec.ts. Note the URL is
- *     per-animal, so a later adoption makes the same address live again for
- *     the new family; the first family's old link comes back with it.
- *  2. There is at least one clinical entry. An empty record is worse than no
- *     link, and the UI hides the share button on exactly the same condition,
- *     so a rescuer can never send one.
+ *  1. The token names a placement that is still OPEN.
+ *  2. The animal has at least one clinical entry. An empty record is worse
+ *     than no link, and the UI hides the share button on exactly the same
+ *     condition, so a rescuer can never send one.
+ *
+ * `placements` is read to resolve the token and for nothing else — no field of
+ * it reaches the response, which tests/health-record.unauthed.spec.ts asserts
+ * against the whole payload.
  */
 export async function OPTIONS(req: Request) {
     return corsPreflightResponse(req.headers.get('origin'));
@@ -57,28 +63,29 @@ type ApiEvent = {
 const toMs = (d: unknown): number | null =>
     d instanceof Date ? d.getTime() : typeof d === 'number' ? d * 1000 : null;
 
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }) {
     const origin = request.headers.get('origin');
-    const { id } = await params;
+    const { token } = await params;
     try {
         const db = await getDb();
         if (!db) return withCors(NextResponse.json({ error: 'Database unavailable' }, { status: 500 }), origin);
+
+        // Gate 1: an OPEN placement with this token. A returned animal's span
+        // is closed, so the link the family was given stops here.
+        const placement = await db.select({ animalId: placements.animalId })
+            .from(placements)
+            .where(and(eq(placements.healthToken, token), isNull(placements.endedAt)))
+            .get();
+        if (!placement) {
+            return withCors(NextResponse.json({ error: 'Not found' }, { status: 404 }), origin);
+        }
+        const id = placement.animalId;
 
         const animal = await db.select()
             .from(animals)
             .where(and(eq(animals.id, id), isNull(animals.deletedAt)))
             .get() as typeof animals.$inferSelect | undefined;
         if (!animal) {
-            return withCors(NextResponse.json({ error: 'Not found' }, { status: 404 }), origin);
-        }
-
-        // Gate 1: still placed? A returned animal has no open span, and the
-        // family that was given this link no longer has the animal.
-        const placed = await db.select({ id: placements.id })
-            .from(placements)
-            .where(and(eq(placements.animalId, id), isNull(placements.endedAt)))
-            .get();
-        if (!placed) {
             return withCors(NextResponse.json({ error: 'Not found' }, { status: 404 }), origin);
         }
 
@@ -135,7 +142,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                     .limit(10)
                     .all();
             } catch (e) {
-                logger.warn('GET /api/showcase/health/[id]: image fallback', {
+                logger.warn('GET /api/showcase/health/[token]: image fallback', {
                     animalId: id, key, error: e instanceof Error ? e.message : String(e),
                 });
                 return [];
@@ -192,7 +199,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             },
         }), origin);
     } catch (e) {
-        const errorId = logger.error('GET /api/showcase/health/[id] failed', e, { animalId: id });
+        const errorId = logger.error('GET /api/showcase/health/[token] failed', e);
         return withCors(NextResponse.json({ error: 'Failed to load health record', errorId }, { status: 500 }), origin);
     }
 }

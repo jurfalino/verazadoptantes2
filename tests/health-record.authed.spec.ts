@@ -18,7 +18,9 @@ import { test, expect } from '@playwright/test';
  */
 
 const ADOPTED = 'test-animal-fixture-1';          // Timon: adopted, one vaccination
-const NOTE_ONLY = 'test-animal-fixture-note';     // Soloanota: one `note`, nothing clinical
+const NOTE_ONLY = 'test-animal-fixture-note';     // Soloanota: fostered, nothing clinical
+/** The shared address belongs to the ADOPTION, not the animal (v2.56.126). */
+const ADOPTED_TOKEN = 'tok-fixture-1a-open';
 
 test.describe('Health record handover', () => {
 
@@ -38,13 +40,19 @@ test.describe('Health record handover', () => {
 
         // The message is prefilled with the public link and is editable.
         const message = page.getByTestId('health-share-message');
-        await expect(message).toHaveValue(new RegExp(`/salud/${ADOPTED}`));
+        await expect(message).toHaveValue(new RegExp(`/salud/${ADOPTED_TOKEN}`));
+        // The animal's own id is public; it must not be the address.
+        await expect(message).not.toHaveValue(new RegExp(`/salud/${ADOPTED}`));
         await message.fill('Mensaje propio');
         await expect(message).toHaveValue('Mensaje propio');
 
         // The preview opens the page the family will see — same id, /salud.
         await expect(page.getByTestId('health-share-preview'))
-            .toHaveAttribute('href', new RegExp(`/salud/${ADOPTED}`));
+            .toHaveAttribute('href', new RegExp(`/salud/${ADOPTED_TOKEN}`));
+
+        // And the rescuer is told the link is not forever.
+        await expect(page.getByTestId('health-share-expires'))
+            .toContainText(/stops working if you record a return|deja de funcionar si registrás una devolución/);
 
         // Still on the animal: the handover never navigates away.
         expect(page.url()).toContain(`/my-animals/${ADOPTED}`);
