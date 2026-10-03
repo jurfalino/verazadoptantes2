@@ -191,6 +191,44 @@ INSERT OR REPLACE INTO adopter_events (id, adopter_id, event_type, animal_id, pl
 INSERT OR REPLACE INTO animal_events (id, animal_id, event_type, date, details, recorded_by) VALUES
 ('test-aevent-fixture-tl1', 'test-animal-fixture-1', 'vaccination', strftime('%s','now','-100 days'), 'Quíntuple, primera dosis', 'gatitosolivos@gmail.com');
 
+-- ── HEALTH RECORD FIXTURES (v2.56.123 — health-record.authed.spec.ts) ──
+-- A photo ON the vaccination event (adopter_images.adoption_id is the EVENT
+-- id for event photos), so the shared record has something for its lightbox.
+INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type) VALUES
+('test-img-fixture-aevent1', 'test-adopter-fixture-tl1', 'test-aevent-fixture-tl1',
+ 'https://api.dicebear.com/7.x/shapes/svg?seed=carnet', 'Carnet de vacunación',
+ strftime('%s','now','-100 days'), 'gatitosolivos@gmail.com', 0, 0, 'image');
+
+-- A photo attached to the ADOPTION record rather than to the animal. The
+-- adopter-side editor writes `adoption_id = <animal id>` with the ADOPTER's id
+-- (AdoptionFormEditV2), so this row sits on the same key as the animal's own
+-- gallery and can show the family. Its caption names the adopter on purpose:
+-- the "carries no person" assertion greps the whole payload for that name, so
+-- this row is what makes that assertion mean something.
+INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type) VALUES
+('test-img-fixture-adoption', 'test-adopter-fixture-tl1', 'test-animal-fixture-1',
+ 'https://api.dicebear.com/7.x/shapes/svg?seed=entrega', 'Fátima con Timon el día de la entrega',
+ strftime('%s','now','-80 days'), 'gatitosolivos@gmail.com', 0, 0, 'image');
+
+-- The animal's OWN listing photo: the '__available__' sentinel the create form
+-- writes. This one must reach the family's page.
+INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type) VALUES
+('test-img-fixture-listing', '__available__', 'test-animal-fixture-1',
+ 'https://api.dicebear.com/7.x/shapes/svg?seed=timon', 'Timon recién rescatado',
+ strftime('%s','now','-119 days'), 'gatitosolivos@gmail.com', 0, 1, 'image');
+
+-- An animal whose ONLY animal_event is a `note`, and whose note names a foster
+-- family. The shared record must 404 for it: `note` is unconstrained free text
+-- the rescuer wrote for themselves, so it never reaches the adopting family.
+-- Left AVAILABLE on purpose — the API gate is "has clinical events", not
+-- custody, and an available animal keeps the adopted-by-year grouping intact.
+INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered, added_by, created_at, updated_at) VALUES
+('test-animal-fixture-note', 'Soloanota', 'dog', 'Fixture sin eventos clínicos', 'macho', 'negro', 0, 'gatitosolivos@gmail.com', strftime('%s','now','-30 days'), strftime('%s','now'));
+
+INSERT OR REPLACE INTO animal_events (id, animal_id, event_type, date, details, recorded_by) VALUES
+('test-aevent-fixture-note', 'test-animal-fixture-note', 'note', strftime('%s','now','-20 days'),
+ 'Lo retiró la familia de tránsito de Belgrano', 'gatitosolivos@gmail.com');
+
 -- ============================================================
 -- TEAM VISIBILITY FIXTURES (v2.55.18 — animal-timeline PR5)
 -- The admin session shares an org with a teammate; the teammate's animal

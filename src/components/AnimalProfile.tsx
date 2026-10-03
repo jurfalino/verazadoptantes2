@@ -26,6 +26,7 @@ import AddAnimalEventModal from '@/components/AddAnimalEventModal';
 import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import AnimalShareSheet from '@/components/AnimalShareSheet';
 import PickAdopterForAnimalModal from '@/components/PickAdopterForAnimalModal';
+import ShareHealthRecordModal from '@/components/ShareHealthRecordModal';
 import AnimalApplicants from '@/components/AnimalApplicants';
 import type { AnimalProfileData, ProjectedSlot } from '@/app/actions/animalTimeline';
 import type { ApplicantSummary } from '@/app/actions/applicants';
@@ -50,7 +51,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
     const { t, locale } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
-    const { animal, activePlacement, items, images, projected, reminder, addedByName, orgName, userNameMap } = profile;
+    const { animal, activePlacement, items, images, projected, reminder, addedByName, orgName, userNameMap, healthRecord } = profile;
 
     const [editing, setEditing] = useState(false);
     const [eventModal, setEventModal] = useState<{ type?: string; followupKey?: string; subtype?: ProjectedSlot['subtype'] } | null>(null);
@@ -61,6 +62,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
     const [photoIdx, setPhotoIdx] = useState<number | null>(null);
     const [pickOpen, setPickOpen] = useState<null | 'adoption' | 'foster'>(null);
     const [confirmDelete, setConfirmDelete] = useState(false);
+    const [healthOpen, setHealthOpen] = useState(false);
     const [busy, setBusy] = useState(false);
 
     const fem = animal.sex === 'hembra' || animal.sex === 'female' || animal.sex === 'Hembra';
@@ -304,6 +306,17 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                                        animals with no active placement — anything else 404s. */
                                     publicFiche={!activePlacement && images.length > 0}
                                 />
+                                {healthRecord && healthRecord.vetEventCount > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setHealthOpen(true)}
+                                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 shadow-sm transition-colors"
+                                        data-testid="profile-health-record"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l8.8 8.8 8.8-8.8a5.5 5.5 0 0 0 0-7.8z" /></svg>
+                                        {t('healthRecord.title') || 'Historial médico'}
+                                    </button>
+                                )}
                                 {adopted && activePlacement && (
                                     <button
                                         type="button"
@@ -456,6 +469,17 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                     initialType={eventModal.type}
                     initialFollowupKey={eventModal.followupKey ?? null}
                     initialSubtype={eventModal.subtype}
+                />
+            )}
+            {healthRecord && healthRecord.vetEventCount > 0 && (
+                <ShareHealthRecordModal
+                    open={healthOpen}
+                    onClose={() => setHealthOpen(false)}
+                    animalId={animal.id}
+                    animalName={animal.name || 'Animal'}
+                    vetEventCount={healthRecord.vetEventCount}
+                    familyName={healthRecord.familyName}
+                    contact={healthRecord.contact}
                 />
             )}
             {pickOpen && (

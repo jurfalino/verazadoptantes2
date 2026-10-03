@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { PawIcon, AlertIcon } from './components/Icons'
 import { useT, localizedHref } from './i18n/LocaleContext'
-
-type TFn = (key: string, vars?: Record<string, string | number>) => string
+import { speciesLabel, sexLabel, ageLabel } from './lib/animalLabels'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -30,42 +29,6 @@ interface AnimalDetailData {
 interface ApiResponse {
     animal: AnimalDetailData
     instagramUrl?: string
-}
-
-// Canonical species key, accepting either Spanish or English source values.
-const SPECIES_KEY: Record<string, string> = {
-    perro: 'dog', dog: 'dog',
-    gato: 'cat', cat: 'cat',
-    ave: 'bird', bird: 'bird',
-    conejo: 'rabbit', rabbit: 'rabbit',
-    otro: 'other', other: 'other',
-}
-
-function speciesLabel(s: string | null, t: TFn): string {
-    if (!s) return ''
-    const key = SPECIES_KEY[s.toLowerCase()]
-    return key ? t(`animal.species_${key}`) : s
-}
-
-function sexLabel(s: string | null, t: TFn): string {
-    if (!s) return ''
-    const v = s.toLowerCase()
-    if (v === 'macho' || v === 'male') return t('animal.sex_male')
-    if (v === 'hembra' || v === 'female') return t('animal.sex_female')
-    return s
-}
-
-function ageLabel(estimatedBirthDate: number | null, ageText: string | null, t: TFn): string {
-    if (estimatedBirthDate) {
-        const years = (Date.now() / 1000 - estimatedBirthDate) / (365.25 * 24 * 3600)
-        if (years < 1) {
-            const months = Math.max(1, Math.round(years * 12))
-            return t(months === 1 ? 'animal.age_month' : 'animal.age_months', { n: months })
-        }
-        const yrs = Math.round(years)
-        return t(yrs === 1 ? 'animal.age_year' : 'animal.age_years', { n: yrs })
-    }
-    return ageText || ''
 }
 
 /**

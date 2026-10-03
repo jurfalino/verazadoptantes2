@@ -4,6 +4,7 @@ import PetShieldForm from './PetShieldForm'
 import TermsPage from './TermsPage'
 import Showcase from './Showcase'
 import AnimalDetail from './AnimalDetail'
+import HealthRecord from './HealthRecord'
 import HomePage from './HomePage'
 import { LocaleProvider, useT } from './i18n/LocaleContext'
 
@@ -54,6 +55,20 @@ function AppRoutes() {
         return (
             <ErrorBoundary>
                 <ContractPage animalId={path} />
+            </ErrorBoundary>
+        )
+    }
+
+    // ── /salud/:id ───────────────────────────────────────────────────
+    // v2.56.123: the animal's veterinary record, handed by the rescuer to the
+    // family that adopted or is fostering them. Unlike /animal/:id this one
+    // keeps working after the animal is placed — that is the whole point —
+    // and it carries no person other than the rescue that recorded it.
+    if (path.startsWith('salud/')) {
+        const animalId = path.slice('salud/'.length)
+        return (
+            <ErrorBoundary>
+                <HealthRecord animalId={animalId} />
             </ErrorBoundary>
         )
     }

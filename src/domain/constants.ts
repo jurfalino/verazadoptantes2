@@ -32,6 +32,17 @@ export const EVENT_TYPES = {
 export const ANIMAL_EVENT_TYPES = ['vaccination', 'deworming', 'vet_visit', 'neuter', 'note'] as const;
 export type AnimalEventType = typeof ANIMAL_EVENT_TYPES[number];
 
+/**
+ * v2.56.123: the clinical subset of ANIMAL_EVENT_TYPES — the only events a
+ * shared health record may show. `note` is deliberately excluded: it is
+ * unconstrained free text the rescuer wrote for themselves, so it can name the
+ * foster home or the adopter, and the shared page must carry no person at all.
+ */
+export const VET_EVENT_TYPES = ['vaccination', 'deworming', 'vet_visit', 'neuter'] as const;
+export type VetEventType = typeof VET_EVENT_TYPES[number];
+export const isVetEventType = (t: string | null | undefined): t is VetEventType =>
+    !!t && (VET_EVENT_TYPES as readonly string[]).includes(t);
+
 // User roles (user_profiles.role). Source of truth for the /admin/users role
 // selects + the PUT validation. Order is ascending privilege.
 export const USER_ROLES = ['viewer', 'contributor', 'moderator', 'admin'] as const;

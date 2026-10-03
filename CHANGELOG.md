@@ -2,6 +2,42 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.123] - 2026-10-03
+
+### Added — share an animal's veterinary record with the family that has them
+
+On an animal that is adopted or in a foster home, "Historial médico" opens a
+handover: it says exactly what the family will receive, offers an editable
+message, and sends it over WhatsApp to the number already on the adopter's
+profile (about 80% of placed animals have one). Everyone else gets the link to
+paste wherever they already talk to that family.
+
+The link opens a page on the public site — the animal's photo, name and
+description, then its veterinary timeline: vaccinations, deworming, vet visits
+and neutering, each with its date, the rescuer's own note, and the photos
+attached to it. Any photo opens full size, carrying the entry and date it came
+from, and one tap shows every photo of the animal in a single grid.
+
+The page says nothing about the animal's adoption or its previous foster home,
+and names no person except the rescue that recorded it. The API never reads
+placements, adopters or follow-ups at all. Three kinds of content are left out
+for the same reason — a rescuer writes them for themselves, so they can name a
+household: free-text "notes", the animal's description (a third of the ones in
+use mention a family, an adoption or a foster home), and photos that were
+attached to an adoption record rather than to the animal itself. Those last
+ones share a key with the animal's own gallery, so the page shows only photos
+taken while the animal was being rehomed, plus the ones attached to each
+veterinary entry.
+
+It also claims nothing it cannot know. There is no "vaccines up to date" and no
+next-dose date, because the app has no idea what a given species at a given age
+is due for. Every date shown is one somebody recorded, and the page closes by
+saying how far the record goes and sending the reader to their own vet.
+
+The button appears only once there is at least one veterinary entry, which is
+the same condition under which the page exists — so a rescuer can never send a
+link to an empty page. It is also not indexed by search engines.
+
 ## [2.56.122] - 2026-10-03
 
 ### Fixed — "Compartir" no longer appears on an animal that already has a home

@@ -1,0 +1,11 @@
+# Cloudflare Pages response headers.
+#
+# /salud/* is an animal's veterinary record, handed by a rescuer to the family
+# that adopted or is fostering them. It is reachable by link on purpose — a
+# link in a family's WhatsApp has to keep working for years — but it has no
+# business in a search index. The page sets <meta name="robots"> once React
+# mounts and the API sends X-Robots-Tag on its JSON, but a crawler that does
+# not run JS sees neither: this header is the one that reaches it, because
+# Pages serves the SPA shell for the path itself.
+/salud/*
+  X-Robots-Tag: noindex, nofollow
