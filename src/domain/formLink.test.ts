@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formLinkKind, formResultsView, planFormLink } from './formLink';
+import { formLinkKind, formResultsView, planFormLink, summarizeAdopterForms } from './formLink';
 
 const AUTO = 'auto-1';
 const EXISTING = 'existing-1';
@@ -110,5 +110,51 @@ describe('planFormLink', () => {
     it('never moves a form off an existing profile — that profile is real, merging it away would lose a person', () => {
         expect(planFormLink({ ...base, targetId: OTHER, row: { linkedAdopterId: EXISTING, autoAdopterId: AUTO } }))
             .toEqual({ ok: false, reason: 'already_linked' });
+    });
+});
+
+describe('summarizeAdopterForms', () => {
+    const ME = 'me@x.org';
+    const TEAMMATE = 'mate@x.org';
+    const form = (over: Partial<Parameters<typeof summarizeAdopterForms>[0][number]>) => ({
+        id: 'f1', userId: ME, linkedAdopterId: AUTO, autoAdopterId: AUTO, submittedAt: 100, selectedAnimalId: null, ...over,
+    });
+
+    it('is empty for a person with no forms', () => {
+        expect(summarizeAdopterForms([], ME, () => 0)).toEqual({ count: 0, latest: null, needsReview: false });
+    });
+
+    it('counts every form and surfaces the newest one', () => {
+        const s = summarizeAdopterForms([
+            form({ id: 'old', submittedAt: 100 }),
+            form({ id: 'new', submittedAt: 300, selectedAnimalId: 'luna' }),
+            form({ id: 'mid', submittedAt: 200 }),
+        ], ME, () => 0);
+        expect(s.count).toBe(3);
+        expect(s.latest).toEqual({ submissionId: 'new', submittedAt: 300, animalId: 'luna', ownedByViewer: true });
+    });
+
+    it('needs review exactly when the form-results page would ask for a decision', () => {
+        // New profile with live look-alikes → review_matches.
+        expect(summarizeAdopterForms([form({})], ME, () => 2).needsReview).toBe(true);
+        // Nothing left to compare against.
+        expect(summarizeAdopterForms([form({})], ME, () => 0).needsReview).toBe(false);
+        // Already linked to an existing profile — decided.
+        expect(summarizeAdopterForms([form({ linkedAdopterId: EXISTING })], ME, () => 2).needsReview).toBe(false);
+    });
+
+    it("never flags a teammate's form: only its owner can act on it", () => {
+        const s = summarizeAdopterForms([form({ userId: TEAMMATE })], ME, () => 2);
+        expect(s.needsReview).toBe(false);
+        expect(s.latest?.ownedByViewer).toBe(false);
+    });
+
+    it('flags the person when any of their forms needs review, not only the newest', () => {
+        const s = summarizeAdopterForms([
+            form({ id: 'pending', submittedAt: 100 }),
+            form({ id: 'decided', submittedAt: 200, linkedAdopterId: EXISTING }),
+        ], ME, (id) => (id === 'pending' ? 1 : 0));
+        expect(s.latest?.submissionId).toBe('decided');
+        expect(s.needsReview).toBe(true);
     });
 });

@@ -1,6 +1,6 @@
 'use server';
 
-import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions, duplicateCandidates, contractInvitations, adopterHistory } from '@/db/schema';
+import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions, duplicateCandidates, contractInvitations, adopterHistory, notifications, animals } from '@/db/schema';
 import { eq, ne, sql, and, isNull, isNotNull, or } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
@@ -13,6 +13,7 @@ import type { AdopterFlags } from '@/types/adopter';
 import { computeAvgRating } from '@/domain/ratings';
 import { buildFlags } from '@/domain/flags';
 import { RECORD_TYPES } from '@/domain/constants';
+import { formLinkKind, summarizeAdopterForms, type AdopterFormRow } from '@/domain/formLink';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 import { animalPrimaryFirst } from '@/lib/showcase';
 
@@ -83,7 +84,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         type CountRow = { adopterId: string; recordType: string | null; count: number };
         type StatRow = { adopterId: string; eventType: string; count: number };
         type RecordRow = { adopterId: string; recordType: string | null; date: number | null; rating: number | null };
-        type FormCountRow = { linkedAdopterId: string; count: number };
+        type FormRow = { id: string; userId: string; linkedAdopterId: string; autoAdopterId: string | null; createdAt: Date | number | null; selectedAnimalId: string | null };
         type ContractCountRow = { adopterId: string; count: number };
         type EditRow = { adopterId: string; changedBy: string | null; changedAt: number | Date | null };
         type DupRow = { a1: string; a2: string };
@@ -93,7 +94,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         const allAdoptionCounts: CountRow[] = [];
         const allStats: StatRow[] = [];
         const allAdoptionRecords: RecordRow[] = [];
-        const allFormCounts: FormCountRow[] = [];
+        const allForms: FormRow[] = [];
         const allContractCounts: ContractCountRow[] = [];
         const allEditRows: EditRow[] = [];
         const dupPairs: DupRow[] = [];
@@ -141,10 +142,18 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                     .from(adoptions)
                     .where(sql`${adoptions.adopterId} IN (${inList})`)
                     .all(),
-                db.select({ linkedAdopterId: formSubmissions.linkedAdopterId, count: sql<number>`COUNT(*)` })
+                // Every form per person, not just a count: the row shows the
+                // newest one and whether one still needs a decision.
+                db.select({
+                    id: formSubmissions.id,
+                    userId: formSubmissions.userId,
+                    linkedAdopterId: formSubmissions.linkedAdopterId,
+                    autoAdopterId: formSubmissions.autoAdopterId,
+                    createdAt: formSubmissions.createdAt,
+                    selectedAnimalId: formSubmissions.selectedAnimalId,
+                })
                     .from(formSubmissions)
                     .where(sql`${formSubmissions.linkedAdopterId} IN (${inList})`)
-                    .groupBy(formSubmissions.linkedAdopterId)
                     .all(),
                 // v2.19.10: signed-contract count per adopter via the modern
                 // token-invitation flow (used_at stamped on sign).
@@ -185,7 +194,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             allAdoptionCounts.push(...(counts as CountRow[]));
             allStats.push(...(stats as StatRow[]));
             allAdoptionRecords.push(...(records as RecordRow[]));
-            allFormCounts.push(...(forms as FormCountRow[]));
+            allForms.push(...(forms as FormRow[]));
             allContractCounts.push(...(contracts as ContractCountRow[]));
             allEditRows.push(...(edits as EditRow[]));
             dupPairs.push(...(dups as DupRow[]));
@@ -238,10 +247,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             else if (s.eventType === 'profile_view') entry.profileViews = s.count;
         }
 
-        const formCountMap = new Map<string, number>();
-        for (const row of allFormCounts as { linkedAdopterId: string; count: number }[]) {
-            if (row.linkedAdopterId) formCountMap.set(row.linkedAdopterId, row.count);
-        }
+        const { formsByAdopter, liveMatchCounts, animalNames } = await loadFormContext(db, allForms, userEmail);
         const signedContractCountMap = new Map<string, number>();
         for (const row of allContractCounts as { adopterId: string; count: number }[]) {
             if (row.adopterId) signedContractCountMap.set(row.adopterId, row.count);
@@ -387,7 +393,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 requestCount: counts.requests,
                 searchHits: stats.searchHits,
                 profileViews: stats.profileViews,
-                formCount: formCountMap.get(adopter.id) ?? 0,
+                ...formFields(formsByAdopter.get(adopter.id) ?? [], userEmail!, liveMatchCounts, animalNames),
                 signedContractCount: signedContractCountMap.get(adopter.id) ?? 0,
                 hasPendingDuplicate: adoptersWithPendingDup.has(adopter.id),
                 creatorName,
@@ -416,6 +422,108 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         logger.error('getMyAdopters failed', error, { userEmail, sort });
         throw error;
     }
+}
+
+/** Epoch seconds from a Drizzle timestamp (Date server-side, number in some paths). */
+function toEpochSeconds(v: Date | number | null | undefined): number {
+    if (v instanceof Date) return Math.floor(v.getTime() / 1000);
+    return typeof v === 'number' ? v : 0;
+}
+
+/**
+ * What /my-adopters needs beyond the form rows themselves: for the viewer's
+ * own forms still on their auto-created profile, how many recorded matches
+ * are alive (drives "Por revisar"), and the names of the animals people
+ * applied for. Both lookups only touch the forms that need them, chunked
+ * under D1's bound-parameter cap; each degrades to "unknown" with a warn.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- the Drizzle D1/better-sqlite3 union getDb() returns
+async function loadFormContext(db: any, forms: Array<{ id: string; userId: string; linkedAdopterId: string; autoAdopterId: string | null; createdAt: Date | number | null; selectedAnimalId: string | null }>, viewerEmail: string | undefined) {
+    const formsByAdopter = new Map<string, AdopterFormRow[]>();
+    for (const f of forms) {
+        if (!f.linkedAdopterId) continue;
+        const row: AdopterFormRow = {
+            id: f.id, userId: f.userId, linkedAdopterId: f.linkedAdopterId, autoAdopterId: f.autoAdopterId,
+            submittedAt: toEpochSeconds(f.createdAt), selectedAnimalId: f.selectedAnimalId,
+        };
+        const list = formsByAdopter.get(f.linkedAdopterId);
+        if (list) list.push(row); else formsByAdopter.set(f.linkedAdopterId, [row]);
+    }
+
+    // Only the viewer's forms still on their new profile can need review.
+    const reviewable = forms.filter(f => f.userId === viewerEmail && formLinkKind(f) === 'new_profile').map(f => f.id);
+    const matchIdsBySubmission = new Map<string, string[]>();
+    for (const idChunk of chunk(reviewable, D1_IN_CHUNK)) {
+        const inList = sql.join(idChunk.map((id) => sql`${id}`), sql`, `);
+        const rows = await db.select({ metadata: notifications.metadata })
+            .from(notifications)
+            .where(and(
+                eq(notifications.userId, viewerEmail!),
+                eq(notifications.type, 'form_submission'),
+                sql`json_extract(${notifications.metadata}, '$.submissionId') IN (${inList})`,
+            ))
+            .all()
+            .catch((e: unknown) => {
+                logger.warn('getMyAdopters: form-review notification lookup failed', { viewerEmail, error: e instanceof Error ? e.message : String(e) });
+                return [];
+            }) as Array<{ metadata: string | null }>;
+        for (const r of rows) {
+            try {
+                const meta = r.metadata ? JSON.parse(r.metadata) : {};
+                if (meta.submissionId && Array.isArray(meta.matchedAdopters)) {
+                    matchIdsBySubmission.set(meta.submissionId, meta.matchedAdopters.map((m: { id: string }) => m.id));
+                }
+            } catch (e) {
+                logger.warn('getMyAdopters: unreadable form notification metadata', { viewerEmail, error: e instanceof Error ? e.message : String(e) });
+            }
+        }
+    }
+    const matchIds = [...new Set([...matchIdsBySubmission.values()].flat())];
+    const liveIds = new Set<string>();
+    for (const idChunk of chunk(matchIds, D1_IN_CHUNK)) {
+        const inList = sql.join(idChunk.map((id) => sql`${id}`), sql`, `);
+        const rows = await db.select({ id: adopters.id }).from(adopters)
+            .where(and(sql`${adopters.id} IN (${inList})`, isNull(adopters.deletedAt)))
+            .all()
+            .catch((e: unknown) => {
+                logger.warn('getMyAdopters: match liveness lookup failed', { viewerEmail, error: e instanceof Error ? e.message : String(e) });
+                return [];
+            }) as Array<{ id: string }>;
+        rows.forEach(r => liveIds.add(r.id));
+    }
+    const liveMatchCounts = new Map<string, number>();
+    for (const [submissionId, ids] of matchIdsBySubmission) {
+        liveMatchCounts.set(submissionId, ids.filter(id => liveIds.has(id)).length);
+    }
+
+    const animalIds = [...new Set(forms.map(f => f.selectedAnimalId).filter((id): id is string => !!id))];
+    const animalNames = new Map<string, string>();
+    for (const idChunk of chunk(animalIds, D1_IN_CHUNK)) {
+        const inList = sql.join(idChunk.map((id) => sql`${id}`), sql`, `);
+        const rows = await db.select({ id: animals.id, name: animals.name }).from(animals)
+            .where(sql`${animals.id} IN (${inList})`)
+            .all()
+            .catch((e: unknown) => {
+                logger.warn('getMyAdopters: applied-for animal lookup failed', { viewerEmail, error: e instanceof Error ? e.message : String(e) });
+                return [];
+            }) as Array<{ id: string; name: string | null }>;
+        rows.forEach(r => { if (r.name) animalNames.set(r.id, r.name); });
+    }
+
+    return { formsByAdopter, liveMatchCounts, animalNames };
+}
+
+/** The per-row form fields /my-adopters renders. */
+function formFields(forms: AdopterFormRow[], viewerEmail: string, liveMatchCounts: Map<string, number>, animalNames: Map<string, string>) {
+    const summary = summarizeAdopterForms(forms, viewerEmail, (id) => liveMatchCounts.get(id) ?? 0);
+    return {
+        formCount: summary.count,
+        formNeedsReview: summary.needsReview,
+        latestForm: summary.latest && {
+            ...summary.latest,
+            animalName: summary.latest.animalId ? (animalNames.get(summary.latest.animalId) ?? null) : null,
+        },
+    };
 }
 
 export async function getMyAdoptions(filter: 'all' | 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet' = 'all', sort: 'date' | 'name' = 'date') {

@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.137] - 2026-10-03
+
+### Added — see everyone who filled your adoption form, in Mis adoptantes
+
+"Con formulario" next to "Todos" on /my-adopters lists the people who
+completed a form, newest first. It is kept in the URL (`?filtro=formularios`),
+so Back and shared links keep the view.
+
+- Each row now says what they applied for and when — "Formulario para Luna ·
+  hace 2 d" or "Formulario general" — at the top of Procedencia; it opens the
+  form's results.
+- "Por revisar" marks a person whose form still waits for "¿es la misma
+  persona?" — the same rule as the form-results banner, so the two never
+  disagree. It replaces the "Posible duplicado" pill on that row (same pair,
+  and the form path also files the request in the right history).
+- The filter counts people with a linked form, not the Origen pill: someone
+  you already had who then applied keeps "Manual" as origin but is listed.
+- Only your own forms link and get "Por revisar"; a teammate's form shows
+  what and when, since only its owner can open its results.
+
 ## [2.56.136] - 2026-10-03
 
 ### Fixed — the catalogue control on the cards now says what it does

@@ -1411,6 +1411,15 @@ export const pt = {
         duplicateUrl: 'Este post do Facebook já foi importado. Perfil existente:',
     },
     myAdopters: {
+        filter_label: 'Filtrar adotantes',
+        filter_all: 'Todos',
+        filter_forms: 'Com formulário',
+        form_line_for: 'Formulário para {animal}',
+        form_line_general: 'Formulário geral',
+        form_needs_review: 'Para revisar',
+        form_needs_review_tooltip: 'Há perfis parecidos: decida se é a mesma pessoa',
+        forms_empty: 'Ninguém preencheu seu formulário ainda.',
+        forms_empty_cta: 'Ver todos',
         created_by_self: 'Você',
         created_by_unknown_hint: 'Sem criador identificado',
         // v2.14.10-20: pending-dedup section on /my-adopters

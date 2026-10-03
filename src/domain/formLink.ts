@@ -101,3 +101,49 @@ export function planFormLink(input: {
             return { ok: true, op: 'link' };
     }
 }
+
+/** One form as /my-adopters sees it. `submittedAt` is epoch seconds. */
+export interface AdopterFormRow {
+    id: string;
+    /** The rescuer who shared the form — the only one who can act on it. */
+    userId: string;
+    linkedAdopterId: string | null;
+    autoAdopterId: string | null;
+    submittedAt: number;
+    selectedAnimalId: string | null;
+}
+
+export interface AdopterFormSummary {
+    count: number;
+    latest: { submissionId: string; submittedAt: number; animalId: string | null; ownedByViewer: boolean } | null;
+    /** One of the viewer's own forms is still waiting for "¿es la misma persona?". */
+    needsReview: boolean;
+}
+
+/**
+ * A person's forms, summarised for their /my-adopters row. "Needs review" is
+ * the same rule the form-results page uses for its review banner
+ * (formResultsView → 'review_matches'), so the list and the page can't
+ * disagree. `liveMatchCount` = recorded matches whose profile still exists.
+ */
+export function summarizeAdopterForms(
+    forms: readonly AdopterFormRow[],
+    viewerEmail: string,
+    liveMatchCount: (submissionId: string) => number,
+): AdopterFormSummary {
+    if (forms.length === 0) return { count: 0, latest: null, needsReview: false };
+    const newest = forms.reduce((a, b) => (b.submittedAt > a.submittedAt ? b : a));
+    const needsReview = forms.some(f =>
+        f.userId === viewerEmail
+        && formResultsView(formLinkKind(f), liveMatchCount(f.id)).banner === 'review_matches');
+    return {
+        count: forms.length,
+        latest: {
+            submissionId: newest.id,
+            submittedAt: newest.submittedAt,
+            animalId: newest.selectedAnimalId,
+            ownedByViewer: newest.userId === viewerEmail,
+        },
+        needsReview,
+    };
+}
