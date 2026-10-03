@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.130] - 2026-10-03
+
+### Fixed — releases stop failing for reasons that have nothing to do with the change
+
+The end-to-end tests ran as one long process that compiled pages as it went.
+Its memory grew with every page, until it hit its limit and restarted itself —
+six times in a single run. Each restart was a few seconds with no server, and
+whichever test was running at that moment failed. A different test each time,
+so it looked like random flakiness rather than one cause.
+
+It blocked four of five release attempts in one afternoon, for zero real
+problems, and it was getting worse as the suite grew.
+
+The tests now run as three groups at once — logged-out, regular user and admin
+— each with its own server. None lives long enough to run out of memory, and
+the whole stage finishes in a fraction of the time.
+
 ## [2.56.129] - 2026-10-03
 
 ### Fixed — linking an adoption form to an existing profile now shows, and leaves no duplicate

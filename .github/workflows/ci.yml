@@ -195,19 +195,56 @@ jobs:
   e2e:
     name: 🎭 E2E Tests
     runs-on: ubuntu-latest
-    # The suite runs 10-15 minutes and the old 15-minute cap sat right on top of
-    # that, so it intermittently timed out. A timeout surfaces as
-    # "##[error]The operation was canceled" and the job's conclusion is
+    # ── Split by project, one server each (v2.56.129) ──────────────────────
+    #
+    # This ran as ONE `next dev` process for the whole suite, ~149 tests over
+    # ~25 minutes. Dev compiles routes on demand and its heap grows with every
+    # one it touches, so it reached --max-old-space-size and restarted itself
+    # rather than be OOM-killed — SIX times in run 37135478653. Each restart is
+    # seconds of dead server, and whichever test was in flight died with
+    # ERR_CONNECTION_REFUSED / RESET / EMPTY_RESPONSE or an assertion timing
+    # out on a page that never loaded. A different test each time, so it read
+    # as flaky tests rather than as one cause. v2.56.128 took FIVE attempts to
+    # land; 2026-10-03 cost five runs and ~3 hours for zero real bugs.
+    #
+    # Splitting fixes it by removing the condition rather than managing it: no
+    # server lives long enough to reach the ceiling. Wall clock drops with it,
+    # because the three groups run at once.
+    #
+    # Split along the EXISTING project boundary, not `--shard=i/N`. The groups
+    # already share auth state, so this separates far fewer tests that might
+    # depend on each other — each group still gets its own seeded DB, and any
+    # cross-group fixture coupling will surface here first.
+    # Sized by actual test counts: user 72, authed 67, unauthed+mobile 25.
+    #
+    # Two fixes already tried and rejected — see
+    # .agents/plans/e2e-shard-the-suite.md before reaching for either:
+    #   · raising --max-old-space-size (moves the wall, and trades Next's
+    #     graceful restart for the kernel's OOM killer on a 7 GB runner)
+    #   · `next build && next start` (src/lib/db.ts only falls back to the
+    #     local SQLite DB when NODE_ENV !== 'production', so a built server has
+    #     no database and /api/ready never returns 200)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: user
+            projects: --project=user
+          - group: authed
+            projects: --project=authed
+          - group: rest
+            projects: --project=unauthed --project=mobile
+    # Each group is now ~5-12 minutes, but the headroom stays: a timeout
+    # surfaces as "##[error]The operation was canceled" with conclusion
     # `cancelled` — indistinguishable at a glance from a concurrency
-    # cancellation, and NOT a test failure. Because both deploy jobs list e2e in
-    # `needs`, that skipped the deploy: on 2026-09-04 production merged green and
-    # silently stayed on the previous version. Headroom is cheap; a deploy that
-    # quietly does not happen is not.
+    # cancellation, and NOT a test failure. Because both deploy jobs list e2e
+    # in `needs`, that skips the deploy: on 2026-09-04 production merged green
+    # and silently stayed on the previous version.
     timeout-minutes: 30
     if: github.event_name == 'push'
     needs: [build-and-lint]
     # Deliberately a deploy gate: `continue-on-error` was removed to stop failures
-    # being masked. That makes the timeout above load-bearing.
+    # being masked. With a matrix, `needs: [e2e]` requires EVERY group to pass.
 
     steps:
       - name: Checkout code
@@ -238,7 +275,7 @@ jobs:
         run: npx playwright install-deps chromium webkit
 
       - name: Run Playwright tests
-        run: npx playwright test
+        run: npx playwright test ${{ matrix.projects }}
         env:
           CI: true
           SKIP_ENV_VALIDATION: 'true'
@@ -249,7 +286,9 @@ jobs:
         uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: playwright-report
+          # Unique per group — a matrix uploading the same artifact name twice
+          # fails the upload.
+          name: playwright-report-${{ matrix.group }}
           path: playwright-report/
           retention-days: 14
 
