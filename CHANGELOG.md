@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.140] - 2026-10-03
+
+### Added — a semáforo on the adoption-form answers that matter most
+
+In "Respuestas completas" (and the animal's applicant panel, which shares it),
+three answers now carry a coloured dot before the value:
+
+- **Intención** — red when the animal is a gift, green when it is for them.
+- **Espacios protegidos** — red when the space is not enclosed, green when it
+  is; "No aplica" gets no dot.
+- **Niños en el hogar** — amber when there are children (something to talk
+  through, not a red flag), green when there are none.
+
+Red marks a likely dealbreaker, amber a conversation. Every other answer stays
+undotted. Each dot is labelled ("Atención", "Para conversar", "Bien") for
+screen readers and on hover, so colour is never the only signal. The rule
+lives in `src/domain/answerSignals.ts`.
+
 ## [2.56.139] - 2026-10-03
 
 ### Changed — the Mis adoptantes filter reads "Por formulario"

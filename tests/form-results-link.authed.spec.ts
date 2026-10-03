@@ -161,6 +161,33 @@ test.describe('form-results: linking to an existing profile', () => {
         expect(cspViolations, 'frame-src allows the OSM embed').toEqual([]);
     });
 
+    test('the semáforo marks a gift and an unprotected space red, children amber', async ({ page, request }) => {
+        const stamp = Date.now();
+        const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, {
+            data: {
+                name: `E2E Semaforo ${stamp}`, email: `e2e-semaforo-${stamp}@example.com`, phone: `19${String(stamp).slice(-8)}`,
+                address: '1 E2E Light St', intent: 'gift', children: '2', hasOutdoor: 'yes', isSafe: 'no', housingType: 'house',
+            },
+        });
+        expect(res.ok()).toBeTruthy();
+        const { submissionId } = await res.json();
+
+        await page.goto(`/form-results/${submissionId}`);
+        await dismissCountryBanner(page);
+        const answers = page.getByRole('button', { name: /Complete answers|Respuestas completas|Respostas completas/ });
+        if ((await answers.getAttribute('aria-expanded')) === 'false') await answers.click();
+
+        const dot = (label: RegExp, signal: string) =>
+            page.locator('div.flex.items-baseline', { hasText: label }).locator(`[data-signal="${signal}"]`);
+        await expect(dot(/Children in household|Niños en el hogar|Crianças/, 'caution')).toBeVisible();
+        await expect(dot(/Protected spaces|Secure spaces|Espacios protegidos|Espaços protegidos/, 'risk')).toBeVisible();
+        await expect(dot(/Intent|Intención|Intenção/, 'risk')).toBeVisible();
+        // Colour is never the only signal: each dot is labelled.
+        await expect(dot(/Intent|Intención|Intenção/, 'risk')).toHaveAttribute('aria-label', /Attention|Atención|Atenção/);
+        // Questions outside the semáforo get no dot.
+        await expect(page.locator('div.flex.items-baseline', { hasText: /Home type|Tipo de vivienda|Tipo de moradia/ }).locator('[data-signal]')).toHaveCount(0);
+    });
+
     test('a fresh submission with no look-alikes reads as a new profile, not as "linked"', async ({ page, request }) => {
         const stamp = Date.now();
         const name = `E2E Formlink Solo ${stamp}`;
