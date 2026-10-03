@@ -1,6 +1,39 @@
 'use client';
 
 import { useLanguage } from '@/context/LanguageContext';
+import { answerSignal, type AnswerSignal } from '@/domain/answerSignals';
+
+/** Token per signal: the semantic status colours both themes define (style guide §1.2). */
+const SIGNAL_COLOR: Record<AnswerSignal, string> = {
+    ok: 'var(--status-success-text)',
+    caution: 'var(--status-warning-text)',
+    risk: 'var(--status-error-text)',
+};
+
+/**
+ * An answer's value with its semáforo dot (src/domain/answerSignals.ts) in
+ * front, so the dots line up in a column a rescuer can scan. Colour is never
+ * the only signal: the dot carries a spoken/hover label ("Atención" …).
+ */
+export function AnswerValue({ field, raw, display }: { field: string; raw: unknown; display: string }) {
+    const { t } = useLanguage();
+    const signal = answerSignal(field, raw);
+    return (
+        <span className="inline-flex items-baseline gap-1.5 text-stone-800 min-w-0 [overflow-wrap:anywhere]">
+            {signal && (
+                <span
+                    role="img"
+                    aria-label={t(`formResults.signal_${signal}`)}
+                    title={t(`formResults.signal_${signal}`)}
+                    data-signal={signal}
+                    className="inline-block w-2.5 h-2.5 rounded-full shrink-0 self-center"
+                    style={{ background: SIGNAL_COLOR[signal] }}
+                />
+            )}
+            <span>{display}</span>
+        </span>
+    );
+}
 
 /** Shared form-answer display logic (used by FormResultsContent for adopter info + other pets). */
 export function renderFormAnswerValue(key: string, raw: any, t: (path: string) => string): string | null {
@@ -101,9 +134,7 @@ export default function FormAnswersPanel({ fullAnswers, excludeSections = [] }: 
                                         <span className="font-semibold text-stone-600 min-w-[140px]">
                                             {t(`petshield.fields.${field}`)}:
                                         </span>
-                                        <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">
-                                            {display}
-                                        </span>
+                                        <AnswerValue field={field} raw={raw} display={display} />
                                     </div>
                                 );
                             })}

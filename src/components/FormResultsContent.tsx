@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import Link from 'next/link';
 import { useTimezone } from '@/context/TimezoneContext';
 import { useLanguage } from '@/context/LanguageContext';
-import FormAnswersPanel, { renderFormAnswerValue } from '@/components/FormAnswersPanel';
+import FormAnswersPanel, { renderFormAnswerValue, AnswerValue } from '@/components/FormAnswersPanel';
 import FormResultMatchCard from '@/components/FormResultMatchCard';
 import LocationMap from '@/components/LocationMap';
 import { buttonClasses } from '@/components/ui/Button';
@@ -293,7 +293,7 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                             <span className="font-semibold text-stone-600 min-w-[140px]">
                                                 {t(`petshield.fields.${field}`)}:
                                             </span>
-                                            <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{display}</span>
+                                            <AnswerValue field={field} raw={raw} display={display} />
                                         </div>
                                     );
                                 })}
