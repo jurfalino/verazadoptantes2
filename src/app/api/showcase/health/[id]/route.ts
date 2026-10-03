@@ -2,7 +2,7 @@ export const runtime = 'edge';
 import { NextResponse } from 'next/server';
 import { withCors, corsPreflightResponse } from '@/lib/cors';
 import { logger } from '@/lib/logger';
-import { animals, animalEvents, adopterImages } from '@/db/schema';
+import { animals, animalEvents, adopterImages, placements } from '@/db/schema';
 import { eq, and, or, isNull, desc, sql } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { buildPublicRescuer, animalPrimaryFirst } from '@/lib/showcase';
@@ -24,24 +24,34 @@ import { VET_EVENT_TYPES } from '@/domain/constants';
  *
  * Events are limited to VET_EVENT_TYPES; `note` is excluded (free text).
  *
- * Gating is deliberately NOT on custody. The sibling /api/showcase/animal/[id]
- * 404s once an animal is adopted, which is right for a listing; here it would
- * break a link already sitting in a family's WhatsApp the moment anyone
- * records a devolución. The record belongs to the animal, so it stays up as
- * long as there is something clinical to show. 404 when there is not: an empty
- * health record is worse than no link, and the UI hides the share button in
- * exactly the same case.
+ * Two gates, and both must hold or the link 404s:
+ *
+ *  1. The animal is in SOMEONE'S HOUSE right now. The record is handed to the
+ *     family that has the animal, so when the animal comes back the link they
+ *     were given stops working (product decision, 2026-10-03). `placements` is
+ *     read for this check ONLY — nothing from it reaches the response, which
+ *     is asserted in tests/health-record.unauthed.spec.ts. Note the URL is
+ *     per-animal, so a later adoption makes the same address live again for
+ *     the new family; the first family's old link comes back with it.
+ *  2. There is at least one clinical entry. An empty record is worse than no
+ *     link, and the UI hides the share button on exactly the same condition,
+ *     so a rescuer can never send one.
  */
 export async function OPTIONS(req: Request) {
     return corsPreflightResponse(req.headers.get('origin'));
 }
+
+type ApiMedia = {
+    id: string; url: string; caption: string | null;
+    mediaType: string | null; thumbnailUrl: string | null;
+};
 
 type ApiEvent = {
     id: string;
     eventType: string;
     date: number | null;
     details: string | null;
-    images: { id: string; url: string; caption: string | null }[];
+    images: ApiMedia[];
 };
 
 const toMs = (d: unknown): number | null =>
@@ -59,6 +69,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             .where(and(eq(animals.id, id), isNull(animals.deletedAt)))
             .get() as typeof animals.$inferSelect | undefined;
         if (!animal) {
+            return withCors(NextResponse.json({ error: 'Not found' }, { status: 404 }), origin);
+        }
+
+        // Gate 1: still placed? A returned animal has no open span, and the
+        // family that was given this link no longer has the animal.
+        const placed = await db.select({ id: placements.id })
+            .from(placements)
+            .where(and(eq(placements.animalId, id), isNull(placements.endedAt)))
+            .get();
+        if (!placed) {
             return withCors(NextResponse.json({ error: 'Not found' }, { status: 404 }), origin);
         }
 
@@ -104,6 +124,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                     id: adopterImages.id,
                     url: adopterImages.url,
                     caption: adopterImages.caption,
+                    // A rescuer can attach video as well as stills; without
+                    // these the page would drop a video URL into an <img> and
+                    // show a broken frame.
+                    mediaType: adopterImages.mediaType,
+                    thumbnailUrl: adopterImages.thumbnailUrl,
                 }).from(adopterImages)
                     .where(where)
                     .orderBy(animalPrimaryFirst(), sql`${adopterImages.uploadedAt} DESC`)

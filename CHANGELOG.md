@@ -2,6 +2,32 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.125] - 2026-10-03
+
+### Fixed — only the people who look after an animal can add photos to it
+
+Adding a photo to an animal now requires the right to edit that animal: its
+owner, their team, or an admin. Before, any signed-in account could attach an
+image to any animal — and since those photos appear on the animal's public
+adoption page and on the health record handed to the adopting family, that
+image would have been served to strangers under the rescue's name. Adding a
+photo to an adopter's profile is unchanged and stays open, as does attaching
+one to a timeline entry.
+
+### Changed — the shared health record stops working after a devolución
+
+The link is for the family that has the animal, so when the animal comes back,
+the link they were given stops opening. The handover screen now says so. If the
+animal is adopted again the same address serves the new family, and the first
+family's old link starts working again with it.
+
+### Fixed — videos no longer show as a broken frame
+
+A rescuer can attach video as well as stills. The shared health record now
+plays one, with its still as the cover. The public adoption listing can't play
+video yet, so it leaves them out rather than showing a broken frame — no animal
+in use has one today.
+
 ## [2.56.124] - 2026-10-03
 
 ### Fixed — photos from an adoption no longer show on the animal's public page

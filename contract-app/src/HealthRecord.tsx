@@ -5,7 +5,15 @@ import { speciesLabel, sexLabel, ageLabelMs, isFemale } from './lib/animalLabels
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
-interface ApiImage { id: string; url: string; caption: string | null }
+interface ApiImage {
+    id: string
+    url: string
+    caption: string | null
+    /** 'image' | 'video'. A rescuer can attach either, and a video dropped
+     *  into an <img> is a broken frame on the family's page. */
+    mediaType: string | null
+    thumbnailUrl: string | null
+}
 
 interface ApiEvent {
     id: string
@@ -39,6 +47,8 @@ interface Shot {
     url: string
     caption: string
     event: string
+    isVideo: boolean
+    poster: string | null
 }
 
 /** Rail colours per clinical event type. Each is ≥4.5:1 on white, and they
@@ -48,6 +58,32 @@ const EVENT_COLOR: Record<string, string> = {
     deworming: '#3f6212',
     vet_visit: '#0e7490',
     neuter: '#a21caf',
+}
+
+/** A still, or a video's poster with a play badge over it. Nothing autoplays
+ *  in a grid — a video plays full size, in the lightbox. A video with no
+ *  poster falls back to a neutral tile rather than a broken frame. */
+function Thumb({ img, className, alt }: { img: ApiImage; className: string; alt?: string }) {
+    const isVideo = img.mediaType === 'video'
+    const src = isVideo ? img.thumbnailUrl : img.url
+    return (
+        <span className="relative block">
+            {src ? (
+                <img src={src} alt={alt ?? img.caption ?? ''} className={className} />
+            ) : (
+                <span className={`${className} flex items-center justify-center bg-stone-300 text-stone-600`}>
+                    <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m10 9 5 3-5 3z" /></svg>
+                </span>
+            )}
+            {isVideo && (
+                <span className="absolute inset-0 flex items-center justify-center" aria-hidden>
+                    <span className="flex items-center justify-center w-11 h-11 rounded-full bg-black/60">
+                        <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M8 5v14l11-7z" /></svg>
+                    </span>
+                </span>
+            )}
+        </span>
+    )
 }
 
 function setMetaTag(name: string, content: string, attr: 'name' | 'property' = 'name') {
@@ -121,13 +157,20 @@ export default function HealthRecord({ animalId }: { animalId: string }) {
     const shots: Shot[] = useMemo(() => {
         if (!data) return []
         const out: Shot[] = []
+        const shot = (img: ApiImage, caption: string, event: string): Shot => ({
+            url: img.url,
+            caption,
+            event,
+            isVideo: img.mediaType === 'video',
+            poster: img.thumbnailUrl || null,
+        })
         for (const img of data.animal.images) {
-            out.push({ url: img.url, caption: img.caption || name, event: '' })
+            out.push(shot(img, img.caption || name, ''))
         }
         for (const ev of data.events) {
             const when = `${eventLabel(ev.eventType)} · ${fmtDate(ev.date)}`
             for (const img of ev.images) {
-                out.push({ url: img.url, caption: img.caption || t('health.no_caption'), event: when })
+                out.push(shot(img, img.caption || t('health.no_caption'), when))
             }
         }
         return out
@@ -227,7 +270,7 @@ export default function HealthRecord({ animalId }: { animalId: string }) {
                             className="block w-full cursor-zoom-in"
                             data-testid="health-cover"
                         >
-                            <img src={cover.url} alt={cover.caption || name} className="block w-full h-60 sm:h-80 object-cover" />
+                            <Thumb img={cover} alt={cover.caption || name} className="block w-full h-60 sm:h-80 object-cover" />
                         </button>
                     ) : (
                         <div className="w-full h-40 bg-stone-300 flex items-center justify-center text-stone-500" aria-hidden>
@@ -289,9 +332,8 @@ export default function HealthRecord({ animalId }: { animalId: string }) {
                                                     className="block rounded-xl overflow-hidden bg-stone-200 cursor-zoom-in"
                                                     data-testid="health-event-photo"
                                                 >
-                                                    <img
-                                                        src={img.url}
-                                                        alt={img.caption || ''}
+                                                    <Thumb
+                                                        img={img}
                                                         className={`block w-full object-cover ${ev.images.length === 1 ? 'h-44' : 'h-28'}`}
                                                     />
                                                 </button>
@@ -339,7 +381,7 @@ export default function HealthRecord({ animalId }: { animalId: string }) {
                                 className="text-left rounded-xl overflow-hidden bg-stone-200 cursor-zoom-in"
                                 data-testid="health-gallery-photo"
                             >
-                                <img src={img.url} alt={img.caption || ''} className="block w-full h-32 object-cover" />
+                                <Thumb img={img} className="block w-full h-32 object-cover" />
                                 {img.caption && (
                                     <span className="block px-2 pt-1.5 pb-2 bg-white text-[11px] font-semibold text-stone-700 leading-snug">{img.caption}</span>
                                 )}
@@ -367,7 +409,18 @@ export default function HealthRecord({ animalId }: { animalId: string }) {
                         </button>
                     </div>
                     <div className="flex-1 min-h-0 flex items-center justify-center px-2">
-                        <img src={shots[shot].url} alt={shots[shot].caption} className="max-w-full max-h-full object-contain" data-testid="health-photo-full" />
+                        {shots[shot].isVideo ? (
+                            <video
+                                src={shots[shot].url}
+                                poster={shots[shot].poster ?? undefined}
+                                controls
+                                playsInline
+                                className="max-w-full max-h-full"
+                                data-testid="health-photo-full"
+                            />
+                        ) : (
+                            <img src={shots[shot].url} alt={shots[shot].caption} className="max-w-full max-h-full object-contain" data-testid="health-photo-full" />
+                        )}
                     </div>
                     <div className="p-4 mx-auto w-full max-w-2xl">
                         <p className="m-0 text-sm font-bold text-white leading-snug">{shots[shot].caption}</p>

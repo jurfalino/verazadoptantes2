@@ -101,6 +101,17 @@ test.describe('Health record API (anonymous visitor)', () => {
         expect(body.rescuer.userHandle).toBeUndefined();
     });
 
+    test('a video arrives as a video, with its poster', async ({ request }) => {
+        // Without mediaType the page drops an .mp4 into an <img> and the
+        // family sees a broken frame where the animal should be.
+        const res = await request.get(`/api/showcase/health/${ADOPTED}`);
+        const body = await res.json();
+        const vid = body.animal.images.find((i: { id: string }) => i.id === 'test-vid-fixture-animal');
+        expect(vid).toBeTruthy();
+        expect(vid.mediaType).toBe('video');
+        expect(vid.thumbnailUrl).toBeTruthy();
+    });
+
     test('an animal with only a free-text note has no record at all', async ({ request }) => {
         // Soloanota's single event is a `note` that names a foster family.
         // 404, not an empty page: a rescuer must not be able to send a link to
@@ -124,6 +135,23 @@ test.describe('Public adoption listing of a RETURNED animal', () => {
     // family — which is why this is asserted against the LIVE listing route,
     // not only against the health record.
     const RETURNED = 'test-animal-fixture-ret';
+
+    test('the health record link stops working once the animal is back', async ({ request }) => {
+        // Vuelta HAS a vaccination on file, so this 404 is about custody: the
+        // family that was handed this link no longer has the animal
+        // (product decision, 2026-10-03).
+        const res = await request.get(`/api/showcase/health/${RETURNED}`);
+        expect(res.status()).toBe(404);
+        expect(await res.text()).not.toContain('Triple felina');
+    });
+
+    test('the listing leaves out a video it cannot play', async ({ request }) => {
+        const res = await request.get(`/api/showcase/animal/${RETURNED}`);
+        const body = await res.json();
+        const ids = body.animal.images.map((i: { id: string }) => i.id);
+        expect(ids).toContain('test-img-ret-animal');
+        expect(ids).not.toContain('test-vid-ret-animal');
+    });
 
     test('brings back the animal\'s photos and not the adoption\'s', async ({ request }) => {
         const res = await request.get(`/api/showcase/animal/${RETURNED}`);

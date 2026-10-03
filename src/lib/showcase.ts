@@ -175,7 +175,16 @@ export async function fetchAnimalImages(
                 // re-listed and those photos are the newest ones it has. Only
                 // the animal's own gallery is public (`scope = 'animal'`);
                 // anything unstamped is treated as not-public.
-                .where(and(eq(adopterImages.adoptionId, id), eq(adopterImages.scope, 'animal')))
+                // Stills only. The public listing's three consumers (the grid
+                // card, the detail hero, the thumb strip) all render a plain
+                // <img>, so a video URL here is a broken frame. Dropping it is
+                // the lesser failure until they learn to play one; the shared
+                // health record already does (/api/showcase/health).
+                .where(and(
+                    eq(adopterImages.adoptionId, id),
+                    eq(adopterImages.scope, 'animal'),
+                    sql`COALESCE(${adopterImages.mediaType}, 'image') <> 'video'`,
+                ))
                 .orderBy(animalPrimaryFirst(), sql`rowid ASC`)
                 .limit(5)
                 .all();

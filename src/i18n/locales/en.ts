@@ -1449,6 +1449,7 @@ export const en = {
         send_to_phone: 'to {phone}, the number already on their profile',
         no_phone: 'There is no phone on their profile, so copy the link and send it wherever you already talk.',
         preview: 'See the page',
+        expires_note: 'The link stops working if you record a return.',
     },
     animalProfile: {
         photo_view: 'View photo',

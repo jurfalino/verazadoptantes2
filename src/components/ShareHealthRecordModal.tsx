@@ -196,6 +196,10 @@ export default function ShareHealthRecordModal({
                     )}
                 </div>
 
+                <p className="text-[11px] text-stone-600 leading-relaxed" data-testid="health-share-expires">
+                    {t('healthRecord.expires_note') || 'El link deja de funcionar si registrás una devolución.'}
+                </p>
+
                 <button
                     type="button"
                     onClick={onClose}

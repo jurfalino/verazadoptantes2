@@ -223,6 +223,14 @@ INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption
  'https://api.dicebear.com/7.x/shapes/svg?seed=timon2', 'Timon un año después',
  strftime('%s','now','-10 days'), 'gatitosolivos@gmail.com', 0, 0, 'image', 'animal');
 
+-- A VIDEO of the animal. The health record has to say it is one and hand over
+-- its poster; without that the family's page drops an .mp4 into an <img>.
+INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type, thumbnail_url, scope) VALUES
+('test-vid-fixture-animal', 'test-adopter-fixture-tl1', 'test-animal-fixture-1',
+ 'https://example.invalid/timon.mp4', 'Timon corriendo en el patio',
+ strftime('%s','now','-9 days'), 'gatitosolivos@gmail.com', 0, 0, 'video',
+ 'https://api.dicebear.com/7.x/shapes/svg?seed=timonvid', 'animal');
+
 -- A RETURNED animal, back on the public listing. This is the case that makes
 -- `scope` load-bearing: its adoption ended, so it is available again and the
 -- showcase will serve it — and the photos it accumulated during that adoption
@@ -237,6 +245,17 @@ INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered
 
 INSERT OR REPLACE INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by) VALUES
 ('test-plc-fixture-ret', 'test-animal-fixture-ret', 'test-adopter-fixture-ret', 'adoption', strftime('%s','now','-150 days'), strftime('%s','now','-30 days'), 'completed', 3, 'gatitosolivos@gmail.com');
+
+-- A real clinical entry, so the 404 on this animal's health record proves the
+-- CUSTODY gate and not merely that there was nothing to show.
+INSERT OR REPLACE INTO animal_events (id, animal_id, event_type, date, details, recorded_by) VALUES
+('test-aevent-fixture-ret', 'test-animal-fixture-ret', 'vaccination', strftime('%s','now','-180 days'), 'Triple felina', 'gatitosolivos@gmail.com');
+
+INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type, thumbnail_url, scope) VALUES
+('test-vid-ret-animal', 'test-adopter-fixture-ret', 'test-animal-fixture-ret',
+ 'https://example.invalid/vuelta.mp4', 'Vuelta jugando',
+ strftime('%s','now','-59 days'), 'gatitosolivos@gmail.com', 0, 0, 'video',
+ 'https://api.dicebear.com/7.x/shapes/svg?seed=vueltavid', 'animal');
 
 INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type, scope) VALUES
 ('test-img-ret-animal', 'test-adopter-fixture-ret', 'test-animal-fixture-ret',

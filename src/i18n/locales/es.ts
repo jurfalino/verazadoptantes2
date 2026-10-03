@@ -1454,6 +1454,7 @@ export const es = {
         send_to_phone: 'al {phone}, el teléfono que ya está en su ficha',
         no_phone: 'No hay un teléfono en su ficha, así que copiá el link y mandáselo por donde ya hablen.',
         preview: 'Ver la página',
+        expires_note: 'El link deja de funcionar si registrás una devolución.',
     },
     animalProfile: {
         photo_view: 'Ver la foto',
