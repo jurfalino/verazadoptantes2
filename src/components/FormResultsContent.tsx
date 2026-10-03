@@ -6,6 +6,7 @@ import { useTimezone } from '@/context/TimezoneContext';
 import { useLanguage } from '@/context/LanguageContext';
 import FormAnswersPanel, { renderFormAnswerValue } from '@/components/FormAnswersPanel';
 import FormResultMatchCard from '@/components/FormResultMatchCard';
+import LocationMap from '@/components/LocationMap';
 import { buttonClasses } from '@/components/ui/Button';
 import { en } from '@/i18n/locales/en';
 import { ChevronDown, ChevronRight, CheckCircle2, Users, UserPlus, UserCheck, ArrowRight } from 'lucide-react';
@@ -340,17 +341,8 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                 </CollapsibleSection>
             )}
 
-            {/* Geolocation */}
-            {submission?.latitude && submission?.longitude && (
-                <div className="bg-white rounded-xl border border-stone-200 p-4 mb-4 shadow-sm">
-                    <h2 className="text-sm font-semibold text-stone-700 mb-2">
-                        {L('location_section')}
-                    </h2>
-                    <p className="text-xs text-stone-500">
-                        {submission.latitude}, {submission.longitude}
-                    </p>
-                </div>
-            )}
+            {/* Geolocation — a map you open, not two raw numbers */}
+            <LocationMap latitude={submission?.latitude} longitude={submission?.longitude} title={L('location_section')} />
 
             {/* Matched Profiles – comparison cards (collapsible) */}
             {visibleMatches.length > 0 && submission && (

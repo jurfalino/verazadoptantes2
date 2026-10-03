@@ -1804,6 +1804,13 @@ export const en = {
         continue_with_new: 'Continue with new profile',
         view_new_without_deciding: 'View the new adopter profile (without deciding)',
     },
+    locationMap: {
+        map_title: 'Map of the location the person shared',
+        hint: 'Location their phone sent when filling in the form.',
+        open_in_maps: 'Open in Google Maps',
+        show_map: 'Show location on the map',
+        hide_map: 'Hide map',
+    },
     formResults: {
         back_to_animals: 'Back to My Animals',
         title: 'Form responses',

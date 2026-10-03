@@ -86,7 +86,7 @@ const nextConfig: NextConfig = {
               "img-src 'self' data: blob: https://lh3.googleusercontent.com https://*.googleusercontent.com https://*.fbsbx.com https://*.fbcdn.net https://*.r2.dev",
               "media-src 'self' blob: https://*.r2.dev https://*.cdninstagram.com https://*.fbcdn.net https://*.fbsbx.com",
               "connect-src 'self' https://accounts.google.com https://api.axiom.co https://generativelanguage.googleapis.com https://*.cloudflarestorage.com https://lh3.googleusercontent.com https://*.r2.dev https://*.cdninstagram.com https://*.fbcdn.net https://*.fbsbx.com",
-              "frame-src 'self' https://accounts.google.com",
+              "frame-src 'self' https://accounts.google.com https://www.openstreetmap.org",  // OSM: LocationMap, mounted only when opened
               "frame-ancestors 'none'",
             ].join('; '),
           },

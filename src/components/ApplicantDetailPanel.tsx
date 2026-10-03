@@ -25,6 +25,7 @@ import { RatingExplainer } from '@/components/RatingExplainer';
 import FormAnswersPanel from '@/components/FormAnswersPanel';
 import { createContractInvitation } from '@/app/actions/contract';
 import type { ApplicantSummary } from '@/app/actions/applicants';
+import LocationMap from '@/components/LocationMap';
 
 interface Props {
     applicants: ApplicantSummary[];
@@ -321,11 +322,12 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
                                     />
                                 </div>
                             )}
-                            {(applicant.submission.latitude && applicant.submission.longitude) && (
-                                <p className="text-xs text-stone-500">
-                                    📍 {applicant.submission.latitude}, {applicant.submission.longitude}
-                                </p>
-                            )}
+                            <LocationMap
+                                latitude={applicant.submission.latitude}
+                                longitude={applicant.submission.longitude}
+                                title={t('formResults.location_section')}
+                                variant="inline"
+                            />
                             <a
                                 href={`/form-results/${applicant.submissionId}`}
                                 target="_blank"

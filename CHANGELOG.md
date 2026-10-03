@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.135] - 2026-10-03
+
+### Changed — "Ubicación verificada" is a map you open, not two raw coordinates
+
+The form-results page and the animal's applicant panel printed the location the
+applicant's phone shared as bare numbers ("-34.5185…, -58.4854…"). It is now a
+collapsed "Ubicación verificada" section that opens an OpenStreetMap map with a
+pin on the spot, plus "Abrir en Google Maps" — the same app the address links
+already open.
+
+- Nothing is fetched from the map provider until someone opens it, so viewing
+  a form doesn't send the applicant's location to a third party, and the page
+  loads exactly as fast as before.
+- Content-Security-Policy `frame-src` now allows `https://www.openstreetmap.org`
+  (the embed only; no scripts or images from it run on our pages).
+- Invalid or missing coordinates render nothing, as before.
+
 ## [2.56.134] - 2026-10-03
 
 ### Fixed — the catalogue switch no longer squeezes the animal cards

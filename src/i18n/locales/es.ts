@@ -1810,6 +1810,13 @@ export const es = {
         continue_with_new: 'Continuar con el perfil nuevo',
         view_new_without_deciding: 'Ver el perfil del nuevo adoptante (sin decidir)',
     },
+    locationMap: {
+        map_title: 'Mapa con la ubicación que compartió la persona',
+        hint: 'Ubicación que envió su teléfono al completar el formulario.',
+        open_in_maps: 'Abrir en Google Maps',
+        show_map: 'Ver ubicación en el mapa',
+        hide_map: 'Ocultar mapa',
+    },
     formResults: {
         back_to_animals: 'Mis animales',
         title: 'Respuestas del formulario',

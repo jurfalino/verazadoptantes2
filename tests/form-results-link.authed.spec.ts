@@ -120,6 +120,40 @@ test.describe('form-results: linking to an existing profile', () => {
         expect(requests).toHaveLength(1);
     });
 
+    test('the shared location is a map you open — nothing is fetched until you do', async ({ page, request }) => {
+        const stamp = Date.now();
+        const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, {
+            data: {
+                name: `E2E Formlink Map ${stamp}`, email: `e2e-formlink-map-${stamp}@example.com`, phone: `14${String(stamp).slice(-8)}`,
+                address: '1 E2E Map St', intent: 'self', latitude: '-34.5185839099628', longitude: '-58.4854964873305',
+            },
+        });
+        expect(res.ok()).toBeTruthy();
+        const { submissionId } = await res.json();
+
+        const cspViolations: string[] = [];
+        page.on('console', (m) => { if (/Content Security Policy/i.test(m.text())) cspViolations.push(m.text()); });
+        const mapRequests: string[] = [];
+        page.on('request', (r) => { if (r.url().includes('openstreetmap.org')) mapRequests.push(r.url()); });
+
+        await page.goto(`/form-results/${submissionId}`);
+        await dismissCountryBanner(page);
+        const toggle = page.getByRole('button', { name: /Ubicación verificada|Verified location|Localização verificada/ });
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        await expect(page.locator('iframe[src*="openstreetmap.org"]')).toHaveCount(0);
+        // The raw coordinates are no longer printed on the page.
+        await expect(page.getByText('-34.5185839099628')).toHaveCount(0);
+        expect(mapRequests, 'closed map fetches nothing').toEqual([]);
+
+        await toggle.click();
+        const map = page.locator('iframe[src*="openstreetmap.org/export/embed.html"]');
+        await expect(map).toBeVisible();
+        expect(await map.getAttribute('src')).toContain('marker=-34.5185839099628%2C-58.4854964873305');
+        await expect(page.getByRole('link', { name: /Google Maps/ })).toHaveAttribute('href', /google\.com\/maps\/search\/\?api=1&query=-34\.5185839099628%2C-58\.4854964873305/);
+        await page.waitForTimeout(1500);
+        expect(cspViolations, 'frame-src allows the OSM embed').toEqual([]);
+    });
+
     test('a fresh submission with no look-alikes reads as a new profile, not as "linked"', async ({ page, request }) => {
         const stamp = Date.now();
         const name = `E2E Formlink Solo ${stamp}`;
