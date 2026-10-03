@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { PawIcon, AlertIcon } from './components/Icons'
 import { useT, localizedHref } from './i18n/LocaleContext'
 import { speciesLabel, sexLabel, ageLabel } from './lib/animalLabels'
+import { isVideo, posterOf, posterUrls } from './lib/media'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -16,7 +17,7 @@ interface AnimalDetailData {
     color: string | null
     microchip: string | null
     details: string | null
-    images: { id: string; url: string; caption: string | null }[]
+    images: { id: string; url: string; caption: string | null; mediaType?: string | null; thumbnailUrl?: string | null }[]
     rescuer: {
         displayName: string
         orgName?: string
@@ -78,7 +79,8 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
         setMetaTag('og:title', `${name} busca hogar`, 'property')
         setMetaTag('og:description', subtitle || 'Animal en adopción', 'property')
         setMetaTag('og:type', 'website', 'property')
-        const heroImg = a.images[0]?.url
+        // A crawler handed an .mp4 as og:image renders a broken card.
+        const heroImg = posterUrls(a.images)[0]
         if (heroImg) setMetaTag('og:image', heroImg, 'property')
         // JSON-LD structured data — Product schema (closest match for an
         // adoptable animal listing). Google + social crawlers parse this
@@ -95,7 +97,7 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
             '@type': 'Product',
             name,
             description: a.details || subtitle,
-            image: a.images.map(i => i.url),
+            image: posterUrls(a.images),
             brand: { '@type': 'Organization', name: a.rescuer.orgName || a.rescuer.displayName },
         })
     }, [data, t])
@@ -121,7 +123,9 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
 
     const a = data.animal
     const name = a.animalName?.trim() || t('animal.unnamed')
-    const heroImage = a.images[activeImageIdx]?.url || a.images[0]?.url
+    const heroItem = a.images[activeImageIdx] || a.images[0]
+    const heroImage = heroItem ? posterOf(heroItem) : null
+    const heroIsVideo = !!heroItem && isVideo(heroItem)
     const adoptHref = a.rescuer.userId
         ? localizedHref(`/form?u=${encodeURIComponent(a.rescuer.userId)}&animal=${encodeURIComponent(a.id)}`, locale)
         : null
@@ -136,7 +140,15 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
             <a href={localizedHref('/all', locale)} className="ps-showcase-back-link">{t('animal.back_to_catalog')}</a>
 
             <div className="ps-animal-hero">
-                {heroImage ? (
+                {heroIsVideo && heroItem ? (
+                    <video
+                        src={heroItem.url}
+                        poster={heroImage || undefined}
+                        controls
+                        playsInline
+                        className="ps-animal-hero__img"
+                    />
+                ) : heroImage ? (
                     <img src={heroImage} alt={name} className="ps-animal-hero__img" />
                 ) : (
                     <div className="ps-animal-hero__empty" aria-hidden>
@@ -155,7 +167,12 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
                             onClick={() => setActiveImageIdx(i)}
                             aria-label={t('animal.photo_position', { n: i + 1, total: a.images.length })}
                         >
-                            <img src={img.url} alt="" />
+                            <img src={posterOf(img) || ''} alt="" />
+                            {isVideo(img) && (
+                                <span className="ps-media-badge" aria-hidden>
+                                    <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M8 5v14l11-7z" /></svg>
+                                </span>
+                            )}
                         </button>
                     ))}
                 </div>

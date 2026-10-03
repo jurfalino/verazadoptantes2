@@ -2,6 +2,31 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.127] - 2026-10-03
+
+### Added — the public adoption pages play video
+
+A rescuer can attach video to an animal as well as photos. Until now the
+public catalog, the animal's adoption page and its thumbnail strip all tried
+to draw one as a still image, which showed a broken frame; the shared health
+record already handled it. Now the grid and the strip show the video's cover
+image with a play mark on it, and the animal's page plays it.
+
+Link previews — what Facebook and WhatsApp show when someone shares an animal
+— now skip past videos to the first real photo, instead of handing the video
+file over as the preview image.
+
+A video with no cover image can't be drawn at all, so it no longer counts as
+the animal's photo: an animal with nothing but one of those stays out of the
+public catalog rather than appearing as an empty tile. The «Compartir» options
+on Mis animales use the same rule, so they no longer offer a public page for
+an animal that wouldn't have one.
+
+### Added — docs/photo-scopes.md
+
+What each photo scope means, which part of the app writes it, and every screen
+it appears on.
+
 ## [2.56.126] - 2026-10-03
 
 ### Changed — the shared health record has one address per adoption
@@ -37,9 +62,8 @@ revives the previous family's link.)
 ### Fixed — videos no longer show as a broken frame
 
 A rescuer can attach video as well as stills. The shared health record now
-plays one, with its still as the cover. The public adoption listing can't play
-video yet, so it leaves them out rather than showing a broken frame — no animal
-in use has one today.
+plays one, with its still as the cover. (2.56.127 does the same for the public adoption
+pages.) No animal in use has a video today.
 
 ## [2.56.124] - 2026-10-03
 

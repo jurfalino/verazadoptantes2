@@ -74,6 +74,8 @@ export const adopterImages = sqliteTable("adopter_images", {
     isProfilePicture: integer("is_profile_picture").default(0), // 1 if this is the profile picture
     isPrimary: integer("is_primary").default(0), // v2.56.86: lead photo for adoption_id (an ANIMAL, not an adopter)
     /** v2.56.124: what the photo is OF, because `adoption_id` cannot say.
+     *  Full table of who writes each value and where it is shown:
+     *  docs/photo-scopes.md
      *  'animal'    — the animal's own gallery (create form, "Editar" on the
      *                animal page). Public: showcase + shared health record.
      *  'placement' — attached while recording an adoption/tránsito from the

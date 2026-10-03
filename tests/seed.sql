@@ -255,7 +255,13 @@ INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption
 ('test-vid-ret-animal', 'test-adopter-fixture-ret', 'test-animal-fixture-ret',
  'https://example.invalid/vuelta.mp4', 'Vuelta jugando',
  strftime('%s','now','-59 days'), 'gatitosolivos@gmail.com', 0, 0, 'video',
- 'https://api.dicebear.com/7.x/shapes/svg?seed=vueltavid', 'animal');
+ 'https://api.dicebear.com/7.x/shapes/svg?seed=vueltavid', 'animal'),
+-- …and one with NO poster: nothing the grid can draw, so it must not be
+-- offered as an image anywhere.
+('test-vid-ret-noposter', 'test-adopter-fixture-ret', 'test-animal-fixture-ret',
+ 'https://example.invalid/vuelta2.mp4', 'Vuelta sin miniatura',
+ strftime('%s','now','-58 days'), 'gatitosolivos@gmail.com', 0, 0, 'video',
+ NULL, 'animal');
 
 INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type, scope) VALUES
 ('test-img-ret-animal', 'test-adopter-fixture-ret', 'test-animal-fixture-ret',

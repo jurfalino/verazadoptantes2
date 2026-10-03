@@ -17,12 +17,18 @@ import ShowcaseUrlChips from '@/components/ShowcaseUrlChips';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { myAnimalsTabCount } from '@/lib/myAnimalsTabCount';
-import { isPubliclyListed } from '@/domain/animalAccess';
+import { isPubliclyListed, showableCount } from '@/domain/animalAccess';
 
 interface AnimalImage {
     id: string;
     url: string;
     caption: string | null;
+    /** v2.56.127: 'image' | 'video'. A video counts toward the public listing
+     *  only when it has a poster — see showableCount. */
+    mediaType?: string | null;
+    thumbnailUrl?: string | null;
+    /** 'animal' is the only scope the public page serves — see the gate below. */
+    scope?: string | null;
 }
 
 import type { ApplicantSummary as Applicant } from '@/app/actions/applicants';
@@ -563,7 +569,7 @@ export default function MyAnimalsPage() {
                                                     animalId={animal.id}
                                                     animalName={animal.animalName || 'Animal'}
                                                     adopted={!!animal.adopterId && !isFoster}
-                                                    publicFiche={isPubliclyListed(animal, animal.images.length)}
+                                                    publicFiche={isPubliclyListed(animal, showableCount(animal.images.filter(i => i.scope === 'animal')))}
                                                     compact
                                                 />
                                             )}

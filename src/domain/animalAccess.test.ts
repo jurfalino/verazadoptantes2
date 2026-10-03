@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decideAnimalAccess, illustrationForSpecies, tagLabel, isPubliclyListed } from './animalAccess';
+import { decideAnimalAccess, illustrationForSpecies, tagLabel, isPubliclyListed, showableCount } from './animalAccess';
 
 describe('decideAnimalAccess', () => {
     it('is missing when the row does not exist', () => {
@@ -50,4 +50,27 @@ describe('isPubliclyListed', () => {
     it('is false once adopted', () => expect(isPubliclyListed({ recordType: 'available', adopterId: 'a1' }, 3)).toBe(false));
     it('is false for other record types', () => expect(isPubliclyListed({ recordType: 'adoption', adopterId: null }, 3)).toBe(false));
     it('is false with no row', () => expect(isPubliclyListed(null, 3)).toBe(false));
+});
+
+describe('showableCount', () => {
+    // The catalog is a grid of stills. An animal whose only media is a video
+    // with no poster would be published as a blank tile — worse than being
+    // left out, because the rescuer believes people can see the animal.
+    it('counts photos', () => {
+        expect(showableCount([{ mediaType: 'image' }, { mediaType: 'image' }])).toBe(2);
+    });
+
+    it('counts a video only when it has a poster', () => {
+        expect(showableCount([{ mediaType: 'video', thumbnailUrl: 'p.jpg' }])).toBe(1);
+        expect(showableCount([{ mediaType: 'video', thumbnailUrl: null }])).toBe(0);
+    });
+
+    it('treats a missing mediaType as a photo — rows predating the column', () => {
+        expect(showableCount([{}, { mediaType: null }])).toBe(2);
+    });
+
+    it('is what keeps a video-only animal out of the catalog', () => {
+        const videoOnly = [{ mediaType: 'video', thumbnailUrl: null }];
+        expect(isPubliclyListed({ recordType: 'available', adopterId: null }, showableCount(videoOnly))).toBe(false);
+    });
 });

@@ -235,7 +235,14 @@ export async function GET(request: NextRequest) {
                 const images = await db.select({
                     id: adopterImages.id,
                     url: adopterImages.url,
-                    caption: adopterImages.caption
+                    caption: adopterImages.caption,
+                    // v2.56.127: the card predicts whether a PUBLIC page
+                    // exists for this animal. The public read keeps only
+                    // scope 'animal' and drops a posterless video, so without
+                    // these three the card promises a page that 404s.
+                    scope: adopterImages.scope,
+                    mediaType: adopterImages.mediaType,
+                    thumbnailUrl: adopterImages.thumbnailUrl
                 })
                     .from(adopterImages)
                     .where(eq(adopterImages.adoptionId, animal.id))
@@ -244,7 +251,7 @@ export async function GET(request: NextRequest) {
                     .all()
                     .catch((e: unknown) => {
                         logger.warn('my-animals: images fallback', { animalId: animal.id, userEmail, view, error: e instanceof Error ? e.message : String(e) });
-                        return [] as { id: string; url: string; caption: string | null }[];
+                        return [] as { id: string; url: string; caption: string | null; scope: string | null; mediaType: string | null; thumbnailUrl: string | null }[];
                     });
 
                 let adopterName: string | null = null;

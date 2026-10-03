@@ -29,10 +29,24 @@ export function tagLabel(name: string | null | undefined, max = 10): string {
 }
 
 /** An animal has a public showcase page only while it is up for adoption with
- *  at least one photo. Single definition, also used by the showcase API. */
+ *  at least one photo. Single definition, also used by the showcase API.
+ *
+ *  v2.56.127: a VIDEO does not count on its own. The catalog is a grid of
+ *  stills, and a video-only animal would be listed as a blank tile — worse
+ *  than not being listed, because the rescuer sees it published and assumes
+ *  people can see the animal. Count a video only when it has a poster, which
+ *  is the still the grid would actually draw. */
 export function isPubliclyListed(
     row: { recordType: string | null; adopterId: string | null } | null | undefined,
     photoCount: number,
 ): boolean {
     return !!row && row.recordType === RECORD_TYPES.AVAILABLE && !row.adopterId && photoCount > 0;
+}
+
+/** How many of an animal's media items the catalog can actually draw: a photo,
+ *  or a video that has a poster. Pass the result to `isPubliclyListed`. */
+export function showableCount(
+    media: { mediaType?: string | null; thumbnailUrl?: string | null }[],
+): number {
+    return media.filter(m => (m.mediaType === 'video' ? !!m.thumbnailUrl : true)).length;
 }

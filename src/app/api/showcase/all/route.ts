@@ -5,6 +5,7 @@ import { logger } from '@/lib/logger';
 import { adoptions } from '@/db/schema';
 import { getDb } from '@/lib/db';
 import { availableAnimalsBase, availableAnimalsOrder, buildPublicRescuer, fetchAnimalImages, pickPublicAnimal, type PublicAnimal } from '@/lib/showcase';
+import { showableCount } from '@/domain/animalAccess';
 
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 60;
@@ -51,7 +52,8 @@ export async function GET(request: Request) {
         const animals: PublicAnimal[] = [];
         for (const row of rows) {
             const animalImages = imagesByAnimal.get(row.id) || [];
-            if (animalImages.length === 0) continue;
+            // A video with no poster is nothing the grid can draw (v2.56.127).
+            if (showableCount(animalImages) === 0) continue;
             const key = row.addedBy || '';
             if (!rescuerCache.has(key)) {
                 rescuerCache.set(key, buildPublicRescuer(db, row.addedBy));

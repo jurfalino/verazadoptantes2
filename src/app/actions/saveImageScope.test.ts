@@ -17,6 +17,8 @@ import { join } from 'path';
  * must also pass a scope. Calls with no adoptionId are adopter-gallery photos
  * and are not addressed by it at all.
  *
+ * The four values, who writes each and where each is shown: docs/photo-scopes.md
+ *
  * Source-scanning rather than type-level because TypeScript cannot express
  * "required only when another optional argument is present" on a positional
  * signature, and widening saveImage to an options object would touch every

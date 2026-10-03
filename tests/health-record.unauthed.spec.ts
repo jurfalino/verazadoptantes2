@@ -157,12 +157,20 @@ test.describe('Public adoption listing of a RETURNED animal', () => {
         expect(await res.text()).not.toContain('Triple felina');
     });
 
-    test('the listing leaves out a video it cannot play', async ({ request }) => {
+    test('the listing carries a video with its poster, and drops one without', async ({ request }) => {
         const res = await request.get(`/api/showcase/animal/${RETURNED}`);
         const body = await res.json();
-        const ids = body.animal.images.map((i: { id: string }) => i.id);
-        expect(ids).toContain('test-img-ret-animal');
-        expect(ids).not.toContain('test-vid-ret-animal');
+        const by = (id: string) => body.animal.images.find((i: { id: string }) => i.id === id);
+
+        expect(by('test-img-ret-animal')).toBeTruthy();
+
+        // A video reaches the page as a video, with the still the grid draws.
+        const vid = by('test-vid-ret-animal');
+        expect(vid.mediaType).toBe('video');
+        expect(vid.thumbnailUrl).toBeTruthy();
+
+        // One with no poster is undrawable, so the listing never offers it.
+        expect(by('test-vid-ret-noposter')).toBeFalsy();
     });
 
     test('brings back the animal\'s photos and not the adoption\'s', async ({ request }) => {

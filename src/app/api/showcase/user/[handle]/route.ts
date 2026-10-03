@@ -6,6 +6,7 @@ import { adoptions, userProfiles, users } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { availableAnimalsBase, availableAnimalsOrder, buildPublicRescuer, fetchAnimalImages, pickPublicAnimal } from '@/lib/showcase';
+import { showableCount } from '@/domain/animalAccess';
 
 /** GET /api/showcase/user/[handle] — public list of a single rescuer's available animals.
  *  Handle → user_profiles.user_id → user.email → adoptions.addedBy.
@@ -54,7 +55,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ hand
         // notice in the /my-animals share modal).
         const animals = rows
             .map((row) => ({ row, images: imagesByAnimal.get(row.id) || [] }))
-            .filter(({ images }) => images.length > 0)
+            // A video with no poster is nothing the grid can draw (v2.56.127).
+            .filter(({ images }) => showableCount(images) > 0)
             .map(({ row, images }) => pickPublicAnimal(row, images, rescuer));
 
         return withCors(NextResponse.json({

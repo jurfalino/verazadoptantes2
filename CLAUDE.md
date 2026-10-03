@@ -74,6 +74,7 @@ The canonical database accessor is `src/lib/db.ts` — `getDb()`. It auto-detect
 - `docs/design-style-guide.md` — Canonical UI design system (8px grid, color tokens, button matrix, typography scale)
 - `docs/ux-ui-guidelines.md` — Decision-making framework: principles, patterns, persona conventions, anti-patterns we've walked back
 - `docs/D1_COMPATIBILITY.md` — Full D1 SQLite quirks and safe query patterns
+- `docs/photo-scopes.md` — What `adopter_images.scope` means: which flow writes each value, and which screens (public and internal) show it
 - `docs/code_quality_audit.md` — Dated full-codebase audit with security findings and tech-debt roadmap
 
 ### Authentication

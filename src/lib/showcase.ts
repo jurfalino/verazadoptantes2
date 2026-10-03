@@ -33,8 +33,18 @@ export interface PublicAnimal {
     microchip: string | null;
     details: string | null;
     date: number | null;
-    images: { id: string; url: string; caption: string | null }[];
+    images: PublicMedia[];
     rescuer: PublicRescuer;
+}
+
+/** One photo or video on a public animal page. `thumbnailUrl` is the still a
+ *  video is represented by; for a photo it is null and `url` is the image. */
+export interface PublicMedia {
+    id: string;
+    url: string;
+    caption: string | null;
+    mediaType: string | null;
+    thumbnailUrl: string | null;
 }
 
 export interface PublicRescuer {
@@ -52,7 +62,7 @@ export interface PublicRescuer {
 /** Hard whitelist on which adoption columns become a `PublicAnimal`. */
 export function pickPublicAnimal(
     row: typeof adoptions.$inferSelect,
-    images: { id: string; url: string; caption: string | null }[],
+    images: PublicMedia[],
     rescuer: PublicRescuer,
 ): PublicAnimal {
     return {
@@ -158,8 +168,8 @@ export async function fetchAnimalImages(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     db: any,
     animalIds: string[],
-): Promise<Map<string, { id: string; url: string; caption: string | null }[]>> {
-    const map = new Map<string, { id: string; url: string; caption: string | null }[]>();
+): Promise<Map<string, PublicMedia[]>> {
+    const map = new Map<string, PublicMedia[]>();
     if (animalIds.length === 0) return map;
     await Promise.all(animalIds.map(async (id) => {
         try {
@@ -167,6 +177,10 @@ export async function fetchAnimalImages(
                 id: adopterImages.id,
                 url: adopterImages.url,
                 caption: adopterImages.caption,
+                // v2.56.127: a rescuer can attach video. Without these the
+                // card, the hero and the thumb strip put an .mp4 in an <img>.
+                mediaType: adopterImages.mediaType,
+                thumbnailUrl: adopterImages.thumbnailUrl,
             }).from(adopterImages)
                 // v2.56.124: the animal key also carries photos attached while
                 // recording an adoption from the adopter's side — the handover,
@@ -175,15 +189,13 @@ export async function fetchAnimalImages(
                 // re-listed and those photos are the newest ones it has. Only
                 // the animal's own gallery is public (`scope = 'animal'`);
                 // anything unstamped is treated as not-public.
-                // Stills only. The public listing's three consumers (the grid
-                // card, the detail hero, the thumb strip) all render a plain
-                // <img>, so a video URL here is a broken frame. Dropping it is
-                // the lesser failure until they learn to play one; the shared
-                // health record already does (/api/showcase/health).
                 .where(and(
                     eq(adopterImages.adoptionId, id),
                     eq(adopterImages.scope, 'animal'),
-                    sql`COALESCE(${adopterImages.mediaType}, 'image') <> 'video'`,
+                    // A video with no poster is nothing any of these surfaces
+                    // can draw — it would be an unlabelled black tile in the
+                    // strip. Leave it out rather than serve a hole.
+                    sql`(COALESCE(${adopterImages.mediaType}, 'image') <> 'video' OR ${adopterImages.thumbnailUrl} IS NOT NULL)`,
                 ))
                 .orderBy(animalPrimaryFirst(), sql`rowid ASC`)
                 .limit(5)
