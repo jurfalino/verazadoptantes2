@@ -2,6 +2,7 @@
 
 import { formSubmissions, adoptions } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { revalidatePath } from 'next/cache';
 import { getDb, getUser } from './_db';
 import { insertRecord } from './_recordWrite';
 import { logger } from '@/lib/logger';
@@ -225,6 +226,10 @@ export async function linkFormSubmissionToAdopter(submissionId: string, adopterI
             });
         }
 
+        // Without this the client Router Cache keeps the pre-link form-results
+        // page, so going Back from the profile shows it as still unlinked.
+        revalidatePath(`/form-results/${submissionId}`);
+        revalidatePath(`/adopter/${adopterId}`);
         return { success: true };
     } catch (e) {
         const errorId = logger.error('linkFormSubmissionToAdopter failed', e, { submissionId, adopterId });
