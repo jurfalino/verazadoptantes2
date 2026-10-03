@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.138] - 2026-10-03
+
+### Added — the form screen shows the rating of the person you linked it to
+
+"Solicitud vinculada a X" now carries X's rating badge (tap for the scale)
+right under the name, the same average the profile and Mis adoptantes show.
+A person with no rated activity reads "Todavía sin calificaciones" instead of
+a blank. Only for an existing profile you chose; a profile created from the
+form itself has no history to rate.
+
 ## [2.56.137] - 2026-10-03
 
 ### Added — see everyone who filled your adoption form, in Mis adoptantes

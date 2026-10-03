@@ -1892,6 +1892,7 @@ export const pt = {
         action_view_profile: 'Ver perfil',
         action_view_new_profile: 'Ver perfil novo',
         linked_badge: 'Perfil vinculado',
+        linked_no_rating: 'Ainda sem avaliações',
         same_person: 'É a mesma pessoa',
         confirm_link_title: 'Vincular a {name}?',
         confirm_link_body_merge: 'Combinamos o perfil novo de {applicant} com o de {name}: a solicitação e os dados passam para esse perfil. Se outra pessoa o criou, avisamos.',

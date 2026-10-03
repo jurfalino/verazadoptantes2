@@ -1887,6 +1887,7 @@ export const en = {
         action_view_profile: 'View profile',
         action_view_new_profile: 'View new profile',
         linked_badge: 'Linked profile',
+        linked_no_rating: 'No ratings yet',
         same_person: 'Same person',
         confirm_link_title: 'Link to {name}?',
         confirm_link_body_merge: 'We will combine the new profile for {applicant} with {name}’s: their request and details move to that profile. If someone else created it, we will let them know.',

@@ -79,6 +79,11 @@ test.describe('form-results: linking to an existing profile', () => {
         const orphanId = String(second.auto_adopter_id);
         expect(second.linked_adopter_id).toBe(orphanId);
 
+        // Give the existing person a history worth reading: one 4-star
+        // adoption (own fixture rows, never a seed adopter).
+        execD1(`INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('test-formlink-fixture-animal-${stamp}', 'E2E Fixture Pet', 'dog', 'test-seed', strftime('%s','now'), strftime('%s','now'))`);
+        execD1(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by) VALUES ('test-formlink-fixture-placement-${stamp}', 'test-formlink-fixture-animal-${stamp}', '${existingId}', 'adoption', strftime('%s','now','-10 days'), NULL, 'completed', 4, 'test-seed')`);
+
         // Before deciding: the page asks, instead of claiming "linked".
         await page.goto(`/form-results/${secondId}`);
         await dismissCountryBanner(page);
@@ -98,6 +103,8 @@ test.describe('form-results: linking to an existing profile', () => {
         await expect(page).toHaveURL(new RegExp(`/form-results/${secondId}`));
         await expect(banner).toHaveAttribute('data-state', 'linked_existing', { timeout: 30_000 });
         await expect(banner).toContainText(existingName);
+        // …and how that person is rated — the trust signal the rescuer is here for.
+        await expect(banner).toContainText(/Good|Bueno|Bom/);
         await expect(banner.getByRole('link', { name: /^(View profile|Ver perfil)/ })).toHaveAttribute('href', `/adopter/${existingId}`);
         // The seeded admin can get the T&C modal mid-test; it covers the page.
         await dismissCountryBanner(page);

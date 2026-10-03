@@ -2,7 +2,7 @@ export const runtime = 'edge';
 
 import { redirect, notFound } from 'next/navigation';
 import { getDb } from '@/lib/db';
-import { notifications, adopters, formSubmissions, adopterImages } from '@/db/schema';
+import { notifications, adopters, formSubmissions, adopterImages, adoptions } from '@/db/schema';
 import { eq, or, and, isNull } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { getUser } from '@/app/actions/_db';
@@ -13,6 +13,7 @@ import { logger } from '@/lib/logger';
 import { isOrgMate } from '@/lib/orgMembership';
 import { isAdminAsync } from '@/config/admins';
 import { formLinkKind } from '@/domain/formLink';
+import { computeAvgRating } from '@/domain/ratings';
 
 interface MatchedAdopter {
     id: string;
@@ -135,12 +136,12 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
 
     type ProfileRow = { id: string; name: string; contactInfo: string | null; addressInfo: string | null; status: string | null; profileImageUrl: string | null };
     let matchedProfiles: ProfileRow[] = [];
-    let linkedProfile: { id: string; name: string; profileImageUrl: string | null } | null = null;
+    let linkedProfile: { id: string; name: string; profileImageUrl: string | null; avgRating: number | null } | null = null;
     if (profileIds.length > 0) {
         // OR-of-eq id filters, never `inArray`: D1 does NOT expand array params
         // in IN clauses (it binds `IN (?)` with a single value and silently
         // returns wrong results — see docs/D1_COMPATIBILITY.md).
-        const [rows, imageRows] = await Promise.all([
+        const [rows, imageRows, linkedRatings] = await Promise.all([
             db
                 .select({ id: adopters.id, name: adopters.name, contactInfo: adopters.contactInfo, addressInfo: adopters.addressInfo, status: adopters.status, deletedAt: adopters.deletedAt })
                 .from(adopters)
@@ -156,6 +157,18 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
                     or(isNull(adopterImages.adoptionId), eq(adopterImages.isProfilePicture, 1)),
                 ))
                 .orderBy(sql`${adopterImages.isProfilePicture} DESC`, sql`${adopterImages.uploadedAt} DESC`),
+            // The chosen person's rating, for the "Solicitud vinculada a X"
+            // banner — the trust signal the rescuer is here to read. Same
+            // computation as the profile and /my-adopters (computeAvgRating
+            // over every rated record). Only for an existing profile: one
+            // auto-created from this form has no history to rate.
+            linkKind === 'linked_existing' && linkedId
+                ? db.select({ rating: adoptions.rating }).from(adoptions).where(eq(adoptions.adopterId, linkedId)).all()
+                    .catch((e: unknown) => {
+                        logger.warn('form-results: linked profile rating lookup failed', { submissionId, adopterId: linkedId, error: e instanceof Error ? e.message : String(e) });
+                        return null;
+                    })
+                : Promise.resolve(null),
         ]);
         const imageByAdopter = new Map<string, string>();
         for (const row of imageRows) {
@@ -186,7 +199,12 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         const linkedRow = (rows as Row[]).find(r => r.id === linkedId && !r.deletedAt);
         if (linkedRow) {
             const p = withImage(linkedRow);
-            linkedProfile = { id: p.id, name: p.name, profileImageUrl: p.profileImageUrl };
+            linkedProfile = {
+                id: p.id,
+                name: p.name,
+                profileImageUrl: p.profileImageUrl,
+                avgRating: linkedRatings ? computeAvgRating(linkedRatings as Array<{ rating: number | null }>) : null,
+            };
         }
     }
 

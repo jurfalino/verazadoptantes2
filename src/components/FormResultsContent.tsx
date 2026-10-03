@@ -8,6 +8,8 @@ import FormAnswersPanel, { renderFormAnswerValue } from '@/components/FormAnswer
 import FormResultMatchCard from '@/components/FormResultMatchCard';
 import LocationMap from '@/components/LocationMap';
 import { buttonClasses } from '@/components/ui/Button';
+import { RatingBadge } from '@/components/RatingBadge';
+import { RatingExplainer } from '@/components/RatingExplainer';
 import { en } from '@/i18n/locales/en';
 import { ChevronDown, ChevronRight, CheckCircle2, Users, UserPlus, UserCheck, ArrowRight } from 'lucide-react';
 import { formResultsView, type FormLinkKind, type FormResultsAction, type FormResultsBanner } from '@/domain/formLink';
@@ -106,8 +108,9 @@ interface FormResultsContentProps {
     matchedFormSubmissions?: Array<{ id: string; name: string; notificationId: string | null }>;
     matchedProfiles: MatchedProfile[];
     linkKind: FormLinkKind;
-    /** The live profile the form points at — null when unlinked, or linked to a since-merged profile. */
-    linkedProfile: { id: string; name: string; profileImageUrl: string | null } | null;
+    /** The live profile the form points at — null when unlinked, or linked to a since-merged profile.
+     *  avgRating is only loaded for an existing (chosen) profile. */
+    linkedProfile: { id: string; name: string; profileImageUrl: string | null; avgRating?: number | null } | null;
 }
 
 /** Status tones map to the semantic tokens (style guide §1.2), which both themes define. */
@@ -429,7 +432,7 @@ function StatusBanner({
     banner: FormResultsBanner;
     count: number;
     applicantName: string | null;
-    linkedProfile: { id: string; name: string; profileImageUrl: string | null } | null;
+    linkedProfile: { id: string; name: string; profileImageUrl: string | null; avgRating?: number | null } | null;
     hadMatches: boolean;
     L: (key: string) => string;
     actions: React.ReactNode;
@@ -502,6 +505,21 @@ function StatusBanner({
                     <h2 className="text-base font-bold leading-snug break-words" style={{ color: 'var(--text-primary)' }}>
                         {title}
                     </h2>
+                    {/* The chosen person's rating, right under their name — the
+                        first thing a rescuer vetting this applicant needs. */}
+                    {banner === 'linked_existing' && linkedProfile && (
+                        <div className="mt-2 flex items-center gap-2">
+                            {linkedProfile.avgRating != null ? (
+                                <RatingExplainer rating={linkedProfile.avgRating}>
+                                    <RatingBadge rating={linkedProfile.avgRating} size="sm" label="short" />
+                                </RatingExplainer>
+                            ) : (
+                                <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                                    {L('linked_no_rating')}
+                                </span>
+                            )}
+                        </div>
+                    )}
                     {desc && (
                         <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
                             {desc}
