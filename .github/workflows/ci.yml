@@ -241,17 +241,30 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Sized with `--list`, whole files per leg (playwright.config.ts sets
-          # fullyParallel: false so a shard split never separates a spec's own
-          # tests): 39 / 37 / 37 / 36 / 27.
+          # Balanced by TIME, not by test count — `--shard` divides files
+          # evenly, which is not the same thing. Measured on run 37149642645
+          # (five legs, 15.6 min): authed-2 took 11.8 min while `rest` took
+          # 3.0, because `authed` holds ~78% of the suite's test time
+          # (view-as 2.8, pending-searches 2.4, landing-pages 1.7 CI-minutes).
+          # One leg at 11.8 set the whole pipeline's length. Hence 4 legs for
+          # `authed`, 2 for `user`, 1 for the rest.
+          #
+          # `--shard` rather than naming files per leg: a new spec joins a
+          # shard automatically. Listing files by hand means a spec someone
+          # forgets to add runs NOWHERE, and silently passing by not running
+          # is the worst failure this pipeline could have.
           - group: user-1
             projects: --project=user --shard=1/2
           - group: user-2
             projects: --project=user --shard=2/2
           - group: authed-1
-            projects: --project=authed --shard=1/2
+            projects: --project=authed --shard=1/4
           - group: authed-2
-            projects: --project=authed --shard=2/2
+            projects: --project=authed --shard=2/4
+          - group: authed-3
+            projects: --project=authed --shard=3/4
+          - group: authed-4
+            projects: --project=authed --shard=4/4
           - group: rest
             projects: --project=unauthed --project=mobile
     # Each group is now ~5-12 minutes, but the headroom stays: a timeout
@@ -282,7 +295,19 @@ jobs:
           node-version: '20.18'
           cache: 'npm'
 
+      # ~1 minute per leg, and with seven legs that is a minute off the
+      # critical path as well as six off the bill. Keyed on the lockfile and
+      # the Node version because node_modules carries compiled native modules
+      # (better-sqlite3) that are not portable across either.
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node20.18-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Cache Playwright browsers

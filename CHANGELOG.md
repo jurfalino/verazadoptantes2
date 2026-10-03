@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.132] - 2026-10-03
+
+### Changed — releases now take about ten minutes
+
+The previous change cut a release from half an hour to sixteen minutes. The
+measurements showed one of the five test groups doing more than half the work
+on its own, which set the length of the whole thing while the others sat idle.
+The groups are now balanced by how long they actually take rather than by how
+many tests they hold, and they no longer reinstall the same dependencies from
+scratch each time.
+
 ## [2.56.131] - 2026-10-03
 
 ### Fixed — the release pipeline is faster, and stops dropping releases
