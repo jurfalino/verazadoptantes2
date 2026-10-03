@@ -52,36 +52,41 @@ test.describe('The public-catalogue switch', () => {
         await expect(page.getByTestId(`listing-toggle-${ADOPTED}`)).toHaveCount(0);
     });
 
-    test('on a card it stays a signal — it must not squeeze the card out', async ({ page }) => {
-        // v2.56.133. The first version of this put a 44px switch and a
-        // 20-character label in the card's action row: measured at 1280 it took
-        // 184px of a 339px row and left the card's own date and «Actualizado
-        // por» 31px — an ellipsis. It did NOT overflow, so nothing looked
-        // broken; the card just stopped saying anything. A measurement is the
-        // only thing that catches that, hence this test rather than a snapshot.
-        for (const [w, h] of [[1280, 900], [390, 844]] as const) {
+    test('on a card it reads as a sentence, and is a real tap target', async ({ page }) => {
+        // ux-ui-guidelines §1.3, §1.5, §4.6. Two earlier attempts failed here:
+        //   · a labelled switch inside the action row took 184px of 339 and
+        //     squeezed the card's own date and «Actualizado por» to 31px — an
+        //     ellipsis — without overflowing, so nothing LOOKED broken;
+        //   · replacing it with a bare eye icon fixed the width and broke
+        //     comprehension: colour plus glyph and no text (§1.5), an
+        //     affordance matching nothing else on the card (§1.3), and 36px
+        //     of tap target.
+        // So this asserts the things that actually failed, not the pixels:
+        // it says what it is, it is reachable with a thumb, and it leaves the
+        // card's own information room to be read.
+        for (const [w, h] of [[1280, 900], [375, 812]] as const) {
             await page.setViewportSize({ width: w, height: h });
             await page.goto('/my-animals?view=available');
             await page.waitForSelector('[data-testid^="listing-toggle-"]', { timeout: 30000 });
 
             const m = await page.evaluate(() => {
                 const tg = document.querySelector('[data-testid^="listing-toggle-"]')!;
-                const row = tg.closest('div')!;
-                const meta = row.querySelector('div.flex-1')!;
+                const meta = document.querySelector('[data-testid^="last-update-"]');
+                const r = tg.getBoundingClientRect();
                 return {
-                    overflow: row.scrollWidth - Math.round(row.getBoundingClientRect().width),
-                    meta: Math.round(meta.getBoundingClientRect().width),
-                    toggle: Math.round(tg.getBoundingClientRect().width),
+                    h: Math.round(r.height),
+                    text: (tg.textContent || '').trim(),
+                    meta: meta ? Math.round(meta.getBoundingClientRect().width) : 0,
                     pageScrollX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
                 };
             });
 
-            // The card's own information keeps room to be read…
-            expect(m.meta, `meta column at ${w}px`).toBeGreaterThan(120);
-            // …and the control stays a signal, not a form.
-            expect(m.toggle, `toggle at ${w}px`).toBeLessThan(110);
-            // Nothing escapes the card or the page.
-            expect(m.overflow, `row overflow at ${w}px`).toBeLessThanOrEqual(0);
+            // It says what it means — never colour and a glyph alone (§1.5).
+            expect(m.text, `label at ${w}px`).toMatch(/catalogue|catálogo|photo|foto/i);
+            // Reachable with a thumb (§1.5, ≥44px).
+            expect(m.h, `tap target at ${w}px`).toBeGreaterThanOrEqual(44);
+            // The card still gets to say its own piece.
+            expect(m.meta, `card meta at ${w}px`).toBeGreaterThan(120);
             expect(m.pageScrollX, `page scroll at ${w}px`).toBeLessThanOrEqual(0);
         }
     });

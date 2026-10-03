@@ -90,7 +90,7 @@ export default function AnimalListingToggle({
             disabled={busy}
             onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggle(); }}
             data-testid={`listing-toggle-${animalId}`}
-            className={`relative inline-flex flex-shrink-0 items-center h-6 w-11 rounded-full transition-colors disabled:opacity-50 ${on ? 'bg-teal-600' : 'bg-stone-300'}`}
+            className={`relative inline-flex flex-shrink-0 items-center justify-start h-6 w-11 my-2.5 rounded-full transition-colors disabled:opacity-50 ${on ? 'bg-teal-600' : 'bg-stone-300'}`}
         >
             {/* 4px: half-grid exception, centres the 20px thumb in a 24px track */}
             <span
@@ -100,44 +100,56 @@ export default function AnimalListingToggle({
     );
 
     // ── the card ──
-    // Measured: the labelled switch took 184px of a 339px row and squeezed the
-    // card's own date and «Actualizado por» to 31px — an ellipsis — without
-    // overflowing, so it degraded silently. A card is signals plus one quick
-    // action, not a form.
+    // The card already has a vocabulary for state, and it is sentences: "In
+    // foster with X", "Adopted by X", "View Signed Contract", the amber
+    // «pendientes» row — each a full-width row with an icon and words. A bare
+    // eye icon matched none of it: on a phone there is no hover, so the
+    // commonest state became an unexplained symbol, which is recall where the
+    // rest of the card offers recognition.
     //
-    // So: quiet in the normal state, loud in the exceptional one. Nearly every
-    // animal is listed, and saying so on every card is 184px of noise; an
-    // animal that is HIDDEN is the thing worth seeing at a glance. Listed is a
-    // bare eye (~36px), hidden is eye-off plus the word, in amber. Both keep
-    // role="switch" and the full sentence in aria-label/title, so the meaning
-    // is one hover or one screen-reader stop away. The full labelled control
-    // lives on the animal's own page, where there is room for it.
+    // So: the same full-width row the card uses for everything else, saying
+    // what is true in words, with the switch at the end so it reads as
+    // something you can change. The whole row is the control — one target, not
+    // a 20px icon. Three states, because "on" has two very different meanings:
+    //   listed + photo  → teal, it is working
+    //   listed, no photo → amber, it WANTS to be listed and cannot (your move)
+    //   not listed       → stone, a deliberate choice, not a fault
     if (compact) {
+        const tone = !on
+            ? { box: 'bg-stone-100 text-stone-700 hover:bg-stone-200', track: 'bg-stone-400' }
+            : hasPhoto
+                ? { box: 'bg-teal-50 text-teal-800 hover:bg-teal-100', track: 'bg-teal-600' }
+                : { box: 'bg-amber-100 text-amber-800 hover:bg-amber-200', track: 'bg-amber-500' };
+        const cardLabel = !on
+            ? (t('myAnimals.listing_off') || 'Fuera del catálogo')
+            : hasPhoto
+                ? (t('myAnimals.listing_on') || 'En el catálogo público')
+                : (t('myAnimals.listing_card_needs_photo') || 'Falta una foto para que aparezca');
         return (
             <button
                 type="button"
                 role="switch"
                 aria-checked={on}
                 aria-label={label}
-                title={label}
                 disabled={busy}
                 onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggle(); }}
                 data-testid={`listing-toggle-${animalId}`}
-                className={`inline-flex flex-shrink-0 items-center gap-1.5 min-h-[36px] px-2 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 ${
-                    on ? 'text-stone-400 hover:text-stone-600 hover:bg-stone-100' : 'text-amber-700 bg-amber-50 hover:bg-amber-100'}`}
+                className={`flex items-center gap-2 w-full min-h-[44px] px-3 py-2 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 ${tone.box}`}
             >
                 {on ? (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden>
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden>
                         <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" />
                     </svg>
                 ) : (
-                    <>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden>
-                            <path d="M9.9 5.1A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.6 9.6 0 0 0 4.3-1M3 3l18 18" />
-                        </svg>
-                        {t('myAnimals.listing_off_short') || 'Oculto'}
-                    </>
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden>
+                        <path d="M9.9 5.1A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.6 9.6 0 0 0 4.3-1M3 3l18 18" />
+                    </svg>
                 )}
+                <span className="flex-1 min-w-0 text-left truncate">{cardLabel}</span>
+                {/* Reads as "you can change this", which an icon alone does not. */}
+                <span className={`relative inline-flex flex-shrink-0 items-center h-5 w-9 rounded-full transition-colors ${tone.track}`} aria-hidden>
+                    <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-[18px]' : 'translate-x-[2px]'}`} />
+                </span>
             </button>
         );
     }

@@ -1616,7 +1616,7 @@ export const es = {
         updated_by: 'Actualizado por',
         listing_on: 'En el catálogo público',
         listing_off: 'Fuera del catálogo',
-        listing_off_short: 'Oculto',
+        listing_card_needs_photo: 'Falta una foto para que aparezca',
         listing_on_hint: 'Cualquiera puede verlo en el catálogo y postularse para adoptarlo.',
         listing_off_hint: 'No aparece en el catálogo. Usalo mientras esté en tratamiento o ya prometido — sus datos y sus fotos quedan como están.',
         listing_needs_photo: 'Le falta una foto: hasta que subas una no va a aparecer en el catálogo.',

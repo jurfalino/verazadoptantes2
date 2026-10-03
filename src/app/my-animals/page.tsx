@@ -524,10 +524,24 @@ export default function MyAnimalsPage() {
                                             })()}
                                         </Link>
                                     )}
+                                    {/* Sits with the card's other state rows («Adoptado por»,
+                                        «En tránsito con», the pendientes badge) rather than in
+                                        the action row below — guidelines §1.3, affordances for
+                                        the same job look the same. Only while the animal is
+                                        still looking for a home. */}
+                                    {(!animal.adopterId || isFoster) && (
+                                        <AnimalListingToggle
+                                            animalId={animal.id}
+                                            listed={animal.listed !== 0}
+                                            hasPhoto={showableCount(animal.images.filter(i => i.scope === 'animal')) > 0}
+                                            compact
+                                        />
+                                    )}
+
                                         {/* flex-wrap + a floor on the meta column: controls drop
                                             to their own line rather than squeezing the card's date
                                             and «Actualizado por» into an ellipsis (measured at 31px
-                                            before v2.56.133). */}
+                                            before v2.56.134). */}
                                         <div className="flex flex-wrap items-center gap-2">
                                             <div className="text-xs text-stone-500 flex-1 min-w-[9rem] space-y-0.5">
                                                 {animal.date && (
@@ -570,17 +584,6 @@ export default function MyAnimalsPage() {
                                                         : (t('animalProfile.applicant_many') || 'interesadas')}
                                                 </Link>
                                             )}
-                                            {/* Only while the animal is still looking for a
-                                                home — an adopted one is not a catalogue
-                                                question. Stops the card click. */}
-                                            {!animal.adopterId || isFoster ? (
-                                                <AnimalListingToggle
-                                                    animalId={animal.id}
-                                                    listed={animal.listed !== 0}
-                                                    hasPhoto={showableCount(animal.images.filter(i => i.scope === 'animal')) > 0}
-                                                    compact
-                                                />
-                                            ) : null}
                                             {userId && (
                                                 <AnimalShareSheet
                                                     userId={userId}

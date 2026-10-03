@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.136] - 2026-10-03
+
+### Fixed — the catalogue control on the cards now says what it does
+
+It shipped as a switch with a long label crammed into the card's action row,
+which squeezed the card's own date and «Actualizado por» down to an ellipsis.
+The next attempt replaced it with a small eye icon, which fitted but told
+nobody what it meant — on a phone there is no hover, so the commonest state
+became an unexplained symbol.
+
+It is now a row like the card's others ("Adoptado por…", "En tránsito con…"),
+saying one of three things in plain words:
+
+- **En el catálogo público** — people looking to adopt can find this animal
+- **Fuera del catálogo** — you took it out; its photos and data are untouched
+- **Falta una foto para que aparezca** — it is meant to be listed but cannot
+  be, and now the card tells you why instead of leaving you to wonder
+
+The whole row is the switch, so it is easy to hit with a thumb.
+
 ## [2.56.135] - 2026-10-03
 
 ### Changed — "Ubicación verificada" is a map you open, not two raw coordinates
