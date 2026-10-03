@@ -53,17 +53,21 @@ test.describe('Health record API (anonymous visitor)', () => {
         );
     });
 
-    test('shows the animal\'s own photo and not the one from its adoption', async ({ request }) => {
-        // Both seeded rows sit on `adoption_id = <animal id>`: the listing
-        // photo under the '__available__' sentinel, and one attached to the
-        // adoption record under the ADOPTER's id. Only the first is the
-        // animal's; the second can show the family.
+    test('shows the animal\'s own photos and not the one from its adoption', async ({ request }) => {
+        // All three seeded rows sit on `adoption_id = <animal id>`, and two of
+        // them carry the SAME adopter_id — the one added from «Editar» on the
+        // animal page while Timon was already adopted, and the one attached to
+        // the adoption record. Nothing but `scope` separates those two, which
+        // is the whole reason the column exists.
         const res = await request.get(`/api/showcase/health/${ADOPTED}`);
         expect(res.status()).toBe(200);
         const body = await res.json();
 
         const ids = body.animal.images.map((i: { id: string }) => i.id);
         expect(ids).toContain('test-img-fixture-listing');
+        // Added while the animal was ALREADY adopted — still the animal's.
+        expect(ids).toContain('test-img-fixture-while-placed');
+        // Attached to the adoption from the adopter's side — never the family's.
         expect(ids).not.toContain('test-img-fixture-adoption');
     });
 
@@ -109,5 +113,29 @@ test.describe('Health record API (anonymous visitor)', () => {
     test('a missing animal 404s', async ({ request }) => {
         const res = await request.get('/api/showcase/health/test-animal-does-not-exist');
         expect(res.status()).toBe(404);
+    });
+});
+
+test.describe('Public adoption listing of a RETURNED animal', () => {
+    // v2.56.124. A devolución puts the animal back on the public catalog, and
+    // by then its newest photos are the ones from the adoption it just left.
+    // Both seeded rows sit on the animal's key with the SAME adopter_id, so
+    // `scope` is the only thing standing between a stranger and a photo of the
+    // family — which is why this is asserted against the LIVE listing route,
+    // not only against the health record.
+    const RETURNED = 'test-animal-fixture-ret';
+
+    test('brings back the animal\'s photos and not the adoption\'s', async ({ request }) => {
+        const res = await request.get(`/api/showcase/animal/${RETURNED}`);
+        expect(res.status()).toBe(200);
+
+        const raw = await res.text();
+        expect(raw).not.toContain('Devuelto Timeline');
+        expect(raw).not.toContain('firmando el contrato');
+
+        const body = await res.json();
+        const ids = body.animal.images.map((i: { id: string }) => i.id);
+        expect(ids).toContain('test-img-ret-animal');
+        expect(ids).not.toContain('test-img-ret-placement');
     });
 });

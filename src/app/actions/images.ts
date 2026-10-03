@@ -38,7 +38,16 @@ async function assertCanChangeProfilePhoto(db: any, adopterId: string, actor: st
     }
 }
 
-export async function saveImage(adopterId: string, url: string, caption?: string, adoptionId?: string, mediaType?: string, isProfilePicture?: boolean) {
+export async function saveImage(
+    adopterId: string, url: string, caption?: string, adoptionId?: string,
+    mediaType?: string, isProfilePicture?: boolean,
+    /** v2.56.124: what this photo is OF — see `adopterImages.scope`. Callers
+     *  that put a photo on an ANIMAL must say which: 'animal' reaches the
+     *  public showcase and the shared health record, 'placement' never does.
+     *  Omitted (event photos, adopter-gallery photos) means not-public, which
+     *  is the safe default for anything that forgets to say. */
+    scope?: 'animal' | 'placement',
+) {
     const db = await getDb();
     if (!db) throw new Error("No database");
     const addedBy = await getUser();
@@ -70,6 +79,7 @@ export async function saveImage(adopterId: string, url: string, caption?: string
             adoptionId: adoptionId || null,
             url: persistedUrl,
             caption: caption || null,
+            scope: scope ?? null,
             uploadedAt: new Date(),
             addedBy,
             mediaType: mediaType || 'image',

@@ -168,7 +168,14 @@ export async function fetchAnimalImages(
                 url: adopterImages.url,
                 caption: adopterImages.caption,
             }).from(adopterImages)
-                .where(eq(adopterImages.adoptionId, id))
+                // v2.56.124: the animal key also carries photos attached while
+                // recording an adoption from the adopter's side — the handover,
+                // a document, the family. They used to reach this page, which
+                // matters most right after a devolución, when the animal is
+                // re-listed and those photos are the newest ones it has. Only
+                // the animal's own gallery is public (`scope = 'animal'`);
+                // anything unstamped is treated as not-public.
+                .where(and(eq(adopterImages.adoptionId, id), eq(adopterImages.scope, 'animal')))
                 .orderBy(animalPrimaryFirst(), sql`rowid ASC`)
                 .limit(5)
                 .all();

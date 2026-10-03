@@ -205,17 +205,46 @@ INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption
 -- gallery and can show the family. Its caption names the adopter on purpose:
 -- the "carries no person" assertion greps the whole payload for that name, so
 -- this row is what makes that assertion mean something.
-INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type) VALUES
+INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type, scope) VALUES
 ('test-img-fixture-adoption', 'test-adopter-fixture-tl1', 'test-animal-fixture-1',
  'https://api.dicebear.com/7.x/shapes/svg?seed=entrega', 'Fátima con Timon el día de la entrega',
- strftime('%s','now','-80 days'), 'gatitosolivos@gmail.com', 0, 0, 'image');
+ strftime('%s','now','-80 days'), 'gatitosolivos@gmail.com', 0, 0, 'image', 'placement');
 
--- The animal's OWN listing photo: the '__available__' sentinel the create form
--- writes. This one must reach the family's page.
-INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type) VALUES
+-- The animal's own photos. Two of them, and the second is the point: it was
+-- added from «Editar» on the animal page WHILE Timon was already adopted, so
+-- it carries the holder's adopter_id exactly like the row above. Only `scope`
+-- tells them apart, and this one is the animal's — it must reach both the
+-- public listing and the family's health record.
+INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type, scope) VALUES
 ('test-img-fixture-listing', '__available__', 'test-animal-fixture-1',
  'https://api.dicebear.com/7.x/shapes/svg?seed=timon', 'Timon recién rescatado',
- strftime('%s','now','-119 days'), 'gatitosolivos@gmail.com', 0, 1, 'image');
+ strftime('%s','now','-119 days'), 'gatitosolivos@gmail.com', 0, 1, 'image', 'animal'),
+('test-img-fixture-while-placed', 'test-adopter-fixture-tl1', 'test-animal-fixture-1',
+ 'https://api.dicebear.com/7.x/shapes/svg?seed=timon2', 'Timon un año después',
+ strftime('%s','now','-10 days'), 'gatitosolivos@gmail.com', 0, 0, 'image', 'animal');
+
+-- A RETURNED animal, back on the public listing. This is the case that makes
+-- `scope` load-bearing: its adoption ended, so it is available again and the
+-- showcase will serve it — and the photos it accumulated during that adoption
+-- are the newest ones it has. The animal's own photo must come back with it;
+-- the one attached to the adoption must not, whatever it shows.
+INSERT OR REPLACE INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES
+('test-adopter-fixture-ret', 'Devuelto Timeline', 'Tel: 555-0205', '5', 'test-seed', strftime('%s','now'), strftime('%s','now'));
+UPDATE adopters SET country = 'AR' WHERE id = 'test-adopter-fixture-ret';
+
+INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered, added_by, created_at, updated_at) VALUES
+('test-animal-fixture-ret', 'Vuelta', 'cat', 'Fixture devuelta y re-publicada', 'hembra', 'naranja', 1, 'gatitosolivos@gmail.com', strftime('%s','now','-200 days'), strftime('%s','now'));
+
+INSERT OR REPLACE INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by) VALUES
+('test-plc-fixture-ret', 'test-animal-fixture-ret', 'test-adopter-fixture-ret', 'adoption', strftime('%s','now','-150 days'), strftime('%s','now','-30 days'), 'completed', 3, 'gatitosolivos@gmail.com');
+
+INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type, scope) VALUES
+('test-img-ret-animal', 'test-adopter-fixture-ret', 'test-animal-fixture-ret',
+ 'https://api.dicebear.com/7.x/shapes/svg?seed=vuelta', 'Vuelta en el sillón',
+ strftime('%s','now','-60 days'), 'gatitosolivos@gmail.com', 0, 1, 'image', 'animal'),
+('test-img-ret-placement', 'test-adopter-fixture-ret', 'test-animal-fixture-ret',
+ 'https://api.dicebear.com/7.x/shapes/svg?seed=entrega2', 'Devuelto Timeline firmando el contrato',
+ strftime('%s','now','-150 days'), 'gatitosolivos@gmail.com', 0, 0, 'image', 'placement');
 
 -- An animal whose ONLY animal_event is a `note`, and whose note names a foster
 -- family. The shared record must 404 for it: `note` is unconstrained free text
@@ -261,8 +290,8 @@ INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered
 INSERT OR REPLACE INTO adoptions (id, adopter_id, animal_name, species, details, status, record_type, date, added_by) VALUES
 ('test-animal-fixture-owned-2', NULL, 'Canela', 'dog', 'Fixture: ficha ajena publicada', 'completed', 'available', strftime('%s','now','-10 days'), 'e2e-teammate@example.com');
 
-INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type) VALUES
-('test-img-fixture-owned-2', '__available__', 'test-animal-fixture-owned-2', 'https://api.dicebear.com/7.x/shapes/svg?seed=canela', NULL, strftime('%s','now'), 'e2e-teammate@example.com', 0, 1, 'image');
+INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type, scope) VALUES
+('test-img-fixture-owned-2', '__available__', 'test-animal-fixture-owned-2', 'https://api.dicebear.com/7.x/shapes/svg?seed=canela', NULL, strftime('%s','now'), 'e2e-teammate@example.com', 0, 1, 'image', 'animal');
 
 -- Shared-link fixtures (friendly-404 final review): a form submission and a
 -- contract notification owned by the teammate. The admin (an org-mate) must see

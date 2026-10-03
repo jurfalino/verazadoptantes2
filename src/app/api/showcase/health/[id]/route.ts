@@ -83,28 +83,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             return withCors(NextResponse.json({ error: 'Not found' }, { status: 404 }), origin);
         }
 
-        // Photos. `adopter_images.adoption_id` is overloaded: an EVENT's photos
-        // key on the event id, and an ANIMAL's photos key on the animal id.
+        // Photos, in the two places they live.
         //
-        // Event photos are safe by construction — an event id is only ever
-        // written by the care-event modal. Animal-level ones are NOT: the
-        // adopter-side record editor (AdoptionFormEditV2) also writes
-        // `adoption_id = <animal id>` for a placement-backed record, so that
-        // key mixes the animal's own gallery with photos someone attached to
-        // an adoption — which may show the adopter, their home or a document.
-        // There is no column that tells the two apart after the fact.
+        // Event photos key on the EVENT id and are safe by construction: only
+        // the care-event modal ever writes that id, so these are exactly the
+        // photos of the vet entry they hang under.
         //
-        // So the animal-level fetch is narrowed to `adopter_id = '__available__'`:
-        // the sentinel the create form and the listing flow write, i.e. photos
-        // taken of the animal itself rather than of a placement. Conservative
-        // on purpose — it can omit a legitimate photo (one added from the
-        // animal page WHILE the animal is placed carries the holder's id, not
-        // the sentinel), and it can never include one of the family. Fixing
-        // that gap means marking animal photos at write time; until then a
-        // missing photo is the acceptable failure and a leaked one is not.
+        // Animal photos key on the ANIMAL id, which is shared with photos
+        // attached while recording an adoption from the adopter's side — the
+        // handover, a document, the family. `scope` is what separates them,
+        // written at save time because nothing afterwards can
+        // (adopter_images.scope). Unstamped rows are treated as not-public.
         const pickEventImages = async (eventId: string) => pickImages(eq(adopterImages.adoptionId, eventId), eventId);
         const pickAnimalImages = async () => pickImages(
-            and(eq(adopterImages.adoptionId, id), eq(adopterImages.adopterId, '__available__')), id);
+            and(eq(adopterImages.adoptionId, id), eq(adopterImages.scope, 'animal')), id);
 
         async function pickImages(where: ReturnType<typeof and>, key: string) {
             try {

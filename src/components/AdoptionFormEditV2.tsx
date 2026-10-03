@@ -286,7 +286,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                 const base64 = await compressImage(file);
                 if (formData.id) {
                     const { saveImage } = await import('@/app/actions');
-                    await saveImage(adopterId, base64, `Photo for ${formData.animalName}`, formData.id, 'image');
+                    await saveImage(adopterId, base64, `Photo for ${formData.animalName}`, formData.id, 'image', false, 'placement');
                     const updatedImages = await getAdoptionImages(formData.id);
                     applyAdoptionImages(updatedImages);
                 } else {
@@ -358,7 +358,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                         return fetch('/api/upload-media', { method: 'POST', body: fd });
                     } else {
                         const { saveImage } = await import('@/app/actions');
-                        return saveImage(adopterId, pending.data, `Photo for ${formData.animalName}`, result.id, 'image');
+                        return saveImage(adopterId, pending.data, `Photo for ${formData.animalName}`, result.id, 'image', false, 'placement');
                     }
                 });
                 await Promise.all(uploadPromises);

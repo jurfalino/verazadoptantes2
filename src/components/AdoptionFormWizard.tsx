@@ -624,7 +624,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                         return fetch('/api/upload-media', { method: 'POST', body: fd });
                     } else {
                         const { saveImage } = await import('@/app/actions');
-                        return saveImage(adopterId, pending.data, `Photo for ${formData.animalName}`, result.id, 'image');
+                        return saveImage(adopterId, pending.data, `Photo for ${formData.animalName}`, result.id, 'image', false, 'placement');
                     }
                 });
                 await Promise.all(uploadPromises);

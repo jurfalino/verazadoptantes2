@@ -73,6 +73,16 @@ export const adopterImages = sqliteTable("adopter_images", {
     addedBy: text("added_by").default("anonymous"),
     isProfilePicture: integer("is_profile_picture").default(0), // 1 if this is the profile picture
     isPrimary: integer("is_primary").default(0), // v2.56.86: lead photo for adoption_id (an ANIMAL, not an adopter)
+    /** v2.56.124: what the photo is OF, because `adoption_id` cannot say.
+     *  'animal'    — the animal's own gallery (create form, "Editar" on the
+     *                animal page). Public: showcase + shared health record.
+     *  'placement' — attached while recording an adoption/tránsito from the
+     *                adopter's side. The handover, a document, the family.
+     *                Never public.
+     *  NULL        — written before this column existed, or a photo keyed to
+     *                an EVENT (seguimientos, care events), which the public
+     *                reads never look up. Treated as not-public. */
+    scope: text("scope"),
     mediaType: text("media_type").default("image"), // 'image' or 'video'
     thumbnailUrl: text("thumbnail_url"), // Video thumbnail URL (R2)
 });

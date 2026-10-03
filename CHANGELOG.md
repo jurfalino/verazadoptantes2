@@ -2,6 +2,31 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.124] - 2026-10-03
+
+### Fixed — photos from an adoption no longer show on the animal's public page
+
+A photo is now recorded with what it is a photo OF, and only the animal's own
+photos are public.
+
+Until now the animal's gallery and the photos someone attaches while recording
+an adoption or a tránsito from the adopter's side were stored the same way, on
+the same key. That meant a photo taken at the handover — the family, a signed
+document — could appear on the animal's public adoption page. The case where
+it bites is a devolución: the animal goes back on the catalog, and by then
+those are the newest photos it has.
+
+Nothing a rescuer does changes. Photos added to the animal from «Editar» on
+its page are public, as they always were, and now stay public even when added
+while the animal is already in a home — they belong to the animal and survive
+a return. Photos attached from the adopter's side never are. Seguimiento and
+care-event photos are unaffected: they were never on the public page and still
+are not, but they do appear on the shared health record under their own entry.
+
+Photos saved before this release are public only where it is unambiguous
+(those added while the animal had no home). Three photos in production are
+ambiguous and are hidden until someone looks at them.
+
 ## [2.56.123] - 2026-10-03
 
 ### Added — share an animal's veterinary record with the family that has them
@@ -23,11 +48,8 @@ and names no person except the rescue that recorded it. The API never reads
 placements, adopters or follow-ups at all. Three kinds of content are left out
 for the same reason — a rescuer writes them for themselves, so they can name a
 household: free-text "notes", the animal's description (a third of the ones in
-use mention a family, an adoption or a foster home), and photos that were
-attached to an adoption record rather than to the animal itself. Those last
-ones share a key with the animal's own gallery, so the page shows only photos
-taken while the animal was being rehomed, plus the ones attached to each
-veterinary entry.
+use mention a family, an adoption or a foster home), and photos attached to an
+adoption record rather than to the animal itself (see 2.56.124).
 
 It also claims nothing it cannot know. There is no "vaccines up to date" and no
 next-dose date, because the app has no idea what a given species at a given age

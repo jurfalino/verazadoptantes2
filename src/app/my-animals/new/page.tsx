@@ -229,7 +229,7 @@ function CreateAnimalForm() {
                 const { saveImage } = await import('@/app/actions');
                 const targetId = result?.id || editId || '';
                 for (const img of pendingImages) {
-                    await saveImage('__available__', img, `Photo for ${formData.animalName}`, targetId || undefined, 'image');
+                    await saveImage('__available__', img, `Photo for ${formData.animalName}`, targetId || undefined, 'image', false, 'animal');
                 }
             }
 

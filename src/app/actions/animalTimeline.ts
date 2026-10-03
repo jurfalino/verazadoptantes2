@@ -675,7 +675,10 @@ export async function addAnimalPhoto(animalId: string, dataUrl: string): Promise
         const owner = active?.adopterId || '__available__';
 
         const { saveImage } = await import('@/app/actions/images');
-        const res = await saveImage(owner, dataUrl, undefined, animalId, 'image');
+        // 'animal': this is the animal's own gallery («Editar» on its page), so it
+        // reaches the public showcase and the shared health record — and it stays
+        // the animal's through a devolución, unlike the holder in `owner`.
+        const res = await saveImage(owner, dataUrl, undefined, animalId, 'image', false, 'animal');
         const id = (res as { id?: string })?.id;
         if (!id) return { error: 'Upload failed' };
 
