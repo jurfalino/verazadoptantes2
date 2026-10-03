@@ -13,6 +13,7 @@ import { dueWhenText } from '@/lib/dueWhenText';
 import { formatAge } from '@/lib/ageUtils';
 import ShareFormMenu from '@/components/ShareFormMenu';
 import AnimalShareSheet from '@/components/AnimalShareSheet';
+import AnimalListingToggle from '@/components/AnimalListingToggle';
 import ShowcaseUrlChips from '@/components/ShowcaseUrlChips';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
@@ -55,6 +56,8 @@ interface Animal {
     applicants?: Applicant[];
     /** v2.55.16: due follow-ups (ENABLE_FOLLOWUPS; 0 when off/none). */
     dueFollowups?: number;
+    /** v2.56.128: the rescuer's public-catalogue switch. NULL = listed. */
+    listed?: number | null;
     /** v2.55.18: team visibility — who added this animal. */
     addedBy?: string | null;
     addedByName?: string | null;
@@ -563,6 +566,17 @@ export default function MyAnimalsPage() {
                                                         : (t('animalProfile.applicant_many') || 'interesadas')}
                                                 </Link>
                                             )}
+                                            {/* Only while the animal is still looking for a
+                                                home — an adopted one is not a catalogue
+                                                question. Stops the card click. */}
+                                            {!animal.adopterId || isFoster ? (
+                                                <AnimalListingToggle
+                                                    animalId={animal.id}
+                                                    listed={animal.listed !== 0}
+                                                    hasPhoto={showableCount(animal.images.filter(i => i.scope === 'animal')) > 0}
+                                                    compact
+                                                />
+                                            ) : null}
                                             {userId && (
                                                 <AnimalShareSheet
                                                     userId={userId}

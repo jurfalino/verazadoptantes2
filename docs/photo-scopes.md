@@ -13,6 +13,10 @@ third apart: as soon as the animal is placed, both carry the holder's
 > **Rule of thumb:** only `animal` is public. Everything else, including a
 > photo whose scope was never set, stays inside the app.
 
+Scope answers *which photos* may be public. Whether the ANIMAL is public is a
+separate question — `animals.listed`, the rescuer's catalogue switch (2.56.128)
+— and both have to say yes.
+
 ---
 
 ## The four values

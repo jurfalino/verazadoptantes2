@@ -47,7 +47,7 @@ export type AnimalTimelineItem = {
     recordedBy: string | null;
     /** Ended spans: length in days (placement_end items). */
     spanDays: number | null;
-    images: { id: string; url: string; mediaType: string | null; thumbnailUrl: string | null; caption: string | null; isPrimary?: boolean }[];
+    images: { id: string; url: string; mediaType: string | null; thumbnailUrl: string | null; caption: string | null; isPrimary?: boolean; scope?: string | null }[];
 };
 
 /** A projected follow-up slot, serialized for the client (dates as epoch ms). */
@@ -79,11 +79,13 @@ export type AnimalProfileData = {
         microchip: string | null;
         createdAt: number | null;
         addedBy: string | null;
+        /** v2.56.128: the rescuer's public-catalogue switch. NULL = listed. */
+        listed: number | null;
     };
     /** Current custody, if any. */
     activePlacement: { id: string; recordType: string; adopterId: string; adopterName: string | null; startedAt: number | null } | null;
     items: AnimalTimelineItem[];
-    images: { id: string; url: string; mediaType: string | null; thumbnailUrl: string | null; caption: string | null; isPrimary?: boolean }[];
+    images: { id: string; url: string; mediaType: string | null; thumbnailUrl: string | null; caption: string | null; isPrimary?: boolean; scope?: string | null }[];
     /** ENABLE_FOLLOWUPS is on for this deployment/user. */
     followupsEnabled: boolean;
     /** Projected follow-up slots for the ACTIVE placement (empty when none/flag off). */
@@ -220,6 +222,9 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
     const mapImages = (rows: any[]) => rows.map((im: any) => ({
         id: im.id, url: im.url, mediaType: im.mediaType ?? null, thumbnailUrl: im.thumbnailUrl ?? null, caption: im.caption ?? null,
         isPrimary: im.isPrimary === 1,
+        // v2.56.128: only 'animal' photos reach the catalogue, so the listing
+        // toggle needs it to say whether a photo is actually missing.
+        scope: im.scope ?? null,
     }));
 
     const items: AnimalTimelineItem[] = [];
@@ -362,6 +367,7 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
             estimatedBirthDate: toMs(animal.estimatedBirthDate), neutered: animal.neutered ?? null,
             sex: animal.sex ?? null, color: animal.color ?? null, microchip: animal.microchip ?? null,
             createdAt: toMs(animal.createdAt), addedBy: animal.addedBy ?? null,
+            listed: animal.listed ?? null,
         },
         activePlacement: active ? {
             id: active.id, recordType: active.recordType, adopterId: active.adopterId,
@@ -717,6 +723,41 @@ export async function deleteAnimalPhoto(animalId: string, imageId: string): Prom
     } catch (error) {
         const errorId = logger.error('deleteAnimalPhoto failed', error, { animalId, imageId, userEmail });
         return { error: `Failed to remove photo (${errorId})` };
+    }
+}
+
+/**
+ * v2.56.128: the rescuer's switch for the public catalogue.
+ *
+ * Taking an animal out is not a state of the animal — it is still available,
+ * still fostered, still has its photos. It covers the cases the app has no
+ * other word for: under treatment, already promised, not ready to be seen.
+ * Adopting it away is what ENDS a listing; this only pauses one.
+ *
+ * Stored as NULL/1 = listed, 0 = hidden, so an animal that predates the
+ * switch keeps appearing without a backfill.
+ */
+export async function setAnimalListed(animalId: string, listed: boolean): Promise<{ success: true } | { error: string }> {
+    const { getUser } = await import('@/app/actions/_db');
+    const userEmail = await getUser();
+    try {
+        if (!userEmail) return { error: 'Unauthorized' };
+        if (!animalPhotoIdSchema.safeParse(animalId).success) return { error: 'Not found' };
+        const db = await getDb();
+        if (!db) return { error: 'Database not available' };
+        if (!(await assertCanEditAnimal(db, animalId, userEmail))) return { error: 'Not found' };
+
+        await db.update(animals)
+            .set({ listed: listed ? 1 : 0, updatedAt: new Date(), updatedBy: userEmail })
+            .where(eq(animals.id, animalId));
+
+        logAudit({ userEmail, action: 'animal_listing_set', target: animalId, details: { listed } });
+        revalidatePath(`/my-animals/${animalId}`);
+        revalidatePath('/my-animals');
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('setAnimalListed failed', error, { animalId, listed, userEmail });
+        return { error: `Failed to change the catalogue setting (${errorId})` };
     }
 }
 

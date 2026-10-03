@@ -94,7 +94,15 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                        them. Writes one audit_log row; nothing else.
 //   stopViewAs()         takes nothing; only ever drops the caller's own claim.
 // While a claim is active every D1 write fails (src/lib/readOnlyGuard.ts).
-const EXPECTED_ACTIONS = 160;
+// 161 since v2.56.128: setAnimalListed(animalId, listed) in
+// src/app/actions/animalTimeline.ts — the rescuer's switch for the public
+// catalogue (an animal under treatment or already promised sits out without
+// being adopted away). Safe with arguments a stranger chooses: the id is
+// zod-shaped, assertCanEditAnimal gates on owner ∨ org-mate ∨ admin and is
+// the same gate the other five animal actions use, and the only writable
+// value is a boolean collapsed to 0/1. The worst a permitted caller can do is
+// hide or show their own team's animal, which is the feature. Audited.
+const EXPECTED_ACTIONS = 161;
 
 let manifest;
 try {

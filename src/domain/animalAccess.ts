@@ -37,10 +37,16 @@ export function tagLabel(name: string | null | undefined, max = 10): string {
  *  people can see the animal. Count a video only when it has a poster, which
  *  is the still the grid would actually draw. */
 export function isPubliclyListed(
-    row: { recordType: string | null; adopterId: string | null } | null | undefined,
+    row: { recordType: string | null; adopterId: string | null; listed?: number | null } | null | undefined,
     photoCount: number,
 ): boolean {
-    return !!row && row.recordType === RECORD_TYPES.AVAILABLE && !row.adopterId && photoCount > 0;
+    if (!row || photoCount <= 0) return false;
+    // v2.56.128: the rescuer's switch. NULL is listed — every animal that
+    // existed before the switch keeps appearing.
+    if (row.listed === 0) return false;
+    // An animal in a foster home is still looking for a permanent one.
+    if (row.recordType === 'foster') return true;
+    return row.recordType === RECORD_TYPES.AVAILABLE && !row.adopterId;
 }
 
 /** How many of an animal's media items the catalog can actually draw: a photo,

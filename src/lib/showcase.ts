@@ -19,7 +19,7 @@
 
 import { adoptions, adopterImages, users, organizations, orgMembers, userProfiles } from '@/db/schema';
 import { logger } from '@/lib/logger';
-import { eq, and, isNull, desc, sql } from 'drizzle-orm';
+import { eq, and, or, isNull, desc, sql } from 'drizzle-orm';
 
 export interface PublicAnimal {
     id: string;
@@ -214,10 +214,30 @@ export async function fetchAnimalImages(
  *  not soft-deleted. The `addedBy IS NOT NULL` check is defensive against
  *  orphan rows.
  */
+/**
+ * Who is in the public catalogue.
+ *
+ * v2.56.128, two changes. An animal in a FOSTER home is in it: it is still
+ * looking for a permanent home, which is the whole point of a tránsito, and
+ * removing it the moment someone records one was backwards. And the rescuer
+ * can take any animal out without adopting it away — `listed = 0` for one
+ * under treatment or already promised. NULL is listed, so nothing that
+ * existed before the switch changes.
+ *
+ * The 'available' branch keeps `adopter_id IS NULL`. The compat view unions
+ * animals with adopter EVENTS, and that guard is what keeps an event row from
+ * ever matching. The 'foster' branch needs no such guard — a foster row can
+ * only come from a placement — but it is written as its own branch rather
+ * than by widening the record-type test, so an event type can never slip into
+ * the catalogue by being named like a placement.
+ */
 export function availableAnimalsBase() {
     return and(
-        eq(adoptions.recordType, 'available'),
-        isNull(adoptions.adopterId),
+        or(
+            and(eq(adoptions.recordType, 'available'), isNull(adoptions.adopterId)),
+            eq(adoptions.recordType, 'foster'),
+        ),
+        sql`COALESCE(${adoptions.listed}, 1) = 1`,
     );
 }
 

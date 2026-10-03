@@ -77,6 +77,6 @@ export { matchFingerprints } from './importIdentical';
 export { getMatchContext } from './matchContext';
 export type { MatchContext } from './matchContext';
 
-export { getAnimalProfile, addAnimalEvent, deleteAnimalEvent, addAnimalPhoto, deleteAnimalPhoto, setAnimalPrimaryPhoto } from './animalTimeline';
+export { getAnimalProfile, addAnimalEvent, deleteAnimalEvent, addAnimalPhoto, deleteAnimalPhoto, setAnimalPrimaryPhoto, setAnimalListed } from './animalTimeline';
 export type { AnimalProfileData, AnimalTimelineItem } from './animalTimeline';
 export { getPendingAsks, resolvePendingAsk } from './pendingSearches';

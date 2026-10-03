@@ -231,6 +231,31 @@ INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption
  strftime('%s','now','-9 days'), 'gatitosolivos@gmail.com', 0, 0, 'video',
  'https://api.dicebear.com/7.x/shapes/svg?seed=timonvid', 'animal');
 
+-- ── PUBLIC CATALOGUE FIXTURES (v2.56.128) ──
+-- A FOSTERED animal with a photo. It must be in the public catalogue: a
+-- tránsito is an animal still looking for a permanent home, and until now
+-- recording one removed it from view.
+INSERT OR REPLACE INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES
+('test-adopter-fixture-cat', 'Tránsito Catálogo', 'Tel: 555-0206', '5', 'test-seed', strftime('%s','now'), strftime('%s','now'));
+UPDATE adopters SET country = 'AR' WHERE id = 'test-adopter-fixture-cat';
+
+INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered, added_by, created_at, updated_at) VALUES
+('test-animal-fixture-cat', 'Catalogo', 'dog', 'Fixture en tránsito, debe estar en el catálogo', 'macho', 'blanco', 1, 'gatitosolivos@gmail.com', strftime('%s','now','-15 days'), strftime('%s','now'));
+
+INSERT OR REPLACE INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by, health_token) VALUES
+('test-plc-fixture-cat', 'test-animal-fixture-cat', 'test-adopter-fixture-cat', 'foster', strftime('%s','now','-10 days'), NULL, 'completed', NULL, 'gatitosolivos@gmail.com', 'tok-fixture-cat-open');
+
+INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type, scope) VALUES
+('test-img-fixture-cat', '__available__', 'test-animal-fixture-cat', 'https://api.dicebear.com/7.x/shapes/svg?seed=catalogo', 'Catalogo en su tránsito', strftime('%s','now','-14 days'), 'gatitosolivos@gmail.com', 0, 1, 'image', 'animal');
+
+-- Available, with a photo, but the rescuer took it OUT of the catalogue —
+-- under treatment, say. Everything else about it is unchanged.
+INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered, listed, added_by, created_at, updated_at) VALUES
+('test-animal-fixture-hidden', 'Escondido', 'cat', 'Fixture fuera del catálogo por decisión del rescatista', 'macho', 'gris', 0, 0, 'gatitosolivos@gmail.com', strftime('%s','now','-12 days'), strftime('%s','now'));
+
+INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type, scope) VALUES
+('test-img-fixture-hidden', '__available__', 'test-animal-fixture-hidden', 'https://api.dicebear.com/7.x/shapes/svg?seed=escondido', 'Escondido', strftime('%s','now','-12 days'), 'gatitosolivos@gmail.com', 0, 1, 'image', 'animal');
+
 -- A RETURNED animal, back on the public listing. This is the case that makes
 -- `scope` load-bearing: its adoption ended, so it is available again and the
 -- showcase will serve it — and the photos it accumulated during that adoption

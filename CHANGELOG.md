@@ -2,6 +2,31 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.128] - 2026-10-03
+
+### Added — animals in a foster home are in the public catalogue
+
+Recording a tránsito used to take the animal out of the catalogue. That is
+backwards: an animal in a foster home is the clearest case of one still
+looking for a permanent home, and by then there are photos of it settled in
+and someone who knows what it is like to live with. It is listed now. The
+foster home is never named on the public page.
+
+### Added — a switch for whether an animal is in the catalogue
+
+On the animal's page and on its card: "En el catálogo público". Turn it off
+for an animal under treatment, or one already promised, without adopting it
+away or deleting its photos — everything else about it stays as it is.
+
+Being in the catalogue needs three things at once: no permanent home yet, a
+photo to show, and the rescuer wanting it seen. Only the last is a choice, so
+the switch says which of the other two is missing rather than appearing to do
+nothing — "le falta una foto" when that is the real reason. On an animal that
+already has a home it is not shown at all.
+
+Every animal is listed by default, so nothing changes until a rescuer turns
+something off.
+
 ## [2.56.127] - 2026-10-03
 
 ### Added — the public adoption pages play video

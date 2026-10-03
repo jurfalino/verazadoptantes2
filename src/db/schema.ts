@@ -170,6 +170,9 @@ export const adoptions = sqliteTable("adoptions", {
     sex: text("sex"), // macho, hembra
     color: text("color"), // Color/markings description
     microchip: text("microchip"), // Microchip number if available
+    /** v2.56.128: projected from `animals.listed`. NULL for adopter-event rows,
+     *  which are not animals and are never in the catalogue. */
+    listed: integer("listed"),
 });
 
 // ============================================================================
@@ -200,6 +203,12 @@ export const animals = sqliteTable("animals", {
     color: text("color"),
     microchip: text("microchip"),
     sourceUrl: text("source_url"), // Original post/source for the animal
+    /** v2.56.128: the rescuer's switch for the PUBLIC catalogue. NULL = listed
+     *  (every animal that existed before the switch), 0 = the rescuer took it
+     *  out — under treatment, already promised, not ready. It is not a state
+     *  of the animal: adopting it out is what ends a listing, this only hides
+     *  one. See docs/photo-scopes.md for the other half of "who can see it". */
+    listed: integer("listed"),
     addedBy: text("added_by").default("anonymous"), // Rescuer who owns it
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),

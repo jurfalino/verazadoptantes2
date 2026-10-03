@@ -25,12 +25,14 @@ import AnimalTimeline from '@/components/AnimalTimeline';
 import AddAnimalEventModal from '@/components/AddAnimalEventModal';
 import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import AnimalShareSheet from '@/components/AnimalShareSheet';
+import AnimalListingToggle from '@/components/AnimalListingToggle';
 import PickAdopterForAnimalModal from '@/components/PickAdopterForAnimalModal';
 import ShareHealthRecordModal from '@/components/ShareHealthRecordModal';
 import AnimalApplicants from '@/components/AnimalApplicants';
 import type { AnimalProfileData, ProjectedSlot } from '@/app/actions/animalTimeline';
 import type { ApplicantSummary } from '@/app/actions/applicants';
 import { interpolate } from '@/lib/interpolate';
+import { showableCount } from '@/domain/animalAccess';
 import { dueWhenText } from '@/lib/dueWhenText';
 
 function placeholderFor(species: string | null): string {
@@ -277,6 +279,19 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                                     animal.microchip ? `${t('animalProfile.microchip') || 'Microchip'} ${animal.microchip}` : null,
                                 ].filter(Boolean).join(' · ')}
                             </p>
+
+                            {/* The public catalogue is only a question while the animal
+                                is still looking for a home; once adopted there is
+                                nothing left to decide. */}
+                            {seeking && (
+                                <div className="mt-4 max-w-prose">
+                                    <AnimalListingToggle
+                                        animalId={animal.id}
+                                        listed={animal.listed !== 0}
+                                        hasPhoto={showableCount(images.filter(i => i.scope === 'animal')) > 0}
+                                    />
+                                </div>
+                            )}
 
                             {/* ── action row: one primary + state transition + share + ✎/🗑 ── */}
                             <div className="flex flex-wrap items-center gap-2 mt-4">
