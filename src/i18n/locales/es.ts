@@ -1413,7 +1413,7 @@ export const es = {
     myAdopters: {
         filter_label: 'Filtrar adoptantes',
         filter_all: 'Todos',
-        filter_forms: 'Con formulario',
+        filter_forms: 'Por formulario',
         form_line_for: 'Formulario para {animal}',
         form_line_general: 'Formulario general',
         form_needs_review: 'Por revisar',

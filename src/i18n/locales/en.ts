@@ -1408,7 +1408,7 @@ export const en = {
     myAdopters: {
         filter_label: 'Filter adopters',
         filter_all: 'All',
-        filter_forms: 'With a form',
+        filter_forms: 'Via form',
         form_line_for: 'Form for {animal}',
         form_line_general: 'General form',
         form_needs_review: 'To review',

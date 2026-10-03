@@ -1413,7 +1413,7 @@ export const pt = {
     myAdopters: {
         filter_label: 'Filtrar adotantes',
         filter_all: 'Todos',
-        filter_forms: 'Com formulário',
+        filter_forms: 'Por formulário',
         form_line_for: 'Formulário para {animal}',
         form_line_general: 'Formulário geral',
         form_needs_review: 'Para revisar',

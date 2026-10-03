@@ -384,7 +384,7 @@ export default function MyAdoptersPage() {
         );
     }
 
-    // "Con formulario": everyone who filled a form — including people whose
+    // "Por formulario": everyone who filled a form — including people whose
     // form was combined into a profile they already had, which the Origen
     // pill (how the profile was CREATED) would miss. Newest form first.
     const withForms = adopters
@@ -437,7 +437,7 @@ export default function MyAdoptersPage() {
                     <div role="group" aria-label={t('myAdopters.filter_label') || 'Filtrar'} className="flex flex-wrap gap-2 mb-4">
                         {([
                             [false, t('myAdopters.filter_all') || 'Todos', adopters.length],
-                            [true, t('myAdopters.filter_forms') || 'Con formulario', withForms.length],
+                            [true, t('myAdopters.filter_forms') || 'Por formulario', withForms.length],
                         ] as const).map(([on, label, count]) => (
                             <button
                                 key={String(on)}

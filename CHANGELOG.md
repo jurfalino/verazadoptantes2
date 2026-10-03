@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.139] - 2026-10-03
+
+### Changed — the Mis adoptantes filter reads "Por formulario"
+
+Was "Con formulario". "Por" says how the person reached you, which is what the
+filter is about. EN "Via form", PT "Por formulário".
+
 ## [2.56.138] - 2026-10-03
 
 ### Added — the form screen shows the rating of the person you linked it to

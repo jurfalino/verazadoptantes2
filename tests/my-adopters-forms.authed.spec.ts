@@ -2,7 +2,7 @@ import { test, expect, type APIRequestContext } from '@playwright/test';
 import { dismissCountryBanner } from './helpers';
 
 /**
- * /my-adopters "Con formulario": the place to see everyone who filled the
+ * /my-adopters "Por formulario": the place to see everyone who filled the
  * adoption form, newest first, with what they applied for and whether a form
  * still waits for "¿es la misma persona?" ("Por revisar").
  *
@@ -18,14 +18,14 @@ async function submitForm(request: APIRequestContext, data: { name: string; emai
     return (await res.json()).submissionId as string;
 }
 
-/** The chip's count badge, e.g. "With a form 7" → 7. */
+/** The chip's count badge, e.g. "Via form 7" → 7. */
 async function chipCount(page: import('@playwright/test').Page, name: RegExp): Promise<number> {
     const text = await page.getByRole('button', { name }).innerText();
     return Number(text.match(/(\d+)\s*$/)?.[1] ?? NaN);
 }
 
 test.describe('/my-adopters — people who filled a form', () => {
-    test('"Con formulario" lists them newest first, says what they applied for, and flags the undecided', async ({ page, request }) => {
+    test('"Por formulario" lists them newest first, says what they applied for, and flags the undecided', async ({ page, request }) => {
         test.setTimeout(120_000);
         const stamp = Date.now();
         const email = `e2e-list-${stamp}@example.com`;
@@ -38,12 +38,12 @@ test.describe('/my-adopters — people who filled a form', () => {
         await page.goto(`/my-adopters?filtro=formularios`);
         await dismissCountryBanner(page);
 
-        const formsChip = page.getByRole('button', { name: /With a form|Con formulario|Com formulário/ });
+        const formsChip = page.getByRole('button', { name: /Via form|Por formulario|Por formulário/ });
         await expect(formsChip).toHaveAttribute('aria-pressed', 'true', { timeout: 30_000 });
 
         const rows = page.locator('a[href*="?ref=my-adopters"]:visible');
         const all = await chipCount(page, /^(All|Todos)/);
-        const withForms = await chipCount(page, /With a form|Con formulario|Com formulário/);
+        const withForms = await chipCount(page, /Via form|Por formulario|Por formulário/);
         expect(withForms).toBeLessThan(all); // seed people without forms are filtered out
         await expect(rows).toHaveCount(withForms);
 
