@@ -1448,7 +1448,6 @@ export const en = {
         share_intent_public: 'If you want to share their page with someone interested',
         share_intent_form: 'If you want to vet adopters',
         share_intent_contract: 'If you already have an adopter and want them to sign a digital contract',
-        share_intent_contract_adopted: 'If you want to resend the contract or save the signed copy',
         share_intent_record: 'If you want to record an adoption that already happened',
         event_photos: 'Photos',
         event_rating: 'Rating',

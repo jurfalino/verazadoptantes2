@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.122] - 2026-10-03
+
+### Fixed — "Compartir" no longer appears on an animal that already has a home
+
+On an adopted animal the share sheet still offered to send the adoption form
+("Si querés evaluar adoptantes") and the contract link. Neither applies once
+the animal is placed, and the contract link was actually broken: an interested
+person could open it, fill the whole contract in and only then be told the
+animal "has already been adopted" (the submit endpoint rejects any animal with
+an adopter). The button is now hidden on adopted animals, on the animal's page
+and on the list card. The signed contract, where there is one, is unchanged —
+it still shows on the timeline and the card as «Ver contrato firmado».
+
+Fostered and available animals are untouched: they still get the full sheet.
+
 ## [2.56.121] - 2026-10-02
 
 ### Fixed — release of 2.56.120

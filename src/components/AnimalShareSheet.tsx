@@ -21,6 +21,16 @@
  * `recordType='available' AND adopter_id IS NULL` animals that have at least
  * one photo, and 404s otherwise — so a row offered without that check would
  * hand out a dead public link.
+ *
+ * v2.56.122: once the animal IS adopted, the trigger and the sheet disappear.
+ * Every row above is about finding or formalising a home, and the contract row
+ * was worse than clutter — /api/contract/[id]/submit answers 409 "already been
+ * adopted" (route.ts:74), so it handed out a form the adopter could fill in and
+ * never submit. The signed contract, when one exists, is already surfaced by
+ * the timeline's placement item and the list card («Ver contrato firmado»).
+ * The picker below stays mounted either way: it is what turns `adopted` true,
+ * and PickAdopterForAnimalModal.closeWizard clears the wizard's prefill params
+ * before calling onClose ("only now may the parent unmount us").
  */
 
 import { useEffect, useState } from 'react';
@@ -44,7 +54,7 @@ export default function AnimalShareSheet({ userId, animalId, animalName, adopted
     userId: string;
     animalId: string;
     animalName: string;
-    /** Post-adoption the contract row reads resend/receipt instead of the token pitch. */
+    /** An active adoption placement — the sheet renders nothing (see above). */
     adopted?: boolean;
     /** The public /animal/:id page is actually reachable for this animal:
      *  still available (no active placement) AND it has at least one photo. */
@@ -100,7 +110,7 @@ export default function AnimalShareSheet({ userId, animalId, animalName, adopted
 
     return (
         <>
-            <button
+            {!adopted && <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setOpen(true); }}
                 data-testid={`share-sheet-${animalId}`}
@@ -111,9 +121,9 @@ export default function AnimalShareSheet({ userId, animalId, animalName, adopted
             >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8.5 5.5L12 2l3.5 3.5M12 2v13M5 9.5H4V22h16V9.5h-1" /></svg>
                 {t('animalProfile.share') || 'Compartir'}
-            </button>
+            </button>}
 
-            {open && (
+            {!adopted && open && (
                 <div
                     className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
                     onClick={() => setOpen(false)}
@@ -163,24 +173,20 @@ export default function AnimalShareSheet({ userId, animalId, animalName, adopted
                                 <ShareFormMenu userId={userId} animalId={animalId} animalName={animalName} />
                             </Row>
 
-                            <Row intent={adopted
-                                ? (t('animalProfile.share_intent_contract_adopted') || 'Si querés reenviar el contrato o guardar la constancia firmada')
-                                : (t('animalProfile.share_intent_contract') || 'Si ya tenés un adoptante y querés que firme un contrato digital')}>
+                            <Row intent={t('animalProfile.share_intent_contract') || 'Si ya tenés un adoptante y querés que firme un contrato digital'}>
                                 <ShareMenu contractUrl={`/contract/${animalId}`} animalName={animalName} />
                             </Row>
 
-                            {!adopted && (
-                                <Row intent={t('animalProfile.share_intent_record') || 'Si querés registrar una adopción ya concretada'}>
-                                    <button
-                                        type="button"
-                                        onClick={() => { setOpen(false); setRecordOpen(true); }}
-                                        className={`${pill} text-white bg-teal-600 hover:bg-teal-700`}
-                                        data-testid={`share-record-adoption-${animalId}`}
-                                    >
-                                        {t('myAnimals.record_adoption') || 'Registrar adopción'}
-                                    </button>
-                                </Row>
-                            )}
+                            <Row intent={t('animalProfile.share_intent_record') || 'Si querés registrar una adopción ya concretada'}>
+                                <button
+                                    type="button"
+                                    onClick={() => { setOpen(false); setRecordOpen(true); }}
+                                    className={`${pill} text-white bg-teal-600 hover:bg-teal-700`}
+                                    data-testid={`share-record-adoption-${animalId}`}
+                                >
+                                    {t('myAnimals.record_adoption') || 'Registrar adopción'}
+                                </button>
+                            </Row>
                         </div>
 
                         <button
@@ -194,9 +200,10 @@ export default function AnimalShareSheet({ userId, animalId, animalName, adopted
                 </div>
             )}
 
-            {/* Self-contained: the picker takes the animal and routes to the
-                adopter wizard itself, so the card gets the same one-click path
-                to «ya concretada» that the profile's primary button offers. */}
+            {/* Self-contained: the picker takes the animal and hosts the
+                wizard itself, so the card gets the same one-click path to «ya
+                concretada» that the profile's primary button offers. It is
+                mounted unconditionally — see the note at the top of the file. */}
             <PickAdopterForAnimalModal
                 animalId={animalId}
                 animalName={animalName}

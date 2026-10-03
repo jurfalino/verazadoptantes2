@@ -1453,7 +1453,6 @@ export const pt = {
         share_intent_public: 'Se você quer compartilhar a ficha com alguém interessado',
         share_intent_form: 'Se você quer avaliar adotantes',
         share_intent_contract: 'Se você já tem um adotante e quer que assine um contrato digital',
-        share_intent_contract_adopted: 'Se você quer reenviar o contrato ou guardar o comprovante assinado',
         share_intent_record: 'Se você quer registrar uma adoção que já aconteceu',
         event_photos: 'Fotos',
         event_rating: 'Avaliação',

@@ -103,7 +103,7 @@ test.describe('Animal detail page', () => {
         await expect(page.getByRole('button', { name: /^[1-5] stars?$/ })).toHaveCount(0);
     });
 
-    test('share sheet is intent-keyed and offers recording an adoption', async ({ page }) => {
+    test('share sheet is intent-keyed, and disappears once the animal is adopted', async ({ page }) => {
         // v2.56.15: rows lead with the situation, and the funnel now ends with
         // "an adoption that already happened" — the only door on a list card.
         await page.goto('/my-animals/test-animal-fixture-2'); // available, not adopted
@@ -113,11 +113,24 @@ test.describe('Animal detail page', () => {
         await expect(page.getByText(/If you want to vet adopters|Si querés evaluar adoptantes/)).toBeVisible();
         await expect(page.getByTestId('share-record-adoption-test-animal-fixture-2')).toBeVisible();
 
-        // On an already-adopted animal that row is gone — nothing to record.
+        // v2.56.122: Timon has an active adoption, so there is nothing left to
+        // share — vetting is over, and the contract link would hand out a form
+        // /api/contract/[id]/submit rejects with 409. The button itself is gone,
+        // on the profile AND on the list card.
         await page.goto(`/my-animals/${ANIMAL_ID}`);
         await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
-        await page.getByTestId(`share-sheet-${ANIMAL_ID}`).click();
-        await expect(page.getByTestId(`share-record-adoption-${ANIMAL_ID}`)).toHaveCount(0);
+        await expect(page.getByTestId(`share-sheet-${ANIMAL_ID}`)).toHaveCount(0);
+
+        // On the list the trigger hangs off `userId` from useSession(), so a bare
+        // toHaveCount(0) would also pass before the session hydrates. Anchor it:
+        // prove an AVAILABLE card renders the trigger first, then switch tabs
+        // client-side (a <Link>, so the session stays loaded) and assert Timon's
+        // adopted card has none.
+        await page.goto('/my-animals?view=available');
+        await expect(page.getByTestId('share-sheet-test-animal-fixture-2')).toBeVisible({ timeout: 30000 });
+        await page.locator('a[href="/my-animals?view=adopted"]').click();
+        await expect(page.getByTestId(`animal-card-${ANIMAL_ID}`)).toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId(`share-sheet-${ANIMAL_ID}`)).toHaveCount(0);
     });
 
     test('card meta says WHAT the date means and who last touched the animal', async ({ page }) => {
