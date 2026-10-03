@@ -2,6 +2,30 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.131] - 2026-10-03
+
+### Fixed — the release pipeline is faster, and stops dropping releases
+
+Three things that each cost a release today.
+
+**A pull-request check could kill a release.** Pushing to staging starts the
+release pipeline, and a second later starts the checks for the open release
+pull request. Only one was allowed to run per branch, and the pull-request one
+won — cancelling a release that was minutes from deploying. They are different
+pipelines and now run independently.
+
+**An older release could overwrite a newer one.** Two people pushing minutes
+apart produced two pipelines. If the older one finished last it deployed its
+own, older code — every step green, staging quietly back a version. Both
+deploys now refuse to run if the branch has moved on, and say so.
+
+**The tests no longer wait for the build.** They install and run everything
+they need themselves, so they start immediately. Nothing ships without both
+passing.
+
+Together with running the tests as five groups at once, a release goes from
+about half an hour to roughly ten minutes.
+
 ## [2.56.130] - 2026-10-03
 
 ### Fixed — releases stop failing for reasons that have nothing to do with the change

@@ -21,8 +21,16 @@ on:
 # `cancel-in-progress` is deliberately FALSE on master: a newer staging push
 # should replace an older one, but a production deploy already under way should
 # finish rather than be interrupted part-way through `wrangler pages deploy`.
+# v2.56.131: the group also keys on the EVENT. A push to staging and the
+# pull_request run for the open release PR are created seconds apart on the
+# same branch, and with only the ref in the key the PR run takes the slot and
+# cancels the push — which is what killed run 37148913122 four seconds after
+# it started, with the deploy still ahead of it. A cancelled run reads as
+# `cancelled`, not `failure`, so it looks like someone superseded it on
+# purpose. They are different pipelines (a PR run skips e2e, migrations and
+# both deploys) and have no business cancelling each other.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
@@ -211,11 +219,16 @@ jobs:
     # server lives long enough to reach the ceiling. Wall clock drops with it,
     # because the three groups run at once.
     #
-    # Split along the EXISTING project boundary, not `--shard=i/N`. The groups
-    # already share auth state, so this separates far fewer tests that might
-    # depend on each other — each group still gets its own seeded DB, and any
-    # cross-group fixture coupling will surface here first.
-    # Sized by actual test counts: user 72, authed 67, unauthed+mobile 25.
+    # Split along the EXISTING project boundary first — those groups already
+    # share auth state — then in half again inside `user` and `authed`, which
+    # are too big on their own to hit the time budget. Each leg gets its own
+    # seeded DB, so cross-FILE fixture coupling surfaces here: that is known to
+    # exist (tests/contract-link.spec.ts's history is one such fix) and is the
+    # remaining work in .agents/plans/e2e-shard-the-suite.md.
+    #
+    # Budget: deploy is a fixed ~4 min and the whole pipeline should be ~10,
+    # so e2e has ~6. A leg is ~3 min of fixed overhead (npm ci, browsers,
+    # seed, boot) plus its tests, which puts the ceiling near 40 tests a leg.
     #
     # Two fixes already tried and rejected — see
     # .agents/plans/e2e-shard-the-suite.md before reaching for either:
@@ -228,10 +241,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - group: user
-            projects: --project=user
-          - group: authed
-            projects: --project=authed
+          # Sized with `--list`, whole files per leg (playwright.config.ts sets
+          # fullyParallel: false so a shard split never separates a spec's own
+          # tests): 39 / 37 / 37 / 36 / 27.
+          - group: user-1
+            projects: --project=user --shard=1/2
+          - group: user-2
+            projects: --project=user --shard=2/2
+          - group: authed-1
+            projects: --project=authed --shard=1/2
+          - group: authed-2
+            projects: --project=authed --shard=2/2
           - group: rest
             projects: --project=unauthed --project=mobile
     # Each group is now ~5-12 minutes, but the headroom stays: a timeout
@@ -242,7 +262,13 @@ jobs:
     # and silently stayed on the previous version.
     timeout-minutes: 30
     if: github.event_name == 'push'
-    needs: [build-and-lint]
+    # v2.56.131: deliberately NOT `needs: [build-and-lint]`. e2e installs its
+    # own dependencies and runs its own server; it consumes nothing the build
+    # produces, so waiting for it only added ~2 minutes to the critical path.
+    # Both deploys still list build-and-lint AND e2e in `needs`, so nothing
+    # ships without both. The cost is runner minutes spent on a run whose
+    # build was going to fail anyway, which is the cheaper of the two.
+    #
     # Deliberately a deploy gate: `continue-on-error` was removed to stop failures
     # being masked. With a matrix, `needs: [e2e]` requires EVERY group to pass.
 
@@ -303,6 +329,30 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # v2.56.131: refuse to deploy a commit that is no longer the branch tip.
+      #
+      # Two sessions pushing minutes apart produce two runs. Concurrency is
+      # meant to cancel the older one, but it misfires (see the note at the top
+      # of this file), and on 2026-10-03 an older run was still in E2E while a
+      # newer commit sat on the branch. Had it finished, it would have deployed
+      # ITS tree — rolling staging back to the previous version with every job
+      # green and nothing to show for it. That is the same silent class of
+      # failure as a skipped deploy, and harder to notice because the pipeline
+      # says success.
+      #
+      # Fails loudly rather than skipping: the newer run deploys, and a red job
+      # that says why beats a green one that quietly shipped the wrong thing.
+      - name: Refuse to deploy a superseded commit
+        run: |
+          git fetch origin "${GITHUB_REF_NAME}" --depth=1 --quiet
+          TIP="$(git rev-parse "origin/${GITHUB_REF_NAME}")"
+          if [ "$TIP" != "$GITHUB_SHA" ]; then
+            echo "::error::${GITHUB_REF_NAME} has moved on — this run is for ${GITHUB_SHA:0:8}, the tip is ${TIP:0:8}. The newer run deploys; this one must not overwrite it."
+            exit 1
+          fi
+          echo "✓ ${GITHUB_SHA:0:8} is still the tip of ${GITHUB_REF_NAME}"
+
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -417,6 +467,20 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # Same guard as staging: never let an older run overwrite a newer deploy.
+      # It matters more here — production is the one nobody notices has gone
+      # backwards until a user reports it.
+      - name: Refuse to deploy a superseded commit
+        run: |
+          git fetch origin "${GITHUB_REF_NAME}" --depth=1 --quiet
+          TIP="$(git rev-parse "origin/${GITHUB_REF_NAME}")"
+          if [ "$TIP" != "$GITHUB_SHA" ]; then
+            echo "::error::${GITHUB_REF_NAME} has moved on — this run is for ${GITHUB_SHA:0:8}, the tip is ${TIP:0:8}. The newer run deploys; this one must not overwrite it."
+            exit 1
+          fi
+          echo "✓ ${GITHUB_SHA:0:8} is still the tip of ${GITHUB_REF_NAME}"
+
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
