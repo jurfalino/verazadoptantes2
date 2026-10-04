@@ -72,34 +72,36 @@ describe('layoutRichDoc', () => {
     })
 })
 
-describe('pdfSafeText', () => {
-    it('folds typographic quotes, dashes, ellipsis and bullets to ASCII', () => {
-        expect(pdfSafeText('\u201cHola\u201d \u201eX\u201c \u2018a\u2019 \u201ab')).toBe('"Hola" "X" \'a\' \'b')
-        expect(pdfSafeText('a\u2013b\u2014c')).toBe('a-b-c')
-        expect(pdfSafeText('fin\u2026')).toBe('fin...')
-        expect(pdfSafeText('\u2022 item')).toBe('- item')
+describe('pdfSafeText (WinAnsi)', () => {
+    it('keeps every Spanish / Portuguese letter and the cp1252 typography', () => {
+        const s = 'á é í ó ú ü ñ ç ã õ â ê ô à Á É Ñ Ç ¿ ¡ « » • – — “ ” ‘ ’ … €'
+        expect(pdfSafeText(s)).toBe(s)
+        expect(pdfSafeText('Adopción ñandú, primer año, Gómez')).toBe('Adopción ñandú, primer año, Gómez')
+    })
+    it('folds what WinAnsi lacks: other dashes, bullets, primes', () => {
+        expect(pdfSafeText('a\u2010b\u2212c')).toBe('a-b-c')
+        expect(pdfSafeText('\u25CF item \u25E6 sub')).toBe('\u2022 item \u2022 sub')
+        expect(pdfSafeText('5\u2032 6\u2033')).toBe('5\' 6"')
     })
     it('turns NBSP and other unicode spaces into a normal space', () => {
         expect(pdfSafeText('a\u00a0b\u2009c\u202fd\u3000e')).toBe('a b c d e')
     })
-    it('strips accents like the standard path', () => {
-        expect(pdfSafeText('Adopción ñandú')).toBe('Adopcion nandu')
-    })
-    it('drops anything outside Latin-1 that could not be folded', () => {
-        expect(pdfSafeText('ok \u{1F436} \u20ac5 \u4e2d')).toBe('ok  5 ')
+    it('a letter outside WinAnsi keeps its base letter; emoji / CJK / C1 controls are dropped', () => {
+        expect(pdfSafeText('Ştefan Ő')).toBe('Stefan O')
+        expect(pdfSafeText('ok \u{1F436} 5 \u4e2d\u0085')).toBe('ok  5 ')
         expect(pdfSafeText('\u00b7 \u00df \u00bf')).toBe('\u00b7 \u00df \u00bf')
     })
 })
 
 describe('pdfSafeRichDoc', () => {
-    it('folds every inline in paragraphs and bullet items, keeping marks and shape', () => {
+    it('passes every inline through the WinAnsi rule (here: unchanged), keeping marks and shape', () => {
         const doc: RichDoc = { type: 'doc', content: [
             { type: 'paragraph', content: [{ text: '\u201cS\u00ed\u201d', marks: ['bold'] }] },
             { type: 'bulletList', items: [[{ text: 'a\u2014b' }]] },
         ] }
         expect(pdfSafeRichDoc(doc)).toEqual({ type: 'doc', content: [
-            { type: 'paragraph', content: [{ text: '"Si"', marks: ['bold'] }] },
-            { type: 'bulletList', items: [[{ text: 'a-b' }]] },
+            { type: 'paragraph', content: [{ text: '\u201cS\u00ed\u201d', marks: ['bold'] }] },
+            { type: 'bulletList', items: [[{ text: 'a\u2014b' }]] },
         ] })
     })
     it('an emoji-only word disappears instead of leaving an empty word', () => {

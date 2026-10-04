@@ -8,10 +8,10 @@
  */
 
 import { jsPDF } from 'jspdf'
-import { CONTRACT_CONTENT, stripAccents } from './i18n/contractContent'
+import { CONTRACT_CONTENT } from './i18n/contractContent'
 import type { Locale } from './i18n/types'
 import { contractVersionLabel, customSectionFor, type CustomContract, type RichDoc } from './lib/adoptionDocs'
-import { layoutRichDoc, pdfSafeRichDoc, type Style } from './lib/pdfRichDoc'
+import { layoutRichDoc, pdfSafeRichDoc, toWinAnsi, type Style } from './lib/pdfRichDoc'
 
 interface AnimalData {
     animalName: string
@@ -62,13 +62,14 @@ export function generateContractPdf(animal: AnimalData, form: FormData, locale: 
             }
         }
 
-        // Helper: add wrapped text and advance y. ASCII-folds for helvetica.
+        // Helper: add wrapped text and advance y. Text is reduced to WinAnsi
+        // (accents and ñ kept) before measuring, so wrap and draw agree.
         const addText = (text: string, x: number, maxWidth: number, opts?: { bold?: boolean; size?: number; italic?: boolean }) => {
             const size = opts?.size || 10
             const style = opts?.bold && opts?.italic ? 'bolditalic' : opts?.bold ? 'bold' : opts?.italic ? 'italic' : 'normal'
             doc.setFont('helvetica', style)
             doc.setFontSize(size)
-            const lines = doc.splitTextToSize(stripAccents(text), maxWidth)
+            const lines = doc.splitTextToSize(toWinAnsi(text), maxWidth)
             const lineH = size * 0.45
             checkPage(lines.length * lineH)
             doc.text(lines, x, y)
@@ -78,13 +79,13 @@ export function generateContractPdf(animal: AnimalData, form: FormData, locale: 
         // Helper: add a labeled field
         const addField = (label: string, value: string | null | undefined) => {
             const size = 10
-            const lbl = stripAccents(label)
+            const lbl = toWinAnsi(label)
             doc.setFont('helvetica', 'bold')
             doc.setFontSize(size)
             const labelWidth = doc.getTextWidth(lbl + ' ')
             doc.text(lbl, MARGIN_LEFT + 4, y)
             doc.setFont('helvetica', 'normal')
-            const val = stripAccents(value || '—')
+            const val = toWinAnsi(value || '—')
             const remainingWidth = CONTENT_WIDTH - 4 - labelWidth
             if (doc.getTextWidth(val) > remainingWidth) {
                 doc.text(val.substring(0, Math.floor(remainingWidth / (size * 0.25))), MARGIN_LEFT + 4 + labelWidth, y)
@@ -125,7 +126,7 @@ export function generateContractPdf(animal: AnimalData, form: FormData, locale: 
             for (const line of lines) {
                 if (line === 'gap') { if (drewLine) y += 2; continue }
                 checkPage(lineH)
-                if (line.bullet) { doc.setFont('helvetica', 'normal'); doc.text('-', x0 + 1, y) }
+                if (line.bullet) { doc.setFont('helvetica', 'normal'); doc.text('\u2022', x0 + 1, y) }
                 for (const w of line.words) {
                     doc.setFont('helvetica', w.style); doc.setFontSize(size)
                     doc.text(w.text, x0 + line.indent + w.x, y)
@@ -146,7 +147,7 @@ export function generateContractPdf(animal: AnimalData, form: FormData, locale: 
         // === HEADER ===
         doc.setFont('helvetica', 'bold')
         doc.setFontSize(13)
-        const titleLines = doc.splitTextToSize(stripAccents(c.title), CONTENT_WIDTH)
+        const titleLines = doc.splitTextToSize(toWinAnsi(c.title), CONTENT_WIDTH)
         titleLines.forEach((line: string) => {
             const tw = doc.getTextWidth(line)
             doc.text(line, (PAGE_WIDTH - tw) / 2, y)
@@ -168,7 +169,7 @@ export function generateContractPdf(animal: AnimalData, form: FormData, locale: 
             .replace('{day}', String(day))
             .replace('{month}', month)
             .replace('{year}', String(year))
-        const dateLines = doc.splitTextToSize(stripAccents(dateText), CONTENT_WIDTH)
+        const dateLines = doc.splitTextToSize(toWinAnsi(dateText), CONTENT_WIDTH)
         doc.text(dateLines, MARGIN_LEFT, y)
         y += dateLines.length * LINE_HEIGHT + SECTION_GAP
 
@@ -177,7 +178,7 @@ export function generateContractPdf(animal: AnimalData, form: FormData, locale: 
         doc.setFont('helvetica', 'bold')
         doc.setFontSize(10)
         doc.setTextColor(67, 56, 202) // indigo-700
-        doc.text(stripAccents(c.adopterHeading), MARGIN_LEFT, y)
+        doc.text(toWinAnsi(c.adopterHeading), MARGIN_LEFT, y)
         doc.setTextColor(0, 0, 0)
         y += LINE_HEIGHT + 1
 
@@ -194,7 +195,7 @@ export function generateContractPdf(animal: AnimalData, form: FormData, locale: 
         doc.setFont('helvetica', 'bold')
         doc.setFontSize(10)
         doc.setTextColor(120, 113, 108) // stone-500
-        doc.text(stripAccents(c.rescuerHeading), MARGIN_LEFT, y)
+        doc.text(toWinAnsi(c.rescuerHeading), MARGIN_LEFT, y)
         doc.setTextColor(0, 0, 0)
         y += LINE_HEIGHT + 1
         addField(c.labels.rescuerInstitution, animal.rescuerName || '—')
@@ -268,13 +269,13 @@ export function generateContractPdf(animal: AnimalData, form: FormData, locale: 
         doc.setFont('helvetica', 'italic')
         doc.setFontSize(10)
         doc.setTextColor(150, 150, 150)
-        const adopterName = stripAccents(`${form.name} ${form.lastName}`.trim())
+        const adopterName = toWinAnsi(`${form.name} ${form.lastName}`.trim())
         if (adopterName) {
             const nameW = doc.getTextWidth(adopterName)
             doc.text(adopterName, sigLeft + (sigWidth - nameW) / 2, y)
         }
         if (animal.rescuerName) {
-            const resc = stripAccents(animal.rescuerName)
+            const resc = toWinAnsi(animal.rescuerName)
             const rescW = doc.getTextWidth(resc)
             doc.text(resc, sigRight + (sigWidth - rescW) / 2, y)
         }
@@ -290,9 +291,9 @@ export function generateContractPdf(animal: AnimalData, form: FormData, locale: 
         doc.setFont('helvetica', 'bold')
         doc.setFontSize(8)
         doc.setTextColor(120, 113, 108)
-        const adoptLabel = stripAccents(c.signAdopter)
+        const adoptLabel = toWinAnsi(c.signAdopter)
         doc.text(adoptLabel, sigLeft + (sigWidth - doc.getTextWidth(adoptLabel)) / 2, y)
-        const rescLabel = stripAccents(c.signRescuer)
+        const rescLabel = toWinAnsi(c.signRescuer)
         doc.text(rescLabel, sigRight + (sigWidth - doc.getTextWidth(rescLabel)) / 2, y)
         y += 4
 
@@ -301,7 +302,7 @@ export function generateContractPdf(animal: AnimalData, form: FormData, locale: 
             doc.setFont('helvetica', 'normal')
             doc.setFontSize(8)
             doc.setTextColor(150, 150, 150)
-            const dniText = stripAccents(`${c.docLabel} ${form.dni}`)
+            const dniText = toWinAnsi(`${c.docLabel} ${form.dni}`)
             doc.text(dniText, sigLeft + (sigWidth - doc.getTextWidth(dniText)) / 2, y)
         }
 

@@ -1,9 +1,10 @@
 // ⚠️ DRAFT NOTICE: the `en` and `pt` legal text below is a DRAFT pending
 // human/legal review before it is used in production. `es` is authoritative
 // (extracted verbatim from the original contract, with accents restored as the
-// canonical form). The PDF generator ASCII-folds this text at render time via
-// `stripAccents()`, so the on-screen (accented) and PDF (ASCII) outputs share
-// this single source and can never drift.
+// canonical form). The PDF generator draws it as written (accents and ñ
+// included — helvetica's WinAnsi encoding covers them; see toWinAnsi in
+// lib/pdfRichDoc.ts), so the on-screen and PDF outputs share this single
+// source and can never drift.
 //
 // Single source of truth for the adoption contract body + the Terms page,
 // consumed by BOTH ContractPage.tsx (screen) and contractPdf.ts (PDF).
@@ -61,10 +62,6 @@ export interface ContractContent {
     sexFemale: string;
 }
 
-/** Fold accents to ASCII for the jsPDF output (helvetica lacks full glyph coverage). */
-export function stripAccents(s: string): string {
-    return s.normalize('NFD').replace(/[̀-ͯ]/g, '');
-}
 
 const es: ContractContent = {
     title: 'CONTRATO DE ADOPCIÓN RESPONSABLE DE ANIMAL DE COMPAÑÍA',
