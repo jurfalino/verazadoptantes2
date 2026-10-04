@@ -1313,7 +1313,7 @@ async function runDiscoveryMode(
     try {
         const viewer = user && user !== 'unknown' ? user : null;
         if (viewer) {
-            const { getOrgMemberEmailsFor } = await import('@/app/actions/organizations');
+            const { getOrgMemberEmailsFor } = await import('@/lib/orgMembership');
             const team = new Set(await getOrgMemberEmailsFor(viewer));
             for (const r of allResults) {
                 const owner = r.adopter?.addedBy;

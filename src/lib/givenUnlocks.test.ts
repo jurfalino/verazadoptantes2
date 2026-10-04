@@ -17,8 +17,7 @@ const { state, orgMatesMock, isOrgMateMock } = vi.hoisted(() => ({
 vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
 vi.mock('@/lib/logger', () => ({ logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('@/config/admins', () => ({ isAdminAsync: vi.fn(async () => false), isModeratorOrAdminAsync: vi.fn(async () => false) }));
-vi.mock('@/lib/orgMembership', () => ({ isOrgMate: isOrgMateMock }));
-vi.mock('@/app/actions/organizations', () => ({ getOrgMemberEmailsFor: orgMatesMock }));
+vi.mock('@/lib/orgMembership', () => ({ isOrgMate: isOrgMateMock, getOrgMemberEmailsFor: orgMatesMock }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 
 import { resolveAdopterVisibility, resolveAdoptersVisibility } from './piiAccessServer';

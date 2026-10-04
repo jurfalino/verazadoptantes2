@@ -449,40 +449,7 @@ export async function getOrgMemberEmails(): Promise<string[]> {
     }
 }
 
-/**
- * Session-free variant: returns all member emails across all organizations
- * that the given email belongs to. Safe to call from unauthenticated contexts
- * (e.g. public API routes) where getUser() would fail.
- */
-export async function getOrgMemberEmailsFor(email: string): Promise<string[]> {
-    const db = await getDb();
-    if (!db) return [email];
-
-    try {
-        const myOrgs = await db.select({ orgId: orgMembers.orgId })
-            .from(orgMembers)
-            .where(eq(orgMembers.userEmail, email));
-
-        if (myOrgs.length === 0) return [email];
-
-        const orgIds = [...new Set<string>(myOrgs.map((o: { orgId: string }) => o.orgId))];
-
-        // Per-id fan-out, never `inArray` — see getOrgMemberEmails above. This
-        // one decides who receives contract_result, form_submission and
-        // member_joined notifications, so a truncated set meant notifying the
-        // wrong people rather than merely showing less. No per-id fallback, for
-        // the same reason: fail to the caller alone rather than to a half list.
-        const allMembers = (await Promise.all(orgIds.map((id: string) =>
-            db.select({ userEmail: orgMembers.userEmail }).from(orgMembers)
-                .where(eq(orgMembers.orgId, id)),
-        ))).flat();
-
-        const emails = new Set<string>(allMembers.map((m: { userEmail: string }) => m.userEmail));
-        emails.add(email);
-        return Array.from(emails);
-    } catch (error) {
-        logger.error('getOrgMemberEmailsFor failed', error, { email });
-        return [email];
-    }
-}
+// getOrgMemberEmailsFor(email) lives in src/lib/orgMembership.ts: it takes an
+// identity as an argument and checks no session, so it must never be an export
+// of this 'use server' module (every export here is a browser-callable POST).
 

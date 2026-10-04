@@ -17,8 +17,7 @@ vi.mock('@/config/features', () => ({ getFeatureFlag: vi.fn(async (flag: string)
 vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
 vi.mock('@/lib/logger', () => ({ logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('@/config/admins', () => ({ isAdminAsync: adminMock, isModeratorOrAdminAsync: adminMock }));
-vi.mock('@/lib/orgMembership', () => ({ isOrgMate: orgMateMock, isOwnerOrOrgMate: ownerOrMateMock }));
-vi.mock('@/app/actions/organizations', () => ({ getOrgMemberEmailsFor: vi.fn(async () => []) }));
+vi.mock('@/lib/orgMembership', () => ({ isOrgMate: orgMateMock, isOwnerOrOrgMate: ownerOrMateMock, getOrgMemberEmailsFor: vi.fn(async () => []) }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 
 import { resolveInvitationAccess } from './contractInvitationAccess';

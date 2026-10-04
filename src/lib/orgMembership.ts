@@ -249,3 +249,44 @@ export async function getTeamEmails(email: string | null | undefined): Promise<s
         return [e];
     }
 }
+
+/**
+ * Session-free: all member emails across every organization the given email
+ * belongs to (always including that email). For server code only — public API
+ * routes, notification fan-out, visibility resolution — where getUser() would
+ * fail. Moved out of 'use server' src/app/actions/organizations.ts: as an
+ * export there it was a browser-callable endpoint answering "who are this
+ * person's teammates?" for any email, with no session check.
+ */
+export async function getOrgMemberEmailsFor(email: string): Promise<string[]> {
+    const db = await getDb();
+    if (!db) return [email];
+
+    try {
+        const myOrgs = await db.select({ orgId: orgMembers.orgId })
+            .from(orgMembers)
+            .where(eq(orgMembers.userEmail, email));
+
+        if (myOrgs.length === 0) return [email];
+
+        const orgIds = [...new Set<string>(myOrgs.map((o: { orgId: string }) => o.orgId))];
+
+        // Per-id fan-out, never `inArray` — see getOrgMemberEmails in
+        // src/app/actions/organizations.ts. This
+        // one decides who receives contract_result, form_submission and
+        // member_joined notifications, so a truncated set meant notifying the
+        // wrong people rather than merely showing less. No per-id fallback, for
+        // the same reason: fail to the caller alone rather than to a half list.
+        const allMembers = (await Promise.all(orgIds.map((id: string) =>
+            db.select({ userEmail: orgMembers.userEmail }).from(orgMembers)
+                .where(eq(orgMembers.orgId, id)),
+        ))).flat();
+
+        const emails = new Set<string>(allMembers.map((m: { userEmail: string }) => m.userEmail));
+        emails.add(email);
+        return Array.from(emails);
+    } catch (error) {
+        logger.error('getOrgMemberEmailsFor failed', error, { email });
+        return [email];
+    }
+}

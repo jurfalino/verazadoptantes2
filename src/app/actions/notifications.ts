@@ -458,7 +458,7 @@ export async function notifyOrgMembers(opts: {
     metadata?: Record<string, unknown>;
 }): Promise<void> {
     try {
-        const { getOrgMemberEmailsFor } = await import('@/app/actions/organizations');
+        const { getOrgMemberEmailsFor } = await import('@/lib/orgMembership');
         const emails = await getOrgMemberEmailsFor(opts.actorEmail);
 
         // Exclude the actor

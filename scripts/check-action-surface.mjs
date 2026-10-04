@@ -112,7 +112,13 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // form already on an existing profile is refused rather than moved
 // (planFormLink in src/domain/formLink.ts, unit-tested). Retries are no-ops.
 // The merge is the shared, undoable mergeAdopters. Audited.
-const EXPECTED_ACTIONS = 162;
+// 161 since the reel-11 fixes: getOrgMemberEmailsFor(email) LEFT the surface.
+// It took any email, checked no session, and answered "who are this person's
+// org-mates?" — an endpoint only because it was an export of the 'use server'
+// src/app/actions/organizations.ts (which client pages import, so every export
+// got an id). Moved, unchanged, to src/lib/orgMembership.ts; its callers are
+// all server code (notifications fan-out, findAdopters, piiAccessServer).
+const EXPECTED_ACTIONS = 161;
 
 let manifest;
 try {

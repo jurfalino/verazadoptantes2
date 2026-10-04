@@ -11,8 +11,7 @@ vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
 vi.mock('@/lib/logger', () => ({ logger: { warn: warnMock, info: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 // Server-only neighbours piiAccessServer imports; not exercised here.
 vi.mock('@/config/admins', () => ({ isAdminAsync: vi.fn(async () => false), isModeratorOrAdminAsync: vi.fn(async () => false) }));
-vi.mock('@/lib/orgMembership', () => ({ isOrgMate: vi.fn() }));
-vi.mock('@/app/actions/organizations', () => ({ getOrgMemberEmailsFor: orgMatesMock }));
+vi.mock('@/lib/orgMembership', () => ({ isOrgMate: vi.fn(), getOrgMemberEmailsFor: orgMatesMock }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 
 import { isPiiGatingEnabled, maskMatchCardsForViewer, type MatchCardProfileRow } from './piiAccessServer';
