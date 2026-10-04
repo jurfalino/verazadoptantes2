@@ -11,6 +11,7 @@
 
 import { appConfig } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { logger } from '@/lib/logger';
 
 // Define all feature flags with their defaults
 export const FEATURE_FLAGS = {
@@ -134,8 +135,14 @@ const _flagCache: Map<FeatureFlag, boolean> | null = null;
  * Priority: DB > ENV > Default
  * 
  * Note: On local dev, DB may not be available, so we gracefully fall back to env/default
+ *
+ * `onReadError`: the value to return when the DB read THROWS (as opposed to
+ * "no row", which still means the code default). Defaults to the code default.
+ * A safety flag passes the safe value — ENABLE_PII_ACCESS_GATING passes `true`
+ * (see isPiiGatingEnabled) so a D1 blip masks contact data instead of
+ * unmasking it for everyone.
  */
-export async function getFeatureFlag(flag: FeatureFlag): Promise<boolean> {
+export async function getFeatureFlag(flag: FeatureFlag, opts: { onReadError?: boolean } = {}): Promise<boolean> {
     // Try environment variable first (fastest, works everywhere)
     const envValue = process.env[flag];
     if (envValue !== undefined) {
@@ -157,8 +164,12 @@ export async function getFeatureFlag(flag: FeatureFlag): Promise<boolean> {
                 return row.value === 'true' || row.value === '1';
             }
         }
-    } catch {
-        // DB unavailable (local dev or error), use default
+    } catch (e) {
+        const fallback = opts.onReadError ?? FEATURE_FLAGS[flag];
+        logger.warn('getFeatureFlag: DB read failed, using fallback', {
+            flag, fallback, error: e instanceof Error ? e.message : String(e),
+        });
+        return fallback;
     }
 
     // Return default

@@ -26,7 +26,7 @@ import { getFeatureFlag } from '@/config/features';
 import { interpolate } from '@/lib/interpolate';
 import { buildWaMeUrl, buildTelegramUrl } from '@/lib/whatsapp';
 import { resolveAdopterVisibility, isPiiGatingEnabled, buildMaskOptions } from '@/lib/piiAccessServer';
-import { reachablePhoneForViewer } from '@/lib/piiAccess';
+import { contactOfferFor, isContactableAdopter, type AdopterContactOffer } from '@/lib/piiAccess';
 import { z } from 'zod';
 import { animalPrimaryFirst } from '@/lib/showcase';
 
@@ -390,16 +390,14 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
  * follow-up, and the health-record handover).
  *
  * It offers exactly a phone this viewer already sees in full on the adopter's
- * profile: the same inputs getAdopter masks with (the gating flag,
+ * profile: the same inputs getAdopter masks with (isPiiGatingEnabled,
  * resolveAdopterVisibility, the public-profile option), decided by the pure
- * reachablePhoneForViewer. It used to check only `nothingMasked` and ignore
- * the gating flag, so it could hide a phone the profile was showing.
- * A visibility or DB error fails CLOSED: the caller gets `phone: null`, which
- * every caller renders as "no contact shortcut" rather than as an error.
- * Exception, shared with the profile: getFeatureFlag swallows a failed flag
- * read and returns the code default (gating OFF), so then nothing is masked
- * here either — the two surfaces still agree. The first
- * name comes back regardless — it is already on screen next to the animal.
+ * contactOfferFor / reachablePhoneForViewer. A soft-deleted adopter (its
+ * profile 404s) gets no phone and no name.
+ *
+ * Fails CLOSED: a lookup or visibility error gives `phone: null`, which every
+ * caller renders as "no contact shortcut" rather than as an error; a failed
+ * gating-flag read counts as gating ON (isPiiGatingEnabled), as on the profile.
  */
 async function resolveAdopterContact(
     db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
@@ -407,32 +405,34 @@ async function resolveAdopterContact(
     adopterId: string,
     animalId: string,
     op: string,
-): Promise<{ phone: string | null; channel: 'whatsapp' | 'telegram'; firstName: string }> {
-    let phone: string | null = null;
-    let channel: 'whatsapp' | 'telegram' = 'whatsapp';
-    let firstName = '';
+): Promise<AdopterContactOffer> {
+    let adopter: {
+        id: string; name: string; addedBy: string | null; isPublic: number | null; deletedAt: Date | null;
+        contactEntries: string | null; contactInfo: string | null;
+    } | undefined;
     try {
-        const adopter = await db.select({
+        adopter = await db.select({
             id: adopters.id, name: adopters.name, addedBy: adopters.addedBy, isPublic: adopters.isPublic,
+            deletedAt: adopters.deletedAt,
             contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo,
         }).from(adopters).where(eq(adopters.id, adopterId)).get();
-        if (adopter) {
-            firstName = (adopter.name || '').trim().split(/\s+/)[0] || '';
-            const [gatingOn, visibility, maskOptions] = await Promise.all([
-                isPiiGatingEnabled(),
-                resolveAdopterVisibility(userEmail, { id: adopter.id, addedBy: adopter.addedBy }),
-                buildMaskOptions(adopter),
-            ]);
-            const reachable = reachablePhoneForViewer(adopter, { gatingOn, visibility, maskOptions });
-            if (reachable) { phone = reachable.phone; channel = reachable.channel; }
+        if (!adopter || !isContactableAdopter(adopter)) {
+            if (adopter) logger.info(op + ': adopter soft-deleted, no contact offered', { animalId, adopterId });
+            return contactOfferFor(adopter, null);
         }
+        const [gatingOn, visibility, maskOptions] = await Promise.all([
+            isPiiGatingEnabled(),
+            resolveAdopterVisibility(userEmail, { id: adopter.id, addedBy: adopter.addedBy }),
+            buildMaskOptions(adopter),
+        ]);
+        return contactOfferFor(adopter, { gatingOn, visibility, maskOptions });
     } catch (e) {
         logger.warn(op + ': contact resolution fallback', {
             animalId, adopterId, userEmail,
             error: e instanceof Error ? e.message : String(e),
         });
+        return contactOfferFor(adopter, null);
     }
-    return { phone, channel, firstName };
 }
 
 /** The owner's FollowupSettings (user_profiles is keyed by NextAuth user id,

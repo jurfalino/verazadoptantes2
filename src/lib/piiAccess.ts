@@ -793,6 +793,44 @@ export function reachablePhoneForViewer(
     return null;
 }
 
+/** What the animal page may offer for messaging an animal's current adopter. */
+export interface AdopterContactOffer {
+    phone: string | null;
+    channel: 'whatsapp' | 'telegram';
+    firstName: string;
+}
+
+export type ReachableAccess = Parameters<typeof reachablePhoneForViewer>[1];
+
+/**
+ * Whether an adopter row may be contacted at all from the animal page. A
+ * soft-deleted adopter (merged duplicate, or an approved deletion request)
+ * 404s on its profile, so it offers nothing here either — no phone, no name.
+ */
+export function isContactableAdopter(
+    adopter: { deletedAt?: Date | number | null } | null | undefined,
+): boolean {
+    return !!adopter && !adopter.deletedAt;
+}
+
+/**
+ * The one-tap contact offer (health-record handover, due follow-up): the first
+ * name for the message and a phone the viewer already sees on the profile
+ * (reachablePhoneForViewer). Nothing at all for a missing or soft-deleted
+ * adopter, and no phone when `access` could not be resolved.
+ */
+export function contactOfferFor(
+    adopter: { name?: string | null; deletedAt?: Date | number | null; contactEntries?: string | null; contactInfo?: string | null } | null | undefined,
+    access: ReachableAccess | null,
+): AdopterContactOffer {
+    if (!adopter || !isContactableAdopter(adopter)) return { phone: null, channel: 'whatsapp', firstName: '' };
+    const firstName = (adopter.name || '').trim().split(/\s+/)[0] || '';
+    const reachable = access ? reachablePhoneForViewer(adopter, access) : null;
+    return reachable
+        ? { phone: reachable.phone, channel: reachable.channel, firstName }
+        : { phone: null, channel: 'whatsapp', firstName };
+}
+
 /** Masked household result — parallels AdopterContactMask for the family section. */
 export interface HouseholdMask {
     /** Masked members (name partial-revealed, contacts masked) for direct render. */

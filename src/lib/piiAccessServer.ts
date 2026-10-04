@@ -36,9 +36,15 @@ interface AdopterRef {
 /** A viewer is "real" when their email is a genuine user (see isRealActorEmail). */
 const isRealViewer = isRealActorEmail;
 
-/** Whether the PII access-gating feature flag is on. */
+/**
+ * Whether the PII access-gating feature flag is on. Fails CLOSED: if the flag
+ * cannot be read (D1 error), gating is treated as ON — every caller (the
+ * profile's getAdopter, the PII context, discovery search, the animal page's
+ * one-tap contact) then masks instead of exposing contact data to everyone.
+ * getFeatureFlag logs the failed read at warn.
+ */
 export function isPiiGatingEnabled(): Promise<boolean> {
-    return getFeatureFlag('ENABLE_PII_ACCESS_GATING');
+    return getFeatureFlag('ENABLE_PII_ACCESS_GATING', { onReadError: true });
 }
 
 /** Whether the public-profiles feature flag is on (v2.16.0-12+). */

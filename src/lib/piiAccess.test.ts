@@ -16,6 +16,8 @@ import {
     isRealActorEmail,
     piiCooldownUntil,
     reachablePhoneForViewer,
+    contactOfferFor,
+    isContactableAdopter,
     PII_MASK,
     PII_DENIAL_COOLDOWN_DAYS,
     type Visibility,
@@ -948,5 +950,42 @@ describe('reachablePhoneForViewer — one-tap contact offers only what the profi
 
     it('no phone on file: null', () => {
         expect(reachablePhoneForViewer({ contactEntries: null, contactInfo: null }, { gatingOn: false, visibility: stranger })).toBeNull();
+    });
+});
+
+describe('contactOfferFor — soft-deleted adopters offer nothing', () => {
+    const PHONE = '+54 9 11 5555-0109';
+    const row = (deletedAt: Date | null) => ({
+        name: 'Carla Gómez', deletedAt,
+        contactEntries: JSON.stringify([{ type: 'phone', value: PHONE }]), contactInfo: null,
+    });
+    const full = { gatingOn: true, visibility: vis({ nothingMasked: true }) };
+
+    it('live adopter + full access: first name and phone', () => {
+        expect(contactOfferFor(row(null), full)).toEqual({ phone: PHONE, channel: 'whatsapp', firstName: 'Carla' });
+    });
+
+    it('soft-deleted adopter: no phone and no name, even with full access', () => {
+        expect(contactOfferFor(row(new Date()), full)).toEqual({ phone: null, channel: 'whatsapp', firstName: '' });
+    });
+
+    it('soft-deleted adopter with gating OFF: still nothing', () => {
+        expect(contactOfferFor(row(new Date()), { gatingOn: false, visibility: vis({}) }))
+            .toEqual({ phone: null, channel: 'whatsapp', firstName: '' });
+    });
+
+    it('access unresolved (lookup error): name only, never a phone', () => {
+        expect(contactOfferFor(row(null), null)).toEqual({ phone: null, channel: 'whatsapp', firstName: 'Carla' });
+    });
+
+    it('missing row: nothing', () => {
+        expect(contactOfferFor(undefined, full)).toEqual({ phone: null, channel: 'whatsapp', firstName: '' });
+    });
+
+    it('isContactableAdopter: live yes; deleted, missing no', () => {
+        expect(isContactableAdopter({ deletedAt: null })).toBe(true);
+        expect(isContactableAdopter({ deletedAt: new Date() })).toBe(false);
+        expect(isContactableAdopter({ deletedAt: 1_700_000_000 })).toBe(false);
+        expect(isContactableAdopter(null)).toBe(false);
     });
 });
