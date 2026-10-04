@@ -18,17 +18,22 @@ import { getFeatureFlag } from '@/config/features';
 import { logAudit } from '@/lib/audit';
 import { logger } from '@/lib/logger';
 import { maskEmail } from '@/lib/dates';
-import { eq } from 'drizzle-orm';
-import { organizations, users } from '@/db/schema';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { z } from 'zod';
+import { auditLog, organizations, users } from '@/db/schema';
 import {
     getMemberOrgIds, getUserDocsSource, getSettingsRow, getContractVersion,
-    saveHiddenSteps, saveContract,
+    saveContract, saveHiddenStepsIfUnchanged, listOwnerVersions, sha256Hex,
 } from '@/lib/adoptionDocsRepo';
 import {
-    normalizeEmail, resolveDocsOwner, sanitizeHiddenSteps, contractSectionsSchema,
-    serializeDocsSource, parseStoredHiddenSteps,
-    type DocsSource, type DocsOwner, type ContractSections,
+    normalizeEmail, resolveDocsOwner, contractSectionsSchema, richDocSchema,
+    serializeDocsSource, parseStoredHiddenSteps, SECTION_KEYS, TOGGLEABLE_FORM_STEPS,
+    type DocsSource, type DocsOwner, type ContractSections, type RichDoc, type SectionKey,
 } from '@/domain/adoptionDocs';
+import {
+    STANDARD_REVISION, sectionRevisionText, storedSection, stepStates, planItemSave, changedByOthers,
+    mergeSections, mergeHidden, sectionAuthor, stepAuthor, type StepState, type HistoryEntry,
+} from '@/domain/adoptionDocsCollab';
 import { ADOPTION_DOCS_FORM_SAVED, ADOPTION_DOCS_CONTRACT_SAVED } from '@/domain/adoptionDocsActivity';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -113,6 +118,117 @@ function parseSourceInput(source: string): DocsSource | null {
     if (source === 'self') return { type: 'self' };
     if (source.startsWith('org:') && source.length > 4) return { type: 'org', orgId: source.slice(4) };
     return null;
+}
+
+// ── Collaborative editing helpers (see src/domain/adoptionDocsCollab.ts) ──
+
+export type ItemRevisions = { sections: Record<SectionKey, string>; steps: Record<string, StepState> };
+
+/** Per-section revision: a hash of the text as stored, or 'std' for the standard text. */
+async function sectionRevisions(sections: ContractSections): Promise<Record<SectionKey, string>> {
+    const out = {} as Record<SectionKey, string>;
+    for (const k of SECTION_KEYS) {
+        const text = sectionRevisionText(k, sections[k]);
+        out[k] = text === null ? STANDARD_REVISION : await sha256Hex(text);
+    }
+    return out;
+}
+
+/** Parse a stored contract version's sections, guarded (a bad row reads as standard). */
+function parseVersionSections(raw: string, ctx: Record<string, unknown>): ContractSections {
+    try {
+        const parsed = contractSectionsSchema.safeParse(JSON.parse(raw));
+        if (parsed.success) return parsed.data;
+        logger.warn('adoptionDocs: invalid stored sections', { ...ctx, issues: parsed.error.issues.map(i => i.path.join('.')) });
+    } catch (e) {
+        logger.warn('adoptionDocs: malformed stored sections_json', { ...ctx, error: e instanceof Error ? e.message : String(e) });
+    }
+    return {};
+}
+
+/** What the owner's docs are right now, as one read. */
+async function readCurrentDocs(db: Db, docsOwner: DocsOwner, ctx: Record<string, unknown>) {
+    const settingsRow = await getSettingsRow(db, docsOwner);
+    let sections: ContractSections = {};
+    if (settingsRow?.contractVersionId) {
+        const versionRow = await getContractVersion(db, settingsRow.contractVersionId);
+        if (!versionRow) logger.warn('adoptionDocs: contract version missing', { ...ctx, contractVersionId: settingsRow.contractVersionId });
+        else sections = parseVersionSections(versionRow.sectionsJson, { ...ctx, contractVersionId: versionRow.id });
+    }
+    const { steps: hidden, malformed } = parseStoredHiddenSteps(settingsRow?.hiddenSteps);
+    if (malformed) logger.warn('adoptionDocs: malformed hidden_steps, showing none hidden', { ...ctx, settingsId: settingsRow?.id });
+    return {
+        settingsRow,
+        versionId: settingsRow?.contractVersionId ?? null,
+        sections,
+        hidden,
+        hiddenRaw: settingsRow?.hiddenSteps ?? null,
+    };
+}
+
+/**
+ * Display names (name, else email handle — never a full email) of whoever
+ * introduced each section's current text, from the owner's version history.
+ * Falls back to the last saver when the history doesn't reach (old unsigned
+ * versions are cleaned up; a reset to the standard text writes no version).
+ */
+async function sectionAuthors(
+    db: Db, docsOwner: DocsOwner, current: Awaited<ReturnType<typeof readCurrentDocs>>, keys: SectionKey[],
+): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    if (!keys.length) return out;
+    let history: HistoryEntry[] = [];
+    try {
+        const versions = await listOwnerVersions(db, docsOwner);
+        history = versions.map(v => ({ sections: parseVersionSections(v.sectionsJson, { versionId: v.id }), by: v.createdBy }));
+        // Reset to the standard text: no version row is current — the
+        // settings row's last saver did it.
+        if (!current.versionId) history.unshift({ sections: {}, by: current.settingsRow?.updatedBy ?? null });
+    } catch (e) {
+        logger.warn('adoptionDocs.sectionAuthors: history lookup failed, using last saver', {
+            ownerType: docsOwner.ownerType, error: e instanceof Error ? e.message : String(e),
+        });
+    }
+    for (const k of keys) {
+        const email = sectionAuthor(k, history) ?? current.settingsRow?.updatedBy ?? null;
+        out[k] = email ? await resolveDisplayName(db, email) : '';
+    }
+    return out;
+}
+
+/** Same, for form questions: from the form-save audit rows that record which toggles changed. */
+async function stepAuthors(
+    db: Db, docsOwner: DocsOwner, current: Awaited<ReturnType<typeof readCurrentDocs>>, keys: string[],
+): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    if (!keys.length) return out;
+    let rows: Array<{ by: string | null; changedSteps: Array<{ id: string; hidden: boolean }> }> = [];
+    try {
+        const where = docsOwner.ownerType === 'org'
+            ? and(eq(auditLog.action, ADOPTION_DOCS_FORM_SAVED), eq(auditLog.target, docsOwner.ownerId))
+            : and(eq(auditLog.action, ADOPTION_DOCS_FORM_SAVED), eq(auditLog.userEmail, docsOwner.ownerId), isNull(auditLog.target));
+        const raw = await db.select({ userEmail: auditLog.userEmail, details: auditLog.details })
+            .from(auditLog).where(where).orderBy(desc(auditLog.createdAt), sql`rowid DESC`).limit(50).all() as Array<{ userEmail: string | null; details: string | null }>;
+        rows = raw.map(r => {
+            let changed: Array<{ id: string; hidden: boolean }> = [];
+            try {
+                const d = r.details ? JSON.parse(r.details) : {};
+                if (Array.isArray(d.changedSteps)) changed = d.changedSteps.filter((c: unknown): c is { id: string; hidden: boolean } =>
+                    !!c && typeof (c as { id?: unknown }).id === 'string' && typeof (c as { hidden?: unknown }).hidden === 'boolean');
+            } catch { /* an unreadable audit row only loses its attribution — skip it */ }
+            return { by: r.userEmail, changedSteps: changed };
+        });
+    } catch (e) {
+        logger.warn('adoptionDocs.stepAuthors: audit lookup failed, using last saver', {
+            ownerType: docsOwner.ownerType, error: e instanceof Error ? e.message : String(e),
+        });
+    }
+    const states = stepStates(current.hidden);
+    for (const k of keys) {
+        const email = stepAuthor(k, states[k], rows) ?? current.settingsRow?.updatedBy ?? null;
+        out[k] = email ? await resolveDisplayName(db, email) : '';
+    }
+    return out;
 }
 
 // ── Actions ─────────────────────────────────────────────────────
@@ -243,7 +359,12 @@ export async function setAdoptionDocsSource(source: string): Promise<{ success: 
 /** The editor's data for one owner: hidden steps + contract sections + who/when. */
 export async function getAdoptionDocs(owner: OwnerRef): Promise<{
     success: boolean;
-    data?: { ownerName: string; hiddenSteps: string[]; sections: ContractSections; updatedAt: number | null; updatedByName: string | null };
+    data?: {
+        ownerName: string; hiddenSteps: string[]; sections: ContractSections;
+        updatedAt: number | null; updatedByName: string | null;
+        /** Per-item revisions the editor sends back with a save. */
+        revisions: ItemRevisions;
+    };
     error?: string;
     errorId?: string;
 }> {
@@ -261,60 +382,23 @@ export async function getAdoptionDocs(owner: OwnerRef): Promise<{
             return { success: false, error: 'forbidden' };
         }
 
-        const [settingsRow, ownerName] = await Promise.all([
-            getSettingsRow(db, docsOwner),
-            owner.type === 'org' ? resolveOrgName(db, owner.orgId) : Promise.resolve(''),
-        ]);
-
         // Each stored JSON column parsed on its own and guarded: a bad row
         // opens the editor with defaults for that part instead of failing.
-        const { steps: hiddenSteps, malformed } = parseStoredHiddenSteps(settingsRow?.hiddenSteps);
-        if (malformed) {
-            logger.warn('adoptionDocs.get: malformed hidden_steps, showing none hidden', {
-                actorEmail, owner, settingsId: settingsRow?.id,
-            });
-        }
-
-        let sections: ContractSections = {};
-        if (settingsRow?.contractVersionId) {
-            const versionRow = await getContractVersion(db, settingsRow.contractVersionId);
-            if (!versionRow) {
-                logger.warn('adoptionDocs.get: contract version missing', {
-                    actorEmail, owner, contractVersionId: settingsRow.contractVersionId,
-                });
-            } else {
-                let raw: unknown = undefined;
-                let jsonOk = true;
-                try {
-                    raw = JSON.parse(versionRow.sectionsJson);
-                } catch (e) {
-                    jsonOk = false;
-                    logger.warn('adoptionDocs.get: malformed stored sections_json', {
-                        actorEmail, owner, contractVersionId: versionRow.id,
-                        error: e instanceof Error ? e.message : String(e),
-                    });
-                }
-                const parsed = jsonOk ? contractSectionsSchema.safeParse(raw) : null;
-                if (parsed?.success) {
-                    sections = parsed.data;
-                } else if (parsed) {
-                    logger.warn('adoptionDocs.get: invalid stored sections', {
-                        actorEmail, owner, issues: parsed.error.issues.map(i => i.path.join('.')),
-                    });
-                }
-            }
-        }
-
-        const updatedByName = settingsRow ? await resolveDisplayName(db, settingsRow.updatedBy) : null;
+        const [current, ownerName] = await Promise.all([
+            readCurrentDocs(db, docsOwner, { actorEmail, owner }),
+            owner.type === 'org' ? resolveOrgName(db, owner.orgId) : Promise.resolve(''),
+        ]);
+        const updatedByName = current.settingsRow ? await resolveDisplayName(db, current.settingsRow.updatedBy) : null;
 
         return {
             success: true,
             data: {
                 ownerName,
-                hiddenSteps,
-                sections,
-                updatedAt: settingsRow?.updatedAt ?? null,
+                hiddenSteps: current.hidden,
+                sections: current.sections,
+                updatedAt: current.settingsRow?.updatedAt ?? null,
                 updatedByName,
+                revisions: { sections: await sectionRevisions(current.sections), steps: stepStates(current.hidden) },
             },
         };
     } catch (e) {
@@ -325,8 +409,46 @@ export async function getAdoptionDocs(owner: OwnerRef): Promise<{
     }
 }
 
-/** Save the hidden-step selection for the form. */
-export async function saveFormSteps(owner: OwnerRef, hiddenSteps: string[]): Promise<{ success: boolean; error?: string; errorId?: string }> {
+// ── Saves: only what this editor changed, each item checked against the
+// revision it was loaded at (src/domain/adoptionDocsCollab.ts). ─────────
+
+const stepIdSchema = z.enum(TOGGLEABLE_FORM_STEPS as unknown as [string, ...string[]]);
+const stepStateSchema = z.enum(['hidden', 'shown']);
+const sectionKeySchema = z.enum(['2', '3', '4']);
+const revSchema = z.string().max(100);
+
+const formSaveSchema = z.object({
+    loaded: z.partialRecord(stepIdSchema, stepStateSchema),
+    changes: z.array(z.object({ key: stepIdSchema, hidden: z.boolean(), expected: stepStateSchema })).max(TOGGLEABLE_FORM_STEPS.length),
+}).strict();
+
+const contractSaveSchema = z.object({
+    loaded: z.partialRecord(sectionKeySchema, revSchema),
+    changes: z.array(z.object({
+        key: sectionKeySchema,
+        /** null = back to the standard text. */
+        doc: richDocSchema.nullable(),
+        expectedRev: revSchema,
+    })).max(SECTION_KEYS.length),
+}).strict();
+
+export type FormSaveInput = z.infer<typeof formSaveSchema>;
+export type ContractSaveInput = { loaded: Partial<Record<SectionKey, string>>; changes: Array<{ key: SectionKey; doc: RichDoc | null; expectedRev: string }> };
+
+export type StepConflict = { key: string; by: string; theirs: StepState };
+export type SectionConflict = { key: SectionKey; by: string; theirRev: string; doc: RichDoc | null };
+export type ItemUpdate = { key: string; by: string };
+
+type SaveFail = { success: false; error: string; errorId?: string };
+
+/** CAS attempts per save: the first read, plus one re-read if another save landed in between. */
+const SAVE_ATTEMPTS = 2;
+
+/** Save the form questions this editor toggled. */
+export async function saveFormSteps(owner: OwnerRef, input: FormSaveInput): Promise<SaveFail | {
+    success: true;
+    data: { saved: string[]; conflicts: StepConflict[]; updatedByOthers: ItemUpdate[]; hiddenSteps: string[]; revisions: Record<string, StepState> };
+}> {
     let actorEmail: string | undefined;
     try {
         actorEmail = await getUser();
@@ -341,21 +463,57 @@ export async function saveFormSteps(owner: OwnerRef, hiddenSteps: string[]): Pro
             return { success: false, error: 'forbidden' };
         }
 
-        const sanitized = sanitizeHiddenSteps(hiddenSteps);
-        await saveHiddenSteps(db, docsOwner, sanitized, actorEmail);
+        const parsed = formSaveSchema.safeParse(input);
+        if (!parsed.success) {
+            return { success: false, error: 'invalid', errorId: logger.error('adoptionDocs.saveFormSteps: invalid input', new Error('invalid input'), {
+                actorEmail, owner, issues: parsed.error.issues.map(i => i.path.join('.')),
+            }) };
+        }
+        const { loaded, changes } = parsed.data;
 
-        await logAudit({
-            userEmail: actorEmail,
-            action: ADOPTION_DOCS_FORM_SAVED,
-            target: owner.type === 'org' ? owner.orgId : undefined,
-            details: {
-                ownerType: docsOwner.ownerType,
-                ...(owner.type === 'org' ? { orgId: owner.orgId } : {}),
-                hiddenCount: sanitized.length,
-            },
-        });
+        for (let attempt = 0; attempt < SAVE_ATTEMPTS; attempt++) {
+            const current = await readCurrentDocs(db, docsOwner, { actorEmail, owner });
+            const currentRevs = stepStates(current.hidden);
+            const plan = planItemSave(currentRevs, changes.map(c => ({
+                key: c.key, value: c.hidden, newRev: c.hidden ? 'hidden' : 'shown', expectedRev: c.expected,
+            })));
+            const applied = changes.filter(c => plan.apply.includes(c.key)).map(c => ({ key: c.key, hidden: c.hidden }));
+            const next = mergeHidden(current.hidden, applied);
 
-        return { success: true };
+            if (applied.length) {
+                const ok = await saveHiddenStepsIfUnchanged(db, docsOwner, next, actorEmail, current.hiddenRaw, !!current.settingsRow);
+                if (!ok) continue; // someone saved in between — re-read and re-check
+                await logAudit({
+                    userEmail: actorEmail,
+                    action: ADOPTION_DOCS_FORM_SAVED,
+                    target: owner.type === 'org' ? owner.orgId : undefined,
+                    details: {
+                        ownerType: docsOwner.ownerType,
+                        ...(owner.type === 'org' ? { orgId: owner.orgId } : {}),
+                        hiddenCount: next.length,
+                        // Who-changed-what for later conflicts («<Nombre> cambió esta pregunta»).
+                        changedSteps: applied.map(a => ({ id: a.key, hidden: a.hidden })),
+                    },
+                });
+            }
+
+            const others = changedByOthers(loaded, currentRevs, changes.map(c => c.key));
+            const conflictKeys = plan.conflicts;
+            const names = await stepAuthors(db, docsOwner, current, [...new Set([...conflictKeys, ...others])]);
+            const finalHidden = applied.length ? next : current.hidden;
+            if (conflictKeys.length) logger.info('adoptionDocs.saveFormSteps: conflicts', { actorEmail, owner, conflicts: conflictKeys });
+            return {
+                success: true,
+                data: {
+                    saved: [...plan.apply, ...plan.alreadySaved],
+                    conflicts: conflictKeys.map(k => ({ key: k, by: names[k] ?? '', theirs: currentRevs[k] })),
+                    updatedByOthers: others.map(k => ({ key: k, by: names[k] ?? '' })),
+                    hiddenSteps: finalHidden,
+                    revisions: stepStates(finalHidden),
+                },
+            };
+        }
+        return { success: false, error: 'busy', errorId: logger.error('adoptionDocs.saveFormSteps: lost the race twice', new Error('busy'), { actorEmail, owner }) };
     } catch (e) {
         return {
             success: false, error: 'generic',
@@ -364,12 +522,13 @@ export async function saveFormSteps(owner: OwnerRef, hiddenSteps: string[]): Pro
     }
 }
 
-/** Save the contract's editable sections (§1.2 version rules applied by saveContract). */
-export async function saveContractSections(owner: OwnerRef, sections: unknown): Promise<{
-    success: boolean;
-    data?: { standard: boolean };
-    error?: string;
-    errorId?: string;
+/** Save the contract sections this editor changed (§1.2 version rules still apply: a save is a new version). */
+export async function saveContractSections(owner: OwnerRef, input: ContractSaveInput): Promise<SaveFail | {
+    success: true;
+    data: {
+        saved: SectionKey[]; conflicts: SectionConflict[]; updatedByOthers: ItemUpdate[];
+        sections: ContractSections; revisions: Record<SectionKey, string>; standard: boolean;
+    };
 }> {
     let actorEmail: string | undefined;
     try {
@@ -385,30 +544,66 @@ export async function saveContractSections(owner: OwnerRef, sections: unknown): 
             return { success: false, error: 'forbidden' };
         }
 
-        const parsed = contractSectionsSchema.safeParse(sections);
+        const parsed = contractSaveSchema.safeParse(input);
         if (!parsed.success) {
-            logger.warn('adoptionDocs.saveContractSections: invalid input', {
+            return { success: false, error: 'invalid', errorId: logger.error('adoptionDocs.saveContractSections: invalid input', new Error('invalid input'), {
                 actorEmail, owner, issues: parsed.error.issues.map(i => i.path.join('.')),
-            });
-            return { success: false, error: 'invalid' };
+            }) };
         }
+        const loaded = parsed.data.loaded as Partial<Record<SectionKey, string>>;
+        // Each change as it would be stored (standard text → null) with its revision.
+        const changes = await Promise.all(parsed.data.changes.map(async c => {
+            const key = c.key as SectionKey;
+            const doc = storedSection(key, c.doc as RichDoc | null);
+            const text = sectionRevisionText(key, doc);
+            return { key, value: doc, newRev: text === null ? STANDARD_REVISION : await sha256Hex(text), expectedRev: c.expectedRev };
+        }));
 
-        const result = await saveContract(db, docsOwner, parsed.data, actorEmail);
+        for (let attempt = 0; attempt < SAVE_ATTEMPTS; attempt++) {
+            const current = await readCurrentDocs(db, docsOwner, { actorEmail, owner });
+            const currentRevs = await sectionRevisions(current.sections);
+            const plan = planItemSave(currentRevs, changes);
+            const applied = changes.filter(c => plan.apply.includes(c.key)).map(c => ({ key: c.key, doc: c.value }));
 
-        if (result.action !== 'noop') {
-            await logAudit({
-                userEmail: actorEmail,
-                action: ADOPTION_DOCS_CONTRACT_SAVED,
-                target: owner.type === 'org' ? owner.orgId : undefined,
-                details: {
-                    ownerType: docsOwner.ownerType,
-                    ...(owner.type === 'org' ? { orgId: owner.orgId } : {}),
-                    action: result.action,
+            let finalSections = current.sections;
+            let finalVersionId = current.versionId;
+            if (applied.length) {
+                const next = mergeSections(current.sections, applied);
+                const result = await saveContract(db, docsOwner, next, actorEmail, current.versionId);
+                if (result.raced) continue; // someone saved in between — re-read and re-check
+                finalSections = next;
+                finalVersionId = result.versionId;
+                if (result.action !== 'noop') {
+                    await logAudit({
+                        userEmail: actorEmail,
+                        action: ADOPTION_DOCS_CONTRACT_SAVED,
+                        target: owner.type === 'org' ? owner.orgId : undefined,
+                        details: {
+                            ownerType: docsOwner.ownerType,
+                            ...(owner.type === 'org' ? { orgId: owner.orgId } : {}),
+                            action: result.action,
+                            sections: applied.map(a => a.key),
+                        },
+                    });
+                }
+            }
+
+            const others = changedByOthers(loaded as Record<SectionKey, string>, currentRevs, changes.map(c => c.key));
+            const names = await sectionAuthors(db, docsOwner, current, [...new Set([...plan.conflicts, ...others])]);
+            if (plan.conflicts.length) logger.info('adoptionDocs.saveContractSections: conflicts', { actorEmail, owner, conflicts: plan.conflicts });
+            return {
+                success: true,
+                data: {
+                    saved: [...plan.apply, ...plan.alreadySaved],
+                    conflicts: plan.conflicts.map(k => ({ key: k, by: names[k] ?? '', theirRev: currentRevs[k], doc: current.sections[k] ?? null })),
+                    updatedByOthers: others.map(k => ({ key: k, by: names[k] ?? '' })),
+                    sections: finalSections,
+                    revisions: await sectionRevisions(finalSections),
+                    standard: finalVersionId === null,
                 },
-            });
+            };
         }
-
-        return { success: true, data: { standard: result.versionId === null } };
+        return { success: false, error: 'busy', errorId: logger.error('adoptionDocs.saveContractSections: lost the race twice', new Error('busy'), { actorEmail, owner }) };
     } catch (e) {
         return {
             success: false, error: 'generic',

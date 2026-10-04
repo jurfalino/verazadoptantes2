@@ -29,10 +29,23 @@ function LockIcon() {
     );
 }
 
-type Props = { hidden: string[]; onChange: (h: string[]) => void };
+export type StepConflictView = { by: string; theirs: 'hidden' | 'shown' };
 
-export default function FormStepsEditor({ hidden, onChange }: Props) {
+type Props = {
+    hidden: string[];
+    onChange: (h: string[]) => void;
+    /** A teammate saved this question while it was being edited. */
+    conflicts?: Record<string, StepConflictView>;
+    /** A teammate's choice was pulled in on the last save. */
+    updatedBy?: Record<string, string>;
+    saving?: boolean;
+    onKeepMine?: (id: string) => void;
+    onKeepTheirs?: (id: string) => void;
+};
+
+export default function FormStepsEditor({ hidden, onChange, conflicts = {}, updatedBy = {}, saving = false, onKeepMine, onKeepTheirs }: Props) {
     const { t } = useLanguage();
+    const name = (by: string) => by || t('adoptionDocs.someone');
     const hiddenSet = new Set(hidden);
     const total = FORM_STEP_IDS.length;
     const shown = FORM_STEP_IDS.filter(id => !hiddenSet.has(id)).length;
@@ -59,8 +72,31 @@ export default function FormStepsEditor({ hidden, onChange }: Props) {
             );
         }
         const on = !hiddenSet.has(id);
+        const conflict = conflicts[id];
         return (
             <li key={id}>
+                {conflict && (
+                    <div role="alert" className="mx-2 mt-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 space-y-1" data-testid={`form-step-${id}-conflict`}>
+                        <p className="text-xs text-amber-900">
+                            {t('adoptionDocs.step_conflict')
+                                .replace('{name}', name(conflict.by))
+                                .replace('{state}', t(conflict.theirs === 'hidden' ? 'adoptionDocs.step_state_hidden' : 'adoptionDocs.step_state_shown'))}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                            <button type="button" disabled={saving} onClick={() => onKeepTheirs?.(id)} className="min-h-11 px-2 text-xs font-semibold text-teal-700 hover:underline disabled:opacity-40" data-testid={`form-step-${id}-keep-theirs`}>
+                                {t('adoptionDocs.step_keep_theirs').replace('{name}', name(conflict.by))}
+                            </button>
+                            <button type="button" disabled={saving} onClick={() => onKeepMine?.(id)} className="min-h-11 px-2 text-xs font-semibold text-teal-700 hover:underline disabled:opacity-40" data-testid={`form-step-${id}-keep-mine`}>
+                                {t('adoptionDocs.step_keep_mine')}
+                            </button>
+                        </div>
+                    </div>
+                )}
+                {updatedBy[id] !== undefined && !conflict && (
+                    <p className="px-4 pt-2 text-xs font-semibold text-teal-700" data-testid={`form-step-${id}-updated-by`}>
+                        {t('adoptionDocs.updated_by').replace('{name}', name(updatedBy[id]))}
+                    </p>
+                )}
                 <button
                     type="button"
                     role="switch"
