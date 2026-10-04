@@ -33,6 +33,10 @@ const FOLD: Array<[RegExp, string]> = [
     [/[\u201F\u2033]/g, '"'],
     [/[\u2023\u2043\u2219\u25AA\u25CF\u25E6]/g, '\u2022'], // other bullets → •
     [/[\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/g, ' '],
+    // Line breaks / tabs in a pasted value (a multi-line address, the details
+    // fallback): one space, so words never run together. jsPDF would otherwise
+    // have to place them, and WinAnsi has no glyph for them.
+    [/[\t\r\n]+/g, ' '],
 ]
 
 const inWinAnsi = (ch: string): boolean => {

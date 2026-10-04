@@ -181,19 +181,54 @@ async function sectionAuthors(
     try {
         const versions = await listOwnerVersions(db, docsOwner);
         history = versions.map(v => ({ sections: parseVersionSections(v.sectionsJson, { versionId: v.id }), by: v.createdBy }));
-        // Reset to the standard text: no version row is current — the
-        // settings row's last saver did it.
-        if (!current.versionId) history.unshift({ sections: {}, by: current.settingsRow?.updatedBy ?? null });
+        // Reset to the standard text: no version row is current. Who did it is
+        // in the contract-save activity row (action 'setStandard') — NOT the
+        // settings row's updatedBy, which form saves also move.
+        if (!current.versionId) history.unshift({ sections: {}, by: await lastResetBy(db, docsOwner) });
     } catch (e) {
         logger.warn('adoptionDocs.sectionAuthors: history lookup failed, using last saver', {
             ownerType: docsOwner.ownerType, error: e instanceof Error ? e.message : String(e),
         });
     }
     for (const k of keys) {
-        const email = sectionAuthor(k, history) ?? current.settingsRow?.updatedBy ?? null;
+        // Unknown → '' («otra persona del grupo» in the UI): never guess a name
+        // from updatedBy, which any form or contract save moves. Self docs
+        // have one possible author.
+        const email = sectionAuthor(k, history) ?? ownerFallback(docsOwner);
         out[k] = email ? await resolveDisplayName(db, email) : '';
     }
     return out;
+}
+
+/** Only for self docs is the author known without a record: the owner. */
+function ownerFallback(docsOwner: DocsOwner): string | null {
+    return docsOwner.ownerType === 'user' ? docsOwner.ownerId : null;
+}
+
+/** Owner-scoped filter on the docs activity rows (org → target; self → actor, case-insensitive). */
+function ownerAuditFilter(docsOwner: DocsOwner, action: string) {
+    return docsOwner.ownerType === 'org'
+        ? and(eq(auditLog.action, action), eq(auditLog.target, docsOwner.ownerId))
+        : and(eq(auditLog.action, action), sql`lower(${auditLog.userEmail}) = ${docsOwner.ownerId}`, isNull(auditLog.target));
+}
+
+/** Who reset the whole contract to the standard text most recently, from the contract-save activity rows. */
+async function lastResetBy(db: Db, docsOwner: DocsOwner): Promise<string | null> {
+    const rows = await db.select({ userEmail: auditLog.userEmail, details: auditLog.details })
+        .from(auditLog).where(ownerAuditFilter(docsOwner, ADOPTION_DOCS_CONTRACT_SAVED))
+        .orderBy(desc(auditLog.createdAt), sql`rowid DESC`).limit(20).all() as Array<{ userEmail: string | null; details: string | null }>;
+    for (const r of rows) {
+        try {
+            const d = r.details ? JSON.parse(r.details) : {};
+            if (d.action === 'setStandard') return r.userEmail;
+            if (d.action === 'insert') return null; // a later custom save: the reset predates the history we hold
+        } catch (e) {
+            logger.warn('adoptionDocs.lastResetBy: unreadable audit details, skipped', {
+                ownerType: docsOwner.ownerType, error: e instanceof Error ? e.message : String(e),
+            });
+        }
+    }
+    return null;
 }
 
 /** Same, for form questions: from the form-save audit rows that record which toggles changed. */
@@ -204,10 +239,8 @@ async function stepAuthors(
     if (!keys.length) return out;
     let rows: Array<{ by: string | null; changedSteps: Array<{ id: string; hidden: boolean }> }> = [];
     try {
-        const where = docsOwner.ownerType === 'org'
-            ? and(eq(auditLog.action, ADOPTION_DOCS_FORM_SAVED), eq(auditLog.target, docsOwner.ownerId))
-            // Self docs: the owner id is the normalized email; the audit row has the session email as sent.
-            : and(eq(auditLog.action, ADOPTION_DOCS_FORM_SAVED), sql`lower(${auditLog.userEmail}) = ${docsOwner.ownerId}`, isNull(auditLog.target));
+        // Self docs: the owner id is the normalized email; the audit row has the session email as sent.
+        const where = ownerAuditFilter(docsOwner, ADOPTION_DOCS_FORM_SAVED);
         const raw = await db.select({ userEmail: auditLog.userEmail, details: auditLog.details })
             .from(auditLog).where(where).orderBy(desc(auditLog.createdAt), sql`rowid DESC`).limit(50).all() as Array<{ userEmail: string | null; details: string | null }>;
         rows = raw.map(r => {
@@ -216,7 +249,12 @@ async function stepAuthors(
                 const d = r.details ? JSON.parse(r.details) : {};
                 if (Array.isArray(d.changedSteps)) changed = d.changedSteps.filter((c: unknown): c is { id: string; hidden: boolean } =>
                     !!c && typeof (c as { id?: unknown }).id === 'string' && typeof (c as { hidden?: unknown }).hidden === 'boolean');
-            } catch { /* an unreadable audit row only loses its attribution — skip it */ }
+            } catch (e) {
+                // An unreadable audit row only loses its attribution — skip it, but say so.
+                logger.warn('adoptionDocs.stepAuthors: unreadable audit details, skipped', {
+                    ownerType: docsOwner.ownerType, error: e instanceof Error ? e.message : String(e),
+                });
+            }
             return { by: r.userEmail, changedSteps: changed };
         });
     } catch (e) {
@@ -226,7 +264,7 @@ async function stepAuthors(
     }
     const states = stepStates(current.hidden);
     for (const k of keys) {
-        const email = stepAuthor(k, states[k], rows) ?? current.settingsRow?.updatedBy ?? null;
+        const email = stepAuthor(k, states[k], rows) ?? ownerFallback(docsOwner);
         out[k] = email ? await resolveDisplayName(db, email) : '';
     }
     return out;

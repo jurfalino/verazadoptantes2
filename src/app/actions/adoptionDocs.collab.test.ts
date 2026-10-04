@@ -7,7 +7,24 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { migratedDb } from '@/test-utils/migratedDb';
 import { session, getUser } from '@/test-utils/actionMocks';
 
-const { state, auditSpy } = vi.hoisted(() => ({ state: { db: null as unknown, sqlite: null as unknown, tick: 0 }, auditSpy: vi.fn() }));
+const { state, auditSpy } = vi.hoisted(() => ({
+    state: { db: null as unknown, sqlite: null as unknown, tick: 0, beforeWrite: null as null | (() => void | Promise<void>) },
+    auditSpy: vi.fn(),
+}));
+/** Runs `state.beforeWrite` once, right before a save's compare-and-swap: a teammate saving in between. */
+async function interleave() {
+    const hook = state.beforeWrite;
+    state.beforeWrite = null;
+    if (hook) await hook();
+}
+vi.mock('@/lib/adoptionDocsRepo', async (importOriginal) => {
+    const real = await importOriginal<typeof import('@/lib/adoptionDocsRepo')>();
+    return {
+        ...real,
+        saveContract: async (...args: Parameters<typeof real.saveContract>) => { await interleave(); return real.saveContract(...args); },
+        saveHiddenStepsIfUnchanged: async (...args: Parameters<typeof real.saveHiddenStepsIfUnchanged>) => { await interleave(); return real.saveHiddenStepsIfUnchanged(...args); },
+    };
+});
 vi.mock('./_db', () => ({ getDb: async () => state.db, getUser }));
 vi.mock('@/config/features', () => ({ getFeatureFlag: async () => true }));
 // logAudit writes a real audit_log row (attribution of form toggles reads it back).
@@ -237,5 +254,90 @@ describe('«Los míos» (self) — same rules, own docs', () => {
         expect(f.success && f.data.saved).toEqual([]);
         const f2 = await saveFormSteps(SELF, { loaded: {}, changes: [{ key: q, hidden: false, expected: 'shown' }] });
         expect(f2.success && f2.data.conflicts).toEqual([{ key: q, by: 'Ana Pérez', theirs: 'hidden' }]);
+    });
+});
+
+describe('attribution of a reset and of unknown history', () => {
+    beforeEach(() => {
+        const m = migratedDb();
+        state.db = m.db; state.sqlite = m.sqlite; sqlite = m.sqlite as unknown as Sql; state.tick = 0; state.beforeWrite = null;
+        auditSpy.mockReset();
+        sqlite.prepare(`INSERT INTO user (id, name, email) VALUES ('u-ana', 'Ana Pérez', ?), ('u-beto', NULL, ?)`).run(ANA, BETO);
+        sqlite.prepare(`INSERT INTO organizations (id, name, created_by) VALUES ('org-1', 'Patitas', ?)`).run(ANA);
+        sqlite.prepare(`INSERT INTO org_members (id, org_id, user_email, role) VALUES ('m1', 'org-1', ?, 'owner'), ('m2', 'org-1', ?, 'member')`).run(ANA, BETO);
+    });
+
+    it('a reset to the standard text is credited to whoever reset it — not to the last (form) saver', async () => {
+        session.user = ANA;
+        const a = await saveContractSections(ORG, { loaded: {}, changes: [{ key: '2', doc: doc('Ana'), expectedRev: 'std' }] });
+        if (!a.success) throw new Error('x');
+        const anaStale = a.data.revisions['2'];
+        session.user = BETO;
+        await saveContractSections(ORG, { loaded: {}, changes: [{ key: '2', doc: null, expectedRev: anaStale }] }); // Beto resets
+        session.user = ANA;
+        const q = Object.keys((await loadAs(ANA)).revisions.steps)[0];
+        await saveFormSteps(ORG, { loaded: {}, changes: [{ key: q, hidden: true, expected: 'shown' }] }); // Ana moves updatedBy
+        const r = await saveContractSections(ORG, { loaded: {}, changes: [{ key: '2', doc: doc('Ana otra vez'), expectedRev: anaStale }] });
+        expect(r.success && r.data.conflicts.map(c => [c.key, c.by])).toEqual([['2', 'beto.rescates']]);
+    });
+
+    it('when the history does not say who, the name is left blank (the UI says «otra persona del grupo»)', async () => {
+        session.user = ANA;
+        const a = await saveContractSections(ORG, { loaded: {}, changes: [{ key: '2', doc: doc('Ana'), expectedRev: 'std' }] });
+        if (!a.success) throw new Error('x');
+        session.user = BETO;
+        await saveContractSections(ORG, { loaded: {}, changes: [{ key: '2', doc: null, expectedRev: a.data.revisions['2'] }] });
+        sqlite.prepare('DELETE FROM audit_log').run(); // the record of who reset it is gone
+        session.user = ANA;
+        const r = await saveContractSections(ORG, { loaded: {}, changes: [{ key: '2', doc: doc('x'), expectedRev: a.data.revisions['2'] }] });
+        expect(r.success && r.data.conflicts.map(c => [c.key, c.by])).toEqual([['2', '']]);
+    });
+});
+
+describe('a teammate saving between the check and the write', () => {
+    beforeEach(() => {
+        const m = migratedDb();
+        state.db = m.db; state.sqlite = m.sqlite; sqlite = m.sqlite as unknown as Sql; state.tick = 0; state.beforeWrite = null;
+        auditSpy.mockReset();
+        sqlite.prepare(`INSERT INTO user (id, name, email) VALUES ('u-ana', 'Ana Pérez', ?), ('u-beto', NULL, ?)`).run(ANA, BETO);
+        sqlite.prepare(`INSERT INTO organizations (id, name, created_by) VALUES ('org-1', 'Patitas', ?)`).run(ANA);
+        sqlite.prepare(`INSERT INTO org_members (id, org_id, user_email, role) VALUES ('m1', 'org-1', ?, 'owner'), ('m2', 'org-1', ?, 'member')`).run(ANA, BETO);
+    });
+
+    it('form: the first write loses, the retry merges both questions', async () => {
+        const d = await loadAs(BETO);
+        const [q1, q2] = Object.keys(d.revisions.steps);
+        state.beforeWrite = async () => {
+            // Ana hides q1 after Beto's save read the row, before it writes.
+            session.user = ANA;
+            const r = await saveFormSteps(ORG, { loaded: {}, changes: [{ key: q1, hidden: true, expected: 'shown' }] });
+            if (!r.success) throw new Error('interleaved save failed');
+            session.user = BETO;
+        };
+        session.user = BETO;
+        const r = await saveFormSteps(ORG, { loaded: d.revisions.steps, changes: [{ key: q2, hidden: true, expected: 'shown' }] });
+        if (!r.success) throw new Error('x');
+        expect(r.data.saved).toEqual([q2]);
+        expect(r.data.hiddenSteps).toEqual(expect.arrayContaining([q1, q2]));
+        expect((await loadAs(ANA)).hiddenSteps).toEqual(expect.arrayContaining([q1, q2]));
+    });
+
+    it('contract: the first write loses, and the re-check turns the edit into a conflict', async () => {
+        const d = await loadAs(BETO);
+        state.beforeWrite = async () => {
+            session.user = ANA;
+            const r = await saveContractSections(ORG, { loaded: {}, changes: [{ key: '3', doc: doc('Ana primero'), expectedRev: 'std' }] });
+            if (!r.success) throw new Error('interleaved save failed');
+            session.user = BETO;
+        };
+        session.user = BETO;
+        const r = await saveContractSections(ORG, { loaded: d.revisions.sections, changes: [{ key: '3', doc: doc('Beto'), expectedRev: d.revisions.sections['3'] }] });
+        if (!r.success) throw new Error('x');
+        expect(r.data.saved).toEqual([]);
+        expect(r.data.conflicts.map(c => [c.key, c.by])).toEqual([['3', 'Ana Pérez']]);
+        expect(textOf((await loadAs(ANA)).sections['3'])).toBe('Ana primero');
+        // The losing attempt's version never became current and is marked replaced.
+        const current = sqlite.prepare("SELECT COUNT(*) AS n FROM contract_versions WHERE owner_id = 'org-1' AND replaced_at IS NULL").get()!;
+        expect(current.n).toBe(1);
     });
 });

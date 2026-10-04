@@ -2401,7 +2401,7 @@ export const pt = {
         toast_step_updated_by_other: "{name} tinha mudado «{question}»: agora você vê essa versão.",
         toast_steps_need_review: "Há perguntas que precisam da sua revisão antes de salvar.",
         busy: "Outra pessoa estava salvando ao mesmo tempo. Tente de novo.",
-        language_warning: "Se você editar esta seção, quem ler o contrato em inglês ou português vai vê-la em espanhol, exatamente como você escrever.",
+        language_warning: "Se você editar esta seção, quem ler o contrato em outro idioma vai vê-la exatamente como você escrever.",
         section1_note: 'É preenchida com os dados do animal.',
         locked_section: 'Esta seção não pode ser editada.',
         disclaimer: 'Você é responsável pelo texto do seu contrato. Recomendamos que um advogado o revise.',

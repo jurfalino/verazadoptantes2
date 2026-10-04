@@ -130,6 +130,13 @@ describe('generateContractPdf — accents and typography survive', () => {
         expect(text).toContain('Gómez Ñandú')
     })
 
+    it('a multi-line value (address / details fallback) keeps its words apart', async () => {
+        const { text } = await drawnText(generateContractPdf({ ...animal, color: null, details: 'Mancha blanca\nen el lomo' }, { ...form, address: 'Calle Falsa 123\nPiso 2' }, 'es')!)
+        const flat = text.replace(/\s+/g, ' ')
+        expect(flat).toContain('Mancha blanca en el lomo')
+        expect(flat).toContain('Calle Falsa 123 Piso 2')
+    })
+
     it('a custom section with every character renders exactly as typed, bullets as •', async () => {
         const custom: CustomContract = {
             versionId: 'abcdef1234567890',

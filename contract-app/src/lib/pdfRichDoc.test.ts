@@ -83,6 +83,9 @@ describe('pdfSafeText (WinAnsi)', () => {
         expect(pdfSafeText('\u25CF item \u25E6 sub')).toBe('\u2022 item \u2022 sub')
         expect(pdfSafeText('5\u2032 6\u2033')).toBe('5\' 6"')
     })
+    it('folds line breaks and tabs to one space so words never run together', () => {
+        expect(pdfSafeText('Calle Falsa 123\nPiso 2\r\nDepto B\tCABA')).toBe('Calle Falsa 123 Piso 2 Depto B CABA')
+    })
     it('turns NBSP and other unicode spaces into a normal space', () => {
         expect(pdfSafeText('a\u00a0b\u2009c\u202fd\u3000e')).toBe('a b c d e')
     })

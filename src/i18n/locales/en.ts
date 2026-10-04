@@ -2396,7 +2396,7 @@ export const en = {
         toast_step_updated_by_other: "{name} had changed “{question}”: you're now seeing their version.",
         toast_steps_need_review: "Some questions need your review before saving.",
         busy: "Someone else was saving at the same time. Please try again.",
-        language_warning: "If you edit this section, people reading the contract in English or Portuguese will see it in Spanish, exactly as you write it.",
+        language_warning: "If you edit this section, people reading the contract in another language will see it exactly as you write it.",
         section1_note: 'Filled in with the animal\'s details.',
         locked_section: 'This section can\'t be edited.',
         disclaimer: 'You are responsible for the text of your contract. We recommend having a lawyer review it.',
