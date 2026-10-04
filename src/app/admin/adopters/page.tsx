@@ -1,5 +1,5 @@
 export const runtime = 'edge';
-import { getDb } from "@/app/actions";
+import { getDb } from "@/app/actions/_db";
 import { adopters, adoptions } from "@/db/schema";
 import { desc, like, or, and, isNull, eq, sql, ne } from "drizzle-orm";
 import Link from "next/link";

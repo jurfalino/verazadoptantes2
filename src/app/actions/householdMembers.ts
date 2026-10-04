@@ -19,7 +19,7 @@ import {
     type HouseholdMember,
     type Relationship,
 } from '@/lib/householdMembers';
-import { tokenizeAdopter } from './duplicates';
+import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { isAdminAsync } from '@/config/admins';
 

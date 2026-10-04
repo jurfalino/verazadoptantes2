@@ -3,6 +3,7 @@ import { logger } from '@/lib/logger';
 import { withCors, corsPreflightResponse } from '@/lib/cors';
 import { runAfterResponse } from '@/lib/background';
 import { deriveSpecialNeeds, sanitizeShownSteps } from '@/domain/adoptionDocs';
+import { isValidFormEmail } from '@/domain/formEmail';
 
 export const runtime = 'edge';
 
@@ -51,6 +52,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         }
         if (!email) {
             return withCors(NextResponse.json({ error: 'El email es obligatorio' }, { status: 400 }), origin);
+        }
+        // Same rule as the form's own client check, so a real applicant is
+        // never refused here; a hand-made POST with `email: "x"` is.
+        if (!isValidFormEmail(email)) {
+            logger.info('form submit: invalid email format refused', { userId });
+            return withCors(NextResponse.json({ error: 'El email no es válido' }, { status: 400 }), origin);
         }
 
         const { getDb } = await import('@/lib/db');

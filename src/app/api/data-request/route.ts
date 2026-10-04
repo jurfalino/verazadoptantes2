@@ -1,6 +1,6 @@
 export const runtime = 'edge';
 
-import { getDb } from '@/app/actions';
+import { getDb } from '@/app/actions/_db';
 import { dataRequests } from '@/db/schema';
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';

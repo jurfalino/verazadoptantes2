@@ -2,6 +2,94 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.143] - 2026-10-04
+
+### Added — what an adopter gave you stays yours
+
+When an adopter fills out your (or your team's) adoption form and you link it to a
+profile another rescuer created («Es la misma persona»), you keep seeing in full the
+phone and email they typed in your form — on the profile, in search, on match cards,
+in «Historial médico» and in the follow-up WhatsApp. Everything else on that profile
+stays protected; the address is never unlocked this way. Rescuers who never received
+a form from that person see nothing new.
+
+### Security — server actions reachable from the browser now check who is calling
+
+An audit of every action the browser can call (114 of 146) found several that
+trusted the caller. All fixed; legitimate users see no change except where noted.
+
+- **Merging profiles** (`mergeAdopters`) could be called without signing in. It is no
+  longer reachable from the browser; «Mis adoptantes» uses a new checked action that
+  only merges pairs listed for you, and never absorbs another rescuer's profile into
+  yours. *Change:* if your record is the OLDER of a pair with another rescuer's, you
+  can no longer merge it yourself — that rescuer or an admin can.
+- **Creating/editing adopters** now requires a session and only writes the fields the
+  form edits (owner, creation date, deletion and similar fields can't be set from the
+  browser).
+- **Editing adoption records** now requires being the record's creator, a teammate or
+  an admin (adding records stays open, as designed).
+- **Adoption history and its photos** are no longer readable without signing in;
+  photos no longer carry uploader emails.
+- **Admin metrics** are admin-only (moderators no longer see a widget that can't load).
+- **Duplicate lookups** need a session; search result limits are capped.
+- Identity-taking helpers (database access, org membership, adopter creation, user
+  names/country) are no longer exposed as server actions.
+- Leftover duplicate flags from past merges no longer show in «Mis adoptantes».
+
+## [2.56.142] - 2026-10-04
+
+### Security — other rescuers' protected contact data no longer leaks through matches and contracts
+
+Found while recording the end-to-end demo (Reel 11), confirmed by a code trace and
+fixed after two independent reviews.
+
+- **Match cards** on the form answers and contract answers pages showed a matched
+  profile's full contact data (every phone and email, the street address) even when
+  that profile belongs to another rescuer and is protected. They are now masked
+  exactly like search results: you see in full only what your own applicant typed
+  in that submission (so you can confirm it's the same person), plus anything your
+  existing access already shows. Addresses show only the area. Nothing raw is sent
+  to the browser.
+- **Import lookup** (`/api/adopters`) returned household members unmasked; now masked.
+- **Public form** rejects a malformed email (the same rule the form itself applies),
+  so a junk email can't widen name-only matching.
+- **Contract invitations** can only be sent to someone who applied for that animal,
+  or to a profile the rescuer fully sees. The contract page pre-fills only what the
+  inviting rescuer could see; hidden values stay blank for the adopter to type.
+  Old links that no longer qualify show «Este link ya no es válido».
+- **Signing** a contract on a profile that belongs to another rescuer now ADDS the
+  signed details instead of replacing that rescuer's contact data, address and name.
+  Only the owner's own or team profiles are updated in place.
+- **Linking a form to a profile** directly now requires that profile to be one of
+  the form's recorded matches or one you fully see.
+- Contract links are no longer written to logs in full.
+
+## [2.56.141] - 2026-10-04
+
+### Fixed — copy seen while recording the end-to-end demo (Reel 11)
+
+- **Female animals read as female:** after adding a female animal the toast says
+  «¡Nina publicada en adopción!», and her public page's buttons say «Quiero
+  adoptarla» (pt «Quero adotá-la»). Male or unknown sex keeps the old wording.
+- **Singulars:** «1 foto» on the new-animal photo counter and «1 vista» on the
+  adopter profile (all three languages).
+- **One name for a vet visit:** the app's event type now reads «Consulta
+  veterinaria» (pt «Consulta veterinária»), the same as the adopter's health
+  page. English stays "Vet visit".
+
+### Fixed — «Historial médico» and the follow-up WhatsApp offer the phone the profile shows
+
+- The health-record share window and the follow-up WhatsApp now offer exactly
+  the phone the rescuer already sees in full on that adopter's profile — same
+  rule, same masking (`reachablePhoneForViewer`). Before, they required full
+  access, so a phone visible on the profile (public source, an approved grant,
+  a public profile) still showed «No hay un teléfono en su ficha». Nothing
+  becomes visible beyond what the profile page already shows.
+- A soft-deleted adopter (approved deletion request) gets no phone and no name
+  in either place.
+- If the PII-gating setting can't be read, contact data is now masked instead
+  of shown (fails closed), and the read error is logged instead of swallowed.
+
 ## [2.56.140] - 2026-10-03
 
 ### Added — a semáforo on the adoption-form answers that matter most

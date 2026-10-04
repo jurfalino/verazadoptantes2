@@ -260,7 +260,7 @@ export async function restoreAdopter(adopterId: string) {
 
         // Clear soft-delete; null tokenHash forces re-tokenization, then rebuild tokens.
         await db.update(adopters).set({ deletedAt: null, tokenHash: null }).where(eq(adopters.id, adopterId));
-        const { tokenizeAdopter } = await import('./duplicates');
+        const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
         await tokenizeAdopter(adopterId);
 
         // If a resolved deletion request points here, mark it restored.

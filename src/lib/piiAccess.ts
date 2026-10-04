@@ -13,6 +13,7 @@ import {
     contactEntriesToBlob,
     parseBlobToContactEntries,
     normalizeEntryValue,
+    buildContactEntries,
 } from './contactEntries';
 import { deserializeHouseholdMembers, serializeHouseholdMembers, type HouseholdMember } from './householdMembers';
 import { PHONE_SEARCH_MIN_DIGITS } from '@/config/constants';
@@ -429,6 +430,13 @@ export interface ResolveVisibilityInput {
     isEditor: boolean;
     /** The viewer's grants for THIS adopter (any scope; revoked ones are filtered here). */
     grants: PiiGrantRow[];
+    /**
+     * «What the adopter gave you stays yours»: entry hashes of the contact
+     * values the adopter typed in form submissions RECEIVED by the viewer or a
+     * teammate and linked to this adopter (givenEntryHashes). Unlocks exactly
+     * those entries; read at request time, never stored as grants.
+     */
+    givenEntryHashes?: Iterable<string>;
 }
 
 export interface Visibility {
@@ -458,9 +466,10 @@ export function resolveVisibility(input: ResolveVisibilityInput): Visibility {
     );
     const live = grants.filter(g => !g.revokedAt);
     const hasAllContactGrant = live.some(g => g.scope === 'all_contact');
-    const unlockedEntryHashes = new Set<string>(
-        live.filter(g => g.scope === 'entry' && g.entryRef).map(g => g.entryRef as string),
-    );
+    const unlockedEntryHashes = new Set<string>([
+        ...live.filter(g => g.scope === 'entry' && g.entryRef).map(g => g.entryRef as string),
+        ...(input.givenEntryHashes ?? []),
+    ]);
     const unlockedNameTokenHashes = new Set<string>(
         live.filter(g => g.scope === 'name_token' && g.entryRef).map(g => g.entryRef as string),
     );
@@ -469,6 +478,35 @@ export function resolveVisibility(input: ResolveVisibilityInput): Visibility {
         ? 'full'
         : (hasAllContactGrant || unlockedEntryHashes.size > 0 || unlockedNameTokenHashes.size > 0) ? 'partial' : 'none';
     return { tier, privileged, nothingMasked, hasAllContactGrant, unlockedEntryHashes, unlockedNameTokenHashes };
+}
+
+/**
+ * Entry hashes for «what the adopter gave you stays yours»: the email and
+ * phone an adopter typed in form submission(s) the viewer's team received.
+ * Built with the SAME buildContactEntries the submission's auto-created
+ * profile used, so after «Es la misma persona» (which merges those entries
+ * onto the chosen profile) each hash equals exactly the entry the applicant
+ * created — equality only, nothing near it. A phone needs ≥8 digits (as on
+ * the match card). Addresses never: the legacy `addressInfo` column has no
+ * unlock path, so the street would show in one place and stay masked in
+ * another; names are not contact PII here.
+ */
+export function givenEntryHashes(
+    submissions: Array<{ email?: string | null; phone?: string | null }>,
+): Set<string> {
+    const out = new Set<string>();
+    for (const s of submissions) {
+        const entries = buildContactEntries({
+            emails: s.email ? [s.email] : [],
+            phones: s.phone ? [s.phone] : [],
+        });
+        for (const e of entries) {
+            if (e.type === 'phone' && e.value.replace(/\D/g, '').length < 8) continue;
+            if (e.type !== 'phone' && e.type !== 'email') continue;
+            out.add(hashEntryValue(e.type, e.value));
+        }
+    }
+    return out;
 }
 
 /** A viewer with no email (unauthenticated / unresolved) — everything masked. */
@@ -743,6 +781,200 @@ export function maskAdopterContact(
         addressInfo: maskedAddress,
         householdMembers: maskedHousehold.json,
         maskedFieldCount,
+    };
+}
+
+/** A phone the viewer may be offered as a one-tap WhatsApp / Telegram link. */
+export interface ReachablePhone {
+    phone: string;
+    channel: 'whatsapp' | 'telegram';
+}
+
+/**
+ * The phone a viewer may be offered as a one-tap contact link (the health-record
+ * handover and a due follow-up on the animal page) — exactly a phone the SAME
+ * viewer already sees in full on the adopter's profile, never more.
+ *
+ * Mirrors getAdopter's decision: with gating off, or for a viewer with full
+ * access (`nothingMasked`), or on a whole-profile-public record, nothing is
+ * masked; otherwise the entries go through `maskContactEntries` — the same
+ * per-entry rules (search-match / contribution grants, `isPublic` entries) —
+ * and only entries that come back UNMASKED are candidates. A partial-reveal
+ * value (`+54 9••••`) can never be returned, so it can never reach a wa.me URL.
+ * Source entries follow maskAdopterContact: structured entries, else the
+ * legacy blob parsed into entries. The free-text `contactInfo` regex fallback
+ * only runs when nothing is masked (the profile shows that blob verbatim then).
+ */
+export function reachablePhoneForViewer(
+    adopter: { contactEntries?: string | null; contactInfo?: string | null },
+    access: { gatingOn: boolean; visibility: Visibility; maskOptions?: MaskContactOptions },
+): ReachablePhone | null {
+    const options = access.maskOptions ?? {};
+    const fullyVisible = !access.gatingOn || access.visibility.nothingMasked || !!options.adopterIsPublic;
+    const parsed = deserializeContactEntries(adopter.contactEntries ?? null);
+    const visible = fullyVisible
+        ? parsed
+        : maskContactEntries(
+            parsed.length > 0 ? parsed : parseBlobToContactEntries(adopter.contactInfo ?? null),
+            access.visibility,
+            options,
+        ).entries;
+    const phones = visible.filter(e => e.type === 'phone' && e.value && !e.masked);
+    const tg = phones.find(e => e.apps?.includes('telegram') && !e.apps?.includes('whatsapp'));
+    const wa = phones.find(e => e.apps?.includes('whatsapp')) || phones[0];
+    if (wa) return { phone: wa.value, channel: 'whatsapp' };
+    if (tg) return { phone: tg.value, channel: 'telegram' };
+    if (fullyVisible && adopter.contactInfo) {
+        const m = String(adopter.contactInfo).match(/\+?[\d][\d\s\-().]{7,}/);
+        if (m) return { phone: m[0], channel: 'whatsapp' };
+    }
+    return null;
+}
+
+/** What the animal page may offer for messaging an animal's current adopter. */
+export interface AdopterContactOffer {
+    phone: string | null;
+    channel: 'whatsapp' | 'telegram';
+    firstName: string;
+}
+
+export type ReachableAccess = Parameters<typeof reachablePhoneForViewer>[1];
+
+/**
+ * Whether an adopter row may be contacted at all from the animal page. A
+ * soft-deleted adopter (merged duplicate, or an approved deletion request)
+ * 404s on its profile, so it offers nothing here either — no phone, no name.
+ */
+export function isContactableAdopter(
+    adopter: { deletedAt?: Date | number | null } | null | undefined,
+): boolean {
+    return !!adopter && !adopter.deletedAt;
+}
+
+/**
+ * The one-tap contact offer (health-record handover, due follow-up): the first
+ * name for the message and a phone the viewer already sees on the profile
+ * (reachablePhoneForViewer). Nothing at all for a missing or soft-deleted
+ * adopter, and no phone when `access` could not be resolved.
+ */
+export function contactOfferFor(
+    adopter: { name?: string | null; deletedAt?: Date | number | null; contactEntries?: string | null; contactInfo?: string | null } | null | undefined,
+    access: ReachableAccess | null,
+): AdopterContactOffer {
+    if (!adopter || !isContactableAdopter(adopter)) return { phone: null, channel: 'whatsapp', firstName: '' };
+    const firstName = (adopter.name || '').trim().split(/\s+/)[0] || '';
+    const reachable = access ? reachablePhoneForViewer(adopter, access) : null;
+    return reachable
+        ? { phone: reachable.phone, channel: reachable.channel, firstName }
+        : { phone: null, channel: 'whatsapp', firstName };
+}
+
+// ── Form / contract match cards ───────────────────────────────────────────────
+
+/** Minimum digits for a submitted phone to count as "the same number". */
+const MATCH_CARD_PHONE_MIN_DIGITS = 8;
+
+/** Same phone number: one digit string ends with the other (a +54 9 / area-code
+ *  prefix may be present on one side only), with at least 8 digits compared. */
+function samePhoneNumber(a: string, b: string): boolean {
+    const da = a.replace(/\D/g, '');
+    const db = b.replace(/\D/g, '');
+    if (da.length < MATCH_CARD_PHONE_MIN_DIGITS || db.length < MATCH_CARD_PHONE_MIN_DIGITS) return false;
+    return da.length >= db.length ? da.endsWith(db) : db.endsWith(da);
+}
+
+/**
+ * «Confirm what you already know» for a form / contract match card: the
+ * entry hashes of an existing profile that THIS submission's applicant typed
+ * themselves. Each submitted value runs as its own query through the search
+ * matcher (`matchSearchEntries`) — never concatenated, so one field can't
+ * ride along on another's anchor — and a candidate only counts when it is the
+ * SAME value, not merely a search hit:
+ *   - phone: the same number (samePhoneNumber — suffix with ≥8 digits), not
+ *     the search's 6-digit containment;
+ *   - email / social / id: equal after the standard normalization
+ *     (hashEntryValue), so `a@gmail.com` never unlocks `carla@gmail.com`;
+ *   - address: never. The street+number rule would reveal more than was typed
+ *     (floor, unit), and the legacy `addressInfo` column has no unlock path in
+ *     maskAdopterContact anyway — the card keeps showing the locality only.
+ * Pass contact fields only (not the name or the address text).
+ */
+export function submissionUnlockHashes(
+    entries: ContactEntry[],
+    submitted: Array<string | null | undefined>,
+): Set<string> {
+    const out = new Set<string>();
+    for (const raw of submitted) {
+        const q = (raw ?? '').trim();
+        if (!q) continue;
+        for (const m of matchSearchEntries(entries, q)) {
+            const e = m.entry;
+            if (e.type === 'address') continue;
+            const same = e.type === 'phone'
+                ? samePhoneNumber(e.value, q)
+                : hashEntryValue(e.type, q) === m.hash;
+            if (same) out.add(m.hash);
+        }
+    }
+    return out;
+}
+
+/** What a match card may render for an existing profile's contact. */
+export interface MatchCardContact {
+    contactInfo: string | null;
+    addressInfo: string | null;
+}
+
+/**
+ * Mask an existing profile's contact for a form / contract match card the way
+ * discovery search masks a result: `visibility === null` means gating is OFF
+ * (nothing is masked anywhere then, as on the profile and in search); full
+ * access or a public profile passes through; otherwise maskAdopterContact with
+ * the viewer's grants plus the values this applicant submitted
+ * (submissionUnlockHashes). Unlocks are render-time only — nothing is
+ * persisted, so the profile page keeps its own masking.
+ */
+export function maskMatchCardContact(
+    profile: { contactInfo?: string | null; contactEntries?: string | null; addressInfo?: string | null },
+    visibility: Visibility | null,
+    options: MaskContactOptions,
+    submitted: Array<string | null | undefined>,
+): MatchCardContact {
+    const contactInfo = profile.contactInfo ?? null;
+    const addressInfo = profile.addressInfo ?? null;
+    if (!visibility || visibility.nothingMasked || options.adopterIsPublic) return { contactInfo, addressInfo };
+    const parsed = deserializeContactEntries(profile.contactEntries ?? null);
+    const source = parsed.length > 0 ? parsed : parseBlobToContactEntries(contactInfo);
+    const unlockedEntryHashes = new Set([...visibility.unlockedEntryHashes, ...submissionUnlockHashes(source, submitted)]);
+    const masked = maskAdopterContact(
+        { contactInfo, contactEntries: profile.contactEntries ?? null, addressInfo, householdMembers: null },
+        { ...visibility, unlockedEntryHashes },
+        options,
+    );
+    return { contactInfo: masked.contactInfo, addressInfo: masked.addressInfo };
+}
+
+/**
+ * A full adopter row (e.g. a `select()` returned to the client) with every PII
+ * column masked for a non-privileged viewer: contact, entries, address,
+ * household members (each member's contacts), and legacy family text hidden.
+ * Spread-based, so it MUST override every PII column the row can carry — the
+ * household column was once missed here and leaked through `...row`.
+ */
+export function maskAdopterRow<T extends MaskableAdopter & { name: string; familyMembers?: string | null }>(
+    row: T,
+    visibility: Visibility,
+    options: MaskContactOptions = {},
+): T {
+    const masked = maskAdopterContact(row, visibility, options);
+    return {
+        ...row,
+        name: renderName(row.name, visibility, undefined, options),
+        contactInfo: masked.contactInfo,
+        contactEntries: masked.contactEntries,
+        addressInfo: masked.addressInfo,
+        householdMembers: masked.householdMembers,
+        familyMembers: null,
     };
 }
 

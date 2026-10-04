@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { getDb } from '@/app/actions';
+import { getDb } from '@/app/actions/_db';
 import { adoptions, adopters, animals } from '@/db/schema';
 import { eq, and, isNull, or, count } from 'drizzle-orm';
 import { getFeatureFlag } from '@/config/features';

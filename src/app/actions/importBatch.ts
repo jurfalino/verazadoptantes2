@@ -19,7 +19,7 @@ import { deserializeContactEntries, contactEntriesToBlob } from '@/lib/contactEn
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { insertRecord } from './_recordWrite';
 import { importDateToNoon } from '@/domain/importRow';
-import { tokenizeAdopter } from './duplicates';
+import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { upsertImportRecord } from './importUpsert';
 import { logger } from '@/lib/logger';
 

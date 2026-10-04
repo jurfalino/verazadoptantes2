@@ -85,6 +85,32 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             }
         }
 
+        // Token path: the adopter may be another rescuer's profile. Decide for
+        // the INVITING rescuer whether this invitation is still allowed and how
+        // much of the profile the signature may rewrite (contactUpdateOnSign).
+        let invitedAdopter: { contactInfo: string | null; contactEntries: string | null; addressInfo: string | null } | null = null;
+        let signOverwrite = false;
+        if (invitation) {
+            const { adopters: adoptersTable } = await import('@/db/schema');
+            const row = await db.select({
+                id: adoptersTable.id, addedBy: adoptersTable.addedBy, isPublic: adoptersTable.isPublic, deletedAt: adoptersTable.deletedAt,
+                contactInfo: adoptersTable.contactInfo, contactEntries: adoptersTable.contactEntries, addressInfo: adoptersTable.addressInfo,
+            }).from(adoptersTable).where(eq(adoptersTable.id, invitation.adopterId)).get();
+            if (!row || row.deletedAt) {
+                return withCors(NextResponse.json({ error: 'Adopter record unavailable' }, { status: 410 }), origin);
+            }
+            const { resolveInvitationAccess } = await import('@/lib/contractInvitationAccess');
+            const access = await resolveInvitationAccess(db, invitation.createdBy, animalId, row);
+            if (!access.allowed) {
+                logger.warn('Contract submit: invitation no longer allowed', {
+                    animalId, adopterId: invitation.adopterId, createdBy: invitation.createdBy,
+                });
+                return withCors(NextResponse.json({ error: 'Invitation not valid', code: 'not_allowed' }, { status: 410 }), origin);
+            }
+            invitedAdopter = row;
+            signOverwrite = access.overwriteOnSign;
+        }
+
         // 1. Find the animal record
         const animal = await db.select().from(adoptions).where(eq(adoptions.id, animalId)).get();
         if (!animal) {
@@ -138,12 +164,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         let matches: Array<{ adopterId: string; adopterName: string; matchTypes: string[] }> = [];
         if (invitation) {
             adopterId = invitation.adopterId;
-            // Best-effort update of the adopter's contactInfo with any
-            // typo-corrected fields the signer changed. Keep it simple:
-            // overwrite the contactInfo with the re-built string from the
-            // submitted fields. The original adopter row keeps its source.
+            // Write the signed contact back onto the profile. On the inviting
+            // rescuer's own / team profile the signed values replace the
+            // contact and name, as before. On anyone else's — even one she
+            // sees in full (admin, grant, public, gating off) — the signed
+            // values are ADDED; nothing is removed, an existing address and
+            // the name are kept (contactUpdateOnSign).
             const { adopters: adoptersTable, adopterHistory } = await import('@/db/schema');
-            const { buildContactEntries, contactEntriesToBlob } = await import('@/lib/contactEntries');
+            const { buildContactEntries } = await import('@/lib/contactEntries');
+            const { contactUpdateOnSign, tokenRef } = await import('@/lib/contractInvitation');
             const contactEntries = buildContactEntries({
                 ids: dni ? [{ value: dni, label: 'Documento' }] : [],
                 emails: email ? [email] : [],
@@ -151,13 +180,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 socials: socialNetworks ? [socialNetworks] : [],
                 addresses: address ? [address] : [],
             });
-            const newContactInfo = contactEntriesToBlob(contactEntries);
+            const update = contactUpdateOnSign(
+                invitedAdopter ?? { contactInfo: null, contactEntries: null, addressInfo: null },
+                { entries: contactEntries, address: address || null },
+                signOverwrite,
+            );
 
             await db.update(adoptersTable).set({
-                name: fullName,
-                contactInfo: newContactInfo || null,
-                contactEntries: contactEntries.length ? JSON.stringify(contactEntries) : null,
-                addressInfo: address || null,
+                ...(update.replaceName ? { name: fullName } : {}),
+                contactInfo: update.contactInfo,
+                contactEntries: update.contactEntries,
+                addressInfo: update.addressInfo,
                 updatedAt: new Date(),
             }).where(eq(adoptersTable.id, adopterId));
 
@@ -180,7 +213,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 usedAt: Math.floor(Date.now() / 1000),
             }).where(eq(contractInvitations.token, token!));
 
-            logger.info('Contract signed via invitation', { animalId, adopterId, token });
+            logger.info('Contract signed via invitation', { animalId, adopterId, token: tokenRef(token) });
         } else {
             const { createAdopterFromSubmission } = await import('@/app/actions/_adopterFactory');
             const factoryResult = await createAdopterFromSubmission({

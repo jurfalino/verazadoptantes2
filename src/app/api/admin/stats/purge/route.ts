@@ -1,7 +1,7 @@
 export const runtime = 'edge';
 import { auth } from "@/auth";
 import { isAdminAsync } from "@/config/admins";
-import { getDb } from "@/app/actions";
+import { getDb } from "@/app/actions/_db";
 import { adopterStats } from "@/db/schema";
 import { sql, lt } from "drizzle-orm";
 import { NextResponse } from "next/server";

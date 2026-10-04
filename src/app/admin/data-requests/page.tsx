@@ -1,5 +1,6 @@
 export const runtime = 'edge';
-import { getDb, getUser, resolveDataRequest } from "@/app/actions";
+import { resolveDataRequest } from "@/app/actions";
+import { getDb, getUser } from "@/app/actions/_db";
 import { dataRequests, adopters } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { formatShortDate } from '@/lib/dates';

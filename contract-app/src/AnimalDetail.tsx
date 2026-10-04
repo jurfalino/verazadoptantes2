@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { PawIcon, AlertIcon } from './components/Icons'
 import { useT, localizedHref } from './i18n/LocaleContext'
-import { speciesLabel, sexLabel, ageLabel } from './lib/animalLabels'
+import { speciesLabel, sexLabel, ageLabel, isFemale } from './lib/animalLabels'
 import { isVideo, posterOf, posterUrls } from './lib/media'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -129,6 +129,8 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
     const adoptHref = a.rescuer.userId
         ? localizedHref(`/form?u=${encodeURIComponent(a.rescuer.userId)}&animal=${encodeURIComponent(a.id)}`, locale)
         : null
+    // «Quiero adoptarla» for a female; unknown sex keeps «Quiero adoptarlo».
+    const adoptCta = t(isFemale(a.sex) ? 'animal.adopt_cta_f' : 'animal.adopt_cta')
     const rescuerBackHref =
         a.rescuer.orgSlug ? localizedHref(`/org/${a.rescuer.orgSlug}`, locale) :
         a.rescuer.userHandle ? localizedHref(`/user/${a.rescuer.userHandle}`, locale) :
@@ -209,7 +211,7 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
 
             <div className="ps-animal-cta">
                 {adoptHref ? (
-                    <a href={adoptHref} className="ps-btn ps-btn--primary ps-animal-cta__btn">{t('animal.adopt_cta')}</a>
+                    <a href={adoptHref} className="ps-btn ps-btn--primary ps-animal-cta__btn">{adoptCta}</a>
                 ) : (
                     <p className="ps-animal-cta__unavailable">{t('animal.unavailable_for_application')}</p>
                 )}
@@ -231,7 +233,7 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
             {adoptHref && (
                 <div className="ps-animal-cta-sticky" aria-hidden="false">
                     <a href={adoptHref} className="ps-btn ps-btn--primary ps-animal-cta-sticky__btn">
-                        {t('animal.adopt_cta')}
+                        {adoptCta}
                     </a>
                 </div>
             )}

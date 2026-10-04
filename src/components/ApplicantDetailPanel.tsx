@@ -92,7 +92,10 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
                 setShareUrl(result.url);
                 onContractIssued?.(result.url, applicant);
             } else {
-                toast.error(t('errors.generic') || 'Error', result.error || 'No se pudo generar la invitación');
+                const message = result.error === 'not_allowed'
+                    ? (t('errors.contract_invite_not_allowed') || 'Solo podés enviar el contrato a quien se postuló para este animal.')
+                    : (t('errors.contract_invite_failed') || 'No se pudo generar la invitación');
+                toast.error(t('errors.generic') || 'Error', message, result.errorId ?? resolveErrorId(new Error(`createContractInvitation: ${result.error}`), 'ApplicantDetailPanel'));
             }
         } catch (e) {
             toast.error(t('errors.generic') || 'Error', t('errors.contract_invite_failed') || undefined, resolveErrorId(e, 'ApplicantDetailPanel'));

@@ -1,6 +1,6 @@
 export const runtime = 'edge';
 import Link from 'next/link';
-import { getDb, getUser } from '@/app/actions';
+import { getDb, getUser } from '@/app/actions/_db';
 import { blockedLogins, errorReports } from '@/db/schema';
 import { desc } from 'drizzle-orm';
 import { formatDateTime } from '@/lib/dates';

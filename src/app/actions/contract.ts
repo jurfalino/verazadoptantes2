@@ -19,7 +19,7 @@
  * locked flow lives at /c/<token> in the contract-app.
  */
 
-import { logger } from '@/lib/logger';
+import { logger, generateErrorId } from '@/lib/logger';
 import { auth } from '@/auth';
 import { getDb } from './_db';
 
@@ -27,7 +27,10 @@ export interface CreateInvitationResult {
     success: boolean;
     token?: string;
     url?: string;
+    /** `'not_allowed'` when the adopter is neither an applicant for this animal
+     *  nor a profile the caller fully sees; otherwise a free-text failure. */
     error?: string;
+    errorId?: string;
 }
 
 /** Days a token stays valid. */
@@ -64,12 +67,26 @@ export async function createContractInvitation(
         if (animal.adopterId) return { success: false, error: 'Animal already adopted' };
 
         // Confirm the adopter exists and is not soft-deleted.
-        const adopter = await db.select({ id: adopters.id, deletedAt: adopters.deletedAt })
+        const adopter = await db.select({ id: adopters.id, deletedAt: adopters.deletedAt, addedBy: adopters.addedBy, isPublic: adopters.isPublic })
             .from(adopters)
             .where(eq(adopters.id, adopterId))
             .get();
         if (!adopter) return { success: false, error: 'Adopter not found' };
         if (adopter.deletedAt) return { success: false, error: 'Adopter record was deleted' };
+
+        // Only someone who applied for THIS animal (the applicants panel's own
+        // rows) or a profile the caller already fully sees. Without this, any
+        // rescuer could invite another rescuer's adopter by id and read their
+        // contact on the token page — and rewrite it by signing.
+        const { resolveInvitationAccess } = await import('@/lib/contractInvitationAccess');
+        const access = await resolveInvitationAccess(db, userEmail, animalId, adopter);
+        if (!access.allowed) {
+            const errorId = generateErrorId();
+            logger.warn('createContractInvitation: refused — not an applicant and no full access', {
+                animalId, adopterId, createdBy: userEmail, errorId,
+            });
+            return { success: false, error: 'not_allowed', errorId };
+        }
 
         // Retire any prior unused invitations for this animal so only the
         // newest token is honored. We set expires_at to now() rather than
@@ -103,10 +120,10 @@ export async function createContractInvitation(
         // its by-token fetch resolves); the persisted column is the backstop.
         const url = validLocale ? `${base}/c/${token}?lang=${validLocale}` : `${base}/c/${token}`;
 
-        logger.info('Contract invitation created', { animalId, adopterId, createdBy: userEmail });
+        logger.info('Contract invitation created', { animalId, adopterId, createdBy: userEmail, via: access.via });
         return { success: true, token, url };
     } catch (e) {
         const errorId = logger.error('createContractInvitation failed', e, { animalId, adopterId });
-        return { success: false, error: `Failed to create invitation (${errorId})` };
+        return { success: false, error: `Failed to create invitation (${errorId})`, errorId };
     }
 }

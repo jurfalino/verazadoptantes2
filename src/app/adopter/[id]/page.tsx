@@ -1,6 +1,7 @@
 export const runtime = 'edge';
 import { redirect, notFound } from 'next/navigation';
-import { getAdopter, getHistory, getAdoptions, getImages, getAllAdopterImages, getFlags, getUser, getAvailableAnimals, getAdopterStats, getAverageRating, getIsAdmin, getIsModeratorOrAdmin, getAdoptionConfig, getDuplicateCandidates, hasPendingDeletionRequest } from '@/app/actions';
+import { getAdopter, getHistory, getAdoptions, getImages, getAllAdopterImages, getFlags, getAvailableAnimals, getAdopterStats, getAverageRating, getAdoptionConfig, getDuplicateCandidates, hasPendingDeletionRequest } from '@/app/actions';
+import { getUser, getIsAdmin, getIsModeratorOrAdmin } from '@/app/actions/_db';
 import { resolveUserNames } from '@/app/actions/userNames';
 import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
 import { getAdopterPiiContext } from '@/app/actions/piiAccess';

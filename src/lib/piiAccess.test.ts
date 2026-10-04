@@ -15,6 +15,13 @@ import {
     redactHistoryChanges,
     isRealActorEmail,
     piiCooldownUntil,
+    reachablePhoneForViewer,
+    contactOfferFor,
+    maskMatchCardContact,
+    maskAdopterRow,
+    givenEntryHashes,
+    submissionUnlockHashes,
+    isContactableAdopter,
     PII_MASK,
     PII_DENIAL_COOLDOWN_DAYS,
     type Visibility,
@@ -870,5 +877,288 @@ describe('piiCooldownUntil', () => {
     it('accepts an epoch-ms number', () => {
         const ms = Date.UTC(2026, 4, 1);
         expect(piiCooldownUntil(ms).getTime()).toBe(ms + PII_DENIAL_COOLDOWN_DAYS * 86_400_000);
+    });
+});
+
+describe('reachablePhoneForViewer — one-tap contact offers only what the profile shows', () => {
+    // Carla's profile was created by ANOTHER rescuer; the viewer (who placed an
+    // animal with her) is neither owner, org-mate nor admin.
+    const PHONE = '+54 9 11 5555-0109';
+    const entries = (extra: Partial<ContactEntry> = {}): string => JSON.stringify([
+        { type: 'phone', value: PHONE, ...extra },
+        { type: 'email', value: 'carla@example.com' },
+    ]);
+    const stranger = vis({});
+
+    it('gating ON + no access: no phone (the profile shows it partial-revealed)', () => {
+        expect(reachablePhoneForViewer({ contactEntries: entries() }, { gatingOn: true, visibility: stranger })).toBeNull();
+    });
+
+    it('never returns a partial-reveal value, even from the legacy blob', () => {
+        const r = reachablePhoneForViewer({ contactEntries: null, contactInfo: PHONE }, { gatingOn: true, visibility: stranger });
+        expect(r).toBeNull();
+    });
+
+    it('legacy blob row + grant on its phone: the phone (as the profile reveals it)', () => {
+        const visibility = vis({ unlockedEntryHashes: new Set([hashEntryValue('phone', PHONE)]) });
+        expect(reachablePhoneForViewer({ contactEntries: null, contactInfo: PHONE }, { gatingOn: true, visibility })?.phone)
+            .toBe(PHONE);
+    });
+
+    it('gating ON + full access (owner / org-mate / admin / all-contact grant): the phone', () => {
+        expect(reachablePhoneForViewer({ contactEntries: entries() }, { gatingOn: true, visibility: vis({ nothingMasked: true }) }))
+            .toEqual({ phone: PHONE, channel: 'whatsapp' });
+    });
+
+    it('gating OFF: the profile masks nothing, so neither does this', () => {
+        expect(reachablePhoneForViewer({ contactEntries: entries() }, { gatingOn: false, visibility: stranger }))
+            .toEqual({ phone: PHONE, channel: 'whatsapp' });
+    });
+
+    it('gating ON + entry grant on THAT phone (search match / contribution): the phone', () => {
+        const visibility = vis({ unlockedEntryHashes: new Set([hashEntryValue('phone', PHONE)]) });
+        expect(reachablePhoneForViewer({ contactEntries: entries() }, { gatingOn: true, visibility }))
+            .toEqual({ phone: PHONE, channel: 'whatsapp' });
+    });
+
+    it('gating ON + entry grant on the EMAIL only: still no phone', () => {
+        const visibility = vis({ unlockedEntryHashes: new Set([hashEntryValue('email', 'carla@example.com')]) });
+        expect(reachablePhoneForViewer({ contactEntries: entries() }, { gatingOn: true, visibility })).toBeNull();
+    });
+
+    it('gating ON + entry sourced from a public channel (isPublic): the phone', () => {
+        expect(reachablePhoneForViewer({ contactEntries: entries({ isPublic: true }) }, { gatingOn: true, visibility: stranger }))
+            .toEqual({ phone: PHONE, channel: 'whatsapp' });
+    });
+
+    it('gating ON + whole profile public: the phone', () => {
+        expect(reachablePhoneForViewer({ contactEntries: entries() }, {
+            gatingOn: true, visibility: stranger, maskOptions: { adopterIsPublic: true },
+        })).toEqual({ phone: PHONE, channel: 'whatsapp' });
+    });
+
+    it('prefers a WhatsApp-tagged phone over the first one', () => {
+        const ce = JSON.stringify([
+            { type: 'phone', value: '+54 11 4000-0000' },
+            { type: 'phone', value: PHONE, apps: ['whatsapp'] },
+        ]);
+        expect(reachablePhoneForViewer({ contactEntries: ce }, { gatingOn: true, visibility: vis({ nothingMasked: true }) }))
+            .toEqual({ phone: PHONE, channel: 'whatsapp' });
+    });
+
+    it('free-text contactInfo fallback only when nothing is masked', () => {
+        const adopter = { contactEntries: JSON.stringify([{ type: 'email', value: 'carla@example.com' }]), contactInfo: `cel ${PHONE}` };
+        expect(reachablePhoneForViewer(adopter, { gatingOn: true, visibility: vis({ nothingMasked: true }) })?.phone).toBe(PHONE);
+        expect(reachablePhoneForViewer(adopter, { gatingOn: true, visibility: stranger })).toBeNull();
+    });
+
+    it('no phone on file: null', () => {
+        expect(reachablePhoneForViewer({ contactEntries: null, contactInfo: null }, { gatingOn: false, visibility: stranger })).toBeNull();
+    });
+});
+
+describe('contactOfferFor — soft-deleted adopters offer nothing', () => {
+    const PHONE = '+54 9 11 5555-0109';
+    const row = (deletedAt: Date | null) => ({
+        name: 'Carla Gómez', deletedAt,
+        contactEntries: JSON.stringify([{ type: 'phone', value: PHONE }]), contactInfo: null,
+    });
+    const full = { gatingOn: true, visibility: vis({ nothingMasked: true }) };
+
+    it('live adopter + full access: first name and phone', () => {
+        expect(contactOfferFor(row(null), full)).toEqual({ phone: PHONE, channel: 'whatsapp', firstName: 'Carla' });
+    });
+
+    it('soft-deleted adopter: no phone and no name, even with full access', () => {
+        expect(contactOfferFor(row(new Date()), full)).toEqual({ phone: null, channel: 'whatsapp', firstName: '' });
+    });
+
+    it('soft-deleted adopter with gating OFF: still nothing', () => {
+        expect(contactOfferFor(row(new Date()), { gatingOn: false, visibility: vis({}) }))
+            .toEqual({ phone: null, channel: 'whatsapp', firstName: '' });
+    });
+
+    it('access unresolved (lookup error): name only, never a phone', () => {
+        expect(contactOfferFor(row(null), null)).toEqual({ phone: null, channel: 'whatsapp', firstName: 'Carla' });
+    });
+
+    it('missing row: nothing', () => {
+        expect(contactOfferFor(undefined, full)).toEqual({ phone: null, channel: 'whatsapp', firstName: '' });
+    });
+
+    it('isContactableAdopter: live yes; deleted, missing no', () => {
+        expect(isContactableAdopter({ deletedAt: null })).toBe(true);
+        expect(isContactableAdopter({ deletedAt: new Date() })).toBe(false);
+        expect(isContactableAdopter({ deletedAt: 1_700_000_000 })).toBe(false);
+        expect(isContactableAdopter(null)).toBe(false);
+    });
+});
+
+describe('maskMatchCardContact — form / contract match cards mask like discovery', () => {
+    // Rescuer A's protected profile; rescuer B's applicant matched it by phone.
+    const PHONE = '+54 9 11 5555-0109';
+    const OTHER_EMAIL = 'carla.privada@example.com';
+    const STREET = 'Calle Secreta 1234 PB 6';
+    const profile = {
+        contactEntries: JSON.stringify([
+            { type: 'phone', value: PHONE },
+            { type: 'email', value: OTHER_EMAIL },
+            { type: 'address', value: `${STREET}, Flores, CABA` },
+        ]),
+        contactInfo: `Tel: ${PHONE}\nEmail: ${OTHER_EMAIL}`,
+        addressInfo: `${STREET}, Flores, CABA`,
+    };
+    const stranger = vis({});
+
+    it('stranger + applicant typed the same phone: that phone in full; other email and street stay masked', () => {
+        const r = maskMatchCardContact(profile, stranger, {}, ['11 5555-0109', 'nueva@example.com']);
+        expect(r.contactInfo).toContain(PHONE);
+        expect(r.contactInfo).not.toContain(OTHER_EMAIL);
+        expect(r.contactInfo).not.toContain('Secreta');
+        expect(r.addressInfo).not.toContain('Secreta');
+        expect(r.addressInfo).toContain('CABA');
+    });
+
+    it('stranger + nothing submitted that matches: no full value at all', () => {
+        const r = maskMatchCardContact(profile, stranger, {}, ['11 4000-0000', 'nueva@example.com']);
+        expect(r.contactInfo).not.toContain('5555-0109');
+        expect(r.contactInfo).not.toContain(OTHER_EMAIL);
+        expect(r.addressInfo).not.toContain('Secreta');
+    });
+
+    it('a superstring email does not unlock: a@example.com never reveals carla.privada@example.com', () => {
+        const r = maskMatchCardContact(profile, stranger, {}, ['privada@example.com']);
+        expect(r.contactInfo).not.toContain(OTHER_EMAIL);
+    });
+
+    it('the same email (any case) unlocks just that email', () => {
+        const r = maskMatchCardContact(profile, stranger, {}, ['Carla.Privada@Example.com ']);
+        expect(r.contactInfo).toContain(OTHER_EMAIL);
+        expect(r.contactInfo).not.toContain('5555-0109');
+    });
+
+    it('a 6-digit fragment (enough for search) does not unlock the phone here', () => {
+        const r = maskMatchCardContact(profile, stranger, {}, ['550109']);
+        expect(r.contactInfo).not.toContain('5555-0109');
+    });
+
+    it('address stays masked even when the applicant typed exactly the same one', () => {
+        const r = maskMatchCardContact(profile, stranger, {}, [`${STREET}, Flores, CABA`]);
+        expect(r.contactInfo).not.toContain('Secreta');
+        expect(r.addressInfo).not.toContain('Secreta');
+    });
+
+    it('an existing grant still unlocks (same as the profile page)', () => {
+        const r = maskMatchCardContact(profile, vis({ unlockedEntryHashes: new Set([hashEntryValue('email', OTHER_EMAIL)]) }), {}, []);
+        expect(r.contactInfo).toContain(OTHER_EMAIL);
+    });
+
+    it('legacy blob-only profile: same rules', () => {
+        const legacy = { contactEntries: null, contactInfo: `Tel: ${PHONE}\nEmail: ${OTHER_EMAIL}`, addressInfo: null };
+        const r = maskMatchCardContact(legacy, stranger, {}, [PHONE]);
+        expect(r.contactInfo).toContain(PHONE);
+        expect(r.contactInfo).not.toContain(OTHER_EMAIL);
+    });
+
+    it('full access (owner / teammate / admin / all-contact grant): raw', () => {
+        expect(maskMatchCardContact(profile, vis({ nothingMasked: true }), {}, []))
+            .toEqual({ contactInfo: profile.contactInfo, addressInfo: profile.addressInfo });
+    });
+
+    it('public profile: raw', () => {
+        expect(maskMatchCardContact(profile, stranger, { adopterIsPublic: true }, []))
+            .toEqual({ contactInfo: profile.contactInfo, addressInfo: profile.addressInfo });
+    });
+
+    it('gating off (visibility null): raw, as on the profile page and in search', () => {
+        expect(maskMatchCardContact(profile, null, {}, []))
+            .toEqual({ contactInfo: profile.contactInfo, addressInfo: profile.addressInfo });
+    });
+});
+
+describe('submissionUnlockHashes', () => {
+    const entries: ContactEntry[] = [
+        { type: 'phone', value: '+54 9 11 5555-0109' },
+        { type: 'id', value: '30.123.456' },
+        { type: 'social', value: '@carla.g' },
+        { type: 'address', value: 'Cuba 2734 PB 6, Belgrano' },
+    ];
+
+    it('each field is its own query: a phone never carries a DNI along', () => {
+        const got = submissionUnlockHashes(entries, ['11 5555-0109 30123456']);
+        expect(got.has(hashEntryValue('id', '30.123.456'))).toBe(false);
+    });
+
+    it('same DNI (formatting aside) and same social handle unlock', () => {
+        const got = submissionUnlockHashes(entries, ['30123456', 'carla.g']);
+        expect(got.has(hashEntryValue('id', '30.123.456'))).toBe(true);
+        expect(got.has(hashEntryValue('social', '@carla.g'))).toBe(true);
+    });
+
+    it('never an address, and blanks are ignored', () => {
+        const got = submissionUnlockHashes(entries, ['Cuba 2734 PB 6, Belgrano', '', null, undefined]);
+        expect(got.size).toBe(0);
+    });
+});
+
+describe('maskAdopterRow — a full row returned to a non-privileged viewer (GET /api/adopters)', () => {
+    const row = {
+        id: 'a1', addedBy: 'rescuer-a@example.com', name: 'Carla Gómez', status: '5',
+        contactInfo: 'Tel: 1155550109',
+        contactEntries: JSON.stringify([{ type: 'phone', value: '1155550109' }]),
+        addressInfo: 'Calle Secreta 1234, Flores',
+        familyMembers: 'Hijo: Tomás 1144448888',
+        householdMembers: JSON.stringify([
+            { id: 'hm-1', name: 'Tomás Gómez', relationship: 'child', contactEntries: [{ id: 'ce-1', type: 'phone', value: '1144448888' }] },
+        ]),
+    };
+
+    it('masks every PII column, household members included', () => {
+        const r = maskAdopterRow(row, vis({}));
+        const all = JSON.stringify(r);
+        expect(all).not.toContain('1155550109');
+        expect(all).not.toContain('1144448888');
+        expect(all).not.toContain('Secreta');
+        expect(r.familyMembers).toBeNull();
+        expect(r.id).toBe('a1');
+        expect(r.status).toBe('5');
+    });
+});
+
+describe('givenEntryHashes — what the adopter gave you stays yours', () => {
+    it('hashes the typed email and phone exactly as their auto-created entries', () => {
+        const got = givenEntryHashes([{ email: ' Carla@Example.com ', phone: '11 5555-0109' }]);
+        expect(got).toEqual(new Set([hashEntryValue('email', 'carla@example.com'), hashEntryValue('phone', '1155550109')]));
+    });
+
+    it('a phone with fewer than 8 digits unlocks nothing; blanks are ignored', () => {
+        expect(givenEntryHashes([{ email: null, phone: '555-0109' }]).size).toBe(0);
+        expect(givenEntryHashes([{ email: '', phone: '' }]).size).toBe(0);
+    });
+
+    it('only equality: the typed phone does not unlock a different number that ends the same', () => {
+        const v = resolveVisibility({
+            viewerEmail: 'b@example.com', ownerEmail: 'a@example.com', isAdmin: false, isModerator: false,
+            isOrgMate: false, isEditor: false, grants: [],
+            givenEntryHashes: givenEntryHashes([{ phone: '11 5555-0109' }]),
+        });
+        const entries: ContactEntry[] = [
+            { type: 'phone', value: '11 5555-0109' },
+            { type: 'phone', value: '+54 9 11 5555-0109' },
+            { type: 'email', value: 'a-private@example.com' },
+        ];
+        const visible = maskContactEntries(entries, v).entries.filter(e => !e.masked).map(e => e.value);
+        expect(visible).toEqual(['11 5555-0109']);
+        expect(v.tier).toBe('partial');
+        expect(v.nothingMasked).toBe(false);
+    });
+
+    it('without given hashes resolveVisibility is unchanged', () => {
+        const v = resolveVisibility({
+            viewerEmail: 'b@example.com', ownerEmail: 'a@example.com', isAdmin: false, isModerator: false,
+            isOrgMate: false, isEditor: false, grants: [],
+        });
+        expect(v.tier).toBe('none');
+        expect(v.unlockedEntryHashes.size).toBe(0);
     });
 });

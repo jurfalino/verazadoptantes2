@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formLinkKind, formResultsView, planFormLink, summarizeAdopterForms } from './formLink';
+import { formLinkKind, formResultsView, planFormLink, summarizeAdopterForms, canLinkSubmissionDirectly } from './formLink';
 
 const AUTO = 'auto-1';
 const EXISTING = 'existing-1';
@@ -156,5 +156,26 @@ describe('summarizeAdopterForms', () => {
         ], ME, (id) => (id === 'pending' ? 1 : 0));
         expect(s.latest?.submissionId).toBe('decided');
         expect(s.needsReview).toBe(true);
+    });
+});
+
+describe('canLinkSubmissionDirectly', () => {
+    const base = { targetLive: true, isRecordedMatch: false, callerFullySees: false };
+
+    it('refuses a profile that is neither a recorded match nor fully visible (no forged applicants)', () => {
+        expect(canLinkSubmissionDirectly(base)).toEqual({ ok: false, reason: 'not_allowed' });
+    });
+
+    it('allows the profile she just created from the form (her own — fully visible)', () => {
+        expect(canLinkSubmissionDirectly({ ...base, callerFullySees: true })).toEqual({ ok: true });
+    });
+
+    it('allows a match recorded for this submission', () => {
+        expect(canLinkSubmissionDirectly({ ...base, isRecordedMatch: true })).toEqual({ ok: true });
+    });
+
+    it('refuses a deleted or missing profile, even a recorded match', () => {
+        expect(canLinkSubmissionDirectly({ ...base, targetLive: false, isRecordedMatch: true }))
+            .toEqual({ ok: false, reason: 'target_unavailable' });
     });
 });

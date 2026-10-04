@@ -208,6 +208,14 @@ export async function setProfilePicture(adopterId: string, imageId: string) {
     // cleanly (outside the try) rather than being masked as a generic failure.
     const actor = await getUser();
     await assertCanChangeProfilePhoto(db, adopterId, actor);
+    // The photo must be one of THIS adopter's: editing adopter A must not let
+    // anyone flag another adopter's (or an animal gallery's) image.
+    const image = await db.select({ adopterId: adopterImages.adopterId }).from(adopterImages)
+        .where(eq(adopterImages.id, imageId)).get();
+    if (!image || image.adopterId !== adopterId) {
+        const errorId = logger.error('setProfilePicture: image does not belong to this adopter', new Error('image/adopter mismatch'), { adopterId, imageId, actor });
+        throw new Error(`Failed to set profile picture (Error ID: ${errorId})`);
+    }
     try {
         // First, unset any existing profile picture for this adopter
         await db.update(adopterImages)
@@ -220,7 +228,7 @@ export async function setProfilePicture(adopterId: string, imageId: string) {
         // Then set the new profile picture
         await db.update(adopterImages)
             .set({ isProfilePicture: 1 })
-            .where(eq(adopterImages.id, imageId));
+            .where(and(eq(adopterImages.id, imageId), eq(adopterImages.adopterId, adopterId)));
 
         revalidatePath(`/adopter/${adopterId}`);
 
@@ -249,10 +257,26 @@ export async function setProfilePicture(adopterId: string, imageId: string) {
 }
 
 export async function getAdoptionImages(adoptionId: string) {
+    // Signed-in rescuers only — the adopter profile's history (AdoptionHistory)
+    // and the record editor (AdoptionFormEditV2) are the callers, both behind
+    // sign-in. Placement / event photos are never for anonymous eyes (the
+    // public surfaces read scope='animal' through their own routes). Only the
+    // fields those two components render are returned: no uploader email, no
+    // adopter id, no scope.
+    try { await getUser(); } catch {
+        logger.warn('getAdoptionImages: refused — no session', { adoptionId });
+        return [];
+    }
     try {
         const db = await getDb();
         if (!db) return [];
-        return await db.select().from(adopterImages)
+        return await db.select({
+            id: adopterImages.id,
+            url: adopterImages.url,
+            caption: adopterImages.caption,
+            mediaType: adopterImages.mediaType,
+            thumbnailUrl: adopterImages.thumbnailUrl,
+        }).from(adopterImages)
             .where(eq(adopterImages.adoptionId, adoptionId))
             .orderBy(animalPrimaryFirst(), sql`${adopterImages.uploadedAt} DESC`)
             .all();

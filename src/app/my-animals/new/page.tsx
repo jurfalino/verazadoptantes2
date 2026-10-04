@@ -11,6 +11,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { computeBirthDate, deriveAgeFromBirthDate, parseLegacyAge } from '@/lib/ageUtils';
 import Link from 'next/link';
 import { zarazTrack } from '@/lib/zaraz';
+import { isFemaleAnimal } from '@/domain/animalSex';
 
 /** Compress image to max 1200px and JPEG 80% */
 function compressImage(file: File): Promise<string> {
@@ -241,7 +242,7 @@ function CreateAnimalForm() {
                 t('toast.saved_title'),
                 isEditMode
                     ? t('dashboard.animal_updated')
-                    : (t('dashboard.animal_listed') || `${formData.animalName} listed for adoption!`).replace('{name}', formData.animalName),
+                    : (t(isFemaleAnimal(formData.sex) ? 'dashboard.animal_listed_f' : 'dashboard.animal_listed') || `${formData.animalName} listed for adoption!`).replace('{name}', formData.animalName),
             );
             router.push('/my-animals');
         } catch (err) {
@@ -259,6 +260,8 @@ function CreateAnimalForm() {
             </div>
         );
     }
+
+    const photoCount = existingImages.length + pendingImages.length;
 
     return (
         <div className="min-h-screen bg-stone-50 py-12 px-4">
@@ -523,7 +526,7 @@ function CreateAnimalForm() {
                                     {uploading ? (t('adopter.uploading') || 'Uploading...') : (t('common.add_photo') || '+ Add Photo')}
                                     <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploading} />
                                 </label>
-                                <span className="text-xs text-teal-700">{existingImages.length + pendingImages.length} {t('common.photos') || 'photos'}</span>
+                                <span className="text-xs text-teal-700">{photoCount} {photoCount === 1 ? (t('common.photo_one') || 'photo') : (t('common.photos') || 'photos')}</span>
                             </div>
                         </div>
 

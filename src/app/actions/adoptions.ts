@@ -6,7 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
-import { tokenizeAdopter } from './duplicates';
+import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { saveAdoptionSchema } from './validation';
 import { insertRecord, updateRecord, deleteRecordById, softDeleteAnimal, isAnimalBacked, countAnimalLinks, deletePlacementForAdopter } from './_recordWrite';
 import { decideAnimalFate, NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
@@ -29,6 +29,19 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
         const existing = data.id ? await db.select().from(adoptions).where(eq(adoptions.id, data.id)).get() : null;
 
         if (existing) {
+            // Editing an existing record is a MUTATION: the record's creator,
+            // a teammate of theirs, or an admin — exactly deleteAdoption's gate
+            // and what the UI offers (AdoptionHistory canEdit; the animal page
+            // via assertCanEditAnimal). Adding a new record stays open.
+            const { isAdminAsync } = await import('@/config/admins');
+            const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+            if (!(await isOwnerOrOrgMate(changedBy, existing.addedBy)) && !(await isAdminAsync(changedBy))) {
+                // Thrown like every other saveAdoption failure (callers treat a
+                // throw as failure); the catch below logs it with the errorId
+                // the user sees.
+                throw new Error('Not authorized to edit this record');
+            }
+
             // Update existing
             // Calculate changes
             const changes: Record<string, any> = {};
@@ -347,6 +360,13 @@ async function attachAdoptionThumbnails<T extends { id: string }>(
 }
 
 export async function getAdoptions(adopterId: string) {
+    // Every page that shows an adopter's history requires sign-in; the records
+    // carry verified home addresses, notes and rescuer emails. Anonymous
+    // callers get nothing.
+    try { await getUser(); } catch {
+        logger.warn('getAdoptions: refused — no session', { adopterId });
+        return [];
+    }
     try {
         const db = await getDb();
         if (!db) return [];

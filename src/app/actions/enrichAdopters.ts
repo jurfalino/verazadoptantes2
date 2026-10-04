@@ -1,4 +1,7 @@
-'use server';
+// NOT 'use server' (since the reel-11 fixes): a server-only helper called by
+// actions and routes. As an export of a 'use server' module it was a
+// browser-callable endpoint that checked no session. Never import this file
+// from a client component.
 
 import { adoptions, adopterFlags, adopterStats, adopterImages, duplicateCandidates } from '@/db/schema';
 import { eq, sql, and, isNull, ne, or } from 'drizzle-orm';
