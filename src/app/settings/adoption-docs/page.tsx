@@ -33,6 +33,9 @@ type Status = 'loading' | 'off' | 'forbidden' | 'error' | 'ready';
 
 const SOURCE = 'AdoptionDocsEditor';
 
+/** «otra persona del grupo» can open a sentence. */
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 const btnPrimary = 'min-h-11 py-3 px-6 rounded-xl text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors';
 const btnSecondary = 'min-h-11 py-3 px-6 rounded-xl text-sm font-bold text-teal-700 bg-teal-50 border border-teal-200 hover:bg-teal-100 hover:border-teal-400 disabled:opacity-40 transition-colors';
 
@@ -240,9 +243,10 @@ function AdoptionDocsEditor() {
             if (mineSaved.length === 1) toast.success(t('adoptionDocs.toast_saved_section').replace('{n}', mineSaved[0]));
             else if (mineSaved.length > 1) toast.success(t('adoptionDocs.toast_saved_sections').replace('{list}', listOf(mineSaved)));
             for (const x of d.updatedByOthers) {
-                toast.info(t('adoptionDocs.toast_updated_by_other').replace('{name}', x.by || t('adoptionDocs.someone')).replace('{n}', x.key));
+                toast.info(capitalize(t('adoptionDocs.toast_updated_by_other').replace('{name}', x.by || t('adoptionDocs.someone')).replace('{n}', x.key)));
             }
-            for (const cf of d.conflicts) toast.error(t('adoptionDocs.toast_needs_review').replace('{n}', cf.key));
+            // A conflict is not an error: the section's banner carries the choice.
+            for (const cf of d.conflicts) toast.warning(t('adoptionDocs.toast_needs_review').replace('{n}', cf.key));
             if (!mineSaved.length && !d.updatedByOthers.length && !d.conflicts.length) toast.success(t('settings.saved'));
             await load(false); // refresh "Última edición"
         } catch (error) {
@@ -328,9 +332,9 @@ function AdoptionDocsEditor() {
             });
             const question = (id: string) => t(id.startsWith('identity-') || id === 'selfie' ? `adoptionDocs.step_${id.replace('-', '_')}` : `petshield.fields.${id}`);
             for (const x of d.updatedByOthers) {
-                toast.info(t('adoptionDocs.toast_step_updated_by_other').replace('{name}', x.by || t('adoptionDocs.someone')).replace('{question}', question(x.key)));
+                toast.info(capitalize(t('adoptionDocs.toast_step_updated_by_other').replace('{name}', x.by || t('adoptionDocs.someone')).replace('{question}', question(x.key))));
             }
-            if (d.conflicts.length) toast.error(t('adoptionDocs.toast_steps_need_review'));
+            if (d.conflicts.length) toast.warning(t('adoptionDocs.toast_steps_need_review'));
             if (d.saved.some(id => changes.some(c => c.key === id)) || (!d.conflicts.length && !d.updatedByOthers.length)) toast.success(t('settings.saved'));
             await load(false); // refresh "Última edición"
         } catch (error) {

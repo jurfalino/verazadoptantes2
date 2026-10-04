@@ -20,6 +20,9 @@ import { storedSection } from '@/domain/adoptionDocsCollab';
 import RichTextEditor from './RichTextEditor';
 import RichDocPreview, { StandardSectionPreview } from './RichDocPreview';
 
+/** «otra persona del grupo» can open a sentence. */
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 export type SectionConflictView = { by: string; doc: RichDoc | null };
 
 type Props = {
@@ -88,7 +91,7 @@ export default function ContractSectionsEditor({
 
                         {conflict && (
                             <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-2" data-testid={`contract-section-${k}-conflict`}>
-                                <p className="text-sm text-amber-900">{t('adoptionDocs.conflict_banner').replace('{name}', name(conflict.by))}</p>
+                                <p className="text-sm text-amber-900">{capitalize(t('adoptionDocs.conflict_banner').replace('{name}', name(conflict.by)))}</p>
                                 <div className="flex flex-wrap gap-2">
                                     <button type="button" className={linkBtn} onClick={() => setCompare(c => ({ ...c, [k]: !c[k] }))} data-testid={`contract-section-${k}-view-theirs`}>
                                         {compare[k] ? t('adoptionDocs.conflict_hide') : t('adoptionDocs.conflict_view')}

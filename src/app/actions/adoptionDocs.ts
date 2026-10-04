@@ -206,7 +206,8 @@ async function stepAuthors(
     try {
         const where = docsOwner.ownerType === 'org'
             ? and(eq(auditLog.action, ADOPTION_DOCS_FORM_SAVED), eq(auditLog.target, docsOwner.ownerId))
-            : and(eq(auditLog.action, ADOPTION_DOCS_FORM_SAVED), eq(auditLog.userEmail, docsOwner.ownerId), isNull(auditLog.target));
+            // Self docs: the owner id is the normalized email; the audit row has the session email as sent.
+            : and(eq(auditLog.action, ADOPTION_DOCS_FORM_SAVED), sql`lower(${auditLog.userEmail}) = ${docsOwner.ownerId}`, isNull(auditLog.target));
         const raw = await db.select({ userEmail: auditLog.userEmail, details: auditLog.details })
             .from(auditLog).where(where).orderBy(desc(auditLog.createdAt), sql`rowid DESC`).limit(50).all() as Array<{ userEmail: string | null; details: string | null }>;
         rows = raw.map(r => {

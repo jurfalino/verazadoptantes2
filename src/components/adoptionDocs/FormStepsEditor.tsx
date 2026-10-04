@@ -29,6 +29,9 @@ function LockIcon() {
     );
 }
 
+/** «otra persona del grupo» can open a sentence. */
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 export type StepConflictView = { by: string; theirs: 'hidden' | 'shown' };
 
 type Props = {
@@ -78,9 +81,9 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
                 {conflict && (
                     <div role="alert" className="mx-2 mt-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 space-y-1" data-testid={`form-step-${id}-conflict`}>
                         <p className="text-xs text-amber-900">
-                            {t('adoptionDocs.step_conflict')
+                            {capitalize(t('adoptionDocs.step_conflict')
                                 .replace('{name}', name(conflict.by))
-                                .replace('{state}', t(conflict.theirs === 'hidden' ? 'adoptionDocs.step_state_hidden' : 'adoptionDocs.step_state_shown'))}
+                                .replace('{state}', t(conflict.theirs === 'hidden' ? 'adoptionDocs.step_state_hidden' : 'adoptionDocs.step_state_shown')))}
                         </p>
                         <div className="flex flex-wrap gap-2">
                             <button type="button" disabled={saving} onClick={() => onKeepTheirs?.(id)} className="min-h-11 px-2 text-xs font-semibold text-teal-700 hover:underline disabled:opacity-40" data-testid={`form-step-${id}-keep-theirs`}>

@@ -193,3 +193,49 @@ describe('collaborative form editing', () => {
         expect(r.success && r.data.conflicts).toEqual([]);
     });
 });
+
+describe('«Los míos» (self) — same rules, own docs', () => {
+    const SELF = { type: 'self' as const };
+    const ANA_MIXED = 'Ana@Example.com'; // the session email as the provider sent it
+
+    beforeEach(() => {
+        const m = migratedDb();
+        state.db = m.db; state.sqlite = m.sqlite; sqlite = m.sqlite as unknown as Sql; state.tick = 0;
+        auditSpy.mockReset();
+        sqlite.prepare(`INSERT INTO user (id, name, email) VALUES ('u-ana', 'Ana Pérez', ?)`).run(ANA_MIXED);
+    });
+
+    async function loadSelf() {
+        session.user = ANA_MIXED;
+        const res = await getAdoptionDocs(SELF);
+        if (!res.success || !res.data) throw new Error('load failed');
+        return res.data;
+    }
+
+    it('saves a section and a question, and both come back on reload', async () => {
+        const d = await loadSelf();
+        const q = Object.keys(d.revisions.steps)[0];
+        const c = await saveContractSections(SELF, { loaded: d.revisions.sections, changes: [{ key: '2', doc: doc('Mío'), expectedRev: 'std' }] });
+        const f = await saveFormSteps(SELF, { loaded: d.revisions.steps, changes: [{ key: q, hidden: true, expected: 'shown' }] });
+        expect(c.success && c.data.saved).toEqual(['2']);
+        expect(f.success && f.data.saved).toEqual([q]);
+        const again = await loadSelf();
+        expect(textOf(again.sections['2'])).toBe('Mío');
+        expect(again.hiddenSteps).toContain(q);
+    });
+
+    it('a stale second tab conflicts, attributed to me by name (mixed-case session email)', async () => {
+        const tab1 = await loadSelf();
+        const tab2 = await loadSelf();
+        const q = Object.keys(tab1.revisions.steps)[1];
+        await saveContractSections(SELF, { loaded: tab1.revisions.sections, changes: [{ key: '3', doc: doc('tab 1'), expectedRev: 'std' }] });
+        await saveFormSteps(SELF, { loaded: tab1.revisions.steps, changes: [{ key: q, hidden: true, expected: 'shown' }] });
+        const c = await saveContractSections(SELF, { loaded: tab2.revisions.sections, changes: [{ key: '3', doc: doc('tab 2'), expectedRev: 'std' }] });
+        expect(c.success && c.data.conflicts.map(x => [x.key, x.by])).toEqual([['3', 'Ana Pérez']]);
+        // Tab 2 still thinks the question is shown; it wants it shown → but tab 1 hid it meanwhile.
+        const f = await saveFormSteps(SELF, { loaded: tab2.revisions.steps, changes: [{ key: q, hidden: false, expected: tab2.revisions.steps[q] }] });
+        expect(f.success && f.data.saved).toEqual([]);
+        const f2 = await saveFormSteps(SELF, { loaded: {}, changes: [{ key: q, hidden: false, expected: 'shown' }] });
+        expect(f2.success && f2.data.conflicts).toEqual([{ key: q, by: 'Ana Pérez', theirs: 'hidden' }]);
+    });
+});
