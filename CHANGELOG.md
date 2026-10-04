@@ -2,6 +2,40 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.143] - 2026-10-04
+
+### Added — what an adopter gave you stays yours
+
+When an adopter fills out your (or your team's) adoption form and you link it to a
+profile another rescuer created («Es la misma persona»), you keep seeing in full the
+phone and email they typed in your form — on the profile, in search, on match cards,
+in «Historial médico» and in the follow-up WhatsApp. Everything else on that profile
+stays protected; the address is never unlocked this way. Rescuers who never received
+a form from that person see nothing new.
+
+### Security — server actions reachable from the browser now check who is calling
+
+An audit of every action the browser can call (114 of 146) found several that
+trusted the caller. All fixed; legitimate users see no change except where noted.
+
+- **Merging profiles** (`mergeAdopters`) could be called without signing in. It is no
+  longer reachable from the browser; «Mis adoptantes» uses a new checked action that
+  only merges pairs listed for you, and never absorbs another rescuer's profile into
+  yours. *Change:* if your record is the OLDER of a pair with another rescuer's, you
+  can no longer merge it yourself — that rescuer or an admin can.
+- **Creating/editing adopters** now requires a session and only writes the fields the
+  form edits (owner, creation date, deletion and similar fields can't be set from the
+  browser).
+- **Editing adoption records** now requires being the record's creator, a teammate or
+  an admin (adding records stays open, as designed).
+- **Adoption history and its photos** are no longer readable without signing in;
+  photos no longer carry uploader emails.
+- **Admin metrics** are admin-only (moderators no longer see a widget that can't load).
+- **Duplicate lookups** need a session; search result limits are capped.
+- Identity-taking helpers (database access, org membership, adopter creation, user
+  names/country) are no longer exposed as server actions.
+- Leftover duplicate flags from past merges no longer show in «Mis adoptantes».
+
 ## [2.56.142] - 2026-10-04
 
 ### Security — other rescuers' protected contact data no longer leaks through matches and contracts
