@@ -14,6 +14,7 @@ import { isOrgMate } from '@/lib/orgMembership';
 import { isAdminAsync } from '@/config/admins';
 import { formLinkKind } from '@/domain/formLink';
 import { computeAvgRating } from '@/domain/ratings';
+import { maskMatchCardsForViewer } from '@/lib/piiAccessServer';
 
 interface MatchedAdopter {
     id: string;
@@ -143,7 +144,12 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         // returns wrong results — see docs/D1_COMPATIBILITY.md).
         const [rows, imageRows, linkedRatings] = await Promise.all([
             db
-                .select({ id: adopters.id, name: adopters.name, contactInfo: adopters.contactInfo, addressInfo: adopters.addressInfo, status: adopters.status, deletedAt: adopters.deletedAt })
+                .select({
+                    id: adopters.id, name: adopters.name, status: adopters.status, deletedAt: adopters.deletedAt,
+                    // Masking inputs only — never forwarded to the client.
+                    addedBy: adopters.addedBy, isPublic: adopters.isPublic,
+                    contactInfo: adopters.contactInfo, contactEntries: adopters.contactEntries, addressInfo: adopters.addressInfo,
+                })
                 .from(adopters)
                 .where(or(...profileIds.map(id => eq(adopters.id, id)))!)
                 .all(),
@@ -174,11 +180,31 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         for (const row of imageRows) {
             if (!imageByAdopter.has(row.adopterId)) imageByAdopter.set(row.adopterId, row.url);
         }
-        type Row = Omit<ProfileRow, 'profileImageUrl'> & { deletedAt: Date | null };
-        const withImage = (r: Row): ProfileRow => {
-            const { deletedAt: _deletedAt, ...rest } = r;
-            return { ...rest, profileImageUrl: imageByAdopter.get(r.id) ?? null };
+        type Row = {
+            id: string; name: string; status: string | null; deletedAt: Date | null;
+            addedBy: string | null; isPublic: number | null;
+            contactInfo: string | null; contactEntries: string | null; addressInfo: string | null;
         };
+        // Another rescuer's protected profile must not reach this page raw
+        // (props are serialized into the RSC payload): contact and address go
+        // through the same masking discovery search applies, and only the
+        // values this applicant typed are unlocked. Built field by field — never
+        // spread a DB row into the props.
+        const liveRows = (rows as Row[]).filter(r => !r.deletedAt);
+        const masked = await maskMatchCardsForViewer(
+            currentUser,
+            liveRows,
+            [metadata.submittedData?.phone, metadata.submittedData?.email],
+            { submissionId },
+        );
+        const withImage = (r: Row): ProfileRow => ({
+            id: r.id,
+            name: r.name,
+            contactInfo: masked.get(r.id)?.contactInfo ?? null,
+            addressInfo: masked.get(r.id)?.addressInfo ?? null,
+            status: r.status,
+            profileImageUrl: imageByAdopter.get(r.id) ?? null,
+        });
 
         // Soft-deleted (merged-away) matches are dropped at read time, so a
         // notification recorded before a merge still renders correctly.

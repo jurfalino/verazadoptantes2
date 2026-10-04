@@ -5,17 +5,18 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { getDbMock, warnMock } = vi.hoisted(() => ({ getDbMock: vi.fn(), warnMock: vi.fn() }));
+const { getDbMock, warnMock, orgMatesMock } = vi.hoisted(() => ({ getDbMock: vi.fn(), warnMock: vi.fn(), orgMatesMock: vi.fn() }));
 
 vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
 vi.mock('@/lib/logger', () => ({ logger: { warn: warnMock, info: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 // Server-only neighbours piiAccessServer imports; not exercised here.
-vi.mock('@/config/admins', () => ({ isAdminAsync: vi.fn(), isModeratorOrAdminAsync: vi.fn() }));
+vi.mock('@/config/admins', () => ({ isAdminAsync: vi.fn(async () => false), isModeratorOrAdminAsync: vi.fn(async () => false) }));
 vi.mock('@/lib/orgMembership', () => ({ isOrgMate: vi.fn() }));
-vi.mock('@/app/actions/organizations', () => ({ getOrgMemberEmailsFor: vi.fn() }));
+vi.mock('@/app/actions/organizations', () => ({ getOrgMemberEmailsFor: orgMatesMock }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 
-import { isPiiGatingEnabled } from './piiAccessServer';
+import { isPiiGatingEnabled, maskMatchCardsForViewer, type MatchCardProfileRow } from './piiAccessServer';
+import { appConfig } from '@/db/schema';
 import { getFeatureFlag } from '@/config/features';
 
 /** A db whose app_config read resolves to `row`. */
@@ -63,5 +64,94 @@ describe('PII gating flag read', () => {
             'getFeatureFlag: DB read failed, using fallback',
             expect.objectContaining({ flag: 'ENABLE_CHAT_WIDGET', fallback: false }),
         );
+    });
+});
+
+/**
+ * A fake D1 for the match-card path: every app_config flag reads `flagValue`
+ * (or the read throws), and every other table (editor history, grants) is empty.
+ */
+function fakeDb(flagValue: string | Error) {
+    return {
+        select: () => ({
+            from: (table: unknown) => ({
+                where: () => {
+                    const rows: unknown[] = [];
+                    return {
+                        get: async () => {
+                            if (table === appConfig) {
+                                if (flagValue instanceof Error) throw flagValue;
+                                return { value: flagValue };
+                            }
+                            return undefined;
+                        },
+                        limit: async () => rows,
+                        then: (res: (v: unknown[]) => unknown) => Promise.resolve(rows).then(res),
+                    };
+                },
+            }),
+        }),
+        selectDistinct: () => ({ from: () => ({ where: async () => [] }) }),
+    };
+}
+
+describe('maskMatchCardsForViewer — B\'s form matching A\'s protected profile', () => {
+    const PHONE = '+54 9 11 5555-0109';
+    const OTHER_EMAIL = 'carla.privada@example.com';
+    const row: MatchCardProfileRow = {
+        id: 'adopter-a', addedBy: 'rescuer-a@example.com', isPublic: 0,
+        contactEntries: JSON.stringify([
+            { type: 'phone', value: PHONE },
+            { type: 'email', value: OTHER_EMAIL },
+            { type: 'address', value: 'Calle Secreta 1234, Flores, CABA' },
+        ]),
+        contactInfo: `Tel: ${PHONE}\nEmail: ${OTHER_EMAIL}`,
+        addressInfo: 'Calle Secreta 1234, Flores, CABA',
+    };
+    const submitted = ['11 5555-0109', 'nueva@example.com'];
+
+    beforeEach(() => {
+        delete process.env.ENABLE_PII_ACCESS_GATING;
+        delete process.env.ENABLE_PUBLIC_PROFILES;
+        getDbMock.mockReset();
+        warnMock.mockReset();
+        orgMatesMock.mockReset();
+        orgMatesMock.mockResolvedValue([]);
+    });
+
+    it('gating ON, another rescuer: only the phone B\'s applicant typed is shown in full', async () => {
+        getDbMock.mockResolvedValue(fakeDb('true'));
+        const r = (await maskMatchCardsForViewer('rescuer-b@example.com', [row], submitted)).get('adopter-a')!;
+        expect(Object.keys(r).sort()).toEqual(['addressInfo', 'contactInfo']);
+        expect(r.contactInfo).toContain(PHONE);
+        expect(r.contactInfo).not.toContain(OTHER_EMAIL);
+        expect(r.addressInfo).not.toContain('Secreta');
+    });
+
+    it('gating ON, the owner: everything', async () => {
+        getDbMock.mockResolvedValue(fakeDb('true'));
+        const r = (await maskMatchCardsForViewer('rescuer-a@example.com', [row], submitted)).get('adopter-a')!;
+        expect(r).toEqual({ contactInfo: row.contactInfo, addressInfo: row.addressInfo });
+    });
+
+    it('gating flag unreadable: treated as ON, still masked', async () => {
+        getDbMock.mockResolvedValue(fakeDb(new Error('D1_ERROR: network')));
+        const r = (await maskMatchCardsForViewer('rescuer-b@example.com', [row], submitted)).get('adopter-a')!;
+        expect(r.contactInfo).not.toContain(OTHER_EMAIL);
+        expect(r.addressInfo).not.toContain('Secreta');
+    });
+
+    it('visibility resolution throwing: masked, never raw', async () => {
+        getDbMock.mockResolvedValue(fakeDb('true'));
+        orgMatesMock.mockRejectedValue(new Error('D1_ERROR: org lookup'));
+        const r = (await maskMatchCardsForViewer('rescuer-a@example.com', [row], submitted)).get('adopter-a')!;
+        expect(r.contactInfo).not.toContain(OTHER_EMAIL);
+        expect(r.addressInfo).not.toContain('Secreta');
+    });
+
+    it('gating OFF: raw, as on the profile page and in search', async () => {
+        getDbMock.mockResolvedValue(fakeDb('false'));
+        const r = (await maskMatchCardsForViewer('rescuer-b@example.com', [row], submitted)).get('adopter-a')!;
+        expect(r).toEqual({ contactInfo: row.contactInfo, addressInfo: row.addressInfo });
     });
 });

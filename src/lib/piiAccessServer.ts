@@ -23,6 +23,8 @@ import {
     matchSearchEntries,
     matchSearchNameTokens,
     hashNameToken,
+    maskMatchCardContact,
+    type MatchCardContact,
     type Visibility,
     type PiiGrantRow,
     type MaskContactOptions,
@@ -199,6 +201,61 @@ export async function resolveAdoptersVisibility(
             error: e instanceof Error ? e.message : String(e),
         });
         for (const a of adopters) out.set(a.id, NO_ACCESS_VISIBILITY);
+        return out;
+    }
+}
+
+/** The adopter columns a form / contract match card's masking needs. */
+export interface MatchCardProfileRow {
+    id: string;
+    addedBy: string | null;
+    isPublic: number | boolean | null;
+    contactInfo: string | null;
+    contactEntries: string | null;
+    addressInfo: string | null;
+}
+
+/**
+ * Mask the existing profiles on a form-results / contract-results match card
+ * for this viewer, exactly as discovery search masks its results: gating flag
+ * (isPiiGatingEnabled, fails closed) → resolveAdoptersVisibility → public-
+ * profile option → maskMatchCardContact, with the values this submission's
+ * applicant typed (`submitted`) unlocking the equal entries. Any error masks
+ * everything (null contact and address) — never the raw row.
+ */
+export async function maskMatchCardsForViewer(
+    viewerEmail: string | null | undefined,
+    rows: MatchCardProfileRow[],
+    submitted: Array<string | null | undefined>,
+    context: Record<string, unknown> = {},
+): Promise<Map<string, MatchCardContact>> {
+    const out = new Map<string, MatchCardContact>();
+    if (rows.length === 0) return out;
+    try {
+        if (!(await isPiiGatingEnabled())) {
+            for (const r of rows) out.set(r.id, maskMatchCardContact(r, null, {}, submitted));
+            return out;
+        }
+        const [visibilityMap, publicProfilesFlag] = await Promise.all([
+            resolveAdoptersVisibility(viewerEmail, rows.map(r => ({ id: r.id, addedBy: r.addedBy }))),
+            isPublicProfilesEnabled(),
+        ]);
+        for (const r of rows) {
+            out.set(r.id, maskMatchCardContact(
+                r,
+                visibilityMap.get(r.id) ?? NO_ACCESS_VISIBILITY,
+                maskOptionsFor(publicProfilesFlag, r),
+                submitted,
+            ));
+        }
+        return out;
+    } catch (e) {
+        logger.warn('maskMatchCardsForViewer failed — failing closed (contact hidden)', {
+            ...context, count: rows.length, viewer: viewerEmail,
+            error: e instanceof Error ? e.message : String(e),
+        });
+        out.clear();
+        for (const r of rows) out.set(r.id, { contactInfo: null, addressInfo: null });
         return out;
     }
 }

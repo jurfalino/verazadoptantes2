@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { logger } from '@/lib/logger';
 import { isOrgMate } from '@/lib/orgMembership';
 import { isAdminAsync } from '@/config/admins';
+import { maskMatchCardsForViewer } from '@/lib/piiAccessServer';
 import ContractResultsMatchCard from '@/components/ContractResultsMatchCard';
 import ContractResultsKeepNewButton from '@/components/ContractResultsKeepNewButton';
 
@@ -103,11 +104,37 @@ export default async function ContractResultsPage({ params }: { params: Promise<
         const adopterIds = metadata.matchedAdopters.map(a => a.id);
         // Filter soft-deleted (merged-duplicate) adopters at read time so even legacy
         // notifications whose stored matchedAdopters contains since-deleted IDs render correctly.
-        matchedProfiles = await db
-            .select({ id: adopters.id, name: adopters.name, contactInfo: adopters.contactInfo, status: adopters.status })
+        type Row = {
+            id: string; name: string; status: string | null;
+            addedBy: string | null; isPublic: number | null;
+            contactInfo: string | null; contactEntries: string | null; addressInfo: string | null;
+        };
+        const rows: Row[] = await db
+            .select({
+                id: adopters.id, name: adopters.name, status: adopters.status,
+                // Masking inputs only — never forwarded to the client.
+                addedBy: adopters.addedBy, isPublic: adopters.isPublic,
+                contactInfo: adopters.contactInfo, contactEntries: adopters.contactEntries, addressInfo: adopters.addressInfo,
+            })
             .from(adopters)
             .where(and(or(...adopterIds.map(id => eq(adopters.id, id)))!, isNull(adopters.deletedAt)))
             .all();
+        // Another rescuer's protected profile must not reach the card raw: the
+        // same masking discovery search applies, unlocking only what this
+        // contract's adopter typed. Built field by field — never spread a row.
+        const sd = metadata.submittedData;
+        const masked = await maskMatchCardsForViewer(
+            currentUser,
+            rows,
+            [sd?.phone, sd?.email, sd?.dni, ...(sd?.socialNetworks ?? '').split(/[\s,;]+/)],
+            { notificationId },
+        );
+        matchedProfiles = rows.map(r => ({
+            id: r.id,
+            name: r.name,
+            contactInfo: masked.get(r.id)?.contactInfo ?? null,
+            status: r.status,
+        }));
     }
 
     const hasMatches = metadata.matchCount > 0;

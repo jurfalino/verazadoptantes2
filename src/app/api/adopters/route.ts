@@ -11,7 +11,7 @@ import { tokenizeAdopter } from '@/app/actions/duplicates';
 import { processImageForStorage, uploadToR2 } from '@/lib/r2';
 import { createAdopterApiSchema } from '@/app/actions/validation';
 import { deserializeContactEntries, contactEntriesToBlob } from '@/lib/contactEntries';
-import { maskAdopterContact, renderName } from '@/lib/piiAccess';
+import { maskAdopterRow } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
 
 type MaskableRow = {
@@ -22,6 +22,7 @@ type MaskableRow = {
     contactEntries: string | null;
     addressInfo: string | null;
     familyMembers: string | null;
+    householdMembers?: string | null;
     /** Optional — when present + flag on, the whole row bypasses masking. */
     isPublic?: number | null;
 };
@@ -43,15 +44,7 @@ async function maskMatchesForViewer<T extends MaskableRow>(
         const vis = visMap.get(r.id);
         const maskOpts = maskOptionsFor(publicProfilesFlag, r);
         if (!vis || vis.nothingMasked || maskOpts.adopterIsPublic) return r;
-        const masked = maskAdopterContact(r, vis, maskOpts);
-        return {
-            ...r,
-            name: renderName(r.name, vis, undefined, maskOpts),
-            contactInfo: masked.contactInfo,
-            contactEntries: masked.contactEntries,
-            addressInfo: masked.addressInfo,
-            familyMembers: null,
-        };
+        return maskAdopterRow(r, vis, maskOpts);
     });
 }
 

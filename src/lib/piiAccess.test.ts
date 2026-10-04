@@ -17,6 +17,9 @@ import {
     piiCooldownUntil,
     reachablePhoneForViewer,
     contactOfferFor,
+    maskMatchCardContact,
+    maskAdopterRow,
+    submissionUnlockHashes,
     isContactableAdopter,
     PII_MASK,
     PII_DENIAL_COOLDOWN_DAYS,
@@ -987,5 +990,136 @@ describe('contactOfferFor — soft-deleted adopters offer nothing', () => {
         expect(isContactableAdopter({ deletedAt: new Date() })).toBe(false);
         expect(isContactableAdopter({ deletedAt: 1_700_000_000 })).toBe(false);
         expect(isContactableAdopter(null)).toBe(false);
+    });
+});
+
+describe('maskMatchCardContact — form / contract match cards mask like discovery', () => {
+    // Rescuer A's protected profile; rescuer B's applicant matched it by phone.
+    const PHONE = '+54 9 11 5555-0109';
+    const OTHER_EMAIL = 'carla.privada@example.com';
+    const STREET = 'Calle Secreta 1234 PB 6';
+    const profile = {
+        contactEntries: JSON.stringify([
+            { type: 'phone', value: PHONE },
+            { type: 'email', value: OTHER_EMAIL },
+            { type: 'address', value: `${STREET}, Flores, CABA` },
+        ]),
+        contactInfo: `Tel: ${PHONE}\nEmail: ${OTHER_EMAIL}`,
+        addressInfo: `${STREET}, Flores, CABA`,
+    };
+    const stranger = vis({});
+
+    it('stranger + applicant typed the same phone: that phone in full; other email and street stay masked', () => {
+        const r = maskMatchCardContact(profile, stranger, {}, ['11 5555-0109', 'nueva@example.com']);
+        expect(r.contactInfo).toContain(PHONE);
+        expect(r.contactInfo).not.toContain(OTHER_EMAIL);
+        expect(r.contactInfo).not.toContain('Secreta');
+        expect(r.addressInfo).not.toContain('Secreta');
+        expect(r.addressInfo).toContain('CABA');
+    });
+
+    it('stranger + nothing submitted that matches: no full value at all', () => {
+        const r = maskMatchCardContact(profile, stranger, {}, ['11 4000-0000', 'nueva@example.com']);
+        expect(r.contactInfo).not.toContain('5555-0109');
+        expect(r.contactInfo).not.toContain(OTHER_EMAIL);
+        expect(r.addressInfo).not.toContain('Secreta');
+    });
+
+    it('a superstring email does not unlock: a@example.com never reveals carla.privada@example.com', () => {
+        const r = maskMatchCardContact(profile, stranger, {}, ['privada@example.com']);
+        expect(r.contactInfo).not.toContain(OTHER_EMAIL);
+    });
+
+    it('the same email (any case) unlocks just that email', () => {
+        const r = maskMatchCardContact(profile, stranger, {}, ['Carla.Privada@Example.com ']);
+        expect(r.contactInfo).toContain(OTHER_EMAIL);
+        expect(r.contactInfo).not.toContain('5555-0109');
+    });
+
+    it('a 6-digit fragment (enough for search) does not unlock the phone here', () => {
+        const r = maskMatchCardContact(profile, stranger, {}, ['550109']);
+        expect(r.contactInfo).not.toContain('5555-0109');
+    });
+
+    it('address stays masked even when the applicant typed exactly the same one', () => {
+        const r = maskMatchCardContact(profile, stranger, {}, [`${STREET}, Flores, CABA`]);
+        expect(r.contactInfo).not.toContain('Secreta');
+        expect(r.addressInfo).not.toContain('Secreta');
+    });
+
+    it('an existing grant still unlocks (same as the profile page)', () => {
+        const r = maskMatchCardContact(profile, vis({ unlockedEntryHashes: new Set([hashEntryValue('email', OTHER_EMAIL)]) }), {}, []);
+        expect(r.contactInfo).toContain(OTHER_EMAIL);
+    });
+
+    it('legacy blob-only profile: same rules', () => {
+        const legacy = { contactEntries: null, contactInfo: `Tel: ${PHONE}\nEmail: ${OTHER_EMAIL}`, addressInfo: null };
+        const r = maskMatchCardContact(legacy, stranger, {}, [PHONE]);
+        expect(r.contactInfo).toContain(PHONE);
+        expect(r.contactInfo).not.toContain(OTHER_EMAIL);
+    });
+
+    it('full access (owner / teammate / admin / all-contact grant): raw', () => {
+        expect(maskMatchCardContact(profile, vis({ nothingMasked: true }), {}, []))
+            .toEqual({ contactInfo: profile.contactInfo, addressInfo: profile.addressInfo });
+    });
+
+    it('public profile: raw', () => {
+        expect(maskMatchCardContact(profile, stranger, { adopterIsPublic: true }, []))
+            .toEqual({ contactInfo: profile.contactInfo, addressInfo: profile.addressInfo });
+    });
+
+    it('gating off (visibility null): raw, as on the profile page and in search', () => {
+        expect(maskMatchCardContact(profile, null, {}, []))
+            .toEqual({ contactInfo: profile.contactInfo, addressInfo: profile.addressInfo });
+    });
+});
+
+describe('submissionUnlockHashes', () => {
+    const entries: ContactEntry[] = [
+        { type: 'phone', value: '+54 9 11 5555-0109' },
+        { type: 'id', value: '30.123.456' },
+        { type: 'social', value: '@carla.g' },
+        { type: 'address', value: 'Cuba 2734 PB 6, Belgrano' },
+    ];
+
+    it('each field is its own query: a phone never carries a DNI along', () => {
+        const got = submissionUnlockHashes(entries, ['11 5555-0109 30123456']);
+        expect(got.has(hashEntryValue('id', '30.123.456'))).toBe(false);
+    });
+
+    it('same DNI (formatting aside) and same social handle unlock', () => {
+        const got = submissionUnlockHashes(entries, ['30123456', 'carla.g']);
+        expect(got.has(hashEntryValue('id', '30.123.456'))).toBe(true);
+        expect(got.has(hashEntryValue('social', '@carla.g'))).toBe(true);
+    });
+
+    it('never an address, and blanks are ignored', () => {
+        const got = submissionUnlockHashes(entries, ['Cuba 2734 PB 6, Belgrano', '', null, undefined]);
+        expect(got.size).toBe(0);
+    });
+});
+
+describe('maskAdopterRow — a full row returned to a non-privileged viewer (GET /api/adopters)', () => {
+    const row = {
+        id: 'a1', addedBy: 'rescuer-a@example.com', name: 'Carla Gómez', status: '5',
+        contactInfo: 'Tel: 1155550109',
+        contactEntries: JSON.stringify([{ type: 'phone', value: '1155550109' }]),
+        addressInfo: 'Calle Secreta 1234, Flores',
+        familyMembers: 'Hijo: Tomás 1144448888',
+        householdMembers: JSON.stringify([
+            { id: 'hm-1', name: 'Tomás Gómez', relationship: 'child', contactEntries: [{ id: 'ce-1', type: 'phone', value: '1144448888' }] },
+        ]),
+    };
+
+    it('masks every PII column, household members included', () => {
+        const r = maskAdopterRow(row, vis({}));
+        const all = JSON.stringify(r);
+        expect(all).not.toContain('1155550109');
+        expect(all).not.toContain('1144448888');
+        expect(all).not.toContain('Secreta');
+        expect(r.familyMembers).toBeNull();
+        expect(r.id).toBe('a1');
+        expect(r.status).toBe('5');
     });
 });
