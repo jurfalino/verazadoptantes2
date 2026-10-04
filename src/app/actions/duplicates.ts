@@ -4,7 +4,7 @@ import { adopters, adopterFlags, adopterStats, duplicateTokens, duplicateCandida
 import { eq, or, and, inArray, sql, isNull } from 'drizzle-orm';
 import { logger, generateErrorId } from '@/lib/logger';
 import { getDb, getUser } from './_db';
-import { decideDedupMerge, type DedupSide } from '@/domain/dedupPair';
+import { decideDedupMerge, isOpenDuplicateFlag, type DedupSide } from '@/domain/dedupPair';
 import { normalizeText, extractPhones, extractEmails, extractSocials, normalizeSocialHandle, detectSocialPlatformFromValue } from '@/lib/tokenizer';
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, storedScoreToPercent, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 
@@ -237,6 +237,12 @@ export interface DuplicateCandidate {
  * Used by profile banner and flagging pre-population.
  */
 export async function getDuplicateCandidates(adopterId: string): Promise<DuplicateCandidate[]> {
+    // Signed-in only (the profile page and its flagging panel both are): the
+    // result names the other profiles that look like this one.
+    try { await getUser(); } catch {
+        logger.warn('getDuplicateCandidates: refused — no session', { adopterId });
+        return [];
+    }
     try {
         const db = await getDb();
         if (!db) return [];
@@ -462,9 +468,9 @@ export async function mergePendingDedupPair(candidateId: string): Promise<{ succ
                 .from(duplicateCandidates).where(eq(duplicateCandidates.id, candidateId)).get();
             if (cand && cand.status === 'pending') pair = { a: cand.a, b: cand.b, source: 'detected' };
             if (!cand) {
-                const flag = await db.select({ a: adopterFlags.adopterId, b: adopterFlags.targetAdopterId, reason: adopterFlags.reason })
+                const flag = await db.select({ adopterId: adopterFlags.adopterId, targetAdopterId: adopterFlags.targetAdopterId, reason: adopterFlags.reason, details: adopterFlags.details })
                     .from(adopterFlags).where(eq(adopterFlags.id, candidateId)).get();
-                if (flag && flag.reason === 'duplicate' && flag.b) pair = { a: flag.a, b: flag.b, source: 'flag' };
+                if (flag && isOpenDuplicateFlag(flag)) pair = { a: flag.adopterId, b: flag.targetAdopterId!, source: 'flag' };
             }
         }
         const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
@@ -568,12 +574,16 @@ export async function getPendingDuplicatesForUser(
                 id: adopterFlags.id,
                 adopterId: adopterFlags.adopterId,
                 targetAdopterId: adopterFlags.targetAdopterId,
+                reason: adopterFlags.reason,
+                details: adopterFlags.details,
                 createdAt: adopterFlags.createdAt,
             }).from(adopterFlags).where(eq(adopterFlags.reason, 'duplicate')).limit(100).all();
 
             const seen = new Set(mine.map(c => [c.adopter1Id, c.adopter2Id].sort().join('|')));
-            for (const f of flags as Array<{ id: string; adopterId: string; targetAdopterId: string | null; createdAt: Date | null }>) {
-                if (!f.targetAdopterId) continue;
+            for (const f of flags as Array<{ id: string; adopterId: string; targetAdopterId: string | null; reason: string | null; details: string | null; createdAt: Date | null }>) {
+                // Merged (annotated) and self-pointing flags are settled; the
+                // merge action refuses them too (isOpenDuplicateFlag).
+                if (!f.targetAdopterId || !isOpenDuplicateFlag(f)) continue;
                 if (!ownIds.has(f.adopterId) && !ownIds.has(f.targetAdopterId)) continue;
                 const key = [f.adopterId, f.targetAdopterId].sort().join('|');
                 if (seen.has(key)) continue; // the engine already found this pair
@@ -758,6 +768,12 @@ export async function checkTokenDuplicates(data: {
     socials?: string[];
     addresses?: string[];
 }): Promise<TokenMatchResult[]> {
+    // Signed-in only: it answers "is anyone named X / with phone Y on file?"
+    // with names — an existence oracle for anonymous callers.
+    try { await getUser(); } catch {
+        logger.warn('checkTokenDuplicates: refused — no session');
+        return [];
+    }
     try {
         const db = await getDb();
         if (!db) {

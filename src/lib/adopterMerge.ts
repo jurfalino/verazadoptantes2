@@ -18,6 +18,7 @@ import { reassignAdopterRecords } from '@/app/actions/_recordWrite';
 import { normalizeText } from '@/lib/tokenizer';
 import { deserializeContactEntries, mergeContactEntries } from '@/lib/contactEntries';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
+import { MERGED_FLAG_DETAILS_PREFIX } from '@/domain/dedupPair';
 
 export interface MergeAdoptersResult {
     success: boolean;
@@ -252,7 +253,7 @@ export async function mergeAdopters(
             .where(flagPairCond) as Array<{ id: string; details: string | null }>;
         undo.annotatedFlags = annotated.map(f => ({ id: f.id, details: f.details }));
         await db.update(adopterFlags).set({
-            details: `Merged into ${primaryId} by ${actorEmail}`,
+            details: `${MERGED_FLAG_DETAILS_PREFIX}${primaryId} by ${actorEmail}`,
         }).where(flagPairCond);
 
         // 11. Audit log — caller may also write its own context-specific entry.

@@ -53,3 +53,27 @@ export function decideDedupMerge(
     if (!newer.teamOwned) return { ok: false, reason: 'other_owner' };
     return { ok: true, primaryId: older.id, secondaryId: newer.id };
 }
+
+/** A duplicate flag row, as far as the merge feed cares. */
+export interface DuplicateFlagRow {
+    adopterId: string;
+    targetAdopterId: string | null;
+    reason: string | null;
+    details: string | null;
+}
+
+/** Marker mergeAdopters writes into a flag's details once its pair is merged. */
+export const MERGED_FLAG_DETAILS_PREFIX = 'Merged into ';
+
+/**
+ * Whether a manual duplicate flag is still an open question. Flags carry no
+ * status column: dismissing one deletes the row (dismissFlag), and merging
+ * annotates it (`details` = "Merged into …") and re-points the absorbed side's
+ * flags onto the survivor — which can leave a flag pointing at itself. None of
+ * those are pairs to show or merge.
+ */
+export function isOpenDuplicateFlag(f: DuplicateFlagRow): boolean {
+    if (f.reason !== 'duplicate' || !f.targetAdopterId) return false;
+    if (f.adopterId === f.targetAdopterId) return false;
+    return !(f.details ?? '').startsWith(MERGED_FLAG_DETAILS_PREFIX);
+}

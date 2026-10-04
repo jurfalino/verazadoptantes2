@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decideDedupMerge, type DedupSide } from './dedupPair';
+import { decideDedupMerge, isOpenDuplicateFlag, type DedupSide } from './dedupPair';
 
 const ME = 'me@example.com';
 const side = (id: string, addedBy: string | null, createdAt: number, teamOwned: boolean, deleted = false): DedupSide =>
@@ -55,5 +55,17 @@ describe('decideDedupMerge', () => {
         expect(decideDedupMerge(ME, MINE_OLD, side('x', ME, 2, true, true)).ok).toBe(false);
         expect(decideDedupMerge(ME, MINE_OLD, null).ok).toBe(false);
         expect(decideDedupMerge(ME, MINE_OLD, MINE_OLD).ok).toBe(false);
+    });
+});
+
+describe('isOpenDuplicateFlag', () => {
+    const f = (o: Partial<{ adopterId: string; targetAdopterId: string | null; reason: string | null; details: string | null }>) =>
+        ({ adopterId: 'a', targetAdopterId: 'b', reason: 'duplicate', details: null, ...o });
+    it('an open duplicate flag', () => expect(isOpenDuplicateFlag(f({}))).toBe(true));
+    it('merged (annotated by mergeAdopters)', () => expect(isOpenDuplicateFlag(f({ details: 'Merged into b by x@example.com' }))).toBe(false));
+    it('self-pointing after a merge re-pointed it', () => expect(isOpenDuplicateFlag(f({ targetAdopterId: 'a' }))).toBe(false));
+    it('no target, or another reason', () => {
+        expect(isOpenDuplicateFlag(f({ targetAdopterId: null }))).toBe(false);
+        expect(isOpenDuplicateFlag(f({ reason: 'inaccurate_information' }))).toBe(false);
     });
 });

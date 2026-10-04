@@ -4,10 +4,18 @@ import { adopters, adoptions, adopterFlags } from "@/db/schema";
 import { count, isNull, and, ne } from "drizzle-orm";
 import AdminMetricsCollapsible from "@/components/admin/AdminMetricsCollapsible";
 import { FLAG_REASONS } from "@/domain/constants";
+import { auth } from "@/auth";
+import { isAdminAsync } from "@/config/admins";
 
 export default async function AdminOverviewPage() {
     const db = await getDb();
     if (!db) return <div>Database unavailable</div>;
+
+    // Moderators also land here (the console layout admits them), but the
+    // metrics actions are admin-only — so the widget is rendered for admins
+    // only, decided here on the server.
+    const email = (await auth())?.user?.email ?? null;
+    const showMetrics = !!email && await isAdminAsync(email);
 
     // Only the cheap DB counters load eagerly — the (slow) Axiom metrics now live
     // in a collapsible that fetches on expand, so the overview renders fast.
@@ -53,7 +61,7 @@ export default async function AdminOverviewPage() {
 
             {/* Métricas — the /admin/metrics dashboard, folded in here as a
                 collapsible that only queries Axiom when expanded (v2.44.1). */}
-            <AdminMetricsCollapsible />
+            {showMetrics && <AdminMetricsCollapsible />}
         </div>
     );
 }

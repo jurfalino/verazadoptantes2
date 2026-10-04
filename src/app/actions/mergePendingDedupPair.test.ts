@@ -35,7 +35,7 @@ function seed() {
     sqlite.exec(`
         CREATE TABLE adopters (id TEXT, added_by TEXT, created_at INTEGER, deleted_at INTEGER);
         CREATE TABLE duplicate_candidates (id TEXT, adopter1_id TEXT, adopter2_id TEXT, status TEXT);
-        CREATE TABLE adopter_flags (id TEXT, adopter_id TEXT, target_adopter_id TEXT, reason TEXT);
+        CREATE TABLE adopter_flags (id TEXT, adopter_id TEXT, target_adopter_id TEXT, reason TEXT, details TEXT);
         INSERT INTO adopters VALUES ('mine-new', '${OWNER}', 2000, NULL), ('other-old', 'other@example.com', 1000, NULL),
                                     ('mine-old', '${OWNER}', 100, NULL), ('other-new', 'other@example.com', 5000, NULL),
                                     ('mate-new', 'mate@example.com', 3000, NULL),
@@ -44,8 +44,8 @@ function seed() {
                                                 ('cand-absorb-foreign', 'mine-old', 'other-new', 'pending'),
                                                 ('cand-foreign', 'x', 'y', 'pending'),
                                                 ('cand-done', 'mine-new', 'other-old', 'merged');
-        INSERT INTO adopter_flags VALUES ('flag-cross', 'other-old', 'mine-new', 'duplicate'),
-                                         ('flag-team', 'mine-old', 'mate-new', 'duplicate');
+        INSERT INTO adopter_flags VALUES ('flag-cross', 'other-old', 'mine-new', 'duplicate', NULL),
+                                         ('flag-team', 'mine-old', 'mate-new', 'duplicate', NULL);
     `);
     state.db = drizzle(sqlite);
 }

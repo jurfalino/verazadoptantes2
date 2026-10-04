@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { fetchMetrics, fetchTopErrors7d, type MetricsPayload, type TopErrorsPayload } from '@/app/actions/metrics';
 import { MetricsDashboard } from './MetricsDashboard';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 
 /**
  * Resumen "Métricas" section — the /admin/metrics dashboard, folded into the
@@ -14,7 +15,8 @@ import { MetricsDashboard } from './MetricsDashboard';
 export default function AdminMetricsCollapsible() {
     const [open, setOpen] = useState(false);
     const [loaded, setLoaded] = useState(false);
-    const [failed, setFailed] = useState(false);
+    /** errorId of a failed load (null = not failed). */
+    const [failed, setFailed] = useState<string | null>(null);
     const [pending, start] = useTransition();
     const [metrics, setMetrics] = useState<MetricsPayload | null>(null);
     const [topErrors, setTopErrors] = useState<TopErrorsPayload | null>(null);
@@ -29,8 +31,8 @@ export default function AdminMetricsCollapsible() {
                     setMetrics(m);
                     setTopErrors(te);
                     setLoaded(true);
-                } catch {
-                    setFailed(true);
+                } catch (e) {
+                    setFailed(resolveErrorId(e, 'AdminMetricsCollapsible'));
                 }
             });
         }
@@ -55,7 +57,9 @@ export default function AdminMetricsCollapsible() {
             {open && (
                 <div className="px-6 pb-6 pt-5 border-t border-stone-100">
                     {failed ? (
-                        <p className="text-sm text-stone-500 py-6 text-center">No se pudieron cargar las métricas.</p>
+                        <p className="text-sm text-stone-500 py-6 text-center">
+                            No se pudieron cargar las métricas. <span className="font-mono text-xs">(Error ID: {failed})</span>
+                        </p>
                     ) : !loaded ? (
                         <div className="flex items-center gap-3 text-sm text-stone-500 py-10 justify-center">
                             <svg className="w-5 h-5 animate-spin text-teal-600" fill="none" viewBox="0 0 24 24">
