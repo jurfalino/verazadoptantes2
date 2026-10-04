@@ -2,6 +2,34 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.142] - 2026-10-04
+
+### Security — other rescuers' protected contact data no longer leaks through matches and contracts
+
+Found while recording the end-to-end demo (Reel 11), confirmed by a code trace and
+fixed after two independent reviews.
+
+- **Match cards** on the form answers and contract answers pages showed a matched
+  profile's full contact data (every phone and email, the street address) even when
+  that profile belongs to another rescuer and is protected. They are now masked
+  exactly like search results: you see in full only what your own applicant typed
+  in that submission (so you can confirm it's the same person), plus anything your
+  existing access already shows. Addresses show only the area. Nothing raw is sent
+  to the browser.
+- **Import lookup** (`/api/adopters`) returned household members unmasked; now masked.
+- **Public form** rejects a malformed email (the same rule the form itself applies),
+  so a junk email can't widen name-only matching.
+- **Contract invitations** can only be sent to someone who applied for that animal,
+  or to a profile the rescuer fully sees. The contract page pre-fills only what the
+  inviting rescuer could see; hidden values stay blank for the adopter to type.
+  Old links that no longer qualify show «Este link ya no es válido».
+- **Signing** a contract on a profile that belongs to another rescuer now ADDS the
+  signed details instead of replacing that rescuer's contact data, address and name.
+  Only the owner's own or team profiles are updated in place.
+- **Linking a form to a profile** directly now requires that profile to be one of
+  the form's recorded matches or one you fully see.
+- Contract links are no longer written to logs in full.
+
 ## [2.56.141] - 2026-10-04
 
 ### Fixed — copy seen while recording the end-to-end demo (Reel 11)
