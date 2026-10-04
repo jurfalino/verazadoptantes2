@@ -170,6 +170,84 @@ test.describe('form-results: match card masks another rescuer\'s protected profi
         expect(String(after.address_info)).toContain('Reservada');
     });
 
+    test('what the adopter gave you stays yours: B and only B sees the typed phone and email on A\'s profile', async ({ browser, request }) => {
+        test.setTimeout(180_000);
+        const stamp = Date.now();
+        const phone = `13${String(stamp).slice(-8)}`;
+        const aEmail = `e2e-given-private-${stamp}@example.com`;
+        const aPhone2 = `14${String(stamp).slice(-8)}`;
+        const aStreet = `Calle Escondida ${String(stamp).slice(-4)}`;
+        const bEmail = `e2e-given-typed-${stamp}@example.com`;
+        const USER_EMAIL = 'testuser@example.com';
+        const animalId = `test-given-fixture-animal-${stamp}`;
+        const C_ID = `test-given-c-${stamp}`;
+        const C_EMAIL = `test-given-c-${stamp}@example.com`;
+
+        // A's adopter X, with a second phone only A knows.
+        const aSubmission = await submitForm(request, ADMIN_USER_ID, { name: `E2E Given Titular ${stamp}`, email: aEmail, phone, address: `${aStreet}, Flores` });
+        const xId = String(one(`SELECT auto_adopter_id FROM form_submissions WHERE id = '${aSubmission}'`).auto_adopter_id);
+        execD1(`UPDATE adopters SET contact_entries = json_insert(contact_entries, '\\$[#]', json('{"id":"ce-given-${stamp}","type":"phone","value":"${aPhone2}"}')) WHERE id = '${xId}'`);
+
+        // B's applicant (same phone → match, her own email) for B's animal.
+        execD1(`INSERT INTO animals (id, name, species, details, added_by, created_at, updated_at) VALUES ('${animalId}', 'E2E Given Pet', 'cat', 'E2E fixture', '${USER_EMAIL}', strftime('%s','now'), strftime('%s','now'))`);
+        const bSubmission = await submitForm(request, USER_ID, {
+            name: `E2E Given Postulante ${stamp}`, email: bEmail, phone, address: '9 Otra Calle, Caballito', animalId,
+        });
+
+        const ctx = await browser.newContext({ storageState: '.auth/user.json' });
+        const page = await ctx.newPage();
+        await page.goto(`/form-results/${bSubmission}`);
+        await dismissCountryBanner(page);
+        const card = page.locator('article').filter({ has: page.locator(`#comparison-${xId}`) });
+        await card.getByRole('button', { name: /^(Same person|Es la misma persona|É a mesma pessoa)$/ }).click();
+        await page.getByRole('dialog').getByRole('button', { name: /Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa/ }).click();
+        await expect(page).toHaveURL(new RegExp(`/adopter/${xId}`), { timeout: 30_000 });
+
+        // B's view of A's profile: what her applicant typed, in full…
+        await expect(page.getByText(bEmail).first()).toBeVisible({ timeout: 30_000 });
+        const bDigits = (await page.locator('main').innerText()).replace(/\D/g, '');
+        expect(bDigits).toContain(phone);
+        // …and nothing else of A's, not even in the page payload.
+        expect(bDigits).not.toContain(aPhone2);
+        const bHtml = await page.content();
+        expect(bHtml).not.toContain(aEmail);
+        expect(bHtml).not.toContain(aStreet);
+
+        // B adopts her animal out to X: «Historial médico» offers the typed phone.
+        execD1(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by, health_token) VALUES ('test-given-plc-${stamp}', '${animalId}', '${xId}', 'adoption', strftime('%s','now','-5 days'), NULL, 'completed', NULL, '${USER_EMAIL}', 'tok-given-${stamp}')`);
+        execD1(`INSERT INTO animal_events (id, animal_id, event_type, date, details, recorded_by) VALUES ('test-given-ev-${stamp}', '${animalId}', 'vaccination', strftime('%s','now','-3 days'), 'Triple felina', '${USER_EMAIL}')`);
+        await page.goto(`/my-animals/${animalId}`);
+        await dismissCountryBanner(page);
+        await page.getByTestId('profile-health-record').click();
+        const send = page.getByTestId('health-share-send');
+        await expect(send).toBeVisible({ timeout: 30_000 });
+        expect(String(await send.getAttribute('href'))).toContain(phone.slice(-8));
+        await expect(page.getByTestId('health-share-nophone')).toHaveCount(0);
+        await ctx.close();
+
+        // C never received anything from this adopter: everything stays masked.
+        execD1(`INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES ('${C_ID}', 'Test C', '${C_EMAIL}', strftime('%s','now'), NULL)`);
+        execD1(`INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms_version, terms_accepted_at) VALUES ('${C_ID}', 'AR', 1, 1, strftime('%s','now'))`);
+        const { encode } = await import('next-auth/jwt');
+        const cToken = await encode({
+            secret: process.env.AUTH_SECRET!,
+            token: { email: C_EMAIL, name: 'Test C', sub: C_ID, sessionVersion: 3 },
+            salt: 'authjs.session-token',
+        });
+        const cCtx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+        await cCtx.addCookies([{ name: 'authjs.session-token', value: cToken, domain: 'localhost', path: '/', httpOnly: true, sameSite: 'Lax' }]);
+        const cPage = await cCtx.newPage();
+        await cPage.goto(`/adopter/${xId}`);
+        await dismissCountryBanner(cPage);
+        await expect(cPage.locator('main')).toContainText(/E2E Given Titular|E\. G\. T\./, { timeout: 30_000 });
+        const cHtml = await cPage.content();
+        expect(cHtml).not.toContain(bEmail);
+        expect(cHtml).not.toContain(aEmail);
+        const cDigits = (await cPage.locator('main').innerText()).replace(/\D/g, '');
+        expect(cDigits).not.toContain(phone);
+        await cCtx.close();
+    });
+
     test('the public form refuses a malformed email', async ({ request }) => {
         const res = await request.post(`/api/form/${USER_ID}/submit`, {
             data: { name: `E2E Mask Bad Email ${Date.now()}`, email: 'x', phone: '1100000000', address: '1 Calle', intent: 'self' },

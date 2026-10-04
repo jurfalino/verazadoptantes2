@@ -13,6 +13,7 @@ import {
     contactEntriesToBlob,
     parseBlobToContactEntries,
     normalizeEntryValue,
+    buildContactEntries,
 } from './contactEntries';
 import { deserializeHouseholdMembers, serializeHouseholdMembers, type HouseholdMember } from './householdMembers';
 import { PHONE_SEARCH_MIN_DIGITS } from '@/config/constants';
@@ -429,6 +430,13 @@ export interface ResolveVisibilityInput {
     isEditor: boolean;
     /** The viewer's grants for THIS adopter (any scope; revoked ones are filtered here). */
     grants: PiiGrantRow[];
+    /**
+     * «What the adopter gave you stays yours»: entry hashes of the contact
+     * values the adopter typed in form submissions RECEIVED by the viewer or a
+     * teammate and linked to this adopter (givenEntryHashes). Unlocks exactly
+     * those entries; read at request time, never stored as grants.
+     */
+    givenEntryHashes?: Iterable<string>;
 }
 
 export interface Visibility {
@@ -458,9 +466,10 @@ export function resolveVisibility(input: ResolveVisibilityInput): Visibility {
     );
     const live = grants.filter(g => !g.revokedAt);
     const hasAllContactGrant = live.some(g => g.scope === 'all_contact');
-    const unlockedEntryHashes = new Set<string>(
-        live.filter(g => g.scope === 'entry' && g.entryRef).map(g => g.entryRef as string),
-    );
+    const unlockedEntryHashes = new Set<string>([
+        ...live.filter(g => g.scope === 'entry' && g.entryRef).map(g => g.entryRef as string),
+        ...(input.givenEntryHashes ?? []),
+    ]);
     const unlockedNameTokenHashes = new Set<string>(
         live.filter(g => g.scope === 'name_token' && g.entryRef).map(g => g.entryRef as string),
     );
@@ -469,6 +478,35 @@ export function resolveVisibility(input: ResolveVisibilityInput): Visibility {
         ? 'full'
         : (hasAllContactGrant || unlockedEntryHashes.size > 0 || unlockedNameTokenHashes.size > 0) ? 'partial' : 'none';
     return { tier, privileged, nothingMasked, hasAllContactGrant, unlockedEntryHashes, unlockedNameTokenHashes };
+}
+
+/**
+ * Entry hashes for «what the adopter gave you stays yours»: the email and
+ * phone an adopter typed in form submission(s) the viewer's team received.
+ * Built with the SAME buildContactEntries the submission's auto-created
+ * profile used, so after «Es la misma persona» (which merges those entries
+ * onto the chosen profile) each hash equals exactly the entry the applicant
+ * created — equality only, nothing near it. A phone needs ≥8 digits (as on
+ * the match card). Addresses never: the legacy `addressInfo` column has no
+ * unlock path, so the street would show in one place and stay masked in
+ * another; names are not contact PII here.
+ */
+export function givenEntryHashes(
+    submissions: Array<{ email?: string | null; phone?: string | null }>,
+): Set<string> {
+    const out = new Set<string>();
+    for (const s of submissions) {
+        const entries = buildContactEntries({
+            emails: s.email ? [s.email] : [],
+            phones: s.phone ? [s.phone] : [],
+        });
+        for (const e of entries) {
+            if (e.type === 'phone' && e.value.replace(/\D/g, '').length < 8) continue;
+            if (e.type !== 'phone' && e.type !== 'email') continue;
+            out.add(hashEntryValue(e.type, e.value));
+        }
+    }
+    return out;
 }
 
 /** A viewer with no email (unauthenticated / unresolved) — everything masked. */

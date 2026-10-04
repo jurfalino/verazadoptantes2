@@ -19,6 +19,7 @@ import {
     contactOfferFor,
     maskMatchCardContact,
     maskAdopterRow,
+    givenEntryHashes,
     submissionUnlockHashes,
     isContactableAdopter,
     PII_MASK,
@@ -1121,5 +1122,43 @@ describe('maskAdopterRow — a full row returned to a non-privileged viewer (GET
         expect(r.familyMembers).toBeNull();
         expect(r.id).toBe('a1');
         expect(r.status).toBe('5');
+    });
+});
+
+describe('givenEntryHashes — what the adopter gave you stays yours', () => {
+    it('hashes the typed email and phone exactly as their auto-created entries', () => {
+        const got = givenEntryHashes([{ email: ' Carla@Example.com ', phone: '11 5555-0109' }]);
+        expect(got).toEqual(new Set([hashEntryValue('email', 'carla@example.com'), hashEntryValue('phone', '1155550109')]));
+    });
+
+    it('a phone with fewer than 8 digits unlocks nothing; blanks are ignored', () => {
+        expect(givenEntryHashes([{ email: null, phone: '555-0109' }]).size).toBe(0);
+        expect(givenEntryHashes([{ email: '', phone: '' }]).size).toBe(0);
+    });
+
+    it('only equality: the typed phone does not unlock a different number that ends the same', () => {
+        const v = resolveVisibility({
+            viewerEmail: 'b@example.com', ownerEmail: 'a@example.com', isAdmin: false, isModerator: false,
+            isOrgMate: false, isEditor: false, grants: [],
+            givenEntryHashes: givenEntryHashes([{ phone: '11 5555-0109' }]),
+        });
+        const entries: ContactEntry[] = [
+            { type: 'phone', value: '11 5555-0109' },
+            { type: 'phone', value: '+54 9 11 5555-0109' },
+            { type: 'email', value: 'a-private@example.com' },
+        ];
+        const visible = maskContactEntries(entries, v).entries.filter(e => !e.masked).map(e => e.value);
+        expect(visible).toEqual(['11 5555-0109']);
+        expect(v.tier).toBe('partial');
+        expect(v.nothingMasked).toBe(false);
+    });
+
+    it('without given hashes resolveVisibility is unchanged', () => {
+        const v = resolveVisibility({
+            viewerEmail: 'b@example.com', ownerEmail: 'a@example.com', isAdmin: false, isModerator: false,
+            isOrgMate: false, isEditor: false, grants: [],
+        });
+        expect(v.tier).toBe('none');
+        expect(v.unlockedEntryHashes.size).toBe(0);
     });
 });

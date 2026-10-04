@@ -6,8 +6,8 @@
  * the enforcement points: getAdopter, getHistory, findAdopters, /api/adopters.
  */
 
-import { adopterHistory, adopters as adoptersTable, piiAccessGrants } from '@/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { adopterHistory, adopters as adoptersTable, piiAccessGrants, formSubmissions } from '@/db/schema';
+import { and, eq, or, ne, isNull, isNotNull } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { getFeatureFlag } from '@/config/features';
 import { isAdminAsync, isModeratorOrAdminAsync } from '@/config/admins';
@@ -23,6 +23,7 @@ import {
     matchSearchEntries,
     matchSearchNameTokens,
     hashNameToken,
+    givenEntryHashes,
     maskMatchCardContact,
     type MatchCardContact,
     type Visibility,
@@ -78,6 +79,52 @@ export function maskOptionsFor(
     return { adopterIsPublic: !!publicProfilesFlag && !!adopter?.isPublic };
 }
 
+/** A form submission's typed contact, and the profile it is linked to. */
+export interface GivenSubmissionRow {
+    linkedAdopterId: string | null;
+    email: string | null;
+    phone: string | null;
+}
+
+/** D1 allows 100 bound parameters per query; leave room for the rest. */
+const TEAM_CHUNK = 80;
+
+/**
+ * Form submissions RECEIVED by `team` (the viewer + her org-mates; `user_id`
+ * is the receiving rescuer) and linked to a profile — the source of «what the
+ * adopter gave you stays yours». `adopterId` set: only that profile.
+ * `adopterId` null (search batches): every submission linked to an EXISTING
+ * profile (linked ≠ auto; a form still on its own auto-created profile is the
+ * team's own record, already fully visible). linked_adopter_id is only written
+ * by the app's own flows: the submit route (auto profile), planFormLink and
+ * canLinkSubmissionDirectly (recorded match / fully-visible profile), and
+ * mergeAdopters re-pointing. OR-of-eq over the team, never IN; chunked.
+ */
+export async function loadGivenSubmissions(
+    db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+    team: string[],
+    adopterId: string | null,
+): Promise<GivenSubmissionRow[]> {
+    const emails = [...new Set(team.filter(isRealActorEmail))];
+    if (emails.length === 0) return [];
+    const chunks: string[][] = [];
+    for (let i = 0; i < emails.length; i += TEAM_CHUNK) chunks.push(emails.slice(i, i + TEAM_CHUNK));
+    const results = await Promise.all(chunks.map(chunk => db.select({
+        linkedAdopterId: formSubmissions.linkedAdopterId,
+        email: formSubmissions.email,
+        phone: formSubmissions.phone,
+    }).from(formSubmissions).where(and(
+        or(...chunk.map(e => eq(formSubmissions.userId, e)))!,
+        adopterId
+            ? eq(formSubmissions.linkedAdopterId, adopterId)
+            : and(
+                isNotNull(formSubmissions.linkedAdopterId),
+                or(isNull(formSubmissions.autoAdopterId), ne(formSubmissions.linkedAdopterId, formSubmissions.autoAdopterId)),
+            ),
+    )).all() as Promise<GivenSubmissionRow[]>));
+    return results.flat();
+}
+
 /** Resolve visibility for a single (viewer, adopter) pair. Fails closed on error. */
 export async function resolveAdopterVisibility(
     viewerEmail: string | null | undefined,
@@ -87,7 +134,7 @@ export async function resolveAdopterVisibility(
     try {
         const db = await getDb();
         if (!db) return NO_ACCESS_VISIBILITY;
-        const [isAdmin, isModeratorOrAdmin, isOrgMateOfOwner, editorRows, grantRows] = await Promise.all([
+        const [isAdmin, isModeratorOrAdmin, isOrgMateOfOwner, editorRows, grantRows, given] = await Promise.all([
             isAdminAsync(viewerEmail),
             // v2.18.10: moderators get full privileged PII visibility too.
             isModeratorOrAdminAsync(viewerEmail),
@@ -109,6 +156,17 @@ export async function resolveAdopterVisibility(
                 revokedAt: piiAccessGrants.revokedAt,
             }).from(piiAccessGrants)
                 .where(and(eq(piiAccessGrants.adopterId, adopter.id), eq(piiAccessGrants.granteeEmail, viewerEmail))),
+            // «What the adopter gave you stays yours» — own .catch so a failure
+            // here only drops these unlocks, never the owner's privilege.
+            (async () => {
+                const team = await getOrgMemberEmailsFor(viewerEmail);
+                return loadGivenSubmissions(db, team, adopter.id);
+            })().catch((e: unknown) => {
+                logger.warn('resolveAdopterVisibility: given-submissions lookup failed (no given unlocks)', {
+                    adopterId: adopter.id, viewer: viewerEmail, error: e instanceof Error ? e.message : String(e),
+                });
+                return [] as GivenSubmissionRow[];
+            }),
         ]);
         return resolveVisibility({
             viewerEmail,
@@ -118,6 +176,7 @@ export async function resolveAdopterVisibility(
             isOrgMate: isOrgMateOfOwner,
             isEditor: editorRows.length > 0,
             grants: grantRows,
+            givenEntryHashes: givenEntryHashes(given),
         });
     } catch (e) {
         // Fail closed — a resolution error masks everything rather than leaking PII.
@@ -166,6 +225,23 @@ export async function resolveAdoptersVisibility(
                 revokedAt: piiAccessGrants.revokedAt,
             }).from(piiAccessGrants).where(eq(piiAccessGrants.granteeEmail, viewerEmail)),
         ]);
+        // «What the adopter gave you stays yours» — ONE query per viewer (team
+        // OR-chain, rows linked to an existing profile), filtered to this batch
+        // in memory. Own .catch: a failure drops only these unlocks.
+        const wanted = new Set(adopters.map(a => a.id));
+        const givenRows = await loadGivenSubmissions(db, viewerOrgMateEmails ?? [viewerEmail], null)
+            .catch((e: unknown) => {
+                logger.warn('resolveAdoptersVisibility: given-submissions lookup failed (no given unlocks)', {
+                    count: adopters.length, viewer: viewerEmail, error: e instanceof Error ? e.message : String(e),
+                });
+                return [] as GivenSubmissionRow[];
+            });
+        const givenByAdopter = new Map<string, GivenSubmissionRow[]>();
+        for (const g of givenRows) {
+            if (!g.linkedAdopterId || !wanted.has(g.linkedAdopterId)) continue;
+            const list = givenByAdopter.get(g.linkedAdopterId);
+            if (list) list.push(g); else givenByAdopter.set(g.linkedAdopterId, [g]);
+        }
         const editorSet = new Set<string>(editorRows.map((r: { id: string }) => r.id));
         const orgMateEmailSet = new Set<string>(
             (viewerOrgMateEmails ?? []).map(e => (e ?? '').toLowerCase().trim()),
@@ -192,6 +268,7 @@ export async function resolveAdoptersVisibility(
                 isOrgMate: isOrgMateOfOwner,
                 isEditor: editorSet.has(a.id),
                 grants: grantsByAdopter.get(a.id) ?? [],
+                givenEntryHashes: givenEntryHashes(givenByAdopter.get(a.id) ?? []),
             }));
         }
         return out;
