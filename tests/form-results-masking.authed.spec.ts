@@ -152,12 +152,16 @@ test.describe('form-results: match card masks another rescuer\'s protected profi
         // Addresses never pre-fill from a profile she can't fully see.
         expect(prefill.address).toBe('');
 
-        // Signing adds what was signed and keeps everything A had.
+        // Signing adds what was signed and keeps everything A had. Signed with
+        // gating OFF on purpose: B then "sees" A's profile in full, which must
+        // still not let her signature overwrite it — only ownership does.
+        execD1(`INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES ('ENABLE_PII_ACCESS_GATING', 'false', strftime('%s','now'), 'e2e')`);
         const TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
         const sign = await anon.request.post(`/api/contract/${animalId}/submit`, {
             data: { name: 'Otra', lastName: 'Firmante', email: bEmail, phone, address: '9 Otra Calle, Caballito', dni: '', socialNetworks: '', token, screenshot: TINY_PNG },
         });
         expect(sign.ok(), await sign.text()).toBeTruthy();
+        execD1(`INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES ('ENABLE_PII_ACCESS_GATING', 'true', strftime('%s','now'), 'e2e')`);
         await anon.close();
         const after = one(`SELECT name, contact_entries, address_info FROM adopters WHERE id = '${aId}'`);
         expect(after.name).toBe(aName);

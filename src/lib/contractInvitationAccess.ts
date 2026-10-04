@@ -13,6 +13,7 @@ import { formSubmissions } from '@/db/schema';
 import { and, eq, or } from 'drizzle-orm';
 import type { getDb } from '@/lib/db';
 import { isPiiGatingEnabled, resolveAdopterVisibility, buildMaskOptions } from '@/lib/piiAccessServer';
+import { isOwnerOrOrgMate } from '@/lib/orgMembership';
 import type { Visibility, MaskContactOptions } from '@/lib/piiAccess';
 import { decideInvitationAccess, type InvitationAccessDecision } from '@/lib/contractInvitation';
 
@@ -41,7 +42,7 @@ export async function resolveInvitationAccess(
     animalId: string,
     adopter: { id: string; addedBy: string | null; isPublic: number | boolean | null },
 ): Promise<InvitationAccess> {
-    const [submissions, gatingOn, visibility, maskOptions] = await Promise.all([
+    const [submissions, gatingOn, visibility, maskOptions, isOwnerOrTeammate] = await Promise.all([
         db.select({ email: formSubmissions.email, phone: formSubmissions.phone })
             .from(formSubmissions)
             .where(and(
@@ -53,6 +54,7 @@ export async function resolveInvitationAccess(
         isPiiGatingEnabled(),
         resolveAdopterVisibility(rescuerEmail, { id: adopter.id, addedBy: adopter.addedBy }),
         buildMaskOptions(adopter),
+        isOwnerOrOrgMate(rescuerEmail, adopter.addedBy),
     ]);
     const isApplicant = submissions.length > 0;
     const decision = decideInvitationAccess({
@@ -60,6 +62,7 @@ export async function resolveInvitationAccess(
         nothingMasked: visibility.nothingMasked,
         gatingOn,
         adopterIsPublic: !!maskOptions.adopterIsPublic,
+        isOwnerOrTeammate,
     });
     const submitted = submissions.flatMap(s => [s.email, s.phone]).filter((v): v is string => !!v && !!v.trim());
     return {

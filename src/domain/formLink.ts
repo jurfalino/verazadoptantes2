@@ -102,6 +102,28 @@ export function planFormLink(input: {
     }
 }
 
+export type DirectLinkDecision =
+    | { ok: true }
+    | { ok: false; reason: 'target_unavailable' | 'not_allowed' };
+
+/**
+ * linkFormSubmissionToAdopter (a profile created from the form, or an unlinked
+ * form) may only point the form at a profile the rescuer could legitimately
+ * choose: one of the matches recorded for this submission (as planFormLink
+ * requires) or a profile she already sees in full (her own / her team's / an
+ * approved full-contact grant / admin). Anything else would let her forge
+ * «applicant» status — and with it a contract invitation — for any adopter.
+ */
+export function canLinkSubmissionDirectly(input: {
+    targetLive: boolean;
+    isRecordedMatch: boolean;
+    callerFullySees: boolean;
+}): DirectLinkDecision {
+    if (!input.targetLive) return { ok: false, reason: 'target_unavailable' };
+    if (input.isRecordedMatch || input.callerFullySees) return { ok: true };
+    return { ok: false, reason: 'not_allowed' };
+}
+
 /** One form as /my-adopters sees it. `submittedAt` is epoch seconds. */
 export interface AdopterFormRow {
     id: string;

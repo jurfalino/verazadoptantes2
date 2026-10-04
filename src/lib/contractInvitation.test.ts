@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decideInvitationAccess, buildContractPrefill, contactUpdateOnSign, splitName } from './contractInvitation';
+import { decideInvitationAccess, buildContractPrefill, contactUpdateOnSign, splitName, tokenRef } from './contractInvitation';
 import { hashEntryValue, type Visibility } from './piiAccess';
 import { buildContactEntries, deserializeContactEntries } from './contactEntries';
 
@@ -28,7 +28,7 @@ const carla = {
 };
 
 describe('decideInvitationAccess', () => {
-    const base = { isApplicant: false, nothingMasked: false, gatingOn: true, adopterIsPublic: false };
+    const base = { isApplicant: false, nothingMasked: false, gatingOn: true, adopterIsPublic: false, isOwnerOrTeammate: false };
 
     it('a foreign adopter who never applied for this animal: refused', () => {
         expect(decideInvitationAccess(base).allowed).toBe(false);
@@ -38,18 +38,31 @@ describe('decideInvitationAccess', () => {
         expect(decideInvitationAccess({ ...base, gatingOn: false }).allowed).toBe(false);
     });
 
-    it('an applicant for this animal: allowed, but not full access to a foreign profile', () => {
-        expect(decideInvitationAccess({ ...base, isApplicant: true })).toEqual({ allowed: true, fullAccess: false });
+    it('an applicant for this animal: allowed, but neither full access nor overwrite on a foreign profile', () => {
+        expect(decideInvitationAccess({ ...base, isApplicant: true })).toEqual({ allowed: true, fullAccess: false, overwriteOnSign: false });
     });
 
-    it('own / team / admin profile: allowed with full access', () => {
-        expect(decideInvitationAccess({ ...base, nothingMasked: true })).toEqual({ allowed: true, fullAccess: true });
+    it('own / teammate profile: allowed, full access, and a signature may overwrite', () => {
+        expect(decideInvitationAccess({ ...base, nothingMasked: true, isOwnerOrTeammate: true }))
+            .toEqual({ allowed: true, fullAccess: true, overwriteOnSign: true });
     });
 
-    it('full access follows the profile page: gating off or a public profile', () => {
-        expect(decideInvitationAccess({ ...base, isApplicant: true, gatingOn: false }).fullAccess).toBe(true);
-        expect(decideInvitationAccess({ ...base, isApplicant: true, adopterIsPublic: true }).fullAccess).toBe(true);
+    // Seeing a profile in full is not owning it: these all MERGE on sign.
+    it('admin / moderator / approved full-contact grant (nothingMasked, not the team): allowed, full access, merge', () => {
+        expect(decideInvitationAccess({ ...base, nothingMasked: true }))
+            .toEqual({ allowed: true, fullAccess: true, overwriteOnSign: false });
     });
+
+    it('public profile: full access for the pre-fill, still merge on sign', () => {
+        expect(decideInvitationAccess({ ...base, isApplicant: true, adopterIsPublic: true }))
+            .toEqual({ allowed: true, fullAccess: true, overwriteOnSign: false });
+    });
+
+    it('gating off: full access for the pre-fill, still merge on sign', () => {
+        expect(decideInvitationAccess({ ...base, isApplicant: true, gatingOn: false }))
+            .toEqual({ allowed: true, fullAccess: true, overwriteOnSign: false });
+    });
+
 });
 
 describe('buildContractPrefill', () => {
@@ -89,7 +102,7 @@ describe('contactUpdateOnSign', () => {
         address: 'Otra Calle 9, Caballito',
     };
 
-    it('foreign profile: signed values are added; A\'s email, DNI, street and name survive', () => {
+    it('not her / her team\'s profile: signed values are added; A\'s email, DNI, street and name survive', () => {
         const u = contactUpdateOnSign(carla, signed, false);
         const values = deserializeContactEntries(u.contactEntries).map(e => e.value);
         expect(values).toEqual(expect.arrayContaining([A_EMAIL, DNI, STREET, 'nueva@example.com', PHONE]));
@@ -98,11 +111,20 @@ describe('contactUpdateOnSign', () => {
         expect(u.replaceName).toBe(false);
     });
 
-    it('full access: the signed values replace the contact, as before', () => {
+    it('her own / team profile: the signed values replace the contact, as before', () => {
         const u = contactUpdateOnSign(carla, signed, true);
         const values = deserializeContactEntries(u.contactEntries).map(e => e.value);
         expect(values).not.toContain(A_EMAIL);
         expect(u.addressInfo).toBe('Otra Calle 9, Caballito');
         expect(u.replaceName).toBe(true);
+    });
+});
+
+describe('tokenRef', () => {
+    it('logs only a prefix of the bearer token', () => {
+        const t = '0f8b2c4e-1111-2222-3333-444455556666';
+        expect(tokenRef(t)).toBe('0f8b2c4e…');
+        expect(tokenRef(t)).not.toContain('4444');
+        expect(tokenRef(undefined)).toBe('');
     });
 });

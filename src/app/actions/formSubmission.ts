@@ -8,9 +8,9 @@ import { insertRecord } from './_recordWrite';
 import { mergeAdopters } from './duplicates';
 import { createNotification, resolveDisplayName } from './notifications';
 import { isAdmin } from '@/config/admins';
-import { planFormLink } from '@/domain/formLink';
+import { planFormLink, canLinkSubmissionDirectly } from '@/domain/formLink';
 import { RECORD_TYPES } from '@/domain/constants';
-import { logger } from '@/lib/logger';
+import { logger, generateErrorId } from '@/lib/logger';
 
 // ── Human-readable label helpers ──────────────────────────────────
 
@@ -225,6 +225,48 @@ export async function linkFormSubmissionToAdopter(submissionId: string, adopterI
         const db = await getDb();
         const currentUser = await getUser();
         if (!db || !currentUser) return { success: false, error: 'Unauthorized' };
+
+        // Only a profile she could legitimately choose: a match recorded for
+        // this submission, or one she already sees in full (normally the one
+        // she just created from the form). Being linked makes the person an
+        // «applicant» — which unlocks a contract invitation and its pre-fill.
+        const [target, notif] = await Promise.all([
+            db.select({ id: adopters.id, addedBy: adopters.addedBy, deletedAt: adopters.deletedAt })
+                .from(adopters).where(eq(adopters.id, adopterId)).get(),
+            db.select({ metadata: notifications.metadata })
+                .from(notifications)
+                .where(and(
+                    eq(notifications.userId, currentUser),
+                    eq(notifications.type, 'form_submission'),
+                    sql`json_extract(${notifications.metadata}, '$.submissionId') = ${submissionId}`,
+                ))
+                .get(),
+        ]);
+        let recordedMatchIds: string[] = [];
+        try {
+            const meta = notif?.metadata ? JSON.parse(notif.metadata) : {};
+            recordedMatchIds = (meta.matchedAdopters ?? []).map((m: { id: string }) => m.id);
+        } catch (e) {
+            logger.warn('linkFormSubmissionToAdopter: unreadable notification metadata', {
+                submissionId, adopterId, actorEmail: currentUser, error: e instanceof Error ? e.message : String(e),
+            });
+        }
+        const { resolveAdopterVisibility } = await import('@/lib/piiAccessServer');
+        const visibility = target
+            ? await resolveAdopterVisibility(currentUser, { id: target.id, addedBy: target.addedBy })
+            : null;
+        const decision = canLinkSubmissionDirectly({
+            targetLive: !!target && !target.deletedAt,
+            isRecordedMatch: recordedMatchIds.includes(adopterId),
+            callerFullySees: !!visibility?.nothingMasked,
+        });
+        if (!decision.ok) {
+            const errorId = generateErrorId();
+            logger.warn('linkFormSubmissionToAdopter: refused', {
+                submissionId, adopterId, actorEmail: currentUser, reason: decision.reason, errorId,
+            });
+            return { success: false, error: decision.reason, errorId };
+        }
 
         // Only an UNLINKED form (auto-create failed) takes a profile this way.
         // A form already on a profile keeps it: moving it here would orphan

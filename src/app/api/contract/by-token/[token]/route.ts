@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { withCors, corsPreflightResponse } from '@/lib/cors';
 import { animalPrimaryFirst } from '@/lib/showcase';
-import { buildContractPrefill, type ContractPrefill } from '@/lib/contractInvitation';
+import { buildContractPrefill, tokenRef, type ContractPrefill } from '@/lib/contractInvitation';
 import { resolveInvitationAccess } from '@/lib/contractInvitationAccess';
 
 export const runtime = 'edge';
@@ -83,7 +83,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
         const access = await resolveInvitationAccess(db, invite.createdBy, invite.animalId, adopter);
         if (!access.allowed) {
             logger.warn('Contract by-token: invitation no longer allowed', {
-                token, animalId: invite.animalId, adopterId: invite.adopterId, createdBy: invite.createdBy,
+                token: tokenRef(token), animalId: invite.animalId, adopterId: invite.adopterId, createdBy: invite.createdBy,
             });
             return withCors(NextResponse.json({ error: 'Invitation not valid', code: 'not_allowed' }, { status: 410 }), origin);
         }
@@ -148,7 +148,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
             customContract: resolved?.contract ?? null,
         }), origin);
     } catch (e) {
-        const errorId = logger.error('Contract by-token fetch failed', e, { token });
+        const errorId = logger.error('Contract by-token fetch failed', e, { token: tokenRef(token) });
         return withCors(NextResponse.json({ error: 'Internal error', errorId }, { status: 500 }), origin);
     }
 }

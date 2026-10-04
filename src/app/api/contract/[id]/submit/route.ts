@@ -89,7 +89,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         // the INVITING rescuer whether this invitation is still allowed and how
         // much of the profile the signature may rewrite (contactUpdateOnSign).
         let invitedAdopter: { contactInfo: string | null; contactEntries: string | null; addressInfo: string | null } | null = null;
-        let signFullAccess = false;
+        let signOverwrite = false;
         if (invitation) {
             const { adopters: adoptersTable } = await import('@/db/schema');
             const row = await db.select({
@@ -108,7 +108,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 return withCors(NextResponse.json({ error: 'Invitation not valid', code: 'not_allowed' }, { status: 410 }), origin);
             }
             invitedAdopter = row;
-            signFullAccess = access.fullAccess;
+            signOverwrite = access.overwriteOnSign;
         }
 
         // 1. Find the animal record
@@ -164,15 +164,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         let matches: Array<{ adopterId: string; adopterName: string; matchTypes: string[] }> = [];
         if (invitation) {
             adopterId = invitation.adopterId;
-            // Write the signed contact back onto the profile. With full access
-            // (her own / her team's profile, or nothing masked) the signed
-            // values replace the contact, as before. Otherwise the profile may
-            // be another rescuer's and the signer only saw part of it: the
-            // signed values are ADDED, nothing is removed, an existing address
-            // and the name are kept (contactUpdateOnSign).
+            // Write the signed contact back onto the profile. On the inviting
+            // rescuer's own / team profile the signed values replace the
+            // contact and name, as before. On anyone else's — even one she
+            // sees in full (admin, grant, public, gating off) — the signed
+            // values are ADDED; nothing is removed, an existing address and
+            // the name are kept (contactUpdateOnSign).
             const { adopters: adoptersTable, adopterHistory } = await import('@/db/schema');
             const { buildContactEntries } = await import('@/lib/contactEntries');
-            const { contactUpdateOnSign } = await import('@/lib/contractInvitation');
+            const { contactUpdateOnSign, tokenRef } = await import('@/lib/contractInvitation');
             const contactEntries = buildContactEntries({
                 ids: dni ? [{ value: dni, label: 'Documento' }] : [],
                 emails: email ? [email] : [],
@@ -183,7 +183,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             const update = contactUpdateOnSign(
                 invitedAdopter ?? { contactInfo: null, contactEntries: null, addressInfo: null },
                 { entries: contactEntries, address: address || null },
-                signFullAccess,
+                signOverwrite,
             );
 
             await db.update(adoptersTable).set({
@@ -213,7 +213,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 usedAt: Math.floor(Date.now() / 1000),
             }).where(eq(contractInvitations.token, token!));
 
-            logger.info('Contract signed via invitation', { animalId, adopterId, token });
+            logger.info('Contract signed via invitation', { animalId, adopterId, token: tokenRef(token) });
         } else {
             const { createAdopterFromSubmission } = await import('@/app/actions/_adopterFactory');
             const factoryResult = await createAdopterFromSubmission({

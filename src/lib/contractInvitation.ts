@@ -8,7 +8,10 @@
  * may see — never from the raw row:
  *   - who may be invited at all (decideInvitationAccess);
  *   - what the unauthenticated token page pre-fills (buildContractPrefill);
- *   - what signing writes back onto the profile (contactUpdateOnSign).
+ *   - what signing writes back onto the profile (contactUpdateOnSign) — keyed
+ *     on OWNERSHIP (owner or teammate), never on visibility: seeing a profile
+ *     in full (admin, grant holder, public profile, gating off) is not a right
+ *     to rewrite another rescuer's record.
  */
 
 import type { Visibility, MaskContactOptions } from './piiAccess';
@@ -21,6 +24,15 @@ import {
     mergeContactEntries,
 } from './contactEntries';
 
+/**
+ * A log-safe reference to an invitation token. Tokens are bearer credentials
+ * (whoever holds one opens and signs the contract), so logs carry only the
+ * first 8 characters — enough to correlate with a row, useless to replay.
+ */
+export function tokenRef(token: string | null | undefined): string {
+    return token ? `${token.slice(0, 8)}…` : '';
+}
+
 export interface InvitationAccessInput {
     /** A form for THIS animal, received by this rescuer, is linked to the adopter
      *  (the same rows the applicants panel lists). */
@@ -32,14 +44,20 @@ export interface InvitationAccessInput {
     gatingOn: boolean;
     /** The whole profile is public (flag on + admin-flagged record). */
     adopterIsPublic: boolean;
+    /** The rescuer created the profile or shares a team with whoever did. */
+    isOwnerOrTeammate: boolean;
 }
 
 export interface InvitationAccessDecision {
     /** May this rescuer issue / use an invitation for this adopter. */
     allowed: boolean;
     /** Nothing about the adopter's contact is hidden from this rescuer — the
-     *  same predicate as the match card and the profile page. */
+     *  same predicate as the match card and the profile page. Drives the
+     *  pre-fill only. */
     fullAccess: boolean;
+    /** A signature may REPLACE the profile's contact and name. Only on the
+     *  rescuer's own or her team's profile; everywhere else it merges. */
+    overwriteOnSign: boolean;
 }
 
 /**
@@ -51,6 +69,7 @@ export function decideInvitationAccess(input: InvitationAccessInput): Invitation
     return {
         allowed: input.isApplicant || input.nothingMasked,
         fullAccess: !input.gatingOn || input.nothingMasked || input.adopterIsPublic,
+        overwriteOnSign: input.isOwnerOrTeammate,
     };
 }
 
@@ -141,18 +160,19 @@ export interface ContactUpdate {
 
 /**
  * What a signature through an invitation writes onto the adopter's profile.
- * With full access: today's behaviour (the signed values replace the contact).
- * Otherwise the profile may belong to another rescuer, and the signer only saw
- * part of it — so the signed values are ADDED (mergeContactEntries dedupes),
- * nothing the profile already had is removed, an existing address is kept,
- * and the name is left alone.
+ * `overwrite` (decideInvitationAccess.overwriteOnSign — the inviting rescuer's
+ * own or team profile): today's behaviour, the signed values replace the
+ * contact and the name. Otherwise the profile belongs to another rescuer — the
+ * signed values are ADDED (mergeContactEntries dedupes), nothing the profile
+ * already had is removed, an existing address is kept, and the name is left
+ * alone.
  */
 export function contactUpdateOnSign(
     existing: { contactInfo: string | null; contactEntries: string | null; addressInfo: string | null },
     signed: { entries: ContactEntry[]; address: string | null },
-    fullAccess: boolean,
+    overwrite: boolean,
 ): ContactUpdate {
-    if (fullAccess) {
+    if (overwrite) {
         return {
             contactInfo: contactEntriesToBlob(signed.entries) || null,
             contactEntries: signed.entries.length ? JSON.stringify(signed.entries) : null,

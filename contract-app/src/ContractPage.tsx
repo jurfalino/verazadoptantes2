@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { generateContractPdf, blobToBase64 } from './contractPdf'
 import { useT } from './i18n/LocaleContext'
+import { contractErrorKey } from './lib/contractErrors'
 import { CONTRACT_CONTENT } from './i18n/contractContent'
 import { isValidCustomContract, customSectionFor, STANDARD_CONTRACT_VERSION, type CustomContract } from './lib/adoptionDocs'
 import RichDocView from './components/RichDocView'
@@ -94,12 +95,8 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
                 if (!res.ok) {
                     const data = await res.json().catch(() => ({}))
                     const code = (data as { code?: string }).code
-                    let errMsg: string
-                    if (res.status === 404) errMsg = t('contract.error_not_found')
-                    else if (res.status === 410 && code === 'used') errMsg = t('contract.error_used')
-                    else if (res.status === 410 && code === 'expired') errMsg = t('contract.error_expired')
-                    else if (res.status === 410 && code === 'already_adopted') errMsg = t('contract.error_already_adopted')
-                    else errMsg = (data as { error?: string }).error || t('contract.error_generic')
+                    const key = contractErrorKey(res.status, code)
+                    const errMsg = key ? t(key) : ((data as { error?: string }).error || t('contract.error_generic'))
                     const id = extractErrorId((data as { error?: string }).error)
                     console.error(`[CONTRACT] Load failed (${res.status}):`, errMsg)
                     setError(errMsg)
@@ -181,10 +178,11 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
                 setContractSaved(true)
                 setSubmitted(true)
             } else {
-                const data = await res.json().catch(() => ({ error: 'Unknown error' })) as { error?: string }
+                const data = await res.json().catch(() => ({ error: 'Unknown error' })) as { error?: string; code?: string }
                 const id = extractErrorId(data.error)
                 console.error(`[CONTRACT] Submit failed (${res.status}):`, data.error)
-                setError(data.error || t('contract.error_submit'))
+                const key = contractErrorKey(res.status, data.code)
+                setError(key ? t(key) : (data.error || t('contract.error_submit')))
                 if (id) setErrorId(id)
             }
         } catch (err) {
