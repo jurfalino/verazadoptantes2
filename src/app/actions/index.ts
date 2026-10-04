@@ -14,7 +14,7 @@ export type { SearchResult, SearchResponse, SnippetField, MatchSnippet } from '.
 export { getAdoptionConfig } from './config';
 
 // Unified search engine
-export { findAdopters } from './findAdopters';
+export { findAdopters } from './findAdoptersAction';
 export { findFormDuplicates } from './findFormDuplicates';
 export { findWeakNameMatches } from './findWeakNameMatches';
 export type { FindAdoptersInput, FindAdoptersOptions, FindAdoptersResponse, DuplicateMatch, DiscoveryMatch, AdopterMatch, SearchMode } from './types';

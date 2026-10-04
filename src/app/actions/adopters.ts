@@ -3,7 +3,7 @@
 import { headers } from 'next/headers';
 import { adopters, adopterHistory, adopterStats } from '@/db/schema';
 import { eq, sql, and } from 'drizzle-orm';
-import { logger, withTrace } from '@/lib/logger';
+import { logger, withTrace, generateErrorId } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
@@ -225,17 +225,22 @@ export async function saveAdopter(data: SaveAdopterInput) {
         data.contactInfo = contactEntriesToBlob(entries) || null;
     }
 
+    // A session is required: the actor is never inferred or defaulted. (It
+    // used to fall back to 'Unknown', which let an anonymous caller create
+    // records — and edit any record whose addedBy was also 'Unknown'.)
+    let changedBy: string;
+    try {
+        changedBy = await getUser();
+    } catch {
+        const errorId = generateErrorId();
+        logger.warn('saveAdopter: refused — no session', { adopterId: data?.id, errorId });
+        throw new Error(`Authentication required (Error ID: ${errorId})`);
+    }
+
     try {
         const db = await getDb();
         if (!db) {
             throw new Error("No database");
-        }
-
-        let changedBy = 'Unknown';
-        try {
-            changedBy = await getUser();
-        } catch (e) {
-            logger.warn('getUser failed during adopter save', { error: e instanceof Error ? e.message : String(e) });
         }
 
         // Check if exists
@@ -294,9 +299,18 @@ export async function saveAdopter(data: SaveAdopterInput) {
             }
 
             if (hasChanges) {
+                // Only the client-editable fields — never the whole payload. A
+                // spread let an owner/teammate also rewrite addedBy, createdAt,
+                // deletedAt (bypassing deleteOwnAdopter / admin-only restore),
+                // isDemo, tokenHash, country and sourceUrl.
+                const editable: Partial<typeof adopters.$inferInsert> = {};
+                for (const field of fields) {
+                    // @ts-ignore — the three fields are text columns
+                    if (data[field] !== undefined) editable[field] = data[field];
+                }
                 // Optimistic locking: only update if the record hasn't been modified since we read it
                 const result = await db.update(adopters).set({
-                    ...data,
+                    ...editable,
                     updatedAt: new Date()
                 }).where(
                     and(
@@ -336,8 +350,9 @@ export async function saveAdopter(data: SaveAdopterInput) {
             }
             return { success: true, id: data.id };
         } else {
-            // Create
-            const newId = data.id || crypto.randomUUID();
+            // Create. The id is always minted here: a client-chosen id is never
+            // trusted (the form sends '' for a new profile).
+            const newId = crypto.randomUUID();
 
             // Look up the user's country to stamp on the adopter. Two-tier
             // fallback: user_profiles.country (set on first sign-in from
@@ -366,10 +381,19 @@ export async function saveAdopter(data: SaveAdopterInput) {
                 } catch { /* headers() unavailable in some non-request contexts — fine, leave null */ }
             }
 
+            // Whitelisted columns only — server-owned fields (id, addedBy,
+            // createdAt, deletedAt, isDemo, tokenHash, country, source) are
+            // set here, never taken from the payload.
             await db.insert(adopters).values({
-                ...data,
+                name: data.name ?? '',
+                ...(data.status != null ? { status: data.status } : {}),
+                contactInfo: data.contactInfo ?? null,
+                contactEntries: data.contactEntries ?? null,
+                addressInfo: data.addressInfo ?? null,
+                familyMembers: data.familyMembers ?? null,
+                sourceUrl: data.sourceUrl || null,
                 id: newId,
-                addedBy: changedBy, // Added this line
+                addedBy: changedBy,
                 country: userCountry,
                 createdAt: new Date(),
                 updatedAt: new Date(),

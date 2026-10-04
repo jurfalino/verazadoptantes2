@@ -183,11 +183,24 @@ export async function attachContractToExistingAdopter(
 export async function markContractKeepNew(adopterId: string): Promise<{ success: boolean }> {
     let actorEmail = 'unknown';
     try {
-        const { getUser } = await import('./_db');
-        actorEmail = await getUser().catch(() => 'unknown');
+        // Signed-in, and only for a profile of the caller's (or her team's):
+        // the keep-new button sits on her own contract-results page, whose
+        // orphan profile was auto-created under her name. Anything else would
+        // let anyone write unlimited analytics rows for any adopter.
+        try { actorEmail = await getUser(); } catch {
+            logger.warn('markContractKeepNew: refused — no session', { adopterId });
+            return { success: false };
+        }
 
         const db = await getDb();
         if (!db) return { success: false };
+
+        const target = await db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, adopterId)).get();
+        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+        if (!target || !(await isOwnerOrOrgMate(actorEmail, target.addedBy))) {
+            logger.warn('markContractKeepNew: refused — not the caller\'s profile', { adopterId, actor: actorEmail });
+            return { success: false };
+        }
 
         await db.insert(adopterStats).values({
             id: crypto.randomUUID(),

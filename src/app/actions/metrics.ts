@@ -4,7 +4,24 @@ import { getTimeSeries, getPriorTotal, getWindowTotal, windowIso, getTraceLatenc
 import { computeTrend, type Window } from '@/lib/metricsTime';
 import { sumSeries } from '@/lib/metricsShape';
 import type { SeriesPoint } from '@/lib/metricsSeries';
-import { logger } from '@/lib/logger';
+import { logger, generateErrorId } from '@/lib/logger';
+
+/** Admin only: the dashboard is under /admin, and these read production
+ *  metrics + error messages and spend the Axiom query quota. Throws with an
+ *  errorId (the admin widgets already catch). */
+async function assertAdmin(op: string): Promise<void> {
+    let email: string | null = null;
+    try {
+        const { auth } = await import('@/auth');
+        email = (await auth())?.user?.email ?? null;
+    } catch { /* no session */ }
+    const { isAdminAsync } = await import('@/config/admins');
+    if (!email || !(await isAdminAsync(email))) {
+        const errorId = generateErrorId();
+        logger.warn(`${op}: refused — not an admin`, { user: email, errorId });
+        throw new Error(`Unauthorized (Error ID: ${errorId})`);
+    }
+}
 
 export interface MetricCardData {
     key: MetricKey;
@@ -25,6 +42,7 @@ export interface MetricsPayload {
 }
 
 export async function fetchMetrics(window: Window): Promise<MetricsPayload> {
+    await assertAdmin('fetchMetrics');
     const keys = Object.keys(METRICS) as MetricKey[];
 
     const cards = await Promise.all(keys.map(async (key): Promise<MetricCardData> => {
@@ -89,6 +107,7 @@ export interface TopErrorsPayload {
  * section is expanded, so nothing from the old eager overview block is lost.
  */
 export async function fetchTopErrors7d(): Promise<TopErrorsPayload> {
+    await assertAdmin('fetchTopErrors7d');
     const w = windowIso('7d');
     const raw = await getTopErrors({ ...w, limit: 5 }).catch((e) => {
         logger.warn('fetchTopErrors7d: getTopErrors failed', { error: e instanceof Error ? e.message : String(e) });

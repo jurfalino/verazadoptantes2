@@ -141,6 +141,17 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //   folded into the caller's, whatever createdAt says (decideDedupMerge,
 //   src/domain/dedupPair.ts, unit + integration tested). Refusals are logged
 //   with an errorId; the merge is the shared, undoable, audited one.
+// Still 146 after the audit fixes: findAdopters MOVED, it did not multiply.
+// The engine (src/app/actions/findAdopters.ts) lost 'use server' — its
+// 'duplicate' mode runs without a session for the public form/contract submit
+// and must not be browser-selectable — and the browser's findAdopters is now
+// the thin action in src/app/actions/findAdoptersAction.ts: discovery passes
+// through (the engine masks for anonymous viewers), 'duplicate' needs a
+// session. Same audit, no count change: saveAdopter (session required,
+// columns whitelisted), saveAdoption (edits owner/team/admin), getAdoptions /
+// getAdoptionImages (signed-in), fetchMetrics / fetchTopErrors7d (admin),
+// markContractKeepNew (own/team profile), setProfilePicture (image must be
+// the adopter's).
 const EXPECTED_ACTIONS = 146;
 
 let manifest;

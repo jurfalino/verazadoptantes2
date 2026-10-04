@@ -1,4 +1,9 @@
-'use server';
+// NOT 'use server' (since the reel-11 fixes): this is the trusted, server-side
+// engine. Its 'duplicate' mode runs without a session by design (the public
+// form / contract submit routes call it through _adopterFactory), so the
+// browser must never be able to pick it directly. Client components call the
+// session-checked action in ./findAdoptersAction.ts (re-exported by the
+// barrel under the same name). Never import this file from a client component.
 
 /**
  * findAdopters — Unified Search Engine
