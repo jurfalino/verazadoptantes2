@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.144] - 2026-10-04
+
+### Fixed — contract PDFs keep accents and ñ (standard contract too)
+
+Signed and generic contract PDFs now print «primer año», «Gómez», ¿ ¡ « » • – “ ”
+exactly as written. Our own code was stripping them; no font was added. Bullets
+print as •, and line breaks inside a field become a space instead of disappearing.
+
+### Added — custom adoption form and contract: safe for teammates editing at once
+
+(Behind ENABLE_CUSTOM_ADOPTION_DOCS, still off in production.)
+- Saving sends only what you changed: the contract sections you edited, or the
+  questions you switched on/off. If a teammate changed a different section, both
+  changes are kept and you see theirs marked «Actualizada por <nombre>».
+- If a teammate saved the SAME section while you were editing, it isn't overwritten:
+  «<Nombre> guardó cambios en esta sección mientras la editabas» with «Ver su
+  versión» (side by side, combine and save), «Quedarme con la de <Nombre>» or
+  «Guardar la mía igual». Questions get the same per-question warning.
+- Checked on the server, so an old or modified page can't skip it.
+- Editing a contract section shows a note: readers in other languages will see that
+  section as written.
+
 ## [2.56.143] - 2026-10-04
 
 ### Added — what an adopter gave you stays yours
