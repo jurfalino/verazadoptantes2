@@ -5,7 +5,7 @@ import { eq, and, or, ne, isNull, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { getDb, getUser } from './_db';
 import { insertRecord } from './_recordWrite';
-import { mergeAdopters } from './duplicates';
+import { mergeAdopters } from '@/lib/adopterMerge';
 import { createNotification, resolveDisplayName } from './notifications';
 import { isAdmin } from '@/config/admins';
 import { planFormLink, canLinkSubmissionDirectly } from '@/domain/formLink';

@@ -1,6 +1,6 @@
 export const runtime = 'edge';
 
-import { getDb } from "@/app/actions";
+import { getDb } from "@/app/actions/_db";
 import { adopters, adopterFlags, adopterHistory, adopterImages, adopterStats, duplicateTokens, duplicateCandidates, formSubmissions } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { auth } from "@/auth";

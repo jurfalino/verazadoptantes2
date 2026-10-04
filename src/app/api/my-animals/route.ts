@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     const view = searchParams.get('view') || 'available'; // 'available', 'adopted', or 'all'
 
     try {
-        const { getDb } = await import('@/app/actions');
+        const { getDb } = await import('@/app/actions/_db');
         const db = await getDb();
         if (!db) {
             const errorId = logger.error('API my-animals: db unavailable', new Error('getDb returned null'), { userEmail, view });

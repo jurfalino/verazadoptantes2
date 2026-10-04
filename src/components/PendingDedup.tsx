@@ -23,7 +23,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import {
     getPendingDuplicatesForUser,
     dismissDuplicateCandidate,
-    mergeAdopters,
+    mergePendingDedupPair,
     type PendingDedupPair,
 } from '@/app/actions/duplicates';
 import { AdopterName } from '@/components/AdopterName';
@@ -204,18 +204,22 @@ export default function PendingDedup() {
         if (busyCandidateId) return;
         setBusyCandidateId(pair.candidateId);
         try {
-            const session = await fetch('/api/auth/session').then(r => r.json()).catch(() => null) as { user?: { email?: string } } | null;
-            const actor = session?.user?.email || 'unknown';
-            // Merge with the EXISTING (older) record as primary so the older
-            // profile keeps its id (URLs, references stay valid). New one is
-            // soft-deleted and its contactInfo appended.
-            const result = await mergeAdopters(pair.existingAdopter.id, pair.newAdopter.id, actor);
+            // The server takes the actor from the session, checks the pair is
+            // one this feed shows the caller, and keeps the EXISTING (older)
+            // record as primary so its id, URLs and references stay valid.
+            const result = await mergePendingDedupPair(pair.candidateId);
             if (result.success) {
                 toast.success(t('myAdopters.pending_dedup_merged') || 'Profiles merged');
                 setPairs(prev => prev?.filter(p => p.candidateId !== pair.candidateId) || []);
                 setTotal(n => Math.max(0, n - 1));
             } else {
-                toast.error(t('errors.generic') || 'Error', t('errors.merge_failed') || 'No se pudieron combinar los perfiles.');
+                const message = result.error === 'other_owner'
+                    ? (t('errors.merge_other_owner') || 'Este perfil lo cargó otro rescatista: no se puede absorber en el tuyo.')
+                    : result.error === 'flag_cross_owner'
+                        ? (t('errors.merge_flag_cross_owner') || 'Este par lo revisa un administrador.')
+                        : (t('errors.merge_failed') || 'No se pudieron combinar los perfiles.');
+                toast.error(t('errors.generic') || 'Error', message,
+                    result.errorId ?? resolveErrorId(new Error(`mergePendingDedupPair: ${result.error}`), 'PendingDedup'));
             }
         } catch (e) {
             toast.error(t('errors.generic') || 'Error', t('errors.merge_failed') || undefined, resolveErrorId(e, 'PendingDedup'));

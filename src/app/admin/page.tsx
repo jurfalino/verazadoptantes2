@@ -1,5 +1,5 @@
 export const runtime = 'edge';
-import { getDb } from "@/app/actions";
+import { getDb } from "@/app/actions/_db";
 import { adopters, adoptions, adopterFlags } from "@/db/schema";
 import { count, isNull, and, ne } from "drizzle-orm";
 import AdminMetricsCollapsible from "@/components/admin/AdminMetricsCollapsible";

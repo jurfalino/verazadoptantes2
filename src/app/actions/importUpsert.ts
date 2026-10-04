@@ -19,7 +19,7 @@ import { isRealActorEmail } from '@/lib/piiAccess';
 import { planRecordMerge, type MergeContact } from '@/domain/importMerge';
 import { addContactEntry } from './addContactEntry';
 import { saveAdoption, getAdoptions } from './adoptions';
-import { tokenizeAdopter } from './duplicates';
+import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { importDateToNoon } from '@/domain/importRow';
 import { logger } from '@/lib/logger';
 

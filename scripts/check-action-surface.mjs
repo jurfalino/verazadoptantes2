@@ -118,7 +118,30 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // src/app/actions/organizations.ts (which client pages import, so every export
 // got an id). Moved, unchanged, to src/lib/orgMembership.ts; its callers are
 // all server code (notifications fan-out, findAdopters, piiAccessServer).
-const EXPECTED_ACTIONS = 161;
+// 146 since the reel-11 fixes (measured): 16 doors closed, 1 opened.
+//   CLOSED — server helpers that checked no session, so they never belonged on
+//   the wire. Moved to plain modules, or their file lost 'use server':
+//     mergeAdopters, mergeCandidatePair, unmergeAdopters → src/lib/adopterMerge.ts
+//       (mergeAdopters' id shipped in /my-adopters' JS: anyone could merge any
+//       two profiles and read the victim's contact on their own)
+//     tokenizeAdopter → src/lib/adopterTokenize.ts
+//     createAdopterFromSubmission (_adopterFactory.ts), resolveUserNames
+//       (userNames.ts), getUserCountry (userCountry.ts), enrichAdopters,
+//       hydrateDuplicateMatches — same files, directive removed
+//     getDb, getUser, getIsAdmin, getIsModeratorOrAdmin, checkIsAdmin,
+//       checkIsAdminAsync, checkIsModeratorOrAdminAsync — _db.ts, directive
+//       removed (checkIsAdmin(email) answered "is this email an admin?")
+//   OPENED — mergePendingDedupPair(candidateId) in src/app/actions/duplicates.ts,
+//   the only browser door to a merge. Safe with arguments a stranger chooses:
+//   the actor is the session (anonymous → refused); the id must be a pending
+//   duplicate_candidates row or a manual duplicate flag the caller's feed lists
+//   (they created a live side); and ownership, never age, decides what may be
+//   absorbed: the absorbed (newer) record must be the caller's or a teammate's,
+//   and a flag needs both sides in the team — so a foreign profile is never
+//   folded into the caller's, whatever createdAt says (decideDedupMerge,
+//   src/domain/dedupPair.ts, unit + integration tested). Refusals are logged
+//   with an errorId; the merge is the shared, undoable, audited one.
+const EXPECTED_ACTIONS = 146;
 
 let manifest;
 try {

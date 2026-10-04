@@ -3,7 +3,7 @@ export const runtime = 'edge';
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { isAdminAsync } from '@/config/admins';
-import { mergeAdopters, mergeCandidatePair } from '@/app/actions/duplicates';
+import { mergeAdopters, mergeCandidatePair } from '@/lib/adopterMerge';
 
 /**
  * How many secondaries one request may merge into the primary. Each merge is

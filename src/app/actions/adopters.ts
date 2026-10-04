@@ -7,7 +7,7 @@ import { logger, withTrace } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
-import { tokenizeAdopter } from './duplicates';
+import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { saveAdopterSchema } from './validation';
 import {
     deserializeContactEntries,

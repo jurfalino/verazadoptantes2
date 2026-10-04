@@ -1,4 +1,7 @@
-'use server';
+// NOT 'use server' (since the reel-11 fixes): a server-only helper called by
+// actions and routes. As an export of a 'use server' module it was a
+// browser-callable endpoint that checked no session. Never import this file
+// from a client component.
 
 /**
  * Shared adopter-creation path for non-manual flows (form submit + legacy
@@ -185,7 +188,7 @@ export async function createAdopterFromSubmission(
     // call (and any concurrent submission for the same person) can match
     // this row through the token index. ~200-500ms — acceptable on submit.
     try {
-        const { tokenizeAdopter } = await import('@/app/actions/duplicates');
+        const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
         await tokenizeAdopter(adopterId);
     } catch (e) {
         logger.warn('createAdopterFromSubmission: tokenize failed (continuing)', {

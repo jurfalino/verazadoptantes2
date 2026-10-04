@@ -13,7 +13,7 @@ import {
     detectSocialPlatform,
     type ContactEntry,
 } from '@/lib/contactEntries';
-import { tokenizeAdopter } from './duplicates';
+import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { hashEntryValue, isRealActorEmail } from '@/lib/piiAccess';
 import { isAdminAsync } from '@/config/admins';
 

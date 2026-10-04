@@ -3,7 +3,7 @@ export const runtime = 'edge';
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { isAdminAsync } from '@/config/admins';
-import { unmergeAdopters } from '@/app/actions/duplicates';
+import { unmergeAdopters } from '@/lib/adopterMerge';
 
 /**
  * POST /api/admin/duplicates/unmerge

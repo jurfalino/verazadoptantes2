@@ -16,7 +16,7 @@ import {
     type SocialPlatform,
     type MessagingApp,
 } from '@/lib/contactEntries';
-import { tokenizeAdopter } from './duplicates';
+import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { hashEntryValue, isRealActorEmail } from '@/lib/piiAccess';
 import { createNotification, resolveDisplayName } from './notifications';
 import { getAdopterApprovers } from './piiAccess';

@@ -351,6 +351,8 @@ export const pt = {
         dedup_dismiss_failed: 'Não foi possível descartar a sugestão. Tente novamente.',
         load_duplicates_failed: 'Não foi possível carregar os possíveis duplicados. Recarregue a página.',
         merge_failed: 'Não foi possível combinar os perfis. Tente novamente.',
+        merge_other_owner: 'Este perfil foi cadastrado por outro resgatista: não pode ser absorvido pelo seu. Quem o cadastrou, ou um administrador, pode mesclá-los.',
+        merge_flag_cross_owner: 'Este par foi marcado manualmente entre perfis de resgatistas diferentes: um administrador vai revisá-lo.',
         dismiss_failed: 'Não foi possível descartar a sugestão. Tente novamente.',
         contract_invite_failed: 'Não foi possível gerar o link do contrato. Tente novamente.',
         contract_invite_not_allowed: 'Você só pode enviar o contrato para quem se candidatou a este animal, ou para um perfil seu ou da sua equipe.',

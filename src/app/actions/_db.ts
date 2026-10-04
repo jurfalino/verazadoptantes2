@@ -1,4 +1,8 @@
-'use server';
+// NOT 'use server' (since the reel-11 fixes): these are server helpers —
+// getDb, getUser and the admin checks — imported by actions and routes. As a
+// 'use server' module every export here was a browser-callable endpoint
+// (including checkIsAdmin(email), which answered "is this email an admin?").
+// Never import this file from a client component.
 
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';

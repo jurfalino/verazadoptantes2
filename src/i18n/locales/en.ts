@@ -352,6 +352,8 @@ export const en = {
         dedup_dismiss_failed: "The suggestion couldn't be dismissed. Please try again.",
         load_duplicates_failed: "We couldn't load possible duplicates. Reload the page.",
         merge_failed: "The profiles couldn't be merged. Please try again.",
+        merge_other_owner: "This profile was created by another rescuer, so it can't be absorbed into yours. Whoever created it, or an admin, can merge them.",
+        merge_flag_cross_owner: 'This pair was flagged by hand across different rescuers\' profiles: an admin reviews it.',
         dismiss_failed: "The suggestion couldn't be dismissed. Please try again.",
         contract_invite_failed: "The contract link couldn't be created. Please try again.",
         contract_invite_not_allowed: 'You can only send the contract to someone who applied for this animal, or to a profile of yours or your team.',

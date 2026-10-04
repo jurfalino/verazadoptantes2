@@ -7,7 +7,7 @@ import { eq, like, or, and, isNull, type InferSelectModel } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
-import { tokenizeAdopter } from '@/app/actions/duplicates';
+import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { processImageForStorage, uploadToR2 } from '@/lib/r2';
 import { createAdopterApiSchema } from '@/app/actions/validation';
 import { deserializeContactEntries, contactEntriesToBlob } from '@/lib/contactEntries';

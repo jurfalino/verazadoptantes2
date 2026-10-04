@@ -5,8 +5,10 @@
 export type { AdopterFlags } from '@/types/adopter';
 export type { SearchResult, SearchResponse, SnippetField, MatchSnippet } from './types';
 
-// DB helpers
-export { getDb, getUser, getIsAdmin, getIsModeratorOrAdmin } from './_db';
+// DB helpers: import getDb / getUser / getIsAdmin / getIsModeratorOrAdmin from
+// './_db' directly. They are not server actions, and this barrel is imported by
+// client components, so re-exporting them here would pull server code into
+// the browser bundle.
 
 // Config
 export { getAdoptionConfig } from './config';
@@ -49,7 +51,7 @@ export type { DuplicateCandidate, TokenMatchResult } from './duplicates';
 export { flagAdopterAsDuplicate } from './flagAdopterAsDuplicate';
 
 // Enrichment
-export { enrichAdopters } from './enrichAdopters';
+// enrichAdopters: import from './enrichAdopters' (server-only helper, not an action).
 export type { EnrichmentResult } from './enrichAdopters';
 
 // Notifications — import directly from '@/app/actions/notifications' (server-side only)

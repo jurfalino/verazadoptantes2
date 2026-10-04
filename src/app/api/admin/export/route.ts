@@ -1,7 +1,7 @@
 export const runtime = 'edge';
 import { auth } from "@/auth";
 import { isAdminAsync } from "@/config/admins";
-import { getDb } from "@/app/actions";
+import { getDb } from "@/app/actions/_db";
 import { TABLE_REGISTRY, TABLE_BY_KEY, defaultSelection } from "@/lib/dataMigration";
 import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
