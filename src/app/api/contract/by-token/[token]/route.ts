@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { withCors, corsPreflightResponse } from '@/lib/cors';
 import { animalPrimaryFirst } from '@/lib/showcase';
+import { buildContractPrefill, type ContractPrefill } from '@/lib/contractInvitation';
+import { resolveInvitationAccess } from '@/lib/contractInvitationAccess';
 
 export const runtime = 'edge';
 
@@ -34,30 +36,6 @@ interface AnimalPayload {
     microchip: string | null;
     rescuerName: string | null;
     images: Array<{ id: string; url: string; caption: string | null }>;
-}
-
-interface PrefillPayload {
-    name: string;
-    lastName: string;
-    email: string;
-    phone: string;
-    address: string;
-    dni: string;
-}
-
-function splitContactLine(contactInfo: string | null, prefix: string): string {
-    if (!contactInfo) return '';
-    const re = new RegExp(`^${prefix}:\\s*(.*)$`, 'mi');
-    const m = contactInfo.match(re);
-    return m ? m[1].trim() : '';
-}
-
-function splitName(full: string): { first: string; last: string } {
-    const trimmed = full.trim();
-    if (!trimmed) return { first: '', last: '' };
-    const parts = trimmed.split(/\s+/);
-    if (parts.length === 1) return { first: parts[0], last: '' };
-    return { first: parts.slice(0, -1).join(' '), last: parts[parts.length - 1] };
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }) {
@@ -99,6 +77,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
             return withCors(NextResponse.json({ error: 'Adopter record unavailable' }, { status: 410 }), origin);
         }
 
+        // This page needs no login, so what it shows is decided for the
+        // INVITING rescuer: re-check she may invite this adopter (closes tokens
+        // minted before the gate existed) and pre-fill only what she sees.
+        const access = await resolveInvitationAccess(db, invite.createdBy, invite.animalId, adopter);
+        if (!access.allowed) {
+            logger.warn('Contract by-token: invitation no longer allowed', {
+                token, animalId: invite.animalId, adopterId: invite.adopterId, createdBy: invite.createdBy,
+            });
+            return withCors(NextResponse.json({ error: 'Invitation not valid', code: 'not_allowed' }, { status: 410 }), origin);
+        }
+
         const images = await db.select({
             id: adopterImages.id,
             url: adopterImages.url,
@@ -128,15 +117,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
         const { resolveDocsForRescuer } = await import('@/lib/adoptionDocsRepo');
         const resolved = await resolveDocsForRescuer(db, animal.addedBy);
 
-        const { first, last } = splitName(adopter.name);
-        const prefill: PrefillPayload = {
-            name: first,
-            lastName: last,
-            email: splitContactLine(adopter.contactInfo, 'Email'),
-            phone: splitContactLine(adopter.contactInfo, 'Tel') || splitContactLine(adopter.contactInfo, 'Teléfono') || splitContactLine(adopter.contactInfo, 'Telefono'),
-            address: splitContactLine(adopter.contactInfo, 'Dirección') || splitContactLine(adopter.contactInfo, 'Direccion') || (adopter.addressInfo || ''),
-            dni: splitContactLine(adopter.contactInfo, 'Documento') || splitContactLine(adopter.contactInfo, 'DNI'),
-        };
+        // Full access: the profile's contact as before. Otherwise only what the
+        // inviting rescuer sees in full; a masked field stays blank to type.
+        const prefill: ContractPrefill = buildContractPrefill(adopter, access);
 
         const animalPayload: AnimalPayload = {
             id: animal.id,

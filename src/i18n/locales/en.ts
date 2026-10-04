@@ -354,6 +354,7 @@ export const en = {
         merge_failed: "The profiles couldn't be merged. Please try again.",
         dismiss_failed: "The suggestion couldn't be dismissed. Please try again.",
         contract_invite_failed: "The contract link couldn't be created. Please try again.",
+        contract_invite_not_allowed: 'You can only send the contract to someone who applied for this animal, or to a profile of yours or your team.',
         flag_duplicate_failed: "It couldn't be flagged as a duplicate. Please try again.",
         attach_contract_failed: "The adoption couldn't be attributed to that profile. Please try again.",
         load_applicants_failed: "We couldn't load the applicants. Reload the page.",

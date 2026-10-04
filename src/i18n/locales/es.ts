@@ -353,6 +353,7 @@ export const es = {
         merge_failed: 'No se pudieron combinar los perfiles. Volvé a intentar.',
         dismiss_failed: 'No se pudo descartar la sugerencia. Volvé a intentar.',
         contract_invite_failed: 'No se pudo generar el link del contrato. Volvé a intentar.',
+        contract_invite_not_allowed: 'Solo podés enviar el contrato a quien se postuló para este animal, o a un perfil tuyo o de tu equipo.',
         flag_duplicate_failed: 'No se pudo marcar como duplicado. Volvé a intentar.',
         attach_contract_failed: 'No se pudo atribuir la adopción a ese perfil. Volvé a intentar.',
         load_applicants_failed: 'No pudimos cargar los postulantes. Recargá la página.',

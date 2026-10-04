@@ -228,7 +228,10 @@ export default function AnimalApplicants({
             if (result.success && result.url) {
                 setShareUrl({ url: result.url, adopterName: applicant.adopterName });
             } else {
-                toast.error(t('errors.generic') || 'Error', result.error || 'Could not issue invitation');
+                const message = result.error === 'not_allowed'
+                    ? (t('errors.contract_invite_not_allowed') || 'You can only send the contract to someone who applied for this animal.')
+                    : (t('errors.contract_invite_failed') || 'Could not issue invitation');
+                toast.error(t('errors.generic') || 'Error', message, result.errorId ?? resolveErrorId(new Error(`createContractInvitation: ${result.error}`), 'AnimalApplicants'));
             }
         } catch (e) {
             toast.error(t('errors.generic') || 'Error', t('errors.contract_invite_failed') || undefined, resolveErrorId(e, 'AnimalApplicants'));
