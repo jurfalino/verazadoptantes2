@@ -20,6 +20,7 @@ export const animal: CatalogSlice = {
         'animal.about': 'Sobre {name}',
         'animal.posted_by': 'Publicado por',
         'animal.adopt_cta': 'Quiero adoptarlo',
+        'animal.adopt_cta_f': 'Quiero adoptarla',
         'animal.unavailable_for_application': 'Este animal no está disponible para postulación en este momento.',
         'animal.follow_instagram': 'Seguinos en Instagram',
         // Species
@@ -46,6 +47,7 @@ export const animal: CatalogSlice = {
         'animal.about': 'About {name}',
         'animal.posted_by': 'Posted by',
         'animal.adopt_cta': 'I want to adopt',
+        'animal.adopt_cta_f': 'I want to adopt',
         'animal.unavailable_for_application': 'This animal is not available for applications right now.',
         'animal.follow_instagram': 'Follow us on Instagram',
         // Species
@@ -72,6 +74,7 @@ export const animal: CatalogSlice = {
         'animal.about': 'Sobre {name}',
         'animal.posted_by': 'Publicado por',
         'animal.adopt_cta': 'Quero adotá-lo',
+        'animal.adopt_cta_f': 'Quero adotá-la',
         'animal.unavailable_for_application': 'Este animal não está disponível para candidatura no momento.',
         'animal.follow_instagram': 'Siga-nos no Instagram',
         // Species

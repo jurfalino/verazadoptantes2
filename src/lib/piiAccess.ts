@@ -746,6 +746,53 @@ export function maskAdopterContact(
     };
 }
 
+/** A phone the viewer may be offered as a one-tap WhatsApp / Telegram link. */
+export interface ReachablePhone {
+    phone: string;
+    channel: 'whatsapp' | 'telegram';
+}
+
+/**
+ * The phone a viewer may be offered as a one-tap contact link (the health-record
+ * handover and a due follow-up on the animal page) — exactly a phone the SAME
+ * viewer already sees in full on the adopter's profile, never more.
+ *
+ * Mirrors getAdopter's decision: with gating off, or for a viewer with full
+ * access (`nothingMasked`), or on a whole-profile-public record, nothing is
+ * masked; otherwise the entries go through `maskContactEntries` — the same
+ * per-entry rules (search-match / contribution grants, `isPublic` entries) —
+ * and only entries that come back UNMASKED are candidates. A partial-reveal
+ * value (`+54 9••••`) can never be returned, so it can never reach a wa.me URL.
+ * Source entries follow maskAdopterContact: structured entries, else the
+ * legacy blob parsed into entries. The free-text `contactInfo` regex fallback
+ * only runs when nothing is masked (the profile shows that blob verbatim then).
+ */
+export function reachablePhoneForViewer(
+    adopter: { contactEntries?: string | null; contactInfo?: string | null },
+    access: { gatingOn: boolean; visibility: Visibility; maskOptions?: MaskContactOptions },
+): ReachablePhone | null {
+    const options = access.maskOptions ?? {};
+    const fullyVisible = !access.gatingOn || access.visibility.nothingMasked || !!options.adopterIsPublic;
+    const parsed = deserializeContactEntries(adopter.contactEntries ?? null);
+    const visible = fullyVisible
+        ? parsed
+        : maskContactEntries(
+            parsed.length > 0 ? parsed : parseBlobToContactEntries(adopter.contactInfo ?? null),
+            access.visibility,
+            options,
+        ).entries;
+    const phones = visible.filter(e => e.type === 'phone' && e.value && !e.masked);
+    const tg = phones.find(e => e.apps?.includes('telegram') && !e.apps?.includes('whatsapp'));
+    const wa = phones.find(e => e.apps?.includes('whatsapp')) || phones[0];
+    if (wa) return { phone: wa.value, channel: 'whatsapp' };
+    if (tg) return { phone: tg.value, channel: 'telegram' };
+    if (fullyVisible && adopter.contactInfo) {
+        const m = String(adopter.contactInfo).match(/\+?[\d][\d\s\-().]{7,}/);
+        if (m) return { phone: m[0], channel: 'whatsapp' };
+    }
+    return null;
+}
+
 /** Masked household result — parallels AdopterContactMask for the family section. */
 export interface HouseholdMask {
     /** Masked members (name partial-revealed, contacts masked) for direct render. */

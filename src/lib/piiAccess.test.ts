@@ -15,6 +15,7 @@ import {
     redactHistoryChanges,
     isRealActorEmail,
     piiCooldownUntil,
+    reachablePhoneForViewer,
     PII_MASK,
     PII_DENIAL_COOLDOWN_DAYS,
     type Visibility,
@@ -870,5 +871,82 @@ describe('piiCooldownUntil', () => {
     it('accepts an epoch-ms number', () => {
         const ms = Date.UTC(2026, 4, 1);
         expect(piiCooldownUntil(ms).getTime()).toBe(ms + PII_DENIAL_COOLDOWN_DAYS * 86_400_000);
+    });
+});
+
+describe('reachablePhoneForViewer — one-tap contact offers only what the profile shows', () => {
+    // Carla's profile was created by ANOTHER rescuer; the viewer (who placed an
+    // animal with her) is neither owner, org-mate nor admin.
+    const PHONE = '+54 9 11 5555-0109';
+    const entries = (extra: Partial<ContactEntry> = {}): string => JSON.stringify([
+        { type: 'phone', value: PHONE, ...extra },
+        { type: 'email', value: 'carla@example.com' },
+    ]);
+    const stranger = vis({});
+
+    it('gating ON + no access: no phone (the profile shows it partial-revealed)', () => {
+        expect(reachablePhoneForViewer({ contactEntries: entries() }, { gatingOn: true, visibility: stranger })).toBeNull();
+    });
+
+    it('never returns a partial-reveal value, even from the legacy blob', () => {
+        const r = reachablePhoneForViewer({ contactEntries: null, contactInfo: PHONE }, { gatingOn: true, visibility: stranger });
+        expect(r).toBeNull();
+    });
+
+    it('legacy blob row + grant on its phone: the phone (as the profile reveals it)', () => {
+        const visibility = vis({ unlockedEntryHashes: new Set([hashEntryValue('phone', PHONE)]) });
+        expect(reachablePhoneForViewer({ contactEntries: null, contactInfo: PHONE }, { gatingOn: true, visibility })?.phone)
+            .toBe(PHONE);
+    });
+
+    it('gating ON + full access (owner / org-mate / admin / all-contact grant): the phone', () => {
+        expect(reachablePhoneForViewer({ contactEntries: entries() }, { gatingOn: true, visibility: vis({ nothingMasked: true }) }))
+            .toEqual({ phone: PHONE, channel: 'whatsapp' });
+    });
+
+    it('gating OFF: the profile masks nothing, so neither does this', () => {
+        expect(reachablePhoneForViewer({ contactEntries: entries() }, { gatingOn: false, visibility: stranger }))
+            .toEqual({ phone: PHONE, channel: 'whatsapp' });
+    });
+
+    it('gating ON + entry grant on THAT phone (search match / contribution): the phone', () => {
+        const visibility = vis({ unlockedEntryHashes: new Set([hashEntryValue('phone', PHONE)]) });
+        expect(reachablePhoneForViewer({ contactEntries: entries() }, { gatingOn: true, visibility }))
+            .toEqual({ phone: PHONE, channel: 'whatsapp' });
+    });
+
+    it('gating ON + entry grant on the EMAIL only: still no phone', () => {
+        const visibility = vis({ unlockedEntryHashes: new Set([hashEntryValue('email', 'carla@example.com')]) });
+        expect(reachablePhoneForViewer({ contactEntries: entries() }, { gatingOn: true, visibility })).toBeNull();
+    });
+
+    it('gating ON + entry sourced from a public channel (isPublic): the phone', () => {
+        expect(reachablePhoneForViewer({ contactEntries: entries({ isPublic: true }) }, { gatingOn: true, visibility: stranger }))
+            .toEqual({ phone: PHONE, channel: 'whatsapp' });
+    });
+
+    it('gating ON + whole profile public: the phone', () => {
+        expect(reachablePhoneForViewer({ contactEntries: entries() }, {
+            gatingOn: true, visibility: stranger, maskOptions: { adopterIsPublic: true },
+        })).toEqual({ phone: PHONE, channel: 'whatsapp' });
+    });
+
+    it('prefers a WhatsApp-tagged phone over the first one', () => {
+        const ce = JSON.stringify([
+            { type: 'phone', value: '+54 11 4000-0000' },
+            { type: 'phone', value: PHONE, apps: ['whatsapp'] },
+        ]);
+        expect(reachablePhoneForViewer({ contactEntries: ce }, { gatingOn: true, visibility: vis({ nothingMasked: true }) }))
+            .toEqual({ phone: PHONE, channel: 'whatsapp' });
+    });
+
+    it('free-text contactInfo fallback only when nothing is masked', () => {
+        const adopter = { contactEntries: JSON.stringify([{ type: 'email', value: 'carla@example.com' }]), contactInfo: `cel ${PHONE}` };
+        expect(reachablePhoneForViewer(adopter, { gatingOn: true, visibility: vis({ nothingMasked: true }) })?.phone).toBe(PHONE);
+        expect(reachablePhoneForViewer(adopter, { gatingOn: true, visibility: stranger })).toBeNull();
+    });
+
+    it('no phone on file: null', () => {
+        expect(reachablePhoneForViewer({ contactEntries: null, contactInfo: null }, { gatingOn: false, visibility: stranger })).toBeNull();
     });
 });

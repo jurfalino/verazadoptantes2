@@ -25,8 +25,8 @@ import { compareTimelineItems } from '@/domain/animalTimelineOrder';
 import { getFeatureFlag } from '@/config/features';
 import { interpolate } from '@/lib/interpolate';
 import { buildWaMeUrl, buildTelegramUrl } from '@/lib/whatsapp';
-import { deserializeContactEntries } from '@/lib/contactEntries';
-import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
+import { resolveAdopterVisibility, isPiiGatingEnabled, buildMaskOptions } from '@/lib/piiAccessServer';
+import { reachablePhoneForViewer } from '@/lib/piiAccess';
 import { z } from 'zod';
 import { animalPrimaryFirst } from '@/lib/showcase';
 
@@ -389,11 +389,17 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
  * The adopter's reachable phone, for the one-tap contact affordances (a due
  * follow-up, and the health-record handover).
  *
- * resolveAdopterVisibility is the single authority on whether this viewer may
- * see the number at all, and this fails CLOSED: any error, any masking, and
- * the caller gets `phone: null`, which every caller renders as "no contact
- * shortcut" rather than as an error. The first name comes back regardless —
- * it is already on screen next to the animal.
+ * It offers exactly a phone this viewer already sees in full on the adopter's
+ * profile: the same inputs getAdopter masks with (the gating flag,
+ * resolveAdopterVisibility, the public-profile option), decided by the pure
+ * reachablePhoneForViewer. It used to check only `nothingMasked` and ignore
+ * the gating flag, so it could hide a phone the profile was showing.
+ * A visibility or DB error fails CLOSED: the caller gets `phone: null`, which
+ * every caller renders as "no contact shortcut" rather than as an error.
+ * Exception, shared with the profile: getFeatureFlag swallows a failed flag
+ * read and returns the code default (gating OFF), so then nothing is masked
+ * here either — the two surfaces still agree. The first
+ * name comes back regardless — it is already on screen next to the animal.
  */
 async function resolveAdopterContact(
     db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
@@ -407,24 +413,18 @@ async function resolveAdopterContact(
     let firstName = '';
     try {
         const adopter = await db.select({
-            id: adopters.id, name: adopters.name, addedBy: adopters.addedBy,
+            id: adopters.id, name: adopters.name, addedBy: adopters.addedBy, isPublic: adopters.isPublic,
             contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo,
         }).from(adopters).where(eq(adopters.id, adopterId)).get();
         if (adopter) {
             firstName = (adopter.name || '').trim().split(/\s+/)[0] || '';
-            const visibility = await resolveAdopterVisibility(userEmail, { id: adopter.id, addedBy: adopter.addedBy });
-            if (visibility.nothingMasked) {
-                const entries = deserializeContactEntries(adopter.contactEntries);
-                const phones = entries.filter(en => en.type === 'phone' && en.value);
-                const tg = phones.find(en => en.apps?.includes('telegram') && !en.apps?.includes('whatsapp'));
-                const wa = phones.find(en => en.apps?.includes('whatsapp')) || phones[0];
-                if (wa) { phone = wa.value; channel = 'whatsapp'; }
-                else if (tg) { phone = tg.value; channel = 'telegram'; }
-                if (!phone && adopter.contactInfo) {
-                    const m = String(adopter.contactInfo).match(/\+?[\d][\d\s\-().]{7,}/);
-                    if (m) phone = m[0];
-                }
-            }
+            const [gatingOn, visibility, maskOptions] = await Promise.all([
+                isPiiGatingEnabled(),
+                resolveAdopterVisibility(userEmail, { id: adopter.id, addedBy: adopter.addedBy }),
+                buildMaskOptions(adopter),
+            ]);
+            const reachable = reachablePhoneForViewer(adopter, { gatingOn, visibility, maskOptions });
+            if (reachable) { phone = reachable.phone; channel = reachable.channel; }
         }
     } catch (e) {
         logger.warn(op + ': contact resolution fallback', {
