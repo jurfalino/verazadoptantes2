@@ -2,6 +2,32 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.141] - 2026-10-04
+
+### Fixed — copy seen while recording the end-to-end demo (Reel 11)
+
+- **Female animals read as female:** after adding a female animal the toast says
+  «¡Nina publicada en adopción!», and her public page's buttons say «Quiero
+  adoptarla» (pt «Quero adotá-la»). Male or unknown sex keeps the old wording.
+- **Singulars:** «1 foto» on the new-animal photo counter and «1 vista» on the
+  adopter profile (all three languages).
+- **One name for a vet visit:** the app's event type now reads «Consulta
+  veterinaria» (pt «Consulta veterinária»), the same as the adopter's health
+  page. English stays "Vet visit".
+
+### Fixed — «Historial médico» and the follow-up WhatsApp offer the phone the profile shows
+
+- The health-record share window and the follow-up WhatsApp now offer exactly
+  the phone the rescuer already sees in full on that adopter's profile — same
+  rule, same masking (`reachablePhoneForViewer`). Before, they required full
+  access, so a phone visible on the profile (public source, an approved grant,
+  a public profile) still showed «No hay un teléfono en su ficha». Nothing
+  becomes visible beyond what the profile page already shows.
+- A soft-deleted adopter (approved deletion request) gets no phone and no name
+  in either place.
+- If the PII-gating setting can't be read, contact data is now masked instead
+  of shown (fails closed), and the read error is logged instead of swallowed.
+
 ## [2.56.140] - 2026-10-03
 
 ### Added — a semáforo on the adoption-form answers that matter most
