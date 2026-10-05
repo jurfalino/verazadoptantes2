@@ -938,6 +938,7 @@ export const en = {
         hh_rel_sibling: 'Sibling',
         hh_rel_other_relative: 'Other relative',
         hh_rel_housemate: 'Housemate',
+        hh_gift_recipient: 'Gift recipient',
         hh_rel_unknown: 'Unknown',
         notes: 'Notes',
         placeholder_notes: 'Additional observations, age, behavior, etc.',
@@ -1794,6 +1795,14 @@ export const en = {
             specialNeeds: 'Open to special-needs animals',
             legal: 'Accepted terms & conditions',
         },
+        /** A gift form names the recipient — {n} is her first name (spec Part 2 §10). */
+        fields_gift: {
+            household: "People in {n}'s home",
+            children: "Children in {n}'s home",
+            existingPets: "Pets in {n}'s home",
+            housingType: "{n}'s home type",
+            petExperience: "{n}'s past pets",
+        },
         options: {
             boolean: {
                 yes: 'Yes',
@@ -1815,10 +1824,12 @@ export const en = {
                 apartment: 'Apartment',
             },
             hasOutdoor: {
+                unknown: "Doesn't know",
                 yes: 'Yes',
                 no: 'No',
             },
             isSafe: {
+                unknown: "Doesn't know",
                 yes: 'Yes, enclosed',
                 no: 'Not enclosed',
                 na: 'Not applicable',
@@ -1830,27 +1841,32 @@ export const en = {
                 '8+': '8+ hours',
             },
             petExperience: {
+                unknown: "Doesn't know",
                 no: 'No, first pet',
                 cat: 'Yes, cat',
                 dog: 'Yes, dog',
                 other: 'Yes, other',
             },
             willingToSterilize: {
+                unknown: "Doesn't know",
                 yes: 'Yes',
                 no: 'No',
             },
             movingPlans: {
+                unknown: "Doesn't know",
                 no: 'No',
                 maybe: 'Possibly',
                 yes: 'Yes',
             },
             vacationPlan: {
+                unknown: "Doesn't know",
                 take: 'Take them with me',
                 family: 'Family will care for them',
                 sitter: 'Pet sitter / boarding',
                 unsure: 'Not sure yet',
             },
             children: {
+                unknown: "Doesn't know",
                 none: 'No',
                 '1': '1',
                 '2': '2',
@@ -1967,6 +1983,7 @@ export const en = {
         linked_badge: 'Linked profile',
         linked_no_rating: 'No ratings yet',
         household_alone: 'Lives alone',
+        gift_for: 'Who it is for',
         household_years: '{n} years old',
         signal_ok: 'Fine',
         signal_caution: 'Worth discussing',

@@ -2,6 +2,7 @@
 
 import { useLanguage } from '@/context/LanguageContext';
 import { answerSignal, personSignal, type AnswerSignal } from '@/domain/answerSignals';
+import { parseGiftRecipient, recipientFullName, type GiftRecipient } from '@/domain/giftRecipient';
 
 /** Token per signal: the semantic status colours both themes define (style guide §1.2). */
 const SIGNAL_COLOR: Record<AnswerSignal, string> = {
@@ -65,6 +66,40 @@ export function householdPeopleRow(answers: Record<string, unknown>, label: stri
         <div key="household" className="flex items-baseline gap-2 text-xs">
             <span className="font-semibold text-stone-600 min-w-[140px]">{label}:</span>
             <HouseholdPeopleAnswer people={answers.householdPeople as FormPerson[]} livesAlone={answers.livesAlone === true} />
+        </div>
+    );
+}
+
+/** Who a gift form is for — null for any other form (spec Part 2 §10). */
+export function giftRecipientOf(answers: Record<string, unknown>): GiftRecipient | null {
+    return answers.intent === 'gift' ? parseGiftRecipient(answers.giftRecipient) : null;
+}
+
+/**
+ * A field's label, about the recipient on a gift form ("Niños en el hogar de
+ * Laura") where the plain label would read as the giver's own home.
+ */
+export function fieldLabel(field: string, answers: Record<string, unknown>, t: (path: string) => string): string {
+    const recipient = giftRecipientOf(answers);
+    if (recipient) {
+        const key = `petshield.fields_gift.${field}`;
+        const gift = t(key);
+        if (gift !== key) return gift.replace('{n}', recipient.firstName);
+    }
+    return t(`petshield.fields.${field}`);
+}
+
+/** "Para quién es" — first row of the adopter's data on a gift form; null otherwise. */
+export function giftRecipientRow(answers: Record<string, unknown>, t: (path: string) => string) {
+    const r = giftRecipientOf(answers);
+    if (!r) return null;
+    return (
+        <div key="giftRecipient" className="flex items-baseline gap-2 text-xs" data-testid="gift-recipient">
+            <span className="font-semibold text-stone-600 min-w-[140px]">{t('formResults.gift_for')}:</span>
+            <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">
+                {recipientFullName(r) ?? r.firstName}
+                <span className="text-stone-500"> · {t(`adopter.hh_rel_${r.relationship}`)}{r.phone && <> · {r.phone}</>}</span>
+            </span>
         </div>
     );
 }
@@ -186,7 +221,7 @@ export default function FormAnswersPanel({ fullAnswers, excludeSections = [] }: 
                         <div className="space-y-1">
                             {visibleFields.map(field => {
                                 if (field === 'children') {
-                                    const people = householdPeopleRow(fullAnswers, t('petshield.fields.household'));
+                                    const people = householdPeopleRow(fullAnswers, fieldLabel('household', fullAnswers, t));
                                     if (people) return people;
                                 }
                                 const raw = get(field);
@@ -195,7 +230,7 @@ export default function FormAnswersPanel({ fullAnswers, excludeSections = [] }: 
                                 return (
                                     <div key={field} className="flex items-baseline gap-2 text-xs">
                                         <span className="font-semibold text-stone-600 min-w-[140px]">
-                                            {t(`petshield.fields.${field}`)}:
+                                            {fieldLabel(field, fullAnswers, t)}:
                                         </span>
                                         <AnswerValue field={field} raw={raw} display={display} />
                                     </div>

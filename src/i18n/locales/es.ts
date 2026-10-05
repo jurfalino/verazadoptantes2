@@ -945,6 +945,7 @@ export const es = {
         hh_rel_sibling: 'Hermano/a',
         hh_rel_other_relative: 'Otro familiar',
         hh_rel_housemate: 'Conviviente',
+        hh_gift_recipient: 'Destinatario/a del regalo',
         hh_rel_unknown: 'Desconocida',
         notes: 'Notas',
         placeholder_notes: 'Observaciones adicionales, edad, comportamiento, etc.',
@@ -1800,6 +1801,14 @@ export const es = {
             specialNeeds: 'Abierto a necesidades especiales',
             legal: 'Aceptó términos y condiciones',
         },
+        /** A gift form names the recipient — {n} is her first name (spec Part 2 §10). */
+        fields_gift: {
+            household: 'Personas en el hogar de {n}',
+            children: 'Niños en el hogar de {n}',
+            existingPets: 'Mascotas en el hogar de {n}',
+            housingType: 'Vivienda de {n}',
+            petExperience: 'Mascotas previas de {n}',
+        },
         options: {
             boolean: {
                 yes: 'Sí',
@@ -1821,10 +1830,12 @@ export const es = {
                 apartment: 'Departamento',
             },
             hasOutdoor: {
+                unknown: 'No sabe',
                 yes: 'Sí',
                 no: 'No',
             },
             isSafe: {
+                unknown: 'No sabe',
                 yes: 'Sí, cerrado',
                 no: 'No está cerrado',
                 na: 'No aplica',
@@ -1836,27 +1847,32 @@ export const es = {
                 '8+': '8+ horas',
             },
             petExperience: {
+                unknown: 'No sabe',
                 no: 'No, primera mascota',
                 cat: 'Sí, gato',
                 dog: 'Sí, perro',
                 other: 'Sí, otra',
             },
             willingToSterilize: {
+                unknown: 'No sabe',
                 yes: 'Sí',
                 no: 'No',
             },
             movingPlans: {
+                unknown: 'No sabe',
                 no: 'No',
                 maybe: 'Posiblemente',
                 yes: 'Sí',
             },
             vacationPlan: {
+                unknown: 'No sabe',
                 take: 'La llevo conmigo',
                 family: 'La cuida familia',
                 sitter: 'Cuidador / guardería',
                 unsure: 'No lo sé aún',
             },
             children: {
+                unknown: 'No sabe',
                 none: 'No',
                 '1': '1',
                 '2': '2',
@@ -1972,6 +1988,7 @@ export const es = {
         linked_badge: 'Perfil vinculado',
         linked_no_rating: 'Todavía sin calificaciones',
         household_alone: 'Vive solo/a',
+        gift_for: 'Para quién es',
         household_years: '{n} años',
         signal_ok: 'Bien',
         signal_caution: 'Para conversar',

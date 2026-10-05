@@ -254,12 +254,13 @@ test.describe('form-results: linking to an existing profile', () => {
         await expect(page.locator(`a[href="/form-results/${submissionId}"]`).first()).toBeVisible();
     });
 
-    test("gift: only the fully named recipient reaches the giver's profile; the recipient's housemates stay on the form", async ({ request }) => {
+    test("gift: only the fully named recipient reaches the giver's profile; the recipient's housemates stay on the form", async ({ page, request }) => {
         const stamp = Date.now();
         const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
             name: `E2E Regalo ${stamp}`, email: `e2e-regalo-${stamp}@example.com`, phone: `25${String(stamp).slice(-8)}`, address: '1 Gift St',
             intent: 'gift', giftRecipient: { relationship: 'child', firstName: 'Laura', lastName: 'Pérez', phone: '11 5555 1234' },
             householdPeople: [{ relationship: 'partner', age: 30, firstName: 'Marcos', lastName: 'Gómez' }], livesAlone: false,
+            hasOutdoor: 'unknown', isSafe: 'unknown',
         } });
         expect(res.ok(), await res.text()).toBeTruthy();
         const { submissionId } = await res.json();
@@ -269,6 +270,26 @@ test.describe('form-results: linking to an existing profile', () => {
         expect(members.map((m: { name: string }) => m.name)).toEqual(['Laura Pérez']);
         expect(members[0]).toMatchObject({ relationship: 'child', giftRecipient: true });
         expect(JSON.stringify(members[0].contactEntries)).toContain('11 5555 1234');
+
+        // The form screen: who it is for comes first, the home rows talk about her, "No sabe" carries no dot.
+        await page.goto(`/form-results/${submissionId}`);
+        await dismissCountryBanner(page);
+        const answers = page.getByRole('button', { name: /Complete answers|Respuestas completas|Respostas completas/ });
+        if ((await answers.getAttribute('aria-expanded')) === 'false') await answers.click();
+        const forWhom = page.getByTestId('gift-recipient');
+        await expect(forWhom).toContainText('Laura Pérez');
+        await expect(forWhom).toContainText('11 5555 1234');
+        await expect(page.getByText(/(People in|Personas en el hogar de|Pessoas na casa de) Laura/)).toBeVisible();
+        for (const label of [/Patio or yard|Patio o jardín|Quintal ou jardim/, /Protected spaces|Secure spaces|Espacios protegidos|Espaços protegidos/]) {
+            const line = page.locator('div.flex.items-baseline', { hasText: label });
+            await expect(line).toContainText(/No sabe|Doesn't know|Não sabe/);
+            await expect(line.locator('[data-signal]')).toHaveCount(0);
+        }
+
+        // The profile marks her as the person the animal is for.
+        await page.goto(`/adopter/${row.auto_adopter_id}`);
+        await dismissCountryBanner(page);
+        await expect(page.getByText(/Gift recipient|Destinatario\/a del regalo|Destinatário\/a do presente/).first()).toBeVisible();
     });
 
     test('gift with a first-name-only recipient: nothing on the profile', async ({ request }) => {

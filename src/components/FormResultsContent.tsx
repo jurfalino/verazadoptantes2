@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import Link from 'next/link';
 import { useTimezone } from '@/context/TimezoneContext';
 import { useLanguage } from '@/context/LanguageContext';
-import FormAnswersPanel, { renderFormAnswerValue, AnswerValue, householdPeopleRow } from '@/components/FormAnswersPanel';
+import FormAnswersPanel, { renderFormAnswerValue, AnswerValue, householdPeopleRow, giftRecipientRow, fieldLabel } from '@/components/FormAnswersPanel';
 import FormResultMatchCard from '@/components/FormResultMatchCard';
 import LocationMap from '@/components/LocationMap';
 import { buttonClasses } from '@/components/ui/Button';
@@ -260,6 +260,7 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                         <div className="bg-white rounded-xl border border-stone-200 p-4 mb-4 shadow-sm">
                             <h2 className="text-sm font-semibold text-stone-700 mb-3">{L('section_adopter_info')}</h2>
                             <div className="space-y-1">
+                                {giftRecipientRow(fullAnswers, t)}
                                 {submitted?.name && (
                                     <div className="flex items-baseline gap-2 text-xs">
                                         <span className="font-semibold text-stone-600 min-w-[140px]">{L('name_label')}:</span>
@@ -286,7 +287,7 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                 )}
                                 {['ageRange', 'children', 'housingType', 'hasOutdoor', 'isSafe', 'hoursAlone'].map((field) => {
                                     if (field === 'children') {
-                                        const people = householdPeopleRow(fullAnswers, t('petshield.fields.household'));
+                                        const people = householdPeopleRow(fullAnswers, fieldLabel('household', fullAnswers, t));
                                         if (people) return people;
                                     }
                                     const raw = fullAnswers[field];
@@ -295,7 +296,7 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                     return (
                                         <div key={field} className="flex items-baseline gap-2 text-xs">
                                             <span className="font-semibold text-stone-600 min-w-[140px]">
-                                                {t(`petshield.fields.${field}`)}:
+                                                {fieldLabel(field, fullAnswers, t)}:
                                             </span>
                                             <AnswerValue field={field} raw={raw} display={display} />
                                         </div>
@@ -330,7 +331,7 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                         return (
                                             <div key={field} className="flex items-baseline gap-2 text-xs">
                                                 <span className="font-semibold text-stone-600 min-w-[140px]">
-                                                    {t(`petshield.fields.${field}`)}:
+                                                    {fieldLabel(field, fullAnswers, t)}:
                                                 </span>
                                                 <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{display}</span>
                                             </div>
