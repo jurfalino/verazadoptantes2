@@ -7,6 +7,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { previewInterviewCandidates } from '@/app/actions/interviews';
 import type { CandidateSummary, PrepFacts } from '@/domain/interview/types';
 import CandidateCard from './CandidateCard';
+import { INTERVIEW_LIMITS } from '@/lib/interviews/limits';
 
 const LABEL = 'block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider';
 const INPUT = 'w-full h-10 px-4 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-base md:text-sm';
@@ -21,7 +22,7 @@ function RowList({ label, values, onChange, testId, inputMode }: {
             <label className={LABEL}>{label}</label>
             <div className="space-y-2">
                 {rows.map((v, i) => (
-                    <input key={i} data-testid={`${testId}-${i}`} className={INPUT} value={v} inputMode={inputMode}
+                    <input key={i} data-testid={`${testId}-${i}`} className={INPUT} value={v} inputMode={inputMode} maxLength={INTERVIEW_LIMITS.prepRow}
                         onChange={e => { const next = [...rows]; next[i] = e.target.value; onChange(next); }} />
                 ))}
             </div>
@@ -71,7 +72,7 @@ export default function InterviewPrep({ prep, onPrepChange, leadCandidateId, onL
                 </div>
                 <div>
                     <label className={LABEL} htmlFor="interview-prep-name">{t('interview.prep_name')}</label>
-                    <input id="interview-prep-name" data-testid="interview-prep-name" className={INPUT} value={prep.name}
+                    <input id="interview-prep-name" data-testid="interview-prep-name" className={INPUT} value={prep.name} maxLength={INTERVIEW_LIMITS.prepName}
                         onChange={e => onPrepChange({ ...prep, name: e.target.value })} autoFocus />
                 </div>
                 <RowList label={t('interview.prep_phones')} values={prep.phones} onChange={phones => onPrepChange({ ...prep, phones })} testId="interview-prep-phone" inputMode="tel" />
@@ -79,7 +80,7 @@ export default function InterviewPrep({ prep, onPrepChange, leadCandidateId, onL
                 <RowList label={t('interview.prep_emails')} values={prep.emails} onChange={emails => onPrepChange({ ...prep, emails })} testId="interview-prep-email" inputMode="email" />
                 <div>
                     <label className={LABEL} htmlFor="interview-prep-address">{t('interview.prep_address')}</label>
-                    <input id="interview-prep-address" className={INPUT} value={prep.address} onChange={e => onPrepChange({ ...prep, address: e.target.value })} />
+                    <input id="interview-prep-address" className={INPUT} value={prep.address} maxLength={INTERVIEW_LIMITS.prepAddress} onChange={e => onPrepChange({ ...prep, address: e.target.value })} />
                 </div>
                 <div className="flex justify-end pt-2">
                     <button type="button" data-testid="interview-start" disabled={!canStart} onClick={onStart}

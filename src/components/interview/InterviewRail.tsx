@@ -4,6 +4,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { STAGES, type Answer, type CustomQuestion, type QueueItem, type Stage } from '@/domain/interview/types';
 import { questionText } from './questionText';
 import { StateIcon } from './icons';
+import { INTERVIEW_LIMITS } from '@/lib/interviews/limits';
 
 function preview(a: Answer | undefined, t: (k: string) => string): string {
     if (!a) return '';
@@ -68,7 +69,7 @@ export default function InterviewRail({ queue, answers, custom, currentId, onSel
                     );
                 })}
                 <form className="mt-2 flex gap-2" onSubmit={e => { e.preventDefault(); if (draft.trim()) { onAddCustom(draft, currentStage); setDraft(''); setOpen(false); } }}>
-                    <input aria-label={t('interview.add_question')} placeholder={t('interview.add_question_placeholder')} value={draft} onChange={e => setDraft(e.target.value)}
+                    <input aria-label={t('interview.add_question')} placeholder={t('interview.add_question_placeholder')} value={draft} maxLength={INTERVIEW_LIMITS.customQuestion} onChange={e => setDraft(e.target.value)}
                         className="w-full h-9 px-3 rounded-lg border border-teal-200 bg-white text-base md:text-sm outline-none focus:border-teal-500" />
                     <button type="submit" className="px-3 text-xs font-semibold text-teal-700 bg-teal-50 rounded-lg hover:bg-teal-100">{t('interview.add_question_save')}</button>
                 </form>

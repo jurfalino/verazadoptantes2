@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { RELATIONSHIPS, type Relationship } from '@/lib/householdMembers';
 import type { Answer, AnswerKind, ContactType } from '@/domain/interview/types';
+import { INTERVIEW_LIMITS as L, parseInterviewNumber } from '@/lib/interviews/limits';
 
 const INPUT = 'w-full h-10 px-4 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-base md:text-sm';
 const TEXTAREA = 'w-full p-3 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-y text-base md:text-sm';
@@ -24,15 +25,19 @@ export default function InterviewAnswerInput({ kind, choices, value, onChange, o
 
     if (kind === 'text') {
         return (
-            <textarea data-testid="interview-answer" className={TEXTAREA} rows={4} placeholder={t('interview.answer_placeholder')}
+            <textarea data-testid="interview-answer" className={TEXTAREA} rows={4} maxLength={L.answerText} placeholder={t('interview.answer_placeholder')}
                 value={value?.text ?? ''} onChange={e => onChange(answered({ text: e.target.value }))}
                 onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSubmit(); } }} />
         );
     }
     if (kind === 'number') {
         return (
-            <input data-testid="interview-answer" type="number" inputMode="numeric" min={0} max={1000} className={`${INPUT} max-w-[10rem]`}
-                value={value?.number ?? ''} onChange={e => onChange(e.target.value === '' ? null : answered({ number: Number(e.target.value) }))}
+            <input data-testid="interview-answer" type="number" inputMode="numeric" min={L.numberMin} max={L.numberMax} className={`${INPUT} max-w-[10rem]`}
+                value={value?.number ?? ''} onChange={e => {
+                    const n = parseInterviewNumber(e.target.value);
+                    if (n === undefined) return; // not a number yet: keep the last value
+                    onChange(n === null ? null : answered({ number: n }));
+                }}
                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onSubmit(); } }} />
         );
     }
@@ -63,7 +68,7 @@ export default function InterviewAnswerInput({ kind, choices, value, onChange, o
                             onChange={e => set(rows.map((x, j) => j === i ? { ...x, type: e.target.value as ContactType } : x))}>
                             {CONTACT_TYPES.map(ct => <option key={ct} value={ct}>{t(`interview.contact_type_${ct}`)}</option>)}
                         </select>
-                        <input data-testid={`interview-contact-${i}`} className={INPUT} value={r.value}
+                        <input data-testid={`interview-contact-${i}`} className={INPUT} value={r.value} maxLength={L.contactValue}
                             inputMode={r.type === 'phone' ? 'tel' : r.type === 'email' ? 'email' : 'text'}
                             onChange={e => set(rows.map((x, j) => j === i ? { ...x, value: e.target.value } : x))} />
                         {rows.length > 1 && (
@@ -85,7 +90,7 @@ export default function InterviewAnswerInput({ kind, choices, value, onChange, o
         <div className="space-y-2">
             {rows.map((r, i) => (
                 <div key={i} className="flex gap-2">
-                    <input data-testid={`interview-household-${i}`} aria-label={t('interview.household_name')} placeholder={t('interview.household_name')} className={INPUT} value={r.name}
+                    <input data-testid={`interview-household-${i}`} aria-label={t('interview.household_name')} placeholder={t('interview.household_name')} className={INPUT} value={r.name} maxLength={L.householdName}
                         onChange={e => set(rows.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
                     <select aria-label={t('adopter.hh_rel')} className={`${INPUT} max-w-[11rem] px-2`} value={r.relationship ?? ''}
                         onChange={e => set(rows.map((x, j) => j === i ? { ...x, relationship: (e.target.value || null) as Relationship | null } : x))}>
