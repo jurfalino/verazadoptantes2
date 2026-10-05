@@ -1121,3 +1121,446 @@ Expected: PASS
 git add CHANGELOG.md package.json package-lock.json tests/household-question.authed.spec.ts
 git commit -m "v<version>: household people as an alternative to '¿Hay niños?'"
 ```
+
+---
+
+# Part 2 + 3 tasks (spec Parts 2 and 3, approved 2026-10-05)
+
+## Global Constraints (Parts 2–3)
+
+- **When the gift flow applies:** only when `intent === 'gift'`. A "Para mí"
+  form (or one with intent hidden) is byte-for-byte the current behaviour.
+- **Recipient:**
+  - `relationship` uses the same 6 values as the household step, required;
+  - `firstName` required, ≤ 60;
+  - `lastName` optional, ≤ 60;
+  - `phone` optional, digits/space/+/- only, ≤ 30.
+- **Recipient on the profile:** only with first **and** last name, on the
+  **giver's** auto profile, as a household member with
+  `giftRecipient: true`, the phone as a `phone` contact entry and
+  `addedBy: 'form-submission'`.
+- **Recipient's housemates** never go onto the giver's profile.
+- **"No sé":** value `'unknown'`, offered only in the gift flow, on children,
+  hasOutdoor, isSafe, petExperience, willingToSterilize, movingPlans and
+  vacationPlan. Displayed as "No sabe" / "Doesn't know" / "Não sabe". It never
+  gets a semáforo dot.
+- **Phone:**
+  - required unless the stored list contains `'phone-optional'`;
+  - with no config, it is required;
+  - the server never rejects a missing phone; it warns instead.
+- **No new browser-callable server actions** (the action surface count is unchanged).
+
+## Review Focus (Parts 2–3)
+
+1. **The applicant picks "Es un regalo", fills the recipient, then goes back and
+   switches to "Para mí".** Expected: `giftRecipient` and any `'unknown'`
+   answers never reach the submit body. Test in Task 10.
+2. **A saved draft from a gift flow is resumed.** Expected: it lands on the
+   saved step (the gift step exists because `intent` is restored first). Test
+   in Task 10.
+3. **A teammate toggles "phone optional" while another edits a question.**
+   Expected: neither save drops the other's change. Test in Task 13.
+4. **No rescuer config arrives (fetch fails).** Expected: the phone is required.
+   Test in Task 13.
+5. **A gift recipient with only a first name.** Expected: shown on the form,
+   not on any profile. Test in Task 11.
+
+---
+
+### Task 9: Gift recipient + wording rules (pure, both apps)
+
+**Files:**
+- Create: `src/domain/giftRecipient.ts`, `src/domain/giftRecipient.test.ts`
+- Create: `contract-app/src/lib/giftFlow.ts`, `contract-app/src/lib/giftFlow.test.ts`
+- Modify: `src/domain/answerSignals.test.ts` (`'unknown'` → `null`)
+
+**Interfaces:**
+- Produces (app):
+  - `parseGiftRecipient(raw: unknown): GiftRecipient | null`
+  - `type GiftRecipient = { relationship: FormRelationship; firstName: string; lastName?: string; phone?: string }`
+  - `recipientFullName(r: GiftRecipient): string | null`
+- Produces (contract-app):
+  - `GIFT_WORDED_STEPS`: the 10 step ids
+  - `GIFT_UNKNOWN_STEPS`: the 7 step ids
+  - `giftTitleKey(stepId: string): string | null`, returning `form.q_<x>_title_gift`
+    for worded steps and null otherwise
+  - `adaptStepForGift<S extends { id: string; title: string; type: string; options?: Array<{ value: string; label: string; icon?: string }> }>(step: S, answers: Record<string, unknown>, t: (k: string) => string): S`
+  - `isGift(answers): boolean`
+  - `stripGiftAnswers(answers: Record<string, unknown>): Record<string, unknown>`,
+    which drops `giftRecipient` and any `'unknown'` values when not a gift
+
+- [ ] **Step 1: Write the failing tests.**
+
+`src/domain/giftRecipient.test.ts`:
+
+```ts
+import { describe, it, expect } from 'vitest';
+import { parseGiftRecipient, recipientFullName } from './giftRecipient';
+
+describe('parseGiftRecipient', () => {
+    it('keeps a valid recipient, trimming', () => {
+        expect(parseGiftRecipient({ relationship: 'child', firstName: ' Laura ', lastName: ' Pérez ', phone: ' 11 5555-1234 ' }))
+            .toEqual({ relationship: 'child', firstName: 'Laura', lastName: 'Pérez', phone: '11 5555-1234' });
+    });
+    it('needs a known relationship and a first name', () => {
+        expect(parseGiftRecipient({ relationship: 'boss', firstName: 'Laura' })).toBeNull();
+        expect(parseGiftRecipient({ relationship: 'child', firstName: '  ' })).toBeNull();
+        expect(parseGiftRecipient('x')).toBeNull();
+        expect(parseGiftRecipient(null)).toBeNull();
+    });
+    it('drops a malformed phone, caps names', () => {
+        const r = parseGiftRecipient({ relationship: 'partner', firstName: 'x'.repeat(80), phone: 'call me maybe' })!;
+        expect(r.firstName).toHaveLength(60);
+        expect(r.phone).toBeUndefined();
+    });
+});
+
+describe('recipientFullName', () => {
+    it('needs both names', () => {
+        expect(recipientFullName({ relationship: 'child', firstName: 'Laura', lastName: 'Pérez' })).toBe('Laura Pérez');
+        expect(recipientFullName({ relationship: 'child', firstName: 'Laura' })).toBeNull();
+    });
+});
+```
+
+`contract-app/src/lib/giftFlow.test.ts`:
+
+```ts
+import { describe, it, expect } from 'vitest'
+import { adaptStepForGift, giftTitleKey, isGift, stripGiftAnswers, GIFT_UNKNOWN_STEPS } from './giftFlow'
+
+const t = (k: string) => ({ 'form.q_outdoor_title_gift': '¿{n} tiene patio o jardín?', 'form.opt_unknown': 'No sé' } as Record<string, string>)[k] ?? k
+const gift = { intent: 'gift', giftRecipient: { relationship: 'child', firstName: 'Laura' } }
+
+describe('gift flow', () => {
+    it('only a gift with a recipient is a gift', () => {
+        expect(isGift(gift)).toBe(true)
+        expect(isGift({ intent: 'self' })).toBe(false)
+        expect(isGift({ intent: 'gift' })).toBe(false) // no recipient yet → neutral wording
+    })
+    it('rewords and adds "No sé" for a gift', () => {
+        const step = { id: 'hasOutdoor', type: 'icon-cards', title: '¿Tenés patio o jardín?', options: [{ value: 'yes', label: 'Sí', icon: 'patio' }] }
+        const out = adaptStepForGift(step, gift, t)
+        expect(out.title).toBe('¿Laura tiene patio o jardín?')
+        expect(out.options!.map(o => o.value)).toEqual(['yes', 'unknown'])
+        expect(adaptStepForGift(step, { intent: 'self' }, t)).toBe(step)
+    })
+    it('knows which steps are worded', () => {
+        expect(giftTitleKey('housingType')).toBe('form.q_housing_title_gift')
+        expect(giftTitleKey('identity-phone')).toBeNull()
+        expect(GIFT_UNKNOWN_STEPS).not.toContain('housingType')
+    })
+    it('strips gift answers from a non-gift submission', () => {
+        expect(stripGiftAnswers({ intent: 'self', giftRecipient: { firstName: 'L' }, hasOutdoor: 'unknown', isSafe: 'yes' }))
+            .toEqual({ intent: 'self', isSafe: 'yes' })
+        expect(stripGiftAnswers({ ...gift, hasOutdoor: 'unknown' })).toEqual({ ...gift, hasOutdoor: 'unknown' })
+    })
+})
+```
+
+Append to `src/domain/answerSignals.test.ts`:
+
+```ts
+describe('"No sé" never gets a dot', () => {
+    it('unknown is null', () => {
+        for (const f of ['children', 'isSafe', 'intent']) expect(answerSignal(f, 'unknown')).toBeNull();
+    });
+});
+```
+
+- [ ] **Step 2: Run them to verify they fail.**
+  Run: `npx vitest run src/domain/giftRecipient.test.ts src/domain/answerSignals.test.ts && (cd contract-app && npx vitest run src/lib/giftFlow.test.ts)`
+  Expected: FAIL (modules missing). The answerSignals test may already pass,
+  which is a finding: it is a guard, not new behaviour.
+
+- [ ] **Step 3: Implement.** `src/domain/giftRecipient.ts`:
+
+```ts
+import { FORM_RELATIONSHIPS, type FormRelationship } from './householdPeople';
+/** The gift's recipient — the person who will live with the animal (spec Part 2 §7). */
+export type GiftRecipient = { relationship: FormRelationship; firstName: string; lastName?: string; phone?: string };
+const REL = new Set<string>(FORM_RELATIONSHIPS);
+const name = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 60) : '');
+export function parseGiftRecipient(raw: unknown): GiftRecipient | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const r = raw as Record<string, unknown>;
+    if (typeof r.relationship !== 'string' || !REL.has(r.relationship)) return null;
+    const firstName = name(r.firstName);
+    if (!firstName) return null;
+    const lastName = name(r.lastName);
+    const phone = typeof r.phone === 'string' && /^[\d\s+()-]{6,30}$/.test(r.phone.trim()) ? r.phone.trim() : undefined;
+    return { relationship: r.relationship as FormRelationship, firstName, ...(lastName ? { lastName } : {}), ...(phone ? { phone } : {}) };
+}
+export function recipientFullName(r: GiftRecipient): string | null {
+    return r.firstName && r.lastName ? `${r.firstName} ${r.lastName}` : null;
+}
+```
+
+`contract-app/src/lib/giftFlow.ts`:
+
+```ts
+/** Gift flow wording (spec Part 2 §8): the home questions talk about the recipient. */
+export const GIFT_WORDED_STEPS = ['children', 'existingPets', 'housingType', 'household', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience', 'willingToSterilize', 'movingPlans', 'vacationPlan'] as const
+export const GIFT_UNKNOWN_STEPS = ['children', 'hasOutdoor', 'isSafe', 'petExperience', 'willingToSterilize', 'movingPlans', 'vacationPlan'] as const
+const TITLE: Record<string, string> = {
+    children: 'form.q_children_title_gift', existingPets: 'form.q_existing_pets_title_gift', housingType: 'form.q_housing_title_gift',
+    hasOutdoor: 'form.q_outdoor_title_gift', petExperience: 'form.q_pet_experience_title_gift',
+    willingToSterilize: 'form.q_sterilize_title_gift', movingPlans: 'form.q_moving_title_gift', vacationPlan: 'form.q_vacation_title_gift',
+}
+export function giftTitleKey(stepId: string): string | null { return TITLE[stepId] ?? null }
+export function isGift(answers: Record<string, unknown>): boolean {
+    const r = answers.giftRecipient as { firstName?: string } | undefined
+    return answers.intent === 'gift' && !!r?.firstName?.trim()
+}
+export function adaptStepForGift<S extends { id: string; title: string; options?: Array<{ value: string; label: string; icon?: string }> }>(
+    step: S, answers: Record<string, unknown>, t: (k: string) => string,
+): S {
+    if (!isGift(answers)) return step
+    const n = String((answers.giftRecipient as { firstName: string }).firstName).trim()
+    const key = giftTitleKey(step.id)
+    const unknown = (GIFT_UNKNOWN_STEPS as readonly string[]).includes(step.id) && step.options
+    if (!key && !unknown) return step
+    return {
+        ...step,
+        ...(key ? { title: t(key).replace('{n}', n) } : {}),
+        ...(unknown ? { options: [...step.options!, { value: 'unknown', label: t('form.opt_unknown'), icon: 'maybe' }] } : {}),
+    }
+}
+export function stripGiftAnswers(answers: Record<string, unknown>): Record<string, unknown> {
+    if (answers.intent === 'gift') return answers
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(answers)) {
+        if (k === 'giftRecipient' || v === 'unknown') continue
+        out[k] = v
+    }
+    return out
+}
+```
+
+  The household step title for a gift ("¿Quiénes viven con {n}?", "Sin contar
+  a {n}", "Vive solo/a") is resolved in Task 10 via
+  `householdStepTitleKey(housingType, isGift)`.
+
+- [ ] **Step 4: Run them to verify they pass.** Same command. Expected: PASS.
+- [ ] **Step 5: Commit** `git add` the five files, with message
+  `"gift flow: recipient parsing + gift wording rules"`.
+
+### Task 10: The public form — "¿Para quién es?" step, gift wording, stripping
+
+**Files:**
+- Modify: `contract-app/src/PetShieldForm.tsx`:
+  - new `GiftRecipientStep` type and schema entry after `intent`;
+  - the conditional filter;
+  - render via `adaptStepForGift`;
+  - `canAdvance` / validate.
+- Create: `contract-app/src/components/GiftRecipient.tsx`
+- Modify:
+  - `contract-app/src/lib/adoptionDocs.ts`: `FORM_STEP_IDS` gains `'giftRecipient'`
+    after `'intent'`, and `buildSubmitBody` applies `stripGiftAnswers`;
+  - `src/domain/adoptionDocs.ts` (mirror): `'giftRecipient'` in `FORM_STEP_IDS`
+    (after `'intent'`), plus a new
+    `DERIVED_FORM_STEPS = ['giftRecipient'] as const`, mirrored. A derived step:
+    - is **not** in `TOGGLEABLE_FORM_STEPS` or `FORM_STEP_GROUPS`;
+    - is dropped by `sanitizeHiddenSteps`;
+    - is always kept by `formStepsToAsk`;
+    - is gated only by `stepsForAnswers` (exists only when `intent === 'gift'`).
+
+    Hiding `intent` therefore hides it. The toggleable count stays at 19 until
+    Task 13 adds the phone token;
+  - `contract-app/src/lib/householdPeopleForm.ts`:
+    `householdStepTitleKey(housingType, gift)` gains the gift variants;
+  - `contract-app/src/i18n/catalogs/form.ts`: es/en/pt for every `*_title_gift`,
+    `form.opt_unknown`, the gift step keys and the household gift keys;
+  - the app domain tests that list steps (24 → 25; toggleable stays 19).
+
+- [ ] **Step 1: Failing tests** (contract-app `lib/adoptionDocs.test.ts` + `householdPeopleForm.test.ts`):
+
+```ts
+// adoptionDocs.test.ts
+it('the gift step only exists when the answer is "gift"', () => {
+    const S = ['intent', 'giftRecipient', 'children'].map(id => ({ id }))
+    expect(stepsForAnswers(S, { intent: 'self' }).map(s => s.id)).toEqual(['intent', 'children'])
+    expect(stepsForAnswers(S, { intent: 'gift' }).map(s => s.id)).toEqual(['intent', 'giftRecipient', 'children'])
+    expect(stepsForAnswers(S, {}).map(s => s.id)).toEqual(['intent', 'children'])
+})
+it('buildSubmitBody never sends gift answers on a "Para mí" form', () => {
+    const body = buildSubmitBody({ intent: 'self', giftRecipient: { firstName: 'L' }, hasOutdoor: 'unknown' }, [], null, [{ id: 'intent' }])
+    expect(body.giftRecipient).toBeUndefined(); expect(body.hasOutdoor).toBeUndefined()
+})
+// householdPeopleForm.test.ts
+it('gift wording for the people step', () => {
+    expect(householdStepTitleKey('house', true)).toBe('form.q_household_title_gift')
+    expect(householdStepTitleKey('house', false)).toBe('form.q_household_title_house')
+})
+```
+
+- [ ] **Step 2:** Run `cd contract-app && npx vitest run`. Expected: FAIL
+  (`stepsForAnswers` missing; gift answers still sent).
+- [ ] **Step 3: Implement.**
+  - `stepsForAnswers<T extends { id: string }>(schema: T[], answers): T[]`
+    drops `giftRecipient` unless `answers.intent === 'gift'`. Add it to
+    `lib/adoptionDocs.ts`. In `PetShieldForm`:
+    `const schema = stepsForAnswers(formStepsToAsk(baseSchema, hiddenSteps), answers)`.
+  - `GiftRecipient.tsx`: relationship chips (`FORM_RELATIONSHIPS`, labels `form.rel_*`),
+    Nombre (required), Apellido and Teléfono (optional). Inputs use 16px text and
+    `.ps-field` / `.ps-input`. It writes `answers.giftRecipient`.
+  - `canAdvance`: relationship and first name present.
+  - At render, the current step becomes `adaptStepForGift(schema[step], answers, t)`.
+    The household step uses `householdStepTitleKey(answers.housingType, isGift(answers))`
+    and the gift subtitle and "Vive solo/a" (`form.q_household_subtitle_gift`,
+    `form.household_alone_gift`, both with `{n}`).
+  - `buildSubmitBody`: `stripGiftAnswers(stripHiddenAnswers(...))`.
+- [ ] **Step 4:** Run `cd contract-app && npx vitest run && npx tsc --noEmit`, plus
+  `npx vitest run src/domain` at the root. Expected: PASS.
+- [ ] **Step 5:** Manual check: run the form locally (vite on 3121, config route
+  stubbed as in Task 4). Choose Regalo, then Laura, then confirm "¿Dónde vive
+  Laura?", "¿Quiénes viven con Laura?" and the "No sé" chips. At 390 and 1280:
+  no overflow, no console errors. Go back, choose "Para mí", and confirm the
+  wording is back to "¿Dónde vivís?".
+- [ ] **Step 6: Commit** with message `"form: '¿Para quién es?' + home questions worded for the recipient"`.
+
+### Task 11: Submit — recipient onto the giver's profile; recipient's housemates stay on the form
+
+**Files:**
+- Modify:
+  - `src/lib/householdMembers.ts`: `giftRecipient?: boolean`, (de)serialised;
+  - `src/app/api/form/[userId]/submit/route.ts`;
+  - `tests/form-results-link.authed.spec.ts`.
+
+- [ ] **Step 1: Failing e2e** (DB-level):
+
+```ts
+test('gift: only the fully named recipient reaches the giver profile; the recipient\'s housemates stay on the form', async ({ request }) => {
+    const stamp = Date.now();
+    const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+        name: `E2E Regalo ${stamp}`, email: `e2e-regalo-${stamp}@example.com`, phone: `25${String(stamp).slice(-8)}`, address: '1 Gift St',
+        intent: 'gift', giftRecipient: { relationship: 'child', firstName: 'Laura', lastName: 'Pérez', phone: '11 5555 1234' },
+        householdPeople: [{ relationship: 'partner', age: 30, firstName: 'Marcos', lastName: 'Gómez' }], livesAlone: false,
+    } });
+    expect(res.ok(), await res.text()).toBeTruthy();
+    const { submissionId } = await res.json();
+    const row = one(`SELECT auto_adopter_id, answers_json FROM form_submissions WHERE id = '${submissionId}'`);
+    expect(JSON.parse(String(row.answers_json)).giftRecipient).toMatchObject({ firstName: 'Laura', lastName: 'Pérez' });
+    const members = JSON.parse(String(one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`).household_members));
+    expect(members.map((m: { name: string }) => m.name)).toEqual(['Laura Pérez']);
+    expect(members[0]).toMatchObject({ relationship: 'child', giftRecipient: true });
+    expect(JSON.stringify(members[0].contactEntries)).toContain('11 5555 1234');
+});
+test('gift with a first-name-only recipient: nothing on the profile', async ({ request }) => {
+    const stamp = Date.now();
+    const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+        name: `E2E Regalo2 ${stamp}`, email: `e2e-regalo2-${stamp}@example.com`, phone: `26${String(stamp).slice(-8)}`, address: '2 Gift St',
+        intent: 'gift', giftRecipient: { relationship: 'sibling', firstName: 'Ana' },
+    } });
+    const { submissionId } = await res.json();
+    const row = one(`SELECT auto_adopter_id FROM form_submissions WHERE id = '${submissionId}'`);
+    const prof = one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`);
+    expect(isNull(prof.household_members) || JSON.parse(String(prof.household_members)).length === 0).toBe(true);
+});
+```
+
+- [ ] **Step 2:** Run it (local harness, repaired DB). Expected: FAIL. Marcos
+  lands on the profile and Laura doesn't.
+- [ ] **Step 3: Implement.**
+  - `HouseholdMember.giftRecipient?: boolean`: kept by (de)serialise when `true`.
+  - In the route:
+    - `const gift = body.intent === 'gift'`;
+    - `const recipient = gift ? parseGiftRecipient(body.giftRecipient) : null`;
+    - `answers.giftRecipient = recipient ?? undefined`, deleted when `!gift`;
+    - household profile members only when `!gift`;
+    - when the recipient has a full name, push a member with
+      `{ id: 'form-<id>-recipient', name, relationship, giftRecipient: true, addedBy: 'form-submission', contactEntries: phone ? [{ id: crypto.randomUUID(), type: 'phone', value: phone, addedBy: 'form-submission' }] : [] }`.
+- [ ] **Step 4:** Run the e2e and `npx vitest run`. Expected: PASS.
+- [ ] **Step 5: Commit** with message `"form submit: gift recipient onto the giver's profile; recipient's housemates stay on the form"`.
+
+### Task 12: Display — "Para quién", gift labels, "No sabe", profile pill
+
+**Files:**
+- Modify:
+  - `src/components/FormAnswersPanel.tsx`: a "Para quién" row (exported
+    `giftRecipientRow`), gift labels (`petshield.fields_gift.<field>` with
+    `{n}`), and the `'unknown'` display;
+  - `src/components/FormResultsContent.tsx`: render `giftRecipientRow` first in
+    "Datos del adoptante", and use gift labels for the fields there;
+  - `src/components/HouseholdSection.tsx`: a "Destinatario/a del regalo" pill
+    when `giftRecipient`;
+  - `src/i18n/locales/{es,en,pt}.ts`:
+    - `petshield.options.<field>.unknown` for the 7 fields;
+    - `petshield.fields_gift.*`;
+    - `formResults.gift_for`;
+    - `adopter.hh_gift_recipient`.
+- [ ] **Step 1: Failing e2e** (UI): extend the gift test with page steps.
+  1. Open `/form-results/<id>` and expand "Respuestas completas".
+  2. Expect `getByTestId('gift-recipient')` to contain "Laura Pérez".
+  3. For a submission with `hasOutdoor: 'unknown'`, expect the row text
+     /No sabe|Doesn't know/ and **no** `[data-signal]` in that row.
+  4. Open `/adopter/<auto>` and expect /Gift recipient|Destinatario\/a del regalo/.
+- [ ] **Step 2:** Run it. Expected: FAIL.
+- [ ] **Step 3: Implement**, following the existing `householdPeopleRow` pattern.
+  The pill is `text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-700`
+  (themed classes).
+- [ ] **Step 4:** Run it plus `npx tsc --noEmit && npx vitest run`. Expected: PASS.
+- [ ] **Step 5: Commit** with message `"form results + profile: gift recipient, gift wording, 'No sabe'"`.
+
+### Task 13: Phone required by default, optional per form
+
+**Files:**
+- Modify:
+  - `src/domain/adoptionDocs.ts`: add `FORM_OPTION_TOKENS = ['phone-optional']`.
+    `KNOWN` includes it. `TOGGLEABLE_FORM_STEPS` becomes
+    `[...steps not locked, ...FORM_OPTION_TOKENS]`. `inFormOrder` keeps tokens
+    at the end. Add `isPhoneRequired(hidden)`.
+  - `contract-app/src/lib/adoptionDocs.ts` (mirror, plus `isPhoneRequired`) and
+    the mirror test.
+  - `src/components/adoptionDocs/FormStepsEditor.tsx`: an "Obligatorio" switch
+    under the locked `identity-phone` row. The counter ignores tokens.
+  - `contract-app/src/PetShieldForm.tsx`: the phone field gets
+    `required: isPhoneRequired(hiddenSteps ?? [])`.
+  - `src/app/api/form/[userId]/submit/route.ts`: warn when the phone is missing
+    on a phone-required form.
+  - i18n: `adoptionDocs.phone_required` in es/en/pt.
+- [ ] **Step 1: Failing tests:**
+
+```ts
+// src/domain/adoptionDocs.test.ts
+it('phone is required unless the token is present', () => {
+    expect(isPhoneRequired([])).toBe(true);
+    expect(isPhoneRequired(['phone-optional'])).toBe(false);
+});
+it('the sanitiser keeps the option token and drops unknown ones', () => {
+    expect(sanitizeHiddenSteps(['intent', 'phone-optional', 'bogus'])).toEqual(['intent', 'phone-optional']);
+});
+// src/domain/adoptionDocsCollab.test.ts (exists) — a save of an unrelated step keeps the token:
+it('mergeHidden never drops the phone option', () => {
+    expect(mergeHidden(['phone-optional'], [{ key: 'intent', hidden: true }])).toEqual(['intent', 'phone-optional']);
+});
+// contract-app: isPhoneRequired(null) === true (fetch failed → required)
+```
+
+- [ ] **Step 2:** Run `npx vitest run src/domain && (cd contract-app && npx vitest run)`. Expected: FAIL.
+- [ ] **Step 3: Implement** as listed. Update the existing step-count tests if
+  `TOGGLEABLE_FORM_STEPS` grows. A note for the collab code: `stepStates`
+  iterates `TOGGLEABLE_FORM_STEPS`, so the token gets a state of its own and
+  conflicts work unchanged.
+- [ ] **Step 4:** Run the same command. Expected: PASS. Then add to
+  `tests/household-question.authed.spec.ts`:
+  - turning the phone switch off and saving puts `'phone-optional'` in `hidden_steps`;
+  - the public config carries it;
+  - turning it back on removes it.
+
+  Run it. Expected: PASS.
+- [ ] **Step 5: Commit** with message `"form: phone required by default, optional per form"`.
+
+### Task 14: Verification, visual pass, release notes
+
+- [ ] Run everything:
+  - root `tsc`, vitest, lint (≤ 125), build, the action-surface check;
+  - contract-app `tsc` + vitest;
+  - the e2e set from Task 8, plus the new gift tests.
+- [ ] Visual pass (temporary script, both themes, 1280 and 390):
+  - the gift step and the reworded steps in the contract-app;
+  - the form-results "Para quién" block;
+  - the profile pill;
+  - the settings phone switch.
+- [ ] Bump the version above `origin/staging` and add a CHANGELOG entry (gift
+  flow + phone), then commit with explicit paths.
