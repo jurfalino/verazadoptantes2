@@ -77,6 +77,9 @@ test.describe('Duplicate mass-merge and undo', () => {
         // survivor (public status travels with the absorbed evidence), and
         // undo must take it back off.
         execD1(`UPDATE adopters SET is_public = 1 WHERE id = '${B}'`);
+        // B lists a household member (e.g. from an adoption form): the merge
+        // must carry it onto A, and undo must take it back off.
+        execD1(`UPDATE adopters SET household_members = '[{"id":"hm-b","name":"Tomás López","relationship":"child","contactEntries":[],"age":7,"ageAsOf":"2026-10-04"}]' WHERE id = '${B}'`);
 
         // ── Mass-merge B and C into A through the real endpoint (admin session).
         const mergeRes = await page.request.post('/api/admin/duplicates/merge', {
@@ -103,8 +106,9 @@ test.describe('Duplicate mass-merge and undo', () => {
         }
 
         const survivor = parseD1Rows(execD1(
-            `SELECT contact_info, contact_entries, deleted_at, is_public FROM adopters WHERE id = '${A}'`,
+            `SELECT contact_info, contact_entries, deleted_at, is_public, household_members FROM adopters WHERE id = '${A}'`,
         ))[0];
+        expect(String(survivor.household_members), 'household members travel with the absorbed profile').toContain('Tomás López');
         expect(isDbNull(survivor.deleted_at), 'survivor must stay live').toBe(true);
         expect(Number(survivor.is_public), 'public flag travels with absorbed B').toBe(1);
         // Absorbed contact blobs appended; absorbed names carried as aliases.
@@ -142,9 +146,10 @@ test.describe('Duplicate mass-merge and undo', () => {
         }
 
         const restored = parseD1Rows(execD1(
-            `SELECT contact_info, contact_entries, is_public FROM adopters WHERE id = '${A}'`,
+            `SELECT contact_info, contact_entries, is_public, household_members FROM adopters WHERE id = '${A}'`,
         ))[0];
         expect(restored.contact_info).toBe('alpha-contact-original');
+        expect(String(restored.household_members ?? ''), 'undo takes the absorbed members back off').not.toContain('Tomás López');
         expect(Number(restored.is_public), 'undo reverts the inherited public flag').toBe(0);
         // The auto-aliases came with the merge; undo must take them back out.
         expect(String(restored.contact_entries ?? '')).not.toContain(NAME_B);

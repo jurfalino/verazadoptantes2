@@ -17,6 +17,7 @@ import { getDb } from '@/lib/db';
 import { reassignAdopterRecords } from '@/app/actions/_recordWrite';
 import { normalizeText } from '@/lib/tokenizer';
 import { deserializeContactEntries, mergeContactEntries } from '@/lib/contactEntries';
+import { deserializeHouseholdMembers, serializeHouseholdMembers, mergeHouseholdMembers } from '@/lib/householdMembers';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { casAdopterLists } from '@/lib/adopterListCas';
 import { MERGED_FLAG_DETAILS_PREFIX } from '@/domain/dedupPair';
@@ -153,6 +154,17 @@ export async function mergeAdopters(
                 updates.contactEntries = JSON.stringify(mergedEntries);
             }
 
+            // 6c. Carry the absorbed profile's household members (an adoption
+            // form can put people on the auto-created profile — spec
+            // 2026-10-04 §3). Without this, "Es la misma persona" dropped them.
+            // Read from `p`, the fresh row, like every field here (CAS-guarded).
+            const absorbedMembers = deserializeHouseholdMembers(secondary.householdMembers);
+            if (absorbedMembers.length) {
+                updates.householdMembers = serializeHouseholdMembers(
+                    mergeHouseholdMembers(deserializeHouseholdMembers(p.householdMembers), absorbedMembers),
+                );
+            }
+
             // Force re-tokenization on next save
             updates.tokenHash = null;
             updates.updatedAt = new Date();
@@ -168,6 +180,7 @@ export async function mergeAdopters(
             familyMembers: written.row.familyMembers,
             sourceUrl: written.row.sourceUrl,
             isPublic: written.row.isPublic,
+            householdMembers: written.row.householdMembers ?? null,
         };
 
         // 1. Re-point adoptions (placements + adopter_events → normalized tables)
@@ -396,6 +409,8 @@ interface MergeUndoPayload {
         sourceUrl: string | null;
         /** Absent in payloads written before v2.55.10 — undo leaves the flag as-is then. */
         isPublic?: number;
+        /** Absent in payloads written before household members merged (2026-10-04) — undo leaves them then. */
+        householdMembers?: string | null;
     };
     placementIds: string[];
     adopterEventIds: string[];
@@ -529,6 +544,7 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
             sourceUrl: undo.primarySnapshot.sourceUrl,
             // Pre-v2.55.10 payloads have no isPublic — leave the flag alone then.
             ...(undo.primarySnapshot.isPublic !== undefined ? { isPublic: undo.primarySnapshot.isPublic } : {}),
+            ...(undo.primarySnapshot.householdMembers !== undefined ? { householdMembers: undo.primarySnapshot.householdMembers } : {}),
             tokenHash: null,
             updatedAt: new Date(),
         }).where(eq(adopters.id, primaryId));
