@@ -7,7 +7,7 @@
 import { z } from 'zod';
 
 export const FORM_STEP_IDS = [
-    'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'children', 'existingPets',
+    'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'giftRecipient', 'children', 'existingPets',
     'housingType', 'household', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience', 'willingToSterilize',
     'vetCommitment', 'movingPlans', 'vacationPlan', 'identity-name', 'identity-email',
     'identity-phone', 'identity-address', 'ageRange', 'geo', 'selfie',
@@ -16,10 +16,18 @@ export const FORM_STEP_IDS = [
 /** Terms consent + identity feed the adopter record and dedup — never hideable. */
 export const LOCKED_FORM_STEPS = ['legal', 'identity-name', 'identity-email', 'identity-phone', 'identity-address'] as const;
 
-const LOCKED = new Set<string>(LOCKED_FORM_STEPS);
-const KNOWN = new Set<string>(FORM_STEP_IDS);
+/**
+ * Steps that exist only because of an earlier answer — 'giftRecipient' only
+ * after "Es un regalo" (spec Part 2 §7). Never toggled, grouped or stored on
+ * their own: hiding `intent` hides them.
+ */
+export const DERIVED_FORM_STEPS = ['giftRecipient'] as const;
 
-export const TOGGLEABLE_FORM_STEPS = FORM_STEP_IDS.filter(id => !LOCKED.has(id));
+const LOCKED = new Set<string>(LOCKED_FORM_STEPS);
+const DERIVED = new Set<string>(DERIVED_FORM_STEPS);
+const KNOWN = new Set<string>(FORM_STEP_IDS.filter(id => !DERIVED.has(id)));
+
+export const TOGGLEABLE_FORM_STEPS = FORM_STEP_IDS.filter(id => !LOCKED.has(id) && !DERIVED.has(id));
 
 export const FORM_STEP_GROUPS = [
     { key: 'what', steps: ['species', 'lifeStage', 'specialNeeds', 'intent'] },

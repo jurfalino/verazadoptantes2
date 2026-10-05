@@ -10,9 +10,9 @@ import {
 const doc = (...texts: string[]): RichDoc => ({ type: 'doc', content: texts.map(t => ({ type: 'paragraph', content: [{ text: t }] })) });
 
 describe('form steps', () => {
-    it('lists the 24 PetShield steps in form order', () => {
+    it('lists the 25 PetShield steps in form order', () => {
         expect(FORM_STEP_IDS).toEqual([
-            'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'children', 'existingPets',
+            'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'giftRecipient', 'children', 'existingPets',
             'housingType', 'household', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience', 'willingToSterilize',
             'vetCommitment', 'movingPlans', 'vacationPlan', 'identity-name', 'identity-email',
             'identity-phone', 'identity-address', 'ageRange', 'geo', 'selfie',
@@ -179,5 +179,16 @@ describe('household question choice', () => {
         expect(isStepAsked('household', ['children', 'household'])).toBe(false);
         expect(isStepAsked('intent', ['intent'])).toBe(false);
         expect(isStepAsked('legal', ['legal'])).toBe(true);
+    });
+});
+
+import { DERIVED_FORM_STEPS } from './adoptionDocs';
+describe('derived gift step', () => {
+    it('is a form step but never toggleable, grouped or storable', () => {
+        expect(FORM_STEP_IDS).toContain('giftRecipient');
+        expect(DERIVED_FORM_STEPS).toEqual(['giftRecipient']);
+        expect(TOGGLEABLE_FORM_STEPS).not.toContain('giftRecipient');
+        expect(FORM_STEP_GROUPS.flatMap(g => g.steps as readonly string[])).not.toContain('giftRecipient');
+        expect(sanitizeHiddenSteps(['giftRecipient', 'intent'])).toEqual(['intent']);
     });
 });

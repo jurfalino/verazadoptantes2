@@ -12,6 +12,10 @@ const ids = (name: string) => {
 describe('contract-app mirror', () => {
     it('FORM_STEP_IDS match', () => expect(ids('FORM_STEP_IDS')).toEqual([...FORM_STEP_IDS]));
     it('LOCKED_FORM_STEPS match', () => expect(ids('LOCKED_FORM_STEPS')).toEqual([...LOCKED_FORM_STEPS]));
+    it('DERIVED_FORM_STEPS match', async () => {
+        const { DERIVED_FORM_STEPS } = await import('./adoptionDocs');
+        expect(ids('DERIVED_FORM_STEPS')).toEqual([...DERIVED_FORM_STEPS]);
+    });
     it('FORM_RELATIONSHIPS match', async () => {
         const { FORM_RELATIONSHIPS } = await import('./householdPeople');
         expect(ids('FORM_RELATIONSHIPS')).toEqual([...FORM_RELATIONSHIPS]);

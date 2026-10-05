@@ -1488,3 +1488,5 @@ body {
 .ps-people__choice--selected { border-color: var(--ps-border-active); color: var(--ps-accent-strong); box-shadow: var(--ps-glow); }
 /* 16px: below that iOS Safari zooms in on focus (ux-ui-guidelines §1.5). */
 .ps-people__editor .ps-input { font-size: 16px; }
+/* "¿Para quién es?" reuses the editor card's inputs without the card frame. */
+.ps-people__editor--plain { background: transparent; border: none; padding: 0; }

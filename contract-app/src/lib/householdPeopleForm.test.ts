@@ -21,3 +21,10 @@ describe('household step helpers', () => {
         expect(canLeaveHouseholdStep({ livesAlone: false, people: [{ relationship: 'partner', age: 40 }], editing: { relationship: 'child', age: null } })).toBe(false)
     })
 })
+
+describe('gift wording for the people step', () => {
+    it('talks about the recipient', () => {
+        expect(householdStepTitleKey('house', true)).toBe('form.q_household_title_gift')
+        expect(householdStepTitleKey('house', false)).toBe('form.q_household_title_house')
+    })
+})

@@ -218,3 +218,22 @@ describe('childrenAnswer (mirror)', () => {
         expect(childrenAnswer([{ age: 1 }, { age: 2 }, { age: 3 }])).toBe('3+')
     })
 })
+
+import { stepsForAnswers } from './adoptionDocs'
+describe('gift step (derived)', () => {
+    it('exists only when the answer is "gift"', () => {
+        const S = ['intent', 'giftRecipient', 'children'].map(id => ({ id }))
+        expect(stepsForAnswers(S, { intent: 'self' }).map(s => s.id)).toEqual(['intent', 'children'])
+        expect(stepsForAnswers(S, { intent: 'gift' }).map(s => s.id)).toEqual(['intent', 'giftRecipient', 'children'])
+        expect(stepsForAnswers(S, {}).map(s => s.id)).toEqual(['intent', 'children'])
+    })
+    it('config never hides it on its own (hiding intent does, via the answer)', () => {
+        const S = ['intent', 'giftRecipient', 'children'].map(id => ({ id }))
+        expect(formStepsToAsk(S, ['giftRecipient']).map(s => s.id)).toContain('giftRecipient')
+    })
+    it('buildSubmitBody never sends gift answers on a "Para mí" form', () => {
+        const body = buildSubmitBody({ intent: 'self', giftRecipient: { firstName: 'L' }, hasOutdoor: 'unknown' }, [], null, [{ id: 'intent' }])
+        expect(body.giftRecipient).toBeUndefined()
+        expect(body.hasOutdoor).toBeUndefined()
+    })
+})

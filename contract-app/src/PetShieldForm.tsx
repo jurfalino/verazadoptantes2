@@ -2,8 +2,10 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } fr
 import './petshield.css'
 import { useT } from './i18n/LocaleContext'
 import {
-    FORM_STEP_IDS, formStepsToAsk, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody, childrenAnswer,
+    FORM_STEP_IDS, formStepsToAsk, stepsForAnswers, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody, childrenAnswer,
 } from './lib/adoptionDocs'
+import GiftRecipient, { type Recipient } from './components/GiftRecipient'
+import { adaptStepForGift, isGift, recipientFirstName } from './lib/giftFlow'
 import HouseholdPeople, { type Person } from './components/HouseholdPeople'
 import { canLeaveHouseholdStep, householdStepTitleKey, type DraftPerson } from './lib/householdPeopleForm'
 
@@ -48,13 +50,18 @@ interface PetCounterStep {
     petTypes: Array<{ value: string; label: string; icon: string }>;
 }
 
+/** "¿Para quién es?" — asked only after "Es un regalo" (spec Part 2 §7). */
+interface GiftRecipientStep {
+    id: string; type: 'gift-recipient'; title: string; subtitle?: string;
+}
+
 /** "¿Quiénes viven en la casa?" — the people list, an alternative to 'children' (spec 2026-10-04). */
 interface HouseholdPeopleStep {
     id: string; type: 'household-people'; title: string; subtitle?: string;
 }
 
 type FormStep = ConsentStep | TextFieldsStep | GeolocationStep | CameraUploadStep
-    | IconCardsStep | SegmentedCardsStep | ToggleStep | ChecklistStep | PetCounterStep | HouseholdPeopleStep;
+    | IconCardsStep | SegmentedCardsStep | ToggleStep | ChecklistStep | PetCounterStep | HouseholdPeopleStep | GiftRecipientStep;
 
 // ══════════════════════════════════════════════
 // SVG ICONS
@@ -375,6 +382,9 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             ],
         },
         {
+            id: 'giftRecipient', type: 'gift-recipient', title: t('form.q_gift_recipient_title'), subtitle: t('form.q_gift_recipient_subtitle'),
+        },
+        {
             id: 'children', type: 'segmented-cards', title: t('form.q_children_title'),
             options: [
                 { value: 'none', label: t('form.opt_no') },
@@ -548,8 +558,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         : DEFAULT_SCHEMA
     // Same reference when hiddenSteps is null/empty (no config, or flag off) —
     // never removes a locked step even if the server sends a bad/forged one.
-    const schema = formStepsToAsk(baseSchema, hiddenSteps)
-    const totalSteps = schema.length
+    const configSchema = formStepsToAsk(baseSchema, hiddenSteps)
     const DRAFT_KEY = draftKey(userId, animalId)
 
     // ── State ──
@@ -557,6 +566,9 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     // The household card being edited, if any — Continue waits for it.
     const [householdEditing, setHouseholdEditing] = useState<DraftPerson | null>(null)
     const [answers, setAnswers] = useState<Record<string, any>>({})
+    // Answer-dependent steps ("¿Para quién es?" only after "Es un regalo").
+    const schema = stepsForAnswers(configSchema, answers)
+    const totalSteps = schema.length
     const [errors, setErrors] = useState<Record<string, string>>({})
     const [toast, setToast] = useState<{ message: string; id?: string } | null>(null)
     const [submitted, setSubmitted] = useState(false)
@@ -600,7 +612,10 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             }
             if (resolved.draft.answers) setAnswers(resolved.draft.answers)
             draftStepIdRef.current = resolved.draft.stepId
-            setStep(restoreStepIndex(schema, resolved.draft, FORM_STEP_IDS))
+            // Index against the steps the DRAFT's answers produce: "¿Para quién
+            // es?" exists only once intent='gift' is restored, and the current
+            // `schema` still reflects the empty pre-hydration answers.
+            setStep(restoreStepIndex(stepsForAnswers(configSchema, resolved.draft.answers ?? {}), resolved.draft, FORM_STEP_IDS))
         } catch (e) {
             console.warn('[PetShield] draft restore failed', e)
         }
@@ -626,7 +641,12 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
 
 
     // ── Current step ──
-    const currentStep = schema[step]
+    // Gift flow: the home questions talk about the recipient (spec Part 2 §8).
+    const rawStep = schema[step]
+    const currentStep = (rawStep && 'title' in rawStep
+        ? adaptStepForGift(rawStep as FormStep & { title: string }, answers, t)
+        : rawStep) as FormStep | undefined
+    const giftName = recipientFirstName(answers)
     const isLastStep = step === totalSteps - 1
     const progress = ((step + 1) / totalSteps) * 100
 
@@ -692,6 +712,11 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             }
         }
 
+        if (currentStep.type === 'gift-recipient') {
+            const r = (answersToCheck.giftRecipient as Recipient | undefined) ?? {}
+            if (!r.relationship || !r.firstName?.trim()) newErrors.giftRecipient = t('form.err_gift_recipient')
+        }
+
         if (currentStep.type === 'household-people') {
             if (!canLeaveHouseholdStep({
                 livesAlone: !!answersToCheck.livesAlone,
@@ -719,6 +744,10 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             case 'segmented-cards': return true // optional, has default
             case 'toggle': return true // optional
             case 'checklist': return true // optional
+            case 'gift-recipient': {
+                const r = (answers.giftRecipient as Recipient | undefined) ?? {}
+                return !!r.relationship && !!r.firstName?.trim()
+            }
             case 'household-people': return canLeaveHouseholdStep({
                 livesAlone: !!answers.livesAlone,
                 people: (answers.householdPeople as Person[] | undefined) ?? [],
@@ -1113,15 +1142,27 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                 </div>
             )
 
+            case 'gift-recipient': return (
+                <div className="ps-step" key={key}>
+                    <h1 className="ps-title">{currentStep.title}</h1>
+                    {currentStep.subtitle && <p className="ps-subtitle">{currentStep.subtitle}</p>}
+                    <GiftRecipient
+                        value={(answers.giftRecipient as Recipient | undefined) ?? {}}
+                        onChange={r => setAnswer('giftRecipient', r)}
+                    />
+                    {errors.giftRecipient && <p className="ps-field__error">{errors.giftRecipient}</p>}
+                </div>
+            )
             case 'household-people': {
                 const people = (answers.householdPeople as Person[] | undefined) ?? []
                 return (
                     <div className="ps-step" key={key}>
-                        <h1 className="ps-title">{t(householdStepTitleKey(answers.housingType))}</h1>
-                        {currentStep.subtitle && <p className="ps-subtitle">{currentStep.subtitle}</p>}
+                        <h1 className="ps-title">{t(householdStepTitleKey(answers.housingType, isGift(answers))).replace('{n}', giftName)}</h1>
+                        <p className="ps-subtitle">{isGift(answers) ? t('form.q_household_subtitle_gift').replace('{n}', giftName) : currentStep.subtitle}</p>
                         <HouseholdPeople
                             people={people}
                             livesAlone={!!answers.livesAlone}
+                            aloneLabel={isGift(answers) ? t('form.household_alone_gift') : undefined}
                             onChange={(next, alone) => {
                                 setAnswer('householdPeople', next)
                                 setAnswer('livesAlone', alone)

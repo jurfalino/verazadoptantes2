@@ -15,9 +15,11 @@ const MAX_PEOPLE = 15
 
 type Editing = { index: number | null; draft: DraftPerson }
 
-export default function HouseholdPeople({ people, livesAlone, onChange, onAlone, onEditingChange }: {
+export default function HouseholdPeople({ people, livesAlone, onChange, onAlone, onEditingChange, aloneLabel }: {
     people: Person[]
     livesAlone: boolean
+    /** Gift flow: "Vive solo/a" instead of "Vivo solo/a". */
+    aloneLabel?: string
     onChange: (people: Person[], livesAlone: boolean) => void
     onAlone: () => void
     onEditingChange: (editing: DraftPerson | null) => void
@@ -114,7 +116,7 @@ export default function HouseholdPeople({ people, livesAlone, onChange, onAlone,
                     {people.length === 0 && (
                         <button type="button" aria-pressed={livesAlone}
                             className={`ps-btn ps-people__choice ${livesAlone ? 'ps-people__choice--selected' : ''}`} onClick={onAlone}>
-                            {t('form.household_alone')}
+                            {aloneLabel ?? t('form.household_alone')}
                         </button>
                     )}
                 </div>

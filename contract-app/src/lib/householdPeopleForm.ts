@@ -10,7 +10,8 @@ export function isPersonComplete(p: DraftPerson): boolean {
 }
 
 /** "…en la casa?" / "…en el departamento?" from the housing answer; neutral otherwise. */
-export function householdStepTitleKey(housingType: unknown): string {
+export function householdStepTitleKey(housingType: unknown, gift = false): string {
+    if (gift) return 'form.q_household_title_gift'
     return housingType === 'house' ? 'form.q_household_title_house'
         : housingType === 'apartment' ? 'form.q_household_title_apartment'
             : 'form.q_household_title_home'

@@ -7,7 +7,7 @@
  */
 
 import { useLanguage } from '@/context/LanguageContext';
-import { FORM_STEP_GROUPS, FORM_STEP_IDS, LOCKED_FORM_STEPS, householdQuestion, isStepAsked } from '@/domain/adoptionDocs';
+import { FORM_STEP_GROUPS, FORM_STEP_IDS, LOCKED_FORM_STEPS, DERIVED_FORM_STEPS, householdQuestion, isStepAsked } from '@/domain/adoptionDocs';
 
 const LOCKED = new Set<string>(LOCKED_FORM_STEPS);
 
@@ -52,7 +52,8 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
     const hiddenSet = new Set(hidden);
     // 'household' is not a question of its own here: it is the "detailed"
     // choice on the children row (spec 2026-10-04 §2), so it never counts.
-    const questions = FORM_STEP_IDS.filter(id => id !== 'household');
+    // …nor is a derived step ("¿Para quién es?", asked only after "Es un regalo").
+    const questions = FORM_STEP_IDS.filter(id => id !== 'household' && !(DERIVED_FORM_STEPS as readonly string[]).includes(id));
     const total = questions.length;
     const shown = questions.filter(id => isStepAsked(id, hidden) || (id === 'children' && isStepAsked('household', hidden))).length;
     const choice = householdQuestion(hidden);

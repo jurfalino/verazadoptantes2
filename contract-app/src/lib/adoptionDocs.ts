@@ -8,8 +8,10 @@
  */
 import { CONTRACT_CONTENT } from '../i18n/contractContent'
 
+import { stripGiftAnswers } from './giftFlow'
+
 export const FORM_STEP_IDS = [
-    'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'children', 'existingPets',
+    'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'giftRecipient', 'children', 'existingPets',
     'housingType', 'household', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience', 'willingToSterilize',
     'vetCommitment', 'movingPlans', 'vacationPlan', 'identity-name', 'identity-email',
     'identity-phone', 'identity-address', 'ageRange', 'geo', 'selfie',
@@ -38,11 +40,20 @@ export function formStepsToAsk<T extends { id: string }>(schema: T[], stored: re
     const people = hidden.has('household')
     const rowHidden = hidden.has('children')
     return schema.filter(s => {
-        if (LOCKED.has(s.id)) return true
+        if (LOCKED.has(s.id) || DERIVED.has(s.id)) return true
         if (s.id === 'children') return !rowHidden && !people
         if (s.id === 'household') return !rowHidden && people
         return !hidden.has(s.id)
     })
+}
+
+/** Steps that exist only because of an earlier answer (mirror of the app's DERIVED_FORM_STEPS). */
+export const DERIVED_FORM_STEPS = ['giftRecipient'] as const
+const DERIVED = new Set<string>(DERIVED_FORM_STEPS)
+
+/** Drops answer-dependent steps whose answer isn't there: "¿Para quién es?" only after "Es un regalo". */
+export function stepsForAnswers<T extends { id: string }>(schema: T[], answers: Record<string, unknown>): T[] {
+    return schema.filter(s => s.id !== 'giftRecipient' || answers.intent === 'gift')
 }
 
 /** Mirrors src/domain/householdPeople.ts (mirror test). */
@@ -151,7 +162,8 @@ export function buildSubmitBody(
     animalId: string | null | undefined,
     schema: readonly { id: string }[],
 ): Record<string, unknown> {
-    const cleaned = stripHiddenAnswers(finalAnswers, hiddenSteps ?? [])
+    // A "Para mí" form never carries a recipient or a "No sé" from a gift draft.
+    const cleaned = stripGiftAnswers(stripHiddenAnswers(finalAnswers, hiddenSteps ?? []))
     return {
         ...cleaned,
         ...(animalId ? { animalId } : {}),
