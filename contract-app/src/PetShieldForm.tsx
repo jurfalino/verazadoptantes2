@@ -2,8 +2,10 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } fr
 import './petshield.css'
 import { useT } from './i18n/LocaleContext'
 import {
-    FORM_STEP_IDS, formStepsToAsk, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody,
+    FORM_STEP_IDS, formStepsToAsk, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody, childrenAnswer,
 } from './lib/adoptionDocs'
+import HouseholdPeople, { type Person } from './components/HouseholdPeople'
+import { canLeaveHouseholdStep, householdStepTitleKey, type DraftPerson } from './lib/householdPeopleForm'
 
 // ══════════════════════════════════════════════
 // TYPES — JSON Schema
@@ -552,6 +554,8 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
 
     // ── State ──
     const [step, setStep] = useState(0)
+    // The household card being edited, if any — Continue waits for it.
+    const [householdEditing, setHouseholdEditing] = useState<DraftPerson | null>(null)
     const [answers, setAnswers] = useState<Record<string, any>>({})
     const [errors, setErrors] = useState<Record<string, string>>({})
     const [toast, setToast] = useState<{ message: string; id?: string } | null>(null)
@@ -562,6 +566,13 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     // File upload
     const fileInputRef = useRef<HTMLInputElement>(null)
     const [dragOver, setDragOver] = useState(false)
+
+    // The step a resumed draft was saved on, held until the rescuer's config
+    // arrives. Config used to only HIDE steps, so mapping the draft onto the
+    // default schema was always right; the people list ('household') is the
+    // first step config ADDS — without this, a draft saved there resumed one
+    // step later and silently skipped the question. Cleared by navigation.
+    const draftStepIdRef = useRef<string | undefined>(undefined)
 
     // ── Hydrate from localStorage ──
     // Runs once the draft key (userId + animalId) is known. `schema` is read
@@ -588,6 +599,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                 }
             }
             if (resolved.draft.answers) setAnswers(resolved.draft.answers)
+            draftStepIdRef.current = resolved.draft.stepId
             setStep(restoreStepIndex(schema, resolved.draft, FORM_STEP_IDS))
         } catch (e) {
             console.warn('[PetShield] draft restore failed', e)
@@ -637,8 +649,10 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     // before paint — otherwise one frame briefly renders the stale index
     // against the new (possibly shorter) schema.
     useLayoutEffect(() => {
-        if (step > 0) {
-            setStep(restoreStepIndex(schema, { answers, stepId: currentStepIdRef.current }, FORM_STEP_IDS))
+        const stepId = draftStepIdRef.current ?? currentStepIdRef.current
+        draftStepIdRef.current = undefined
+        if (step > 0 || stepId) {
+            setStep(restoreStepIndex(schema, { answers, stepId }, FORM_STEP_IDS))
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [hiddenSteps])
@@ -678,6 +692,16 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             }
         }
 
+        if (currentStep.type === 'household-people') {
+            if (!canLeaveHouseholdStep({
+                livesAlone: !!answersToCheck.livesAlone,
+                people: (answersToCheck.householdPeople as Person[] | undefined) ?? [],
+                editing: householdEditing,
+            })) {
+                newErrors.household = t('form.err_household')
+            }
+        }
+
         setErrors(newErrors)
         return Object.keys(newErrors).length === 0
     }
@@ -695,6 +719,11 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             case 'segmented-cards': return true // optional, has default
             case 'toggle': return true // optional
             case 'checklist': return true // optional
+            case 'household-people': return canLeaveHouseholdStep({
+                livesAlone: !!answers.livesAlone,
+                people: (answers.householdPeople as Person[] | undefined) ?? [],
+                editing: householdEditing,
+            })
             default: return true
         }
     }
@@ -702,6 +731,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     // ── Navigation ──
     /** If overrides is provided (e.g. from auto-advance), use it for validation and for building next answers so we don't rely on state having flushed yet. Ignore if caller passed a DOM event by mistake. */
     function goNext(overrides?: Record<string, any>) {
+        draftStepIdRef.current = undefined
         const isEvent = overrides && typeof overrides === 'object' && 'target' in overrides && (overrides as any).target?.nodeType !== undefined
         const safeOverrides = isEvent ? undefined : overrides
         const effectiveAnswers = safeOverrides ? { ...answers, ...safeOverrides } : answers
@@ -720,6 +750,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     }
 
     function goBack() {
+        draftStepIdRef.current = undefined
         if (step > 0) {
             setAnimationKey(k => k + 1)
             setStep(step - 1)
@@ -1082,6 +1113,34 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                 </div>
             )
 
+            case 'household-people': {
+                const people = (answers.householdPeople as Person[] | undefined) ?? []
+                return (
+                    <div className="ps-step" key={key}>
+                        <h1 className="ps-title">{t(householdStepTitleKey(answers.housingType))}</h1>
+                        {currentStep.subtitle && <p className="ps-subtitle">{currentStep.subtitle}</p>}
+                        <HouseholdPeople
+                            people={people}
+                            livesAlone={!!answers.livesAlone}
+                            onChange={(next, alone) => {
+                                setAnswer('householdPeople', next)
+                                setAnswer('livesAlone', alone)
+                                // Legacy answer, derived (the server recomputes it).
+                                setAnswer('children', childrenAnswer(next))
+                            }}
+                            onAlone={() => {
+                                const o = { householdPeople: [], livesAlone: true, children: 'none' }
+                                setAnswer('householdPeople', o.householdPeople)
+                                setAnswer('livesAlone', true)
+                                setAnswer('children', 'none')
+                                if (!isLastStep) goNext(o)
+                            }}
+                            onEditingChange={setHouseholdEditing}
+                        />
+                        {errors.household && <p className="ps-field__error">{errors.household}</p>}
+                    </div>
+                )
+            }
             case 'pet-counter': {
                 const counts = (answers[currentStep.id] as Record<string, number>) || {};
                 const total = Object.values(counts).reduce((s, n) => s + n, 0);
