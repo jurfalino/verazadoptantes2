@@ -6,17 +6,18 @@
  * the interviewer's alone. Logs carry ids and counts only — never answers,
  * prep facts or identifiers.
  */
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
 import { adopters, interviews } from '@/db/schema';
 import { deriveKnownFacts } from '@/domain/interview/facts';
-import { factMatches, streetPairs } from '@/domain/interview/verify';
+import { factMatches, verifyGivenValues } from '@/domain/interview/verify';
 import { canViewInterviewAnswers } from '@/domain/interview/access';
 import { QUESTION_BANK, questionById } from '@/domain/interview/bank';
-import type { CandidateSummary, ContactType, PrepFacts } from '@/domain/interview/types';
+import type { CandidateSummary, PrepFacts } from '@/domain/interview/types';
 import { safeError } from '@/lib/interviews/safeError';
+import { rowsAffected } from '@/lib/interviews/rowsAffected';
 import { storedFactValues } from '@/lib/interviews/candidates';
 import {
     answersJson, contextFor, hydrateCandidates, loadInterview, matchCandidates, mergeCandidates, parseInterviewRow, prepJson,
@@ -259,14 +260,17 @@ export async function listMyInterviewDrafts(): Promise<ActionResult<{ drafts: Dr
 }
 
 const VERIFY_BUDGET = 5;
-const MAX_GIVEN_CONTACTS = 3;
-const CONTACT_TYPE = { phones: 'phone', emails: 'email', socials: 'social' } as const satisfies Record<string, ContactType>;
+/** Lost compare-and-set races tolerated before refusing (another tab spending the same budget). */
+const VERIFY_CAS_RETRIES = 2;
 
 /**
  * Boolean comparison of what the interviewer typed for ONE answered question
  * against a candidate's stored value. Given values come only from the saved
- * draft answer (never from the caller), at most 3 contacts / 1 street pair,
- * and each (candidate, fact) has a small call budget: otherwise it is an oracle.
+ * draft answer (never from the caller), at most 3 keyable contacts / exactly
+ * 1 street pair (verifyGivenValues), and each (candidate, fact) has a small
+ * call budget: otherwise it is an oracle. An answer that is not comparable is
+ * refused BEFORE the budget is touched, and the budget increment is a
+ * compare-and-set so concurrent calls can never spend past it.
  */
 export async function verifyInterviewFact(interviewId: string, questionId: string, candidateId: string): Promise<ActionResult<{ match: boolean }>> {
     let actor: string | undefined;
@@ -283,27 +287,42 @@ export async function verifyInterviewFact(interviewId: string, questionId: strin
         if (!s.candidateIds.includes(cid)) throw new Refusal('forbidden');
         const answer = s.answers[q.id];
         if (!answer || answer.status !== 'answered') throw new Refusal('invalid');
-        let given: string[];
-        if (fact === 'address') {
-            const text = answer.text ?? '';
-            if (!text || streetPairs(text).length > 1) throw new Refusal('invalid');
-            given = [text];
-        } else {
-            given = (answer.contacts ?? []).filter(c => c.type === CONTACT_TYPE[fact]).map(c => c.value);
-            if (!given.length || given.length > MAX_GIVEN_CONTACTS) throw new Refusal('invalid');
-        }
+        const given = verifyGivenValues(fact, answer);
+        if (!given) throw new Refusal('invalid'); // partial / too many / not exactly one street pair: no budget spent
 
         const key = `${cid}:${fact}`;
-        const row0 = await db.select({ counts: interviews.verifyCountsJson }).from(interviews).where(eq(interviews.id, s.id)).get();
-        let counts: Record<string, number> = {};
-        try { counts = row0?.counts ? JSON.parse(row0.counts) : {}; } catch { logger.warn('interviews.verify: corrupt counts reset', { interviewId: s.id }); }
-        if ((counts[key] ?? 0) >= VERIFY_BUDGET) {
-            logger.warn('interviews.verify: budget spent', { interviewId: s.id, candidateId: cid, fact });
-            throw new Refusal('invalid');
+        let spent = false;
+        for (let attempt = 0; attempt <= VERIFY_CAS_RETRIES && !spent; attempt++) {
+            const row0 = await db.select({ counts: interviews.verifyCountsJson }).from(interviews)
+                .where(and(eq(interviews.id, s.id), eq(interviews.status, 'draft'))).get();
+            if (!row0) throw new Refusal('invalid');
+            const old: string | null = row0.counts ?? null;
+            let counts: Record<string, number> = {};
+            try {
+                counts = old ? JSON.parse(old) : {};
+            } catch (e) {
+                logger.warn('interviews.verify: corrupt counts reset', { interviewId: s.id, error: safeError(e).message });
+            }
+            if ((counts[key] ?? 0) >= VERIFY_BUDGET) {
+                logger.warn('interviews.verify: budget spent', { interviewId: s.id, candidateId: cid, fact });
+                throw new Refusal('invalid');
+            }
+            counts[key] = (counts[key] ?? 0) + 1;
+            const next = JSON.stringify(counts);
+            const res = await db.update(interviews).set({ verifyCountsJson: next }).where(and(
+                eq(interviews.id, s.id), eq(interviews.status, 'draft'),
+                old === null ? isNull(interviews.verifyCountsJson) : eq(interviews.verifyCountsJson, old),
+            )).run();
+            const changed = rowsAffected(res);
+            if (changed !== null) {
+                spent = changed > 0;
+            } else {
+                const after = await db.select({ counts: interviews.verifyCountsJson }).from(interviews).where(eq(interviews.id, s.id)).get();
+                spent = after?.counts === next;
+            }
+            if (!spent) logger.warn('interviews.verify: budget write lost a race', { interviewId: s.id, candidateId: cid, fact, attempt });
         }
-        counts[key] = (counts[key] ?? 0) + 1;
-        await db.update(interviews).set({ verifyCountsJson: JSON.stringify(counts) })
-            .where(and(eq(interviews.id, s.id), eq(interviews.status, 'draft')));
+        if (!spent) throw new Refusal('invalid');
 
         const row = await db.select({ contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo, addressInfo: adopters.addressInfo })
             .from(adopters).where(eq(adopters.id, cid)).get();

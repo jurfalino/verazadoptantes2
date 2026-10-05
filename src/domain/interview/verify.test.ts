@@ -38,3 +38,33 @@ describe('streetPairs', () => {
         expect(streetPairs('barrio norte')).toHaveLength(0);
     });
 });
+
+import { verifyGivenValues } from './verify';
+describe('verifyGivenValues', () => {
+    const phones = (...vs: string[]) => ({ status: 'answered' as const, contacts: vs.map(value => ({ type: 'phone' as const, value })) });
+    it('returns the keyable values of the fact type, ignoring blank rows and other types', () => {
+        expect(verifyGivenValues('phones', phones('11 6585-1333'))).toEqual(['11 6585-1333']);
+        expect(verifyGivenValues('phones', { status: 'answered', contacts: [
+            { type: 'phone', value: '11 6585-1333' }, { type: 'phone', value: '  ' }, { type: 'email', value: 'x' },
+        ] })).toEqual(['11 6585-1333']);
+    });
+    it('a partial (unkeyable) value makes the whole answer not comparable', () => {
+        expect(verifyGivenValues('phones', phones('1165'))).toBeNull();
+        expect(verifyGivenValues('phones', phones('11 6585-1333', '1165'))).toBeNull();
+        expect(verifyGivenValues('socials', { status: 'answered', contacts: [{ type: 'social', value: '@' }] })).toBeNull();
+    });
+    it('needs 1 to 3 values', () => {
+        expect(verifyGivenValues('phones', phones('  '))).toBeNull();
+        expect(verifyGivenValues('phones', phones('1100000001', '1100000002', '1100000003'))).toHaveLength(3);
+        expect(verifyGivenValues('phones', phones('1100000001', '1100000002', '1100000003', '1100000004'))).toBeNull();
+    });
+    it('an address needs exactly one street pair', () => {
+        expect(verifyGivenValues('address', { status: 'answered', text: ' Rivadavia 1234, CABA ' })).toEqual(['Rivadavia 1234, CABA']);
+        expect(verifyGivenValues('address', { status: 'answered', text: 'Rivadavia' })).toBeNull();
+        expect(verifyGivenValues('address', { status: 'answered', text: 'Rivadavia 1234 y Corrientes 5678' })).toBeNull();
+    });
+    it('only answered answers are comparable', () => {
+        expect(verifyGivenValues('phones', null)).toBeNull();
+        expect(verifyGivenValues('phones', { status: 'skipped' })).toBeNull();
+    });
+});

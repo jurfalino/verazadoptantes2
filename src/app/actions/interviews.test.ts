@@ -180,6 +180,67 @@ describe('refreshInterviewCandidates / verifyInterviewFact', () => {
         expect(await verifyInterviewFact(id, 'rapport_phone', 'a1')).toEqual({ ok: false, error: 'invalid' });
     });
 
+    const countsOf = (id: string) => {
+        const raw = sqlite.prepare('SELECT verify_counts_json FROM interviews WHERE id = ?').get(id)!.verify_counts_json as string | null;
+        return raw ? JSON.parse(raw) as Record<string, number> : {};
+    };
+
+    it('verify refuses a partial (4-digit) phone WITHOUT spending budget; 5 valid calls still succeed afterwards', async () => {
+        const id = await startWithAnswer('rapport_phone', { status: 'answered', contacts: [{ type: 'phone', value: '1165' }] });
+        for (let i = 0; i < 3; i++) expect(await verifyInterviewFact(id, 'rapport_phone', 'a1')).toEqual({ ok: false, error: 'invalid' });
+        expect(countsOf(id)).toEqual({});
+        await saveInterviewDraft(id, { ...emptyPatch, answers: { rapport_phone: phoneAns(1) }, visited: ['rapport_phone'] } as never);
+        for (let i = 0; i < 5; i++) expect(await verifyInterviewFact(id, 'rapport_phone', 'a1')).toEqual({ ok: true, match: true });
+        expect(await verifyInterviewFact(id, 'rapport_phone', 'a1')).toEqual({ ok: false, error: 'invalid' });
+        expect(countsOf(id)).toEqual({ 'a1:phones': 5 });
+    });
+
+    it('verify refuses an address with no street pair without spending budget', async () => {
+        const id = await startWithAnswer('story_address', { status: 'answered', text: 'Rivadavia' });
+        expect(await verifyInterviewFact(id, 'story_address', 'a1')).toEqual({ ok: false, error: 'invalid' });
+        expect(countsOf(id)).toEqual({});
+    });
+
+    it('verify ignores a blank contact row next to a real phone', async () => {
+        const id = await startWithAnswer('rapport_phone', { status: 'answered', contacts: [{ type: 'phone', value: '11 6585-1333' }, { type: 'phone', value: '' }] });
+        expect(await verifyInterviewFact(id, 'rapport_phone', 'a1')).toEqual({ ok: true, match: true });
+        expect(countsOf(id)).toEqual({ 'a1:phones': 1 });
+    });
+
+    // A concurrent call (another tab) writes the counts between this call's read and its update.
+    const raceOnce = (write: () => void) => {
+        const real = state.db as object;
+        let fired = false;
+        state.db = new Proxy(real, {
+            get(target, p) {
+                const v = Reflect.get(target, p);
+                if (p === 'update' && !fired) {
+                    return (...args: unknown[]) => { fired = true; write(); return (v as (...a: unknown[]) => unknown).apply(target, args); };
+                }
+                return typeof v === 'function' ? v.bind(target) : v;
+            },
+        });
+        return () => { state.db = real; };
+    };
+
+    it('verify budget is a compare-and-set: a concurrent spend up to the limit cannot be exceeded', async () => {
+        const id = await startWithAnswer('rapport_phone', phoneAns(1));
+        const restore = raceOnce(() => sqlite.prepare('UPDATE interviews SET verify_counts_json = ? WHERE id = ?').run(JSON.stringify({ 'a1:phones': 5 }), id));
+        try {
+            expect(await verifyInterviewFact(id, 'rapport_phone', 'a1')).toEqual({ ok: false, error: 'invalid' });
+        } finally { restore(); }
+        expect(countsOf(id)).toEqual({ 'a1:phones': 5 });
+    });
+
+    it('verify budget is a compare-and-set: a lost race re-reads instead of overwriting (no lost update)', async () => {
+        const id = await startWithAnswer('rapport_phone', phoneAns(1));
+        const restore = raceOnce(() => sqlite.prepare('UPDATE interviews SET verify_counts_json = ? WHERE id = ?').run(JSON.stringify({ 'a1:phones': 3 }), id));
+        try {
+            expect(await verifyInterviewFact(id, 'rapport_phone', 'a1')).toEqual({ ok: true, match: true });
+        } finally { restore(); }
+        expect(countsOf(id)).toEqual({ 'a1:phones': 4 });
+    });
+
     it('verify refuses a profile that is not one of this interview’s candidates', async () => {
         const r = await startInterview({ prep: PREP });
         if (!r.ok) throw new Error('start failed');

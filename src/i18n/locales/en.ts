@@ -2554,6 +2554,7 @@ export const en = {
         verify_match: 'Matches {name}\'s profile',
         verify_nomatch: 'Doesn\'t match {name}\'s profile',
         verify_pending: 'Compared once you note the answer',
+        verify_unavailable: 'No more comparisons with this profile',
         contact_type_phone: 'Phone',
         contact_type_email: 'Email',
         contact_type_social: 'Social media',

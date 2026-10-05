@@ -21,15 +21,27 @@ export function buildQueue(ctx: InterviewContext, bank: readonly QuestionDef[] =
         ? ctx.candidates.filter(c => c.adopterId === ctx.confirmedAdopterId)
         : ctx.candidates;
 
+    // Which candidates a verifying question compares against. Shared by answered and
+    // upcoming items: an answered question must keep its hints, or the first keystroke
+    // (which answers it) would unmount them before any comparison runs.
+    const verifyFor = (q: QuestionDef): QueueItem['verify'] => {
+        if (!q.verifies) return undefined;
+        const candidateIds = pool.filter(c => c.stored.includes(q.verifies!)).map(c => c.adopterId);
+        return candidateIds.length ? { fact: q.verifies, candidateIds } : undefined;
+    };
+
     const locked: QueueItem[] = [];
     for (const id of ctx.visited) {
         const status = ctx.answers[id]?.status;
         const q = byId.get(id);
         const c = customById.get(id);
         if (!status || (!q && !c)) continue;
-        locked.push(c
-            ? { id, stage: c.stage, state: status, added: { reasonKey: 'interview.reason.custom' } }
-            : { id, stage: q!.stage, state: status });
+        if (c) {
+            locked.push({ id, stage: c.stage, state: status, added: { reasonKey: 'interview.reason.custom' } });
+            continue;
+        }
+        const verify = verifyFor(q!);
+        locked.push({ id, stage: q!.stage, state: status, ...(verify ? { verify } : {}) });
     }
 
     const upcoming: Ranked[] = [];
@@ -50,11 +62,9 @@ export function buildQueue(ctx: InterviewContext, bank: readonly QuestionDef[] =
         }
         if (q.when && !q.when(known, ctx)) continue;
         if (q.fills.length > 0 && q.fills.every(f => known.filled.includes(f))) continue;
-        let verify: QueueItem['verify'];
+        const verify = verifyFor(q);
         if (q.verifies) {
-            const candidateIds = pool.filter(c => c.stored.includes(q.verifies!)).map(c => c.adopterId);
-            if (candidateIds.length) {
-                verify = { fact: q.verifies, candidateIds };
+            if (verify) {
                 if (!added && q.fills.length === 0) added = { reasonKey: 'interview.reason.verify' };
             } else if (q.fills.length === 0) {
                 continue; // exists only to verify, and there is nothing to verify against

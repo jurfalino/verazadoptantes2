@@ -2559,6 +2559,7 @@ export const pt = {
         verify_match: 'Coincide com o perfil de {name}',
         verify_nomatch: 'Não coincide com o perfil de {name}',
         verify_pending: 'Comparado quando você anotar a resposta',
+        verify_unavailable: 'Não é possível comparar mais com este perfil',
         contact_type_phone: 'Telefone',
         contact_type_email: 'Email',
         contact_type_social: 'Rede social',

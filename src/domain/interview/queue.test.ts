@@ -55,6 +55,38 @@ describe('buildQueue', () => {
         expect(q.find(i => i.id === 'details_other_phones')!.verify!.candidateIds).toEqual(['a1']);
     });
 
+    it('an ANSWERED verifying question keeps its verification hint (the first keystroke must not drop it)', () => {
+        const candidates = [cand('a1', { stored: ['phones'] }), cand('a2', { stored: ['emails'] })];
+        const answers = {
+            details_other_phones: { status: 'answered' as const, contacts: [{ type: 'phone' as const, value: '11 6585-1333' }] },
+            rapport_phone: { status: 'answered' as const, contacts: [{ type: 'phone' as const, value: '11 6585-1444' }] },
+        };
+        const q = buildQueue(ctx({ candidates, answers, visited: ['details_other_phones', 'rapport_phone'] }));
+        const other = q.find(i => i.id === 'details_other_phones')!;
+        const phone = q.find(i => i.id === 'rapport_phone')!;
+        expect(other.state).toBe('answered');
+        expect(other.verify).toEqual({ fact: 'phones', candidateIds: ['a1'] });
+        expect(phone.state).toBe('answered');
+        expect(phone.verify).toEqual({ fact: 'phones', candidateIds: ['a1'] });
+        // Order and `added` semantics of locked items are unchanged.
+        expect(q.slice(0, 2).map(i => i.id)).toEqual(['details_other_phones', 'rapport_phone']);
+        expect(other.added).toBeUndefined();
+        expect(phone.added).toBeUndefined();
+    });
+
+    it('an answered verifying question verifies only against the confirmed profile, and carries no hint without a holder', () => {
+        const answers = { details_other_phones: { status: 'answered' as const, contacts: [{ type: 'phone' as const, value: '11 6585-1333' }] } };
+        const confirmed = buildQueue(ctx({
+            confirmedAdopterId: 'a2', answers, visited: ['details_other_phones'],
+            candidates: [cand('a1', { stored: ['phones'] }), cand('a2', { stored: ['phones'] })],
+        }));
+        expect(confirmed.find(i => i.id === 'details_other_phones')!.verify).toEqual({ fact: 'phones', candidateIds: ['a2'] });
+        const none = buildQueue(ctx({ answers, visited: ['details_other_phones'], candidates: [cand('a1', { stored: ['emails'] })] }));
+        const item = none.find(i => i.id === 'details_other_phones')!;
+        expect(item.state).toBe('answered');
+        expect(item.verify).toBeUndefined();
+    });
+
     it('follow-ups appear only after a matching answer, marked with their parent', () => {
         expect(ids(buildQueue(ctx()))).not.toContain('details_pet_what_happened');
         const q = buildQueue(ctx({

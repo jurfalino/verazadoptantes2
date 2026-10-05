@@ -5,7 +5,7 @@
  */
 import { extractAddressWords, normalizeText } from '@/lib/tokenizer';
 import { contactKey } from './facts';
-import type { ContactType, VerifiableFact } from './types';
+import type { Answer, ContactType, VerifiableFact } from './types';
 
 const CONTACT_TYPE: Record<Exclude<VerifiableFact, 'address'>, ContactType> = { phones: 'phone', emails: 'email', socials: 'social' };
 
@@ -55,4 +55,29 @@ export function factMatches(fact: VerifiableFact, stored: string[], given: strin
 /** Distinct "street number" pairs in a free-text address; the verify budget rule lives here. */
 export function streetPairs(text: string): string[] {
     return [...extractStreetPairs(text)];
+}
+
+/** At most this many values of one contact type are compared per call. */
+export const MAX_GIVEN_CONTACTS = 3;
+
+/**
+ * The values of an answer that may be compared with a profile, or null when
+ * the answer is not ready to compare. Blank rows are ignored; then contacts
+ * need 1–3 values of the fact's type, every one a usable identifier (a
+ * 4-digit partial phone is not), and an address needs exactly one "street
+ * number" pair (so a numberless address is never compared). The client calls
+ * the server only when this is non-null, and the server refuses — before
+ * spending any of the call budget — when it is null, so a half-typed answer
+ * neither burns the budget nor shows a false "doesn't match".
+ */
+export function verifyGivenValues(fact: VerifiableFact, answer: Answer | null | undefined): string[] | null {
+    if (!answer || answer.status !== 'answered') return null;
+    if (fact === 'address') {
+        const text = (answer.text ?? '').trim();
+        return text && streetPairs(text).length === 1 ? [text] : null;
+    }
+    const type = CONTACT_TYPE[fact];
+    const given = (answer.contacts ?? []).filter(c => c.type === type).map(c => (c.value ?? '').trim()).filter(Boolean);
+    if (!given.length || given.length > MAX_GIVEN_CONTACTS) return null;
+    return given.every(v => contactKey(type, v) !== null) ? given : null;
 }

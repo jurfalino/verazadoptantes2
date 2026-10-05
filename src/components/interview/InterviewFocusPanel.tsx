@@ -2,11 +2,11 @@
 import { useEffect, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { questionById } from '@/domain/interview/bank';
-import { answerHasContent } from '@/domain/interview/facts';
 import type { Answer, CandidateSummary, ContactType, CustomQuestion, QueueItem } from '@/domain/interview/types';
 import { verifyInterviewFact } from '@/app/actions/interviews';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { questionText } from './questionText';
+import { protectedVerifyTargets, verifyCacheKey, verifyCallTargets } from './verifyTargets';
 import InterviewAnswerInput from './InterviewAnswerInput';
 
 type VerifyCache = React.MutableRefObject<Map<string, boolean | 'refused'>>;
@@ -18,13 +18,13 @@ function VerifyHints({ interviewId, item, answer, candidates, flush, cache }: {
     const [, bump] = useState(0);
     const fact = item.verify!.fact;
     const targets = candidates.filter(c => item.verify!.candidateIds.includes(c.adopterId));
-    const protectedIds = targets.filter(c => !c.visible[fact]?.length).map(c => c.adopterId);
+    const protectedIds = protectedVerifyTargets(item, candidates);
     const answerKey = JSON.stringify(answer ?? null);
-    const keyOf = (id: string) => `${item.id}|${id}|${answerKey}`;
+    const keyOf = (id: string) => verifyCacheKey(item.id, id, answer);
 
     useEffect(() => {
-        if (!answer || !answerHasContent(answer)) return;
-        const missing = protectedIds.filter(id => !cache.current.has(keyOf(id)));
+        // Nothing to ask while the answer is not comparable (partial phone, blank, …): the hint stays neutral.
+        const missing = verifyCallTargets(item, answer, candidates, k => cache.current.has(k));
         if (!missing.length) return;
         let active = true;
         const timer = setTimeout(async () => {
@@ -61,7 +61,13 @@ function VerifyHints({ interviewId, item, answer, candidates, flush, cache }: {
                     );
                 }
                 const cached = cache.current.get(keyOf(c.adopterId));
-                if (cached === 'refused') return null;
+                if (cached === 'refused') {
+                    return (
+                        <p key={c.adopterId} data-testid={`interview-verify-${c.adopterId}`} className="text-xs rounded-lg px-3 py-2 text-stone-500">
+                            {t('interview.verify_unavailable')}
+                        </p>
+                    );
+                }
                 const r = cached;
                 return (
                     <p key={c.adopterId} data-testid={`interview-verify-${c.adopterId}`}
