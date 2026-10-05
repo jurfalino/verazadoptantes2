@@ -20,8 +20,16 @@ type Row = typeof adopters.$inferSelect;
 /** A list write is retried this many times against fresh reads before giving up. */
 export const LIST_SAVE_ATTEMPTS = 3;
 
+/**
+ * Columns whose current value a write is conditional on: the lists, and the
+ * free-text fields the append / merge / contract paths rewrite from what they
+ * read. Any other column in `write` (isPublic, tokenHash…) is written as is.
+ */
+const GUARDED = ['contactEntries', 'contactInfo', 'householdMembers', 'addressInfo', 'familyMembers', 'sourceUrl', 'name'] as const;
+type Guarded = typeof GUARDED[number];
+
 /** What one attempt decided: the columns to write (none = nothing to write) and the result to hand back. */
-export type ListStep<R> = { write?: Partial<Pick<Row, 'contactEntries' | 'contactInfo' | 'householdMembers'>>; result: R };
+export type ListStep<R> = { write?: Partial<typeof adopters.$inferInsert>; result: R };
 
 export type ListCasOutcome<R> =
     | { status: 'done'; result: R; wrote: boolean; row: Row }
@@ -47,14 +55,16 @@ export async function casAdopterLists<R>(
         if (!write || !Object.keys(write).length) return { status: 'done', result, wrote: false, row };
 
         const conds = [eq(adopters.id, adopterId)];
-        const guard = (col: 'contactEntries' | 'contactInfo' | 'householdMembers') => {
+        const guard = (col: Guarded) => {
             const v = row[col];
             conds.push(v === null || v === undefined ? isNull(adopters[col]) : eq(adopters[col], v));
         };
-        if ('contactEntries' in write || 'contactInfo' in write) { guard('contactEntries'); guard('contactInfo'); }
-        if ('householdMembers' in write) guard('householdMembers');
+        // The blob is derived from the entries: a write of either is conditional on both.
+        const cols = new Set<Guarded>(GUARDED.filter(c => c in write));
+        if (cols.has('contactEntries') || cols.has('contactInfo')) { cols.add('contactEntries'); cols.add('contactInfo'); }
+        for (const c of cols) guard(c);
 
-        const won = await db.update(adopters).set({ ...write, updatedAt: new Date() })
+        const won = await db.update(adopters).set({ updatedAt: new Date(), ...write })
             .where(and(...conds)).returning({ id: adopters.id });
         if (won.length) return { status: 'done', result, wrote: true, row };
         logger.info('casAdopterLists: lost a race, re-reading', { adopterId, attempt, ...ctx });

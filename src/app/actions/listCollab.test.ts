@@ -27,6 +27,8 @@ vi.mock('./piiAccess', () => ({ getAdopterApprovers: vi.fn(async () => []) }));
 import { addContactEntry } from './addContactEntry';
 import { updateContactEntry } from './updateContactEntry';
 import { removeContactEntry } from './removeContactEntry';
+import { appendToExistingAdopter } from './adopters';
+import { mergeAdopters } from '@/lib/adopterMerge';
 import { updateHouseholdMember, removeHouseholdMember, addMemberContactEntry, updateMemberContactEntry, removeMemberContactEntry } from './householdMembers';
 
 type Row = Record<string, unknown>;
@@ -227,5 +229,36 @@ describe('household members — concurrent edits', () => {
         expect(res.ok).toBe(true);
         expect(members()[0].name).toBe('Juan C.');
         expect(members()[1].contactEntries.map(e => e.value)).toEqual(['lu@example.com']);
+    });
+});
+
+describe('other writers of the lists never drop a concurrent change', () => {
+    it('appending to an existing profile while a teammate edits an entry: both survive', async () => {
+        raceWith(() => setEntries([{ ...ENTRIES[0], value: '1155550000' }, ENTRIES[1]]));
+        const res = await appendToExistingAdopter(ID, { contactEntries: JSON.stringify([{ id: 'e-new', type: 'email', value: 'nuevo@example.com' }]) });
+        expect(res.success).toBe(true);
+        expect(valueOf('e-phone')).toBe('1155550000');
+        expect(entries().map(e => e.value)).toContain('nuevo@example.com');
+        const blob = sqlite.prepare('SELECT contact_info FROM adopters WHERE id = ?').get(ID)!.contact_info as string;
+        expect(blob).toContain('1155550000');
+        expect(blob).toContain('nuevo@example.com');
+    });
+
+    it('merging into a profile while a teammate edits one of its entries: the edit survives the merge', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, contact_entries, created_at, updated_at)
+            VALUES ('adopter-list-2', 'Carla G.', '5', ?, ?, 1000, 1000)`).run(OWNER, JSON.stringify([{ id: 's-1', type: 'phone', value: '1199990000' }]));
+        raceWith(() => setEntries([{ ...ENTRIES[0], value: '1155550000' }, ENTRIES[1]]));
+        const res = await mergeAdopters(ID, 'adopter-list-2', OWNER);
+        expect(res.success).toBe(true);
+        expect(valueOf('e-phone')).toBe('1155550000');
+        expect(entries().map(e => e.value)).toContain('1199990000');
+    });
+
+    it('a non-editor probing an entry id that does not exist learns nothing (not «deleted», no name)', async () => {
+        await as(MATE, () => removeContactEntry({ adopterId: ID, entryId: 'e-mail', expectedValue: 'carla@example.com' }));
+        const upd = await as('stranger@example.com', () => updateContactEntry({ adopterId: ID, entryId: 'e-mail', value: 'x@example.com', expectedValue: 'carla@example.com' }));
+        expect(upd).toEqual({ ok: false, error: 'Not authorized to edit this entry.' });
+        const rem = await as('stranger@example.com', () => removeContactEntry({ adopterId: ID, entryId: 'e-mail', expectedValue: 'carla@example.com' }));
+        expect(rem).toEqual({ ok: false, error: 'Not authorized to remove this entry.' });
     });
 });

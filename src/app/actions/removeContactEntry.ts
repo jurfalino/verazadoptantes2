@@ -76,7 +76,13 @@ export async function removeContactEntry(
         const outcome = await casAdopterLists<Step>(db, adopterId, (row) => {
             const entries = deserializeContactEntries(row.contactEntries);
             const idx = entries.findIndex(e => e.id === entryId);
-            if (idx < 0) return { result: expectedValue !== undefined ? { kind: 'deleted' } : { kind: 'not_found' } };
+            // Authorization first: someone who could not edit it must not
+            // learn whether an entry id exists, or who removed it. A missing
+            // entry has no contributor, so only the record-wide editors pass.
+            if (idx < 0) {
+                if (!isOwner && !actorIsAdmin && !actorIsOrgMate) return { result: { kind: 'forbidden' } };
+                return { result: expectedValue !== undefined ? { kind: 'deleted' } : { kind: 'not_found' } };
+            }
             const removed = entries[idx];
             const isOwnContribution = !!removed.addedBy && removed.addedBy === actor;
             if (!isOwner && !actorIsAdmin && !actorIsOrgMate && !isOwnContribution) return { result: { kind: 'forbidden' } };

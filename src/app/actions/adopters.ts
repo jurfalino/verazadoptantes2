@@ -6,6 +6,7 @@ import { eq, sql, and, isNull } from 'drizzle-orm';
 import { logger, withTrace, generateErrorId } from '@/lib/logger';
 import { planFieldSave, canonField } from '@/domain/fieldCollab';
 import { adopterFieldAuthors } from '@/lib/collabAttribution';
+import { casAdopterLists } from '@/lib/adopterListCas';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
@@ -129,47 +130,51 @@ export async function appendToExistingAdopter(
             return `${existing}\n${trimmed}`;
         };
 
-        const updates: Partial<typeof adopters.$inferInsert> = {};
-        const appendedFields: Record<string, string> = {};
+        // Computed from the row as it is NOW and written with a compare-and-swap
+        // (src/lib/adopterListCas.ts): a teammate's contact edit landing in
+        // between is re-read and merged into, never overwritten.
+        const outcome = await casAdopterLists<Record<string, string>>(db, targetId, (row) => {
+            const updates: Partial<typeof adopters.$inferInsert> = {};
+            const appendedFields: Record<string, string> = {};
 
-        // Contact: prefer the structured-entry merge (normalized dedup) when
-        // the caller sends contactEntries; fall back to the legacy blob append
-        // for callers that only send a contactInfo string.
-        if (fields.contactEntries) {
-            const incoming = deserializeContactEntries(fields.contactEntries);
-            if (incoming.length) {
-                const targetEntries = deserializeContactEntries(target.contactEntries);
-                const base = targetEntries.length ? targetEntries : parseBlobToContactEntries(target.contactInfo);
-                const merged = mergeContactEntries(base, incoming);
-                if (merged.length !== base.length) {
-                    updates.contactEntries = JSON.stringify(merged);
-                    updates.contactInfo = contactEntriesToBlob(merged) || null;
-                    appendedFields.contactInfo = contactEntriesToBlob(incoming);
+            // Contact: prefer the structured-entry merge (normalized dedup) when
+            // the caller sends contactEntries; fall back to the legacy blob append
+            // for callers that only send a contactInfo string.
+            if (fields.contactEntries) {
+                const incoming = deserializeContactEntries(fields.contactEntries);
+                if (incoming.length) {
+                    const targetEntries = deserializeContactEntries(row.contactEntries);
+                    const base = targetEntries.length ? targetEntries : parseBlobToContactEntries(row.contactInfo);
+                    const merged = mergeContactEntries(base, incoming);
+                    if (merged.length !== base.length) {
+                        updates.contactEntries = JSON.stringify(merged);
+                        updates.contactInfo = contactEntriesToBlob(merged) || null;
+                        appendedFields.contactInfo = contactEntriesToBlob(incoming);
+                    }
                 }
+            } else {
+                const newContact = appendIfNew(row.contactInfo, fields.contactInfo);
+                if (newContact !== row.contactInfo) { updates.contactInfo = newContact; appendedFields.contactInfo = fields.contactInfo!.trim(); }
             }
-        } else {
-            const newContact = appendIfNew(target.contactInfo, fields.contactInfo);
-            if (newContact !== target.contactInfo) { updates.contactInfo = newContact; appendedFields.contactInfo = fields.contactInfo!.trim(); }
-        }
 
-        const newAddress = appendIfNew(target.addressInfo, fields.addressInfo);
-        if (newAddress !== target.addressInfo) { updates.addressInfo = newAddress; appendedFields.addressInfo = fields.addressInfo!.trim(); }
+            const newAddress = appendIfNew(row.addressInfo, fields.addressInfo);
+            if (newAddress !== row.addressInfo) { updates.addressInfo = newAddress; appendedFields.addressInfo = fields.addressInfo!.trim(); }
 
-        const newFamily = appendIfNew(target.familyMembers, fields.familyMembers);
-        if (newFamily !== target.familyMembers) { updates.familyMembers = newFamily; appendedFields.familyMembers = fields.familyMembers!.trim(); }
+            const newFamily = appendIfNew(row.familyMembers, fields.familyMembers);
+            if (newFamily !== row.familyMembers) { updates.familyMembers = newFamily; appendedFields.familyMembers = fields.familyMembers!.trim(); }
 
-        // sourceUrl is single-value, not appendable; only set if target has none.
-        if (fields.sourceUrl && fields.sourceUrl.trim() && !target.sourceUrl) {
-            updates.sourceUrl = fields.sourceUrl.trim();
-            appendedFields.sourceUrl = fields.sourceUrl.trim();
-        }
-
-        if (Object.keys(updates).length === 0) {
-            // Idempotent no-op — everything the user typed was already on the target.
-            return { success: true, adopterId: targetId };
-        }
-
-        await db.update(adopters).set({ ...updates, updatedAt: new Date() }).where(eq(adopters.id, targetId));
+            // sourceUrl is single-value, not appendable; only set if target has none.
+            if (fields.sourceUrl && fields.sourceUrl.trim() && !row.sourceUrl) {
+                updates.sourceUrl = fields.sourceUrl.trim();
+                appendedFields.sourceUrl = fields.sourceUrl.trim();
+            }
+            return Object.keys(updates).length ? { write: updates, result: appendedFields } : { result: appendedFields };
+        }, { op: 'appendToExistingAdopter', actorEmail });
+        if (outcome.status === 'missing') return { success: false, error: 'Target adopter not found' };
+        if (outcome.status === 'busy') return { success: false, error: `Failed to append (Error ID: ${outcome.errorId})` };
+        // Idempotent no-op — everything the user typed was already on the target.
+        if (!outcome.wrote) return { success: true, adopterId: targetId };
+        const appendedFields = outcome.result;
 
         await db.insert(adopterHistory).values({
             id: crypto.randomUUID(),
