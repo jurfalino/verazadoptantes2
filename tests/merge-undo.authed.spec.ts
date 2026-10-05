@@ -127,6 +127,12 @@ test.describe('Duplicate mass-merge and undo', () => {
             expect(row.status, `${row.id} should be resolved by the merge`).toBe('merged');
         }
 
+        // A teammate adds someone to the survivor after the merge: undo must
+        // take back only what the merge brought, never their later edit.
+        const withLaura = JSON.parse(String(parseD1Rows(execD1(`SELECT household_members FROM adopters WHERE id = '${A}'`))[0].household_members));
+        withLaura.push({ id: 'hm-laura', name: 'Laura Ruiz', relationship: 'partner', contactEntries: [] });
+        execD1(`UPDATE adopters SET household_members = '${JSON.stringify(withLaura)}' WHERE id = '${A}'`);
+
         // ── Undo, newest-first (server refuses older-first for same survivor).
         const undoRes = await page.request.post('/api/admin/duplicates/unmerge', {
             data: { auditIds: [...auditIds].reverse() },
@@ -150,6 +156,7 @@ test.describe('Duplicate mass-merge and undo', () => {
         ))[0];
         expect(restored.contact_info).toBe('alpha-contact-original');
         expect(String(restored.household_members ?? ''), 'undo takes the absorbed members back off').not.toContain('Tomás López');
+        expect(String(restored.household_members ?? ''), "undo keeps a teammate's later household edit").toContain('Laura Ruiz');
         expect(Number(restored.is_public), 'undo reverts the inherited public flag').toBe(0);
         // The auto-aliases came with the merge; undo must take them back out.
         expect(String(restored.contact_entries ?? '')).not.toContain(NAME_B);

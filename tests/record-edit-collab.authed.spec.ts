@@ -196,3 +196,28 @@ test('household: a new member shows once; a rename a teammate beat is refused, n
         execD1(`DELETE FROM adopters WHERE id = '${adopterId}'`);
     }
 });
+
+test("household: saving a name fix never reverts a teammate's newer age", async ({ page }) => {
+    test.setTimeout(150_000);
+    const stamp = Date.now();
+    const adopterId = `test-adopter-hh-age-${stamp}`;
+    const today = new Date().toISOString().slice(0, 10);
+    execD1(`INSERT INTO adopters (id, name, status, household_members, added_by, country, created_at, updated_at) VALUES ('${adopterId}', 'Hogar Edad ${stamp}', '5', '[{"id":"hm-t","name":"Tomás López","relationship":"child","contactEntries":[],"age":7,"ageAsOf":"${today}"}]', '${ADMIN_EMAIL}', 'AR', strftime('%s','now'), strftime('%s','now'))`);
+    const stored = () => JSON.parse(String(one(`SELECT household_members AS h FROM adopters WHERE id = '${adopterId}'`).h ?? '[]')) as Array<{ name: string; age?: number }>;
+    try {
+        await page.goto(`/adopter/${adopterId}`);
+        await dismissCountryBanner(page);
+        await expect(page.getByTestId('household-member')).toHaveCount(1, { timeout: 30_000 });
+        await page.getByTestId('household-member-edit').click();
+        // Meanwhile a teammate corrects the age to 8.
+        execD1(`UPDATE adopters SET household_members = '[{"id":"hm-t","name":"Tomás López","relationship":"child","contactEntries":[],"age":8,"ageAsOf":"${today}"}]', updated_at = strftime('%s','now') WHERE id = '${adopterId}'`);
+        await page.getByTestId('household-member-name-input').fill('Tomás Lopez');
+        await page.getByTestId('household-member-save').click();
+        await page.waitForTimeout(3_000);
+        expect(stored()[0].age, "the teammate's age stands").toBe(8);
+    } finally {
+        execD1(`DELETE FROM adopter_history WHERE adopter_id = '${adopterId}'`);
+        execD1(`DELETE FROM duplicate_tokens WHERE adopter_id = '${adopterId}'`);
+        execD1(`DELETE FROM adopters WHERE id = '${adopterId}'`);
+    }
+});

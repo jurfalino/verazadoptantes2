@@ -206,14 +206,19 @@ export async function addHouseholdMember(
 }
 
 export async function updateHouseholdMember(
-    input: { adopterId: string; memberId: string; name?: string; relationship?: Relationship | null; age?: number | null; expected?: { name?: string | null; relationship?: Relationship | null } },
+    input: { adopterId: string; memberId: string; name?: string; relationship?: Relationship | null; age?: number | null; expected?: { name?: string | null; relationship?: Relationship | null; age?: number | null } },
 ): Promise<{ ok: true } | Conflict | Busy | Err> {
     const actor = await authActor();
     if (!actor) return { ok: false, error: 'Not authenticated' };
     const adopterId = String(input.adopterId || '');
     const memberId = String(input.memberId || '');
     const expected = input.expected && typeof input.expected === 'object'
-        ? { name: expectedText(input.expected.name ?? ''), relationship: input.expected.relationship ?? null }
+        ? {
+            name: expectedText(input.expected.name ?? ''),
+            relationship: input.expected.relationship ?? null,
+            // The age as the editor saw it when the form opened; absent = not checked (older clients).
+            ...('age' in input.expected ? { age: input.expected.age ?? null } : {}),
+        }
         : null;
     try {
         const r = await loadEditable(adopterId, actor);
@@ -226,7 +231,8 @@ export async function updateHouseholdMember(
             const relationship = input.relationship !== undefined ? (input.relationship && REL_SET.has(input.relationship) ? input.relationship : null) : m.relationship;
             if (sameText(name, m.name) && (relationship ?? null) === (m.relationship ?? null) && sameAge(m, input.age)) return { result: 'noop' };
             // A teammate changed this person since the form opened: refuse.
-            if (expected && (!sameText(expected.name, m.name) || (expected.relationship ?? null) !== (m.relationship ?? null))) return { result: 'changed' };
+            if (expected && (!sameText(expected.name, m.name) || (expected.relationship ?? null) !== (m.relationship ?? null)
+                || ('age' in expected && (expected.age ?? null) !== (currentAge(m) ?? null)))) return { result: 'changed' };
             if (!name && !relationship && m.contactEntries.length === 0) return { result: 'empty' };
             const next: HouseholdMember = { ...m, name, relationship };
             if (!sameAge(m, input.age)) applyAge(next, input.age);

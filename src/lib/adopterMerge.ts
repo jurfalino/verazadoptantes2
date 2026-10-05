@@ -99,6 +99,11 @@ export async function mergeAdopters(
         // compare-and-swap (src/lib/adopterListCas.ts): a teammate's contact or
         // household edit landing mid-merge is merged in, never overwritten. The
         // undo snapshot is the row this write actually replaced.
+        // The absorbed profile's household members, re-id'd ONCE (outside the
+        // CAS retry loop) so the ids this merge adds are known and can never
+        // collide with the survivor's — undo removes exactly these.
+        const absorbedMembers = deserializeHouseholdMembers(secondary.householdMembers)
+            .map(m => ({ ...m, id: crypto.randomUUID() }));
         const mergedFields = (p: typeof primary) => {
             const updates: Partial<typeof adopters.$inferInsert> = {};
 
@@ -158,7 +163,6 @@ export async function mergeAdopters(
             // form can put people on the auto-created profile — spec
             // 2026-10-04 §3). Without this, "Es la misma persona" dropped them.
             // Read from `p`, the fresh row, like every field here (CAS-guarded).
-            const absorbedMembers = deserializeHouseholdMembers(secondary.householdMembers);
             if (absorbedMembers.length) {
                 updates.householdMembers = serializeHouseholdMembers(
                     mergeHouseholdMembers(deserializeHouseholdMembers(p.householdMembers), absorbedMembers),
@@ -180,8 +184,14 @@ export async function mergeAdopters(
             familyMembers: written.row.familyMembers,
             sourceUrl: written.row.sourceUrl,
             isPublic: written.row.isPublic,
-            householdMembers: written.row.householdMembers ?? null,
         };
+        if (absorbedMembers.length) {
+            // Same computation the write used, on the same row: the absorbed
+            // members that actually landed (repeats of the survivor's skipped).
+            const absorbedIds = new Set(absorbedMembers.map(m => m.id));
+            undo.addedHouseholdMemberIds = mergeHouseholdMembers(deserializeHouseholdMembers(written.row.householdMembers), absorbedMembers)
+                .map(m => m.id).filter(id => absorbedIds.has(id));
+        }
 
         // 1. Re-point adoptions (placements + adopter_events → normalized tables)
         const moved = await reassignAdopterRecords(db, secondaryId, primaryId);
@@ -409,9 +419,13 @@ interface MergeUndoPayload {
         sourceUrl: string | null;
         /** Absent in payloads written before v2.55.10 — undo leaves the flag as-is then. */
         isPublic?: number;
-        /** Absent in payloads written before household members merged (2026-10-04) — undo leaves them then. */
-        householdMembers?: string | null;
     };
+    /**
+     * Household members this merge appended to the survivor (fresh ids). Undo
+     * removes exactly these, so a teammate's later household edit survives —
+     * restoring a whole-list snapshot would erase it. Absent before 2026-10-04.
+     */
+    addedHouseholdMemberIds?: string[];
     placementIds: string[];
     adopterEventIds: string[];
     imageIds: string[];
@@ -544,10 +558,23 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
             sourceUrl: undo.primarySnapshot.sourceUrl,
             // Pre-v2.55.10 payloads have no isPublic — leave the flag alone then.
             ...(undo.primarySnapshot.isPublic !== undefined ? { isPublic: undo.primarySnapshot.isPublic } : {}),
-            ...(undo.primarySnapshot.householdMembers !== undefined ? { householdMembers: undo.primarySnapshot.householdMembers } : {}),
             tokenHash: null,
             updatedAt: new Date(),
         }).where(eq(adopters.id, primaryId));
+
+        // 3b. Take back only the household members the merge added — never the
+        //     survivor's own list, which may have been edited since.
+        const addedMemberIds = new Set(undo.addedHouseholdMemberIds ?? []);
+        if (addedMemberIds.size) {
+            const out = await casAdopterLists(db, primaryId, (row) => {
+                const members = deserializeHouseholdMembers(row.householdMembers);
+                const kept = members.filter(m => !addedMemberIds.has(m.id));
+                return kept.length === members.length
+                    ? { result: null }
+                    : { write: { householdMembers: serializeHouseholdMembers(kept) }, result: null };
+            }, { op: 'unmergeAdopters.household', auditId });
+            if (out.status === 'busy') throw new Error(`Undo collided with concurrent household edits (Error ID: ${out.errorId})`);
+        }
 
         // 4. Put the touched duplicate candidates back to their prior status —
         //    grouped by target status so each group is a few chunked updates.

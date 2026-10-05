@@ -36,6 +36,8 @@ const TYPE_ICON: Record<ContactEntryType, typeof Phone> = {
 interface Draft { type: ContactEntryType; value: string; platform: SocialPlatform | null; apps: MessagingApp[] }
 interface MemberUI extends HouseholdMember {
     editing?: boolean; draftName?: string; draftRel?: Relationship | null; draftAge?: string;
+    /** The age as shown when the edit opened — sent as `expected.age`, and to tell whether the rescuer changed it. */
+    openAge?: string;
     composer?: { stage: 'pick' } | ({ stage: 'edit' } & Draft) | null;
 }
 interface CEditing extends ContactEntry { editing?: boolean; draft?: Draft }
@@ -68,7 +70,7 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                 if (!lm) return { ...sm };
                 return {
                     ...sm,
-                    editing: lm.editing, draftName: lm.draftName, draftRel: lm.draftRel, draftAge: lm.draftAge, composer: lm.composer,
+                    editing: lm.editing, draftName: lm.draftName, draftRel: lm.draftRel, draftAge: lm.draftAge, openAge: lm.openAge, composer: lm.composer,
                     contactEntries: sm.contactEntries.map(se => {
                         const le = lm.contactEntries.find(e => e.id === se.id) as CEditing | undefined;
                         return le?.editing ? { ...se, editing: true, draft: le.draft } as CEditing : se;
@@ -115,8 +117,10 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
     async function saveMember(m: MemberUI) {
         const name = (m.draftName ?? '').trim();
         const relationship = m.draftRel ?? null;
-        // '' clears the age; a number sets it (the action validates 0–120).
-        const age = m.draftAge === undefined ? undefined : m.draftAge.trim() === '' ? null : Number(m.draftAge);
+        // Sent only when the rescuer changed it, so saving a name fix can never
+        // write back a stale age over a teammate's newer one. '' clears it.
+        const ageChanged = m.draftAge !== undefined && m.draftAge.trim() !== (m.openAge ?? '');
+        const age = !ageChanged ? undefined : m.draftAge!.trim() === '' ? null : Number(m.draftAge);
         const isNew = (m as MemberUI & { isNew?: boolean }).isNew;
         if (isNew) {
             const res = await run(() => addHouseholdMember({ adopterId, name, relationship, age: age ?? undefined }));
@@ -126,21 +130,21 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                 : x));
         } else {
             const res = await run(
-                () => updateHouseholdMember({ adopterId, memberId: m.id, name, relationship, age, expected: { name: m.name, relationship: m.relationship ?? null } }),
+                () => updateHouseholdMember({ adopterId, memberId: m.id, name, relationship, age, expected: { name: m.name, relationship: m.relationship ?? null, age: m.openAge ? Number(m.openAge) : null } }),
                 (kind) => { if (kind === 'deleted') setMembers(prev => prev.filter(x => x.id !== m.id)); },
             );
             if (!res) return;
             patch(m.id, {
                 name, relationship,
                 ...(age === null ? { age: undefined, ageAsOf: undefined } : typeof age === 'number' ? { age, ageAsOf: new Date().toISOString().slice(0, 10) } : {}),
-                editing: false, draftName: undefined, draftRel: undefined, draftAge: undefined,
+                editing: false, draftName: undefined, draftRel: undefined, draftAge: undefined, openAge: undefined,
             });
         }
         router.refresh();
     }
     function cancelMember(m: MemberUI) {
         if ((m as MemberUI & { isNew?: boolean }).isNew) setMembers(prev => prev.filter(x => x.id !== m.id));
-        else patch(m.id, { editing: false, draftName: undefined, draftRel: undefined, draftAge: undefined });
+        else patch(m.id, { editing: false, draftName: undefined, draftRel: undefined, draftAge: undefined, openAge: undefined });
     }
     function deleteMember(m: MemberUI) {
         setConfirmTarget({ kind: 'member', member: m });
@@ -285,7 +289,7 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                                 </div>
                                 {canEdit && (
                                     <div className="flex gap-0.5 shrink-0">
-                                        <button type="button" data-testid="household-member-edit" onClick={() => patch(m.id, { editing: true, draftName: m.name, draftRel: m.relationship, draftAge: m.age !== undefined ? String(currentAge(m)) : '' })} title={t('adopter.ce_edit_label')} className="p-1.5 text-stone-500 hover:text-teal-700 hover:bg-teal-50 rounded"><Pencil className="w-3.5 h-3.5" /></button>
+                                        <button type="button" data-testid="household-member-edit" onClick={() => { const shown = m.age !== undefined ? String(currentAge(m)) : ''; patch(m.id, { editing: true, draftName: m.name, draftRel: m.relationship, draftAge: shown, openAge: shown }); }} title={t('adopter.ce_edit_label')} className="p-1.5 text-stone-500 hover:text-teal-700 hover:bg-teal-50 rounded"><Pencil className="w-3.5 h-3.5" /></button>
                                         <button type="button" onClick={() => deleteMember(m)} title="Quitar" className="p-1.5 text-stone-500 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
                                     </div>
                                 )}
