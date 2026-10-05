@@ -10,5 +10,5 @@ export function canViewInterviewAnswers(p: {
     if (p.viewer === p.conductedBy) return true;
     if (p.viewerIsAdmin) return true;
     if (p.ownerEmail && p.viewer === p.ownerEmail) return true;
-    return p.viewerIsOrgMate;
+    return !!p.ownerEmail && p.viewerIsOrgMate;
 }

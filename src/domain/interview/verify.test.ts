@@ -10,10 +10,19 @@ describe('factMatches', () => {
         expect(factMatches('emails', ['Juan@Mail.com'], ['juan@mail.com'])).toBe(true);
         expect(factMatches('socials', ['https://www.instagram.com/juan.perez/'], ['@juan.perez'])).toBe(true);
     });
-    it('addresses match when equal after accents/case, or sharing two meaningful words', () => {
+    it('addresses match on exact normalization or shared street pairs', () => {
+        // Positive: exact match after normalization
         expect(factMatches('address', ['Av. Rivadavia 4500, Caballito'], ['av rivadavia 4500 caballito'])).toBe(true);
+        // Positive: shared street pair (Rivadavia 4500)
         expect(factMatches('address', ['Rivadavia 4500, Caballito'], ['vivo en Rivadavia 4500'])).toBe(true);
-        expect(factMatches('address', ['Rivadavia 4500, Caballito'], ['Corrientes 1200, Almagro'])).toBe(false);
+        // Negative: different streets (Rivadavia vs Corrientes), even in same city
+        expect(factMatches('address', ['Rivadavia 4500, Buenos Aires'], ['Corrientes 1200, Buenos Aires'])).toBe(false);
+        // Negative: different streets with different numbers, same neighborhood
+        expect(factMatches('address', ['Mendoza 1200 Caballito'], ['Cordoba 1200 Caballito'])).toBe(false);
+        // Negative: same street, different numbers
+        expect(factMatches('address', ['Rivadavia 4500'], ['Rivadavia 4600'])).toBe(false);
+        // Negative: no street pairs on one side (city name alone)
+        expect(factMatches('address', ['Caballito'], ['Caballito, Buenos Aires'])).toBe(false);
     });
     it('nothing to compare is never a match', () => {
         expect(factMatches('phones', [], ['1165851333'])).toBe(false);

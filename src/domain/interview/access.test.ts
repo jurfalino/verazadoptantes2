@@ -15,4 +15,7 @@ describe('canViewInterviewAnswers (spec D7)', () => {
         expect(canViewInterviewAnswers({ ...base, viewer: null })).toBe(false);
         expect(canViewInterviewAnswers({ ...base, ownerEmail: null, viewer: 'other@x.com' })).toBe(false);
     });
+    it('org-mate access requires ownerEmail to be set', () => {
+        expect(canViewInterviewAnswers({ ...base, ownerEmail: null, viewer: 'x@x.com', viewerIsOrgMate: true })).toBe(false);
+    });
 });
