@@ -3,6 +3,8 @@ export const en = {
         created_by: 'Created by',
     },
     collab: {
+        animal_already_placed: '{animal} already has an active adoption or foster.',
+        animal_already_placed_unnamed: 'This animal already has an active adoption or foster.',
         someone: 'another team member',
         conflict: '{name} changed {field} while you were editing.',
         view_theirs: 'See their version',

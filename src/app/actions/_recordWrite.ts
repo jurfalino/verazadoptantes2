@@ -32,6 +32,20 @@ export function normalizeRecordType(rt: string | null | undefined): string {
 type Db = any;
 type RecordData = any;
 
+/**
+ * The database refused a second ACTIVE placement for one animal (unique
+ * partial index idx_placements_one_active, drizzle/0078): someone adopted or
+ * fostered it between our read and our write. The message carries the column
+ * on SQLite / D1 alike; drizzle may wrap it, so the cause chain is read too.
+ */
+export function isActivePlacementConflict(e: unknown): boolean {
+    for (let cur: unknown = e, depth = 0; cur && depth < 4; cur = (cur as { cause?: unknown }).cause, depth++) {
+        const msg = cur instanceof Error ? cur.message : String(cur);
+        if (/UNIQUE constraint failed/i.test(msg) && /placements\.animal_id|idx_placements_one_active/.test(msg)) return true;
+    }
+    return false;
+}
+
 function newId(): string {
     return crypto.randomUUID();
 }
@@ -147,7 +161,9 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
         deletedAt: null,
     }).onConflictDoNothing();
     if (isPlacementType(recordType) && data.adopterId) {
-        await db.insert(placements).values(placementValues(animalId, data, recordType, data.adopterId, actor, date, `${animalId}-plc`)).onConflictDoNothing();
+        // A retry with the same id is a no-op; a DIFFERENT active placement
+        // for this animal is not — it raises (isActivePlacementConflict).
+        await db.insert(placements).values(placementValues(animalId, data, recordType, data.adopterId, actor, date, `${animalId}-plc`)).onConflictDoNothing({ target: placements.id });
     }
     return animalId;
 }
@@ -207,7 +223,7 @@ function asPlanned(viewOf: (f: string) => unknown, existing: RecordData, fields:
  * caller should re-read and re-plan. Without it, writes are unconditional (the
  * pre-collision behaviour, kept for callers that do no checking).
  */
-export async function updateRecord(db: Db, data: RecordData, existing: RecordData, actor: string, opts: { cas?: boolean } = {}): Promise<{ lost: boolean }> {
+export async function updateRecord(db: Db, data: RecordData, existing: RecordData, actor: string, opts: { cas?: boolean } = {}): Promise<{ lost: boolean; landed?: string[] }> {
     const id: string = data.id;
     const now = new Date();
     const cas = !!opts.cas;
@@ -257,6 +273,13 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
     // The active placement, read before anything is written (the view's
     // values for this record come from it too).
     const active = await db.select().from(placements).where(and(eq(placements.animalId, id), isNull(placements.endedAt))).get();
+    if (cas) {
+        // Who holds the animal must still be what the caller planned against —
+        // checked before anything is written, so a lost race here lands nothing.
+        const holder = active ? active.adopterId : null;
+        if (canonField('adopterId', holder) !== canonField('adopterId', existing.adopterId)) return { lost: true };
+        if (active && canonField('recordType', active.recordType) !== canonField('recordType', existing.recordType)) return { lost: true };
+    }
     let animalRow: any = null;
     if (!cas) {
         await db.update(animals).set(animalPatch).where(eq(animals.id, id));
@@ -270,6 +293,22 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
             .returning({ id: animals.id });
         if (!won.length) return { lost: true };
     }
+    // The animal's own fields have landed. If the placement part loses below,
+    // the caller still owes history for these (`landed`), and its retry will
+    // see them as already saved.
+    const landed = cas ? written.filter(f => f in ANIMAL_COLS) : [];
+    const lostAfterAnimal = () => ({ lost: true, landed });
+    /** Open a placement; in cas mode a concurrent one (unique index) is a lost race. */
+    const openPlacement = async (values: RecordData): Promise<boolean> => {
+        if (!cas) { await db.insert(placements).values(values); return true; }
+        try {
+            await db.insert(placements).values(values);
+            return true;
+        } catch (e) {
+            if (isActivePlacementConflict(e)) return false;
+            throw e;
+        }
+    };
 
     // Placement lifecycle.
     const desiredType: string = data.recordType ?? existing.recordType;
@@ -279,12 +318,6 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
     // doesn't change (in cas mode `data` holds only the changed ones).
     const opening = cas ? { ...pickPlacementFields(existing), ...data } : data;
 
-    if (cas) {
-        // Who holds the animal must still be what the caller planned against.
-        const holder = active ? active.adopterId : null;
-        if (canonField('adopterId', holder) !== canonField('adopterId', existing.adopterId)) return { lost: true };
-        if (active && canonField('recordType', active.recordType) !== canonField('recordType', existing.recordType)) return { lost: true };
-    }
     /** End the active placement — only if it is still the active one. */
     const closeActive = async (): Promise<boolean> => {
         if (!cas) {
@@ -307,8 +340,8 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
                 actor,
             );
             if (ended) {
-                if (!(await closeActive())) return { lost: true };
-                await db.insert(placements).values(placementValues(id, opening, desiredType, desiredAdopter, actor, opening.date ?? now));
+                if (!(await closeActive())) return lostAfterAnimal();
+                if (!(await openPlacement(placementValues(id, opening, desiredType, desiredAdopter, actor, opening.date ?? now)))) return lostAfterAnimal();
             } else {
                 // Same holder + type → patch mutable fields on the active placement.
                 const pPatch: RecordData = {};
@@ -325,21 +358,22 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
                         await db.update(placements).set(pPatch).where(eq(placements.id, active.id));
                     } else {
                         const viewOfPlacement = (f: string) => (f === 'date' ? (active.startedAt ?? animalRow?.createdAt) : active[PLACEMENT_COLS[f]]);
-                        if (!asPlanned(viewOfPlacement, existing, written, PLACEMENT_COLS)) return { lost: true };
+                        if (!asPlanned(viewOfPlacement, existing, written, PLACEMENT_COLS)) return lostAfterAnimal();
                         const won = await db.update(placements).set(pPatch)
                             .where(and(eq(placements.id, active.id), isNull(placements.endedAt), ...guards(placements, active, pPatch, PLACEMENT_COLS)))
                             .returning({ id: placements.id });
-                        if (!won.length) return { lost: true };
+                        if (!won.length) return lostAfterAnimal();
                     }
                 }
             }
         } else {
-            // available → placed: open the first placement.
-            await db.insert(placements).values(placementValues(id, opening, desiredType, desiredAdopter, actor, opening.date ?? now));
+            // available → placed: open the first placement. Two people doing
+            // this at once: the database lets only one in.
+            if (!(await openPlacement(placementValues(id, opening, desiredType, desiredAdopter, actor, opening.date ?? now)))) return lostAfterAnimal();
         }
     } else if (active && (desiredType === 'available' || !desiredAdopter)) {
         // Placed → available: close the active placement.
-        if (!(await closeActive())) return { lost: true };
+        if (!(await closeActive())) return lostAfterAnimal();
     }
     return { lost: false };
 }

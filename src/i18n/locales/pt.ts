@@ -3,6 +3,8 @@ export const pt = {
         created_by: 'Criada por',
     },
     collab: {
+        animal_already_placed: '{animal} já tem uma adoção ou lar temporário ativo.',
+        animal_already_placed_unnamed: 'Este animal já tem uma adoção ou lar temporário ativo.',
         someone: 'outra pessoa da equipe',
         conflict: '{name} mudou {field} enquanto você editava.',
         view_theirs: 'Ver a outra versão',

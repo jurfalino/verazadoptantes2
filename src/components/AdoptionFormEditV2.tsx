@@ -18,9 +18,9 @@ import { formatAge } from '@/lib/ageUtils';
 import DatePicker from '@/components/ui/DatePicker';
 import { extractVideoThumbnail } from '@/lib/videoThumbnail';
 import { zarazTrack } from '@/lib/zaraz';
-import { isSaveBusyError } from '@/domain/fieldCollab';
+import { isSaveBusyError, isAnimalAlreadyPlacedError } from '@/domain/fieldCollab';
 import { FieldConflictNotice } from '@/components/collab/FieldConflictNotice';
-import { updatedByOtherMessage, needsReviewMessage } from '@/lib/collabCopy';
+import { updatedByOtherMessage, needsReviewMessage, animalAlreadyPlacedMessage } from '@/lib/collabCopy';
 
 /** Convert a data URL to a Blob for FormData upload */
 function dataUrlToBlob(dataUrl: string): Blob {
@@ -463,7 +463,13 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
             }
         } catch (err) {
             console.error(err);
-            toast.error(t('errors.generic'), isSaveBusyError(err) ? t('collab.busy') : t('errors.save_adoption_failed'), resolveErrorId(err, 'AdoptionFormEditV2'));
+            toast.error(
+                t('errors.generic'),
+                isAnimalAlreadyPlacedError(err) ? animalAlreadyPlacedMessage(t, formData.animalName)
+                    : isSaveBusyError(err) ? t('collab.busy')
+                    : t('errors.save_adoption_failed'),
+                resolveErrorId(err, 'AdoptionFormEditV2'),
+            );
         } finally {
             setLoading(false);
         }

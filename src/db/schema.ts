@@ -248,6 +248,10 @@ export const placements = sqliteTable("placements", {
     animalIdx: index("idx_placements_animal").on(table.animalId),
     adopterIdx: index("idx_placements_adopter").on(table.adopterId),
     activeIdx: index("idx_placements_active").on(table.animalId, table.endedAt),
+    // At most ONE active placement per animal (drizzle/0078). Two people
+    // assigning the same animal at once: the second insert fails here, and
+    // the app maps it to «… ya tiene una adopción o tránsito activo».
+    oneActiveIdx: uniqueIndex("idx_placements_one_active").on(table.animalId).where(sql`ended_at IS NULL`),
 }));
 
 // Adopter-scoped activity that is NOT a custody placement: observations and

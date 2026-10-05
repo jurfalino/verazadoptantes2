@@ -10,10 +10,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { migratedDb } from '@/test-utils/migratedDb';
 import { session, getUser, isAdmin, OWNER, MATE, STRANGER } from '@/test-utils/actionMocks';
 import * as mocks from '@/test-utils/actionMocks';
-import { isSaveBusyError } from '@/domain/fieldCollab';
+import { isSaveBusyError, isAnimalAlreadyPlacedError } from '@/domain/fieldCollab';
+import { isActivePlacementConflict } from './_recordWrite';
 
 const { state, audit } = vi.hoisted(() => ({
-    state: { db: null as unknown, interleave: null as null | (() => void), sqlite: null as unknown },
+    state: { db: null as unknown, interleave: null as null | (() => unknown), sqlite: null as unknown },
     audit: { calls: [] as Array<{ userEmail: string; action: string; target: string; details: unknown }> },
 }));
 vi.mock('./_db', () => ({ getDb: async () => state.db, getUser }));
@@ -23,7 +24,7 @@ vi.mock('@/lib/orgMembership', () => ({
     isOwnerOrOrgMate: async (a: string, b: string) => {
         const hook = state.interleave;
         state.interleave = null;
-        hook?.();
+        await hook?.();
         return mocks.isOwnerOrOrgMate(a, b);
     },
 }));
@@ -266,5 +267,139 @@ describe('saveAdoption — per-field collisions', () => {
 
     it('a malformed baseline is rejected', async () => {
         await expect(saveAdoption({ id: 'an1', animalName: 'X' } as never, { loaded: { addedBy: 'x' } } as never)).rejects.toThrow(/Invalid adoption data/);
+    });
+});
+
+describe('one active placement per animal', () => {
+    beforeEach(() => {
+        const m = migratedDb();
+        state.db = m.db;
+        state.sqlite = m.sqlite;
+        state.interleave = null;
+        audit.calls = [];
+        sqlite = m.sqlite as unknown as typeof sqlite;
+        session.user = OWNER;
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('ad1', 'Carla', '5', ?, 1000, 1000), ('ad2', 'Bruno', '5', ?, 1000, 1000)`).run(OWNER, OWNER);
+        sqlite.prepare(`INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('an3', 'Luna', 'dog', ?, 1000, 1000)`).run(OWNER);
+        sqlite.prepare(`INSERT INTO user (id, name, email) VALUES ('u-mate', 'Marta Ruiz', ?)`).run(MATE);
+    });
+    const active = () => sqlite.prepare("SELECT adopter_id FROM placements WHERE animal_id = 'an3' AND ended_at IS NULL").all();
+    const FROM_AVAILABLE = { adopterId: null, recordType: 'available' };
+
+    it('two people placing the same available animal at once: one lands, the other gets the conflict', async () => {
+        // Marta's whole save runs between Carla's read and her write.
+        state.interleave = () => as(MATE, () => saveAdoption({ id: 'an3', adopterId: 'ad2', recordType: 'adoption' } as never, { loaded: FROM_AVAILABLE }));
+        const res = await saveAdoption({ id: 'an3', adopterId: 'ad1', recordType: 'adoption' } as never, { loaded: FROM_AVAILABLE });
+        expect(res.conflicts?.map(c => c.field)).toEqual(['adopterId']);
+        expect(res.saved).toEqual([]);
+        expect(res.conflicts?.find(c => c.field === 'adopterId')?.by).toBe('Marta Ruiz');
+        expect(active()).toEqual([{ adopter_id: 'ad2' }]);
+    });
+
+    it('the database itself refuses the second active placement: a lost race, re-planned into a conflict', async () => {
+        // A placement opened by someone else right before our insert (past every app check).
+        let armed = true;
+        const real = state.db as { insert: (...a: unknown[]) => unknown };
+        state.db = new Proxy(real, {
+            get(target, prop, recv) {
+                if (prop === 'insert') return (...a: unknown[]) => {
+                    if (armed) {
+                        armed = false;
+                        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, recorded_by) VALUES ('race-plc', 'an3', 'ad2', 'adoption', 2000, ?)`).run(MATE);
+                    }
+                    return (target.insert as (...x: unknown[]) => unknown).apply(target, a);
+                };
+                return Reflect.get(target, prop, recv);
+            },
+        });
+        const res = await saveAdoption({ id: 'an3', adopterId: 'ad1', recordType: 'adoption' } as never, { loaded: FROM_AVAILABLE });
+        expect(res.conflicts?.map(c => c.field)).toEqual(['adopterId']);
+        expect(res.saved).toEqual([]);
+        expect(active()).toEqual([{ adopter_id: 'ad2' }]);
+    });
+
+    it('a create that collides with an existing active placement: a localized-error marker with an errorId', async () => {
+        // An active placement whose animal the view does not show yet — the
+        // create path inserts the animal and then its placement.
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, recorded_by) VALUES ('orphan-plc', 'an-new', 'ad2', 'adoption', 2000, ?)`).run(MATE);
+        const err = await saveAdoption({ id: 'an-new', adopterId: 'ad1', recordType: 'adoption', animalName: 'Toto', species: 'dog' } as never).catch(e => e);
+        expect(isAnimalAlreadyPlacedError(err)).toBe(true);
+        expect(String(err.message)).toMatch(/Error ID: \w+/);
+        expect(sqlite.prepare("SELECT COUNT(*) AS n FROM placements WHERE animal_id = 'an-new' AND ended_at IS NULL").get()!.n).toBe(1);
+    });
+
+    it('a delivery address verified on a new adoption joins the contacts as an entry, blob in sync, concurrent edit kept', async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ?, contact_info = '1155551111' WHERE id = 'ad1'`)
+            .run(JSON.stringify([{ id: 'e1', type: 'phone', value: '1155551111' }]));
+        // A teammate edits the phone while the record is being created.
+        let armed = true;
+        const real = state.db as { update: (...a: unknown[]) => unknown };
+        state.db = new Proxy(real, {
+            get(target, prop, recv) {
+                if (prop === 'update') return (...a: unknown[]) => {
+                    if (armed) {
+                        armed = false;
+                        sqlite.prepare(`UPDATE adopters SET contact_entries = ?, contact_info = '1155552222' WHERE id = 'ad1'`)
+                            .run(JSON.stringify([{ id: 'e1', type: 'phone', value: '1155552222' }]));
+                    }
+                    return (target.update as (...x: unknown[]) => unknown).apply(target, a);
+                };
+                return Reflect.get(target, prop, recv);
+            },
+        });
+        await saveAdoption({ adopterId: 'ad1', recordType: 'adoption', animalName: 'Toto', species: 'dog', deliveredToHome: 1, verifiedAddress: 'Calle Falsa 123, Rosario' } as never);
+        const row = sqlite.prepare("SELECT contact_entries, contact_info FROM adopters WHERE id = 'ad1'").get()!;
+        const list = JSON.parse(row.contact_entries as string) as Array<{ type: string; value: string }>;
+        expect(list.map(e => e.value)).toEqual(['1155552222', 'Calle Falsa 123, Rosario']);
+        expect(list[1].type).toBe('address');
+        expect(row.contact_info).toContain('1155552222');
+        expect(row.contact_info).toContain('Calle Falsa 123');
+    });
+
+    it('recognizes the unique-index failure, raw and wrapped', () => {
+        let raw: unknown;
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type) VALUES ('p1', 'an3', 'ad1', 'adoption')`).run();
+        try { sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type) VALUES ('p2', 'an3', 'ad2', 'adoption')`).run(); } catch (e) { raw = e; }
+        expect(isActivePlacementConflict(raw)).toBe(true);
+        expect(isActivePlacementConflict(new Error('Failed query', { cause: raw }))).toBe(true);
+        expect(isActivePlacementConflict(new Error('UNIQUE constraint failed: user.email'))).toBe(false);
+    });
+});
+
+describe('half-landed saves keep their history', () => {
+    beforeEach(() => {
+        const m = migratedDb();
+        state.db = m.db;
+        state.sqlite = m.sqlite;
+        state.interleave = null;
+        audit.calls = [];
+        sqlite = m.sqlite as unknown as typeof sqlite;
+        session.user = OWNER;
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('ad1', 'Carla', '5', ?, 1000, 1000)`).run(OWNER);
+        sqlite.prepare(`INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('an1', 'Nina', 'cat', ?, 1000, 1000)`).run(OWNER);
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, comments, recorded_by) VALUES ('an1-plc', 'an1', 'ad1', 'adoption', 1000, 'Todo bien', ?)`).run(OWNER);
+    });
+
+    it('the animal part lands, the placement part loses: the landed field gets its history; the other is a conflict', async () => {
+        // Second UPDATE = the placement patch; a teammate's note lands right before it.
+        let n = 0;
+        const real = state.db as { update: (...a: unknown[]) => unknown };
+        state.db = new Proxy(real, {
+            get(target, prop, recv) {
+                if (prop === 'update') return (...a: unknown[]) => {
+                    if (++n === 2) sqlite.prepare(`UPDATE placements SET comments = 'Se mudaron' WHERE id = 'an1-plc'`).run();
+                    return (target.update as (...x: unknown[]) => unknown).apply(target, a);
+                };
+                return Reflect.get(target, prop, recv);
+            },
+        });
+        const res = await saveAdoption({ id: 'an1', animalName: 'Nina Bella', comments: 'Mía' } as never, { loaded: { animalName: 'Nina', comments: 'Todo bien' } });
+        expect(res.saved).toContain('animalName');
+        expect(res.conflicts?.map(c => c.field)).toEqual(['comments']);
+        expect(animal().name).toBe('Nina Bella');
+        expect(activePlacement().comments).toBe('Se mudaron');
+        const history = sqlite.prepare("SELECT changes FROM adopter_history").all().map(r => JSON.parse(r.changes as string).adoption_updated);
+        expect(history).toEqual([{ animalName: { from: 'Nina', to: 'Nina Bella' } }]);
+        expect(audit.calls.map(c => (c.details as { fields: string[] }).fields)).toEqual([['animalName']]);
     });
 });

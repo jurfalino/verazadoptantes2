@@ -56,3 +56,9 @@ export function theirVersionLabel(t: T, by: string | null | undefined): string {
 export function keepTheirsLabel(t: T, by: string | null | undefined): string {
     return t('collab.keep_theirs').replace('{name}', collabName(t, by));
 }
+
+/** «<Animal> ya tiene una adopción o tránsito activo.» */
+export function animalAlreadyPlacedMessage(t: T, animalName: string | null | undefined): string {
+    const name = (animalName ?? '').trim();
+    return name ? t('collab.animal_already_placed').replace('{animal}', name) : t('collab.animal_already_placed_unnamed');
+}

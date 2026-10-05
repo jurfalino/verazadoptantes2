@@ -114,12 +114,20 @@ export function planFieldSave(
 
 /**
  * Fields that only make sense together: if any of `group` conflicts, the
- * others in it that were about to be written are held back as conflicts too.
+ * others in it that were about to be written are held back as conflicts too,
+ * and none of them counts as saved.
  */
 export function holdTogether(plan: FieldPlan, group: readonly string[]): FieldPlan {
     if (!plan.conflicts.some(f => group.includes(f))) return plan;
     const held = plan.apply.filter(f => group.includes(f));
-    return { ...plan, apply: plan.apply.filter(f => !group.includes(f)), conflicts: [...plan.conflicts, ...held] };
+    // A group member that merely happens to match ours isn't "saved" either:
+    // the decision it belongs to was someone else's.
+    return {
+        ...plan,
+        apply: plan.apply.filter(f => !group.includes(f)),
+        alreadySaved: plan.alreadySaved.filter(f => !group.includes(f)),
+        conflicts: [...plan.conflicts, ...held],
+    };
 }
 
 /**
@@ -138,4 +146,11 @@ export const SAVE_BUSY = 'SAVE_BUSY';
 /** Did this save fail only because someone else was saving at the same moment? */
 export function isSaveBusyError(e: unknown): boolean {
     return e instanceof Error && e.message.startsWith(SAVE_BUSY);
+}
+
+/** Message prefix of the error a save throws when the animal already has an active adoption / foster. */
+export const ANIMAL_ALREADY_PLACED = 'ANIMAL_ALREADY_PLACED';
+
+export function isAnimalAlreadyPlacedError(e: unknown): boolean {
+    return e instanceof Error && e.message.startsWith(ANIMAL_ALREADY_PLACED);
 }
