@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { adaptStepForGift, giftTitleKey, isGift, stripGiftAnswers, GIFT_UNKNOWN_STEPS } from './giftFlow'
+import { adaptStepForGift, giftTitleKey, isGift, stripGiftAnswers, GIFT_UNKNOWN_STEPS, giftRecipientProblem } from './giftFlow'
 
 const t = (k: string) => ({ 'form.q_outdoor_title_gift': '¿{n} tiene patio o jardín?', 'form.opt_unknown': 'No sé' } as Record<string, string>)[k] ?? k
 const gift = { intent: 'gift', giftRecipient: { relationship: 'child', firstName: 'Laura' } }
@@ -26,5 +26,18 @@ describe('gift flow', () => {
         expect(stripGiftAnswers({ intent: 'self', giftRecipient: { firstName: 'L' }, hasOutdoor: 'unknown', isSafe: 'yes' }))
             .toEqual({ intent: 'self', isSafe: 'yes' })
         expect(stripGiftAnswers({ ...gift, hasOutdoor: 'unknown' })).toEqual({ ...gift, hasOutdoor: 'unknown' })
+    })
+})
+
+describe('giftRecipientProblem', () => {
+    it('needs a relationship and a first name', () => {
+        expect(giftRecipientProblem({ firstName: 'Laura' })).toBe('missing')
+        expect(giftRecipientProblem({ relationship: 'child', firstName: ' ' })).toBe('missing')
+    })
+    it('checks the phone like the applicant\'s — the server would otherwise drop it', () => {
+        expect(giftRecipientProblem({ relationship: 'child', firstName: 'Laura', phone: '11 5555 1234 (WhatsApp)' })).toBe('phone')
+        expect(giftRecipientProblem({ relationship: 'child', firstName: 'Laura', phone: '123456' })).toBe('phone')
+        expect(giftRecipientProblem({ relationship: 'child', firstName: 'Laura', phone: '+54 (11) 5555-1234' })).toBeNull()
+        expect(giftRecipientProblem({ relationship: 'child', firstName: 'Laura', phone: '  ' })).toBeNull()
     })
 })

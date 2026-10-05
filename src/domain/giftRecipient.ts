@@ -8,7 +8,8 @@ import { FORM_RELATIONSHIPS, type FormRelationship } from './householdPeople';
 export type GiftRecipient = { relationship: FormRelationship; firstName: string; lastName?: string; phone?: string };
 
 const REL = new Set<string>(FORM_RELATIONSHIPS);
-const PHONE = /^[\d\s+()-]{6,30}$/;
+/** The form's own phone rule (contract-app 'phone-ar': 7+ of digits, spaces, + ( ) -), capped. */
+const PHONE = /^[\d\s+()-]{7,30}$/;
 const cleanName = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 60) : '');
 
 export function parseGiftRecipient(raw: unknown): GiftRecipient | null {

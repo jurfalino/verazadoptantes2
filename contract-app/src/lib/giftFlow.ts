@@ -56,3 +56,14 @@ export function stripGiftAnswers(answers: Record<string, unknown>): Record<strin
     }
     return out
 }
+
+/** The applicant's phone rule (PetShieldForm VALIDATORS['phone-ar']); the server keeps only phones that pass it. */
+const PHONE = /^[\d+\s()-]{7,}$/
+
+/** What stops "¿Para quién es?" from being answered — null when it can go on. */
+export function giftRecipientProblem(r: { relationship?: string; firstName?: string; phone?: string }): 'missing' | 'phone' | null {
+    if (!r.relationship || !r.firstName?.trim()) return 'missing'
+    const phone = r.phone?.trim()
+    if (phone && !PHONE.test(phone)) return 'phone'
+    return null
+}

@@ -5,7 +5,7 @@ import {
     FORM_STEP_IDS, formStepsToAsk, withPhoneRequirement, stepsForAnswers, stepAfter, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody, childrenAnswer,
 } from './lib/adoptionDocs'
 import GiftRecipient, { type Recipient } from './components/GiftRecipient'
-import { adaptStepForGift, isGift, recipientFirstName } from './lib/giftFlow'
+import { adaptStepForGift, isGift, recipientFirstName, giftRecipientProblem } from './lib/giftFlow'
 import HouseholdPeople, { type Person } from './components/HouseholdPeople'
 import { canLeaveHouseholdStep, householdStepTitleKey, type DraftPerson } from './lib/householdPeopleForm'
 
@@ -713,8 +713,8 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         }
 
         if (currentStep.type === 'gift-recipient') {
-            const r = (answersToCheck.giftRecipient as Recipient | undefined) ?? {}
-            if (!r.relationship || !r.firstName?.trim()) newErrors.giftRecipient = t('form.err_gift_recipient')
+            const problem = giftRecipientProblem((answersToCheck.giftRecipient as Recipient | undefined) ?? {})
+            if (problem) newErrors.giftRecipient = t(problem === 'phone' ? 'form.err_gift_phone' : 'form.err_gift_recipient')
         }
 
         if (currentStep.type === 'household-people') {

@@ -51,6 +51,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         const recipient = gift ? parseGiftRecipient(body.giftRecipient) : null;
         delete answers.giftRecipient;
         if (recipient) answers.giftRecipient = recipient;
+        const sentPhone = (body.giftRecipient as { phone?: unknown } | undefined)?.phone;
+        if (recipient && !recipient.phone && typeof sentPhone === 'string' && sentPhone.trim()) {
+            // The form checks the same rule, so only an old tab or a hand-made POST gets here.
+            logger.warn('form submit: gift recipient phone dropped (bad format)', { userId });
+        }
         if (Array.isArray(body.householdPeople) || body.livesAlone === true) {
             answers.householdPeople = householdPeople;
             answers.livesAlone = body.livesAlone === true && householdPeople.length === 0;
