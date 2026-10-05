@@ -152,6 +152,46 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // getAdoptionImages (signed-in), fetchMetrics / fetchTopErrors7d (admin),
 // markContractKeepNew (own/team profile), setProfilePicture (image must be
 // the adopter's).
+// Interview guide (ENABLE_INTERVIEW_GUIDE): nine exports in
+// src/app/actions/interviews.ts (8) + interviewComplete.ts (1). MEASURED still
+// 146: Next only records an id for a 'use server' export that some route or
+// client module references, and nothing imports these yet (the UI lands in a
+// later task). EXPECTED_ACTIONS therefore stays 146 until the first import
+// ships; then it becomes 155 (146 + 9) in THAT commit. Signed off here against
+// the rule above — what a stranger can do with arguments they choose. Every
+// door needs a session and the flag, and every error is logged through safeError
+// (bound params stripped):
+//   previewInterviewCandidates(prep)  — the same masked duplicate search the
+//                                       add-adopter form already exposes.
+//   startInterview({prep|adopterId})  — creates a draft owned by the caller;
+//                                       candidates come from the server-side match,
+//                                       a forged lead id is dropped. With adopterId
+//                                       it reuses the open profile draft (partial
+//                                       unique index + insert-or-reselect).
+//   saveInterviewDraft(id, patch)     — interviewer only, drafts only (a completed
+//                                       interview is never revived); zod caps sizes.
+//   refreshInterviewCandidates(id)    — interviewer only; re-matches from the STORED
+//                                       draft, no caller-supplied identifiers.
+//   getInterview(id)                  — drafts: interviewer only; completed: D7
+//                                       (interviewer, owner, owner's org-mates, admins).
+//   listMyInterviewDrafts()           — the caller's own drafts only.
+//   verifyInterviewFact(id, questionId, candidateId) — interviewer only. The fact
+//                                       comes from the bank question's `verifies`;
+//                                       values only from THAT question's saved answer
+//                                       (<=3 contacts, <=1 street pair for address);
+//                                       the candidate must be in the interview's
+//                                       server-recorded list; 5-call budget per
+//                                       (candidate, fact) per interview; returns only
+//                                       a boolean — no value leaves the server.
+//   discardInterviewDraft(id)         — interviewer only, drafts only.
+//   completeInterview(id, input)      — interviewer only; target must be 'new' or a
+//                                       recorded candidate (and match a persisted
+//                                       adopter_id on retry); deterministic observation
+//                                       id `${interviewId}-obs`, idempotent retries,
+//                                       household dedupe; only collected values are
+//                                       written, through saveAdopter / appendToExisting-
+//                                       Adopter / addHouseholdMember / saveAdoption with
+//                                       their own gates. Audited.
 const EXPECTED_ACTIONS = 146;
 
 let manifest;
