@@ -27,3 +27,8 @@ export function answerSignal(field: string, raw: unknown): AnswerSignal | null {
             return null;
     }
 }
+
+/** One person in "¿Quiénes viven en la casa?" (Jon, 2026-10-04): under 5 red, 5–17 amber, adults green. */
+export function personSignal(age: number): AnswerSignal {
+    return age < 5 ? 'risk' : age < 18 ? 'caution' : 'ok';
+}
