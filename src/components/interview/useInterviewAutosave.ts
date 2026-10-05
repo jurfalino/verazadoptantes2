@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { saveInterviewDraft } from '@/app/actions/interviews';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import type { DraftPatch } from '@/lib/interviews/validation';
-import { AutosaveQueue, type AutosaveStatus } from './autosaveQueue';
+import { AutosaveQueue, type AutosaveStatus, type SaveResult } from './autosaveQueue';
 
 export function useInterviewAutosave(opts: {
     interviewId: string | null;
@@ -16,15 +16,16 @@ export function useInterviewAutosave(opts: {
     const idRef = useRef(opts.interviewId);
     idRef.current = opts.interviewId;
     const saveFn = opts.save ?? saveInterviewDraft;
-    const queue = useMemo(() => new AutosaveQueue(async (payload) => {
+    const queue = useMemo(() => new AutosaveQueue(async (payload): Promise<SaveResult> => {
         const id = idRef.current;
-        if (!id) return true;
+        if (!id) return 'ok';
         try {
             const r = await saveFn(id, JSON.parse(payload) as DraftPatch);
-            return r.ok;
+            if (r.ok) return 'ok';
+            return r.error === 'generic' ? 'retry' : 'fatal';
         } catch (e) {
             resolveErrorId(e, 'useInterviewAutosave.save');
-            return false;
+            return 'retry';
         }
     }, opts.delayMs ?? 800, setStatus), [saveFn, opts.delayMs]);
 

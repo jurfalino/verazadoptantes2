@@ -59,27 +59,38 @@ export default function InterviewApp({ initialDrafts, fromAdopterId, resumeId }:
         setPhase(Object.keys(v.answers).length || techniqueHidden() ? 'interview' : 'technique');
     }, []);
 
-    // Entry: from a profile, or resuming a draft.
+    // Entry: from a profile, or resuming a draft. Runs once per entry key: a locale switch
+    // (t changes) must never re-fetch and overwrite local answers.
+    const tRef = useRef(t); tRef.current = t;
+    const failRef = useRef(fail); failRef.current = fail;
+    const toastRef = useRef(toast); toastRef.current = toast;
+    // Survives StrictMode's mount/unmount/mount, unlike a per-run `active` flag (the key guard skips run 2).
+    const mounted = useRef(true);
+    useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+    const entryKey = useRef<string | null>(null);
     useEffect(() => {
-        let active = true;
+        const key = `${resumeId}|${fromAdopterId}`;
+        if (entryKey.current === key) return;
+        entryKey.current = key;
         (async () => {
             try {
                 if (resumeId) {
                     const r = await getInterview(resumeId);
-                    if (!active) return;
-                    if (r.ok) applyView(resumeId, r.view); else { toast.error(t('interview.load_failed'), undefined, r.errorId); setPhase('prep'); }
+                    if (!mounted.current) return;
+                    if (!r.ok) { toastRef.current.error(tRef.current('interview.load_failed'), undefined, r.errorId); setPhase('prep'); return; }
+                    if (r.view.status !== 'draft') { router.replace('/interview/' + encodeURIComponent(resumeId)); return; }
+                    applyView(resumeId, r.view);
                 } else if (fromAdopterId) {
                     const r = await startInterview({ adopterId: fromAdopterId });
-                    if (!active) return;
-                    if (r.ok) applyView(r.interviewId, r.view); else { toast.error(t(r.error === 'disabled' ? 'interview.disabled' : 'interview.load_failed'), undefined, r.errorId); setPhase('prep'); }
+                    if (!mounted.current) return;
+                    if (r.ok) applyView(r.interviewId, r.view); else { toastRef.current.error(tRef.current(r.error === 'disabled' ? 'interview.disabled' : 'interview.load_failed'), undefined, r.errorId); setPhase('prep'); }
                 }
             } catch (e) {
-                fail(e, t('interview.load_failed'), 'InterviewApp.entry');
-                if (active) setPhase('prep');
+                failRef.current(e, tRef.current('interview.load_failed'), 'InterviewApp.entry');
+                if (mounted.current) setPhase('prep');
             }
         })();
-        return () => { active = false; };
-    }, [resumeId, fromAdopterId, applyView, fail, t, toast]);
+    }, [resumeId, fromAdopterId, applyView, router]);
 
     const ctx: InterviewContext = useMemo(() => ({
         prep, answers, visited, custom, candidates, ...(confirmedAdopterId ? { confirmedAdopterId } : {}),
@@ -93,6 +104,12 @@ export default function InterviewApp({ initialDrafts, fromAdopterId, resumeId }:
         payload: { answers, visited, custom, leadCandidateId },
         enabled: phase === 'interview' || phase === 'review',
     });
+
+    const errorToasted = useRef(false);
+    useEffect(() => {
+        if (status === 'error' && !errorToasted.current) { errorToasted.current = true; toast.error(t('interview.save_failed')); }
+        if (status === 'saved') errorToasted.current = false;
+    }, [status, toast, t]);
 
     // New identifier → save, then let the server re-match from the stored draft.
     const signature = identifierSignature(known);
@@ -216,7 +233,7 @@ export default function InterviewApp({ initialDrafts, fromAdopterId, resumeId }:
                                     : candidates.length === 1 ? t('interview.candidate_one') : t('interview.candidates_count').replace('{n}', String(candidates.length))}
                                 {newCandidateIds.length > 0 && <span className="ml-2 font-semibold text-teal-700 motion-safe:animate-pulse">{t('interview.new_candidate')}</span>}
                                 <span className="ml-2 text-stone-500" aria-live="polite" data-testid="interview-save-status">
-                                    {status === 'saving' ? t('interview.saving') : status === 'saved' ? t('interview.saved') : status === 'offline' ? t('interview.offline') : ''}
+                                    {status === 'saving' ? t('interview.saving') : status === 'saved' ? t('interview.saved') : status === 'offline' ? t('interview.offline') : status === 'error' ? t('interview.save_failed') : ''}
                                 </span>
                             </p>
                         </div>
