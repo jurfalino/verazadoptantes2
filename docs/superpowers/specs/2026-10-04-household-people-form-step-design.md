@@ -186,3 +186,113 @@ older configs never mention it, so "hideable" alone would switch it on everywher
 - Making the people list the default, or removing "¿Hay niños?".
 - Collecting contacts for household members on the form.
 - Backfilling older submissions.
+
+---
+
+# Part 2 — Gift flow: "¿Para quién es?" (2026-10-04, approved direction)
+
+## Problem
+
+When the applicant answers "Es un regalo", every home question still talks
+to *them*: "¿Dónde vivís?", "¿Tenés patio?", "¿Tenés mascotas?", "Sin contarte
+a vos"… The answers describe the wrong home, and the rescuer never learns who
+will actually live with the animal, which is the person to vet.
+
+## Decisions (Jon)
+
+| Topic | Decision |
+|---|---|
+| Flow | Ask for whom, then word the home questions about that person (with "No sé" where the giver may not know) |
+| Recipient on the app | **Only on the giver's profile** (a household member marked as the gift's recipient), plus the form screen. No profile of their own; no "link the recipient" action for now |
+| Linking | "Es la misma persona" keeps meaning "the applicant (giver) is that person". It is not a way to attach the form to the recipient |
+
+## 7. The "¿Para quién es?" step (contract-app)
+
+- **When asked:** new step id `giftRecipient`, type `gift-recipient`, right after
+  `intent`. It is asked **only when `intent === 'gift'`**. When intent is hidden
+  or answered "Para mí", the step and its answer never exist: the answer is
+  stripped before submit, like any hidden step.
+- **Fields:**
+  - **Relación**, single tap, required: the same chips as the household step
+    (Pareja · Hijo/a · Padre/Madre · Hermano/a · Otro familiar · Amigo/a o compañero/a).
+  - **Nombre**: required. The following questions use it ("¿Dónde vive Laura?").
+  - **Apellido**: optional.
+  - **Teléfono**: optional, validated like the applicant's phone.
+- **Answer:** `giftRecipient: { relationship, firstName, lastName?, phone? }`.
+- **Server:** re-parsed by `parseGiftRecipient` in `src/domain/giftRecipient.ts`,
+  pure and unit-tested. It enforces the same relationship enum and name caps,
+  and normalises the phone. Not trusted from the client.
+
+## 8. Questions reworded for a gift
+
+Only when `intent === 'gift'`. `{n}` is the recipient's first name. The giver's
+own identity steps (name, email, phone, address, age, selfie) are unchanged.
+
+| Step | Self (unchanged) | Gift | "No sé" |
+|---|---|---|---|
+| children | ¿Hay niños en el hogar? | ¿Hay niños en la casa de {n}? | yes |
+| existingPets | ¿Tenés mascotas actualmente? | ¿{n} tiene mascotas actualmente? | — (counter, optional) |
+| housingType | ¿Dónde vivís? | ¿Dónde vive {n}? | — |
+| household | ¿Quiénes viven en la casa? / Sin contarte a vos / Vivo solo/a | ¿Quiénes viven con {n}? / Sin contar a {n} / Vive solo/a | — |
+| hasOutdoor | ¿Tenés patio o jardín? | ¿{n} tiene patio o jardín? | yes |
+| isSafe | ¿El espacio está protegido? | (unchanged) | yes |
+| hoursAlone | (neutral, unchanged) | (unchanged) | — |
+| petExperience | ¿Tuviste mascotas antes? | ¿{n} tuvo mascotas antes? | yes |
+| willingToSterilize | ¿Estás dispuesto/a a castrar o esterilizar? | ¿{n} está dispuesto/a a castrar o esterilizar? | yes |
+| movingPlans | ¿Tenés pensado mudarte pronto? | ¿{n} tiene pensado mudarse pronto? | yes |
+| vacationPlan | ¿Qué harías con el animal en vacaciones? | ¿Qué haría {n} con el animal en vacaciones? | yes |
+
+- **"No sé"** is an extra option, value `'unknown'`, shown only in the gift
+  flow. It is stored as `'unknown'` and displayed as "No sabe".
+- **Semáforo:** `'unknown'` never gets a dot. Every other rule is unchanged,
+  including gift → red on Intención.
+- **People list:** in a gift, the list describes the **recipient's** home. Those
+  people therefore **never go onto the giver's profile**, even when fully named:
+  they are not the giver's household. They stay on the form with their dots.
+
+## 9. Recipient → giver's profile
+
+At submit, with `intent === 'gift'` and a valid `giftRecipient`:
+- **Only when** the recipient has **first and last name**, the giver's
+  auto-created profile gets a household member with:
+  - `name`: "First Last";
+  - `relationship`;
+  - `giftRecipient: true`, a new optional `HouseholdMember` flag;
+  - the phone as a contact entry when given;
+  - `addedBy`: `'form-submission'`.
+- **No profile of their own.** The name and phone feed search and duplicate
+  detection like any relative's.
+- **Known effect:** if the recipient already has a profile, duplicate detection
+  may list the giver and the recipient as a possible duplicate. The rescuer
+  chooses "Mantener separados". The same happens today with any relative's name.
+- **Profile display:** "Hija · Laura Pérez", with a small "Destinataria del
+  regalo" pill (masked like the rest of the member).
+
+## 10. Form screen
+
+- **"Para quién"** sits at the top of "Respuestas completas" for a gift:
+  "Hija · Laura Pérez · Tel …".
+- The reworded questions keep their gift wording as labels ("Patio o jardín de
+  Laura").
+- Older forms and "Para mí" forms are unchanged.
+
+## Testing (Part 2)
+
+- **Unit:**
+  - `parseGiftRecipient`: enum, required first name, caps, phone;
+  - the gift-wording resolver (which title key for which step and intent);
+  - `answerSignal` with `'unknown'` → no dot;
+  - stripping `giftRecipient` when intent ≠ gift.
+- **E2E:**
+  - a gift submission with a fully named recipient and two housemates:
+    - only the recipient reaches the giver's profile, flagged and with the phone;
+    - the housemates stay on the form;
+    - the form screen shows "Para quién";
+  - a "Para mí" submission is unchanged.
+- **Contract-app:** walk the gift flow at 390 and 1280 and check the reworded
+  titles and the "No sé" options.
+
+## Out of scope (Part 2)
+
+- A profile of the recipient's own, and a "vincular destinatario" action.
+- Asking the recipient to fill in the form themselves.
