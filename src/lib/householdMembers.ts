@@ -30,6 +30,15 @@ export interface HouseholdMember {
     contactEntries: ContactEntry[];
     /** Contributor attribution (collaborative-vetting model); undefined for legacy. */
     addedBy?: string;
+    /** Age as given on `ageAsOf` (adoption form, spec 2026-10-04). Show `currentAge()`, never this raw. */
+    age?: number;
+    /** ISO day (YYYY-MM-DD) the age was given; only kept alongside `age`. */
+    ageAsOf?: string;
+}
+
+const AGE_DAY = /^\d{4}-\d{2}-\d{2}$/;
+function validAge(v: unknown): number | undefined {
+    return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 120 ? v : undefined;
 }
 
 export const MAX_MEMBERS = 30;
@@ -93,6 +102,11 @@ export function deserializeHouseholdMembers(json: string | null | undefined): Ho
             : deriveMemberId(name, relationship ?? '', i);
         const member: HouseholdMember = { id, name: name.trim(), relationship, contactEntries };
         if (typeof m.addedBy === 'string' && m.addedBy.trim()) member.addedBy = m.addedBy.slice(0, 256);
+        const age = validAge(m.age);
+        if (age !== undefined) {
+            member.age = age;
+            if (typeof m.ageAsOf === 'string' && AGE_DAY.test(m.ageAsOf)) member.ageAsOf = m.ageAsOf;
+        }
         out.push(member);
     }
     return out;
@@ -110,6 +124,8 @@ export function serializeHouseholdMembers(members: HouseholdMember[] | null | un
             relationship: m.relationship && REL_SET.has(m.relationship) ? m.relationship : null,
             contactEntries: m.contactEntries ?? [],
             ...(m.addedBy ? { addedBy: m.addedBy } : {}),
+            ...(validAge(m.age) !== undefined ? { age: m.age } : {}),
+            ...(validAge(m.age) !== undefined && m.ageAsOf && AGE_DAY.test(m.ageAsOf) ? { ageAsOf: m.ageAsOf } : {}),
         }));
     return JSON.stringify(clean);
 }
@@ -135,4 +151,37 @@ export function parseLegacyFamilyText(text: string | null | undefined): Househol
         if (out.length >= MAX_MEMBERS) break;
     }
     return out;
+}
+
+/** Age today: the recorded age plus whole years elapsed since it was recorded. */
+export function currentAge(m: { age?: number; ageAsOf?: string }, today: Date = new Date()): number | null {
+    if (typeof m.age !== 'number') return null;
+    if (!m.ageAsOf) return m.age;
+    const [y, mo, d] = m.ageAsOf.split('-').map(Number);
+    let years = today.getUTCFullYear() - y;
+    const month = today.getUTCMonth() + 1;
+    if (month < mo || (month === mo && today.getUTCDate() < d)) years--;
+    return m.age + Math.max(0, years);
+}
+
+const memberKey = (m: HouseholdMember) =>
+    `${m.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()}|${m.relationship ?? ''}`;
+
+/**
+ * A merge's household: the survivor's members plus the absorbed profile's,
+ * minus exact (name + relationship) repeats. Nameless members are never
+ * collapsed — "a son, phone X" twice may be two people.
+ */
+export function mergeHouseholdMembers(survivor: HouseholdMember[], absorbed: HouseholdMember[]): HouseholdMember[] {
+    const seen = new Set(survivor.filter(m => m.name.trim()).map(memberKey));
+    const out = [...survivor];
+    for (const m of absorbed) {
+        if (m.name.trim()) {
+            const k = memberKey(m);
+            if (seen.has(k)) continue;
+            seen.add(k);
+        }
+        out.push(m);
+    }
+    return out.slice(0, MAX_MEMBERS);
 }
