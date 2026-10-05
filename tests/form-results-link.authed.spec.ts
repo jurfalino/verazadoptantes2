@@ -260,7 +260,7 @@ test.describe('form-results: linking to an existing profile', () => {
             name: `E2E Regalo ${stamp}`, email: `e2e-regalo-${stamp}@example.com`, phone: `25${String(stamp).slice(-8)}`, address: '1 Gift St',
             intent: 'gift', giftRecipient: { relationship: 'child', firstName: 'Laura', lastName: 'Pérez', phone: '11 5555 1234' },
             householdPeople: [{ relationship: 'partner', age: 30, firstName: 'Marcos', lastName: 'Gómez' }], livesAlone: false,
-            hasOutdoor: 'unknown', isSafe: 'unknown',
+            hasOutdoor: 'unknown', isSafe: 'unknown', vacationPlan: 'unknown',
         } });
         expect(res.ok(), await res.text()).toBeTruthy();
         const { submissionId } = await res.json();
@@ -280,7 +280,10 @@ test.describe('form-results: linking to an existing profile', () => {
         await expect(forWhom).toContainText('Laura Pérez');
         await expect(forWhom).toContainText('11 5555 1234');
         await expect(page.getByText(/(People in|Personas en el hogar de|Pessoas na casa de) Laura/)).toBeVisible();
-        for (const label of [/Patio or yard|Patio o jardín|Quintal ou jardim/, /Protected spaces|Secure spaces|Espacios protegidos|Espaços protegidos/]) {
+        // Every reworded question keeps its gift wording as the label (spec §10).
+        await expect(page.getByText(/Patio o jardín de Laura|Laura's patio or yard|Quintal ou jardim de Laura/)).toBeVisible();
+        await expect(page.getByText(/Plan para vacaciones de Laura|Laura's vacation plan|Plano de férias de Laura/)).toBeVisible();
+        for (const label of [/patio or yard|patio o jardín|quintal ou jardim/i, /Protected spaces|Secure spaces|Espacios protegidos|Espaços protegidos/]) {
             const line = page.locator('div.flex.items-baseline', { hasText: label });
             await expect(line).toContainText(/No sabe|Doesn't know|Não sabe/);
             await expect(line.locator('[data-signal]')).toHaveCount(0);
@@ -290,6 +293,16 @@ test.describe('form-results: linking to an existing profile', () => {
         await page.goto(`/adopter/${row.auto_adopter_id}`);
         await dismissCountryBanner(page);
         await expect(page.getByText(/Gift recipient|Destinatario\/a del regalo|Destinatário\/a do presente/).first()).toBeVisible();
+    });
+
+    test('a submission without a phone is still stored — the server never refuses it (spec Part 3)', async ({ request }) => {
+        const stamp = Date.now();
+        const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+            name: `E2E SinTel ${stamp}`, email: `e2e-sintel-${stamp}@example.com`, address: '1 No Phone St', intent: 'self',
+        } });
+        expect(res.ok(), await res.text()).toBeTruthy();
+        const { submissionId } = await res.json();
+        expect(one(`SELECT auto_adopter_id FROM form_submissions WHERE id = '${submissionId}'`).auto_adopter_id).toBeTruthy();
     });
 
     test('gift with a first-name-only recipient: nothing on the profile', async ({ request }) => {

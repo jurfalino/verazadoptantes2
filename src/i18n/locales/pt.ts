@@ -1801,8 +1801,12 @@ export const pt = {
             specialNeeds: 'Aberto a necessidades especiais',
             legal: 'Aceitou termos e condições',
         },
-        /** A gift form names the recipient — {n} is her first name (spec Part 2 §10). */
+        /** A gift form labels every reworded question for the recipient — {n} is her first name (spec Part 2 §10). */
         fields_gift: {
+            hasOutdoor: 'Quintal ou jardim de {n}',
+            willingToSterilize: 'Compromisso de castração/esterilização de {n}',
+            movingPlans: 'Planos de mudança de {n}',
+            vacationPlan: 'Plano de férias de {n}',
             household: 'Pessoas na casa de {n}',
             children: 'Crianças na casa de {n}',
             existingPets: 'Pets na casa de {n}',

@@ -1795,8 +1795,12 @@ export const en = {
             specialNeeds: 'Open to special-needs animals',
             legal: 'Accepted terms & conditions',
         },
-        /** A gift form names the recipient — {n} is her first name (spec Part 2 §10). */
+        /** A gift form labels every reworded question for the recipient — {n} is her first name (spec Part 2 §10). */
         fields_gift: {
+            hasOutdoor: "{n}'s patio or yard",
+            willingToSterilize: '{n} willing to sterilize',
+            movingPlans: "{n}'s moving plans",
+            vacationPlan: "{n}'s vacation plan",
             household: "People in {n}'s home",
             children: "Children in {n}'s home",
             existingPets: "Pets in {n}'s home",
