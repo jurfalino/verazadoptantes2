@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } fr
 import './petshield.css'
 import { useT } from './i18n/LocaleContext'
 import {
-    FORM_STEP_IDS, applyHiddenSteps, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody,
+    FORM_STEP_IDS, formStepsToAsk, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody,
 } from './lib/adoptionDocs'
 
 // ══════════════════════════════════════════════
@@ -46,8 +46,13 @@ interface PetCounterStep {
     petTypes: Array<{ value: string; label: string; icon: string }>;
 }
 
+/** "¿Quiénes viven en la casa?" — the people list, an alternative to 'children' (spec 2026-10-04). */
+interface HouseholdPeopleStep {
+    id: string; type: 'household-people'; title: string; subtitle?: string;
+}
+
 type FormStep = ConsentStep | TextFieldsStep | GeolocationStep | CameraUploadStep
-    | IconCardsStep | SegmentedCardsStep | ToggleStep | ChecklistStep | PetCounterStep;
+    | IconCardsStep | SegmentedCardsStep | ToggleStep | ChecklistStep | PetCounterStep | HouseholdPeopleStep;
 
 // ══════════════════════════════════════════════
 // SVG ICONS
@@ -394,6 +399,10 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             ],
         },
         {
+            // Title follows the housing answer at render time (Task 4).
+            id: 'household', type: 'household-people', title: '', subtitle: t('form.q_household_subtitle'),
+        },
+        {
             id: 'hasOutdoor', type: 'icon-cards', title: t('form.q_outdoor_title'),
             options: [
                 { value: 'yes', label: t('form.opt_yes'), icon: 'patio' },
@@ -537,7 +546,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         : DEFAULT_SCHEMA
     // Same reference when hiddenSteps is null/empty (no config, or flag off) —
     // never removes a locked step even if the server sends a bad/forged one.
-    const schema = applyHiddenSteps(baseSchema, hiddenSteps)
+    const schema = formStepsToAsk(baseSchema, hiddenSteps)
     const totalSteps = schema.length
     const DRAFT_KEY = draftKey(userId, animalId)
 

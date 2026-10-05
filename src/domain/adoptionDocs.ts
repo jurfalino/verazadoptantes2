@@ -8,7 +8,7 @@ import { z } from 'zod';
 
 export const FORM_STEP_IDS = [
     'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'children', 'existingPets',
-    'housingType', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience', 'willingToSterilize',
+    'housingType', 'household', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience', 'willingToSterilize',
     'vetCommitment', 'movingPlans', 'vacationPlan', 'identity-name', 'identity-email',
     'identity-phone', 'identity-address', 'ageRange', 'geo', 'selfie',
 ] as const;
@@ -23,7 +23,7 @@ export const TOGGLEABLE_FORM_STEPS = FORM_STEP_IDS.filter(id => !LOCKED.has(id))
 
 export const FORM_STEP_GROUPS = [
     { key: 'what', steps: ['species', 'lifeStage', 'specialNeeds', 'intent'] },
-    { key: 'home', steps: ['children', 'existingPets', 'housingType', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience'] },
+    { key: 'home', steps: ['children', 'household', 'existingPets', 'housingType', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience'] },
     { key: 'commitments', steps: ['willingToSterilize', 'vetCommitment', 'movingPlans', 'vacationPlan'] },
     { key: 'person', steps: ['identity-name', 'identity-email', 'identity-phone', 'identity-address', 'ageRange', 'geo', 'selfie'] },
 ] as const;
@@ -44,6 +44,26 @@ export function sanitizeShownSteps(input: unknown): string[] | null {
     const keep = new Set<string>();
     for (const v of input) if (typeof v === 'string' && KNOWN.has(v)) keep.add(v);
     return inFormOrder(keep);
+}
+
+/**
+ * "¿Hay niños?" vs the people list (spec 2026-10-04 §2). Stored in the same
+ * hidden_steps list: the 'household' token means "people list"; absent (every
+ * existing config) means the children question. 'children' in the list hides
+ * the household question whichever is chosen — one switch for the row.
+ * contract-app's formStepsToAsk applies the same rule to the public form.
+ */
+export function householdQuestion(hidden: readonly string[]): 'children' | 'people' {
+    return hidden.includes('household') ? 'people' : 'children';
+}
+
+/** Whether the public form asks `id` under this stored list. */
+export function isStepAsked(id: string, hidden: readonly string[]): boolean {
+    if (LOCKED.has(id)) return true;
+    const rowHidden = hidden.includes('children');
+    if (id === 'children') return !rowHidden && householdQuestion(hidden) === 'children';
+    if (id === 'household') return !rowHidden && householdQuestion(hidden) === 'people';
+    return !hidden.includes(id);
 }
 
 /**

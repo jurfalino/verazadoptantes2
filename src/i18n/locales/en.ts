@@ -1771,6 +1771,7 @@ export const en = {
             context: 'Context & consent',
         },
         fields: {
+            household: 'Household members',
             ageRange: 'Age range',
             geo: 'Currently at home',
             species: 'Species',
@@ -2415,6 +2416,9 @@ export const en = {
         save_failed: "We couldn't save that",
     },
     adoptionDocs: {
+        household_choice_label: 'How to ask',
+        household_choice_children: 'Any children? (simple)',
+        household_choice_people: 'Household members (detailed)',
         settings_title: 'Adoption form and contract',
         settings_hint: 'Choose which form and contract are sent when you share a link.',
         use_label: 'When sharing, use:',

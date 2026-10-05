@@ -10,17 +10,17 @@ import {
 const doc = (...texts: string[]): RichDoc => ({ type: 'doc', content: texts.map(t => ({ type: 'paragraph', content: [{ text: t }] })) });
 
 describe('form steps', () => {
-    it('lists the 23 PetShield steps in form order', () => {
+    it('lists the 24 PetShield steps in form order', () => {
         expect(FORM_STEP_IDS).toEqual([
             'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'children', 'existingPets',
-            'housingType', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience', 'willingToSterilize',
+            'housingType', 'household', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience', 'willingToSterilize',
             'vetCommitment', 'movingPlans', 'vacationPlan', 'identity-name', 'identity-email',
             'identity-phone', 'identity-address', 'ageRange', 'geo', 'selfie',
         ]);
     });
     it('locks terms + identity', () => {
         expect(LOCKED_FORM_STEPS).toEqual(['legal', 'identity-name', 'identity-email', 'identity-phone', 'identity-address']);
-        expect(TOGGLEABLE_FORM_STEPS).toHaveLength(18);
+        expect(TOGGLEABLE_FORM_STEPS).toHaveLength(19);
     });
     it('groups cover every toggleable step exactly once', () => {
         const all = (FORM_STEP_GROUPS.flatMap(g => g.steps) as string[]).filter(s => !(LOCKED_FORM_STEPS as readonly string[]).includes(s));
@@ -162,5 +162,22 @@ describe('parseStoredHiddenSteps', () => {
     it('valid JSON of the wrong shape → no steps, flagged malformed', () => {
         expect(parseStoredHiddenSteps('{"a":1}')).toEqual({ steps: [], malformed: true });
         expect(parseStoredHiddenSteps('"selfie"')).toEqual({ steps: [], malformed: true });
+    });
+});
+
+import { householdQuestion, isStepAsked } from './adoptionDocs';
+describe('household question choice', () => {
+    it('reads the token', () => {
+        expect(householdQuestion([])).toBe('children');
+        expect(householdQuestion(['household'])).toBe('people');
+    });
+    it('isStepAsked mirrors the public form', () => {
+        expect(isStepAsked('children', [])).toBe(true);
+        expect(isStepAsked('household', [])).toBe(false);
+        expect(isStepAsked('household', ['household'])).toBe(true);
+        expect(isStepAsked('children', ['household'])).toBe(false);
+        expect(isStepAsked('household', ['children', 'household'])).toBe(false);
+        expect(isStepAsked('intent', ['intent'])).toBe(false);
+        expect(isStepAsked('legal', ['legal'])).toBe(true);
     });
 });

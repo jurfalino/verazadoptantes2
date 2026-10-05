@@ -7,7 +7,7 @@
  */
 
 import { useLanguage } from '@/context/LanguageContext';
-import { FORM_STEP_GROUPS, FORM_STEP_IDS, LOCKED_FORM_STEPS } from '@/domain/adoptionDocs';
+import { FORM_STEP_GROUPS, FORM_STEP_IDS, LOCKED_FORM_STEPS, householdQuestion, isStepAsked } from '@/domain/adoptionDocs';
 
 const LOCKED = new Set<string>(LOCKED_FORM_STEPS);
 
@@ -50,8 +50,12 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
     const { t } = useLanguage();
     const name = (by: string) => by || t('adoptionDocs.someone');
     const hiddenSet = new Set(hidden);
-    const total = FORM_STEP_IDS.length;
-    const shown = FORM_STEP_IDS.filter(id => !hiddenSet.has(id)).length;
+    // 'household' is not a question of its own here: it is the "detailed"
+    // choice on the children row (spec 2026-10-04 §2), so it never counts.
+    const questions = FORM_STEP_IDS.filter(id => id !== 'household');
+    const total = questions.length;
+    const shown = questions.filter(id => isStepAsked(id, hidden) || (id === 'children' && isStepAsked('household', hidden))).length;
+    const choice = householdQuestion(hidden);
 
     const label = (id: string) => t(OWN_LABEL_KEYS[id] ?? `petshield.fields.${id}`);
 
@@ -61,6 +65,50 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
         // Keep form order so the saved list is stable.
         onChange(FORM_STEP_IDS.filter(s => next.has(s)));
     };
+
+    const choose = (people: boolean) => {
+        onChange(FORM_STEP_IDS.filter(s => (s === 'household' ? people : hiddenSet.has(s))));
+    };
+
+    const conflictBanner = (key: string, conflict: StepConflictView) => (
+        <div role="alert" className="mx-2 mt-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 space-y-1" data-testid={`form-step-${key}-conflict`}>
+            <p className="text-xs text-amber-900">
+                {capitalize(t('adoptionDocs.step_conflict')
+                    .replace('{name}', name(conflict.by))
+                    .replace('{state}', t(conflict.theirs === 'hidden' ? 'adoptionDocs.step_state_hidden' : 'adoptionDocs.step_state_shown')))}
+                {key === 'household' && <> ({label('household')})</>}
+            </p>
+            <div className="flex flex-wrap gap-2">
+                <button type="button" disabled={saving} onClick={() => onKeepTheirs?.(key)} className="min-h-11 px-2 text-xs font-semibold text-teal-700 hover:underline disabled:opacity-40" data-testid={`form-step-${key}-keep-theirs`}>
+                    {t('adoptionDocs.step_keep_theirs').replace('{name}', name(conflict.by))}
+                </button>
+                <button type="button" disabled={saving} onClick={() => onKeepMine?.(key)} className="min-h-11 px-2 text-xs font-semibold text-teal-700 hover:underline disabled:opacity-40" data-testid={`form-step-${key}-keep-mine`}>
+                    {t('adoptionDocs.step_keep_mine')}
+                </button>
+            </div>
+        </div>
+    );
+
+    /** Under the children row: ask it simply, or as the people list. */
+    const householdChoice = () => (
+        <div role="radiogroup" aria-label={t('adoptionDocs.household_choice_label')} className="flex flex-wrap gap-2 px-4 pb-3">
+            {([['children', 'adoptionDocs.household_choice_children'], ['people', 'adoptionDocs.household_choice_people']] as const).map(([value, key]) => (
+                <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={choice === value}
+                    onClick={() => choose(value === 'people')}
+                    data-testid={`household-choice-${value}`}
+                    className={`min-h-11 px-4 py-2 rounded-xl text-[13px] font-bold border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 ${choice === value
+                        ? 'bg-teal-600 text-white border-transparent'
+                        : 'bg-white text-stone-700 border-stone-200 hover:bg-[var(--accent-subtle-bg)]'}`}
+                >
+                    {t(key)}
+                </button>
+            ))}
+        </div>
+    );
 
     const row = (id: string) => {
         if (LOCKED.has(id)) {
@@ -78,26 +126,16 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
         const conflict = conflicts[id];
         return (
             <li key={id}>
-                {conflict && (
-                    <div role="alert" className="mx-2 mt-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 space-y-1" data-testid={`form-step-${id}-conflict`}>
-                        <p className="text-xs text-amber-900">
-                            {capitalize(t('adoptionDocs.step_conflict')
-                                .replace('{name}', name(conflict.by))
-                                .replace('{state}', t(conflict.theirs === 'hidden' ? 'adoptionDocs.step_state_hidden' : 'adoptionDocs.step_state_shown')))}
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                            <button type="button" disabled={saving} onClick={() => onKeepTheirs?.(id)} className="min-h-11 px-2 text-xs font-semibold text-teal-700 hover:underline disabled:opacity-40" data-testid={`form-step-${id}-keep-theirs`}>
-                                {t('adoptionDocs.step_keep_theirs').replace('{name}', name(conflict.by))}
-                            </button>
-                            <button type="button" disabled={saving} onClick={() => onKeepMine?.(id)} className="min-h-11 px-2 text-xs font-semibold text-teal-700 hover:underline disabled:opacity-40" data-testid={`form-step-${id}-keep-mine`}>
-                                {t('adoptionDocs.step_keep_mine')}
-                            </button>
-                        </div>
-                    </div>
-                )}
+                {conflict && conflictBanner(id, conflict)}
+                {id === 'children' && conflicts.household && conflictBanner('household', conflicts.household)}
                 {updatedBy[id] !== undefined && !conflict && (
                     <p className="px-4 pt-2 text-xs font-semibold text-teal-700" data-testid={`form-step-${id}-updated-by`}>
                         {t('adoptionDocs.updated_by').replace('{name}', name(updatedBy[id]))}
+                    </p>
+                )}
+                {id === 'children' && updatedBy.household !== undefined && !conflicts.household && (
+                    <p className="px-4 pt-2 text-xs font-semibold text-teal-700" data-testid="form-step-household-updated-by">
+                        {t('adoptionDocs.updated_by').replace('{name}', name(updatedBy.household))}
                     </p>
                 )}
                 <button
@@ -117,6 +155,7 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
                         <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ease-in-out ${on ? 'translate-x-5' : 'translate-x-1'}`} />
                     </span>
                 </button>
+                {id === 'children' && on && householdChoice()}
             </li>
         );
     };
@@ -137,7 +176,7 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
                         {t(`adoptionDocs.group_${group.key}`)}
                     </h3>
                     <ul className="rounded-2xl border border-stone-200 bg-white divide-y divide-stone-100 p-1">
-                        {group.steps.map(id => row(id))}
+                        {group.steps.filter(id => id !== 'household').map(id => row(id))}
                     </ul>
                 </section>
             ))}

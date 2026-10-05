@@ -1777,6 +1777,7 @@ export const es = {
             context: 'Contexto y consentimiento',
         },
         fields: {
+            household: 'Personas del hogar',
             ageRange: 'Rango de edad',
             geo: '¿Está en su domicilio?',
             species: 'Especie',
@@ -2420,6 +2421,9 @@ export const es = {
         save_failed: 'No pudimos guardar',
     },
     adoptionDocs: {
+        household_choice_label: 'Cómo preguntar',
+        household_choice_children: '¿Hay niños? (simple)',
+        household_choice_people: 'Personas del hogar (detallado)',
         settings_title: 'Formulario y contrato de adopción',
         settings_hint: 'Elegí qué formulario y contrato se envían cuando compartís un link.',
         use_label: 'Al compartir, usar:',

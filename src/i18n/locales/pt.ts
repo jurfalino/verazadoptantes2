@@ -1777,6 +1777,7 @@ export const pt = {
             context: 'Contexto e consentimento',
         },
         fields: {
+            household: 'Pessoas da casa',
             ageRange: 'Faixa etária',
             geo: 'Está no seu endereço?',
             species: 'Espécie',
@@ -2420,6 +2421,9 @@ export const pt = {
         save_failed: 'Não conseguimos salvar',
     },
     adoptionDocs: {
+        household_choice_label: 'Como perguntar',
+        household_choice_children: 'Há crianças? (simples)',
+        household_choice_people: 'Pessoas da casa (detalhado)',
         settings_title: 'Formulário e contrato de adoção',
         settings_hint: 'Escolha qual formulário e contrato são enviados quando você compartilha um link.',
         use_label: 'Ao compartilhar, usar:',

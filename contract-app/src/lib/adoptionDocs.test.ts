@@ -175,3 +175,46 @@ describe('PetShieldForm.tsx characterization', () => {
         expect(ids).toEqual([...FORM_STEP_IDS])
     })
 })
+
+import { formStepsToAsk, childrenAnswer } from './adoptionDocs'
+const HS = ['intent', 'children', 'housingType', 'household', 'hasOutdoor'].map(id => ({ id }))
+const idsOf = (x: { id: string }[]) => x.map(s => s.id)
+
+describe('formStepsToAsk', () => {
+    it('default (no config) asks "¿Hay niños?", never the people list', () => {
+        expect(idsOf(formStepsToAsk(HS, null))).toEqual(['intent', 'children', 'housingType', 'hasOutdoor'])
+        expect(idsOf(formStepsToAsk(HS, []))).toEqual(['intent', 'children', 'housingType', 'hasOutdoor'])
+    })
+    it('"household" chosen → people list instead of the children question', () => {
+        expect(idsOf(formStepsToAsk(HS, ['household']))).toEqual(['intent', 'housingType', 'household', 'hasOutdoor'])
+    })
+    it('hiding "children" hides the household question whichever is chosen', () => {
+        expect(idsOf(formStepsToAsk(HS, ['children']))).toEqual(['intent', 'housingType', 'hasOutdoor'])
+        expect(idsOf(formStepsToAsk(HS, ['children', 'household']))).toEqual(['intent', 'housingType', 'hasOutdoor'])
+    })
+    it('still hides other hidden steps and never a locked one', () => {
+        expect(idsOf(formStepsToAsk([{ id: 'legal' }, ...HS], ['legal', 'intent']))).toEqual(['legal', 'children', 'housingType', 'hasOutdoor'])
+    })
+})
+
+describe('stripHiddenAnswers with the household choice', () => {
+    const answers = { children: '2', householdPeople: [{ relationship: 'child', age: 4 }], livesAlone: false, intent: 'self' }
+    it('people chosen: keeps the people and the derived children count', () => {
+        expect(stripHiddenAnswers(answers, ['household'])).toEqual(answers)
+    })
+    it('children chosen (default): drops a stale people list', () => {
+        expect(stripHiddenAnswers(answers, [])).toEqual({ children: '2', intent: 'self' })
+    })
+    it('row hidden: drops both', () => {
+        expect(stripHiddenAnswers(answers, ['children', 'household'])).toEqual({ intent: 'self' })
+        expect(stripHiddenAnswers(answers, ['children'])).toEqual({ intent: 'self' })
+    })
+})
+
+describe('childrenAnswer (mirror)', () => {
+    it('counts under-18s', () => {
+        expect(childrenAnswer([])).toBe('none')
+        expect(childrenAnswer([{ age: 17 }, { age: 30 }])).toBe('1')
+        expect(childrenAnswer([{ age: 1 }, { age: 2 }, { age: 3 }])).toBe('3+')
+    })
+})
