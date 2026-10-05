@@ -55,6 +55,11 @@ production — production applicants keep seeing "¿Hay niños?" until it is on.
   by the server for a missing phone (a tab opened earlier still gets through);
   they are logged.
 
+### Fixed — a bright line under the first row of lists in dark mode
+
+- Every divided list (settings questions, menus, panels) drew its first divider
+  in near-white in the dark theme; all dividers now use the theme's border colour.
+
 ## [2.56.145] - 2026-10-04
 
 ### Fixed — two people editing the same animal or adopter no longer overwrite each other
