@@ -74,8 +74,13 @@ export async function recordFieldAuthors(db: Db, recordId: string, fields: strin
     return namesFor(db, fields, rows);
 }
 
-/** Contact entries / household members — the history rows that name the item id. */
-export async function itemAuthors(db: Db, adopterId: string, itemIds: string[]): Promise<Record<string, string>> {
+/**
+ * Contact entries / household members — the newest history row whose change
+ * of one of `keys` (e.g. 'updated_entry', 'removed_entry') names the item by
+ * `id` / `entryId`. Only those keys count: a member's id also appears in rows
+ * about that member's contacts, which say nothing about who renamed them.
+ */
+export async function itemAuthors(db: Db, adopterId: string, itemIds: string[], keys: readonly string[]): Promise<Record<string, string>> {
     if (!itemIds.length) return {};
     let rows: Array<{ by: string | null; fields: string[] }> = [];
     try {
@@ -83,8 +88,16 @@ export async function itemAuthors(db: Db, adopterId: string, itemIds: string[]):
             .from(adopterHistory).where(eq(adopterHistory.adopterId, adopterId))
             .orderBy(desc(adopterHistory.changedAt), sql`rowid DESC`).limit(100).all() as Array<{ changedBy: string | null; changes: string | null }>;
         rows = raw.map(r => {
-            const text = r.changes ?? '';
-            return { by: r.changedBy, fields: itemIds.filter(id => text.includes(`"${id}"`)) };
+            const changes = parseJson(r.changes, { adopterId });
+            const named = new Set<string>();
+            for (const k of keys) {
+                const v = changes[k] as { id?: unknown; entryId?: unknown } | undefined;
+                if (v && typeof v === 'object') {
+                    if (typeof v.entryId === 'string') named.add(v.entryId);
+                    else if (typeof v.id === 'string') named.add(v.id);
+                }
+            }
+            return { by: r.changedBy, fields: itemIds.filter(id => named.has(id)) };
         });
     } catch (e) {
         logger.warn('collabAttribution.itemAuthors: history lookup failed', { adopterId, error: e instanceof Error ? e.message : String(e) });

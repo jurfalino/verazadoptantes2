@@ -9,10 +9,14 @@ import { logAudit } from '@/lib/audit';
 import {
     deserializeContactEntries,
     contactEntriesToBlob,
+    type ContactEntry,
 } from '@/lib/contactEntries';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { hashEntryValue, isRealActorEmail } from '@/lib/piiAccess';
 import { isAdminAsync } from '@/config/admins';
+import { casAdopterLists } from '@/lib/adopterListCas';
+import { itemAuthors } from '@/lib/collabAttribution';
+import type { EntryConflict } from './updateContactEntry';
 
 /**
  * Owner+admin-gated removal of a single contact entry, identified by its
@@ -31,11 +35,16 @@ import { isAdminAsync } from '@/config/admins';
  * Alias entries carry no grants (not PII), so step 3 is a no-op for them.
  */
 export async function removeContactEntry(
-    input: { adopterId: string; entryId: string },
-): Promise<{ ok: true; adopterId: string; entryId: string } | { ok: false; error: string }> {
+    input: { adopterId: string; entryId: string; expectedValue?: string },
+): Promise<
+    | { ok: true; adopterId: string; entryId: string }
+    | { ok: false; error: 'conflict'; conflict: EntryConflict }
+    | { ok: false; error: 'busy'; errorId: string }
+    | { ok: false; error: string }
+> {
     const parsed = removeContactEntrySchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: 'Invalid input' };
-    const { adopterId, entryId } = parsed.data;
+    const { adopterId, entryId, expectedValue } = parsed.data;
 
     let actor = '';
     try { actor = await getUser(); } catch { /* anonymous */ }
@@ -49,12 +58,6 @@ export async function removeContactEntry(
         if (!target) return { ok: false, error: 'Adopter not found' };
         if (target.deletedAt) return { ok: false, error: 'Cannot edit a deleted adopter' };
 
-        const entries = deserializeContactEntries(target.contactEntries);
-        const idx = entries.findIndex(e => e.id === entryId);
-        if (idx < 0) return { ok: false, error: 'Entry not found' };
-
-        const removed = entries[idx];
-
         // Per-entry mutation gate: owner, admin, OR the original contributor
         // of this entry (matching updateContactEntry's relaxation). Entries
         // with no `addedBy` (legacy / blob-migrated) stay owner+admin-only.
@@ -63,22 +66,47 @@ export async function removeContactEntry(
             isAdminAsync(actor),
             (await import('@/lib/orgMembership')).isOrgMate(actor, target.addedBy),
         ]);
-        const isOwnContribution = !!removed.addedBy && removed.addedBy === actor;
-        if (!isOwner && !actorIsAdmin && !actorIsOrgMate && !isOwnContribution) {
+
+        type Step =
+            | { kind: 'not_found' } | { kind: 'deleted' } | { kind: 'changed' } | { kind: 'forbidden' }
+            | { kind: 'removed'; removed: ContactEntry };
+
+        // Re-run on a fresh read after a lost race: only THIS entry is taken
+        // out of the current list, so a teammate's concurrent add or edit survives.
+        const outcome = await casAdopterLists<Step>(db, adopterId, (row) => {
+            const entries = deserializeContactEntries(row.contactEntries);
+            const idx = entries.findIndex(e => e.id === entryId);
+            if (idx < 0) return { result: expectedValue !== undefined ? { kind: 'deleted' } : { kind: 'not_found' } };
+            const removed = entries[idx];
+            const isOwnContribution = !!removed.addedBy && removed.addedBy === actor;
+            if (!isOwner && !actorIsAdmin && !actorIsOrgMate && !isOwnContribution) return { result: { kind: 'forbidden' } };
+            // A teammate changed it since this was shown: don't delete what the
+            // person hasn't seen.
+            if (expectedValue !== undefined && hashEntryValue(removed.type, expectedValue) !== hashEntryValue(removed.type, removed.value)) {
+                return { result: { kind: 'changed' } };
+            }
+            const remaining = [...entries.slice(0, idx), ...entries.slice(idx + 1)];
+            return {
+                write: { contactEntries: remaining.length ? JSON.stringify(remaining) : null, contactInfo: contactEntriesToBlob(remaining) || null },
+                result: { kind: 'removed', removed },
+            };
+        }, { op: 'removeContactEntry', actor, entryId });
+
+        if (outcome.status === 'missing') return { ok: false, error: 'Adopter not found' };
+        if (outcome.status === 'busy') return { ok: false, error: 'busy', errorId: outcome.errorId };
+        const r = outcome.result;
+        if (r.kind === 'not_found') return { ok: false, error: 'Entry not found' };
+        if (r.kind === 'forbidden') {
             logger.warn('removeContactEntry: not owner/admin/org-mate/contributor', { adopterId, actor, entryId });
             return { ok: false, error: 'Not authorized to remove this entry.' };
         }
-
+        if (r.kind === 'deleted' || r.kind === 'changed') {
+            const by = (await itemAuthors(db, adopterId, [entryId], ['updated_entry', 'removed_entry']))[entryId] ?? '';
+            logger.info('removeContactEntry: refused, entry changed meanwhile', { adopterId, actor, entryId, kind: r.kind });
+            return { ok: false, error: 'conflict', conflict: { kind: r.kind, by } };
+        }
+        const removed = r.removed;
         const removedHash = hashEntryValue(removed.type, removed.value);
-        const remaining = [...entries.slice(0, idx), ...entries.slice(idx + 1)];
-
-        await db.update(adopters)
-            .set({
-                contactEntries: remaining.length ? JSON.stringify(remaining) : null,
-                contactInfo: contactEntriesToBlob(remaining) || null,
-                updatedAt: new Date(),
-            })
-            .where(eq(adopters.id, adopterId));
 
         await db.insert(adopterHistory).values({
             id: crypto.randomUUID(),

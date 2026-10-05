@@ -9,7 +9,7 @@
  * viewer (canEdit=false) sees a read-only, masked list.
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Phone, Mail, AtSign, IdCard, MapPin, UserRound, Pencil, Trash2, Plus, Check, X } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -22,6 +22,7 @@ import { MessagingLogo } from '@/components/MessagingLogo';
 import { detectSocialPlatform, type ContactEntry, type ContactEntryType, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
 import { RELATIONSHIPS, type HouseholdMember, type Relationship } from '@/lib/householdMembers';
 import { handledAsStale } from '@/lib/errorMessage';
+import { entryConflictMessage } from '@/lib/collabCopy';
 import {
     addHouseholdMember, updateHouseholdMember, removeHouseholdMember,
     addMemberContactEntry, updateMemberContactEntry, removeMemberContactEntry,
@@ -56,13 +57,50 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
         | null
     >(null);
 
+    // Fresh server data (after any refresh) replaces what's shown — while
+    // keeping open editors and their drafts — so a teammate's change is
+    // visible, and becomes what the next save is compared against.
+    const serverKey = useMemo(() => JSON.stringify(initialMembers), [initialMembers]);
+    useEffect(() => {
+        setMembers(prev => {
+            const merged: MemberUI[] = initialMembers.map(sm => {
+                const lm = prev.find(x => x.id === sm.id);
+                if (!lm) return { ...sm };
+                return {
+                    ...sm,
+                    editing: lm.editing, draftName: lm.draftName, draftRel: lm.draftRel, composer: lm.composer,
+                    contactEntries: sm.contactEntries.map(se => {
+                        const le = lm.contactEntries.find(e => e.id === se.id) as CEditing | undefined;
+                        return le?.editing ? { ...se, editing: true, draft: le.draft } as CEditing : se;
+                    }),
+                };
+            });
+            // Members being added here and not yet saved stay.
+            return [...merged, ...prev.filter(x => (x as MemberUI & { isNew?: boolean }).isNew)];
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [serverKey]);
+
     const relLabel = (r: Relationship | null | undefined) => r ? t(`adopter.hh_rel_${r}`) : '';
     const patch = (id: string, up: Partial<MemberUI>) => setMembers(prev => prev.map(m => m.id === id ? { ...m, ...up } : m));
-    async function run<T extends { ok: boolean; error?: string }>(fn: () => Promise<T>): Promise<Extract<T, { ok: true }> | null> {
+    /** `onConflict` runs when a teammate changed/removed the item meanwhile (after the warning). */
+    async function run<T extends { ok: boolean; error?: string }>(fn: () => Promise<T>, onConflict?: (kind: 'changed' | 'deleted') => void): Promise<Extract<T, { ok: true }> | null> {
         setBusy(true);
         try {
             const res = await fn();
-            if (!res.ok) { toast.error(t('errors.generic') || 'Error', t('errors.save_household_failed') || 'No se pudo guardar el grupo familiar. Volvé a intentar.'); return null; }
+            if (!res.ok) {
+                const r = res as { error?: string; conflict?: { kind: 'changed' | 'deleted'; by: string }; errorId?: string };
+                if (r.error === 'conflict' && r.conflict) {
+                    toast.warning(entryConflictMessage(t, r.conflict.kind, r.conflict.by));
+                    onConflict?.(r.conflict.kind);
+                    router.refresh();
+                } else if (r.error === 'busy') {
+                    toast.error(t('errors.generic') || 'Error', t('collab.busy'), r.errorId);
+                } else {
+                    toast.error(t('errors.generic') || 'Error', t('errors.save_household_failed') || 'No se pudo guardar el grupo familiar. Volvé a intentar.');
+                }
+                return null;
+            }
             return res as Extract<T, { ok: true }>;
         } catch (e) {
             if (!handledAsStale(e)) toast.error('Error', e instanceof Error ? e.message : 'Error inesperado'); return null;
@@ -83,7 +121,10 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
             patch(m.id, { id: res.memberId, name, relationship, editing: false, draftName: undefined, draftRel: undefined });
             setMembers(prev => prev.map(x => x.id === m.id ? { ...x, id: res.memberId } : x));
         } else {
-            const res = await run(() => updateHouseholdMember({ adopterId, memberId: m.id, name, relationship }));
+            const res = await run(
+                () => updateHouseholdMember({ adopterId, memberId: m.id, name, relationship, expected: { name: m.name, relationship: m.relationship ?? null } }),
+                (kind) => { if (kind === 'deleted') setMembers(prev => prev.filter(x => x.id !== m.id)); },
+            );
             if (!res) return;
             patch(m.id, { name, relationship, editing: false, draftName: undefined, draftRel: undefined });
         }
@@ -115,7 +156,10 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
     async function saveEditContact(m: MemberUI, ce: CEditing) {
         const d = ce.draft; if (!d) return;
         const platform = ce.type === 'social' ? (detectSocialPlatform(d.value) ?? d.platform ?? ce.platform ?? undefined) : ce.platform;
-        const res = await run(() => updateMemberContactEntry({ adopterId, memberId: m.id, entryId: ce.id!, value: d.value.trim(), platform: platform ?? undefined, apps: d.apps }));
+        const res = await run(
+            () => updateMemberContactEntry({ adopterId, memberId: m.id, entryId: ce.id!, value: d.value.trim(), platform: platform ?? undefined, apps: d.apps, expectedValue: ce.value }),
+            (kind) => { if (kind === 'deleted') patch(m.id, { contactEntries: m.contactEntries.filter(e => e.id !== ce.id) }); },
+        );
         if (!res) return;
         patch(m.id, { contactEntries: m.contactEntries.map(e => e.id === ce.id ? { ...e, value: d.value.trim(), platform, apps: d.apps, editing: false, draft: undefined } as CEditing : e) });
         router.refresh();
@@ -136,12 +180,18 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
         if (!target) return;
 
         if (target.kind === 'member') {
-            const res = await run(() => removeHouseholdMember({ adopterId, memberId: target.member.id }));
+            const res = await run(
+                () => removeHouseholdMember({ adopterId, memberId: target.member.id, expected: { name: target.member.name, relationship: target.member.relationship ?? null } }),
+                (kind) => { if (kind === 'deleted') setMembers(prev => prev.filter(x => x.id !== target.member.id)); },
+            );
             if (!res) { setConfirmTarget(null); return; }
             setMembers(prev => prev.filter(x => x.id !== target.member.id));
         } else {
             const m = target.member;
-            const res = await run(() => removeMemberContactEntry({ adopterId, memberId: m.id, entryId: target.entry.id! }));
+            const res = await run(
+                () => removeMemberContactEntry({ adopterId, memberId: m.id, entryId: target.entry.id!, expectedValue: target.entry.value }),
+                (kind) => { if (kind === 'deleted') patch(m.id, { contactEntries: m.contactEntries.filter(e => e.id !== target.entry.id) }); },
+            );
             if (!res) { setConfirmTarget(null); return; }
             patch(m.id, { contactEntries: m.contactEntries.filter(e => e.id !== target.entry.id) });
         }

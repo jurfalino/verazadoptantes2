@@ -52,12 +52,16 @@ export const updateContactEntrySchema = z.object({
     locality: z.string().max(500).optional(),
     platform: z.enum(['facebook', 'instagram', 'tiktok', 'x', 'threads', 'other']).optional(),
     apps: z.array(z.enum(['whatsapp', 'telegram'])).optional(),
+    // The value the editor saw when it started editing — a teammate's change
+    // since then is refused instead of overwritten.
+    expectedValue: z.string().max(1000).optional(),
 });
 
 // removeContactEntry — owner+admin only. Removes an existing entry by id.
 export const removeContactEntrySchema = z.object({
     adopterId: z.string().min(1).max(64),
     entryId: z.string().min(1).max(64),
+    expectedValue: z.string().max(1000).optional(),
 });
 
 export const saveAdopterSchema = z.object({
