@@ -829,7 +829,7 @@ git commit -m "form submit: household people to answers + named people to the pr
 ### Task 6: Merges carry household members (and undo restores them)
 
 **Files:**
-- Modify: `src/app/actions/duplicates.ts`:
+- Modify: `src/lib/adopterMerge.ts` (moved out of `src/app/actions/duplicates.ts` on 2026-10-04):
   - `mergeAdopters`: merge the members;
   - `MergeUndoPayload.primarySnapshot.householdMembers?: string | null`;
   - `unmergeAdopters`: restore them.
@@ -864,9 +864,9 @@ expect(isD1Null(a2.household_members) || !String(a2.household_members).includes(
 Run (local harness, see `project_local_e2e_harness`): `npx playwright test tests/merge-undo.authed.spec.ts --config=playwright.local.config.ts --project=authed --workers=1 --no-deps`
 Expected: FAIL. A lacks Tomás López.
 
-- [ ] **Step 3: Implement.** In `mergeAdopters`:
+- [ ] **Step 3: Implement.** In `mergeAdopters` (`src/lib/adopterMerge.ts`; it already turns the absorbed name into an alias):
   - add `householdMembers: primary.householdMembers ?? null` to `undo.primarySnapshot`;
-  - in step 6 (field appends), add:
+  - next to the alias carry-over, add:
 
 ```ts
 const absorbedMembers = deserializeHouseholdMembers(secondary.householdMembers);
@@ -890,7 +890,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/app/actions/duplicates.ts tests/merge-undo.authed.spec.ts
+git add src/lib/adopterMerge.ts tests/merge-undo.authed.spec.ts
 git commit -m "merge: carry household members (undoable)"
 ```
 
