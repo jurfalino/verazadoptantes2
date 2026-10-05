@@ -39,3 +39,9 @@ describe('personSignal', () => {
         expect(personSignal(80)).toBe('ok');
     });
 });
+
+describe('"No sé" never gets a dot', () => {
+    it('unknown is null', () => {
+        for (const f of ['children', 'isSafe', 'intent']) expect(answerSignal(f, 'unknown')).toBeNull();
+    });
+});
