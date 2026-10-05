@@ -294,6 +294,15 @@ body {
   box-shadow: var(--ps-glow);
 }
 
+/* Selected must win over hover/focus: on touch screens the tapped item keeps
+   :hover, which outranks a bare class and made the choice look unselected. */
+.ps-segmented__item--selected:hover,
+.ps-segmented__item--selected:focus-visible {
+  background: rgba(var(--ps-accent-glow-rgb), 0.15);
+  color: var(--ps-accent-strong);
+  border-color: var(--ps-border-active);
+}
+
 /* ── Text Inputs ── */
 .ps-input-group {
   display: flex;
@@ -1448,3 +1457,36 @@ body {
   padding: 8px;
   box-sizing: content-box;
 }
+
+/* ── Household people ("¿Quiénes viven en la casa?") ── */
+.ps-segmented--wrap { flex-wrap: wrap; }
+.ps-segmented--wrap .ps-segmented__item { flex: 1 1 calc(50% - 4px); min-height: 44px; white-space: normal; }
+.ps-people { display: flex; flex-direction: column; gap: var(--ps-2); margin-top: var(--ps-3); }
+.ps-people__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--ps-1); }
+.ps-people__row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--ps-1);
+  background: var(--ps-card); border: 1px solid var(--ps-border); border-radius: var(--ps-2);
+  padding: var(--ps-1) var(--ps-1) var(--ps-1) var(--ps-2);
+}
+.ps-people__summary { text-align: left; font-size: 15px; font-weight: 600; color: var(--ps-text); min-width: 0; overflow-wrap: anywhere; }
+.ps-people__name { font-weight: 500; color: var(--ps-text-secondary); }
+.ps-people__actions { display: flex; flex-shrink: 0; }
+.ps-people__btn { padding: var(--ps-1) var(--ps-2); font-size: 13px; min-height: 44px; }
+.ps-people__editor {
+  display: flex; flex-direction: column; gap: var(--ps-2);
+  background: var(--ps-card); border: 1px solid var(--ps-border-active); border-radius: var(--ps-2); padding: var(--ps-2);
+}
+.ps-people__names { display: grid; grid-template-columns: 1fr 1fr; gap: var(--ps-1); }
+@media (max-width: 420px) { .ps-people__names { grid-template-columns: 1fr; } }
+.ps-people__editor-actions { display: flex; justify-content: flex-end; gap: var(--ps-1); }
+.ps-people__choices { display: flex; flex-direction: column; gap: var(--ps-1); }
+.ps-people__choice {
+  justify-content: center; width: 100%; min-height: 48px;
+  background: var(--ps-card); color: var(--ps-text); border: 1px solid var(--ps-border);
+}
+.ps-people__choice:hover:not(:disabled), .ps-people__choice:focus-visible { border-color: var(--ps-border-active); }
+.ps-people__choice--selected { border-color: var(--ps-border-active); color: var(--ps-accent-strong); box-shadow: var(--ps-glow); }
+/* 16px: below that iOS Safari zooms in on focus (ux-ui-guidelines §1.5). */
+.ps-people__editor .ps-input { font-size: 16px; }
+/* "¿Para quién es?" reuses the editor card's inputs without the card frame. */
+.ps-people__editor--plain { background: transparent; border: none; padding: 0; }

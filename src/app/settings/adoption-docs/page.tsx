@@ -330,7 +330,8 @@ function AdoptionDocsEditor() {
                 for (const x of d.updatedByOthers) next[x.key] = x.by;
                 return next;
             });
-            const question = (id: string) => t(id.startsWith('identity-') || id === 'selfie' ? `adoptionDocs.step_${id.replace('-', '_')}` : `petshield.fields.${id}`);
+            const question = (id: string) => t(id === 'phone-optional' ? 'adoptionDocs.phone_required_question'
+                : id.startsWith('identity-') || id === 'selfie' ? `adoptionDocs.step_${id.replace('-', '_')}` : `petshield.fields.${id}`);
             for (const x of d.updatedByOthers) {
                 toast.info(capitalize(t('adoptionDocs.toast_step_updated_by_other').replace('{name}', x.by || t('adoptionDocs.someone')).replace('{question}', question(x.key))));
             }

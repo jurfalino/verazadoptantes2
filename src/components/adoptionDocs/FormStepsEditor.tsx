@@ -7,7 +7,7 @@
  */
 
 import { useLanguage } from '@/context/LanguageContext';
-import { FORM_STEP_GROUPS, FORM_STEP_IDS, LOCKED_FORM_STEPS } from '@/domain/adoptionDocs';
+import { FORM_STEP_GROUPS, FORM_STEP_IDS, LOCKED_FORM_STEPS, DERIVED_FORM_STEPS, householdQuestion, isStepAsked, isPhoneRequired, inFormOrder } from '@/domain/adoptionDocs';
 
 const LOCKED = new Set<string>(LOCKED_FORM_STEPS);
 
@@ -26,6 +26,19 @@ function LockIcon() {
             <rect x="5" y="11" width="14" height="10" rx="2" />
             <path d="M8 11V7a4 4 0 0 1 8 0v4" />
         </svg>
+    );
+}
+
+/** The switch's track + thumb; the button around it carries role and state. */
+function SwitchTrack({ on }: { on: boolean }) {
+    return (
+        <span
+            aria-hidden="true"
+            className={`relative inline-flex h-6 w-10 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out ${on ? 'bg-teal-600' : 'bg-stone-300'}`}
+        >
+            {/* 4px: half-grid exception (toggle thumb offset) */}
+            <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ease-in-out ${on ? 'translate-x-5' : 'translate-x-1'}`} />
+        </span>
     );
 }
 
@@ -50,27 +63,113 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
     const { t } = useLanguage();
     const name = (by: string) => by || t('adoptionDocs.someone');
     const hiddenSet = new Set(hidden);
-    const total = FORM_STEP_IDS.length;
-    const shown = FORM_STEP_IDS.filter(id => !hiddenSet.has(id)).length;
+    // 'household' is not a question of its own here: it is the "detailed"
+    // choice on the children row (spec 2026-10-04 §2), so it never counts.
+    // …nor is a derived step ("¿Para quién es?", asked only after "Es un regalo").
+    const questions = FORM_STEP_IDS.filter(id => id !== 'household' && !(DERIVED_FORM_STEPS as readonly string[]).includes(id));
+    const total = questions.length;
+    const shown = questions.filter(id => isStepAsked(id, hidden) || (id === 'children' && isStepAsked('household', hidden))).length;
+    const choice = householdQuestion(hidden);
 
     const label = (id: string) => t(OWN_LABEL_KEYS[id] ?? `petshield.fields.${id}`);
 
     const toggle = (id: string) => {
         const next = new Set(hiddenSet);
         if (next.has(id)) next.delete(id); else next.add(id);
-        // Keep form order so the saved list is stable.
-        onChange(FORM_STEP_IDS.filter(s => next.has(s)));
+        // Keep form order (options last) so the saved list is stable.
+        onChange(inFormOrder(next));
     };
+
+    const choose = (people: boolean) => {
+        const next = new Set(hiddenSet);
+        if (people) next.add('household'); else next.delete('household');
+        onChange(inFormOrder(next));
+    };
+
+    const phoneRequired = isPhoneRequired(hidden);
+
+    const conflictBanner = (key: string, conflict: StepConflictView) => (
+        <div role="alert" className="mx-2 mt-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 space-y-1" data-testid={`form-step-${key}-conflict`}>
+            <p className="text-xs text-amber-900">
+                {capitalize(t('adoptionDocs.step_conflict')
+                    .replace('{name}', name(conflict.by))
+                    .replace('{state}', t(key === 'phone-optional'
+                        // The phone is always asked; this option only says whether it must be answered.
+                        ? (conflict.theirs === 'hidden' ? 'adoptionDocs.phone_state_optional' : 'adoptionDocs.phone_state_required')
+                        : (conflict.theirs === 'hidden' ? 'adoptionDocs.step_state_hidden' : 'adoptionDocs.step_state_shown'))))}
+                {key === 'household' && <> ({label('household')})</>}
+                {key === 'phone-optional' && <> ({t('adoptionDocs.phone_required_question')})</>}
+            </p>
+            <div className="flex flex-wrap gap-2">
+                <button type="button" disabled={saving} onClick={() => onKeepTheirs?.(key)} className="min-h-11 px-2 text-xs font-semibold text-teal-700 hover:underline disabled:opacity-40" data-testid={`form-step-${key}-keep-theirs`}>
+                    {t('adoptionDocs.step_keep_theirs').replace('{name}', name(conflict.by))}
+                </button>
+                <button type="button" disabled={saving} onClick={() => onKeepMine?.(key)} className="min-h-11 px-2 text-xs font-semibold text-teal-700 hover:underline disabled:opacity-40" data-testid={`form-step-${key}-keep-mine`}>
+                    {t('adoptionDocs.step_keep_mine')}
+                </button>
+            </div>
+        </div>
+    );
+
+    /** Under the children row: ask it simply, or as the people list. */
+    const householdChoice = () => (
+        <div role="radiogroup" aria-label={t('adoptionDocs.household_choice_label')} className="flex flex-wrap gap-2 px-4 pb-3">
+            {([['children', 'adoptionDocs.household_choice_children'], ['people', 'adoptionDocs.household_choice_people']] as const).map(([value, key]) => (
+                <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={choice === value}
+                    onClick={() => choose(value === 'people')}
+                    data-testid={`household-choice-${value}`}
+                    className={`min-h-11 px-4 py-2 rounded-xl text-[13px] font-bold border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 ${choice === value
+                        ? 'bg-teal-600 text-white border-transparent'
+                        : 'bg-white text-stone-700 border-stone-200 hover:bg-[var(--accent-subtle-bg)]'}`}
+                >
+                    {t(key)}
+                </button>
+            ))}
+        </div>
+    );
+
+    /** Under the phone row: always asked, but answering it can be optional (spec Part 3). */
+    const phoneRequirement = () => (
+        <>
+            {conflicts['phone-optional'] && conflictBanner('phone-optional', conflicts['phone-optional'])}
+            {updatedBy['phone-optional'] !== undefined && !conflicts['phone-optional'] && (
+                <p className="px-4 pt-2 text-xs font-semibold text-teal-700" data-testid="form-step-phone-optional-updated-by">
+                    {t('adoptionDocs.updated_by').replace('{name}', name(updatedBy['phone-optional']))}
+                </p>
+            )}
+            <button
+                type="button"
+                role="switch"
+                aria-checked={phoneRequired}
+                onClick={() => toggle('phone-optional')}
+                className="w-full flex items-center justify-between gap-4 min-h-11 pl-8 pr-4 py-2 text-left rounded-xl hover:bg-stone-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 transition-colors"
+                data-testid="form-step-phone-required"
+            >
+                <span className={`text-sm ${phoneRequired ? 'text-stone-900' : 'text-stone-500'}`}>{t('adoptionDocs.phone_required')}</span>
+                <SwitchTrack on={phoneRequired} />
+            </button>
+        </>
+    );
 
     const row = (id: string) => {
         if (LOCKED.has(id)) {
-            return (
-                <li key={id} className="flex items-center justify-between gap-4 min-h-11 px-4 py-2" data-testid={`form-step-${id}`}>
+            const locked = (
+                <div className="flex items-center justify-between gap-4 min-h-11 px-4 py-2" data-testid={`form-step-${id}`}>
                     <span className="text-sm font-medium text-stone-700">{label(id)}</span>
                     <span className="inline-flex items-center gap-2 text-xs font-semibold text-stone-500 shrink-0">
                         <LockIcon />
                         {t('adoptionDocs.always_asked')}
                     </span>
+                </div>
+            );
+            return (
+                <li key={id}>
+                    {locked}
+                    {id === 'identity-phone' && phoneRequirement()}
                 </li>
             );
         }
@@ -78,26 +177,16 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
         const conflict = conflicts[id];
         return (
             <li key={id}>
-                {conflict && (
-                    <div role="alert" className="mx-2 mt-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 space-y-1" data-testid={`form-step-${id}-conflict`}>
-                        <p className="text-xs text-amber-900">
-                            {capitalize(t('adoptionDocs.step_conflict')
-                                .replace('{name}', name(conflict.by))
-                                .replace('{state}', t(conflict.theirs === 'hidden' ? 'adoptionDocs.step_state_hidden' : 'adoptionDocs.step_state_shown')))}
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                            <button type="button" disabled={saving} onClick={() => onKeepTheirs?.(id)} className="min-h-11 px-2 text-xs font-semibold text-teal-700 hover:underline disabled:opacity-40" data-testid={`form-step-${id}-keep-theirs`}>
-                                {t('adoptionDocs.step_keep_theirs').replace('{name}', name(conflict.by))}
-                            </button>
-                            <button type="button" disabled={saving} onClick={() => onKeepMine?.(id)} className="min-h-11 px-2 text-xs font-semibold text-teal-700 hover:underline disabled:opacity-40" data-testid={`form-step-${id}-keep-mine`}>
-                                {t('adoptionDocs.step_keep_mine')}
-                            </button>
-                        </div>
-                    </div>
-                )}
+                {conflict && conflictBanner(id, conflict)}
+                {id === 'children' && conflicts.household && conflictBanner('household', conflicts.household)}
                 {updatedBy[id] !== undefined && !conflict && (
                     <p className="px-4 pt-2 text-xs font-semibold text-teal-700" data-testid={`form-step-${id}-updated-by`}>
                         {t('adoptionDocs.updated_by').replace('{name}', name(updatedBy[id]))}
+                    </p>
+                )}
+                {id === 'children' && updatedBy.household !== undefined && !conflicts.household && (
+                    <p className="px-4 pt-2 text-xs font-semibold text-teal-700" data-testid="form-step-household-updated-by">
+                        {t('adoptionDocs.updated_by').replace('{name}', name(updatedBy.household))}
                     </p>
                 )}
                 <button
@@ -109,14 +198,9 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
                     data-testid={`form-step-${id}`}
                 >
                     <span className={`text-sm font-medium ${on ? 'text-stone-900' : 'text-stone-500'}`}>{label(id)}</span>
-                    <span
-                        aria-hidden="true"
-                        className={`relative inline-flex h-6 w-10 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out ${on ? 'bg-teal-600' : 'bg-stone-300'}`}
-                    >
-                        {/* 4px: half-grid exception (toggle thumb offset) */}
-                        <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ease-in-out ${on ? 'translate-x-5' : 'translate-x-1'}`} />
-                    </span>
+                    <SwitchTrack on={on} />
                 </button>
+                {id === 'children' && on && householdChoice()}
             </li>
         );
     };
@@ -137,7 +221,7 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
                         {t(`adoptionDocs.group_${group.key}`)}
                     </h3>
                     <ul className="rounded-2xl border border-stone-200 bg-white divide-y divide-stone-100 p-1">
-                        {group.steps.map(id => row(id))}
+                        {group.steps.filter(id => id !== 'household').map(id => row(id))}
                     </ul>
                 </section>
             ))}

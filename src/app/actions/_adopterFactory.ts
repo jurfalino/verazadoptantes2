@@ -32,10 +32,13 @@
  */
 
 import { logger } from '@/lib/logger';
+import { serializeHouseholdMembers, type HouseholdMember } from '@/lib/householdMembers';
 
 export type AdopterSource = 'manual' | 'form' | 'contract' | 'imported';
 
 export interface CreateAdopterInput {
+    /** Fully named people from "¿Quiénes viven en la casa?" (spec 2026-10-04 §3). Written before tokenizing so their names reach dedup. */
+    householdMembers?: HouseholdMember[];
     /** Always 'form' or 'contract' here; 'manual'/'imported' use their own paths. */
     source: Extract<AdopterSource, 'form' | 'contract'>;
     name: string;
@@ -146,6 +149,7 @@ export async function createAdopterFromSubmission(
         name: trimmedName,
         contactInfo: contactInfo || null,
         contactEntries: contactEntries.length ? JSON.stringify(contactEntries) : null,
+        householdMembers: input.householdMembers?.length ? serializeHouseholdMembers(input.householdMembers) : null,
         addressInfo: input.address || null,
         addedBy: input.addedBy || 'anonymous',
         source: input.source,

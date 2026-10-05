@@ -2,6 +2,64 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.146] - 2026-10-05
+
+### Added — "¿Quiénes viven en la casa?" as an alternative to "¿Hay niños?"
+
+Rescuers can now choose, in Ajustes → Formulario y contrato, how the adoption
+form asks about the home: the simple "¿Hay niños?" (still the default — nothing
+changes for anyone who doesn't opt in) or **"Personas del hogar (detallado)"**.
+
+- **The form step** asks "¿Quiénes viven en la casa?" (or "…en el departamento?"
+  from the housing answer), right after the housing question. The applicant
+  taps **"Vivo solo/a"** or adds each person: relationship, age, and an
+  optional first and last name.
+- **On the form screen and the animal's applicant panel**, each person shows
+  with a semáforo dot: under 5 red, 5–17 amber, adults green.
+- **People given a first and last name become household members on the
+  applicant's profile**, with their age, which stays current. Their names feed
+  duplicate detection like any relative's.
+- **Every form is now linked from its profile's history** ("Ver formulario
+  completado"), recorded at submit time. It counts toward "demasiados pedidos".
+- **Combining profiles ("Es la misma persona", the duplicates queue) carries
+  household members along**; undo takes them back off.
+- Fixes found on the way: a resumed form draft could skip a step that the
+  rescuer's settings add; a selected option chip in the form lost its selected
+  look while tapped.
+
+The settings page sits behind the custom-forms switch, which is off in
+production — production applicants keep seeing "¿Hay niños?" until it is on.
+
+### Added — when the animal is a gift, the form asks who it is for
+
+- **"Es un regalo" is followed by "¿Para quién es?"**: relationship, first name
+  (required), last name and phone (optional).
+- **The home questions then talk about that person** — "¿Dónde vive Laura?",
+  "¿Quiénes viven en la casa de Laura?" — and the ones a giver may not know
+  offer **"No sé"**.
+- **On the form screen**, "Para quién es" comes first in the applicant's data,
+  the home rows are labelled for the recipient ("Personas en el hogar de Laura"),
+  and "No sabe" answers carry no semáforo dot.
+- **On the giver's profile**, a recipient given a first and last name is added
+  as a household member marked **"Destinatario/a del regalo"**, with her phone.
+  The people living with the recipient stay on the form only — they are not the
+  giver's household.
+
+### Changed — the applicant's phone is required by default
+
+- The form's phone question must now be answered. Rescuers can make it optional
+  per form with the new **"Obligatorio"** switch under "Teléfono" in Ajustes →
+  Formulario y contrato.
+- **This applies in production too**: with the custom-forms switch off there is
+  no setting, so every form requires the phone. Submissions are never refused
+  by the server for a missing phone (a tab opened earlier still gets through);
+  they are logged.
+
+### Fixed — a bright line under the first row of lists in dark mode
+
+- Every divided list (settings questions, menus, panels) drew its first divider
+  in near-white in the dark theme; all dividers now use the theme's border colour.
+
 ## [2.56.145] - 2026-10-04
 
 ### Fixed — two people editing the same animal or adopter no longer overwrite each other

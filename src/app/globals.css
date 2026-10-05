@@ -336,7 +336,11 @@ button {
   border-color: var(--border-default) !important;
 }
 
-[data-theme="dark"] .divide-stone-100>*+* {
+/* Tailwind 4 draws divide-y as a border-bottom on every child but the last,
+   so this must reach the FIRST child too (a `>*+*` remap left the first
+   divider in raw stone-100 — a bright line in dark mode). */
+[data-theme="dark"] .divide-stone-100>*,
+[data-theme="dark"] .divide-stone-200>* {
   border-color: var(--border-default) !important;
 }
 
