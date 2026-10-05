@@ -13,9 +13,9 @@ export function textMatches(re: RegExp): (a: Answer) => boolean {
     };
 }
 
-const LOST_PET = /(perd|escap|muri|falleci|regal|devolv|lost|ran away|died|passed away|gave (him|her|it) away|rehom|returned|perdeu|fugiu|morreu|faleceu|doei|devolvi)/i;
-const KIDS = /(child|hij|niñ|nene|nena|beb|chic[oa]s?\b|kid|son\b|daughter|baby|filh|crian)/i;
-const PETS_NOW = /(perr|gat|dog|cat|cachorr|gato|cão|cao)/i;
+const LOST_PET = /\b(perd|escap|muri|falleci|regal|devolv|lost|ran away|died|passed away|gave (him|her|it) away|rehom|returned|perdeu|fugiu|morreu|faleceu|doei|devolvi)/i;
+const KIDS = /\b(child|hij|niñ|nene|nena|beb|chic[oa]s?\b|kids?\b|daughter|baby|filh|crian)/i;
+const PETS_NOW = /\b(perr|gat|dogs?\b|cats?\b|cachorr|cão|cao\b)/i;
 const yearsHere = (a?: Answer) => (a?.status === 'answered' && typeof a.number === 'number' ? a.number : null);
 
 export const QUESTION_BANK: readonly QuestionDef[] = [

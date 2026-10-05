@@ -50,4 +50,25 @@ describe('QUESTION_BANK', () => {
         expect(textMatches(/^rent$/)({ status: 'answered', choice: 'rent' })).toBe(true);
         expect(textMatches(/child/)({ status: 'answered', household: [{ name: 'Leo', relationship: 'child' }] })).toBe(true);
     });
+
+    it('KIDS follow-up avoids false positives', () => {
+        const t = questionById('details_kids')!.followUpOf!.test;
+        expect(t({ status: 'answered', text: 'Mis padres son jubilados' })).toBe(false);
+        expect(t({ status: 'answered', household: [{ name: 'Nelson', relationship: 'parent' }] })).toBe(false);
+        expect(t({ status: 'answered', text: 'Tengo dos hijos' })).toBe(true);
+        expect(t({ status: 'answered', household: [{ name: 'Leo', relationship: 'child' }] })).toBe(true);
+    });
+
+    it('PETS_NOW follow-up avoids false positives', () => {
+        const t = questionById('details_pets_now_care')!.followUpOf!.test;
+        expect(t({ status: 'answered', text: 'Vivo con Catalina' })).toBe(false);
+        expect(t({ status: 'answered', text: 'Es obligatorio' })).toBe(false);
+        expect(t({ status: 'answered', text: 'Tengo un perro y dos gatos' })).toBe(true);
+        expect(t({ status: 'answered', text: 'I have a dog' })).toBe(true);
+    });
+
+    it('LOST_PET follow-up ignores unrelated words', () => {
+        const t = questionById('details_pet_what_happened')!.followUpOf!.test;
+        expect(t({ status: 'answered', text: 'I studied vet medicine' })).toBe(false);
+    });
 });
