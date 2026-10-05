@@ -2,6 +2,30 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.147] - 2026-10-05
+
+### Added — phone-interview guide (hidden: flag `ENABLE_INTERVIEW_GUIDE`, off)
+
+Nothing changes for users until an admin turns on «Guía de entrevista telefónica».
+With the flag off, `/interview` doesn't exist and none of the entry points render.
+
+- **Preparation:** enter what you know about the person (name, phones, socials,
+  email, address); possible matching profiles appear while you type.
+- **Technique:** a three-stage guide (confianza → historia → detalles).
+- **Interview:** an adaptive list of ~40 questions with a rail of past, current
+  and upcoming questions. Follow-ups appear from earlier answers, and questions
+  that tell candidate profiles apart move up. Answers save as you type, so a
+  dropped call or another device resumes where you left off.
+- **Private checks:** on someone else's protected profile the rescuer only sees
+  «coincide / no coincide», never the stored value (5 checks per profile and fact
+  per interview).
+- **Saving:** pick the profile or «Persona nueva»; new contacts and household
+  members are added only where you're allowed to edit; an optional rating and
+  summary become an observation. The timeline shows «Entrevista», and «Ver
+  respuestas» only for the interviewer, the profile's owner and team, and admins.
+- Entry points: «Entrevista» in the user menu, «Entrevistar» in a profile's ⋯ menu.
+- Migration 0079 adds the `interviews` table. Nine new server actions (155 total).
+
 ## [2.56.146] - 2026-10-05
 
 ### Added — "¿Quiénes viven en la casa?" as an alternative to "¿Hay niños?"
