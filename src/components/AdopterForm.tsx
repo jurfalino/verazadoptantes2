@@ -38,6 +38,8 @@ import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, AdoptionConfig
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 import { parseContactsParam } from '@/lib/createPrefill';
 import { handledAsStale } from '@/lib/errorMessage';
+import { FieldConflictNotice, UpdatedByBadge } from '@/components/collab/FieldConflictNotice';
+import { updatedByOtherMessage, needsReviewMessage } from '@/lib/collabCopy';
 
 interface AdopterFormProps {
     initialData?: Adopter | null;
@@ -356,6 +358,21 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         familyMembers: initialData?.familyMembers || '',
     });
 
+    // What the server had for each editable field when this tab last heard
+    // from it — sent with every save so the server can tell what THIS editor
+    // changed from what a teammate changed meanwhile (src/domain/fieldCollab.ts).
+    // Moves forward after every save (and every refresh from the server).
+    type Baseline = { name: string | null; status: string | null; familyMembers: string | null };
+    const baselineOf = (src?: { name?: string | null; status?: string | null; familyMembers?: string | null } | null): Baseline => ({
+        name: src?.name ?? null, status: src?.status ?? null, familyMembers: src?.familyMembers ?? null,
+    });
+    const baselineRef = useRef<Baseline>(baselineOf(initialData));
+    // A teammate's competing save per inline field, and who refreshed which field.
+    const [fieldConflicts, setFieldConflicts] = useState<Partial<Record<'name' | 'familyMembers', { by: string; value: string | null }>>>({});
+    const fieldConflictsRef = useRef(fieldConflicts);
+    fieldConflictsRef.current = fieldConflicts;
+    const [fieldUpdatedBy, setFieldUpdatedBy] = useState<Partial<Record<string, string>>>({});
+
     // Structured contact entries. Initialized from the stored JSON, falling
     // back to a best-effort parse of the legacy contactInfo blob so editing an
     // old (un-migrated) record still shows typed chips. data.contactInfo is
@@ -388,6 +405,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     // isn't clobbered by a background refresh.
     useEffect(() => {
         if (isEditing || !initialData) return;
+        baselineRef.current = baselineOf(initialData);
         setData({
             id: initialData.id || '',
             name: initialData.name || formPrefill?.name || nameFromUrl || '',
@@ -520,7 +538,9 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             const payload = isNew
                 ? { ...data, contactEntries: JSON.stringify(contactEntries), ...(dontKnowName && !data.name.trim() ? { isPublic: anonPublic } : {}) }
                 : { ...data, contactEntries: undefined, contactInfo: undefined };
-            const res = await saveAdopter(payload);
+            // An existing record sends what it loaded, so a field this tab
+            // didn't touch never reverts a teammate's newer value.
+            const res = await saveAdopter(payload, isNew ? undefined : { loaded: { ...baselineRef.current } });
             // v2.19.43: defensive check. saveAdopter is supposed to either return
             // { success: true | false, ... } or throw with an embedded errorId, but
             // we've seen rare cases (transient edge-runtime panic, network hiccup
@@ -613,6 +633,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                         console.error("[ADOPTER FORM] Navigation error:", navError);
                         window.location.href = redirectUrl;
                     }
+                } else if (res.conflicts?.length) {
+                    // A teammate saved the same field meanwhile: nothing of
+                    // theirs was overwritten. Stay in edit so it can be reviewed.
+                    toast.warning(needsReviewMessage(t, res.conflicts[0].field));
                 } else {
                     // Counterpart of adopter_created for the funnel's "created or
                     // modified an adopter" step.
@@ -625,6 +649,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                 // it via reportClientError so the toast carries a correlatable
                 // id. The server's `res.error` (if any) goes into the report's
                 // `extra` for the Axiom row; the user sees only the id.
+                if (res.error === 'busy') {
+                    toast.error(t('toast.save_error_title'), t('collab.busy'), res.errorId);
+                    return;
+                }
                 const errorId = await reportClientError({
                     message: `saveAdopter returned success=false${res && 'error' in res && res.error ? `: ${res.error}` : ''}`,
                     source: 'AdopterForm.performActualSave',
@@ -730,22 +758,35 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     const dataRef = useRef(data);
     dataRef.current = data;
 
-    // Per-field autosave for the unified direct-edit fields (name, family) on an
-    // EXISTING profile — reuses saveAdopter with the existing-record payload (contact
-    // is saved separately). Optimistic; reverts + toasts on failure so nothing is
-    // silently lost. The returned boolean drives InlineEditField's 5-second undo.
-    const saveField = useCallback(async (field: 'name' | 'familyMembers', next: string): Promise<boolean> => {
+    // Per-field save for the unified direct-edit fields (name, family) on an
+    // EXISTING profile. Sends ONLY the field being saved plus what this tab
+    // loaded for it, so the server writes it only if nobody changed it since
+    // (src/domain/fieldCollab.ts). Optimistic; reverts + toasts on failure so
+    // nothing is silently lost. Returns whether it stuck — false keeps
+    // InlineEditField open with the typed text.
+    //
+    // `force` = «Guardar la mía igual»: the editor has seen the teammate's
+    // value, so that value becomes the one compared against.
+    const saveField = useCallback(async (field: 'name' | 'familyMembers', next: string, opts?: { force?: boolean }): Promise<boolean> => {
         const prevData = dataRef.current;
         const updated = { ...prevData, [field]: next };
         setData(updated);
         dataRef.current = updated;
+        const loaded = { ...baselineRef.current };
+        const seen = fieldConflictsRef.current[field];
+        if (opts?.force && seen) loaded[field] = seen.value;
         // A stale tab's save never ran: the "new version" notice says so. Don't
         // also report it as a failed save. Returning false keeps the editor open
         // with what was typed.
         let stale = false;
-        const res = await saveAdopter({ ...updated, contactEntries: undefined, contactInfo: undefined })
-            .catch((e) => { stale = handledAsStale(e); return null; });
-        if (stale) {
+        const res = await saveAdopter({ id: prevData.id, [field]: next }, { loaded })
+            .catch((e) => { stale = handledAsStale(e); if (!stale) throw e; return null; })
+            .catch(async (e) => {
+                const errorId = resolveErrorId(e, 'AdopterForm.saveField');
+                toast.error(t('toast.save_error_title'), t('errors.save_adopter_failed'), errorId);
+                return undefined;
+            });
+        if (stale || res === undefined) {
             // Undo the optimistic update. Left in place, the field's value would
             // equal the typed text, so pressing Guardar again read as "no change",
             // closed the editor and showed an unsaved value as saved (audit 2, F1).
@@ -757,6 +798,10 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
         if (!res?.success) {
             setData(prevData);
             dataRef.current = prevData;
+            if (res && res.error === 'busy') {
+                toast.error(t('toast.save_error_title'), t('collab.busy'), res.errorId);
+                return false;
+            }
             const errorId = await reportClientError({
                 message: 'saveAdopter (inline field) failed',
                 source: 'AdopterForm.saveField',
@@ -765,9 +810,62 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             toast.error(t('toast.save_error_title'), t('errors.save_adopter_failed'), errorId);
             return false;
         }
+        // Fields a teammate changed that this editor didn't: show theirs.
+        const others = res.updatedByOthers ?? [];
+        const mine = res.conflicts?.find(c => c.field === field);
+        const refreshed: Partial<Baseline> = {};
+        for (const o of others) refreshed[o.field as keyof Baseline] = o.value;
+        if (mine) refreshed[field] = mine.value;
+        baselineRef.current = { ...baselineRef.current, ...refreshed, ...(mine ? {} : { [field]: next }) };
+        const display = { ...dataRef.current };
+        for (const o of others) if (o.field === 'name' || o.field === 'familyMembers') display[o.field] = o.value ?? '';
+        if (mine) display[field] = mine.value ?? '';
+        setData(display);
+        dataRef.current = display;
+        if (others.length) {
+            setFieldUpdatedBy(u => ({ ...u, ...Object.fromEntries(others.map(o => [o.field, o.by])) }));
+            for (const o of others) toast.info(updatedByOtherMessage(t, o.field, o.by));
+        }
+        if (mine) {
+            // Nothing of theirs was overwritten. The editor stays open with my
+            // text; the notice beneath it offers their version or mine.
+            setFieldConflicts(c => ({ ...c, [field]: { by: mine.by, value: mine.value } }));
+            toast.warning(needsReviewMessage(t, field));
+            return false;
+        }
+        setFieldConflicts(c => { const n = { ...c }; delete n[field]; return n; });
+        setFieldUpdatedBy(u => { const n = { ...u }; delete n[field]; return n; });
         zarazTrack('adopter_updated', { source: 'inline', field });
         return true;
     }, [toast, t]);
+
+    // «Quedarme con la de <Nombre>»: their value is already stored — just show it.
+    const keepTheirs = useCallback((field: 'name' | 'familyMembers') => {
+        const theirs = fieldConflictsRef.current[field];
+        if (!theirs) return;
+        baselineRef.current = { ...baselineRef.current, [field]: theirs.value };
+        const display = { ...dataRef.current, [field]: theirs.value ?? '' };
+        setData(display);
+        dataRef.current = display;
+        setFieldConflicts(c => { const n = { ...c }; delete n[field]; return n; });
+    }, []);
+
+    const conflictFor = (field: 'name' | 'familyMembers') => {
+        const c = fieldConflicts[field];
+        if (!c) return undefined;
+        return (draft: string, close: () => void) => (
+            <FieldConflictNotice
+                field={field}
+                by={c.by}
+                theirs={c.value}
+                testId={`adopter-${field}-conflict`}
+                onKeepTheirs={() => { keepTheirs(field); close(); }}
+                onKeepMine={async () => { if (await saveField(field, draft, { force: true })) close(); }}
+            />
+        );
+    };
+    const updatedBadgeFor = (field: 'name' | 'familyMembers') =>
+        fieldUpdatedBy[field] !== undefined ? <UpdatedByBadge by={fieldUpdatedBy[field]!} testId={`adopter-${field}-updated-by`} /> : undefined;
 
     // Publish/clear the nav's mobile actions — now ONLY for the new-adopter creation
     // flow (existing profiles edit each field inline, with no global Save). Re-runs on
@@ -797,6 +895,8 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             canEdit={canEdit}
             multiline
             onSave={(next) => saveField('familyMembers', next)}
+            renderConflict={conflictFor('familyMembers')}
+            badge={updatedBadgeFor('familyMembers')}
             placeholder={t('adopter.placeholder_family')}
             emptyLabel={t('adopter.no_family')}
             displayRender={(v) => renderTextWithLinks(v, { emptyLabel: t('audit.empty_val') })}
@@ -1053,6 +1153,8 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                 editButtonTestId="name-edit-btn"
                                                 onEditingChange={setNameEditing}
                                                 onSave={(next) => saveField('name', next)}
+                                                renderConflict={conflictFor('name')}
+                                                badge={updatedBadgeFor('name')}
                                                 rootClassName="min-w-0 flex-1"
                                                 inputClassName="w-full text-xl md:text-2xl font-extrabold text-teal-950 tracking-tight bg-transparent border-b-2 border-teal-300 focus:border-teal-500 outline-none py-0.5 placeholder-stone-500 transition-all"
                                                 placeholder={t('adopter.placeholder_name_aliases')}

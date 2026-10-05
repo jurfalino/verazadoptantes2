@@ -62,7 +62,7 @@ export const removeContactEntrySchema = z.object({
 
 export const saveAdopterSchema = z.object({
     id: id.optional(),
-    name: z.string().max(5_000).optional().default(''),
+    name: z.string().max(5_000).optional(),
     contactInfo: optionalText,
     // JSON-serialized ContactEntry[]. The string is length-bounded here; the
     // structure (entry count, per-value length) is sanitized by
@@ -79,6 +79,10 @@ export const saveAdopterSchema = z.object({
     deletedAt: z.coerce.date().optional().nullable(),
     isPublic: z.boolean().optional(),
 }).superRefine((data, ctx) => {
+    // An edit of an existing profile that doesn't send `name` isn't changing
+    // it (inline edits send only the field being saved). The CREATE branch of
+    // saveAdopter re-checks the minimum identifier itself.
+    if (data.name === undefined && data.id) return;
     const contactEntries = typeof data.contactEntries === 'string' ? data.contactEntries : null;
     const contactInfo = typeof data.contactInfo === 'string' ? data.contactInfo : null;
     if (!hasMinimumIdentifier({ name: data.name, contactEntries, contactInfo })) {

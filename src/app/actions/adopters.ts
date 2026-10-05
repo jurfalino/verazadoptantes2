@@ -2,13 +2,17 @@
 
 import { headers } from 'next/headers';
 import { adopters, adopterHistory, adopterStats } from '@/db/schema';
-import { eq, sql, and } from 'drizzle-orm';
+import { eq, sql, and, isNull } from 'drizzle-orm';
 import { logger, withTrace, generateErrorId } from '@/lib/logger';
+import { planFieldSave, canonField } from '@/domain/fieldCollab';
+import { adopterFieldAuthors } from '@/lib/collabAttribution';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { saveAdopterSchema } from './validation';
+import { z } from 'zod';
+import { hasMinimumIdentifier } from '@/domain/adopterIdentity';
 import {
     deserializeContactEntries,
     contactEntriesToBlob,
@@ -201,9 +205,22 @@ export async function appendToExistingAdopter(
 // for the anonymous-record visibility toggle (matches saveAdopterSchema's
 // `z.boolean()`), while the DB column itself is a 0/1 integer — the CREATE
 // branch below normalizes it before insert.
-type SaveAdopterInput = Omit<typeof adopters.$inferInsert, 'isPublic'> & { isPublic?: boolean | number };
+// `name` is optional: an inline edit of one field sends only that field.
+type SaveAdopterInput = Omit<typeof adopters.$inferInsert, 'isPublic' | 'name'> & { name?: string; isPublic?: boolean | number };
 
-export async function saveAdopter(data: SaveAdopterInput) {
+// What the editing form had loaded for each field it may send — the baseline
+// the per-field collision check compares against.
+const loadedText = z.string().max(5_000).nullable().optional();
+const saveAdopterOptsSchema = z.object({
+    loaded: z.object({ name: loadedText, status: loadedText, familyMembers: loadedText }).strict().optional(),
+}).strict().optional();
+
+export type AdopterFieldConflict = { field: string; by: string; value: string | null };
+export type AdopterSaveResult =
+    | { success: true; id: string; saved?: string[]; conflicts?: AdopterFieldConflict[]; updatedByOthers?: AdopterFieldConflict[] }
+    | { success: false; error: string; errorId: string };
+
+export async function saveAdopter(data: SaveAdopterInput, opts?: { loaded?: Partial<Record<'name' | 'status' | 'familyMembers', string | null>> }): Promise<AdopterSaveResult> {
     // Defense-in-depth: notes field deprecated in v2.12.1-28 (backfilled into
     // observation records). Strip from any incoming payload before validation
     // so legacy clients can't write to it.
@@ -214,6 +231,10 @@ export async function saveAdopter(data: SaveAdopterInput) {
     const parsed = saveAdopterSchema.safeParse(data);
     if (!parsed.success) {
         throw new Error(`Invalid adopter data: ${parsed.error.issues.map(i => i.message).join(', ')}`);
+    }
+    const parsedOpts = saveAdopterOptsSchema.safeParse(opts);
+    if (!parsedOpts.success) {
+        throw new Error(`Invalid adopter data: ${parsedOpts.error.issues.map(i => i.message).join(', ')}`);
     }
 
     // Derive the contactInfo blob from structured entries when the caller
@@ -284,75 +305,20 @@ export async function saveAdopter(data: SaveAdopterInput) {
             // make a named/protected record public through saveAdopter.
             delete (data as Record<string, unknown>).isPublic;
 
-            // Calculate changes
-            const changes: Record<string, any> = {};
-            let hasChanges = false;
-
-            const fields = ['name', 'status', 'familyMembers'] as const;
-            for (const field of fields) {
-                // @ts-ignore
-                if (data[field] !== undefined && data[field] !== existing[field]) {
-                    // @ts-ignore
-                    changes[field] = { from: existing[field], to: data[field] };
-                    hasChanges = true;
-                }
-            }
-
-            if (hasChanges) {
-                // Only the client-editable fields — never the whole payload. A
-                // spread let an owner/teammate also rewrite addedBy, createdAt,
-                // deletedAt (bypassing deleteOwnAdopter / admin-only restore),
-                // isDemo, tokenHash, country and sourceUrl.
-                const editable: Partial<typeof adopters.$inferInsert> = {};
-                for (const field of fields) {
-                    // @ts-ignore — the three fields are text columns
-                    if (data[field] !== undefined) editable[field] = data[field];
-                }
-                // Optimistic locking: only update if the record hasn't been modified since we read it
-                const result = await db.update(adopters).set({
-                    ...editable,
-                    updatedAt: new Date()
-                }).where(
-                    and(
-                        eq(adopters.id, data.id as string),
-                        eq(adopters.updatedAt, existing.updatedAt!)
-                    )
-                );
-
-                // Check if update succeeded (no concurrent modification)
-                const rowsAffected = (result as unknown as { rowsAffected?: number }).rowsAffected ?? 1;
-                if (rowsAffected === 0) {
-                    throw new Error('This record was modified by another user. Please refresh and try again.');
-                }
-
-                // Log history
-                await db.insert(adopterHistory).values({
-                    id: crypto.randomUUID(),
-                    adopterId: data.id as string,
-                    changedBy,
-                    changes: JSON.stringify(changes),
-                    changedAt: new Date()
-                });
-
-                logger.info('Adopter updated', { adopterId: data.id, changedBy });
-                logAudit({ userEmail: changedBy, action: 'adopter_updated', target: data.id as string, details: changes });
-
-                // Synchronous (v30): edge-runtime workers can reap a fire-and-forget
-                // tokenize before the per-token INSERTs finish, leaving rows with a
-                // valid tokenHash but an empty token set — invisible to the dedup
-                // matcher until an admin clicks Scan. ~250ms cost is acceptable;
-                // silent-token-loss is not. _adopterFactory already awaits the same way.
-                try {
-                    await tokenizeAdopter(data.id as string);
-                } catch (e) {
-                    logger.error('Tokenize adopter failed (update path)', e, { adopterId: data.id });
-                }
-            }
-            return { success: true, id: data.id };
+            // Per-field collision check (src/domain/fieldCollab.ts): only the
+            // fields this editor CHANGED are written, each only if nobody
+            // changed it since the form loaded (`opts.loaded`). Callers without
+            // `loaded` keep the old behaviour (write what differs).
+            return await updateAdopterFields(db, existing, data, opts?.loaded, changedBy);
         } else {
             // Create. The id is always minted here: a client-chosen id is never
             // trusted (the form sends '' for a new profile).
             const newId = crypto.randomUUID();
+            // The schema skips the name-or-contact check when an id is sent
+            // without a name (an edit that isn't renaming); a create always needs it.
+            if (!hasMinimumIdentifier({ name: data.name ?? '', contactEntries: data.contactEntries ?? null, contactInfo: data.contactInfo ?? null })) {
+                throw new Error('Invalid adopter data: A name or at least one contact is required.');
+            }
 
             // Look up the user's country to stamp on the adopter. Two-tier
             // fallback: user_profiles.country (set on first sign-in from
@@ -432,6 +398,81 @@ export async function saveAdopter(data: SaveAdopterInput) {
         const errorId = logger.error('Save adopter failed', error, { adopterId: data.id });
         throw new Error(`Failed to save adopter (Error ID: ${errorId})`);
     }
+}
+
+const ADOPTER_EDIT_FIELDS = ['name', 'status', 'familyMembers'] as const;
+type AdopterEditField = typeof ADOPTER_EDIT_FIELDS[number];
+
+/** The update half of saveAdopter: per-field check, column-level compare-and-swap, one retry. */
+async function updateAdopterFields(
+    db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+    existing: typeof adopters.$inferSelect,
+    data: SaveAdopterInput,
+    loadedIn: Partial<Record<AdopterEditField, string | null>> | undefined,
+    changedBy: string,
+): Promise<AdopterSaveResult> {
+    const adopterId = existing.id;
+    const payload: Record<string, unknown> = {};
+    for (const f of ADOPTER_EDIT_FIELDS) if (data[f] !== undefined) payload[f] = data[f];
+    const loaded: Record<string, unknown> = {};
+    if (loadedIn) for (const f of ADOPTER_EDIT_FIELDS) if (f in loadedIn) loaded[f] = loadedIn[f];
+
+    let current = existing;
+    for (let attempt = 0; attempt < 2; attempt++) {
+        if (attempt > 0) {
+            const fresh = await db.select().from(adopters).where(eq(adopters.id, adopterId)).get();
+            if (!fresh) throw new Error('Adopter disappeared during save');
+            current = fresh;
+        }
+        const currentVals: Record<string, unknown> = { name: current.name, status: current.status, familyMembers: current.familyMembers };
+        const plan = planFieldSave(payload, loaded, currentVals);
+        // Without `loaded` a field equal to what is stored is not a write.
+        const apply = plan.apply.filter(f => canonField(f, payload[f]) !== canonField(f, currentVals[f]));
+        const saved = [...plan.alreadySaved, ...plan.apply.filter(f => !apply.includes(f))];
+
+        if (apply.length) {
+            const set: Partial<typeof adopters.$inferInsert> = { updatedAt: new Date() };
+            const conds = [eq(adopters.id, adopterId)];
+            const col = { name: adopters.name, status: adopters.status, familyMembers: adopters.familyMembers } as const;
+            for (const f of apply as AdopterEditField[]) {
+                (set as Record<string, unknown>)[f] = payload[f] ?? null;
+                const was = currentVals[f] as string | null | undefined;
+                conds.push(was === null || was === undefined ? isNull(col[f]) : eq(col[f], was));
+            }
+            // Column-level compare-and-swap: lands only if every column we
+            // write still holds the value we checked against.
+            const won = await db.update(adopters).set(set).where(and(...conds)).returning({ id: adopters.id });
+            if (!won.length) continue; // someone saved in between — re-read and re-check
+
+            const changes: Record<string, { from: unknown; to: unknown }> = {};
+            for (const f of apply) changes[f] = { from: currentVals[f] ?? null, to: payload[f] ?? null };
+            await db.insert(adopterHistory).values({
+                id: crypto.randomUUID(), adopterId, changedBy, changes: JSON.stringify(changes), changedAt: new Date(),
+            });
+            logger.info('Adopter updated', { adopterId, changedBy, fields: apply });
+            logAudit({ userEmail: changedBy, action: 'adopter_updated', target: adopterId, details: changes });
+            // Names feed duplicate detection; re-tokenize only when one changed.
+            if (apply.includes('name') || apply.includes('familyMembers')) {
+                try {
+                    await tokenizeAdopter(adopterId);
+                } catch (e) {
+                    logger.error('Tokenize adopter failed (update path)', e, { adopterId });
+                }
+            }
+        }
+
+        const named = await adopterFieldAuthors(db, adopterId, [...new Set([...plan.conflicts, ...plan.updatedByOthers])]);
+        const view = (f: string): AdopterFieldConflict => ({ field: f, by: named[f] ?? '', value: (currentVals[f] as string | null | undefined) ?? null });
+        if (plan.conflicts.length) logger.info('saveAdopter: field conflicts', { adopterId, changedBy, conflicts: plan.conflicts });
+        return {
+            success: true, id: adopterId,
+            saved: [...apply, ...saved],
+            conflicts: plan.conflicts.map(view),
+            updatedByOthers: plan.updatedByOthers.map(view),
+        };
+    }
+    const errorId = logger.error('saveAdopter: lost the race twice', new Error('busy'), { adopterId, changedBy });
+    return { success: false, error: 'busy', errorId };
 }
 
 // Fetch adopter stats — flat totals (no period bucketing)
