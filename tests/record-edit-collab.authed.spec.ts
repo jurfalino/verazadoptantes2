@@ -88,8 +88,8 @@ async function animalScenario(page: Page, browser: Browser, animalId: string, st
     await beto.getByTestId('inline-edit-save').click();
     const notice = beto.getByTestId('animal-details-conflict');
     await expect(notice).toBeVisible({ timeout: 30_000 });
-    // Named (the seed has two user rows for the admin's email, hence either name) — never the fallback.
-    await expect(notice).toContainText(/Gatitos Olivos|Test Admin/);
+    // The same name the animal card shows for her (animal-profile spec: «Test Admin»).
+    await expect(notice).toContainText('Test Admin');
     await expect(beto.getByTestId('inline-edit-form')).toBeVisible();
     expect(animal().details).toBe(`ANA-${stamp}`);
 
@@ -146,6 +146,49 @@ test('adopter profile in two tabs: the stale tab never reverts the other field',
         await tabA.getByTestId('adopter-name-conflict-keep-mine').click();
         await expect.poll(() => row().name, { timeout: 15_000 }).toBe(`Otra ${stamp}`);
         await expect(tabA.getByTestId('adopter-name-conflict')).toHaveCount(0);
+        await tabB.close();
+    } finally {
+        execD1(`DELETE FROM adopter_history WHERE adopter_id = '${adopterId}'`);
+        execD1(`DELETE FROM duplicate_tokens WHERE adopter_id = '${adopterId}'`);
+        execD1(`DELETE FROM adopters WHERE id = '${adopterId}'`);
+    }
+});
+
+test('household: a new member shows once; a rename a teammate beat is refused, not overwritten', async ({ page, context }) => {
+    test.setTimeout(150_000);
+    const stamp = Date.now();
+    const adopterId = `test-adopter-hh-collab-${stamp}`;
+    execD1(`INSERT INTO adopters (id, name, status, household_members, added_by, country, created_at, updated_at) VALUES ('${adopterId}', 'Hogar ${stamp}', '5', '[]', '${ADMIN_EMAIL}', 'AR', strftime('%s','now'), strftime('%s','now'))`);
+    const stored = () => JSON.parse(String(one(`SELECT household_members AS h FROM adopters WHERE id = '${adopterId}'`).h ?? '[]')) as Array<{ name: string }>;
+    const open = async (p: Page) => {
+        await p.goto(`/adopter/${adopterId}`);
+        await dismissCountryBanner(p);
+        await expect(p.getByTestId('household-add-member')).toBeVisible({ timeout: 30_000 });
+    };
+    try {
+        await open(page);
+        await page.getByTestId('household-add-member').click();
+        await page.getByTestId('household-member-name-input').fill('Ana Hija');
+        await page.getByTestId('household-member-save').click();
+        await expect.poll(() => stored().map(m => m.name), { timeout: 15_000 }).toEqual(['Ana Hija']);
+        // After the refresh lands: exactly one row, and it is editable as a saved member.
+        await page.waitForTimeout(2_000);
+        await expect(page.getByTestId('household-member')).toHaveCount(1);
+
+        // Tab B renames her first; tab A (never refreshed) renames too.
+        const tabB = await context.newPage();
+        await open(tabB);
+        await tabB.getByTestId('household-member-edit').click();
+        await tabB.getByTestId('household-member-name-input').fill('Ana María');
+        await tabB.getByTestId('household-member-save').click();
+        await expect.poll(() => stored().map(m => m.name), { timeout: 15_000 }).toEqual(['Ana María']);
+
+        await page.getByTestId('household-member-edit').click();
+        await page.getByTestId('household-member-name-input').fill('Anita');
+        await page.getByTestId('household-member-save').click();
+        await expect(page.getByText(/changed this while you were editing|cambió este dato mientras lo editabas/).first()).toBeVisible({ timeout: 30_000 });
+        expect(stored().map(m => m.name)).toEqual(['Ana María']);
+        await expect(page.getByTestId('household-member')).toHaveCount(1);
         await tabB.close();
     } finally {
         execD1(`DELETE FROM adopter_history WHERE adopter_id = '${adopterId}'`);

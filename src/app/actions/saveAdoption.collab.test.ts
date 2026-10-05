@@ -202,6 +202,39 @@ describe('saveAdoption — per-field collisions', () => {
         expect(res.updatedByOthers).toEqual([]);
     });
 
+    it('date writes land through the compare-and-swap (placement start, event date, birth date)', async () => {
+        // Placed animal: the view's date IS the placement's start.
+        let res = await saveAdoption({ id: 'an1', date: new Date(2_000_000 * 1000) } as never, { loaded: { date: new Date(1000 * 1000) } });
+        expect(res.conflicts).toEqual([]);
+        expect(activePlacement().started_at).toBe(2_000_000);
+        // Event.
+        res = await saveAdoption({ id: 'ev1', date: new Date(3_000_000 * 1000) } as never, { loaded: { date: 1000 } });
+        expect(res.conflicts).toEqual([]);
+        expect(sqlite.prepare("SELECT date FROM adopter_events WHERE id = 'ev1'").get()!.date).toBe(3_000_000);
+        // Birth date (a real one: epoch numbers are read as ms above 1e11), baseline
+        // in milliseconds as the animal form sends it.
+        sqlite.prepare("UPDATE animals SET estimated_birth_date = 1600000000 WHERE id = 'an1'").run();
+        res = await saveAdoption({ id: 'an1', estimatedBirthDate: new Date(1_650_000_000 * 1000) } as never, { loaded: { estimatedBirthDate: 1_600_000_000 * 1000 } });
+        expect(res.conflicts).toEqual([]);
+        expect(animal().estimated_birth_date).toBe(1_650_000_000);
+    });
+
+    it('a placement with no start date: the view shows the animal\'s creation date, and a new date still lands', async () => {
+        sqlite.prepare("UPDATE placements SET started_at = NULL WHERE id = 'an1-plc'").run();
+        const res = await saveAdoption({ id: 'an1', date: new Date(2_000_000 * 1000), comments: 'Nueva nota' } as never, { loaded: { date: new Date(1000 * 1000), comments: 'Todo bien' } });
+        expect(res.conflicts).toEqual([]);
+        expect(activePlacement().started_at).toBe(2_000_000);
+        expect(activePlacement().comments).toBe('Nueva nota');
+    });
+
+    it('the animal\'s link while the placement has its own: no false lost race', async () => {
+        sqlite.prepare("UPDATE placements SET source_url = 'https://ejemplo.org/placement' WHERE id = 'an1-plc'").run();
+        sqlite.prepare("UPDATE animals SET source_url = 'https://ejemplo.org/animal' WHERE id = 'an1'").run();
+        const res = await saveAdoption({ id: 'an1', sourceUrl: 'https://ejemplo.org/nuevo' } as never, { loaded: { sourceUrl: 'https://ejemplo.org/placement' } });
+        expect(res.conflicts).toEqual([]);
+        expect(animal().source_url).toBe('https://ejemplo.org/nuevo');
+    });
+
     it('losing the race twice throws the busy marker with an errorId; nothing written', async () => {
         let n = 0;
         const real = state.db as { update: (...a: unknown[]) => unknown };

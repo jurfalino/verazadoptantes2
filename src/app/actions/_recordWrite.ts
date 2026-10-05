@@ -188,9 +188,16 @@ function guards(table: any, row: any, patch: RecordData, cols: Record<string, st
     return out;
 }
 
-/** Did the table row still hold what the caller planned against, for every view field in `fields`? */
-function asPlanned(row: any, existing: RecordData, fields: string[], cols: Record<string, string>): boolean {
-    return fields.every(f => !(f in cols) || canonField(f, row[cols[f]]) === canonField(f, existing[f]));
+/**
+ * Does the view field still hold what the caller planned against, for every
+ * field in `fields` this table backs? `viewOf` derives the view's value from
+ * the rows just read — the view COALESCEs a few columns across tables
+ * (drizzle/0076: date = placement start ?? animal created_at, sourceUrl =
+ * placement's ?? animal's), so comparing the bare column would call every
+ * such save a lost race.
+ */
+function asPlanned(viewOf: (f: string) => unknown, existing: RecordData, fields: string[], cols: Record<string, string>): boolean {
+    return fields.every(f => !(f in cols) || canonField(f, viewOf(f)) === canonField(f, existing[f]));
 }
 
 /**
@@ -226,7 +233,7 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
             return { lost: false };
         }
         const ev = await db.select().from(adopterEvents).where(eq(adopterEvents.id, id)).get();
-        if (!ev || !asPlanned(ev, existing, written, EVENT_COLS)) return { lost: true };
+        if (!ev || !asPlanned(f => ev[EVENT_COLS[f]], existing, written, EVENT_COLS)) return { lost: true };
         const won = await db.update(adopterEvents).set(patch)
             .where(and(eq(adopterEvents.id, id), ...guards(adopterEvents, ev, patch, EVENT_COLS)))
             .returning({ id: adopterEvents.id });
@@ -247,11 +254,17 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
     if (data.color !== undefined) animalPatch.color = data.color;
     if (data.microchip !== undefined) animalPatch.microchip = data.microchip;
     if (data.sourceUrl !== undefined) animalPatch.sourceUrl = data.sourceUrl;
+    // The active placement, read before anything is written (the view's
+    // values for this record come from it too).
+    const active = await db.select().from(placements).where(and(eq(placements.animalId, id), isNull(placements.endedAt))).get();
+    let animalRow: any = null;
     if (!cas) {
         await db.update(animals).set(animalPatch).where(eq(animals.id, id));
     } else {
         const row = await db.select().from(animals).where(eq(animals.id, id)).get();
-        if (!row || !asPlanned(row, existing, written, ANIMAL_COLS)) return { lost: true };
+        animalRow = row;
+        const viewOfAnimal = (f: string) => (f === 'sourceUrl' ? (active?.sourceUrl ?? row?.sourceUrl) : row?.[ANIMAL_COLS[f]]);
+        if (!row || !asPlanned(viewOfAnimal, existing, written, ANIMAL_COLS)) return { lost: true };
         const won = await db.update(animals).set(animalPatch)
             .where(and(eq(animals.id, id), ...guards(animals, row, animalPatch, ANIMAL_COLS)))
             .returning({ id: animals.id });
@@ -259,7 +272,6 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
     }
 
     // Placement lifecycle.
-    const active = await db.select().from(placements).where(and(eq(placements.animalId, id), isNull(placements.endedAt))).get();
     const desiredType: string = data.recordType ?? existing.recordType;
     const desiredAdopter = data.adopterId !== undefined ? data.adopterId : existing.adopterId;
     const wantsPlacement = isPlacementType(desiredType) && !!desiredAdopter;
@@ -312,7 +324,8 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
                     if (!cas) {
                         await db.update(placements).set(pPatch).where(eq(placements.id, active.id));
                     } else {
-                        if (!asPlanned(active, existing, written, PLACEMENT_COLS)) return { lost: true };
+                        const viewOfPlacement = (f: string) => (f === 'date' ? (active.startedAt ?? animalRow?.createdAt) : active[PLACEMENT_COLS[f]]);
+                        if (!asPlanned(viewOfPlacement, existing, written, PLACEMENT_COLS)) return { lost: true };
                         const won = await db.update(placements).set(pPatch)
                             .where(and(eq(placements.id, active.id), isNull(placements.endedAt), ...guards(placements, active, pPatch, PLACEMENT_COLS)))
                             .returning({ id: placements.id });

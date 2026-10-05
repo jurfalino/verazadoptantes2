@@ -5,22 +5,25 @@
  * (the UI then says «otra persona del equipo» instead of guessing).
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { adopterHistory, auditLog, users } from '@/db/schema';
+import { adopterHistory, auditLog } from '@/db/schema';
+import { resolveUserNames } from '@/app/actions/userNames';
+import { emailHandle } from '@/lib/userDisplay';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { fieldAuthor } from '@/domain/fieldCollab';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
-export async function displayNameOf(db: Db, email: string | null | undefined): Promise<string> {
+export async function displayNameOf(_db: Db, email: string | null | undefined): Promise<string> {
     if (!email || !email.includes('@')) return '';
+    // The same resolver as the cards' «Agregado por» / «Actualizado por»
+    // (animalTimeline, AdoptionHistory), so one person has one name everywhere.
     try {
-        const row = await db.select({ name: users.name }).from(users).where(eq(users.email, email)).get() as { name: string | null } | undefined;
-        const name = row?.name?.trim();
-        return name || email.split('@')[0];
+        const names = await resolveUserNames([email]);
+        return names[email]?.trim() || emailHandle(email);
     } catch (e) {
         logger.warn('collabAttribution.displayNameOf: lookup failed, using handle', { error: e instanceof Error ? e.message : String(e) });
-        return email.split('@')[0];
+        return emailHandle(email);
     }
 }
 

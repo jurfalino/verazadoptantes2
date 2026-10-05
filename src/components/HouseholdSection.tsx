@@ -75,8 +75,9 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                     }),
                 };
             });
-            // Members being added here and not yet saved stay.
-            return [...merged, ...prev.filter(x => (x as MemberUI & { isNew?: boolean }).isNew)];
+            // Members being added here and not yet saved stay (a saved one is
+            // already in the server list — never show it twice).
+            return [...merged, ...prev.filter(x => (x as MemberUI & { isNew?: boolean }).isNew && !initialMembers.some(sm => sm.id === x.id))];
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [serverKey]);
@@ -118,8 +119,9 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
         if (isNew) {
             const res = await run(() => addHouseholdMember({ adopterId, name, relationship }));
             if (!res) return;
-            patch(m.id, { id: res.memberId, name, relationship, editing: false, draftName: undefined, draftRel: undefined });
-            setMembers(prev => prev.map(x => x.id === m.id ? { ...x, id: res.memberId } : x));
+            setMembers(prev => prev.map(x => x.id === m.id
+                ? { ...x, id: res.memberId, name, relationship, editing: false, draftName: undefined, draftRel: undefined, isNew: false } as MemberUI
+                : x));
         } else {
             const res = await run(
                 () => updateHouseholdMember({ adopterId, memberId: m.id, name, relationship, expected: { name: m.name, relationship: m.relationship ?? null } }),
@@ -239,13 +241,13 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
         <div className="space-y-3">
             {members.length === 0 && !canEdit && !hasLegacyText && <p className="text-sm text-stone-500 italic">{t('adopter.no_family')}</p>}
             {members.map(m => (
-                <div key={m.id} className="border border-stone-200 rounded-xl p-3.5 bg-stone-50">
+                <div key={m.id} className="border border-stone-200 rounded-xl p-3.5 bg-stone-50" data-testid="household-member">
                     {m.editing ? (
                         <div className="space-y-2">
                             <div className="flex gap-2 flex-wrap">
                                 <div className="flex-1 min-w-[140px]">
                                     <label className="block text-[11px] font-semibold text-stone-500 mb-1">{t('adopter.hh_name')}</label>
-                                    <input autoFocus type="text" value={m.draftName ?? ''} onChange={e => patch(m.id, { draftName: e.target.value })} placeholder={t('adopter.hh_name_ph')} className="w-full px-2.5 py-1.5 border border-stone-300 rounded text-sm outline-none focus:border-teal-500" />
+                                    <input autoFocus type="text" data-testid="household-member-name-input" value={m.draftName ?? ''} onChange={e => patch(m.id, { draftName: e.target.value })} placeholder={t('adopter.hh_name_ph')} className="w-full px-2.5 py-1.5 border border-stone-300 rounded text-sm outline-none focus:border-teal-500" />
                                 </div>
                                 <div className="flex-1 min-w-[140px]">
                                     <label className="block text-[11px] font-semibold text-stone-500 mb-1">{t('adopter.hh_rel')}</label>
@@ -257,7 +259,7 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                             </div>
                             <div className="flex items-center gap-2 justify-end">
                                 <button type="button" onClick={() => cancelMember(m)} disabled={busy} className="text-xs font-medium px-3 py-1.5 rounded text-stone-700 bg-stone-100 hover:bg-stone-200 disabled:opacity-50"><X className="w-3.5 h-3.5 inline" /> {t('adopter.ce_edit_cancel')}</button>
-                                <button type="button" onClick={() => saveMember(m)} disabled={busy || !((m.draftName ?? '').trim() || m.draftRel)} className="text-xs font-semibold px-3.5 py-1.5 rounded bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40"><Check className="w-3.5 h-3.5 inline" /> {t('adopter.ce_edit_save')}</button>
+                                <button type="button" data-testid="household-member-save" onClick={() => saveMember(m)} disabled={busy || !((m.draftName ?? '').trim() || m.draftRel)} className="text-xs font-semibold px-3.5 py-1.5 rounded bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40"><Check className="w-3.5 h-3.5 inline" /> {t('adopter.ce_edit_save')}</button>
                             </div>
                         </div>
                     ) : (
@@ -272,7 +274,7 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                                 </div>
                                 {canEdit && (
                                     <div className="flex gap-0.5 shrink-0">
-                                        <button type="button" onClick={() => patch(m.id, { editing: true, draftName: m.name, draftRel: m.relationship })} title={t('adopter.ce_edit_label')} className="p-1.5 text-stone-500 hover:text-teal-700 hover:bg-teal-50 rounded"><Pencil className="w-3.5 h-3.5" /></button>
+                                        <button type="button" data-testid="household-member-edit" onClick={() => patch(m.id, { editing: true, draftName: m.name, draftRel: m.relationship })} title={t('adopter.ce_edit_label')} className="p-1.5 text-stone-500 hover:text-teal-700 hover:bg-teal-50 rounded"><Pencil className="w-3.5 h-3.5" /></button>
                                         <button type="button" onClick={() => deleteMember(m)} title="Quitar" className="p-1.5 text-stone-500 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
                                     </div>
                                 )}
@@ -327,7 +329,7 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                 </div>
             ))}
             {canEdit && (
-                <button type="button" onClick={startAdd} disabled={busy} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-md disabled:opacity-50">
+                <button type="button" data-testid="household-add-member" onClick={startAdd} disabled={busy} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-md disabled:opacity-50">
                     <Plus className="w-4 h-4" />{t('adopter.hh_cta_add')}
                 </button>
             )}

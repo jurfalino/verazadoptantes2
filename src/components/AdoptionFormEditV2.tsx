@@ -128,7 +128,12 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
         date: d.date ?? null, deliveredToHome: d.deliveredToHome ? 1 : 0, verifiedAddress: d.verifiedAddress ?? null,
         identityVerified: d.identityVerified ? 1 : 0,
     });
-    const baselineRef = useRef<{ id: string; values: Record<string, unknown> } | null>(initialData?.id ? { id: initialData.id, values: baselineOf(initialData) } : null);
+    // `values`: what is stored (compared on the server). `shown`: the form as
+    // it was filled from them (display defaults like rating 5 included) — only
+    // fields that differ from `shown` are this editor's changes, and only those
+    // are sent.
+    type Baseline = { id: string; values: Record<string, unknown>; shown: typeof formData };
+    const baselineRef = useRef<Baseline | null>(initialData?.id ? { id: initialData.id, values: baselineOf(initialData), shown: { ...formData } } : null);
     const [conflicts, setConflicts] = useState<Record<string, { by: string; value: unknown }>>({});
     const formRef = useRef<HTMLFormElement>(null);
     const dayOf = (v: unknown): string => {
@@ -136,6 +141,12 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
         const d = v instanceof Date ? v : new Date(typeof v === 'number' && v < 1e11 ? v * 1000 : (v as string | number));
         return Number.isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0];
     };
+    /** The editable fields as the save would send them — what "changed" is measured on. */
+    const editableOf = (fd: typeof formData): Record<string, unknown> => ({
+        animalName: fd.animalName.trim() || null, details: fd.details, status: fd.status, rating: Number(fd.rating),
+        comments: fd.comments, species: fd.species, recordType: fd.recordType, date: fd.date,
+        deliveredToHome: fd.deliveredToHome ? 1 : 0, verifiedAddress: fd.verifiedAddress || null, identityVerified: fd.identityVerified ? 1 : 0,
+    });
     /** A stored value, in the form's own representation. */
     const asFormValue = (field: string, v: unknown): unknown => {
         if (field === 'date') return dayOf(v);
@@ -153,8 +164,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
 
     // Update form data when initialData changes
     if (initialData && formData.id !== initialData.id) {
-        baselineRef.current = initialData.id ? { id: initialData.id, values: baselineOf(initialData) } : null;
-        setFormData({
+        const filled = {
             id: initialData.id,
             animalName: initialData.animalName || '',
             details: initialData.details || '',
@@ -168,7 +178,9 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
             deliveredToHome: initialData.deliveredToHome || false,
             verifiedAddress: initialData.verifiedAddress || '',
             identityVerified: initialData.identityVerified || false
-        });
+        };
+        baselineRef.current = initialData.id ? { id: initialData.id, values: baselineOf(initialData), shown: { ...filled } } : null;
+        setFormData(filled);
         setIsOpen(true);
         setMode('new');
     }
@@ -343,7 +355,8 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
             const dateParts = formData.date.split('-').map(Number);
             const localDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2] || 1, 12, 0, 0);
 
-            const base = baselineRef.current && baselineRef.current.id === formData.id ? baselineRef.current.values : null;
+            const baseline = baselineRef.current && baselineRef.current.id === formData.id ? baselineRef.current : null;
+            const base = baseline?.values ?? null;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const payload: any = {
                 ...formData,
@@ -357,11 +370,16 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                 verifiedAddress: formData.verifiedAddress || null,
                 identityVerified: formData.identityVerified ? 1 : 0
             };
-            if (base) {
-                // An edit: this form doesn't edit «en nombre de» (sending null
-                // used to wipe it), and the date counts as changed only if the DAY did.
+            if (baseline) {
+                // An edit sends only what this person changed: a field still as
+                // it was shown is left alone (a teammate may have changed it).
+                // «En nombre de» isn't edited here (sending null used to wipe
+                // it); the date counts as changed only if the DAY did.
+                const now = editableOf(formData);
+                const was = editableOf(baseline.shown);
+                for (const k of Object.keys(now)) if (JSON.stringify(now[k]) === JSON.stringify(was[k])) delete payload[k];
+                if (adopterId === (baseline.shown.adopterId || adopterId)) delete payload.adopterId;
                 delete payload.onBehalfOf;
-                if (formData.date === dayOf(base.date)) delete payload.date;
             }
             const result = await saveAdoption(payload, base ? { loaded: { ...base } as any } : undefined); // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -383,12 +401,16 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                 return;
             }
 
-            if (base && result) {
-                for (const f of result.saved ?? []) if (f in payload) base[f] = payload[f];
+            if (baseline && base && result) {
+                for (const f of result.saved ?? []) if (f in payload) {
+                    base[f] = payload[f];
+                    (baseline.shown as Record<string, unknown>)[f] = (formData as Record<string, unknown>)[f];
+                }
                 // Fields a teammate changed that I didn't: show theirs.
                 const others = result.updatedByOthers ?? [];
                 for (const o of others) {
                     base[o.field] = o.value;
+                    (baseline.shown as Record<string, unknown>)[o.field] = asFormValue(o.field, o.value);
                     toast.info(updatedByOtherMessage(t, o.field, o.by));
                 }
                 if (others.length) setFormData(prev => ({ ...prev, ...Object.fromEntries(others.map(o => [o.field, asFormValue(o.field, o.value)])) }));
@@ -516,7 +538,10 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                             saving={loading}
                             testId={`record-${field}-conflict`}
                             onKeepTheirs={() => {
-                                if (baselineRef.current) baselineRef.current.values[field] = c.value;
+                                if (baselineRef.current) {
+                                    baselineRef.current.values[field] = c.value;
+                                    (baselineRef.current.shown as Record<string, unknown>)[field] = asFormValue(field, c.value);
+                                }
                                 setFormData(prev => ({ ...prev, [field]: asFormValue(field, c.value) }));
                                 setConflicts(cs => { const n = { ...cs }; delete n[field]; return n; });
                             }}
