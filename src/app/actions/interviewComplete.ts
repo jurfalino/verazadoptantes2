@@ -7,11 +7,12 @@
  * flips LAST; adopter_id and event_id are persisted as soon as they exist,
  * so a retry after a partial failure resumes instead of duplicating.
  */
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
 import { safeError } from '@/lib/interviews/safeError';
+import { rowsAffected } from '@/lib/interviews/rowsAffected';
 import { adopterEvents, adopters, interviews } from '@/db/schema';
 import { deserializeHouseholdMembers } from '@/lib/householdMembers';
 import { normalizeText } from '@/lib/tokenizer';
@@ -40,6 +41,18 @@ export async function completeInterview(interviewId: string, input: CompleteInpu
 
         const { adopterId: target, rating, summary } = parsed.data;
         if (target !== 'new' && !s.candidateIds.includes(target)) return { ok: false, error: 'forbidden' };
+
+        // An existing target must still be a live profile: a merged (soft-deleted) one would
+        // receive contacts and an observation nobody sees. Checked before any write.
+        let targetOwner: string | null = null;
+        if (target !== 'new') {
+            const t = await db.select({ addedBy: adopters.addedBy, deletedAt: adopters.deletedAt }).from(adopters).where(eq(adopters.id, target)).get();
+            if (!t || t.deletedAt) {
+                logger.warn('interviews.complete: target profile is deleted or missing', { interviewId: id, adopterId: target });
+                return { ok: false, error: 'invalid' };
+            }
+            targetOwner = t.addedBy ?? null;
+        }
 
         // Only what this interview actually collected may be written (no free-form injection).
         const known = deriveKnownFacts(contextFor(s, []), QUESTION_BANK);
@@ -82,7 +95,7 @@ export async function completeInterview(interviewId: string, input: CompleteInpu
 
         // 2. Additions. A new profile already holds the contacts/address from its create.
         if (created || target !== 'new') {
-            const owner = (await db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, adopterId)).get())?.addedBy ?? null;
+            const owner = created ? actor : targetOwner;
             const { isAdminAsync } = await import('@/config/admins');
             const { isOrgMate } = await import('@/lib/orgMembership');
             const canEdit = created || owner === actor || (await isAdminAsync(actor)) || (await isOrgMate(actor, owner));
@@ -98,7 +111,7 @@ export async function completeInterview(interviewId: string, input: CompleteInpu
                     present.some(m => normalizeText(m.name.trim()) === normalizeText(h.name.trim()) && m.relationship === h.relationship);
                 for (const h of household.filter(h => !have(h))) {
                     const r = await addHouseholdMember({ adopterId, name: h.name, relationship: h.relationship });
-                    if (!r.ok) logger.warn('interviews.complete: household add refused', { interviewId: id, adopterId });
+                    if (!r.ok) logger.warn('interviews.complete: household add refused', { interviewId: id, adopterId, error: r.error });
                 }
             }
         }
@@ -118,7 +131,15 @@ export async function completeInterview(interviewId: string, input: CompleteInpu
 
         // 4. Done — last.
         const now = new Date();
-        await db.update(interviews).set({ status: 'completed', completedAt: now, updatedAt: now }).where(eq(interviews.id, id));
+        const done = await db.update(interviews).set({ status: 'completed', completedAt: now, updatedAt: now })
+            .where(and(eq(interviews.id, id), eq(interviews.status, 'draft'))).run();
+        if (rowsAffected(done) === 0) {
+            // Someone else moved the row on (a concurrent completion, or a discard in another tab).
+            const after = await loadInterview(db, id);
+            if (after?.status === 'completed' && after.adopterId) return { ok: true, adopterId: after.adopterId };
+            logger.warn('interviews.complete: interview left draft before completing', { interviewId: id, adopterId, status: after?.status ?? null });
+            return { ok: false, error: 'invalid' };
+        }
         logger.info('interviews.complete', {
             interviewId: id, adopterId, actor, created,
             answeredCount: Object.values(s.answers).filter(a => a.status === 'answered').length,

@@ -3,7 +3,7 @@ import { migratedDb } from '@/test-utils/migratedDb';
 import { session, getUser, isAdmin, isOrgMate, isOwnerOrOrgMate, OWNER, STRANGER } from '@/test-utils/actionMocks';
 
 const { state, calls } = vi.hoisted(() => ({
-    state: { sqlite: null as unknown, db: null as unknown, flag: true, failObservation: false, failAfterInsert: false },
+    state: { sqlite: null as unknown, db: null as unknown, flag: true, failObservation: false, failAfterInsert: false, discardDuringObservation: false, refuseHousehold: false },
     calls: { saveAdopter: [] as unknown[], append: [] as unknown[], household: [] as unknown[], saveAdoption: [] as unknown[] },
 }));
 vi.mock('./_db', () => ({ getDb: async () => state.db, getUser }));
@@ -15,13 +15,18 @@ vi.mock('./adopters', () => ({
     appendToExistingAdopter: vi.fn(async (id: string, f: unknown) => { calls.append.push([id, f]); return { success: true, adopterId: id }; }),
 }));
 vi.mock('./householdMembers', () => ({
-    addHouseholdMember: vi.fn(async (i: unknown) => { calls.household.push(i); return { ok: true, memberId: 'm1' }; }),
+    addHouseholdMember: vi.fn(async (i: unknown) => {
+        calls.household.push(i);
+        return state.refuseHousehold ? { ok: false, error: 'Cannot edit a deleted adopter' } : { ok: true, memberId: 'm1' };
+    }),
 }));
 vi.mock('./adoptions', () => ({
     saveAdoption: vi.fn(async (d: unknown) => {
         if (state.failObservation) throw new Error('D1 down');
         calls.saveAdoption.push(d);
         const dd = d as { id: string; adopterId: string };
+        // Another tab discards the draft while this completion is mid-way.
+        if (state.discardDuringObservation) (state.sqlite as Sqlite).prepare(`UPDATE interviews SET status = 'discarded' WHERE id = 'i1'`).run();
         if (state.failAfterInsert) {
             state.failAfterInsert = false;
             (state.sqlite as Sqlite).prepare(`INSERT INTO adopter_events (id, adopter_id, event_type) VALUES (?, ?, 'observation')`).run(dd.id, dd.adopterId);
@@ -32,6 +37,7 @@ vi.mock('./adoptions', () => ({
 }));
 
 import { completeInterview } from './interviewComplete';
+import { logger } from '@/lib/logger';
 
 type Sqlite = { prepare: (s: string) => { get: (...a: unknown[]) => Record<string, unknown> | undefined; run: (...a: unknown[]) => unknown } };
 let sqlite: Sqlite;
@@ -56,7 +62,7 @@ const ADD = {
 beforeEach(() => {
     const m = migratedDb();
     state.db = m.db; state.sqlite = m.sqlite; sqlite = m.sqlite as unknown as Sqlite;
-    state.flag = true; state.failObservation = false; state.failAfterInsert = false;
+    state.flag = true; state.failObservation = false; state.failAfterInsert = false; state.discardDuringObservation = false; state.refuseHousehold = false;
     for (const k of Object.keys(calls) as (keyof typeof calls)[]) calls[k] = [];
     session.user = OWNER;
     sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, deleted_at, is_demo) VALUES ('a-owned', 'Juan', '5', ?, 1, 1, NULL, 0)`).run(OWNER);
@@ -163,5 +169,38 @@ describe('completeInterview', () => {
         expect(await completeInterview('i1', { adopterId: 'a-foreign', additions: ADD, rating: null, summary: null })).toEqual({ ok: false, error: 'invalid' });
         expect(calls.append).toHaveLength(appends);
         expect(calls.saveAdoption).toEqual([]);
+    });
+
+    it('refuses a merged (soft-deleted) candidate before any write', async () => {
+        seedDraft();
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 2000 WHERE id = 'a-owned'`).run();
+        const warn = vi.spyOn(logger, 'warn');
+        try {
+            expect(await completeInterview('i1', { adopterId: 'a-owned', additions: ADD, rating: 4, summary: 'x' })).toEqual({ ok: false, error: 'invalid' });
+            expect(warn).toHaveBeenCalledWith('interviews.complete: target profile is deleted or missing', { interviewId: 'i1', adopterId: 'a-owned' });
+        } finally { warn.mockRestore(); }
+        expect(calls.saveAdoption).toEqual([]);
+        expect(calls.append).toEqual([]);
+        expect(calls.household).toEqual([]);
+        expect(sqlite.prepare(`SELECT status, adopter_id, event_id FROM interviews WHERE id = 'i1'`).get()).toEqual({ status: 'draft', adopter_id: null, event_id: null });
+    });
+
+    it('never flips a draft discarded mid-completion to completed', async () => {
+        seedDraft();
+        state.discardDuringObservation = true;
+        const r = await completeInterview('i1', { adopterId: 'a-owned', additions: ADD, rating: null, summary: null });
+        expect(r).toEqual({ ok: false, error: 'invalid' });
+        expect(sqlite.prepare(`SELECT status FROM interviews WHERE id = 'i1'`).get()).toEqual({ status: 'discarded' });
+    });
+
+    it('a refused household add is logged with its error', async () => {
+        seedDraft();
+        state.refuseHousehold = true;
+        const warn = vi.spyOn(logger, 'warn');
+        try {
+            expect((await completeInterview('i1', { adopterId: 'a-owned', additions: ADD, rating: null, summary: null })).ok).toBe(true);
+            expect(warn).toHaveBeenCalledWith('interviews.complete: household add refused',
+                { interviewId: 'i1', adopterId: 'a-owned', error: 'Cannot edit a deleted adopter' });
+        } finally { warn.mockRestore(); }
     });
 });
