@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.148] - 2026-10-05
+
+### Fixed — interview-guide e2e waits for the page on slow CI servers
+
+- 2.56.147 never reached staging: one interview e2e check looked for the
+  technique screen once, before the page had loaded, on CI's slower server.
+  It now waits for the screen. No app change; the feature is still hidden.
+
 ## [2.56.147] - 2026-10-05
 
 ### Added — phone-interview guide (hidden: flag `ENABLE_INTERVIEW_GUIDE`, off)

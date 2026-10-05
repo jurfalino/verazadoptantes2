@@ -21,9 +21,13 @@ const FOREIGN_INTERVIEW = 'test-interview-fixture-iv-2';
 const NEW_NAME = `Persona Entrevista ${Date.now()}`;
 const NEW_PHONE = '11 7777 2233';
 
+// isVisible() never waits (its timeout is ignored), so on a slow CI server it
+// answered "no" while the technique screen was still loading. Wait for either
+// screen, then click through the technique if that is the one showing.
 async function pastTechnique(page: Page) {
     const go = page.getByTestId('interview-technique-continue');
-    if (await go.isVisible({ timeout: 15000 }).catch(() => false)) await go.click();
+    await expect(go.or(page.getByTestId('interview-focus'))).toBeVisible({ timeout: 30000 });
+    if (await go.isVisible()) await go.click();
 }
 
 test.describe.configure({ mode: 'serial' });
