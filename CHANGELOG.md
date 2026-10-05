@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.145] - 2026-10-04
+
+### Fixed — two people editing the same animal or adopter no longer overwrite each other
+
+- **Animal, adopter profile and adoption-record forms** now save only the fields you
+  changed. A tab left open no longer reverts a teammate's change to a field you
+  didn't touch. If a teammate changed the SAME field meanwhile, nothing is
+  overwritten: «Lucía cambió la edad mientras editabas.» with «Ver su versión» or
+  «Guardar la mía igual». Changes to other fields show as «Actualizado por <nombre>».
+- **Contact details and household members:** two people adding, editing or removing
+  different entries at the same moment both land (before, one could be lost without
+  notice). Editing an entry a teammate changed or deleted shows a warning instead.
+  Adding to an existing profile, contract signing, merges and the verified address
+  now use the same protection.
+- **One active adoption or foster per animal**, enforced by the database
+  (migration 0078 tidies any duplicates first; production had none). A second
+  simultaneous registration or signature gets «<Animal> ya tiene una adopción o
+  tránsito activo.» with an Error ID, in the adopter's language on the contract page.
+- The raw English «This record was modified by another user» message is gone.
+
 ## [2.56.144] - 2026-10-04
 
 ### Fixed — contract PDFs keep accents and ñ (standard contract too)
