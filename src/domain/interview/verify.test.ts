@@ -29,3 +29,12 @@ describe('factMatches', () => {
         expect(factMatches('phones', ['1165851333'], [])).toBe(false);
     });
 });
+
+import { streetPairs } from './verify';
+describe('streetPairs', () => {
+    it('counts distinct street+number pairs', () => {
+        expect(streetPairs('Av Rivadavia 1234')).toHaveLength(1);
+        expect(streetPairs('Rivadavia 1234, Corrientes 5678')).toHaveLength(2);
+        expect(streetPairs('barrio norte')).toHaveLength(0);
+    });
+});

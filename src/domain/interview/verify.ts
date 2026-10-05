@@ -51,3 +51,8 @@ export function factMatches(fact: VerifiableFact, stored: string[], given: strin
         return !!k && keys.has(k);
     });
 }
+
+/** Distinct "street number" pairs in a free-text address; the verify budget rule lives here. */
+export function streetPairs(text: string): string[] {
+    return [...extractStreetPairs(text)];
+}

@@ -110,6 +110,14 @@ describe('startInterview / drafts', () => {
         expect(row.status).toBe('completed');
     });
 
+    it('discard refuses a completed interview and leaves it completed', async () => {
+        const r = await startInterview({ prep: PREP });
+        if (!r.ok) throw new Error('start failed');
+        sqlite.prepare(`UPDATE interviews SET status = 'completed' WHERE id = ?`).run(r.interviewId);
+        expect(await discardInterviewDraft(r.interviewId)).toEqual({ ok: false, error: 'invalid' });
+        expect(sqlite.prepare('SELECT status FROM interviews WHERE id = ?').get(r.interviewId)!.status).toBe('completed');
+    });
+
     it('lists only my open drafts with answered counts', async () => {
         const r = await startInterview({ prep: PREP });
         if (!r.ok) throw new Error('start failed');
@@ -133,20 +141,48 @@ describe('refreshInterviewCandidates / verifyInterviewFact', () => {
         expect(JSON.parse(row.candidate_ids_json as string)).toEqual(['a1']);
     });
 
-    it('verify compares the STORED answers with the raw profile and returns only a boolean', async () => {
+    const startWithAnswer = async (qid: string, answer: unknown) => {
         state.matches = [cand('a1')];
         const r = await startInterview({ prep: { ...PREP, phones: [] } });
         if (!r.ok) throw new Error('start failed');
-        await saveInterviewDraft(r.interviewId, { ...emptyPatch,
-            answers: { rapport_phone: { status: 'answered', contacts: [{ type: 'phone', value: '11 6585-1333' }] } }, visited: ['rapport_phone'] });
-        const v = await verifyInterviewFact(r.interviewId, 'a1', 'phones');
+        await saveInterviewDraft(r.interviewId, { ...emptyPatch, answers: { [qid]: answer }, visited: [qid] } as never);
+        return r.interviewId;
+    };
+    const phoneAns = (n: number) => ({ status: 'answered', contacts: Array.from({ length: n }, (_, i) => ({ type: 'phone', value: i ? `11 0000-000${i}` : '11 6585-1333' })) });
+
+    it('verify compares the saved answer of that question with the raw profile and returns only a boolean', async () => {
+        const id = await startWithAnswer('rapport_phone', phoneAns(1));
+        const v = await verifyInterviewFact(id, 'rapport_phone', 'a1');
         expect(v).toEqual({ ok: true, match: true });
         expect(Object.keys(v)).toEqual(['ok', 'match']);
+    });
+
+    it('verify refuses unknown / non-verifying / unanswered questions', async () => {
+        const id = await startWithAnswer('rapport_phone', phoneAns(1));
+        expect(await verifyInterviewFact(id, 'nope_question', 'a1')).toEqual({ ok: false, error: 'invalid' });
+        expect(await verifyInterviewFact(id, 'rapport_work', 'a1')).toEqual({ ok: false, error: 'invalid' });
+        expect(await verifyInterviewFact(id, 'details_email', 'a1')).toEqual({ ok: false, error: 'invalid' });
+    });
+
+    it('verify refuses more than 3 given values', async () => {
+        const id = await startWithAnswer('rapport_phone', phoneAns(4));
+        expect(await verifyInterviewFact(id, 'rapport_phone', 'a1')).toEqual({ ok: false, error: 'invalid' });
+    });
+
+    it('verify refuses an address answer with two street pairs', async () => {
+        const id = await startWithAnswer('story_address', { status: 'answered', text: 'Rivadavia 1234 y Corrientes 5678' });
+        expect(await verifyInterviewFact(id, 'story_address', 'a1')).toEqual({ ok: false, error: 'invalid' });
+    });
+
+    it('verify has a budget of 5 calls per candidate and fact', async () => {
+        const id = await startWithAnswer('rapport_phone', phoneAns(1));
+        for (let i = 0; i < 5; i++) expect((await verifyInterviewFact(id, 'rapport_phone', 'a1')).ok).toBe(true);
+        expect(await verifyInterviewFact(id, 'rapport_phone', 'a1')).toEqual({ ok: false, error: 'invalid' });
     });
 
     it('verify refuses a profile that is not one of this interview’s candidates', async () => {
         const r = await startInterview({ prep: PREP });
         if (!r.ok) throw new Error('start failed');
-        expect(await verifyInterviewFact(r.interviewId, 'a1', 'phones')).toEqual({ ok: false, error: 'forbidden' });
+        expect(await verifyInterviewFact(r.interviewId, 'rapport_phone', 'a1')).toEqual({ ok: false, error: 'forbidden' });
     });
 });

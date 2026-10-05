@@ -14,8 +14,11 @@ CREATE TABLE IF NOT EXISTS interviews (
     event_id TEXT,
     created_at INTEGER DEFAULT (strftime('%s', 'now')),
     updated_at INTEGER DEFAULT (strftime('%s', 'now')),
-    completed_at INTEGER
+    completed_at INTEGER,
+    verify_counts_json TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_interviews_drafts ON interviews (conducted_by, status);
 CREATE INDEX IF NOT EXISTS idx_interviews_adopter ON interviews (adopter_id);
 CREATE INDEX IF NOT EXISTS idx_interviews_event ON interviews (event_id);
+-- One open draft per (interviewer, profile); startInterview relies on this to resume instead of duplicating.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_interviews_one_profile_draft ON interviews (conducted_by, source_id) WHERE status = 'draft' AND source_kind = 'profile';

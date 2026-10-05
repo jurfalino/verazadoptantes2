@@ -167,7 +167,10 @@ export const interviews = sqliteTable("interviews", {
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     completedAt: integer("completed_at", { mode: "timestamp" }),
+    /** JSON Record<`${candidateId}:${fact}`, number>: verify calls spent (budget in interviews.ts). */
+    verifyCountsJson: text("verify_counts_json"),
 }, (table) => ({
+    oneProfileDraftIdx: uniqueIndex("idx_interviews_one_profile_draft").on(table.conductedBy, table.sourceId).where(sql`status = 'draft' AND source_kind = 'profile'`),
     draftsIdx: index("idx_interviews_drafts").on(table.conductedBy, table.status),
     adopterIdx: index("idx_interviews_adopter").on(table.adopterId),
     eventIdx: index("idx_interviews_event").on(table.eventId),
