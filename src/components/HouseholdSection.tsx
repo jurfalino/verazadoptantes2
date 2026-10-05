@@ -283,7 +283,7 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                                 <div className="min-w-0 flex-1">
                                     <div className="font-semibold text-[15px] text-stone-900 break-words">
                                         {m.name || <span className="italic text-stone-400">{t('adopter.hh_name')}</span>}
-                                        {m.giftRecipient && <span className="ml-1.5 align-middle text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-700">{t('adopter.hh_gift_recipient')}</span>}
+                                        {m.giftRecipient && <span className="ml-1.5 inline-block whitespace-nowrap align-middle text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-700">{t('adopter.hh_gift_recipient')}</span>}
                                     </div>
                                     <div className={`text-xs ${m.relationship ? 'text-stone-500' : 'text-stone-400 italic'}`}>
                                         {m.relationship === 'unknown' ? t('adopter.hh_rel_unknown_display') : m.relationship ? relLabel(m.relationship) : t('adopter.hh_rel_none')}
