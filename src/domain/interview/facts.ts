@@ -16,7 +16,7 @@ export function contactKey(type: ContactType, value: string): string | null {
         return digits.length >= 7 ? digits.slice(-8) : null;
     }
     if (type === 'email') return v.toLowerCase();
-    return normalizeSocialHandle(v) ?? (normalizeText(v).replace(/^@+/, '') || null);
+    return normalizeSocialHandle(v);
 }
 
 export function answerHasContent(a: Answer): boolean {

@@ -25,6 +25,10 @@ describe('contactKey', () => {
         expect(contactKey('email', ' Juan@Mail.com ')).toBe('juan@mail.com');
         expect(contactKey('social', 'https://instagram.com/juan.perez')).toBe(contactKey('social', '@juan.perez'));
     });
+    it('invalid socials (bare domain, no path, too-short handle) return null', () => {
+        expect(contactKey('social', 'instagram.com')).toBeNull();
+        expect(contactKey('social', 'https://instagram.com/')).toBeNull();
+    });
 });
 
 describe('answerHasContent', () => {
@@ -75,6 +79,14 @@ describe('deriveKnownFacts', () => {
         expect(k.filled).toContain('phones');
         expect(k.filled).not.toContain('address');
         expect(k.phones).toEqual([]); // values are never copied from a profile
+    });
+
+    it('invalid prep socials (bare domain, no path) do not fill socials', () => {
+        const k = deriveKnownFacts(ctx({
+            prep: { ...EMPTY_PREP, name: 'Juan', socials: ['instagram.com'] },
+        }), BANK);
+        expect(k.filled).not.toContain('socials');
+        expect(k.socials).toEqual([]);
     });
 });
 
