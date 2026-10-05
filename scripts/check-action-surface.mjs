@@ -198,7 +198,9 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // listMyInterviewDrafts, discardInterviewDraft; the 8th is the rest of interviews.ts that
 // Next records with them (verifyInterviewFact). interviewComplete.ts is not imported yet, so
 // it becomes 155 when Task 13 imports it.
-const EXPECTED_ACTIONS = 154;
+// Task 13: completeInterview became wired in this commit (InterviewReview imports it);
+// MEASURED 155 = 146 + 9.
+const EXPECTED_ACTIONS = 155;
 
 let manifest;
 try {
