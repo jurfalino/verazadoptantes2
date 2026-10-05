@@ -147,6 +147,32 @@ export const pendingSearches = sqliteTable("pending_searches", {
     adopterIdx: index("idx_pending_searches_adopter").on(table.adopterId),
 }));
 
+// Interview guide (ENABLE_INTERVIEW_GUIDE). prep_json = { prep, leadCandidateId,
+// confirmedAdopterId }; answers_json = { answers, visited, custom }. The question
+// queue is NOT stored: it is buildQueue() of this state. See
+// .agents/plans/interview-guide.md §5.
+export const interviews = sqliteTable("interviews", {
+    id: text("id").primaryKey(),
+    conductedBy: text("conducted_by").notNull(),
+    /** 'draft' | 'completed' | 'discarded' */
+    status: text("status").notNull().default('draft'),
+    /** 'standalone' | 'profile' (Phase 2: 'form' | 'animal') */
+    sourceKind: text("source_kind").notNull(),
+    sourceId: text("source_id"),
+    prepJson: text("prep_json"),
+    answersJson: text("answers_json"),
+    candidateIdsJson: text("candidate_ids_json"),
+    adopterId: text("adopter_id"),
+    eventId: text("event_id"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    completedAt: integer("completed_at", { mode: "timestamp" }),
+}, (table) => ({
+    draftsIdx: index("idx_interviews_drafts").on(table.conductedBy, table.status),
+    adopterIdx: index("idx_interviews_adopter").on(table.adopterId),
+    eventIdx: index("idx_interviews_event").on(table.eventId),
+}));
+
 export const adoptions = sqliteTable("adoptions", {
     id: text("id").primaryKey(),
     adopterId: text("adopter_id"), // Nullable for "Available" animals not yet linked
