@@ -59,8 +59,8 @@ export default function InterviewReview({ interviewId, known, candidates, confir
         if (!target) { toast.warning(t('interview.review_pick_required')); return; }
         setSaving(true);
         try {
-            await flush();
-            const ticked = items.filter(i => !unticked.has(i.key));
+            if (!(await flush())) { toast.error(t('interview.save_failed'), t('interview.offline')); return; }
+            const ticked = canEdit ? items.filter(i => !unticked.has(i.key)) : [];
             const r = await completeInterview(interviewId, {
                 adopterId: target,
                 additions: {
