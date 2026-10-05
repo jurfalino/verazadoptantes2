@@ -192,7 +192,13 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                                       written, through saveAdopter / appendToExisting-
 //                                       Adopter / addHouseholdMember / saveAdoption with
 //                                       their own gates. Audited.
-const EXPECTED_ACTIONS = 146;
+// Task 10 wired the interview actions (MEASURED 154 = 146 + 8): InterviewApp/InterviewPrep/
+// useInterviewAutosave and the /interview pages import previewInterviewCandidates,
+// startInterview, saveInterviewDraft, refreshInterviewCandidates, getInterview,
+// listMyInterviewDrafts, discardInterviewDraft; the 8th is the rest of interviews.ts that
+// Next records with them (verifyInterviewFact). interviewComplete.ts is not imported yet, so
+// it becomes 155 when Task 13 imports it.
+const EXPECTED_ACTIONS = 154;
 
 let manifest;
 try {
