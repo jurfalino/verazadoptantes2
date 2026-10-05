@@ -254,6 +254,37 @@ test.describe('form-results: linking to an existing profile', () => {
         await expect(page.locator(`a[href="/form-results/${submissionId}"]`).first()).toBeVisible();
     });
 
+    test("gift: only the fully named recipient reaches the giver's profile; the recipient's housemates stay on the form", async ({ request }) => {
+        const stamp = Date.now();
+        const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+            name: `E2E Regalo ${stamp}`, email: `e2e-regalo-${stamp}@example.com`, phone: `25${String(stamp).slice(-8)}`, address: '1 Gift St',
+            intent: 'gift', giftRecipient: { relationship: 'child', firstName: 'Laura', lastName: 'Pérez', phone: '11 5555 1234' },
+            householdPeople: [{ relationship: 'partner', age: 30, firstName: 'Marcos', lastName: 'Gómez' }], livesAlone: false,
+        } });
+        expect(res.ok(), await res.text()).toBeTruthy();
+        const { submissionId } = await res.json();
+        const row = one(`SELECT auto_adopter_id, answers_json FROM form_submissions WHERE id = '${submissionId}'`);
+        expect(JSON.parse(String(row.answers_json)).giftRecipient).toMatchObject({ firstName: 'Laura', lastName: 'Pérez' });
+        const members = JSON.parse(String(one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`).household_members));
+        expect(members.map((m: { name: string }) => m.name)).toEqual(['Laura Pérez']);
+        expect(members[0]).toMatchObject({ relationship: 'child', giftRecipient: true });
+        expect(JSON.stringify(members[0].contactEntries)).toContain('11 5555 1234');
+    });
+
+    test('gift with a first-name-only recipient: nothing on the profile', async ({ request }) => {
+        const stamp = Date.now();
+        const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+            name: `E2E Regalo2 ${stamp}`, email: `e2e-regalo2-${stamp}@example.com`, phone: `26${String(stamp).slice(-8)}`, address: '2 Gift St',
+            intent: 'gift', giftRecipient: { relationship: 'sibling', firstName: 'Ana' },
+        } });
+        expect(res.ok(), await res.text()).toBeTruthy();
+        const { submissionId } = await res.json();
+        const row = one(`SELECT auto_adopter_id, answers_json FROM form_submissions WHERE id = '${submissionId}'`);
+        expect(JSON.parse(String(row.answers_json)).giftRecipient).toMatchObject({ firstName: 'Ana' });
+        const prof = one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`);
+        expect(isNull(prof.household_members) || JSON.parse(String(prof.household_members)).length === 0).toBe(true);
+    });
+
     test('a fresh submission with no look-alikes reads as a new profile, not as "linked"', async ({ page, request }) => {
         const stamp = Date.now();
         const name = `E2E Formlink Solo ${stamp}`;

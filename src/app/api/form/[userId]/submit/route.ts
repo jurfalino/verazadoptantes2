@@ -5,6 +5,7 @@ import { runAfterResponse } from '@/lib/background';
 import { deriveSpecialNeeds, sanitizeShownSteps } from '@/domain/adoptionDocs';
 import { isValidFormEmail } from '@/domain/formEmail';
 import { parseHouseholdPeople, childrenAnswer, fullName } from '@/domain/householdPeople';
+import { parseGiftRecipient, recipientFullName } from '@/domain/giftRecipient';
 import type { HouseholdMember } from '@/lib/householdMembers';
 
 export const runtime = 'edge';
@@ -44,6 +45,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         // "¿Quiénes viven en la casa?" (spec 2026-10-04). Re-parsed here: the
         // client can't put junk on a profile or lie about the children count.
         const householdPeople = parseHouseholdPeople(body.householdPeople);
+        // Gift flow (spec Part 2): the recipient is who will live with the
+        // animal. Re-parsed here; never kept on a "Para mí" submission.
+        const gift = body.intent === 'gift';
+        const recipient = gift ? parseGiftRecipient(body.giftRecipient) : null;
+        delete answers.giftRecipient;
+        if (recipient) answers.giftRecipient = recipient;
         if (Array.isArray(body.householdPeople) || body.livesAlone === true) {
             answers.householdPeople = householdPeople;
             answers.livesAlone = body.livesAlone === true && householdPeople.length === 0;
@@ -166,14 +173,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                 submissionId,
                 animalId: selectedAnimalId,
                 animalName: selectedAnimalName,
-                // Only fully named people become profile household members.
-                householdMembers: householdPeople.flatMap((p, i): HouseholdMember[] => {
-                    const memberName = fullName(p);
-                    return memberName ? [{
-                        id: `form-${submissionId}-${i}`, name: memberName, relationship: p.relationship, contactEntries: [],
-                        age: p.age, ageAsOf: new Date().toISOString().slice(0, 10), addedBy: 'form-submission',
-                    }] : [];
-                }),
+                householdMembers: [
+                    // Only fully named people become profile household members —
+                    // and in a gift, the people list is the RECIPIENT's home, not
+                    // the giver's household: those never reach the giver's profile.
+                    ...(gift ? [] : householdPeople.flatMap((p, i): HouseholdMember[] => {
+                        const memberName = fullName(p);
+                        return memberName ? [{
+                            id: `form-${submissionId}-${i}`, name: memberName, relationship: p.relationship, contactEntries: [],
+                            age: p.age, ageAsOf: new Date().toISOString().slice(0, 10), addedBy: 'form-submission',
+                        }] : [];
+                    })),
+                    // The gift's recipient, when fully named, on the giver's profile.
+                    ...(recipient && recipientFullName(recipient) ? [{
+                        id: `form-${submissionId}-recipient`, name: recipientFullName(recipient)!, relationship: recipient.relationship,
+                        giftRecipient: true, addedBy: 'form-submission',
+                        contactEntries: recipient.phone ? [{ id: crypto.randomUUID(), type: 'phone' as const, value: recipient.phone, addedBy: 'form-submission' }] : [],
+                    }] : []),
+                ],
             });
             adopterId = result.adopterId;
             matches = result.dupCandidates.map(c => ({

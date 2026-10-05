@@ -34,6 +34,8 @@ export interface HouseholdMember {
     age?: number;
     /** ISO day (YYYY-MM-DD) the age was given; only kept alongside `age`. */
     ageAsOf?: string;
+    /** The person a gift is for — the one who will live with the animal (spec Part 2 §9). */
+    giftRecipient?: boolean;
 }
 
 const AGE_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -102,6 +104,7 @@ export function deserializeHouseholdMembers(json: string | null | undefined): Ho
             : deriveMemberId(name, relationship ?? '', i);
         const member: HouseholdMember = { id, name: name.trim(), relationship, contactEntries };
         if (typeof m.addedBy === 'string' && m.addedBy.trim()) member.addedBy = m.addedBy.slice(0, 256);
+        if (m.giftRecipient === true) member.giftRecipient = true;
         const age = validAge(m.age);
         if (age !== undefined) {
             member.age = age;
@@ -126,6 +129,7 @@ export function serializeHouseholdMembers(members: HouseholdMember[] | null | un
             ...(m.addedBy ? { addedBy: m.addedBy } : {}),
             ...(validAge(m.age) !== undefined ? { age: m.age } : {}),
             ...(validAge(m.age) !== undefined && m.ageAsOf && AGE_DAY.test(m.ageAsOf) ? { ageAsOf: m.ageAsOf } : {}),
+            ...(m.giftRecipient === true ? { giftRecipient: true } : {}),
         }));
     return JSON.stringify(clean);
 }
