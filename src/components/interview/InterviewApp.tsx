@@ -98,6 +98,8 @@ export default function InterviewApp({ initialDrafts, fromAdopterId, resumeId }:
     const queue = useMemo(() => buildQueue(ctx), [ctx]);
     const known = useMemo(() => deriveKnownFacts(ctx, QUESTION_BANK), [ctx]);
     const current = (currentId && queue.some(i => i.id === currentId)) ? currentId : nextUpcomingId(queue);
+    // Pin the derived question: otherwise answering it re-derives "first upcoming" and the input jumps mid-answer.
+    useEffect(() => { if (phase === 'interview' && currentId === null && current) setCurrentId(current); }, [phase, currentId, current]);
 
     const { status, flush } = useInterviewAutosave({
         interviewId,

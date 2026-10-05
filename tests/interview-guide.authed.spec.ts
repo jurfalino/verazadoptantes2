@@ -58,6 +58,8 @@ test.describe('interview guide', () => {
 
         await expect(page.getByTestId('interview-question')).toBeVisible();
         await page.getByTestId('interview-choice-yes').click();
+        // Answering must not move the question under the user (es/pt '15 minutos', en '15 minutes').
+        await expect(page.getByTestId('interview-question')).toHaveText(/15 minut/);
         await page.getByTestId('interview-next').click();
         await page.getByTestId('interview-answer').fill('Por Instagram');
         await expect(page.getByTestId('interview-save-status')).toHaveText(/Guardado|Saved|Salvo/, { timeout: 15000 });
@@ -65,8 +67,9 @@ test.describe('interview guide', () => {
         await page.goto('/interview');
         await expect(page.getByTestId('interview-drafts')).toBeVisible({ timeout: 30000 });
         await page.getByTestId('interview-drafts').getByRole('button', { name: /^(Continuar|Continue)$/ }).first().click();
-        // The question answered before the reload shows its saved answer as the rail preview (the current item hides its preview).
-        await expect(page.getByTestId('interview-rail').locator('[data-testid^="interview-rail-item-"]').filter({ hasText: /Por Instagram/ })).toHaveCount(1, { timeout: 30000 });
+        // The typed answer landed on the 2nd question (how found); the current rail item hides its preview.
+        await expect(page.getByTestId('interview-rail-item-rapport_how_found')).toContainText(/Por Instagram/, { timeout: 30000 });
+        await expect(page.getByTestId('interview-rail').locator('[data-testid^="interview-rail-item-"]').filter({ hasText: /Por Instagram/ })).toHaveCount(1);
 
         await page.getByTestId('interview-finish').click();
         await page.getByTestId('interview-review-new').click();
