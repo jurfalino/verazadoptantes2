@@ -72,16 +72,22 @@ intent → children → existingPets → housingType.
 The stored config today is only `hiddenSteps`. The new step must be **opt-in**:
 older configs never mention it, so "hideable" alone would switch it on everywhere.
 
-- **New nullable column** `adoption_doc_settings.household_question`
-  (`'children' | 'people'`). `NULL` means `'children'`. Migration `0078`, additive.
-- **Resolution, shared by app and contract-app** (the mirror test keeps them equal):
-  - `'children'` → show `children`, never `household`.
-  - `'people'` → show `household`, never `children`.
-  - The row has **one** show/hide switch, stored as before: `'children'` in
-    `hiddenSteps` means "don't ask about the household", whichever question is
-    chosen. `'household'` is never written to `hiddenSteps`. A legacy config
-    that hid `children` therefore asks neither question, even after switching
-    to `'people'`.
+- **Stored in the existing `hidden_steps` list, no migration.** The list already
+  carries per-question state, with compare-and-swap saves, teammate conflict
+  messages, audit and "who changed it". The token `'household'` present in the
+  list means **"use the people list"**. Absent, which every existing config is,
+  means "¿Hay niños?". This replaces the separate `household_question` column
+  first sketched here: same behaviour, and none of the concurrency work
+  (v2.56.144) has to be redone for a second column.
+- **Resolution, shared by app and contract-app** (the mirror test keeps them equal),
+  `formStepsToAsk(schema, stored)`:
+  - `'household'` absent → ask `children`, never `household`.
+  - `'household'` present → ask `household`, never `children`.
+  - The row has **one** show/hide switch, stored as before: `'children'` in the
+    list means "don't ask about the household", whichever question is chosen.
+    A legacy config that hid `children` therefore asks neither question.
+  - Answer stripping before submit treats `'household'` as a choice, not a
+    hide. It must never delete `householdPeople`.
 - **Settings UI:** in the "Hogar" group, the children row becomes a choice:
   "¿Hay niños? (simple)" / "Personas del hogar (detallado)", next to the
   existing show/hide toggle.
