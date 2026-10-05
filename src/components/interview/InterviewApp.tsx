@@ -17,6 +17,7 @@ import InterviewTechnique, { techniqueHidden } from './InterviewTechnique';
 import InterviewRail from './InterviewRail';
 import InterviewFocusPanel from './InterviewFocusPanel';
 import InterviewReview from './InterviewReview';
+import { candidateRefreshOutcome } from './refreshOutcome';
 
 type Phase = 'loading' | 'prep' | 'technique' | 'interview' | 'review';
 
@@ -128,7 +129,14 @@ export default function InterviewApp({ initialDrafts, fromAdopterId, resumeId }:
             try {
                 if (!(await flush())) return;
                 const r = await refreshInterviewCandidates(interviewId);
-                if (!active || !r.ok) return;
+                if (!active) return;
+                const outcome = candidateRefreshOutcome(r);
+                if (outcome === 'report' && !r.ok) {
+                    // Once per identifier signature (this effect runs once per signature): never silent, never spammy.
+                    toast.error(t('interview.load_failed'), undefined, r.errorId);
+                    return;
+                }
+                if (!r.ok) return;
                 setCandidates(prev => {
                     const before = new Set(prev.map(c => c.adopterId));
                     const added = r.candidates.filter(c => !before.has(c.adopterId)).map(c => c.adopterId);
@@ -140,7 +148,7 @@ export default function InterviewApp({ initialDrafts, fromAdopterId, resumeId }:
             }
         }, 1000);
         return () => { active = false; clearTimeout(timer); };
-    }, [signature, interviewId, phase, flush, fail, t]);
+    }, [signature, interviewId, phase, flush, fail, t, toast]);
 
     const recordAnswer = useCallback((id: string, a: Answer | null) => {
         const keep = a && (a.status !== 'answered' || answerHasContent(a));
