@@ -77,6 +77,7 @@ export function InlineEditField({
             disabled: busy,
             placeholder,
             'aria-label': ariaLabel,
+            'data-testid': editButtonTestId ? `${editButtonTestId}-input` : undefined,
             autoFocus: true,
             onChange: (e: React.ChangeEvent<HTMLInputElement & HTMLTextAreaElement>) => setDraft(e.target.value),
             onKeyDown: (e: React.KeyboardEvent) => {
@@ -101,6 +102,7 @@ export function InlineEditField({
                     <button
                         type="button"
                         onClick={commit}
+                        data-testid={editButtonTestId ? `${editButtonTestId}-save` : undefined}
                         disabled={busy || (required && !draft.trim())}
                         className="inline-flex items-center gap-1 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
                     >

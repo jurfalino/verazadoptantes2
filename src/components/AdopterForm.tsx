@@ -853,6 +853,8 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
     const conflictFor = (field: 'name' | 'familyMembers') => {
         const c = fieldConflicts[field];
         if (!c) return undefined;
+        // A render callback, not a component.
+        // eslint-disable-next-line react/display-name
         return (draft: string, close: () => void) => (
             <FieldConflictNotice
                 field={field}
@@ -895,6 +897,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
             canEdit={canEdit}
             multiline
             onSave={(next) => saveField('familyMembers', next)}
+            editButtonTestId="family-edit-btn"
             renderConflict={conflictFor('familyMembers')}
             badge={updatedBadgeFor('familyMembers')}
             placeholder={t('adopter.placeholder_family')}
