@@ -61,4 +61,30 @@ test.describe('household question choice', () => {
         await page.getByTestId('adoption-docs-save-form').click();
         await expect.poll(stored, { timeout: 15_000 }).toEqual(expect.arrayContaining(['children', 'household']));
     });
+
+    test('the phone is required by default; "Obligatorio" off makes it optional on the public form, and back on', async ({ page, request }) => {
+        execD1(`UPDATE adoption_doc_settings SET hidden_steps = NULL WHERE ${OWNER}`);
+        await page.goto('/settings/adoption-docs');
+        await dismissCountryBanner(page);
+        const required = page.getByTestId('form-step-phone-required');
+        await expect(required).toHaveAttribute('aria-checked', 'true', { timeout: 30_000 });
+        await dismissCountryBanner(page);
+
+        await required.click();
+        await expect(required).toHaveAttribute('aria-checked', 'false');
+        await page.getByTestId('adoption-docs-save-form').click();
+        await expect.poll(stored, { timeout: 15_000 }).toEqual(['phone-optional']);
+        const cfg = await (await request.get('/api/form/test-admin-id')).json();
+        expect(cfg.formConfig.hiddenSteps).toContain('phone-optional');
+
+        // Another question's switch keeps the option.
+        await page.getByTestId('form-step-intent').click();
+        await page.getByTestId('adoption-docs-save-form').click();
+        await expect.poll(stored, { timeout: 15_000 }).toEqual(['intent', 'phone-optional']);
+
+        await required.click();
+        await page.getByTestId('form-step-intent').click();
+        await page.getByTestId('adoption-docs-save-form').click();
+        await expect.poll(stored, { timeout: 15_000 }).toEqual([]);
+    });
 });

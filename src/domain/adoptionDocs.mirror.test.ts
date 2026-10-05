@@ -16,6 +16,10 @@ describe('contract-app mirror', () => {
         const { DERIVED_FORM_STEPS } = await import('./adoptionDocs');
         expect(ids('DERIVED_FORM_STEPS')).toEqual([...DERIVED_FORM_STEPS]);
     });
+    it('FORM_OPTION_TOKENS match', async () => {
+        const { FORM_OPTION_TOKENS } = await import('./adoptionDocs');
+        expect(ids('FORM_OPTION_TOKENS')).toEqual([...FORM_OPTION_TOKENS]);
+    });
     it('FORM_RELATIONSHIPS match', async () => {
         const { FORM_RELATIONSHIPS } = await import('./householdPeople');
         expect(ids('FORM_RELATIONSHIPS')).toEqual([...FORM_RELATIONSHIPS]);

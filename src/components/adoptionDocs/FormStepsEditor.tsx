@@ -7,7 +7,7 @@
  */
 
 import { useLanguage } from '@/context/LanguageContext';
-import { FORM_STEP_GROUPS, FORM_STEP_IDS, LOCKED_FORM_STEPS, DERIVED_FORM_STEPS, householdQuestion, isStepAsked } from '@/domain/adoptionDocs';
+import { FORM_STEP_GROUPS, FORM_STEP_IDS, LOCKED_FORM_STEPS, DERIVED_FORM_STEPS, householdQuestion, isStepAsked, isPhoneRequired, inFormOrder } from '@/domain/adoptionDocs';
 
 const LOCKED = new Set<string>(LOCKED_FORM_STEPS);
 
@@ -26,6 +26,19 @@ function LockIcon() {
             <rect x="5" y="11" width="14" height="10" rx="2" />
             <path d="M8 11V7a4 4 0 0 1 8 0v4" />
         </svg>
+    );
+}
+
+/** The switch's track + thumb; the button around it carries role and state. */
+function SwitchTrack({ on }: { on: boolean }) {
+    return (
+        <span
+            aria-hidden="true"
+            className={`relative inline-flex h-6 w-10 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out ${on ? 'bg-teal-600' : 'bg-stone-300'}`}
+        >
+            {/* 4px: half-grid exception (toggle thumb offset) */}
+            <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ease-in-out ${on ? 'translate-x-5' : 'translate-x-1'}`} />
+        </span>
     );
 }
 
@@ -63,21 +76,29 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
     const toggle = (id: string) => {
         const next = new Set(hiddenSet);
         if (next.has(id)) next.delete(id); else next.add(id);
-        // Keep form order so the saved list is stable.
-        onChange(FORM_STEP_IDS.filter(s => next.has(s)));
+        // Keep form order (options last) so the saved list is stable.
+        onChange(inFormOrder(next));
     };
 
     const choose = (people: boolean) => {
-        onChange(FORM_STEP_IDS.filter(s => (s === 'household' ? people : hiddenSet.has(s))));
+        const next = new Set(hiddenSet);
+        if (people) next.add('household'); else next.delete('household');
+        onChange(inFormOrder(next));
     };
+
+    const phoneRequired = isPhoneRequired(hidden);
 
     const conflictBanner = (key: string, conflict: StepConflictView) => (
         <div role="alert" className="mx-2 mt-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 space-y-1" data-testid={`form-step-${key}-conflict`}>
             <p className="text-xs text-amber-900">
                 {capitalize(t('adoptionDocs.step_conflict')
                     .replace('{name}', name(conflict.by))
-                    .replace('{state}', t(conflict.theirs === 'hidden' ? 'adoptionDocs.step_state_hidden' : 'adoptionDocs.step_state_shown')))}
+                    .replace('{state}', t(key === 'phone-optional'
+                        // The phone is always asked; this option only says whether it must be answered.
+                        ? (conflict.theirs === 'hidden' ? 'adoptionDocs.phone_state_optional' : 'adoptionDocs.phone_state_required')
+                        : (conflict.theirs === 'hidden' ? 'adoptionDocs.step_state_hidden' : 'adoptionDocs.step_state_shown'))))}
                 {key === 'household' && <> ({label('household')})</>}
+                {key === 'phone-optional' && <> ({t('adoptionDocs.phone_required_question')})</>}
             </p>
             <div className="flex flex-wrap gap-2">
                 <button type="button" disabled={saving} onClick={() => onKeepTheirs?.(key)} className="min-h-11 px-2 text-xs font-semibold text-teal-700 hover:underline disabled:opacity-40" data-testid={`form-step-${key}-keep-theirs`}>
@@ -111,15 +132,44 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
         </div>
     );
 
+    /** Under the phone row: always asked, but answering it can be optional (spec Part 3). */
+    const phoneRequirement = () => (
+        <>
+            {conflicts['phone-optional'] && conflictBanner('phone-optional', conflicts['phone-optional'])}
+            {updatedBy['phone-optional'] !== undefined && !conflicts['phone-optional'] && (
+                <p className="px-4 pt-2 text-xs font-semibold text-teal-700" data-testid="form-step-phone-optional-updated-by">
+                    {t('adoptionDocs.updated_by').replace('{name}', name(updatedBy['phone-optional']))}
+                </p>
+            )}
+            <button
+                type="button"
+                role="switch"
+                aria-checked={phoneRequired}
+                onClick={() => toggle('phone-optional')}
+                className="w-full flex items-center justify-between gap-4 min-h-11 pl-8 pr-4 py-2 text-left rounded-xl hover:bg-stone-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 transition-colors"
+                data-testid="form-step-phone-required"
+            >
+                <span className={`text-sm ${phoneRequired ? 'text-stone-900' : 'text-stone-500'}`}>{t('adoptionDocs.phone_required')}</span>
+                <SwitchTrack on={phoneRequired} />
+            </button>
+        </>
+    );
+
     const row = (id: string) => {
         if (LOCKED.has(id)) {
-            return (
-                <li key={id} className="flex items-center justify-between gap-4 min-h-11 px-4 py-2" data-testid={`form-step-${id}`}>
+            const locked = (
+                <div className="flex items-center justify-between gap-4 min-h-11 px-4 py-2" data-testid={`form-step-${id}`}>
                     <span className="text-sm font-medium text-stone-700">{label(id)}</span>
                     <span className="inline-flex items-center gap-2 text-xs font-semibold text-stone-500 shrink-0">
                         <LockIcon />
                         {t('adoptionDocs.always_asked')}
                     </span>
+                </div>
+            );
+            return (
+                <li key={id}>
+                    {locked}
+                    {id === 'identity-phone' && phoneRequirement()}
                 </li>
             );
         }
@@ -148,13 +198,7 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
                     data-testid={`form-step-${id}`}
                 >
                     <span className={`text-sm font-medium ${on ? 'text-stone-900' : 'text-stone-500'}`}>{label(id)}</span>
-                    <span
-                        aria-hidden="true"
-                        className={`relative inline-flex h-6 w-10 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out ${on ? 'bg-teal-600' : 'bg-stone-300'}`}
-                    >
-                        {/* 4px: half-grid exception (toggle thumb offset) */}
-                        <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ease-in-out ${on ? 'translate-x-5' : 'translate-x-1'}`} />
-                    </span>
+                    <SwitchTrack on={on} />
                 </button>
                 {id === 'children' && on && householdChoice()}
             </li>

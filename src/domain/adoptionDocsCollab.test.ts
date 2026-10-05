@@ -74,3 +74,14 @@ describe('attribution', () => {
         expect(stepAuthor('q3', 'shown', rows)).toBeNull();
     });
 });
+
+describe('the phone option rides the per-question saves', () => {
+    it('mergeHidden never drops the phone option', () => {
+        expect(mergeHidden(['phone-optional'], [{ key: 'intent', hidden: true }])).toEqual(['intent', 'phone-optional']);
+        expect(mergeHidden(['intent'], [{ key: 'phone-optional', hidden: true }])).toEqual(['intent', 'phone-optional']);
+    });
+    it('has a state of its own, so a teammate\'s change to it is a conflict like any question', () => {
+        expect(stepStates(['phone-optional'])['phone-optional']).toBe('hidden');
+        expect(stepStates([])['phone-optional']).toBe('shown');
+    });
+});

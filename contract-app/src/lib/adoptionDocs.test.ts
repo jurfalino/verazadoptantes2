@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { FORM_STEP_IDS, applyHiddenSteps, restoreStepIndex, stripHiddenAnswers, buildSubmitBody, draftKey, resolveDraft, isValidCustomContract, contractVersionLabel, customSectionFor, STANDARD_CONTRACT_VERSION, fnv1a, type CustomContract, type RichDoc } from './adoptionDocs'
+import { FORM_STEP_IDS, applyHiddenSteps, restoreStepIndex, stripHiddenAnswers, buildSubmitBody, draftKey, resolveDraft, isValidCustomContract, contractVersionLabel, customSectionFor, STANDARD_CONTRACT_VERSION, fnv1a, isPhoneRequired, withPhoneRequirement, type CustomContract, type RichDoc } from './adoptionDocs'
 
 const schema = FORM_STEP_IDS.map(id => ({ id }))
 
@@ -235,5 +235,29 @@ describe('gift step (derived)', () => {
         const body = buildSubmitBody({ intent: 'self', giftRecipient: { firstName: 'L' }, hasOutdoor: 'unknown' }, [], null, [{ id: 'intent' }])
         expect(body.giftRecipient).toBeUndefined()
         expect(body.hasOutdoor).toBeUndefined()
+    })
+})
+
+describe('isPhoneRequired', () => {
+    it('required by default — and when the config could not be loaded', () => {
+        expect(isPhoneRequired([])).toBe(true)
+        expect(isPhoneRequired(null)).toBe(true)
+        expect(isPhoneRequired(undefined)).toBe(true)
+    })
+    it('optional only when the rescuer turned it off', () => {
+        expect(isPhoneRequired(['phone-optional'])).toBe(false)
+    })
+})
+
+describe('withPhoneRequirement', () => {
+    const phoneStep = { id: 'identity-phone', fields: [{ name: 'phone', label: 'Tel' }] }
+    const other = { id: 'intent' }
+    it('marks the phone field required by default and while the config loads', () => {
+        expect(withPhoneRequirement([other, phoneStep], null)[1]).toEqual({ id: 'identity-phone', fields: [{ name: 'phone', label: 'Tel', required: true }] })
+    })
+    it('leaves it optional when the rescuer turned it off; other steps untouched', () => {
+        const out = withPhoneRequirement([other, phoneStep], ['phone-optional'])
+        expect(out[0]).toBe(other)
+        expect(out[1].fields?.[0].required).toBe(false)
     })
 })

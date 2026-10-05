@@ -47,6 +47,24 @@ export function formStepsToAsk<T extends { id: string }>(schema: T[], stored: re
     })
 }
 
+/** Per-form options in the same stored list (mirror of the app's FORM_OPTION_TOKENS). */
+export const FORM_OPTION_TOKENS = ['phone-optional'] as const
+
+/** The phone is required unless the rescuer turned it off — also when the config couldn't load (null). */
+export function isPhoneRequired(stored: readonly string[] | null | undefined): boolean {
+    return !(stored ?? []).includes('phone-optional')
+}
+
+/** The schema with the phone field's `required` set from the stored list (spec Part 3). */
+export function withPhoneRequirement<T extends { id: string; fields?: Array<{ name: string; required?: boolean }> }>(
+    schema: T[], stored: readonly string[] | null | undefined,
+): T[] {
+    const required = isPhoneRequired(stored)
+    return schema.map(s => s.id === 'identity-phone' && s.fields
+        ? { ...s, fields: s.fields.map(f => (f.name === 'phone' ? { ...f, required } : f)) }
+        : s)
+}
+
 /** Steps that exist only because of an earlier answer (mirror of the app's DERIVED_FORM_STEPS). */
 export const DERIVED_FORM_STEPS = ['giftRecipient'] as const
 const DERIVED = new Set<string>(DERIVED_FORM_STEPS)

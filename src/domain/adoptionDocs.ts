@@ -23,11 +23,26 @@ export const LOCKED_FORM_STEPS = ['legal', 'identity-name', 'identity-email', 'i
  */
 export const DERIVED_FORM_STEPS = ['giftRecipient'] as const;
 
+/**
+ * Per-form options stored in the same hidden_steps list (spec Part 3):
+ * 'phone-optional' lets an applicant leave the phone blank — absent (every
+ * existing config) means the phone is required. Not questions: never counted
+ * or shown, and they sort after the steps. Toggleable, so a teammate's change
+ * is a per-key conflict like any question.
+ */
+export const FORM_OPTION_TOKENS = ['phone-optional'] as const;
+
 const LOCKED = new Set<string>(LOCKED_FORM_STEPS);
 const DERIVED = new Set<string>(DERIVED_FORM_STEPS);
 const KNOWN = new Set<string>(FORM_STEP_IDS.filter(id => !DERIVED.has(id)));
+const OPTIONS = new Set<string>(FORM_OPTION_TOKENS);
 
-export const TOGGLEABLE_FORM_STEPS = FORM_STEP_IDS.filter(id => !LOCKED.has(id) && !DERIVED.has(id));
+export const TOGGLEABLE_FORM_STEPS: readonly string[] = [...FORM_STEP_IDS.filter(id => !LOCKED.has(id) && !DERIVED.has(id)), ...FORM_OPTION_TOKENS];
+
+/** Whether the applicant must give a phone — the default; 'phone-optional' turns it off. */
+export function isPhoneRequired(hidden: readonly string[]): boolean {
+    return !hidden.includes('phone-optional');
+}
 
 export const FORM_STEP_GROUPS = [
     { key: 'what', steps: ['species', 'lifeStage', 'specialNeeds', 'intent'] },
@@ -36,14 +51,15 @@ export const FORM_STEP_GROUPS = [
     { key: 'person', steps: ['identity-name', 'identity-email', 'identity-phone', 'identity-address', 'ageRange', 'geo', 'selfie'] },
 ] as const;
 
-function inFormOrder(ids: Set<string>): string[] {
-    return FORM_STEP_IDS.filter(id => ids.has(id));
+/** Steps in form order, then option tokens. */
+export function inFormOrder(ids: ReadonlySet<string>): string[] {
+    return [...FORM_STEP_IDS.filter(id => ids.has(id)), ...FORM_OPTION_TOKENS.filter(id => ids.has(id))];
 }
 
 export function sanitizeHiddenSteps(input: unknown): string[] {
     if (!Array.isArray(input)) return [];
     const keep = new Set<string>();
-    for (const v of input) if (typeof v === 'string' && KNOWN.has(v) && !LOCKED.has(v)) keep.add(v);
+    for (const v of input) if (typeof v === 'string' && ((KNOWN.has(v) && !LOCKED.has(v)) || OPTIONS.has(v))) keep.add(v);
     return inFormOrder(keep);
 }
 

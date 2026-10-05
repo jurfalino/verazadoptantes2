@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } fr
 import './petshield.css'
 import { useT } from './i18n/LocaleContext'
 import {
-    FORM_STEP_IDS, formStepsToAsk, stepsForAnswers, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody, childrenAnswer,
+    FORM_STEP_IDS, formStepsToAsk, withPhoneRequirement, stepsForAnswers, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody, childrenAnswer,
 } from './lib/adoptionDocs'
 import GiftRecipient, { type Recipient } from './components/GiftRecipient'
 import { adaptStepForGift, isGift, recipientFirstName } from './lib/giftFlow'
@@ -556,9 +556,9 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     const baseSchema = animalId
         ? DEFAULT_SCHEMA.filter(s => !ANIMAL_QUESTION_STEPS.includes(s.id as typeof ANIMAL_QUESTION_STEPS[number]))
         : DEFAULT_SCHEMA
-    // Same reference when hiddenSteps is null/empty (no config, or flag off) —
-    // never removes a locked step even if the server sends a bad/forged one.
-    const configSchema = formStepsToAsk(baseSchema, hiddenSteps)
+    // Never removes a locked step even if the server sends a bad/forged one.
+    // The phone is required unless the rescuer made it optional (null → required).
+    const configSchema = withPhoneRequirement(formStepsToAsk(baseSchema, hiddenSteps), hiddenSteps)
     const DRAFT_KEY = draftKey(userId, animalId)
 
     // ── State ──

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { withCors, corsPreflightResponse } from '@/lib/cors';
 import { runAfterResponse } from '@/lib/background';
-import { deriveSpecialNeeds, sanitizeShownSteps } from '@/domain/adoptionDocs';
+import { deriveSpecialNeeds, sanitizeShownSteps, isPhoneRequired } from '@/domain/adoptionDocs';
 import { isValidFormEmail } from '@/domain/formEmail';
 import { parseHouseholdPeople, childrenAnswer, fullName } from '@/domain/householdPeople';
 import { parseGiftRecipient, recipientFullName } from '@/domain/giftRecipient';
@@ -91,6 +91,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             return withCors(NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 }), origin);
         }
         const rescuerEmail = user.email;
+
+        // Spec Part 3: the phone is required unless the rescuer made it
+        // optional. Never refused here — a tab opened before the switch
+        // changed must still get through — only logged, so a client that
+        // skips its own check shows up.
+        if (!phone) {
+            const { resolveDocsForRescuer } = await import('@/lib/adoptionDocsRepo');
+            const resolved = await resolveDocsForRescuer(db, rescuerEmail);
+            if (isPhoneRequired(resolved?.hiddenSteps ?? [])) logger.warn('form submit: phone missing on a phone-required form', { userId });
+        }
 
         // Upload selfie to R2 (if provided)
         let selfieUrl: string | null = null;

@@ -4,7 +4,7 @@ import {
     sanitizeHiddenSteps, sanitizeShownSteps, parseDocsSource, serializeDocsSource,
     resolveDocsOwner, normalizeRichDoc, normalizeSections, isStandardSections,
     canonicalSectionsJson, planContractSave, deriveSpecialNeeds, richDocSchema,
-    contractSectionsSchema, isContractVersionOwnedBy, parseStoredHiddenSteps, type RichDoc,
+    contractSectionsSchema, isContractVersionOwnedBy, parseStoredHiddenSteps, isPhoneRequired, FORM_OPTION_TOKENS, type RichDoc,
 } from './adoptionDocs';
 
 const doc = (...texts: string[]): RichDoc => ({ type: 'doc', content: texts.map(t => ({ type: 'paragraph', content: [{ text: t }] })) });
@@ -20,11 +20,22 @@ describe('form steps', () => {
     });
     it('locks terms + identity', () => {
         expect(LOCKED_FORM_STEPS).toEqual(['legal', 'identity-name', 'identity-email', 'identity-phone', 'identity-address']);
-        expect(TOGGLEABLE_FORM_STEPS).toHaveLength(19);
+        expect(TOGGLEABLE_FORM_STEPS).toHaveLength(20); // 19 questions + the phone option
     });
     it('groups cover every toggleable step exactly once', () => {
         const all = (FORM_STEP_GROUPS.flatMap(g => g.steps) as string[]).filter(s => !(LOCKED_FORM_STEPS as readonly string[]).includes(s));
-        expect([...all].sort()).toEqual([...TOGGLEABLE_FORM_STEPS].sort());
+        expect([...all, ...FORM_OPTION_TOKENS].sort()).toEqual([...TOGGLEABLE_FORM_STEPS].sort());
+    });
+    it('phone is required unless the token is present', () => {
+        expect(isPhoneRequired([])).toBe(true);
+        expect(isPhoneRequired(['phone-optional'])).toBe(false);
+    });
+    it('the sanitiser keeps the option token, after the steps, and drops unknown ones', () => {
+        expect(sanitizeHiddenSteps(['phone-optional', 'intent', 'bogus'])).toEqual(['intent', 'phone-optional']);
+        expect(parseStoredHiddenSteps('["phone-optional"]').steps).toEqual(['phone-optional']);
+    });
+    it('a shown-steps list is questions only — never the option token', () => {
+        expect(sanitizeShownSteps(['intent', 'phone-optional'])).toEqual(['intent']);
     });
     it('sanitizeHiddenSteps drops unknown, locked, duplicates and non-strings; keeps form order', () => {
         expect(sanitizeHiddenSteps(['selfie', 'legal', 'nope', 'children', 'selfie', 3])).toEqual(['children', 'selfie']);
