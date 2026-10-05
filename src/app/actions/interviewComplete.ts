@@ -12,7 +12,9 @@ import { getDb, getUser } from './_db';
 import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
 import { safeError } from '@/lib/interviews/safeError';
-import { adopters, interviews } from '@/db/schema';
+import { adopterEvents, adopters, interviews } from '@/db/schema';
+import { deserializeHouseholdMembers } from '@/lib/householdMembers';
+import { normalizeText } from '@/lib/tokenizer';
 import { buildContactEntries } from '@/lib/contactEntries';
 import { contactKey, deriveKnownFacts } from '@/domain/interview/facts';
 import { QUESTION_BANK } from '@/domain/interview/bank';
@@ -60,6 +62,9 @@ export async function completeInterview(interviewId: string, input: CompleteInpu
         const { addHouseholdMember } = await import('./householdMembers');
         const { saveAdoption } = await import('./adoptions');
 
+        // A retry must resolve to the profile this interview already chose.
+        if (s.adopterId && target !== 'new' && target !== s.adopterId) return { ok: false, error: 'invalid' };
+
         // 1. Target profile.
         let adopterId = s.adopterId;
         let created = false;
@@ -86,7 +91,12 @@ export async function completeInterview(interviewId: string, input: CompleteInpu
                     const r = await appendToExistingAdopter(adopterId, { contactEntries: entriesJson(), ...(address ? { addressInfo: address } : {}) });
                     if (!r.success) logger.warn('interviews.complete: append refused', { interviewId: id, adopterId, error: r.error });
                 }
-                for (const h of household) {
+                // addHouseholdMember always appends, so a retry must skip people already there.
+                const rawRow = created ? null : await db.select({ hm: adopters.householdMembers }).from(adopters).where(eq(adopters.id, adopterId)).get();
+                const present = deserializeHouseholdMembers(rawRow?.hm ?? null);
+                const have = (h: { name: string; relationship: string }) =>
+                    present.some(m => normalizeText(m.name.trim()) === normalizeText(h.name.trim()) && m.relationship === h.relationship);
+                for (const h of household.filter(h => !have(h))) {
                     const r = await addHouseholdMember({ adopterId, name: h.name, relationship: h.relationship });
                     if (!r.ok) logger.warn('interviews.complete: household add refused', { interviewId: id, adopterId });
                 }
@@ -95,10 +105,15 @@ export async function completeInterview(interviewId: string, input: CompleteInpu
 
         // 3. The observation that anchors the interview on the timeline (D8).
         if (!s.eventId) {
-            const res = await saveAdoption({
-                id: crypto.randomUUID(), recordType: 'observation', adopterId, rating: rating ?? null, details: summary?.trim() || null, date: new Date(),
-            });
-            await db.update(interviews).set({ eventId: res.id, updatedAt: new Date() }).where(eq(interviews.id, id));
+            // Deterministic id: a retry after a partial failure finds the row instead of minting a second one.
+            const eventId = `${id}-obs`;
+            const existing = await db.select({ id: adopterEvents.id }).from(adopterEvents).where(eq(adopterEvents.id, eventId)).get();
+            if (!existing) {
+                await saveAdoption({
+                    id: eventId, recordType: 'observation', adopterId, rating: rating ?? null, details: summary?.trim() || null, date: new Date(),
+                });
+            }
+            await db.update(interviews).set({ eventId, updatedAt: new Date() }).where(eq(interviews.id, id));
         }
 
         // 4. Done — last.

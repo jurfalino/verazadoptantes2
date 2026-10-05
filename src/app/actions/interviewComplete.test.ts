@@ -3,7 +3,7 @@ import { migratedDb } from '@/test-utils/migratedDb';
 import { session, getUser, isAdmin, isOrgMate, isOwnerOrOrgMate, OWNER, STRANGER } from '@/test-utils/actionMocks';
 
 const { state, calls } = vi.hoisted(() => ({
-    state: { db: null as unknown, flag: true, failObservation: false },
+    state: { sqlite: null as unknown, db: null as unknown, flag: true, failObservation: false, failAfterInsert: false },
     calls: { saveAdopter: [] as unknown[], append: [] as unknown[], household: [] as unknown[], saveAdoption: [] as unknown[] },
 }));
 vi.mock('./_db', () => ({ getDb: async () => state.db, getUser }));
@@ -20,7 +20,14 @@ vi.mock('./householdMembers', () => ({
 vi.mock('./adoptions', () => ({
     saveAdoption: vi.fn(async (d: unknown) => {
         if (state.failObservation) throw new Error('D1 down');
-        calls.saveAdoption.push(d); return { success: true, id: 'ev-1' };
+        calls.saveAdoption.push(d);
+        const dd = d as { id: string; adopterId: string };
+        if (state.failAfterInsert) {
+            state.failAfterInsert = false;
+            (state.sqlite as Sqlite).prepare(`INSERT INTO adopter_events (id, adopter_id, event_type) VALUES (?, ?, 'observation')`).run(dd.id, dd.adopterId);
+            throw new Error('post-insert failure');
+        }
+        return { success: true, id: dd.id };
     }),
 }));
 
@@ -48,8 +55,8 @@ const ADD = {
 
 beforeEach(() => {
     const m = migratedDb();
-    state.db = m.db; sqlite = m.sqlite as unknown as Sqlite;
-    state.flag = true; state.failObservation = false;
+    state.db = m.db; state.sqlite = m.sqlite; sqlite = m.sqlite as unknown as Sqlite;
+    state.flag = true; state.failObservation = false; state.failAfterInsert = false;
     for (const k of Object.keys(calls) as (keyof typeof calls)[]) calls[k] = [];
     session.user = OWNER;
     sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, deleted_at, is_demo) VALUES ('a-owned', 'Juan', '5', ?, 1, 1, NULL, 0)`).run(OWNER);
@@ -65,7 +72,7 @@ describe('completeInterview', () => {
         expect(calls.household).toEqual([{ adopterId: 'new-1', name: 'Ana', relationship: 'partner' }]);
         expect(calls.saveAdoption[0]).toMatchObject({ recordType: 'observation', adopterId: 'new-1', rating: 4, details: 'Buena predisposición' });
         const row = sqlite.prepare(`SELECT status, adopter_id, event_id FROM interviews WHERE id = 'i1'`).get()!;
-        expect(row).toEqual({ status: 'completed', adopter_id: 'new-1', event_id: 'ev-1' });
+        expect(row).toEqual({ status: 'completed', adopter_id: 'new-1', event_id: 'i1-obs' });
     });
 
     it('a retry after a failed observation does not create a second profile', async () => {
@@ -120,5 +127,41 @@ describe('completeInterview', () => {
         seedDraft();
         session.user = STRANGER;
         expect(await completeInterview('i1', { adopterId: 'new', additions: ADD, rating: null, summary: null })).toEqual({ ok: false, error: 'forbidden' });
+    });
+
+    it('a retry after the observation row landed but the call threw writes exactly one observation', async () => {
+        seedDraft();
+        state.failAfterInsert = true;
+        const first = await completeInterview('i1', { adopterId: 'a-owned', additions: ADD, rating: null, summary: null });
+        expect(first.ok).toBe(false);
+        const second = await completeInterview('i1', { adopterId: 'a-owned', additions: ADD, rating: null, summary: null });
+        expect(second).toEqual({ ok: true, adopterId: 'a-owned' });
+        expect(calls.saveAdoption).toHaveLength(1);
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopter_events WHERE id = 'i1-obs'`).get()).toEqual({ n: 1 });
+        expect(sqlite.prepare(`SELECT status, event_id FROM interviews WHERE id = 'i1'`).get()).toEqual({ status: 'completed', event_id: 'i1-obs' });
+    });
+
+    it('a retry does not add household members already on the profile', async () => {
+        seedDraft();
+        state.failObservation = true;
+        await completeInterview('i1', { adopterId: 'a-owned', additions: ADD, rating: null, summary: null });
+        expect(calls.household).toHaveLength(1);
+        // Simulate the real append the mock skipped.
+        sqlite.prepare(`UPDATE adopters SET household_members = ? WHERE id = 'a-owned'`).run(JSON.stringify([{ id: 'm1', name: 'ANA ', relationship: 'partner', contactEntries: [] }]));
+        state.failObservation = false;
+        const r = await completeInterview('i1', { adopterId: 'a-owned', additions: ADD, rating: null, summary: null });
+        expect(r.ok).toBe(true);
+        expect(calls.household).toHaveLength(1);
+    });
+
+    it('a retry that names a different candidate than the one already chosen is refused before any write', async () => {
+        seedDraft({ candidateIds: ['a-owned', 'a-foreign'] });
+        state.failObservation = true;
+        await completeInterview('i1', { adopterId: 'a-owned', additions: ADD, rating: null, summary: null });
+        state.failObservation = false;
+        const appends = calls.append.length;
+        expect(await completeInterview('i1', { adopterId: 'a-foreign', additions: ADD, rating: null, summary: null })).toEqual({ ok: false, error: 'invalid' });
+        expect(calls.append).toHaveLength(appends);
+        expect(calls.saveAdoption).toEqual([]);
     });
 });
