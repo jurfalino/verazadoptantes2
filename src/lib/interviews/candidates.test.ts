@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toCandidateSummary, storedFactValues } from './candidates';
+import { toCandidateSummary, storedFactValues, storedFactKinds } from './candidates';
 import type { DiscoveryMatch } from '@/app/actions/types';
 
 function match(over: Partial<Omit<DiscoveryMatch, 'adopter'>> & { adopter?: Partial<DiscoveryMatch['adopter']> } = {}): DiscoveryMatch {
@@ -18,7 +18,7 @@ describe('toCandidateSummary', () => {
         const s = toCandidateSummary(match({ adopter: {
             contactEntries: JSON.stringify([{ type: 'phone', value: '+5491165851333' }, { type: 'email', value: 'j@x.com' }]),
             addressInfo: 'Rivadavia 4500',
-        } }), { viewerIsAdmin: false });
+        } }), { canEdit: false });
         expect(s.stored.sort()).toEqual(['address', 'emails', 'phones']);
         expect(s.visible.phones).toEqual(['+5491165851333']);
         expect(s.visible.address).toEqual(['Rivadavia 4500']);
@@ -30,7 +30,7 @@ describe('toCandidateSummary', () => {
         const s = toCandidateSummary(match({ contactProtected: true, adopter: {
             contactEntries: JSON.stringify([{ type: 'phone', value: '11••••1333', masked: true }, { type: 'social', value: '@juanp' }]),
             addressInfo: 'Riv••••',
-        } }), { viewerIsAdmin: false });
+        } }), { canEdit: false });
         expect(s.stored.sort()).toEqual(['address', 'phones', 'socials']);
         expect(s.visible.phones).toBeUndefined();
         expect(s.visible.address).toBeUndefined();
@@ -38,15 +38,16 @@ describe('toCandidateSummary', () => {
     });
 
     it('a protected profile never falls back to parsing the masked contactInfo blob', () => {
-        const s = toCandidateSummary(match({ contactProtected: true, adopter: { contactEntries: null, contactInfo: 'Tel: 11••••1333' } }), { viewerIsAdmin: false });
+        const s = toCandidateSummary(match({ contactProtected: true, adopter: { contactEntries: null, contactInfo: 'Tel: 11••••1333' } }), { canEdit: false });
         expect(s.visible).toEqual({});
     });
 
-    it('canEdit for own/team profiles and admins only', () => {
-        expect(toCandidateSummary(match({ ownership: 'mine' }), { viewerIsAdmin: false }).canEdit).toBe(true);
-        expect(toCandidateSummary(match({ ownership: 'team' }), { viewerIsAdmin: false }).canEdit).toBe(true);
-        expect(toCandidateSummary(match(), { viewerIsAdmin: true }).canEdit).toBe(true);
-        expect(toCandidateSummary(match(), { viewerIsAdmin: false }).canEdit).toBe(false);
+    it('canEdit and storedFacts come from the caller, not from the masked match', () => {
+        expect(toCandidateSummary(match(), { canEdit: true }).canEdit).toBe(true);
+        expect(toCandidateSummary(match(), { canEdit: false }).canEdit).toBe(false);
+        const s = toCandidateSummary(match({ contactProtected: true }), { canEdit: false, storedFacts: ['phones', 'emails'] });
+        expect(s.stored).toEqual(['emails', 'phones']);
+        expect(s.visible).toEqual({});
     });
 });
 
@@ -55,5 +56,9 @@ describe('storedFactValues (raw row, server-only)', () => {
         const row = { contactEntries: null, contactInfo: 'Tel: 11 6585-1333', addressInfo: 'Rivadavia 4500' };
         expect(storedFactValues(row, 'phones')).toHaveLength(1); // parsed from the blob
         expect(storedFactValues(row, 'address')).toEqual(['Rivadavia 4500']);
+    });
+
+    it('storedFactKinds returns sorted kinds only, no values', () => {
+        expect(storedFactKinds({ contactEntries: null, contactInfo: 'Tel: +5491165851333\nEmail: c@example.com', addressInfo: null })).toEqual(['emails', 'phones']);
     });
 });

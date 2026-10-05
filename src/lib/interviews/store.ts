@@ -4,14 +4,15 @@
  * after their own session/flag/ownership checks.
  */
 import { eq } from 'drizzle-orm';
-import { interviews } from '@/db/schema';
+import { adopters, interviews } from '@/db/schema';
 import { findFormDuplicates } from '@/app/actions/findFormDuplicates';
 import { hydrateDuplicateMatches } from '@/app/actions/hydrateDuplicateMatches';
-import type { DuplicateMatch } from '@/app/actions/types';
+import type { DiscoveryMatch, DuplicateMatch } from '@/app/actions/types';
 import { logger } from '@/lib/logger';
-import type { Answer, CandidateSummary, CustomQuestion, InterviewContext, KnownFacts, PrepFacts } from '@/domain/interview/types';
+import type { Answer, CandidateSummary, CustomQuestion, InterviewContext, KnownFacts, PrepFacts, VerifiableFact } from '@/domain/interview/types';
 import { EMPTY_PREP } from '@/domain/interview/types';
-import { toCandidateSummary } from './candidates';
+import { getOrgMemberEmailsFor } from '@/lib/orgMembership';
+import { storedFactKinds, toCandidateSummary } from './candidates';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same Db handle type the other action helpers take
 type Db = any;
@@ -88,11 +89,41 @@ export function contextFor(s: InterviewState, candidates: CandidateSummary[]): I
     };
 }
 
+/**
+ * Masked matches -> summaries. Two server-side lookups the masked shape cannot give:
+ * which fact KINDS the raw row holds (a protected legacy blob is unreadable once masked),
+ * and whether the viewer may edit (owner / teammate / admin). No raw value leaves here.
+ */
+async function summarize(db: Db, matches: DiscoveryMatch[], viewer: string, viewerIsAdmin: boolean): Promise<CandidateSummary[]> {
+    const live = matches.filter(m => !m.adopter.deletedAt);
+    if (!live.length) return [];
+
+    let team: string[] = [viewer];
+    try { team = await getOrgMemberEmailsFor(viewer); } catch (e) {
+        logger.warn('interviews.summarize: team lookup failed', { error: e instanceof Error ? e.message : String(e) });
+    }
+
+    return Promise.all(live.map(async m => {
+        let storedFacts: VerifiableFact[] = [];
+        let addedBy: string | null = m.adopter.addedBy ?? null;
+        try {
+            const row = await db.select({ contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo, addressInfo: adopters.addressInfo, addedBy: adopters.addedBy })
+                .from(adopters).where(eq(adopters.id, m.adopterId));
+            const r = Array.isArray(row) ? row[0] : row;
+            if (r) { storedFacts = storedFactKinds(r); addedBy = r.addedBy ?? addedBy; }
+        } catch (e) {
+            logger.warn('interviews.summarize: raw row lookup failed', { adopterId: m.adopterId, error: e instanceof Error ? e.message : String(e) });
+        }
+        const canEdit = viewerIsAdmin || (!!addedBy && (addedBy === viewer || team.includes(addedBy)));
+        return toCandidateSummary(m, { canEdit, storedFacts });
+    }));
+}
+
 /** Run the duplicate engine on what the interview knows (no address: D9). */
-export async function matchCandidates(known: KnownFacts, viewerIsAdmin: boolean): Promise<CandidateSummary[]> {
+export async function matchCandidates(db: Db, known: KnownFacts, viewer: string, viewerIsAdmin: boolean): Promise<CandidateSummary[]> {
     if (known.name.length < 2) return [];
     const { results } = await findFormDuplicates({ name: known.name, phones: known.phones, emails: known.emails, socials: known.socials });
-    return results.filter(m => !m.adopter.deletedAt).map(m => toCandidateSummary(m, { viewerIsAdmin }));
+    return summarize(db, results, viewer, viewerIsAdmin);
 }
 
 /** Re-hydrate stored candidate ids through the same masked bridge. */
@@ -100,7 +131,7 @@ export async function hydrateCandidates(db: Db, ids: string[], viewer: string, v
     if (!ids.length) return [];
     const stubs: DuplicateMatch[] = ids.map(adopterId => ({ adopterId, adopterName: '', relevancePercent: 0, matchTypes: [], matchValues: [], source: 'token' }));
     const hydrated = await hydrateDuplicateMatches(db, stubs, { viewer, isUnauthenticated: false });
-    return hydrated.filter(m => !m.adopter.deletedAt).map(m => toCandidateSummary(m, { viewerIsAdmin }));
+    return summarize(db, hydrated, viewer, viewerIsAdmin);
 }
 
 /** Fresh results win (they carry relevance); stored ones that dropped out are kept. */

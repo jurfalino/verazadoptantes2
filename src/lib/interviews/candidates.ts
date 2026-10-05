@@ -10,12 +10,14 @@ import type { CandidateSummary, VerifiableFact } from '@/domain/interview/types'
 
 const ENTRY_FACT: Partial<Record<ContactEntry['type'], VerifiableFact>> = { phone: 'phones', email: 'emails', social: 'socials', address: 'address' };
 
-export function toCandidateSummary(m: DiscoveryMatch, opts: { viewerIsAdmin: boolean }): CandidateSummary {
+export function toCandidateSummary(m: DiscoveryMatch, opts: { canEdit: boolean; storedFacts?: VerifiableFact[] }): CandidateSummary {
     const a = m.adopter;
     let entries = deserializeContactEntries(a.contactEntries);
     if (!entries.length && !m.contactProtected && a.contactInfo) entries = parseBlobToContactEntries(a.contactInfo);
 
-    const stored = new Set<VerifiableFact>();
+    // storedFacts: kinds derived server-side from the RAW row (never values), for profiles whose
+    // masked shape hides them (e.g. a protected legacy blob).
+    const stored = new Set<VerifiableFact>(opts.storedFacts ?? []);
     const visible: Partial<Record<VerifiableFact, string[]>> = {};
     for (const e of entries) {
         const f = ENTRY_FACT[e.type];
@@ -34,7 +36,7 @@ export function toCandidateSummary(m: DiscoveryMatch, opts: { viewerIsAdmin: boo
         relevancePercent: m.relevancePercent,
         avgRating: m.avgRating,
         adoptionCount: m.stats?.adoptions ?? 0,
-        canEdit: opts.viewerIsAdmin || m.ownership === 'mine' || m.ownership === 'team',
+        canEdit: opts.canEdit,
         stored: [...stored].sort(),
         visible,
     };
@@ -50,4 +52,11 @@ export function storedFactValues(
     const values = entries.filter(e => ENTRY_FACT[e.type] === fact).map(e => e.value);
     if (fact === 'address' && row.addressInfo?.trim()) values.push(row.addressInfo.trim());
     return values;
+}
+
+/** Which kinds of fact a raw row holds (types only, sorted, no values). SERVER-ONLY input. */
+export function storedFactKinds(
+    row: { contactEntries: string | null; contactInfo: string | null; addressInfo: string | null },
+): VerifiableFact[] {
+    return (['address', 'emails', 'phones', 'socials'] as const).filter(f => storedFactValues(row, f).length > 0);
 }

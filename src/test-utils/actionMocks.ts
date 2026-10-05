@@ -16,6 +16,9 @@ export const isOrgMate = async (viewer: string | null | undefined, owner: string
     !!viewer && !!owner && viewer !== owner && [OWNER, MATE].includes(viewer) && [OWNER, MATE].includes(owner);
 export const isOwnerOrOrgMate = async (viewer: string | null | undefined, owner: string | null | undefined) =>
     (!!viewer && viewer === owner) || isOrgMate(viewer, owner);
+/** Team emails for a viewer (incl. themselves): OWNER and MATE share a team. */
+export const getOrgMemberEmailsFor = async (email: string) =>
+    [OWNER, MATE].includes(email) ? [OWNER, MATE] : [email];
 export const getUser = async () => {
     if (!session.user) throw new Error('Authentication required');
     return session.user;
