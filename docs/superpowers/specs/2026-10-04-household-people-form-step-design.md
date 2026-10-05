@@ -296,3 +296,58 @@ At submit, with `intent === 'gift'` and a valid `giftRecipient`:
 
 - A profile of the recipient's own, and a "vincular destinatario" action.
 - Asking the recipient to fill in the form themselves.
+
+---
+
+# Part 3 — Phone required by default, optional per form (2026-10-05)
+
+## Decision (Jon)
+
+The applicant's phone ("¿Tu teléfono?", `identity-phone`) becomes **required by
+default**. Each rescuer can make it optional in Ajustes → Formulario y contrato.
+Today it is optional everywhere.
+
+## Design
+
+- **Stored in the same `hidden_steps` list** as the household choice. The token
+  `'phone-optional'` present means optional; absent, which every existing config
+  is, means required.
+  - It is an **option token**, not a step. It goes in a new
+    `FORM_OPTION_TOKENS = ['phone-optional']` (mirrored in contract-app),
+    accepted by `sanitizeHiddenSteps`.
+  - It is included in the keys the collaborative-save code tracks
+    (`stepStates` / `mergeHidden` / `planItemSave`). It therefore gets the same
+    compare-and-swap, conflict message and audit as any question, and is never
+    dropped by a save.
+  - `FORM_STEP_IDS` and the step count shown in settings are unchanged.
+- **Settings:** under the locked "Teléfono" row (still always asked), a switch
+  "Obligatorio" that is on by default. Turning it off writes `'phone-optional'`.
+- **Public form:** the phone field is `required` unless the config contains
+  `'phone-optional'`. A missing or failed config fetch falls back to the
+  default, so the phone is **required**. Validation is unchanged (an Argentine
+  number when given).
+- **Server:** submit **does not reject** a missing phone. An old public-form
+  bundle (deploy skew) or a config fetch that failed must never lose an
+  application. When the rescuer's config requires the phone and none arrived,
+  it logs `logger.warn('form submit: phone missing on a phone-required form', { submissionId, rescuerEmail })`
+  and keeps the submission.
+- **Gift recipient's phone** (Part 2) stays optional.
+- **Production effect:** the custom-forms switch is off in production, so no
+  rescuer can reach the setting there. The default applies, and **every**
+  production form will require the phone once this ships. This is intended.
+
+## Testing (Part 3)
+
+- **Unit, both copies:**
+  - `isPhoneRequired(stored)`;
+  - the sanitiser keeps `'phone-optional'` and drops unknown tokens;
+  - a collaborative save never drops the token, and a teammate conflict on it is
+    reported.
+- **Contract-app:**
+  - the phone field is required with no config, and optional with `'phone-optional'`;
+  - Continue is blocked on an empty phone by default.
+- **E2E:**
+  - settings: switching the phone to optional saves the token, and the public
+    form config carries it;
+  - submit without a phone on a phone-required form still stores the
+    submission (and logs).
