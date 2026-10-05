@@ -2,7 +2,7 @@
 
 All notable changes to BuenAdoptante are documented here.
 
-## [2.56.146] - 2026-10-04
+## [2.56.146] - 2026-10-05
 
 ### Added — "¿Quiénes viven en la casa?" as an alternative to "¿Hay niños?"
 
@@ -29,6 +29,31 @@ changes for anyone who doesn't opt in) or **"Personas del hogar (detallado)"**.
 
 The settings page sits behind the custom-forms switch, which is off in
 production — production applicants keep seeing "¿Hay niños?" until it is on.
+
+### Added — when the animal is a gift, the form asks who it is for
+
+- **"Es un regalo" is followed by "¿Para quién es?"**: relationship, first name
+  (required), last name and phone (optional).
+- **The home questions then talk about that person** — "¿Dónde vive Laura?",
+  "¿Quiénes viven en la casa de Laura?" — and the ones a giver may not know
+  offer **"No sé"**.
+- **On the form screen**, "Para quién es" comes first in the applicant's data,
+  the home rows are labelled for the recipient ("Personas en el hogar de Laura"),
+  and "No sabe" answers carry no semáforo dot.
+- **On the giver's profile**, a recipient given a first and last name is added
+  as a household member marked **"Destinatario/a del regalo"**, with her phone.
+  The people living with the recipient stay on the form only — they are not the
+  giver's household.
+
+### Changed — the applicant's phone is required by default
+
+- The form's phone question must now be answered. Rescuers can make it optional
+  per form with the new **"Obligatorio"** switch under "Teléfono" in Ajustes →
+  Formulario y contrato.
+- **This applies in production too**: with the custom-forms switch off there is
+  no setting, so every form requires the phone. Submissions are never refused
+  by the server for a missing phone (a tab opened earlier still gets through);
+  they are logged.
 
 ## [2.56.145] - 2026-10-04
 
