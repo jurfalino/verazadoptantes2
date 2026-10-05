@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canonField, planFieldSave, fieldAuthor } from './fieldCollab';
+import { canonField, planFieldSave, fieldAuthor, holdTogether } from './fieldCollab';
 
 describe('canonField — same meaning, same string', () => {
     it('text: trimmed; "", null and undefined are the same', () => {
@@ -63,5 +63,19 @@ describe('fieldAuthor', () => {
         expect(fieldAuthor('color', rows)).toBe('beto');
         expect(fieldAuthor('name', rows)).toBe('ana');
         expect(fieldAuthor('sex', rows)).toBeNull();
+    });
+});
+
+describe('holdTogether', () => {
+    it('a conflict on one custody field holds back the other', () => {
+        const plan = planFieldSave({ adopterId: null, recordType: 'available' }, { adopterId: 'a1', recordType: 'adoption' }, { adopterId: 'a2', recordType: 'adoption' });
+        expect(plan.apply).toEqual(['recordType']);
+        const held = holdTogether(plan, ['adopterId', 'recordType']);
+        expect(held.apply).toEqual([]);
+        expect(held.conflicts.sort()).toEqual(['adopterId', 'recordType']);
+    });
+    it('no conflict in the group: unchanged', () => {
+        const plan = planFieldSave({ color: 'x' }, { color: 'y' }, { color: 'z' });
+        expect(holdTogether(plan, ['adopterId', 'recordType'])).toBe(plan);
     });
 });

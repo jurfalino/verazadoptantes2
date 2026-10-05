@@ -10,7 +10,7 @@
  * dated events live exactly once, on the timeline; labels live in the edit form.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
@@ -33,6 +33,9 @@ import type { AnimalProfileData, ProjectedSlot } from '@/app/actions/animalTimel
 import type { ApplicantSummary } from '@/app/actions/applicants';
 import { interpolate } from '@/lib/interpolate';
 import { showableCount } from '@/domain/animalAccess';
+import { isSaveBusyError } from '@/domain/fieldCollab';
+import { FieldConflictNotice, UpdatedByBadge } from '@/components/collab/FieldConflictNotice';
+import { updatedByOtherMessage, needsReviewMessage } from '@/lib/collabCopy';
 import { dueWhenText } from '@/lib/dueWhenText';
 
 function placeholderFor(species: string | null): string {
@@ -546,10 +549,29 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
     const { t } = useLanguage();
     const toast = useShowToast();
 
-    const ageDays = animal.estimatedBirthDate ? Math.round((Date.now() - animal.estimatedBirthDate) / 86400000) : null;
-    const initYears = ageDays != null && ageDays >= 365;
-    const initialAgeNum = ageDays != null ? String(initYears ? Math.floor(ageDays / 365) : Math.max(1, Math.round(ageDays / 30))) : '';
-    const initialAgeUnit: 'months' | 'years' = initYears ? 'years' : 'months';
+    const ageOf = (ebd: number | null | undefined) => {
+        const days = ebd ? Math.round((Date.now() - ebd) / 86400000) : null;
+        const years = days != null && days >= 365;
+        return {
+            num: days != null ? String(years ? Math.floor(days / 365) : Math.max(1, Math.round(days / 30))) : '',
+            unit: (years ? 'years' : 'months') as 'months' | 'years',
+        };
+    };
+    const { num: initialAgeNum, unit: initialAgeUnit } = ageOf(animal.estimatedBirthDate);
+
+    /* What this form last heard from the server for each field — sent with the
+       save so the server can tell my changes from a teammate's
+       (src/domain/fieldCollab.ts), and what "changed" is measured against.
+       A ref (read inside handleSave, also from «Guardar la mía igual»). */
+    const baseRef = useRef({
+        animalName: animal.name ?? null, species: animal.species ?? null, sex: animal.sex ?? null,
+        neutered: animal.neutered ?? null, color: animal.color ?? null, microchip: animal.microchip ?? null,
+        details: animal.details ?? null, estimatedBirthDate: animal.estimatedBirthDate ?? null,
+    } as Record<string, unknown>);
+    const base = baseRef.current;
+    const [ageBase, setAgeBase] = useState({ num: initialAgeNum, unit: initialAgeUnit });
+    const [conflicts, setConflicts] = useState<Record<string, { by: string; value: unknown }>>({});
+    const [updatedBy, setUpdatedBy] = useState<Record<string, string>>({});
     const [name, setName] = useState(animal.name || '');
     const [species, setSpecies] = useState(animal.species || 'other');
     const [sex, setSex] = useState(animal.sex || '');
@@ -658,14 +680,15 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
                and an unknown neutered state (null) became «sin castrar». */
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const patch: Record<string, any> = {};
-            if (name.trim() !== (animal.name || '')) patch.animalName = name.trim() || null;
-            if (species !== (animal.species || 'other')) patch.species = species || null;
-            if (sex !== (animal.sex || '')) patch.sex = sex || null;
-            if (neutered !== (animal.neutered === 1)) patch.neutered = neutered ? 1 : 0;
-            if (color.trim() !== (animal.color || '')) patch.color = color.trim() || null;
-            if (microchip.trim() !== (animal.microchip || '')) patch.microchip = microchip.trim() || null;
-            if (details.trim() !== (animal.details || '')) patch.details = details.trim() || null;
-            if (ageNum !== initialAgeNum || ageUnit !== initialAgeUnit) {
+            const was = (f: string) => (base[f] as string | null) || '';
+            if (name.trim() !== was('animalName')) patch.animalName = name.trim() || null;
+            if (species !== (was('species') || 'other')) patch.species = species || null;
+            if (sex !== was('sex')) patch.sex = sex || null;
+            if (neutered !== (base.neutered === 1)) patch.neutered = neutered ? 1 : 0;
+            if (color.trim() !== was('color')) patch.color = color.trim() || null;
+            if (microchip.trim() !== was('microchip')) patch.microchip = microchip.trim() || null;
+            if (details.trim() !== was('details')) patch.details = details.trim() || null;
+            if (ageNum !== ageBase.num || ageUnit !== ageBase.unit) {
                 const n = parseInt(ageNum, 10);
                 if (!Number.isNaN(n) && n > 0) {
                     const d = new Date();
@@ -673,19 +696,85 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
                     patch.estimatedBirthDate = d;
                 }
             }
+            let held = false;
             if (Object.keys(patch).length > 0) {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const res = await saveAdoption({ id: animal.id, ...patch } as any);
+                const res = await saveAdoption({ id: animal.id, ...patch } as any, { loaded: { ...base } as any });
                 if (!res || !('success' in res)) throw new Error('No response');
+                for (const f of res.saved ?? []) if (f in patch) base[f] = patch[f];
+                // A teammate changed fields I didn't touch: show theirs.
+                for (const o of res.updatedByOthers ?? []) {
+                    showValue(o.field, o.value);
+                    toast.info(updatedByOtherMessage(t, o.field, o.by));
+                }
+                if (res.updatedByOthers?.length) setUpdatedBy(u => ({ ...u, ...Object.fromEntries(res.updatedByOthers!.map(o => [o.field, o.by])) }));
+                // A teammate changed a field I changed too: nothing of theirs
+                // was overwritten; the notice under it lets me choose.
+                if (res.conflicts?.length) {
+                    held = true;
+                    setConflicts(c => ({ ...c, ...Object.fromEntries(res.conflicts!.map(x => [x.field, { by: x.by, value: x.value }])) }));
+                    toast.warning(needsReviewMessage(t, res.conflicts[0].field));
+                }
             }
             const photoError = await applyPhotos();
             if (photoError) throw new Error(photoError);
-            toast.success(t('animalProfile.saved') || 'Guardado', name);
+            if (held) { setSaving(false); return; }
+            toast.success(t('collab.saved'), name);
             onSaved();
         } catch (error) {
-            toast.error(t('errors.generic') || 'Error', t('animalProfile.edit_save_failed') || 'No se pudieron guardar los cambios.', resolveErrorId(error, 'AnimalProfile'));
+            const errorId = resolveErrorId(error, 'AnimalProfile');
+            toast.error(t('errors.generic') || 'Error', isSaveBusyError(error) ? t('collab.busy') : (t('animalProfile.edit_save_failed') || 'No se pudieron guardar los cambios.'), errorId);
             setSaving(false);
         }
+    };
+
+    /** Put a stored value into the form (and make it the new baseline). */
+    const showValue = (field: string, value: unknown) => {
+        base[field] = value;
+        const text = (value as string | null) ?? '';
+        if (field === 'animalName') setName(text);
+        else if (field === 'species') setSpecies(text || 'other');
+        else if (field === 'sex') setSex(text);
+        else if (field === 'color') setColor(text);
+        else if (field === 'microchip') setMicrochip(text);
+        else if (field === 'details') setDetails(text);
+        else if (field === 'neutered') setNeutered(value === 1);
+        else if (field === 'estimatedBirthDate') {
+            const ms = value instanceof Date ? value.getTime() : typeof value === 'string' ? Date.parse(value) : (value as number | null);
+            const a = ageOf(ms);
+            setAgeNum(a.num); setAgeUnit(a.unit); setAgeBase(a);
+        }
+    };
+
+    const dropConflict = (field: string) => setConflicts(c => { const n = { ...c }; delete n[field]; return n; });
+
+    /** Their value, readable. */
+    const theirsText = (field: string, value: unknown): string => {
+        if (value === null || value === undefined || value === '') return '';
+        if (field === 'species') return t(`species.${value}`) || String(value);
+        if (field === 'sex') return value === 'macho' ? (t('adoption.sex_male') || 'Macho') : value === 'hembra' ? (t('adoption.sex_female') || 'Hembra') : String(value);
+        if (field === 'neutered') return value === 1 ? (t('animalProfile.castrated_m') || 'Castrado/a') : (t('animalProfile.not_castrated') || 'Sin castrar');
+        if (field === 'estimatedBirthDate') {
+            const ms = value instanceof Date ? value.getTime() : typeof value === 'string' ? Date.parse(value) : (value as number);
+            const a = ageOf(ms);
+            return a.num ? `${a.num} ${a.unit === 'years' ? (t('animalProfile.years') || 'años') : (t('animalProfile.months') || 'meses')}` : '';
+        }
+        return String(value);
+    };
+
+    /** The collision notice / «Actualizado por» for one field. */
+    const collab = (field: string) => {
+        const c = conflicts[field];
+        if (c) return (
+            <FieldConflictNotice
+                field={field} by={c.by} theirs={theirsText(field, c.value)} saving={saving}
+                testId={`animal-${field}-conflict`}
+                onKeepTheirs={() => { showValue(field, c.value); dropConflict(field); }}
+                onKeepMine={() => { base[field] = c.value; dropConflict(field); void handleSave(); }}
+            />
+        );
+        if (updatedBy[field] !== undefined) return <div className="mt-1"><UpdatedByBadge by={updatedBy[field]} testId={`animal-${field}-updated-by`} /></div>;
+        return null;
     };
 
     const label = 'block text-xs font-semibold uppercase tracking-wide text-stone-500 mb-1';
@@ -697,6 +786,7 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
                 <div>
                     <label className={label} htmlFor="ae-name">{t('animalProfile.field_name') || 'Nombre'}</label>
                     <input id="ae-name" type="text" value={name} onChange={e => setName(e.target.value)} className={input} />
+                    {collab('animalName')}
                 </div>
                 <div>
                     <label className={label} htmlFor="ae-species">{t('animalProfile.field_species') || 'Especie'}</label>
@@ -706,6 +796,7 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
                         <option value="bird">{t('species.bird') || 'Ave'}</option>
                         <option value="other">{t('species.other') || 'Otro'}</option>
                     </select>
+                    {collab('species')}
                 </div>
                 <div>
                     <label className={label} htmlFor="ae-sex">{t('animalProfile.field_sex') || 'Sexo'}</label>
@@ -714,6 +805,7 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
                         <option value="macho">{t('adoption.sex_male') || 'Macho'}</option>
                         <option value="hembra">{t('adoption.sex_female') || 'Hembra'}</option>
                     </select>
+                    {collab('sex')}
                 </div>
                 <div>
                     <label className={label} htmlFor="ae-age">{t('animalProfile.field_age') || 'Edad estimada'}</label>
@@ -724,23 +816,28 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
                             <option value="years">{t('animalProfile.years') || 'años'}</option>
                         </select>
                     </div>
+                    {collab('estimatedBirthDate')}
                 </div>
                 <div>
                     <label className={label} htmlFor="ae-color">{t('animalProfile.field_color') || 'Color'}</label>
                     <input id="ae-color" type="text" value={color} onChange={e => setColor(e.target.value)} className={input} />
+                    {collab('color')}
                 </div>
                 <div>
                     <label className={label} htmlFor="ae-chip">{t('animalProfile.field_microchip') || 'Microchip'}</label>
                     <input id="ae-chip" type="text" value={microchip} onChange={e => setMicrochip(e.target.value)} className={input} placeholder={t('animalProfile.no_microchip') || 'Sin microchip'} />
+                    {collab('microchip')}
                 </div>
             </div>
             <label className="flex items-center gap-2 mt-3 text-sm text-stone-700 cursor-pointer">
                 <input type="checkbox" checked={neutered} onChange={e => setNeutered(e.target.checked)} className="w-4 h-4 rounded accent-teal-600" />
                 {t('animalProfile.field_neutered') || 'Ya está castrado/a'}
             </label>
+            {collab('neutered')}
             <div className="mt-3">
                 <label className={label} htmlFor="ae-details">{t('animalProfile.field_details') || 'Descripción'}</label>
                 <input id="ae-details" type="text" value={details} onChange={e => setDetails(e.target.value)} className={input} placeholder={t('animalProfile.field_details_ph') || 'Carácter, señas, historia…'} />
+                {collab('details')}
             </div>
             {/* ── Photos ── the only place an animal's photos can be changed
                 after it is created. Staged like the fields above. */}

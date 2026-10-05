@@ -113,6 +113,16 @@ export function planFieldSave(
 }
 
 /**
+ * Fields that only make sense together: if any of `group` conflicts, the
+ * others in it that were about to be written are held back as conflicts too.
+ */
+export function holdTogether(plan: FieldPlan, group: readonly string[]): FieldPlan {
+    if (!plan.conflicts.some(f => group.includes(f))) return plan;
+    const held = plan.apply.filter(f => group.includes(f));
+    return { ...plan, apply: plan.apply.filter(f => !group.includes(f)), conflicts: [...plan.conflicts, ...held] };
+}
+
+/**
  * Who last set `field`, from history rows (newest first) that list the fields
  * each save changed. Null when no row says — the UI then names «otra persona
  * del equipo» instead of guessing.
@@ -120,4 +130,12 @@ export function planFieldSave(
 export function fieldAuthor(field: string, rows: ReadonlyArray<{ by: string | null; fields: readonly string[] }>): string | null {
     for (const r of rows) if (r.fields.includes(field)) return r.by;
     return null;
+}
+
+/** Message prefix of the error a save throws after losing the race twice. */
+export const SAVE_BUSY = 'SAVE_BUSY';
+
+/** Did this save fail only because someone else was saving at the same moment? */
+export function isSaveBusyError(e: unknown): boolean {
+    return e instanceof Error && e.message.startsWith(SAVE_BUSY);
 }
