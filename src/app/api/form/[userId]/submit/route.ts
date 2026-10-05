@@ -4,6 +4,8 @@ import { withCors, corsPreflightResponse } from '@/lib/cors';
 import { runAfterResponse } from '@/lib/background';
 import { deriveSpecialNeeds, sanitizeShownSteps } from '@/domain/adoptionDocs';
 import { isValidFormEmail } from '@/domain/formEmail';
+import { parseHouseholdPeople, childrenAnswer, fullName } from '@/domain/householdPeople';
+import type { HouseholdMember } from '@/lib/householdMembers';
 
 export const runtime = 'edge';
 
@@ -39,6 +41,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         // notification's submittedData (where it would read as an "answer").
         const answers: Record<string, unknown> = { ...body };
         delete answers.shownSteps;
+        // "¿Quiénes viven en la casa?" (spec 2026-10-04). Re-parsed here: the
+        // client can't put junk on a profile or lie about the children count.
+        const householdPeople = parseHouseholdPeople(body.householdPeople);
+        if (Array.isArray(body.householdPeople) || body.livesAlone === true) {
+            answers.householdPeople = householdPeople;
+            answers.livesAlone = body.livesAlone === true && householdPeople.length === 0;
+            answers.children = childrenAnswer(householdPeople);
+        }
         const intent = body.intent as string || null;
         const household = Array.isArray(body.household) ? JSON.stringify(body.household) : null;
         // v2.14.10-2: form launched from the public showcase pre-selected
@@ -156,6 +166,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                 submissionId,
                 animalId: selectedAnimalId,
                 animalName: selectedAnimalName,
+                // Only fully named people become profile household members.
+                householdMembers: householdPeople.flatMap((p, i): HouseholdMember[] => {
+                    const memberName = fullName(p);
+                    return memberName ? [{
+                        id: `form-${submissionId}-${i}`, name: memberName, relationship: p.relationship, contactEntries: [],
+                        age: p.age, ageAsOf: new Date().toISOString().slice(0, 10), addedBy: 'form-submission',
+                    }] : [];
+                }),
             });
             adopterId = result.adopterId;
             matches = result.dupCandidates.map(c => ({
@@ -174,6 +192,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                 autoAdopterId: adopterId,
                 status: 'linked',
             }).where(eq(formSubmissions.id, submissionId));
+
+            // Every form shows in its profile's history ("Ver formulario
+            // completado") and counts toward "demasiados pedidos" (Jon,
+            // 2026-10-04). Idempotent; best-effort (logs, never throws).
+            const { addFormRequestRecord } = await import('@/lib/formRequest');
+            await addFormRequestRecord(db, submissionId, adopterId, rescuerEmail);
         } catch (e) {
             logger.warn('Form auto-create-adopter failed (continuing with notification only)', {
                 submissionId,

@@ -188,6 +188,37 @@ test.describe('form-results: linking to an existing profile', () => {
         await expect(page.locator('div.flex.items-baseline', { hasText: /Home type|Tipo de vivienda|Tipo de moradia/ }).locator('[data-signal]')).toHaveCount(0);
     });
 
+    test('household people: only the fully named one reaches the profile, children is recomputed, the request is recorded at submit', async ({ request }) => {
+        const stamp = Date.now();
+        const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+            name: `E2E Hogar ${stamp}`, email: `e2e-hogar-${stamp}@example.com`, phone: `22${String(stamp).slice(-8)}`,
+            address: '1 Hogar St', intent: 'self', housingType: 'house',
+            householdPeople: [
+                { relationship: 'child', age: 3, firstName: 'Tomás', lastName: 'López' },
+                { relationship: 'child', age: 11 },
+                { relationship: 'partner', age: 38, firstName: 'Laura' },
+                { relationship: 'boss', age: 50, firstName: 'Bad', lastName: 'Row' },
+            ],
+            livesAlone: false, children: 'none', // a lying count — the server recomputes it
+        } });
+        expect(res.ok(), await res.text()).toBeTruthy();
+        const { submissionId } = await res.json();
+
+        const row = one(`SELECT auto_adopter_id, answers_json FROM form_submissions WHERE id = '${submissionId}'`);
+        const answers = JSON.parse(String(row.answers_json));
+        expect(answers.children).toBe('2');
+        expect(answers.householdPeople).toHaveLength(3); // the unknown relationship is dropped
+
+        const prof = one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`);
+        const members = JSON.parse(String(prof.household_members));
+        expect(members.map((m: { name: string }) => m.name)).toEqual(['Tomás López']);
+        expect(members[0]).toMatchObject({ relationship: 'child', age: 3, addedBy: 'form-submission' });
+        expect(members[0].ageAsOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+        // Every form is linked from its profile: the request exists from submit time.
+        expect(rows(`SELECT id FROM adoptions WHERE adopter_id = '${row.auto_adopter_id}' AND source_url = 'form:${submissionId}'`)).toHaveLength(1);
+    });
+
     test('a fresh submission with no look-alikes reads as a new profile, not as "linked"', async ({ page, request }) => {
         const stamp = Date.now();
         const name = `E2E Formlink Solo ${stamp}`;
