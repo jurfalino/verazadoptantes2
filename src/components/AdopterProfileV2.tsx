@@ -72,9 +72,11 @@ interface AdopterProfileV2Props {
     showDeletionRequested?: boolean;
     /** ENABLE_PINNED_VISIT_INTENT — pin the visit-intent card to the bottom of the screen. */
     pinnedVisitIntent?: boolean;
+    /** ENABLE_INTERVIEW_GUIDE — «Entrevistar» in the profile's ⋯ menu. */
+    interviewEnabled?: boolean;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false }: AdopterProfileV2Props) {
     const { formatDateTime, formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const searchParams = useSearchParams();
@@ -440,6 +442,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 )}
 
                 <AdopterForm
+                    interviewEnabled={interviewEnabled}
                     initialData={displayedAdopter}
                     currentUser={currentUser}
                     images={allImages}

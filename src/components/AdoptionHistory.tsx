@@ -42,6 +42,7 @@ interface Adoption {
     verifiedAddress?: string | null;
     deliveredToHome?: boolean | number | null;
     species?: string | null;
+    interview?: { id: string; canViewAnswers: boolean };
 }
 
 interface AdoptionImage {
@@ -384,6 +385,17 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                                     <span className="ml-2 inline-flex items-center text-xs px-1.5 py-0.5 rounded font-medium bg-indigo-100 text-indigo-700 align-middle">
                                                         {t('adoption.foster_active') || 'En curso'}
                                                     </span>
+                                                )}
+                                                {adoption.interview && (
+                                                    <span data-testid="interview-badge" className="ml-2 inline-flex items-center text-xs px-1.5 py-0.5 rounded font-medium bg-teal-50 text-teal-800 align-middle">
+                                                        {t('interview.badge')}
+                                                    </span>
+                                                )}
+                                                {adoption.interview?.canViewAnswers && (
+                                                    <a href={`/interview/${adoption.interview.id}`} onClick={e => e.stopPropagation()} data-testid="interview-view-answers"
+                                                        className="ml-2 inline-flex items-center text-xs font-semibold text-teal-700 hover:underline align-middle">
+                                                        {t('interview.view_answers')}
+                                                    </a>
                                                 )}
                                                 {canEdit && (
                                                     <span className="text-teal-600 md:opacity-0 md:group-hover:opacity-100 transition-opacity inline-flex items-center ml-1.5 align-middle">

@@ -42,6 +42,8 @@ import { FieldConflictNotice, UpdatedByBadge } from '@/components/collab/FieldCo
 import { updatedByOtherMessage, needsReviewMessage } from '@/lib/collabCopy';
 
 interface AdopterFormProps {
+    /** ENABLE_INTERVIEW_GUIDE — adds «Entrevistar» to the overflow menu. */
+    interviewEnabled?: boolean;
     initialData?: Adopter | null;
     currentUser?: string;
     /** v2.26.1: ALL adopter images (profile-level + activity-linked) — used for
@@ -120,7 +122,7 @@ function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
     );
 }
 
-export function AdopterForm({ initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick }: AdopterFormProps) {
+export function AdopterForm({ interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -1260,6 +1262,7 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                     <button
                                                         type="button"
                                                         onClick={() => setShowReportMenu(!showReportMenu)}
+                                                        data-testid="profile-overflow"
                                                         className="flex items-center gap-1 p-1.5 rounded-lg text-stone-500 bg-stone-50 hover:text-stone-600 hover:bg-stone-100 transition-all duration-150"
                                                         title={t('flagging.report_actions') || 'Report'}
                                                     >
@@ -1273,6 +1276,19 @@ export function AdopterForm({ initialData, currentUser, images = [], adopterId, 
                                                         <>
                                                             <div className="fixed inset-0 z-40" onClick={() => setShowReportMenu(false)} />
                                                             <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-stone-200 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+                                                                {interviewEnabled && initialData?.id && (
+                                                                    <a href={`/interview?adopterId=${encodeURIComponent(initialData.id)}`} data-testid="profile-interview"
+                                                                        onClick={() => setShowReportMenu(false)}
+                                                                        className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left">
+                                                                        <svg className="w-5 h-5 mt-0.5 text-teal-700" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
+                                                                            <path d="M5.5 3h2l1 4-1.5 1a9 9 0 004.5 4.5l1-1.5 4 1v2a2 2 0 01-2 2A13 13 0 013.5 5a2 2 0 012-2z" strokeLinejoin="round" />
+                                                                        </svg>
+                                                                        <div>
+                                                                            <div className="text-sm font-semibold text-stone-900">{t('interview.start_from_profile')}</div>
+                                                                            <div className="text-xs text-stone-500 mt-0.5">{t('interview.start_from_profile_desc')}</div>
+                                                                        </div>
+                                                                    </a>
+                                                                )}
                                                                 {/* Share Profile */}
                                                                 <button
                                                                     type="button"
