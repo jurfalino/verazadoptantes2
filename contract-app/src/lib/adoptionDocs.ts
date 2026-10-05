@@ -74,6 +74,16 @@ export function stepsForAnswers<T extends { id: string }>(schema: T[], answers: 
     return schema.filter(s => s.id !== 'giftRecipient' || answers.intent === 'gift')
 }
 
+/**
+ * Where "Continuar" from `step` goes, read from the answers being saved — the
+ * schema on screen before the tap may not have the step the tap adds
+ * ("Es un regalo" → "¿Para quién es?") or may still have the one it removes.
+ */
+export function stepAfter<T extends { id: string }>(configSchema: T[], step: number, nextAnswers: Record<string, unknown>): { id: string } | 'submit' {
+    const next = stepsForAnswers(configSchema, nextAnswers)[step + 1]
+    return next ? { id: next.id } : 'submit'
+}
+
 /** Mirrors src/domain/householdPeople.ts (mirror test). */
 export const FORM_RELATIONSHIPS = ['partner', 'child', 'parent', 'sibling', 'other_relative', 'housemate'] as const
 

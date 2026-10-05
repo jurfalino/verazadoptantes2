@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } fr
 import './petshield.css'
 import { useT } from './i18n/LocaleContext'
 import {
-    FORM_STEP_IDS, formStepsToAsk, withPhoneRequirement, stepsForAnswers, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody, childrenAnswer,
+    FORM_STEP_IDS, formStepsToAsk, withPhoneRequirement, stepsForAnswers, stepAfter, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody, childrenAnswer,
 } from './lib/adoptionDocs'
 import GiftRecipient, { type Recipient } from './components/GiftRecipient'
 import { adaptStepForGift, isGift, recipientFirstName } from './lib/giftFlow'
@@ -770,11 +770,12 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         setAnimationKey(k => k + 1)
         if (safeOverrides) setAnswers(prev => ({ ...prev, ...safeOverrides }))
 
-        if (nextStep >= totalSteps) {
+        const target = stepAfter(configSchema, step, nextAnswers)
+        if (target === 'submit') {
             handleSubmit(nextAnswers)
         } else {
             setStep(nextStep)
-            persist(schema[nextStep].id, nextAnswers)
+            persist(target.id, nextAnswers)
         }
     }
 

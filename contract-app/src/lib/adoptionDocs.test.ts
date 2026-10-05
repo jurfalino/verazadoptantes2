@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { FORM_STEP_IDS, applyHiddenSteps, restoreStepIndex, stripHiddenAnswers, buildSubmitBody, draftKey, resolveDraft, isValidCustomContract, contractVersionLabel, customSectionFor, STANDARD_CONTRACT_VERSION, fnv1a, isPhoneRequired, withPhoneRequirement, type CustomContract, type RichDoc } from './adoptionDocs'
+import { FORM_STEP_IDS, applyHiddenSteps, restoreStepIndex, stripHiddenAnswers, buildSubmitBody, draftKey, resolveDraft, isValidCustomContract, contractVersionLabel, customSectionFor, STANDARD_CONTRACT_VERSION, fnv1a, isPhoneRequired, withPhoneRequirement, stepAfter, type CustomContract, type RichDoc } from './adoptionDocs'
 
 const schema = FORM_STEP_IDS.map(id => ({ id }))
 
@@ -259,5 +259,18 @@ describe('withPhoneRequirement', () => {
         const out = withPhoneRequirement([other, phoneStep], ['phone-optional'])
         expect(out[0]).toBe(other)
         expect(out[1].fields?.[0].required).toBe(false)
+    })
+})
+
+describe('stepAfter', () => {
+    const cfg = [{ id: 'intent' }, { id: 'giftRecipient' }, { id: 'children' }, { id: 'identity-phone' }]
+    it('the step after "Es un regalo" is "¿Para quién es?" — from the answers being saved, not the screen before the tap', () => {
+        expect(stepAfter(cfg, 0, { intent: 'gift' })).toEqual({ id: 'giftRecipient' })
+    })
+    it('switching back to "Para mí" goes straight to the home questions', () => {
+        expect(stepAfter(cfg, 0, { intent: 'self', giftRecipient: { firstName: 'L' } })).toEqual({ id: 'children' })
+    })
+    it('past the last step means submit', () => {
+        expect(stepAfter(cfg, 2, { intent: 'self' })).toBe('submit')
     })
 })
