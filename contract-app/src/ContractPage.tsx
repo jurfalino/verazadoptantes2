@@ -178,8 +178,9 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
                 setContractSaved(true)
                 setSubmitted(true)
             } else {
-                const data = await res.json().catch(() => ({ error: 'Unknown error' })) as { error?: string; code?: string }
-                const id = extractErrorId(data.error)
+                const data = await res.json().catch(() => ({ error: 'Unknown error' })) as { error?: string; code?: string; errorId?: string }
+                // The id comes as its own field (409 already_placed) or inside the message.
+                const id = data.errorId || extractErrorId(data.error)
                 console.error(`[CONTRACT] Submit failed (${res.status}):`, data.error)
                 const key = contractErrorKey(res.status, data.code)
                 setError(key ? t(key) : (data.error || t('contract.error_submit')))

@@ -116,7 +116,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }
 
         if (animal.adopterId) {
-            return withCors(NextResponse.json({ error: 'This animal has already been adopted' }, { status: 409 }), origin);
+            return withCors(NextResponse.json({ error: 'This animal has already been adopted', code: 'already_placed' }, { status: 409 }), origin);
         }
 
         // 2. Upload contract document to R2 FIRST — adoption only proceeds if this succeeds

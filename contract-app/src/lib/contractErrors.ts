@@ -5,6 +5,9 @@
  */
 export function contractErrorKey(status: number, code: string | undefined): string | null {
     if (status === 404) return 'contract.error_not_found'
+    // Someone adopted or fostered the animal first (one active placement per
+    // animal) — the submit's 409 carries this code.
+    if (status === 409) return code === 'already_placed' ? 'contract.error_already_placed' : null
     if (status !== 410) return null
     switch (code) {
         case 'used': return 'contract.error_used'
