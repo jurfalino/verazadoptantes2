@@ -3,45 +3,51 @@ import { useEffect, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { questionById } from '@/domain/interview/bank';
 import { answerHasContent } from '@/domain/interview/facts';
-import type { Answer, CandidateSummary, CustomQuestion, QueueItem } from '@/domain/interview/types';
+import type { Answer, CandidateSummary, ContactType, CustomQuestion, QueueItem } from '@/domain/interview/types';
 import { verifyInterviewFact } from '@/app/actions/interviews';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { questionText } from './questionText';
 import InterviewAnswerInput from './InterviewAnswerInput';
 
-function VerifyHints({ interviewId, item, answer, candidates, flush }: {
-    interviewId: string; item: QueueItem; answer: Answer | null; candidates: CandidateSummary[]; flush: () => Promise<boolean>;
+type VerifyCache = React.MutableRefObject<Map<string, boolean | 'refused'>>;
+
+function VerifyHints({ interviewId, item, answer, candidates, flush, cache }: {
+    interviewId: string; item: QueueItem; answer: Answer | null; candidates: CandidateSummary[]; flush: () => Promise<boolean>; cache: VerifyCache;
 }) {
     const { t } = useLanguage();
-    const [results, setResults] = useState<Record<string, boolean>>({});
-    const [refused, setRefused] = useState<Record<string, boolean>>({});
+    const [, bump] = useState(0);
     const fact = item.verify!.fact;
     const targets = candidates.filter(c => item.verify!.candidateIds.includes(c.adopterId));
     const protectedIds = targets.filter(c => !c.visible[fact]?.length).map(c => c.adopterId);
     const answerKey = JSON.stringify(answer ?? null);
+    const keyOf = (id: string) => `${item.id}|${id}|${answerKey}`;
 
     useEffect(() => {
-        setResults({});
-        setRefused({});
-        if (!answer || !answerHasContent(answer) || !protectedIds.length) return;
+        if (!answer || !answerHasContent(answer)) return;
+        const missing = protectedIds.filter(id => !cache.current.has(keyOf(id)));
+        if (!missing.length) return;
         let active = true;
         const timer = setTimeout(async () => {
             if (!(await flush())) return;
-            for (const id of protectedIds) {
+            if (!active) return;
+            for (const id of missing) {
+                if (!active) return;
+                if (cache.current.has(keyOf(id))) continue;
                 try {
                     const r = await verifyInterviewFact(interviewId, item.id, id);
                     if (!active) return;
-                    if (r.ok) setResults(prev => ({ ...prev, [id]: r.match }));
-                    else setRefused(prev => ({ ...prev, [id]: true }));
+                    cache.current.set(keyOf(id), r.ok ? r.match : 'refused');
                 } catch (e) {
                     resolveErrorId(e, 'InterviewFocusPanel.verify');
-                    if (active) setRefused(prev => ({ ...prev, [id]: true }));
+                    if (!active) return;
+                    cache.current.set(keyOf(id), 'refused');
                 }
+                bump(n => n + 1);
             }
         }, 1000);
         return () => { active = false; clearTimeout(timer); };
         // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run only when the answer or the target set changes
-    }, [answerKey, protectedIds.join(','), interviewId, fact]);
+    }, [answerKey, protectedIds.join(','), interviewId, fact, item.id]);
 
     return (
         <div className="mt-3 space-y-1.5" data-testid="interview-verify">
@@ -54,8 +60,9 @@ function VerifyHints({ interviewId, item, answer, candidates, flush }: {
                         </p>
                     );
                 }
-                if (refused[c.adopterId]) return null;
-                const r = results[c.adopterId];
+                const cached = cache.current.get(keyOf(c.adopterId));
+                if (cached === 'refused') return null;
+                const r = cached;
                 return (
                     <p key={c.adopterId} data-testid={`interview-verify-${c.adopterId}`}
                         className={`text-xs rounded-lg px-3 py-2 ${r === true ? 'bg-teal-50 text-teal-800' : r === false ? 'bg-stone-100 text-stone-700' : 'text-stone-500'}`}>
@@ -69,7 +76,7 @@ function VerifyHints({ interviewId, item, answer, candidates, flush }: {
     );
 }
 
-export default function InterviewFocusPanel({ interviewId, item, answer, custom, candidates, onAnswer, onNext, onBlurAnswer, flush }: {
+export default function InterviewFocusPanel({ interviewId, item, answer, custom, candidates, onAnswer, onNext, onBlurAnswer, flush, verifyCache }: {
     interviewId: string;
     item: QueueItem | null;
     answer: Answer | null;
@@ -79,6 +86,7 @@ export default function InterviewFocusPanel({ interviewId, item, answer, custom,
     onNext: (fromId: string | null) => void;
     onBlurAnswer: () => void;
     flush: () => Promise<boolean>;
+    verifyCache: VerifyCache;
 }) {
     const { t } = useLanguage();
     if (!item) {
@@ -86,6 +94,7 @@ export default function InterviewFocusPanel({ interviewId, item, answer, custom,
     }
     const def = questionById(item.id);
     const kind = def?.kind ?? 'text';
+    const defaultContactType: ContactType = def?.verifies === 'emails' || def?.fills.includes('emails') ? 'email' : def?.verifies === 'socials' || def?.fills.includes('socials') ? 'social' : 'phone';
     return (
         <section className="bg-white rounded-2xl border border-stone-200 p-4 md:p-6" data-testid="interview-focus">
             <p className="text-xs font-semibold text-teal-800 uppercase tracking-wider">{t('interview.now')} · {t(`interview.stage.${item.stage}`)}</p>
@@ -94,9 +103,9 @@ export default function InterviewFocusPanel({ interviewId, item, answer, custom,
             {item.added && <p className="mt-1 text-xs text-teal-700">{t(item.added.reasonKey)}</p>}
             <div className="mt-4" onBlur={onBlurAnswer}>
                 <label className="sr-only">{t('interview.answer_label')}</label>
-                <InterviewAnswerInput key={item.id} kind={kind} choices={def?.choices} value={answer} onChange={a => onAnswer(item.id, a)} onSubmit={() => onNext(item.id)} />
+                <InterviewAnswerInput key={item.id} kind={kind} choices={def?.choices} value={answer} onChange={a => onAnswer(item.id, a)} onSubmit={() => onNext(item.id)} defaultContactType={defaultContactType} />
             </div>
-            {item.verify && <VerifyHints interviewId={interviewId} item={item} answer={answer} candidates={candidates} flush={flush} />}
+            {item.verify && <VerifyHints key={item.id} cache={verifyCache} interviewId={interviewId} item={item} answer={answer} candidates={candidates} flush={flush} />}
             <div className="mt-4 flex flex-wrap justify-between gap-2 pt-4 border-t border-teal-100/50">
                 <div className="flex gap-2">
                     <button type="button" data-testid="interview-skip" onClick={() => { onAnswer(item.id, { status: 'skipped' }); onNext(item.id); }}

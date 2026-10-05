@@ -1,4 +1,5 @@
 'use client';
+import { useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { RELATIONSHIPS, type Relationship } from '@/lib/householdMembers';
 import type { Answer, AnswerKind, ContactType } from '@/domain/interview/types';
@@ -7,14 +8,18 @@ const INPUT = 'w-full h-10 px-4 rounded-lg border border-teal-200 bg-white text-
 const TEXTAREA = 'w-full p-3 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-y text-base md:text-sm';
 const CONTACT_TYPES: ContactType[] = ['phone', 'email', 'social'];
 
-export default function InterviewAnswerInput({ kind, choices, value, onChange, onSubmit }: {
+export default function InterviewAnswerInput({ kind, choices, value, onChange, onSubmit, defaultContactType }: {
     kind: AnswerKind;
     choices?: readonly string[];
     value: Answer | null;
     onChange: (a: Answer | null) => void;
     onSubmit: () => void;
+    defaultContactType: ContactType;
 }) {
     const { t } = useLanguage();
+    // Rows live locally so an empty row (type chosen, nothing typed yet) survives; the parent only sees content.
+    const [contactRows, setContactRows] = useState<{ type: ContactType; value: string }[]>(() => value?.contacts?.length ? value.contacts : [{ type: defaultContactType, value: '' }]);
+    const [householdRows, setHouseholdRows] = useState<{ name: string; relationship: Relationship | null }[]>(() => value?.household?.length ? value.household : [{ name: '', relationship: null }]);
     const answered = (patch: Partial<Answer>): Answer => ({ status: 'answered', ...patch });
 
     if (kind === 'text') {
@@ -45,8 +50,11 @@ export default function InterviewAnswerInput({ kind, choices, value, onChange, o
         );
     }
     if (kind === 'contact') {
-        const rows = value?.contacts?.length ? value.contacts : [{ type: 'phone' as ContactType, value: '' }];
-        const set = (next: typeof rows) => onChange(answered({ contacts: next }));
+        const rows = contactRows;
+        const set = (next: typeof rows) => {
+            setContactRows(next);
+            onChange(next.some(r => r.value.trim()) ? answered({ contacts: next }) : null);
+        };
         return (
             <div className="space-y-2">
                 {rows.map((r, i) => (
@@ -63,13 +71,16 @@ export default function InterviewAnswerInput({ kind, choices, value, onChange, o
                         )}
                     </div>
                 ))}
-                <button type="button" onClick={() => set([...rows, { type: rows.at(-1)!.type, value: '' }])} className="text-xs font-semibold text-teal-700 hover:underline">{t('interview.prep_add_row')}</button>
+                <button type="button" onClick={() => set([...rows, { type: rows.at(-1)?.type ?? defaultContactType, value: '' }])} className="text-xs font-semibold text-teal-700 hover:underline">{t('interview.prep_add_row')}</button>
             </div>
         );
     }
     // household
-    const rows = value?.household?.length ? value.household : [{ name: '', relationship: null as Relationship | null }];
-    const set = (next: typeof rows) => onChange(answered({ household: next }));
+    const rows = householdRows;
+    const set = (next: typeof rows) => {
+        setHouseholdRows(next);
+        onChange(next.some(r => r.name.trim()) ? answered({ household: next }) : null);
+    };
     return (
         <div className="space-y-2">
             {rows.map((r, i) => (

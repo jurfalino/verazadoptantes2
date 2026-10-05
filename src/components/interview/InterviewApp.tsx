@@ -106,6 +106,7 @@ export default function InterviewApp({ initialDrafts, fromAdopterId, resumeId }:
     });
 
     const errorToasted = useRef(false);
+    const verifyCache = useRef(new Map<string, boolean | 'refused'>());
     useEffect(() => {
         if (status === 'error' && !errorToasted.current) { errorToasted.current = true; toast.error(t('interview.save_failed')); }
         if (status === 'saved') errorToasted.current = false;
@@ -265,6 +266,7 @@ export default function InterviewApp({ initialDrafts, fromAdopterId, resumeId }:
                             answer={current ? answers[current] ?? null : null}
                             custom={custom}
                             candidates={candidates}
+                            verifyCache={verifyCache}
                             onAnswer={recordAnswer}
                             onNext={goNext}
                             onBlurAnswer={requestFlush}
