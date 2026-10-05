@@ -26,7 +26,7 @@
 2. **Candidate ids are recorded server-side only.**
    - `startInterview` and `refreshInterviewCandidates` run the match on the server from the *stored* draft and union the ids into `candidate_ids_json`.
    - `verifyInterviewFact` compares the *stored* answers with the raw profile.
-   - The client never sends an identifier to compare against a profile, so verification cannot be used as an oracle beyond what the interview itself contains.
+   - The client never sends a separate identifier to compare. The interviewer still writes the answers that get verified, so the exposure is the same "confirm a value you already have" as duplicate search: a yes/no per answer, never a stored value. It is limited to profiles the server itself matched.
 3. **Action list:** the spec's `findInterviewCandidates` is split into `previewInterviewCandidates` (stateless, prep screen), `startInterview` and `refreshInterviewCandidates`. That makes 9 actions in total.
 4. **`tests/seed.sql` gets no row.** The e2e spec toggles the flag itself (same as `pinned-visit-intent.authed.spec.ts`), and parity falls back to the code default `false`.
 
@@ -52,7 +52,7 @@
 1. **Interviewing someone else's protected profile:** no raw contact value of that profile reaches the browser, neither in the candidate card nor the verification hint. Pinned in Task 6 (`toCandidateSummary` tests) and Task 7 (verify returns a boolean only).
 2. **Retrying a save that failed halfway** (new profile created, then the observation insert failed) must not create a second profile. Pinned in Task 8 (idempotency test).
 3. **A second tab still autosaving after the interview was completed** must not revert it to a draft. Pinned in Task 7 (`saveInterviewDraft` refuses non-drafts).
-4. **Clearing an answer** (typing, then deleting everything) must not leave the question "answered" or count its facts as known. Pinned in Task 2 (`answerHasContent` / filled tests) and Task 11 (the client removes empty answers).
+4. **Clearing an answer** (typing, then deleting everything) must not leave the question "answered" or count its facts as known. Pinned in Task 2 (`answerHasContent` / filled tests) and Task 10 (the client removes empty answers).
 5. **Pasting a huge text, or a client sending a giant payload,** is refused by validation instead of being stored. Pinned in Task 7 (validation caps test).
 
 ---
@@ -1016,7 +1016,7 @@ git commit -m "feat(interview): question bank (40) and interview copy in es/en/p
 
 **Interfaces:**
 - Consumes: `deriveKnownFacts` (Task 2), `QUESTION_BANK` (Task 4), types (Task 2).
-- Produces: `MAX_UPCOMING = 25`; `buildQueue(ctx: InterviewContext, bank?: readonly QuestionDef[]): QueueItem[]`, ordered as answered/skipped items in `visited` order, then upcoming items by stage → boost → priority → id; `nextUpcomingId(queue: QueueItem[], excludeId?: string | null): string | null`.
+- Produces: `MAX_UPCOMING = 25`; `buildQueue(ctx: InterviewContext, bank?: readonly QuestionDef[]): QueueItem[]`, ordered as answered/skipped items in `visited` order, then upcoming items by stage → boost → priority → id; `nextUpcomingId(queue: QueueItem[], fromId?: string | null): string | null` (the next upcoming item after `fromId`, wrapping).
 
 - [ ] **Step 1: Write the failing tests** `src/domain/interview/queue.test.ts`
 
@@ -1132,11 +1132,24 @@ describe('buildQueue', () => {
 });
 
 describe('nextUpcomingId', () => {
-    it('returns the first upcoming item other than the current one', () => {
+    it('starts at the first upcoming item', () => {
+        expect(nextUpcomingId(buildQueue(ctx()))).toBe('rapport_good_time');
+    });
+    it('Next walks forward through unanswered questions instead of bouncing between two', () => {
         const q = buildQueue(ctx());
-        const first = nextUpcomingId(q);
-        expect(first).toBe('rapport_good_time');
-        expect(nextUpcomingId(q, first)).not.toBe(first);
+        const a = nextUpcomingId(q);
+        const b = nextUpcomingId(q, a);
+        const c = nextUpcomingId(q, b);
+        expect([a, b, c]).toEqual(upcoming(q).slice(0, 3));
+    });
+    it('after the last upcoming item it wraps to the first one left', () => {
+        const q = buildQueue(ctx());
+        const up = upcoming(q);
+        expect(nextUpcomingId(q, up.at(-1)!)).toBe(up[0]);
+    });
+    it('after answering, continues from the first unanswered question', () => {
+        const q = buildQueue(ctx({ answers: { rapport_good_time: { status: 'answered', choice: 'yes' } }, visited: ['rapport_good_time'] }));
+        expect(nextUpcomingId(q, 'rapport_good_time')).toBe(upcoming(q)[0]);
     });
 });
 ```
@@ -1234,8 +1247,15 @@ export function buildQueue(ctx: InterviewContext, bank: readonly QuestionDef[] =
     return [...locked, ...kept.map(({ boost: _b, priority: _p, ...item }) => item)];
 }
 
-export function nextUpcomingId(queue: QueueItem[], excludeId: string | null = null): string | null {
-    return queue.find(i => i.state === 'upcoming' && i.id !== excludeId)?.id ?? null;
+/** The next unanswered question AFTER `fromId` in queue order, wrapping to the first one left. */
+export function nextUpcomingId(queue: QueueItem[], fromId: string | null = null): string | null {
+    const upcoming = queue.filter(i => i.state === 'upcoming');
+    if (!upcoming.length) return null;
+    const pos = fromId ? queue.findIndex(i => i.id === fromId) : -1;
+    if (pos === -1) return upcoming[0].id;
+    const after = queue.slice(pos + 1).find(i => i.state === 'upcoming');
+    if (after) return after.id;
+    return upcoming.find(i => i.id !== fromId)?.id ?? null;
 }
 ```
 
@@ -1261,7 +1281,7 @@ git commit -m "feat(interview): deterministic adaptive question queue"
 - Create: `src/lib/interviews/candidates.ts`
 - Create: `src/lib/interviews/store.ts`
 - Create: `src/lib/interviews/validation.ts`
-- Test: `src/lib/interviews/candidates.test.ts`, `src/lib/interviews/validation.test.ts`
+- Test: `src/lib/interviews/candidates.test.ts`, `src/lib/interviews/candidates.masking.test.ts`, `src/lib/interviews/validation.test.ts`
 
 **Interfaces:**
 - Consumes: domain types (Task 2), `DiscoveryMatch` (`src/app/actions/types.ts`), `hydrateDuplicateMatches`, `findFormDuplicates`, `deserializeContactEntries` / `parseBlobToContactEntries` (`src/lib/contactEntries.ts`).
@@ -1333,8 +1353,7 @@ export const interviews = sqliteTable("interviews", {
 }));
 ```
 
-Apply locally so `next dev` sees it (`setup-test-db.js` replays drizzle/*.sql for e2e). Run: `npx wrangler d1 execute DB --local --file=drizzle/0079_interviews.sql`
-Expected: success. (`local.db` and `.wrangler` change; do **not** stage them.)
+No manual apply. `scripts/setup-test-db.js` (e2e) and `migratedDb()` (vitest) replay every `drizzle/*.sql`, and CI's `migrate-*` jobs apply it remotely. Do **not** run `wrangler d1 execute --local --file`: it writes into the tracked, already-corrupt `.wrangler` sqlite.
 
 - [ ] **Step 3: Write the failing tests**
 
@@ -1401,6 +1420,46 @@ describe('storedFactValues (raw row, server-only)', () => {
     });
 });
 ```
+
+`src/lib/interviews/candidates.masking.test.ts`: Review Focus #1 against the REAL masking pipeline, not a hand-built shape.
+
+```ts
+import { describe, it, expect, vi } from 'vitest';
+import { migratedDb } from '@/test-utils/migratedDb';
+import { isAdmin, isOrgMate, isOwnerOrOrgMate, OWNER, STRANGER } from '@/test-utils/actionMocks';
+
+const { state } = vi.hoisted(() => ({ state: { db: null as unknown } }));
+vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
+vi.mock('@/config/features', () => ({ getFeatureFlag: async (f: string) => f === 'ENABLE_PII_ACCESS_GATING' }));
+vi.mock('@/config/admins', () => ({ isAdminAsync: isAdmin, isModeratorOrAdminAsync: isAdmin, isAdmin: (e: string) => e === 'admin@example.com' }));
+vi.mock('@/lib/orgMembership', () => ({ isOrgMate, isOwnerOrOrgMate }));
+vi.mock('next/headers', () => ({ headers: async () => new Headers() }));
+vi.mock('@/lib/requestContext', () => ({ getRequestContext: () => ({ env: {} }) }));
+
+import { hydrateDuplicateMatches } from '@/app/actions/hydrateDuplicateMatches';
+import { toCandidateSummary } from './candidates';
+
+describe('toCandidateSummary over the real masking pipeline (gating on)', () => {
+    it("a stranger learns that another rescuer's profile HAS a phone and an address, never the values", async () => {
+        const { db, sqlite } = migratedDb();
+        state.db = db;
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, contact_info, contact_entries, address_info, created_at, updated_at, deleted_at, is_demo, is_public)
+            VALUES ('p1', 'Carla Gómez', '5', ?, 'Tel: +5491165851333', ?, 'Rivadavia 4500, Caballito', 1000, 1000, NULL, 0, 0)`)
+            .run(OWNER, JSON.stringify([{ type: 'phone', value: '+5491165851333' }, { type: 'address', value: 'Rivadavia 4500' }]));
+        const [m] = await hydrateDuplicateMatches(db,
+            [{ adopterId: 'p1', adopterName: '', relevancePercent: 0, matchTypes: [], matchValues: [], source: 'token' }],
+            { viewer: STRANGER, isUnauthenticated: false });
+        expect(m.contactProtected).toBe(true);
+        const s = toCandidateSummary(m, { viewerIsAdmin: false });
+        expect(s.stored).toEqual(expect.arrayContaining(['phones', 'address']));
+        const visible = JSON.stringify(s.visible);
+        expect(visible).not.toContain('65851333');
+        expect(visible).not.toContain('Rivadavia');
+    });
+});
+```
+
+If `hydrateDuplicateMatches` pulls in another server dependency that fails under vitest, mock it the way `src/app/actions/saveAdopter.access.test.ts` does. Never weaken the assertions. If `stored` lacks `phones`, the masked entries come back in a shape `toCandidateSummary` doesn't read. Fix `toCandidateSummary`; otherwise protected candidates would silently never get verification questions.
 
 `src/lib/interviews/validation.test.ts`:
 
@@ -1667,7 +1726,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add drizzle/0079_interviews.sql src/db/schema.ts src/lib/interviews/candidates.ts src/lib/interviews/store.ts src/lib/interviews/validation.ts src/lib/interviews/candidates.test.ts src/lib/interviews/validation.test.ts
+git add drizzle/0079_interviews.sql src/db/schema.ts src/lib/interviews/candidates.ts src/lib/interviews/store.ts src/lib/interviews/validation.ts src/lib/interviews/candidates.test.ts src/lib/interviews/candidates.masking.test.ts src/lib/interviews/validation.test.ts
 git commit -m "feat(interview): interviews table, masked candidate summaries, store helpers"
 ```
 
@@ -1807,6 +1866,14 @@ describe('startInterview / drafts', () => {
         const r = await startInterview({ adopterId: 'a1' });
         expect(r.ok && r.view.confirmedAdopterId).toBe('a1');
         expect(r.ok && r.view.sourceKind).toBe('profile');
+    });
+
+    it('starting from the same profile twice resumes the open draft', async () => {
+        state.matches = [cand('a1')];
+        const a = await startInterview({ adopterId: 'a1' });
+        const b = await startInterview({ adopterId: 'a1' });
+        expect(a.ok && b.ok && a.interviewId === b.interviewId).toBe(true);
+        expect(sqlite.prepare(`SELECT count(*) AS n FROM interviews`).get()!.n).toBe(1);
     });
 
     it('only the interviewer can save, read or discard a draft', async () => {
@@ -1980,6 +2047,16 @@ export async function startInterview(input: { prep?: PrepFacts; leadCandidateId?
         let candidates: CandidateSummary[];
 
         if (adopterId) {
+            // One open draft per (interviewer, profile): a re-click or a StrictMode double effect resumes it.
+            const open = await db.select().from(interviews).where(and(
+                eq(interviews.conductedBy, actor), eq(interviews.status, 'draft'),
+                eq(interviews.sourceKind, 'profile'), eq(interviews.sourceId, adopterId),
+            )).get();
+            if (open) {
+                const existing = parseInterviewRow(open);
+                const cands = await hydrateCandidates(db, existing.candidateIds, actor, g.actorIsAdmin);
+                return { ok: true, interviewId: existing.id, view: await toView(existing, cands, true) };
+            }
             candidates = await hydrateCandidates(db, [adopterId], actor, g.actorIsAdmin);
             if (!candidates.length) throw new Refusal('not_found');
             state = {
@@ -2525,7 +2602,11 @@ git commit -m "chore(interview): sign off nine interview actions in the action-s
 
 ---
 
-### Task 10: Route gating and page shells
+### Task 10: /interview route, client shell, state, autosave and preparation
+
+This task is one reviewable unit: the page shells only compile together with the client components.
+
+**Route files:**
 
 **Files:**
 - Modify: `src/middleware.ts:61` (`PROTECTED_ROUTES`)
@@ -2534,15 +2615,15 @@ git commit -m "chore(interview): sign off nine interview actions in the action-s
 
 **Interfaces:**
 - Consumes: `listMyInterviewDrafts`, `getInterview` (Task 7).
-- Produces: `/interview?adopterId=<id>` and `/interview?resume=<id>` mount `InterviewApp` (Task 11) with `{ initialDrafts: DraftSummary[]; fromAdopterId: string | null; resumeId: string | null }`. `/interview/<id>` mounts `InterviewReadOnly` (Task 15) with `{ view: InterviewView }`.
+- Produces: `/interview?adopterId=<id>` and `/interview?resume=<id>` mount `InterviewApp` (Task 10) with `{ initialDrafts: DraftSummary[]; fromAdopterId: string | null; resumeId: string | null }`. `/interview/<id>` mounts `InterviewReadOnly` (Task 14) with `{ view: InterviewView }`.
 
-- [ ] **Step 1: Protect the route**
+- [ ] **Step R1: Protect the route**
 
 ```ts
 const PROTECTED_ROUTES = ['/my-animals', '/my-adopters', '/my-adoptions', '/settings', '/admin', '/import/sheet', '/interview'];
 ```
 
-- [ ] **Step 2: Create `src/app/interview/page.tsx`**
+- [ ] **Step R2: Create `src/app/interview/page.tsx`**
 
 ```tsx
 export const runtime = 'edge';
@@ -2573,7 +2654,7 @@ export default async function InterviewPage({ searchParams }: { searchParams: Pr
 }
 ```
 
-- [ ] **Step 3: Create `src/app/interview/[id]/page.tsx`**
+- [ ] **Step R3: Create `src/app/interview/[id]/page.tsx`**
 
 ```tsx
 export const runtime = 'edge';
@@ -2602,26 +2683,16 @@ export default async function InterviewDetailPage({ params }: { params: Promise<
 }
 ```
 
-(These won't compile until Tasks 11/15 create the components. Commit them together with Task 11; Step 4 is a reminder.)
+(They compile once the client files below exist; the stubs in Step 8 cover the components filled in later.)
 
-- [ ] **Step 4: Stage now, commit with Task 11**
-
-```bash
-git add src/middleware.ts src/app/interview/page.tsx "src/app/interview/[id]/page.tsx"
-```
-
----
-
-### Task 11: Client shell, state, autosave and preparation
-
-**Files:**
+**Client files:**
 - Create: `src/components/interview/autosaveQueue.ts` (DOM-free, no imports — unit-tested)
 - Create: `src/components/interview/useInterviewAutosave.ts`
 - Create: `src/components/interview/questionText.ts`
 - Create: `src/components/interview/CandidateCard.tsx`
 - Create: `src/components/interview/InterviewPrep.tsx`
 - Create: `src/components/interview/InterviewApp.tsx`
-- Create (stubs filled in by Tasks 12–15, so this task compiles): `InterviewTechnique.tsx`, `InterviewRail.tsx`, `InterviewFocusPanel.tsx`, `InterviewReview.tsx`, `InterviewReadOnly.tsx`, each exporting a component that returns `null`. Each stub's props type must match the one defined in its task.
+- Create (stubs filled in by Tasks 11–14, so this task compiles): `InterviewTechnique.tsx`, `InterviewRail.tsx`, `InterviewFocusPanel.tsx`, `InterviewReview.tsx`, `InterviewReadOnly.tsx`, each exporting a component that returns `null`. Each stub's props type must match the one defined in its task.
 - Test: `src/components/interview/useInterviewAutosave.test.ts`
 
 **Interfaces:**
@@ -2662,6 +2733,28 @@ describe('AutosaveQueue', () => {
         expect(save).toHaveBeenCalledTimes(1);
     });
 
+    it('new typing after a save shows "saving", not "saved", until it is saved', async () => {
+        const statuses: string[] = [];
+        const save = vi.fn(async () => true);
+        const q = new AutosaveQueue(save, 800, s => statuses.push(s));
+        q.schedule('a');
+        await vi.advanceTimersByTimeAsync(800);
+        expect(statuses.at(-1)).toBe('saved');
+        q.schedule('b');
+        expect(statuses.at(-1)).toBe('saving');
+        await vi.advanceTimersByTimeAsync(800);
+        expect(statuses.at(-1)).toBe('saved');
+    });
+
+    it('dispose flushes a pending change instead of dropping it', async () => {
+        const save = vi.fn(async () => true);
+        const q = new AutosaveQueue(save, 800, () => {});
+        q.schedule('a');
+        q.dispose();
+        await vi.runAllTimersAsync();
+        expect(save).toHaveBeenCalledWith('a');
+    });
+
     it('goes offline on failure and retries until it succeeds', async () => {
         const statuses: string[] = [];
         const save = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
@@ -2698,9 +2791,13 @@ export class AutosaveQueue {
     constructor(private save: (payload: string) => Promise<boolean>, private delayMs: number, private onStatus: (s: AutosaveStatus) => void) {}
 
     schedule(payload: string) {
-        if (payload === this.lastSaved) return;
+        if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+        if (payload === this.lastSaved) {
+            if (this.pending !== null) { this.pending = null; this.onStatus('saved'); }
+            return;
+        }
         this.pending = payload;
-        if (this.timer) clearTimeout(this.timer);
+        this.onStatus('saving'); // unsaved typing must never read "Guardado"
         this.timer = setTimeout(() => { void this.flush(); }, this.delayMs);
     }
 
@@ -2715,8 +2812,8 @@ export class AutosaveQueue {
         this.inflight = null;
         if (ok) {
             this.lastSaved = payload;
-            if (this.pending === payload) this.pending = null;
-            this.onStatus('saved');
+            if (this.pending === payload) { this.pending = null; this.onStatus('saved'); }
+            // else: newer typing arrived mid-save; its own timer is already scheduled.
         } else {
             this.onStatus('offline');
             this.timer = setTimeout(() => { void this.flush(); }, RETRY_MS);
@@ -2724,7 +2821,11 @@ export class AutosaveQueue {
         return ok;
     }
 
-    dispose() { if (this.timer) clearTimeout(this.timer); }
+    /** Unmount: never drop a pending change. */
+    dispose() {
+        if (this.timer) clearTimeout(this.timer);
+        if (this.pending !== null) void this.flush();
+    }
 }
 ```
 
@@ -2732,7 +2833,7 @@ export class AutosaveQueue {
 
 ```ts
 'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { saveInterviewDraft } from '@/app/actions/interviews';
 import type { DraftPatch } from '@/lib/interviews/validation';
 import { AutosaveQueue, type AutosaveStatus } from './autosaveQueue';
@@ -2758,8 +2859,18 @@ export function useInterviewAutosave(opts: {
     const serialized = JSON.stringify(opts.payload);
     useEffect(() => { if (opts.enabled && opts.interviewId) queue.schedule(serialized); }, [serialized, opts.enabled, opts.interviewId, queue]);
     useEffect(() => () => queue.dispose(), [queue]);
+    // Leaving the tab or closing it: best-effort flush.
+    useEffect(() => {
+        const onHide = () => { void queue.flush(); };
+        const onVisibility = () => { if (document.visibilityState === 'hidden') void queue.flush(); };
+        window.addEventListener('pagehide', onHide);
+        document.addEventListener('visibilitychange', onVisibility);
+        return () => { window.removeEventListener('pagehide', onHide); document.removeEventListener('visibilitychange', onVisibility); };
+    }, [queue]);
 
-    return { status, flush: () => queue.flush() };
+    // Stable identity: InterviewApp's flush-on-Next effect depends on it.
+    const flush = useCallback(() => queue.flush(), [queue]);
+    return { status, flush };
 }
 ```
 
@@ -2947,7 +3058,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { buildQueue, nextUpcomingId } from '@/domain/interview/queue';
 import { QUESTION_BANK } from '@/domain/interview/bank';
 import { answerHasContent, deriveKnownFacts, identifierSignature } from '@/domain/interview/facts';
-import { EMPTY_PREP, type Answer, type CandidateSummary, type CustomQuestion, type InterviewContext, type PrepFacts, type Stage } from '@/domain/interview/types';
+import { EMPTY_PREP, STAGES, type Answer, type CandidateSummary, type CustomQuestion, type InterviewContext, type PrepFacts, type Stage } from '@/domain/interview/types';
 import { discardInterviewDraft, getInterview, refreshInterviewCandidates, startInterview } from '@/app/actions/interviews';
 import type { DraftSummary, InterviewView } from '@/app/actions/interviewTypes';
 import { useInterviewAutosave } from './useInterviewAutosave';
@@ -3040,9 +3151,10 @@ export default function InterviewApp({ initialDrafts, fromAdopterId, resumeId }:
         if (!interviewId || phase !== 'interview') return;
         if (lastSignature.current === null) { lastSignature.current = signature; return; }
         if (lastSignature.current === signature) return;
-        lastSignature.current = signature;
         let active = true;
-        (async () => {
+        // Debounced: a phone typed digit by digit must not re-match (and record) every partial number.
+        const timer = setTimeout(async () => {
+            lastSignature.current = signature;
             try {
                 if (!(await flush())) return;
                 const r = await refreshInterviewCandidates(interviewId);
@@ -3056,8 +3168,8 @@ export default function InterviewApp({ initialDrafts, fromAdopterId, resumeId }:
             } catch (e) {
                 fail(e, t('interview.load_failed'), 'InterviewApp.refreshCandidates');
             }
-        })();
-        return () => { active = false; };
+        }, 1000);
+        return () => { active = false; clearTimeout(timer); };
     }, [signature, interviewId, phase, flush, fail, t]);
 
     const recordAnswer = useCallback((id: string, a: Answer | null) => {
@@ -3070,7 +3182,17 @@ export default function InterviewApp({ initialDrafts, fromAdopterId, resumeId }:
         setVisited(prev => keep ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter(v => v !== id));
     }, []);
 
-    const goNext = useCallback((fromId: string | null) => setCurrentId(nextUpcomingId(queue, fromId)), [queue]);
+    // Save on Next / Skip / No answer / blur / switching question (spec §3.4).
+    // Runs AFTER the render that scheduled the new payload, so it flushes the latest answer.
+    const [flushTick, setFlushTick] = useState(0);
+    const requestFlush = useCallback(() => setFlushTick(n => n + 1), []);
+    useEffect(() => { if (flushTick > 0) void flush(); }, [flushTick, flush]);
+
+    const goNext = useCallback((fromId: string | null) => {
+        setCurrentId(nextUpcomingId(queue, fromId));
+        requestFlush();
+    }, [queue, requestFlush]);
+    const selectQuestion = useCallback((id: string) => { setCurrentId(id); requestFlush(); }, [requestFlush]);
 
     const addCustom = useCallback((text: string, stage: Stage) => {
         const n = custom.reduce((m, c) => Math.max(m, Number(c.id.split(':')[1]) || 0), 0) + 1;
@@ -3147,6 +3269,20 @@ export default function InterviewApp({ initialDrafts, fromAdopterId, resumeId }:
                                 </span>
                             </p>
                         </div>
+                        <ol className="flex items-center gap-1 text-xs font-semibold order-last w-full md:order-none md:w-auto" aria-label={t('interview.title')}>
+                            {STAGES.map((st, i) => {
+                                const active = queue.find(q => q.id === current)?.stage === st;
+                                return (
+                                    <li key={st} className="flex items-center gap-1">
+                                        {i > 0 && <span className="w-4 h-px bg-stone-300" aria-hidden />}
+                                        <span aria-current={active ? 'step' : undefined}
+                                            className={`px-2 py-0.5 rounded-full ${active ? 'bg-teal-700 text-white' : 'bg-stone-100 text-stone-600'}`}>
+                                            {t(`interview.stage.${st}`)}
+                                        </span>
+                                    </li>
+                                );
+                            })}
+                        </ol>
                         <div className="flex gap-2">
                             <button type="button" onClick={() => setShowTechnique(true)} className="px-3 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg">{t('interview.technique_button')}</button>
                             <button type="button" data-testid="interview-finish" onClick={async () => { await flush(); setPhase('review'); }}
@@ -3154,7 +3290,7 @@ export default function InterviewApp({ initialDrafts, fromAdopterId, resumeId }:
                         </div>
                     </header>
                     <div className="md:grid md:grid-cols-[18rem_1fr] md:gap-6">
-                        <InterviewRail queue={queue} answers={answers} custom={custom} currentId={current} onSelect={setCurrentId} onAddCustom={addCustom} />
+                        <InterviewRail queue={queue} answers={answers} custom={custom} currentId={current} onSelect={selectQuestion} onAddCustom={addCustom} />
                         <InterviewFocusPanel
                             interviewId={interviewId!}
                             item={queue.find(i => i.id === current) ?? null}
@@ -3163,6 +3299,7 @@ export default function InterviewApp({ initialDrafts, fromAdopterId, resumeId }:
                             candidates={candidates}
                             onAnswer={recordAnswer}
                             onNext={goNext}
+                            onBlurAnswer={requestFlush}
                             flush={flush}
                         />
                     </div>
@@ -3190,31 +3327,31 @@ export default function InterviewApp({ initialDrafts, fromAdopterId, resumeId }:
 - [ ] **Step 8: Create the five stubs** so tsc passes. Each is filled in by its own task.
 
 ```tsx
-// src/components/interview/InterviewTechnique.tsx (stub — Task 12)
+// src/components/interview/InterviewTechnique.tsx (stub — Task 11)
 'use client';
 export function techniqueHidden(): boolean { return false; }
 export default function InterviewTechnique(_: { mode: 'screen' | 'sheet'; onContinue?: () => void; onClose?: () => void }) { return null; }
 ```
 ```tsx
-// src/components/interview/InterviewRail.tsx (stub — Task 13)
+// src/components/interview/InterviewRail.tsx (stub — Task 12)
 'use client';
 import type { Answer, CustomQuestion, QueueItem, Stage } from '@/domain/interview/types';
 export default function InterviewRail(_: { queue: QueueItem[]; answers: Record<string, Answer>; custom: CustomQuestion[]; currentId: string | null; onSelect: (id: string) => void; onAddCustom: (text: string, stage: Stage) => void }) { return null; }
 ```
 ```tsx
-// src/components/interview/InterviewFocusPanel.tsx (stub — Task 13)
+// src/components/interview/InterviewFocusPanel.tsx (stub — Task 12)
 'use client';
 import type { Answer, CandidateSummary, CustomQuestion, QueueItem } from '@/domain/interview/types';
-export default function InterviewFocusPanel(_: { interviewId: string; item: QueueItem | null; answer: Answer | null; custom: CustomQuestion[]; candidates: CandidateSummary[]; onAnswer: (id: string, a: Answer | null) => void; onNext: (fromId: string | null) => void; flush: () => Promise<boolean> }) { return null; }
+export default function InterviewFocusPanel(_: { interviewId: string; item: QueueItem | null; answer: Answer | null; custom: CustomQuestion[]; candidates: CandidateSummary[]; onAnswer: (id: string, a: Answer | null) => void; onNext: (fromId: string | null) => void; onBlurAnswer: () => void; flush: () => Promise<boolean> }) { return null; }
 ```
 ```tsx
-// src/components/interview/InterviewReview.tsx (stub — Task 14)
+// src/components/interview/InterviewReview.tsx (stub — Task 13)
 'use client';
 import type { CandidateSummary, KnownFacts } from '@/domain/interview/types';
 export default function InterviewReview(_: { interviewId: string; known: KnownFacts; candidates: CandidateSummary[]; confirmedAdopterId: string | null; leadCandidateId: string | null; flush: () => Promise<boolean>; onBack: () => void; onSaved: (adopterId: string) => void }) { return null; }
 ```
 ```tsx
-// src/components/interview/InterviewReadOnly.tsx (stub — Task 15)
+// src/components/interview/InterviewReadOnly.tsx (stub — Task 14)
 'use client';
 import type { InterviewView } from '@/app/actions/interviewTypes';
 export default function InterviewReadOnly(_: { view: InterviewView }) { return null; }
@@ -3225,16 +3362,16 @@ export default function InterviewReadOnly(_: { view: InterviewView }) { return n
 Run: `npx tsc --noEmit && npm run lint 2>&1 | tail -3 && npm test`
 Expected: PASS; lint ≤ 125.
 
-- [ ] **Step 10: Commit** (includes Task 10's staged files)
+- [ ] **Step 10: Commit**
 
 ```bash
 git add src/components/interview/ src/middleware.ts src/app/interview/page.tsx "src/app/interview/[id]/page.tsx"
-git commit -m "feat(interview): /interview page, preparation step, client state + autosave"
+git commit -m "feat(interview): /interview route + page shells, preparation step, client state + autosave"
 ```
 
 ---
 
-### Task 12: Technique screen and sheet
+### Task 11: Technique screen and sheet
 
 **Files:**
 - Modify (replace stub): `src/components/interview/InterviewTechnique.tsx`
@@ -3328,7 +3465,7 @@ git commit -m "feat(interview): technique screen and in-call sheet"
 
 ---
 
-### Task 13: Rail and focus panel (interview phase)
+### Task 12: Rail and focus panel (interview phase)
 
 **Files:**
 - Modify (replace stubs): `src/components/interview/InterviewRail.tsx`, `src/components/interview/InterviewFocusPanel.tsx`
@@ -3336,7 +3473,7 @@ git commit -m "feat(interview): technique screen and in-call sheet"
 - Create: `src/components/interview/icons.tsx`
 
 **Interfaces:**
-- Consumes: the props declared by the Task 11 stubs; `verifyInterviewFact` (Task 7); `questionText` (Task 11).
+- Consumes: the props declared by the Task 10 stubs; `verifyInterviewFact` (Task 7); `questionText` (Task 10).
 - Produces: `InterviewAnswerInput({ kind, choices?, value, onChange })` with `value: Answer | null`, `onChange: (a: Answer | null) => void`; `StateIcon({ state })`.
 
 - [ ] **Step 1: Implement `icons.tsx`**
@@ -3605,7 +3742,7 @@ function VerifyHints({ interviewId, item, answer, candidates, flush }: {
     );
 }
 
-export default function InterviewFocusPanel({ interviewId, item, answer, custom, candidates, onAnswer, onNext, flush }: {
+export default function InterviewFocusPanel({ interviewId, item, answer, custom, candidates, onAnswer, onNext, onBlurAnswer, flush }: {
     interviewId: string;
     item: QueueItem | null;
     answer: Answer | null;
@@ -3613,6 +3750,7 @@ export default function InterviewFocusPanel({ interviewId, item, answer, custom,
     candidates: CandidateSummary[];
     onAnswer: (id: string, a: Answer | null) => void;
     onNext: (fromId: string | null) => void;
+    onBlurAnswer: () => void;
     flush: () => Promise<boolean>;
 }) {
     const { t } = useLanguage();
@@ -3627,7 +3765,7 @@ export default function InterviewFocusPanel({ interviewId, item, answer, custom,
             <h2 className="mt-2 text-lg md:text-xl font-semibold text-stone-900 break-words" data-testid="interview-question">{questionText(t, item.id, custom)}</h2>
             {def?.hint && <p className="mt-1 text-sm text-stone-600">{t(`interview.h.${item.id}`)}</p>}
             {item.added && <p className="mt-1 text-xs text-teal-700">{t(item.added.reasonKey)}</p>}
-            <div className="mt-4">
+            <div className="mt-4" onBlur={onBlurAnswer}>
                 <label className="sr-only">{t('interview.answer_label')}</label>
                 <InterviewAnswerInput key={item.id} kind={kind} choices={def?.choices} value={answer} onChange={a => onAnswer(item.id, a)} onSubmit={() => onNext(item.id)} />
             </div>
@@ -3661,13 +3799,13 @@ git commit -m "feat(interview): rail + focus panel with typed answers and privat
 
 ---
 
-### Task 14: Review and save
+### Task 13: Review and save
 
 **Files:**
 - Modify (replace stub): `src/components/interview/InterviewReview.tsx`
 
 **Interfaces:**
-- Consumes: `completeInterview` (Task 8), `contactKey` (Task 2), `StarRating` (`src/components/StarRating.tsx`), `CandidateCard` (Task 11).
+- Consumes: `completeInterview` (Task 8), `contactKey` (Task 2), `StarRating` (`src/components/StarRating.tsx`), `CandidateCard` (Task 10).
 
 - [ ] **Step 1: Implement**
 
@@ -3833,7 +3971,7 @@ git commit -m "feat(interview): review screen — explicit profile choice, addit
 
 ---
 
-### Task 15: Read-only interview view
+### Task 14: Read-only interview view
 
 **Files:**
 - Modify (replace stub): `src/components/interview/InterviewReadOnly.tsx`
@@ -3906,7 +4044,7 @@ git commit -m "feat(interview): read-only completed interview view"
 
 ---
 
-### Task 16: Entry points and timeline badge
+### Task 15: Entry points and timeline badge
 
 **Files:**
 - Create: `src/lib/interviews/links.ts`
@@ -4046,7 +4184,7 @@ Add `interviewEnabled = false` to the destructured props, and pass `interviewEna
     interviewEnabled?: boolean;
 ```
 
-Add `interviewEnabled = false` to the signature at L123. In the overflow menu, add the first item before Share (same pattern as the Share button at ~L1277):
+Add `interviewEnabled = false` to the signature at L123. Give the existing overflow (⋯) button a test hook, `data-testid="profile-overflow"` (attribute only, no behaviour change). In the overflow menu, add the first item before Share (same pattern as the Share button at ~L1277):
 
 ```tsx
                                                     {interviewEnabled && initialData?.id && (
@@ -4138,13 +4276,13 @@ git commit -m "feat(interview): entry points (menu, profile) and Entrevista badg
 
 ---
 
-### Task 17: End-to-end tests
+### Task 16: End-to-end tests
 
 **Files:**
 - Create: `tests/interview-guide.authed.spec.ts` (runs in the `authed` project; one nested describe switches to the regular user's storage state)
 
 **Interfaces:**
-- Consumes: the `data-testid`s from Tasks 11–16, plus `dismissCountryBanner` from `tests/helpers.ts`.
+- Consumes: the `data-testid`s from Tasks 10–15, plus `dismissCountryBanner` from `tests/helpers.ts`.
 
 Why one file, run serially:
 - The flag lives in the shared local D1. Two spec files in different projects would toggle it concurrently and race.
@@ -4241,12 +4379,32 @@ test.describe('interview guide', () => {
         await expect(page.getByTestId('interview-candidate').filter({ hasText: NEW_NAME })).toBeVisible({ timeout: 30000 });
     });
 
+    test('the profile ⋯ menu offers «Entrevistar» and it opens the interview on that profile', async ({ page }) => {
+        await page.goto(`/adopter/${FIXTURE}`);
+        await dismissCountryBanner(page);
+        await page.getByTestId('profile-overflow').click();
+        await page.getByTestId('profile-interview').click();
+        await expect(page).toHaveURL(new RegExp(`/interview\\?adopterId=${FIXTURE}`), { timeout: 30000 });
+    });
+
     test('from a profile: starts confirmed and skips preparation', async ({ page }) => {
         await page.goto(`/interview?adopterId=${FIXTURE}`);
         await dismissCountryBanner(page);
         await pastTechnique(page);
         await expect(page.getByTestId('interview-candidate-status')).toContainText(FIXTURE_NAME, { timeout: 30000 });
         await expect(page.getByTestId('interview-prep-name')).toHaveCount(0);
+    });
+
+    test('desktop width: no horizontal scroll, rail visible beside the question', async ({ page }) => {
+        await page.setViewportSize({ width: 1280, height: 900 });
+        await page.goto(`/interview?adopterId=${FIXTURE}`);
+        await dismissCountryBanner(page);
+        await pastTechnique(page);
+        await expect(page.getByTestId('interview-focus')).toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId('interview-rail')).toBeVisible();
+        await expect(page.getByTestId('interview-rail-toggle')).toBeHidden();
+        const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        expect(overflow).toBeLessThanOrEqual(0);
     });
 
     test.describe('phone width', () => {
@@ -4277,24 +4435,61 @@ test.describe('interview guide', () => {
         });
     });
 
-    test('flag off: /interview does not exist and the profile shows no entry point', async ({ page }) => {
+    test('flag off: /interview does not exist, the menu has no «Entrevistar», the badge is gone', async ({ page }) => {
         flagOff();
         const res = await page.goto('/interview');
         expect(res?.status()).toBe(404);
-        await page.goto(`/adopter/${FIXTURE}`);
+        await page.goto(`/adopter/${FOREIGN}`); // this profile HAS a completed interview
         await dismissCountryBanner(page);
+        await expect(page.getByText('Resumen visible')).toBeVisible({ timeout: 30000 }); // the observation itself stays
         await expect(page.getByTestId('interview-badge')).toHaveCount(0);
+        await page.getByTestId('profile-overflow').click();
         await expect(page.getByTestId('profile-interview')).toHaveCount(0);
     });
 });
 ```
 
-- [ ] **Step 3: Run the specs locally**
+- [ ] **Step 3: Run the spec locally**
 
-The local harness uses Node 20, a rebuilt better-sqlite3 and its own port (see the project memory "Playwright RUNS locally now"). From the worktree:
+The base config reuses whatever server is on :3000, which may be another checkout. So use a local, **untracked** config on its own port. Create `playwright.local.config.ts` (never stage it):
 
-Run: `npx playwright test tests/interview-guide.authed.spec.ts --project=authed`
+```ts
+// UNTRACKED local harness: this worktree on its own port, never reuse a server.
+import base from './playwright.config';
+import { defineConfig } from '@playwright/test';
+
+const PORT = 3111;
+const baseWs = Array.isArray(base.webServer) ? base.webServer[0] : base.webServer!;
+
+export default defineConfig({
+    ...base,
+    reporter: 'list',
+    use: { ...base.use, baseURL: `http://localhost:${PORT}` },
+    webServer: {
+        ...baseWs,
+        command: `node scripts/setup-test-db.js && npx next dev -p ${PORT}`,
+        url: `http://localhost:${PORT}/api/ready`,
+        reuseExistingServer: false,
+        timeout: 240000,
+        env: { ...(baseWs.env ?? {}), AUTH_URL: `http://localhost:${PORT}`, NEXTAUTH_URL: `http://localhost:${PORT}` },
+    },
+});
+```
+
+Then:
+
+```bash
+export PATH="/opt/homebrew/opt/node@20/bin:$PATH"   # Node 20 (keg-only); the default Node 26 breaks better-sqlite3
+npm rebuild better-sqlite3                           # once per worktree
+npx playwright test tests/interview-guide.authed.spec.ts --config=playwright.local.config.ts --project=authed --workers=1
+```
+
 Expected: PASS.
+
+Known local traps:
+- `setup-test-db.js` injects rows and does not wipe them. Run `git checkout -- local.db .wrangler/` before trusting a count-based failure, and never stage those files.
+- The tracked `.wrangler` sqlite can fail `PRAGMA integrity_check`, so the dev server never comes up and it looks like a hang. If so, recover it into a scratch copy (`sqlite3 <file> ".recover" | sqlite3 /tmp/repaired.sqlite`), copy that over the file, run, then `git checkout -- .wrangler/`.
+- The `setup` project's "authenticate as user" step can fail locally (pre-existing). If it does, `.auth/user.json` may be missing and the "another rescuer" test can't run locally. Run once without `--no-deps` to create `.auth/admin.json`, then re-run with `--no-deps`. The user-side test is then verified by CI, which is fine as long as it is reported as not run locally.
 - If the profile test can't find the badge, confirm the observation row's `id` in the `adoptions` view equals `adopter_events.id` (view in `drizzle/0076_animal_listed.sql`).
 - If `/interview` returns 200 with the flag off, check that no env var `ENABLE_INTERVIEW_GUIDE` is set: env wins over DB in `getFeatureFlag`.
 - If the candidate test finds nothing, check that the created person was tokenized: `SELECT count(*) FROM duplicate_tokens WHERE adopter_id = (SELECT id FROM adopters WHERE name LIKE 'Persona Entrevista%')`. `saveAdopter` tokenizes synchronously.
