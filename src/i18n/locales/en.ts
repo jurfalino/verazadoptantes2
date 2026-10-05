@@ -251,6 +251,8 @@ export const en = {
         flag_desc_custom_adoption_docs: 'Lets each rescuer and group choose which form questions to ask and edit contract sections 2–4.',
         flag_label_sheet_import: 'Import spreadsheet in My Adopters',
         flag_desc_sheet_import: 'Shows the «Import spreadsheet» button in My Adopters, which opens the spreadsheet adopter import.',
+        flag_label_interview_guide: 'Phone interview guide',
+        flag_desc_interview_guide: 'Shows «Interview» in the menu and «Interview» on profiles: a guide for interviewing adopters by phone and saving what was said.',
         flag_label_email_otp: 'Email code login',
         flag_desc_email_otp: 'Adds a "sign in with email" option to the login modal: a 6-digit code is emailed and typed in, no Google account needed. Requires Resend (API key + verified domain) to be configured. Off by default.',
         flag_label_pwa_install_prompt: '"Install the app" bar',

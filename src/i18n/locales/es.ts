@@ -251,6 +251,8 @@ export const es = {
         flag_desc_custom_adoption_docs: 'Permite que cada rescatista y grupo elija qué preguntas hace el formulario y edite las secciones 2–4 del contrato.',
         flag_label_sheet_import: 'Importar planilla en Mis Adoptantes',
         flag_desc_sheet_import: 'Muestra el botón «Importar planilla» en Mis Adoptantes, que lleva a la carga de adoptantes desde una planilla.',
+        flag_label_interview_guide: 'Guía de entrevista telefónica',
+        flag_desc_interview_guide: 'Muestra «Entrevista» en el menú y «Entrevistar» en los perfiles: una guía para entrevistar adoptantes por teléfono y guardar lo que se habló.',
         flag_label_email_otp: 'Acceso con código por email',
         flag_desc_email_otp: 'Agrega una opción de "iniciar sesión con email" al modal de acceso: se envía un código de 6 dígitos por correo y se ingresa, sin necesidad de cuenta de Google. Requiere Resend configurado (API key + dominio verificado). Por defecto apagado.',
         flag_label_pwa_install_prompt: 'Barra "Instalar la app"',

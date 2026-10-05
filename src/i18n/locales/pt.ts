@@ -251,6 +251,8 @@ export const pt = {
         flag_desc_custom_adoption_docs: 'Permite que cada resgatista e grupo escolha quais perguntas o formulário faz e edite as seções 2–4 do contrato.',
         flag_label_sheet_import: 'Importar planilha em Meus Adotantes',
         flag_desc_sheet_import: 'Mostra o botão «Importar planilha» em Meus Adotantes, que abre a importação de adotantes a partir de uma planilha.',
+        flag_label_interview_guide: 'Guia de entrevista por telefone',
+        flag_desc_interview_guide: 'Mostra «Entrevista» no menu e «Entrevistar» nos perfis: um guia para entrevistar adotantes por telefone e salvar o que foi dito.',
         flag_label_email_otp: 'Acesso com código por e-mail',
         flag_desc_email_otp: 'Adiciona uma opção de "entrar com e-mail" ao modal de acesso: um código de 6 dígitos é enviado por e-mail e digitado, sem necessidade de conta Google. Requer Resend configurado (API key + domínio verificado). Desligado por padrão.',
         flag_label_pwa_install_prompt: 'Barra "Instalar o app"',
