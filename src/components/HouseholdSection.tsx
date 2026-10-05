@@ -20,7 +20,7 @@ import { SocialLogo } from '@/components/SocialLogo';
 import { PhoneAppsToggle } from '@/components/PhoneAppsToggle';
 import { MessagingLogo } from '@/components/MessagingLogo';
 import { detectSocialPlatform, type ContactEntry, type ContactEntryType, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
-import { RELATIONSHIPS, type HouseholdMember, type Relationship } from '@/lib/householdMembers';
+import { RELATIONSHIPS, currentAge, type HouseholdMember, type Relationship } from '@/lib/householdMembers';
 import { handledAsStale } from '@/lib/errorMessage';
 import { entryConflictMessage } from '@/lib/collabCopy';
 import {
@@ -35,7 +35,7 @@ const TYPE_ICON: Record<ContactEntryType, typeof Phone> = {
 
 interface Draft { type: ContactEntryType; value: string; platform: SocialPlatform | null; apps: MessagingApp[] }
 interface MemberUI extends HouseholdMember {
-    editing?: boolean; draftName?: string; draftRel?: Relationship | null;
+    editing?: boolean; draftName?: string; draftRel?: Relationship | null; draftAge?: string;
     composer?: { stage: 'pick' } | ({ stage: 'edit' } & Draft) | null;
 }
 interface CEditing extends ContactEntry { editing?: boolean; draft?: Draft }
@@ -68,7 +68,7 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                 if (!lm) return { ...sm };
                 return {
                     ...sm,
-                    editing: lm.editing, draftName: lm.draftName, draftRel: lm.draftRel, composer: lm.composer,
+                    editing: lm.editing, draftName: lm.draftName, draftRel: lm.draftRel, draftAge: lm.draftAge, composer: lm.composer,
                     contactEntries: sm.contactEntries.map(se => {
                         const le = lm.contactEntries.find(e => e.id === se.id) as CEditing | undefined;
                         return le?.editing ? { ...se, editing: true, draft: le.draft } as CEditing : se;
@@ -115,26 +115,32 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
     async function saveMember(m: MemberUI) {
         const name = (m.draftName ?? '').trim();
         const relationship = m.draftRel ?? null;
+        // '' clears the age; a number sets it (the action validates 0–120).
+        const age = m.draftAge === undefined ? undefined : m.draftAge.trim() === '' ? null : Number(m.draftAge);
         const isNew = (m as MemberUI & { isNew?: boolean }).isNew;
         if (isNew) {
-            const res = await run(() => addHouseholdMember({ adopterId, name, relationship }));
+            const res = await run(() => addHouseholdMember({ adopterId, name, relationship, age: age ?? undefined }));
             if (!res) return;
             setMembers(prev => prev.map(x => x.id === m.id
-                ? { ...x, id: res.memberId, name, relationship, editing: false, draftName: undefined, draftRel: undefined, isNew: false } as MemberUI
+                ? { ...x, id: res.memberId, name, relationship, ...(typeof age === 'number' ? { age, ageAsOf: new Date().toISOString().slice(0, 10) } : {}), editing: false, draftName: undefined, draftRel: undefined, draftAge: undefined, isNew: false } as MemberUI
                 : x));
         } else {
             const res = await run(
-                () => updateHouseholdMember({ adopterId, memberId: m.id, name, relationship, expected: { name: m.name, relationship: m.relationship ?? null } }),
+                () => updateHouseholdMember({ adopterId, memberId: m.id, name, relationship, age, expected: { name: m.name, relationship: m.relationship ?? null } }),
                 (kind) => { if (kind === 'deleted') setMembers(prev => prev.filter(x => x.id !== m.id)); },
             );
             if (!res) return;
-            patch(m.id, { name, relationship, editing: false, draftName: undefined, draftRel: undefined });
+            patch(m.id, {
+                name, relationship,
+                ...(age === null ? { age: undefined, ageAsOf: undefined } : typeof age === 'number' ? { age, ageAsOf: new Date().toISOString().slice(0, 10) } : {}),
+                editing: false, draftName: undefined, draftRel: undefined, draftAge: undefined,
+            });
         }
         router.refresh();
     }
     function cancelMember(m: MemberUI) {
         if ((m as MemberUI & { isNew?: boolean }).isNew) setMembers(prev => prev.filter(x => x.id !== m.id));
-        else patch(m.id, { editing: false, draftName: undefined, draftRel: undefined });
+        else patch(m.id, { editing: false, draftName: undefined, draftRel: undefined, draftAge: undefined });
     }
     function deleteMember(m: MemberUI) {
         setConfirmTarget({ kind: 'member', member: m });
@@ -256,6 +262,10 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                                         {RELATIONSHIPS.map(r => <option key={r} value={r}>{t(`adopter.hh_rel_${r}`)}</option>)}
                                     </select>
                                 </div>
+                                <div className="w-24">
+                                    <label className="block text-[11px] font-semibold text-stone-500 mb-1">{t('adopter.hh_age')}</label>
+                                    <input type="number" inputMode="numeric" min={0} max={120} step={1} data-testid="household-member-age-input" value={m.draftAge ?? ''} onChange={e => patch(m.id, { draftAge: e.target.value })} className="w-full px-2.5 py-1.5 border border-stone-300 rounded text-base outline-none focus:border-teal-500" />
+                                </div>
                             </div>
                             <div className="flex items-center gap-2 justify-end">
                                 <button type="button" onClick={() => cancelMember(m)} disabled={busy} className="text-xs font-medium px-3 py-1.5 rounded text-stone-700 bg-stone-100 hover:bg-stone-200 disabled:opacity-50"><X className="w-3.5 h-3.5 inline" /> {t('adopter.ce_edit_cancel')}</button>
@@ -270,11 +280,12 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                                     <div className="font-semibold text-[15px] text-stone-900 break-words">{m.name || <span className="italic text-stone-400">{t('adopter.hh_name')}</span>}</div>
                                     <div className={`text-xs ${m.relationship ? 'text-stone-500' : 'text-stone-400 italic'}`}>
                                         {m.relationship === 'unknown' ? t('adopter.hh_rel_unknown_display') : m.relationship ? relLabel(m.relationship) : t('adopter.hh_rel_none')}
+                                        {currentAge(m) !== null && <> · {t('adopter.hh_years').replace('{n}', String(currentAge(m)))}</>}
                                     </div>
                                 </div>
                                 {canEdit && (
                                     <div className="flex gap-0.5 shrink-0">
-                                        <button type="button" data-testid="household-member-edit" onClick={() => patch(m.id, { editing: true, draftName: m.name, draftRel: m.relationship })} title={t('adopter.ce_edit_label')} className="p-1.5 text-stone-500 hover:text-teal-700 hover:bg-teal-50 rounded"><Pencil className="w-3.5 h-3.5" /></button>
+                                        <button type="button" data-testid="household-member-edit" onClick={() => patch(m.id, { editing: true, draftName: m.name, draftRel: m.relationship, draftAge: m.age !== undefined ? String(currentAge(m)) : '' })} title={t('adopter.ce_edit_label')} className="p-1.5 text-stone-500 hover:text-teal-700 hover:bg-teal-50 rounded"><Pencil className="w-3.5 h-3.5" /></button>
                                         <button type="button" onClick={() => deleteMember(m)} title="Quitar" className="p-1.5 text-stone-500 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
                                     </div>
                                 )}

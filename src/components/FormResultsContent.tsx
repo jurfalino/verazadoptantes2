@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import Link from 'next/link';
 import { useTimezone } from '@/context/TimezoneContext';
 import { useLanguage } from '@/context/LanguageContext';
-import FormAnswersPanel, { renderFormAnswerValue, AnswerValue } from '@/components/FormAnswersPanel';
+import FormAnswersPanel, { renderFormAnswerValue, AnswerValue, householdPeopleRow } from '@/components/FormAnswersPanel';
 import FormResultMatchCard from '@/components/FormResultMatchCard';
 import LocationMap from '@/components/LocationMap';
 import { buttonClasses } from '@/components/ui/Button';
@@ -285,6 +285,10 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                     </div>
                                 )}
                                 {['ageRange', 'children', 'housingType', 'hasOutdoor', 'isSafe', 'hoursAlone'].map((field) => {
+                                    if (field === 'children') {
+                                        const people = householdPeopleRow(fullAnswers, t('petshield.fields.household'));
+                                        if (people) return people;
+                                    }
                                     const raw = fullAnswers[field];
                                     const display = renderFormAnswerValue(field, raw, t);
                                     if (!display) return null;

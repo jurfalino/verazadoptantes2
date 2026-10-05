@@ -16,6 +16,7 @@ import {
     deserializeHouseholdMembers,
     serializeHouseholdMembers,
     RELATIONSHIPS,
+    currentAge,
     type HouseholdMember,
     type Relationship,
 } from '@/lib/householdMembers';
@@ -157,8 +158,29 @@ const sameText = (a: string | null | undefined, b: string | null | undefined) =>
 
 // ─────────────────────────── Member CRUD ───────────────────────────
 
+/**
+ * Optional age on a member (spec 2026-10-04): a whole 0–120 sets it, dated
+ * today so the profile can show the CURRENT age; null clears it; undefined
+ * leaves it as is. Anything else is ignored (never trust the client).
+ */
+function applyAge(m: HouseholdMember, age: number | null | undefined): void {
+    if (age === undefined) return;
+    if (age === null) { delete m.age; delete m.ageAsOf; return; }
+    if (Number.isInteger(age) && age >= 0 && age <= 120) {
+        m.age = age;
+        m.ageAsOf = new Date().toISOString().slice(0, 10);
+    }
+}
+
+/** True when `age` would leave the member's age as it reads today. */
+function sameAge(m: HouseholdMember, age: number | null | undefined): boolean {
+    if (age === undefined) return true;
+    if (age === null) return m.age === undefined;
+    return currentAge(m) === age;
+}
+
 export async function addHouseholdMember(
-    input: { adopterId: string; name?: string; relationship?: Relationship | null },
+    input: { adopterId: string; name?: string; relationship?: Relationship | null; age?: number | null },
 ): Promise<{ ok: true; memberId: string } | Busy | Err> {
     const actor = await authActor();
     if (!actor) return { ok: false, error: 'Not authenticated' };
@@ -170,6 +192,7 @@ export async function addHouseholdMember(
         const r = await loadEditable(adopterId, actor);
         if (!r.ok) return r;
         const member: HouseholdMember = { id: crypto.randomUUID(), name, relationship, contactEntries: [], addedBy: actor };
+        applyAge(member, input.age);
         const out = await mutateHousehold(r.db, adopterId, (members) => ({ members: [...members, member], result: null }), { op: 'addHouseholdMember', actor });
         if (out.status === 'missing') return { ok: false, error: 'Adopter not found' };
         if (out.status === 'busy') return busy(out.errorId);
@@ -183,7 +206,7 @@ export async function addHouseholdMember(
 }
 
 export async function updateHouseholdMember(
-    input: { adopterId: string; memberId: string; name?: string; relationship?: Relationship | null; expected?: { name?: string | null; relationship?: Relationship | null } },
+    input: { adopterId: string; memberId: string; name?: string; relationship?: Relationship | null; age?: number | null; expected?: { name?: string | null; relationship?: Relationship | null } },
 ): Promise<{ ok: true } | Conflict | Busy | Err> {
     const actor = await authActor();
     if (!actor) return { ok: false, error: 'Not authenticated' };
@@ -201,11 +224,13 @@ export async function updateHouseholdMember(
             if (!m) return { result: expected ? 'deleted' : 'not_found' };
             const name = input.name !== undefined ? String(input.name).trim() : m.name;
             const relationship = input.relationship !== undefined ? (input.relationship && REL_SET.has(input.relationship) ? input.relationship : null) : m.relationship;
-            if (sameText(name, m.name) && (relationship ?? null) === (m.relationship ?? null)) return { result: 'noop' };
+            if (sameText(name, m.name) && (relationship ?? null) === (m.relationship ?? null) && sameAge(m, input.age)) return { result: 'noop' };
             // A teammate changed this person since the form opened: refuse.
             if (expected && (!sameText(expected.name, m.name) || (expected.relationship ?? null) !== (m.relationship ?? null))) return { result: 'changed' };
             if (!name && !relationship && m.contactEntries.length === 0) return { result: 'empty' };
-            return { members: members.map(x => (x.id === memberId ? { ...x, name, relationship } : x)), result: 'updated' };
+            const next: HouseholdMember = { ...m, name, relationship };
+            if (!sameAge(m, input.age)) applyAge(next, input.age);
+            return { members: members.map(x => (x.id === memberId ? next : x)), result: 'updated' };
         }, { op: 'updateHouseholdMember', actor, memberId });
         if (out.status === 'missing') return { ok: false, error: 'Adopter not found' };
         if (out.status === 'busy') return busy(out.errorId);

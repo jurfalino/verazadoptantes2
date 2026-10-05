@@ -219,6 +219,41 @@ test.describe('form-results: linking to an existing profile', () => {
         expect(rows(`SELECT id FROM adoptions WHERE adopter_id = '${row.auto_adopter_id}' AND source_url = 'form:${submissionId}'`)).toHaveLength(1);
     });
 
+    test('household people: the form screen shows each person with a dot; the profile shows the age and links back', async ({ page, request }) => {
+        const stamp = Date.now();
+        const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+            name: `E2E HogarUI ${stamp}`, email: `e2e-hogarui-${stamp}@example.com`, phone: `23${String(stamp).slice(-8)}`,
+            address: '2 Hogar St', intent: 'self', housingType: 'house',
+            householdPeople: [
+                { relationship: 'child', age: 3, firstName: 'Tomás', lastName: 'López' },
+                { relationship: 'child', age: 11 },
+                { relationship: 'partner', age: 38, firstName: 'Laura' },
+            ],
+            livesAlone: false,
+        } });
+        expect(res.ok(), await res.text()).toBeTruthy();
+        const { submissionId } = await res.json();
+        const row = one(`SELECT auto_adopter_id FROM form_submissions WHERE id = '${submissionId}'`);
+
+        await page.goto(`/form-results/${submissionId}`);
+        await dismissCountryBanner(page);
+        const answers = page.getByRole('button', { name: /Complete answers|Respuestas completas|Respostas completas/ });
+        if ((await answers.getAttribute('aria-expanded')) === 'false') await answers.click();
+        const people = page.getByTestId('household-people');
+        await expect(people.locator('[data-signal="risk"]')).toHaveCount(1);    // 3
+        await expect(people.locator('[data-signal="caution"]')).toHaveCount(1); // 11
+        await expect(people.locator('[data-signal="ok"]')).toHaveCount(1);      // 38
+        await expect(people).toContainText('Tomás López');
+        // The derived count is not shown twice next to the list.
+        await expect(page.locator('div.flex.items-baseline', { hasText: /Children in household|Niños en el hogar/ })).toHaveCount(0);
+
+        await page.goto(`/adopter/${row.auto_adopter_id}`);
+        await dismissCountryBanner(page);
+        await expect(page.getByText('Tomás López').first()).toBeVisible();
+        await expect(page.getByText(/3 years old|3 años|3 anos/).first()).toBeVisible();
+        await expect(page.locator(`a[href="/form-results/${submissionId}"]`).first()).toBeVisible();
+    });
+
     test('a fresh submission with no look-alikes reads as a new profile, not as "linked"', async ({ page, request }) => {
         const stamp = Date.now();
         const name = `E2E Formlink Solo ${stamp}`;

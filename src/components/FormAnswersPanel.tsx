@@ -1,7 +1,7 @@
 'use client';
 
 import { useLanguage } from '@/context/LanguageContext';
-import { answerSignal, type AnswerSignal } from '@/domain/answerSignals';
+import { answerSignal, personSignal, type AnswerSignal } from '@/domain/answerSignals';
 
 /** Token per signal: the semantic status colours both themes define (style guide §1.2). */
 const SIGNAL_COLOR: Record<AnswerSignal, string> = {
@@ -9,6 +9,65 @@ const SIGNAL_COLOR: Record<AnswerSignal, string> = {
     caution: 'var(--status-warning-text)',
     risk: 'var(--status-error-text)',
 };
+
+function SignalDot({ signal }: { signal: AnswerSignal }) {
+    const { t } = useLanguage();
+    return (
+        <span
+            role="img"
+            aria-label={t(`formResults.signal_${signal}`)}
+            title={t(`formResults.signal_${signal}`)}
+            data-signal={signal}
+            className="inline-block w-2.5 h-2.5 rounded-full shrink-0 self-center"
+            style={{ background: SIGNAL_COLOR[signal] }}
+        />
+    );
+}
+
+type FormPerson = { relationship: string; age: number; firstName?: string; lastName?: string };
+
+/**
+ * "¿Quiénes viven en la casa?" (spec 2026-10-04 §4): one line per person with
+ * its own dot — under 5 red, 5–17 amber, adults green — or a single green
+ * "Vive solo/a". Replaces the derived "Niños en el hogar" row.
+ */
+export function HouseholdPeopleAnswer({ people, livesAlone }: { people: FormPerson[]; livesAlone?: boolean }) {
+    const { t } = useLanguage();
+    if (!people.length) {
+        return livesAlone ? (
+            <span data-testid="household-people" className="inline-flex items-baseline gap-1.5 text-stone-800">
+                <SignalDot signal="ok" />{t('formResults.household_alone')}
+            </span>
+        ) : null;
+    }
+    return (
+        <ul data-testid="household-people" className="space-y-1 min-w-0">
+            {people.map((p, i) => {
+                const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
+                return (
+                    <li key={i} className="flex items-baseline gap-1.5 text-stone-800 min-w-0 [overflow-wrap:anywhere]">
+                        <SignalDot signal={personSignal(p.age)} />
+                        <span>
+                            {t(`adopter.hh_rel_${p.relationship}`)} · {t('formResults.household_years').replace('{n}', String(p.age))}
+                            {name && <span className="text-stone-500"> · {name}</span>}
+                        </span>
+                    </li>
+                );
+            })}
+        </ul>
+    );
+}
+
+/** The household row for a form that used the people list; null for older forms (they keep "Niños en el hogar"). */
+export function householdPeopleRow(answers: Record<string, unknown>, label: string) {
+    if (!Array.isArray(answers.householdPeople)) return null;
+    return (
+        <div key="household" className="flex items-baseline gap-2 text-xs">
+            <span className="font-semibold text-stone-600 min-w-[140px]">{label}:</span>
+            <HouseholdPeopleAnswer people={answers.householdPeople as FormPerson[]} livesAlone={answers.livesAlone === true} />
+        </div>
+    );
+}
 
 /**
  * An answer's value with its semáforo dot (src/domain/answerSignals.ts) in
@@ -126,6 +185,10 @@ export default function FormAnswersPanel({ fullAnswers, excludeSections = [] }: 
                         </h2>
                         <div className="space-y-1">
                             {visibleFields.map(field => {
+                                if (field === 'children') {
+                                    const people = householdPeopleRow(fullAnswers, t('petshield.fields.household'));
+                                    if (people) return people;
+                                }
                                 const raw = get(field);
                                 const display = renderValue(field, raw);
                                 if (!display) return null;
