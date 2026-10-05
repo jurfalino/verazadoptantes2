@@ -94,7 +94,7 @@ export async function completeInterview(interviewId: string, input: CompleteInpu
                 // addHouseholdMember always appends, so a retry must skip people already there.
                 const rawRow = created ? null : await db.select({ hm: adopters.householdMembers }).from(adopters).where(eq(adopters.id, adopterId)).get();
                 const present = deserializeHouseholdMembers(rawRow?.hm ?? null);
-                const have = (h: { name: string; relationship: string }) =>
+                const have = (h: { name: string; relationship: string | null }) =>
                     present.some(m => normalizeText(m.name.trim()) === normalizeText(h.name.trim()) && m.relationship === h.relationship);
                 for (const h of household.filter(h => !have(h))) {
                     const r = await addHouseholdMember({ adopterId, name: h.name, relationship: h.relationship });
