@@ -69,6 +69,9 @@ export async function startGoogleSignIn(returnPath: string, source: string): Pro
         // Chrome reopens THIS page (public); the destination rides along.
         const intentUrl = buildChromeIntentUrl(window.location.origin, currentReturnPath(), Date.now(), redirectTo);
         const hidden = waitForPageToHide(HANDOFF_WAIT_MS);
+        // Sent before leaving: the outcome event may never flush if Chrome
+        // takes over, and attempts must line up with Chrome's arrivals.
+        posthogTrack('login_inapp_handoff', { app: env.inApp, outcome: 'attempt', source });
         window.location.href = intentUrl;
         const left = await hidden;
         posthogTrack('login_inapp_handoff', { app: env.inApp, outcome: left ? 'left' : 'stayed', source });

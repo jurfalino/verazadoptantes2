@@ -74,8 +74,16 @@ export default function LoginHandoffReceiver() {
             openLogin(returnPath, 'email-code');
             return;
         }
-        posthogTrack('login_inapp_handoff_arrived', { kind, inApp: env.inApp ?? 'none', os: env.os });
-        if (kind === 'google' && !env.inApp && !isAppHandoffReferrer(document.referrer)) {
+        const ref = document.referrer;
+        const appReferrer = isAppHandoffReferrer(ref);
+        // referrer shape tells us whether the gate below eats real hand-offs.
+        posthogTrack('login_inapp_handoff_arrived', {
+            kind, inApp: env.inApp ?? 'none', os: env.os,
+            referrer: ref === '' ? 'empty' : ref.startsWith('android-app://') ? 'android-app'
+                : ref.startsWith(window.location.origin) ? 'same-origin' : 'other',
+            autoStart: kind === 'google' && !env.inApp && appReferrer,
+        });
+        if (kind === 'google' && !env.inApp && !appReferrer) {
             // Not an intent — someone else's link. Offer, don't start.
             openLogin(returnPath);
             return;
