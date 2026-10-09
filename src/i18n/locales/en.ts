@@ -399,6 +399,12 @@ export const en = {
         type_to_confirm: 'Type the code to confirm',
     },
     login: {
+        inapp_this_app: 'this app',
+        inapp_email_first: "Google doesn't allow signing in from {app}. Sign in with a code we email you:",
+        inapp_handoff_failed: "We couldn't open Chrome. Sign in with a code we email you:",
+        inapp_open_in_browser: "Google doesn't allow signing in from {app}. Open this page in Chrome or Safari to sign in.",
+        inapp_opens_chrome: 'Opens in Chrome',
+        google_failed: "We couldn't open Google. Please try again.",
         email_label: 'Or sign in with email',
         email_placeholder: 'vet@clinic.com',
         email_btn: 'Send me a code',

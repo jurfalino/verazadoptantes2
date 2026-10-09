@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { signIn } from 'next-auth/react';
+import { startGoogleSignIn } from '@/lib/googleSignIn';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 
 /**
  * Recovery UI for LEGITIMATE auth failures (as opposed to the adopter-login
@@ -20,14 +21,18 @@ import { signIn } from 'next-auth/react';
  */
 export default function AuthErrorRecovery() {
     const [loading, setLoading] = useState(false);
+    const [errorId, setErrorId] = useState<string | null>(null);
 
     const retry = async () => {
         setLoading(true);
+        setErrorId(null);
         try {
-            await signIn('google', { redirectTo: '/' });
-        } catch {
-            // signIn navigates away on success; if it throws we just re-enable
-            // the button so the user can try again.
+            // In an Android in-app browser this reopens the page in Chrome
+            // first; if that fails the copy below already says what to do.
+            const outcome = await startGoogleSignIn('/', 'AuthErrorRecovery');
+            if (outcome !== 'redirecting') setLoading(false);
+        } catch (e) {
+            setErrorId(resolveErrorId(e, 'AuthErrorRecovery'));
             setLoading(false);
         }
     };
@@ -56,6 +61,11 @@ export default function AuthErrorRecovery() {
                 >
                     {loading ? 'Redirigiendo…' : 'Iniciar sesión con Google'}
                 </button>
+                {errorId && (
+                    <p className="mt-2 text-xs text-rose-600" role="alert">
+                        No pudimos abrir Google. Probá de nuevo. (Código: {errorId})
+                    </p>
+                )}
                 <Link href="/" className="block mt-3 text-sm text-stone-500 hover:text-stone-700">
                     Volver al inicio
                 </Link>

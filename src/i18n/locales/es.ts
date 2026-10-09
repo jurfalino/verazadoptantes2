@@ -398,6 +398,12 @@ export const es = {
         type_to_confirm: 'Escribí el código para confirmar',
     },
     login: {
+        inapp_this_app: 'esta app',
+        inapp_email_first: 'Desde {app}, Google no deja iniciar sesión. Entrá con un código que te mandamos por email:',
+        inapp_handoff_failed: 'No pudimos abrir Chrome. Entrá con un código que te mandamos por email:',
+        inapp_open_in_browser: 'Desde {app}, Google no deja iniciar sesión. Abrí esta página en Chrome o Safari para entrar.',
+        inapp_opens_chrome: 'Se abre en Chrome',
+        google_failed: 'No pudimos abrir Google. Probá de nuevo.',
         email_label: 'O ingresá con tu email',
         email_placeholder: 'vet@clinica.com',
         email_btn: 'Enviarme un código',

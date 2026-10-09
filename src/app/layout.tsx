@@ -12,6 +12,7 @@ import { EditActionsProvider } from "@/context/EditActionsContext";
 import { SessionProvider } from 'next-auth/react';
 import { AuthProvider } from '@/context/AuthContext';
 import LoginModal from '@/components/LoginModal';
+import LoginHandoffReceiver from '@/components/LoginHandoffReceiver';
 import { ToastProvider } from '@/components/ui/Toast';
 import ClientErrorReporter from '@/components/ClientErrorReporter';
 import StaleDeployWatcher from '@/components/StaleDeployWatcher';
@@ -187,6 +188,7 @@ export default async function RootLayout({
                       <CountryConfirmBanner key={session?.user?.email || 'anon'} userEmail={session?.user?.email || null} />
                     )}
                     <LoginModal />
+                    <LoginHandoffReceiver />
                     <InstallPrompt />
                     {children}
                     <Footer />

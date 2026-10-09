@@ -3,15 +3,21 @@
 import { signIn } from 'next-auth/react';
 import { useEffect, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
-import { useAuthContext } from '@/context/AuthContext';
+import { useAuthContext, type LoginReason } from '@/context/AuthContext';
 import EmailOtpForm from '@/components/EmailOtpForm';
+import { currentBrowserEnv, currentReturnPath, startGoogleSignIn } from '@/lib/googleSignIn';
+import { inAppDisplayName } from '@/domain/inAppBrowser';
+import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
+import { posthogTrack } from '@/lib/zaraz';
+import { clearPendingOtp } from '@/lib/pendingOtp';
 
 export default function LoginModal() {
-    const { isLoginOpen, closeLogin, redirectPath } = useAuthContext();
+    const { isLoginOpen, closeLogin, redirectPath, loginReason } = useAuthContext();
     if (!isLoginOpen) return null;
     return (
         <div className="fixed inset-0 bg-teal-950/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <LoginPanel redirectPath={redirectPath} onClose={closeLogin} />
+            {/* Closing abandons a pending email code, so it won't reopen on reload. */}
+            <LoginPanel redirectPath={redirectPath} onClose={() => { clearPendingOtp(); closeLogin(); }} reason={loginReason} />
         </div>
     );
 }
@@ -21,20 +27,32 @@ export default function LoginModal() {
  * show the same box in place (the ?variant=signin prototype puts it over the
  * top of a logged-out visitor's results). Mounting it is opening it.
  */
-export function LoginPanel({ redirectPath, onClose, className = '' }: {
+export function LoginPanel({ redirectPath, onClose, reason = null, className = '' }: {
     redirectPath: string | null;
     onClose: () => void;
+    reason?: LoginReason | null;
     className?: string;
 }) {
     const { t } = useLanguage();
     const [loading, setLoading] = useState(false);
     const [devEmail, setDevEmail] = useState('');
     const [emailOtpEnabled, setEmailOtpEnabled] = useState(false);
+    const [googleError, setGoogleError] = useState<string | null>(null);
+    // Read once: the panel only mounts in the browser (opening it is a click
+    // or the hand-off receiver), so navigator is there.
+    const [env] = useState(currentBrowserEnv);
+    // Set when an Android in-app browser ignored the jump to Chrome.
+    const [handoffFailed, setHandoffFailed] = useState(false);
+    // Google can't sign in here, so the email code leads instead of hiding
+    // behind the reveal link: iOS in-app browsers (no way out to Safari), a
+    // failed hand-off, or the receiver sending the visitor back to us.
+    const emailFirst = reason === 'email-first' || handoffFailed || (env.inApp !== null && env.os !== 'android');
     // Google stays the single visible choice; the email fields appear only
     // after the user asks for them (progressive disclosure —
     // docs/ux-ui-guidelines.md §4.4, and the pattern users already know from
-    // Slack/Notion, §4.6 Jakob's Law).
-    const [emailOtpOpen, setEmailOtpOpen] = useState(false);
+    // Slack/Notion, §4.6 Jakob's Law). A code already sent reopens them.
+    const [emailOtpOpen, setEmailOtpOpen] = useState(reason === 'email-code');
+    const appName = inAppDisplayName(env.inApp) ?? t('login.inapp_this_app');
 
     // Public flag read — the email option only renders when an admin has
     // switched ENABLE_EMAIL_OTP on (Resend must be configured first).
@@ -47,19 +65,43 @@ export function LoginPanel({ redirectPath, onClose, className = '' }: {
                 const cfg = data as { config?: Record<string, string> };
                 setEmailOtpEnabled(cfg.config?.ENABLE_EMAIL_OTP === 'true');
             })
-            .catch(() => { });
-    }, []);
+            .catch((e) => {
+                // Without the flag the email option stays hidden — in an
+                // in-app browser that leaves only Google, which can't work.
+                reportClientError({
+                    level: 'warn',
+                    message: `login config fetch failed: ${e instanceof Error ? e.message : String(e)}`,
+                    source: 'LoginPanel.config',
+                    extra: { inApp: env.inApp },
+                });
+            });
+    }, [env.inApp]);
+
+    useEffect(() => {
+        if (emailFirst) posthogTrack('login_email_first_shown', { app: env.inApp ?? 'none', os: env.os, why: handoffFailed ? 'handoff_failed' : reason ?? 'ios_inapp' });
+    }, [emailFirst]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleGoogleLogin = async () => {
         setLoading(true);
-        await signIn('google', { redirectTo: redirectPath || window.location.pathname });
+        setGoogleError(null);
+        try {
+            const outcome = await startGoogleSignIn(redirectPath || currentReturnPath(), 'LoginPanel');
+            // 'redirecting' leaves the button busy until Google's page loads.
+            if (outcome === 'handoff-failed') setHandoffFailed(true);
+            if (outcome !== 'redirecting') setLoading(false);
+        } catch (e) {
+            setGoogleError(`${t('login.google_failed')} (${resolveErrorId(e, 'LoginPanel.google')})`);
+            setLoading(false);
+        }
     };
 
     const handleDevLogin = async () => {
         if (!devEmail) return;
         setLoading(true);
-        await signIn('dev-login', { email: devEmail, redirectTo: redirectPath || window.location.pathname });
+        await signIn('dev-login', { email: devEmail, redirectTo: redirectPath || currentReturnPath() });
     };
+
+    const emailForm = <EmailOtpForm redirectPath={redirectPath || undefined} autoFocusEmail={!emailFirst} />;
 
     return (
         <div className={`bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 relative border border-teal-100 ${className}`}>
@@ -76,6 +118,24 @@ export function LoginPanel({ redirectPath, onClose, className = '' }: {
             </div>
 
             <div className="space-y-4">
+                {/* In-app browser where Google can't sign in: the email code leads */}
+                {emailFirst && emailOtpEnabled && (
+                    <div data-testid="login-email-first" className="space-y-3">
+                        <p className="text-sm text-teal-800 bg-teal-50 border border-teal-100 rounded-xl px-3 py-2">
+                            {handoffFailed
+                                ? t('login.inapp_handoff_failed')
+                                : t('login.inapp_email_first').replace('{app}', appName)}
+                        </p>
+                        {emailForm}
+                        <div className="flex-1 h-px bg-stone-200" />
+                    </div>
+                )}
+                {emailFirst && !emailOtpEnabled && (
+                    <p data-testid="login-open-in-browser" className="text-sm text-teal-800 bg-teal-50 border border-teal-100 rounded-xl px-3 py-2">
+                        {t('login.inapp_open_in_browser').replace('{app}', appName)}
+                    </p>
+                )}
+
                 {/* Google Login */}
                 <button
                     onClick={handleGoogleLogin}
@@ -87,9 +147,14 @@ export function LoginPanel({ redirectPath, onClose, className = '' }: {
                         {loading ? t('auth.signing_in') || 'Signing in...' : t('auth.continue_google')}
                     </span>
                 </button>
+                {/* Android in-app: the button reopens the page in Chrome first */}
+                {env.inApp && env.os === 'android' && !handoffFailed && (
+                    <p data-testid="login-opens-in-chrome" className="-mt-2 text-xs text-center text-stone-500">{t('login.inapp_opens_chrome')}</p>
+                )}
+                {googleError && <p className="text-xs text-rose-600 text-center" role="alert">{googleError}</p>}
 
                 {/* Email OTP login — feature-flagged, collapsed until asked for */}
-                {emailOtpEnabled && (
+                {emailOtpEnabled && !emailFirst && (
                     <>
                         <div className="flex items-center gap-3 my-2">
                             <div className="flex-1 h-px bg-stone-200" />
@@ -113,7 +178,7 @@ export function LoginPanel({ redirectPath, onClose, className = '' }: {
                         </div>
                         {emailOtpOpen && (
                             <div id="email-otp-panel">
-                                <EmailOtpForm redirectPath={redirectPath || undefined} autoFocusEmail />
+                                {emailForm}
                             </div>
                         )}
                     </>
