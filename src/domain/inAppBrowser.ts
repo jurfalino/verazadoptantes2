@@ -12,7 +12,11 @@
  *
  * Chrome learns it should start the sign-in from a short-lived marker in the
  * URL (`?login=google.<ms>`). The timestamp keeps a copied or shared link from
- * bouncing whoever opens it later to Google.
+ * bouncing whoever opens it later to Google. Chrome reopens the page the
+ * visitor is ON (always public); where to land after sign-in, when that is a
+ * different, members-only page, travels separately in `login_next` — opening
+ * the members-only page directly would bounce through the auth redirect and
+ * lose the marker.
  *
  * Pure functions only — the browser side lives in src/lib/googleSignIn.ts.
  */
@@ -69,6 +73,7 @@ export function inAppDisplayName(app: InAppApp | null): string | null {
 }
 
 export const LOGIN_HANDOFF_PARAM = 'login';
+export const LOGIN_NEXT_PARAM = 'login_next';
 /** How long a hand-off marker stays valid — long enough for Chrome to open. */
 export const LOGIN_HANDOFF_TTL_MS = 2 * 60 * 1000;
 
@@ -93,30 +98,57 @@ export function parseHandoffMarker(raw: string | null | undefined, now: number):
     return m[1] as LoginHandoff;
 }
 
-/** `pathOrUrl` with the marker set — used for both the intent and its fallback. */
-export function withHandoffMarker(path: string, kind: LoginHandoff, now: number): string {
+/**
+ * `path` with the marker set — used for both the intent and its fallback.
+ * `next` (where to land after sign-in) is added only when it differs.
+ */
+export function withHandoffMarker(path: string, kind: LoginHandoff, now: number, next?: string): string {
     const url = new URL(path, 'https://placeholder.invalid');
     url.searchParams.set(LOGIN_HANDOFF_PARAM, buildHandoffMarker(kind, now));
-    return `${url.pathname}${url.search}`;
-}
-
-/** `path` (pathname + query) without the marker. */
-export function withoutHandoffMarker(path: string): string {
-    const url = new URL(path, 'https://placeholder.invalid');
-    url.searchParams.delete(LOGIN_HANDOFF_PARAM);
+    const page = withoutHandoffMarker(path);
+    if (next && withoutHandoffMarker(next) !== page) url.searchParams.set(LOGIN_NEXT_PARAM, withoutHandoffMarker(next));
     return `${url.pathname}${url.search}`;
 }
 
 /**
- * Android intent that reopens `origin + path` in Chrome, carrying the
- * `google` marker. If Chrome is not installed the in-app browser follows
+ * `path` (pathname + query) without the hand-off params, in one canonical
+ * serialization — so two spellings of the same page compare equal.
+ */
+export function withoutHandoffMarker(path: string): string {
+    const url = new URL(path, 'https://placeholder.invalid');
+    url.searchParams.delete(LOGIN_HANDOFF_PARAM);
+    url.searchParams.delete(LOGIN_NEXT_PARAM);
+    url.searchParams.sort();
+    return `${url.pathname}${url.search}`;
+}
+
+/** A same-site path to land on after sign-in, or null. Never another origin. */
+export function safeNextPath(raw: string | null | undefined): string | null {
+    if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) return null;
+    const url = new URL(raw, 'https://placeholder.invalid');
+    if (url.origin !== 'https://placeholder.invalid') return null;
+    return withoutHandoffMarker(`${url.pathname}${url.search}`);
+}
+
+/**
+ * Whether a page load could be Chrome opening our intent. Intents arrive with
+ * no referrer (or an android-app:// one); a link on some other website has
+ * that site as referrer — and must not be able to start Google for a visitor.
+ */
+export function isAppHandoffReferrer(referrer: string): boolean {
+    return referrer === '' || referrer.startsWith('android-app://');
+}
+
+/**
+ * Android intent that reopens `origin + path` (the page the visitor is on)
+ * in Chrome, carrying the `google` marker and, if different, `next`. If Chrome is not installed the in-app browser follows
  * `S.browser_fallback_url` instead — the same page with the `email` marker,
  * so the visitor lands on the email-code login rather than a dead end.
  */
-export function buildChromeIntentUrl(origin: string, path: string, now: number): string {
+export function buildChromeIntentUrl(origin: string, path: string, now: number, next?: string): string {
     const host = new URL(origin).host;
-    const target = withHandoffMarker(path, 'google', now);
-    const fallback = `${origin}${withHandoffMarker(path, 'email', now)}`;
+    const target = withHandoffMarker(path, 'google', now, next);
+    const fallback = `${origin}${withHandoffMarker(path, 'email', now, next)}`;
     return `intent://${host}${target}#Intent;scheme=https;package=com.android.chrome;`
         + `S.browser_fallback_url=${encodeURIComponent(fallback)};end`;
 }

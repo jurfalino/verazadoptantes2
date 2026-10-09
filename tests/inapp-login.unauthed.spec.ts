@@ -92,6 +92,24 @@ test.describe('In-app browser sign-in', () => {
             expect(decodeURIComponent(callback?.value ?? '')).toMatch(/\/\?q=Mechi$/);
         });
 
+        test('carries a members-only destination through the hand-off', async ({ page }) => {
+            const seen = await watchGoogle(page);
+            const googleRequest = page.waitForRequest('https://accounts.google.com/**', { timeout: 20000 });
+            await page.goto(`/?q=Mechi&login=google.${Date.now()}&login_next=${encodeURIComponent('/my-animals')}`);
+            await googleRequest;
+            await expect.poll(() => seen.google).toBe(true);
+            const callback = (await page.context().cookies()).find(c => c.name.endsWith('authjs.callback-url'));
+            expect(decodeURIComponent(callback?.value ?? '')).toMatch(/\/my-animals$/);
+        });
+
+        test('a link from another website only opens the login box', async ({ page }) => {
+            const seen = await watchGoogle(page);
+            await page.goto(`/?login=google.${Date.now()}`, { referer: 'https://evil.example/' });
+            await expect(page.getByRole('button', { name: /continue with google|continuar con google/i })).toBeVisible({ timeout: 15000 });
+            await page.waitForTimeout(1000);
+            expect(seen.google).toBe(false);
+        });
+
         test('a stale marker (shared link) is stripped and does nothing', async ({ page }) => {
             const seen = await watchGoogle(page);
             await page.goto(`/?q=Mechi&login=google.${Date.now() - 10 * 60 * 1000}`);

@@ -66,7 +66,8 @@ export async function startGoogleSignIn(returnPath: string, source: string): Pro
     const redirectTo = withoutHandoffMarker(returnPath);
 
     if (env.inApp && env.os === 'android') {
-        const intentUrl = buildChromeIntentUrl(window.location.origin, redirectTo, Date.now());
+        // Chrome reopens THIS page (public); the destination rides along.
+        const intentUrl = buildChromeIntentUrl(window.location.origin, currentReturnPath(), Date.now(), redirectTo);
         const hidden = waitForPageToHide(HANDOFF_WAIT_MS);
         window.location.href = intentUrl;
         const left = await hidden;

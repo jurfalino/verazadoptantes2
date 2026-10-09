@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
     detectBrowserEnv, parseHandoffMarker, buildHandoffMarker, withHandoffMarker,
     withoutHandoffMarker, buildChromeIntentUrl, LOGIN_HANDOFF_TTL_MS, inAppDisplayName,
+    safeNextPath, isAppHandoffReferrer,
 } from './inAppBrowser';
 
 // Real user agents from production PostHog pageviews (Aug–Oct 2026) unless noted.
@@ -87,6 +88,41 @@ describe('hand-off marker', () => {
         expect(withoutHandoffMarker(marked)).toBe('/?q=Mechi+G');
         expect(withoutHandoffMarker('/adopters/abc')).toBe('/adopters/abc');
     });
+
+    it('canonicalizes, so two spellings of one page compare equal', () => {
+        expect(withoutHandoffMarker('/?q=Juan%20Perez')).toBe(withoutHandoffMarker('/?q=Juan+Perez'));
+        expect(withoutHandoffMarker('/?b=2&a=1')).toBe(withoutHandoffMarker('/?a=1&b=2'));
+    });
+
+    it('carries a different destination as login_next, and strips it again', () => {
+        const marked = withHandoffMarker('/?q=Mechi', 'google', now, '/adopter/abc?q=Mechi');
+        expect(new URLSearchParams(marked.split('?')[1]).get('login_next')).toBe('/adopter/abc?q=Mechi');
+        expect(withoutHandoffMarker(marked)).toBe('/?q=Mechi');
+        // Same page: nothing extra.
+        expect(withHandoffMarker('/?q=Mechi', 'google', now, '/?q=Mechi')).toBe(`/?q=Mechi&login=google.${now}`);
+    });
+});
+
+describe('safeNextPath — where to land after sign-in', () => {
+    it('keeps same-site paths', () => {
+        expect(safeNextPath('/adopter/abc?q=Mechi')).toBe('/adopter/abc?q=Mechi');
+        expect(safeNextPath('/my-animals')).toBe('/my-animals');
+    });
+
+    it('refuses anything that could leave the site', () => {
+        for (const raw of [null, '', 'https://evil.com', '//evil.com', '/\\evil.com', 'evil.com/x', 'javascript:alert(1)']) {
+            expect(safeNextPath(raw)).toBeNull();
+        }
+    });
+});
+
+describe('isAppHandoffReferrer', () => {
+    it('accepts what an intent looks like, not another website', () => {
+        expect(isAppHandoffReferrer('')).toBe(true);
+        expect(isAppHandoffReferrer('android-app://com.instagram.android/')).toBe(true);
+        expect(isAppHandoffReferrer('https://evil.example/')).toBe(false);
+        expect(isAppHandoffReferrer('https://buenadoptante.org/')).toBe(false);
+    });
 });
 
 describe('buildChromeIntentUrl', () => {
@@ -99,5 +135,11 @@ describe('buildChromeIntentUrl', () => {
             + '#Intent;scheme=https;package=com.android.chrome;'
             + `S.browser_fallback_url=${encodeURIComponent(`https://buenadoptante.org/adopters/abc?tab=history&login=email.${now}`)};end`,
         );
+    });
+
+    it('opens the public page the visitor is on, with the members-only destination alongside', () => {
+        const url = buildChromeIntentUrl('https://buenadoptante.org', '/?q=Mechi', now, '/adopter/abc?q=Mechi');
+        expect(url.startsWith(`intent://buenadoptante.org/?q=Mechi&login=google.${now}&login_next=`)).toBe(true);
+        expect(url).toContain(encodeURIComponent('/adopter/abc?q=Mechi'));
     });
 });

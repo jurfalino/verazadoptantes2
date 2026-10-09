@@ -8,6 +8,7 @@ import EmailOtpForm from '@/components/EmailOtpForm';
 import { currentBrowserEnv, currentReturnPath, startGoogleSignIn } from '@/lib/googleSignIn';
 import { inAppDisplayName } from '@/domain/inAppBrowser';
 import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
+import { handledAsStale } from '@/lib/errorMessage';
 import { posthogTrack } from '@/lib/zaraz';
 import { clearPendingOtp } from '@/lib/pendingOtp';
 
@@ -90,7 +91,8 @@ export function LoginPanel({ redirectPath, onClose, reason = null, className = '
             if (outcome === 'handoff-failed') setHandoffFailed(true);
             if (outcome !== 'redirecting') setLoading(false);
         } catch (e) {
-            setGoogleError(`${t('login.google_failed')} (${resolveErrorId(e, 'LoginPanel.google')})`);
+            // A tab older than the deploy: StaleDeployWatcher shows the notice.
+            if (!handledAsStale(e)) setGoogleError(`${t('login.google_failed')} (${resolveErrorId(e, 'LoginPanel.google')})`);
             setLoading(false);
         }
     };

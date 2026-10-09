@@ -21,6 +21,7 @@ import { requestEmailOtp } from '@/app/actions/emailOtp';
 import { savePendingOtp, readPendingOtp, clearPendingOtp } from '@/lib/pendingOtp';
 import { currentReturnPath } from '@/lib/googleSignIn';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { handledAsStale } from '@/lib/errorMessage';
 
 const RESEND_COOLDOWN_SEC = 60; // matches the server's per-email min gap
 
@@ -66,7 +67,7 @@ export default function EmailOtpForm({
                 const id = resolveErrorId(new Error('requestEmailOtp returned undefined'), 'EmailOtpForm.send');
                 setError(`${t('errors.generic')} (${id})`);
             } else if (res.success) {
-                savePendingOtp({ email, sentAt: Date.now(), returnPath: returnPath() });
+                savePendingOtp({ email, sentAt: Date.now(), returnPath: returnPath(), pagePath: currentReturnPath() });
                 setStep('code');
                 setCode('');
                 setCooldown(RESEND_COOLDOWN_SEC);
@@ -82,7 +83,8 @@ export default function EmailOtpForm({
                 setError(res.errorId ? `${t('errors.generic')} (${res.errorId})` : t('errors.generic'));
             }
         } catch (e) {
-            setError(`${t('errors.generic')} (${resolveErrorId(e, 'EmailOtpForm.send')})`);
+            // A tab older than the deploy: StaleDeployWatcher shows the notice.
+            if (!handledAsStale(e)) setError(`${t('errors.generic')} (${resolveErrorId(e, 'EmailOtpForm.send')})`);
         } finally {
             setBusy(false);
         }
@@ -104,7 +106,7 @@ export default function EmailOtpForm({
             clearPendingOtp();
             window.location.assign(returnPath());
         } catch (e) {
-            setError(`${t('errors.generic')} (${resolveErrorId(e, 'EmailOtpForm.verify')})`);
+            if (!handledAsStale(e)) setError(`${t('errors.generic')} (${resolveErrorId(e, 'EmailOtpForm.verify')})`);
             setBusy(false);
         }
     };

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { startGoogleSignIn } from '@/lib/googleSignIn';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { handledAsStale } from '@/lib/errorMessage';
 
 /**
  * Recovery UI for LEGITIMATE auth failures (as opposed to the adopter-login
@@ -32,7 +33,7 @@ export default function AuthErrorRecovery() {
             const outcome = await startGoogleSignIn('/', 'AuthErrorRecovery');
             if (outcome !== 'redirecting') setLoading(false);
         } catch (e) {
-            setErrorId(resolveErrorId(e, 'AuthErrorRecovery'));
+            if (!handledAsStale(e)) setErrorId(resolveErrorId(e, 'AuthErrorRecovery'));
             setLoading(false);
         }
     };

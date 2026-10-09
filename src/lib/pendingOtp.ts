@@ -15,7 +15,10 @@ const PENDING_TTL_MS = 15 * 60 * 1000;
 export interface PendingOtp {
     email: string;
     sentAt: number;
+    /** Where to land after sign-in. */
     returnPath: string;
+    /** The page the code was requested on (canonical, withoutHandoffMarker). */
+    pagePath: string;
 }
 
 export function savePendingOtp(pending: PendingOtp): void {
@@ -32,12 +35,13 @@ export function readPendingOtp(now: number = Date.now()): PendingOtp | null {
         const raw = sessionStorage.getItem(KEY);
         if (!raw) return null;
         const p = JSON.parse(raw) as Partial<PendingOtp>;
-        if (typeof p.email !== 'string' || typeof p.sentAt !== 'number' || typeof p.returnPath !== 'string') return null;
+        if (typeof p.email !== 'string' || typeof p.sentAt !== 'number'
+            || typeof p.returnPath !== 'string' || typeof p.pagePath !== 'string') return null;
         if (now - p.sentAt > PENDING_TTL_MS) {
             sessionStorage.removeItem(KEY);
             return null;
         }
-        return { email: p.email, sentAt: p.sentAt, returnPath: p.returnPath };
+        return { email: p.email, sentAt: p.sentAt, returnPath: p.returnPath, pagePath: p.pagePath };
     } catch {
         return null;
     }
