@@ -24,6 +24,7 @@ import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
 import FormAnswersPanel from '@/components/FormAnswersPanel';
 import { createContractInvitation } from '@/app/actions/contract';
+import { zarazTrack } from '@/lib/zaraz';
 import type { ApplicantSummary } from '@/app/actions/applicants';
 import LocationMap from '@/components/LocationMap';
 
@@ -89,6 +90,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
         try {
             const result = await createContractInvitation(animalId, applicant.adopterId, locale);
             if (result.success && result.url) {
+                zarazTrack('contract_issued', { surface: 'applicant_detail' });
                 setShareUrl(result.url);
                 onContractIssued?.(result.url, applicant);
             } else {

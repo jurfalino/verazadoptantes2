@@ -55,21 +55,21 @@ export default function ShareFormMenu({ userId, animalId, animalName, compact = 
             document.body.removeChild(textarea);
         }
         setCopied(true);
-        zarazTrack('contract_shared', { channel: 'clipboard' });
+        zarazTrack('form_shared', { channel: 'clipboard' });
         setTimeout(() => setCopied(false), 2000);
     };
 
     const handleWhatsApp = () => {
         if (!ready) return;
         window.open(`https://wa.me/?text=${encodeURIComponent(`${shareText}\n${fullUrl}`)}`, '_blank');
-        zarazTrack('contract_shared', { channel: 'whatsapp' });
+        zarazTrack('form_shared', { channel: 'whatsapp' });
         setIsOpen(false);
     };
 
     const handleEmail = () => {
         if (!ready) return;
         window.open(`mailto:?subject=${encodeURIComponent(shareText)}&body=${encodeURIComponent(`${shareText}\n\n${fullUrl}`)}`, '_blank');
-        zarazTrack('contract_shared', { channel: 'email' });
+        zarazTrack('form_shared', { channel: 'email' });
         setIsOpen(false);
     };
 
@@ -78,7 +78,7 @@ export default function ShareFormMenu({ userId, animalId, animalName, compact = 
         if (navigator.share) {
             try {
                 await navigator.share({ title: shareText, url: fullUrl });
-                zarazTrack('contract_shared', { channel: 'native' });
+                zarazTrack('form_shared', { channel: 'native' });
             } catch { /* User cancelled */ }
         }
         setIsOpen(false);
