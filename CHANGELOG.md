@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.152] - 2026-10-10
+
+### Fixed — «Está bien así» edge cases (independent review of 2.56.151)
+
+- **Two reviewers at once:** if someone changed a record's rating or note after
+  the list loaded, «Está bien así» no longer hides it — it says the record
+  changed and reloads the list so it can be reviewed as it is now.
+- **Unsaved star change:** «Está bien así» is disabled on a row with an unsaved
+  rating change instead of silently dropping it.
+- **Errors:** every failure is logged; the toast shows an error code only when
+  there is one.
+
 ## [2.56.151] - 2026-10-10
 
 ### Added — "Está bien así" on the ratings report; moderators work it fully

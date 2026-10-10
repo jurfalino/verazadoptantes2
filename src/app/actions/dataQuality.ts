@@ -165,6 +165,8 @@ export interface RatingsAuditRow {
      * still what they reviewed. Reviewer shown by name, else email handle.
      */
     reviewed: { by: string; at: number } | null;
+    /** Fingerprint of the rating + note as served — sent back with "Está bien así". */
+    fingerprint: string;
 }
 
 export interface RatingsAuditReport {
@@ -218,7 +220,8 @@ export async function getRatingsAudit(): Promise<RatingsAuditReport> {
             if (!queue) continue;
             const reviewFingerprint = (r.reviewFingerprint as string) || null;
             const reviewedBy = (r.reviewedBy as string) || null;
-            const reviewed = reviewedBy && reviewFingerprint === ratingsAuditFingerprint(rating, (r.details as string) ?? null, (r.comments as string) ?? null)
+            const fingerprint = ratingsAuditFingerprint(rating, (r.details as string) ?? null, (r.comments as string) ?? null);
+            const reviewed = reviewedBy && reviewFingerprint === fingerprint
                 ? { by: (r.reviewerName as string) || reviewedBy.split('@')[0], at: Number(r.reviewedAt) }
                 : null;
             rows.push({
@@ -232,6 +235,7 @@ export async function getRatingsAudit(): Promise<RatingsAuditReport> {
                 imported: r.adopterSource === 'imported',
                 queue,
                 reviewed,
+                fingerprint,
             });
         }
 
@@ -341,12 +345,14 @@ export async function saveRatingsAuditChanges(changes: RatingsAuditChange[]): Pr
 
 /**
  * Mark a "Calificaciones vs. notas" row as reviewed and correct as it is
- * ("Está bien así"), or undo that (`reviewed = false`). The fingerprint is taken
- * from the CURRENT persisted rating + note, server-side — never from the client —
- * so the review holds only while what the reviewer saw is unchanged.
+ * ("Está bien así"), or undo that (`reviewed = false`). The stored fingerprint is
+ * computed server-side from the CURRENT persisted rating + note, and is written
+ * only if it equals `seenFingerprint` (what the report served to the reviewer):
+ * if someone edited the record since the page loaded, nothing is written and
+ * 'Changed' is returned, so a review never covers content nobody saw.
  * Moderators + admins.
  */
-export async function setRatingsAuditReviewed(recordId: string, reviewed: boolean): Promise<{ success: boolean; error?: string }> {
+export async function setRatingsAuditReviewed(recordId: string, reviewed: boolean, seenFingerprint?: string): Promise<{ success: boolean; error?: string }> {
     const session = await auth();
     const email = session?.user?.email;
     try {
@@ -354,9 +360,15 @@ export async function setRatingsAuditReviewed(recordId: string, reviewed: boolea
             logger.warn('setRatingsAuditReviewed: unauthorized', { user: email, recordId, reviewed });
             return { success: false, error: 'Unauthorized' };
         }
-        if (!recordId || typeof recordId !== 'string') return { success: false, error: 'Missing record id' };
+        if (!recordId || typeof recordId !== 'string' || (reviewed && !seenFingerprint)) {
+            logger.warn('setRatingsAuditReviewed: missing input', { user: email, recordId, reviewed });
+            return { success: false, error: 'Bad request' };
+        }
         const db = await getDb();
-        if (!db) return { success: false, error: 'Database unavailable' };
+        if (!db) {
+            const errorId = logger.error('setRatingsAuditReviewed: database unavailable', { user: email, recordId, reviewed });
+            return { success: false, error: errorId };
+        }
 
         if (!reviewed) {
             await db.delete(ratingsAuditReviews).where(eq(ratingsAuditReviews.recordId, recordId));
@@ -373,6 +385,10 @@ export async function setRatingsAuditReviewed(recordId: string, reviewed: boolea
                 (r.details as string) ?? null,
                 (r.comments as string) ?? null,
             );
+            if (fingerprint !== seenFingerprint) {
+                logger.info('setRatingsAuditReviewed: record changed since load', { user: email, recordId });
+                return { success: false, error: 'Changed' };
+            }
             const row = { fingerprint, reviewedBy: email, reviewedAt: new Date() };
             await db.insert(ratingsAuditReviews).values({ recordId, ...row })
                 .onConflictDoUpdate({ target: ratingsAuditReviews.recordId, set: row });

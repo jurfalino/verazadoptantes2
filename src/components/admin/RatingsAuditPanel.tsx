@@ -78,8 +78,8 @@ export default function RatingsAuditPanel() {
     const [saving, setSaving] = useState(false);
     const [saveMsg, setSaveMsg] = useState<string | null>(null);
     const [showReviewed, setShowReviewed] = useState(false);
-    /** recordId whose "Está bien así" / undo is in flight. */
-    const [reviewing, setReviewing] = useState<string | null>(null);
+    /** recordIds whose "Está bien así" / undo is in flight. */
+    const [reviewing, setReviewing] = useState<Set<string>>(new Set());
     const [, start] = useTransition();
     const toast = useShowToast();
 
@@ -128,14 +128,19 @@ export default function RatingsAuditPanel() {
 
     async function markReviewed(r: RatingsAuditRow, reviewed: boolean) {
         const failTitle = reviewed ? 'No se pudo marcar' : 'No se pudo deshacer';
-        setReviewing(r.recordId);
+        setReviewing(prev => new Set(prev).add(r.recordId));
         try {
-            const res = await setRatingsAuditReviewed(r.recordId, reviewed);
+            const res = await setRatingsAuditReviewed(r.recordId, reviewed, reviewed ? r.fingerprint : undefined);
             if (!res?.success) {
-                toast.error(failTitle, res?.error === 'Unauthorized' ? 'No tenés permiso.' : 'Intentá de nuevo.', res?.error && res.error !== 'Unauthorized' ? res.error : undefined);
+                if (res?.error === 'Changed') {
+                    toast.error(failTitle, 'Alguien cambió la calificación o la nota de este registro. Actualizamos la lista: revisalo de nuevo.');
+                    load();
+                    return;
+                }
+                const known = res?.error === 'Unauthorized' || res?.error === 'Bad request' || res?.error === 'Not found';
+                toast.error(failTitle, res?.error === 'Unauthorized' ? 'No tenés permiso.' : 'Intentá de nuevo.', res?.error && !known ? res.error : undefined);
                 return;
             }
-            setPending(prev => { const next = new Map(prev); next.delete(r.recordId); return next; });
             load();
             if (reviewed) {
                 toast.success('Está bien así', 'No vuelve a aparecer mientras no cambien la calificación ni la nota.', {
@@ -146,7 +151,7 @@ export default function RatingsAuditPanel() {
         } catch (e) {
             if (!handledAsStale(e)) toast.error(failTitle, userFacingMessage(e, 'Error inesperado.'), resolveErrorId(e, 'RatingsAuditPanel.markReviewed'));
         } finally {
-            setReviewing(null);
+            setReviewing(prev => { const next = new Set(prev); next.delete(r.recordId); return next; });
         }
     }
 
@@ -322,7 +327,8 @@ export default function RatingsAuditPanel() {
                                             )}
                                             <button
                                                 onClick={() => markReviewed(r, !r.reviewed)}
-                                                disabled={reviewing === r.recordId}
+                                                disabled={reviewing.has(r.recordId) || pending.has(r.recordId)}
+                                                title={pending.has(r.recordId) ? 'Guardá o descartá el cambio de calificación primero.' : undefined}
                                                 className="px-3 py-1.5 text-xs font-semibold text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200 disabled:opacity-50"
                                             >
                                                 {r.reviewed ? 'Volver a la lista' : 'Está bien así'}
