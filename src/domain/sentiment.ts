@@ -10,6 +10,8 @@
  * ratings on the 2026-09 production corpus — far too weak to rate anyone).
  */
 
+import { noteHash } from './notePii';
+
 /**
  * Lower-case and strip accents so lexicon entries match all spellings, and undo
  * digit-for-vowel spelling inside words ("mutil4r", "mat4r") that warning posts
@@ -200,4 +202,13 @@ export function classifyRatingsAudit(rating: number | null, sentiment: Sentiment
         return sentiment.cleaned.length < 5 ? 'no_evidence' : 'neutral_evidence';
     }
     return null;
+}
+
+/**
+ * Identity of what a reviewer saw when they marked a row "Está bien así": the
+ * rating plus both note fields. A review holds only while this is unchanged, so
+ * editing the rating or the note (by any write path) puts the row back.
+ */
+export function ratingsAuditFingerprint(rating: number | null, details: string | null, comments: string | null): string {
+    return noteHash(`${rating ?? ''}\u0000${details ?? ''}\u0000${comments ?? ''}`);
 }

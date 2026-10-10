@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scoreNoteSentiment, classifyRatingsAudit } from './sentiment';
+import { scoreNoteSentiment, classifyRatingsAudit, ratingsAuditFingerprint } from './sentiment';
 
 const queue = (rating: number, text: string) => classifyRatingsAudit(rating, scoreNoteSentiment(text));
 
@@ -54,5 +54,26 @@ describe('scoreNoteSentiment', () => {
     it('new warning wording lands strong negatives in to_one', () => {
         expect(queue(2, 'No entregar gatitos.')).toBe('to_one');
         expect(queue(2, 'Alquila, es irresponsable.')).toBe('to_one');
+    });
+});
+
+describe('ratingsAuditFingerprint', () => {
+    const base = ratingsAuditFingerprint(2, 'Todo muy bien', null);
+
+    it('is stable for the same rating and note', () => {
+        expect(ratingsAuditFingerprint(2, 'Todo muy bien', null)).toBe(base);
+    });
+
+    it('changes when the rating changes', () => {
+        expect(ratingsAuditFingerprint(3, 'Todo muy bien', null)).not.toBe(base);
+    });
+
+    it('changes when either note field changes', () => {
+        expect(ratingsAuditFingerprint(2, 'Todo muy bien.', null)).not.toBe(base);
+        expect(ratingsAuditFingerprint(2, 'Todo muy bien', 'nuevo comentario')).not.toBe(base);
+    });
+
+    it('does not confuse text moved between details and comments', () => {
+        expect(ratingsAuditFingerprint(2, 'ab', 'c')).not.toBe(ratingsAuditFingerprint(2, 'a', 'bc'));
     });
 });

@@ -3,13 +3,13 @@
 import { getRequestContext } from '@/lib/requestContext';
 import { sql, eq, desc, and, isNull } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
-import { adopterFlags, adopters, adopterEvents, adopterHistory, placements } from '@/db/schema';
+import { adopterFlags, adopters, adopterEvents, adopterHistory, placements, ratingsAuditReviews } from '@/db/schema';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
-import { getDb, checkIsModeratorOrAdminAsync, checkIsAdminAsync } from './_db';
+import { getDb, checkIsModeratorOrAdminAsync } from './_db';
 import { detectNotePii, noteHash, type NotePiiFlags } from '@/domain/notePii';
-import { scoreNoteSentiment, classifyRatingsAudit, type RatingsAuditQueue } from '@/domain/sentiment';
+import { scoreNoteSentiment, classifyRatingsAudit, ratingsAuditFingerprint, type RatingsAuditQueue } from '@/domain/sentiment';
 
 /**
  * "Calidad de datos" moderation report.
@@ -160,11 +160,16 @@ export interface RatingsAuditRow {
     /** true when the adopter row came from the ImportWizard (adopters.source). */
     imported: boolean;
     queue: RatingsAuditQueue;
+    /**
+     * Set when someone marked this row "Está bien así" AND the rating + note are
+     * still what they reviewed. Reviewer shown by name, else email handle.
+     */
+    reviewed: { by: string; at: number } | null;
 }
 
 export interface RatingsAuditReport {
     rows: RatingsAuditRow[];
-    /** true when the viewer may save rating changes (admins; moderators view only). */
+    /** true when the viewer may save ratings and mark rows reviewed (moderators + admins). */
     canEdit: boolean;
     error?: string;
 }
@@ -176,9 +181,13 @@ export interface RatingsAuditReport {
 const RATINGS_AUDIT_SQL = `
 SELECT ao.id AS recordId, ao.adopter_id AS adopterId, ao.record_type AS recordType,
   ao.rating AS rating, ao.details AS details, ao.comments AS comments,
-  a.name AS adopterName, a.source AS adopterSource
+  a.name AS adopterName, a.source AS adopterSource,
+  rv.fingerprint AS reviewFingerprint, rv.reviewed_by AS reviewedBy, rv.reviewed_at AS reviewedAt,
+  u.name AS reviewerName
 FROM adoptions ao
 JOIN adopters a ON a.id = ao.adopter_id AND a.deleted_at IS NULL AND a.is_demo = 0
+LEFT JOIN ratings_audit_reviews rv ON rv.record_id = ao.id
+LEFT JOIN user u ON u.email = rv.reviewed_by
 WHERE ao.rating IS NOT NULL
 `.trim();
 
@@ -186,8 +195,9 @@ WHERE ao.rating IS NOT NULL
  * "Calificaciones vs. notas" report: every activity record whose 1–5 rating
  * disagrees with — or was never supported by — the sentiment of its own note.
  * Live and self-clearing: fixing the rating (or the note) drops the row on the
- * next load. The sentiment score is a review aid, never an auto-rater.
- * Moderators + admins.
+ * next load. Rows marked "Está bien así" come back flagged `reviewed` (the
+ * client hides them) until their rating or note changes. The sentiment score is
+ * a review aid, never an auto-rater. Moderators + admins.
  */
 export async function getRatingsAudit(): Promise<RatingsAuditReport> {
     const session = await auth();
@@ -197,8 +207,6 @@ export async function getRatingsAudit(): Promise<RatingsAuditReport> {
             logger.warn('getRatingsAudit: unauthorized', { user: email });
             return { rows: [], canEdit: false, error: 'Unauthorized' };
         }
-        const canEdit = await checkIsAdminAsync(email);
-
         const t0 = Date.now();
         const { rows: raw, rowsRead, dbMs } = await runReadonly(RATINGS_AUDIT_SQL);
         const rows: RatingsAuditRow[] = [];
@@ -208,6 +216,11 @@ export async function getRatingsAudit(): Promise<RatingsAuditReport> {
             const sentiment = scoreNoteSentiment(text);
             const queue = classifyRatingsAudit(rating, sentiment);
             if (!queue) continue;
+            const reviewFingerprint = (r.reviewFingerprint as string) || null;
+            const reviewedBy = (r.reviewedBy as string) || null;
+            const reviewed = reviewedBy && reviewFingerprint === ratingsAuditFingerprint(rating, (r.details as string) ?? null, (r.comments as string) ?? null)
+                ? { by: (r.reviewerName as string) || reviewedBy.split('@')[0], at: Number(r.reviewedAt) }
+                : null;
             rows.push({
                 recordId: String(r.recordId ?? ''),
                 adopterId: String(r.adopterId ?? ''),
@@ -218,18 +231,20 @@ export async function getRatingsAudit(): Promise<RatingsAuditReport> {
                 excerpt: sentiment.cleaned.replace(/\s+/g, ' ').slice(0, 180),
                 imported: r.adopterSource === 'imported',
                 queue,
+                reviewed,
             });
         }
 
         logger.info('getRatingsAudit: served', {
             user: email,
             rowCount: rows.length,
+            reviewedCount: rows.filter(r => r.reviewed).length,
             scannedRecords: raw.length,
             rowsRead,
             dbMs,
             durationMs: Date.now() - t0,
         });
-        return { rows, canEdit };
+        return { rows, canEdit: true };
     } catch (e) {
         const errorId = logger.error('getRatingsAudit: failed', { user: email, error: e instanceof Error ? e.message : String(e) });
         return { rows: [], canEdit: false, error: errorId };
@@ -245,9 +260,10 @@ export interface RatingsAuditChange {
 const RATINGS_AUDIT_BATCH_LIMIT = 100;
 
 /**
- * Batch-save rating changes from the "Calificaciones vs. notas" tab. Admin-only
- * (moderators can view the report but not re-rate — record-wide mutations are
- * owner/admin in the collaborative model). Routes each write to the normalized
+ * Batch-save rating changes from the "Calificaciones vs. notas" tab. Moderators
+ * + admins — an explicit exception to owner/admin-only record mutations in the
+ * collaborative model (Jon, 2026-10-10: moderators work this report fully).
+ * Routes each write to the normalized
  * table behind the `adoptions` view: event ids update `adopter_events.rating`;
  * animal ids update the ACTIVE placement's rating (same routing as
  * _recordWrite.updateRecord for a no-transition patch). Every change lands in
@@ -257,7 +273,7 @@ export async function saveRatingsAuditChanges(changes: RatingsAuditChange[]): Pr
     const session = await auth();
     const email = session?.user?.email;
     try {
-        if (!email || !(await checkIsAdminAsync(email))) {
+        if (!email || !(await checkIsModeratorOrAdminAsync(email))) {
             logger.warn('saveRatingsAuditChanges: unauthorized', { user: email, count: changes?.length });
             return { updated: 0, failed: changes?.length ?? 0, error: 'Unauthorized' };
         }
@@ -320,6 +336,53 @@ export async function saveRatingsAuditChanges(changes: RatingsAuditChange[]): Pr
     } catch (e) {
         const errorId = logger.error('saveRatingsAuditChanges: failed', { user: email, count: changes?.length, error: e instanceof Error ? e.message : String(e) });
         return { updated: 0, failed: changes?.length ?? 0, error: errorId };
+    }
+}
+
+/**
+ * Mark a "Calificaciones vs. notas" row as reviewed and correct as it is
+ * ("Está bien así"), or undo that (`reviewed = false`). The fingerprint is taken
+ * from the CURRENT persisted rating + note, server-side — never from the client —
+ * so the review holds only while what the reviewer saw is unchanged.
+ * Moderators + admins.
+ */
+export async function setRatingsAuditReviewed(recordId: string, reviewed: boolean): Promise<{ success: boolean; error?: string }> {
+    const session = await auth();
+    const email = session?.user?.email;
+    try {
+        if (!email || !(await checkIsModeratorOrAdminAsync(email))) {
+            logger.warn('setRatingsAuditReviewed: unauthorized', { user: email, recordId, reviewed });
+            return { success: false, error: 'Unauthorized' };
+        }
+        if (!recordId || typeof recordId !== 'string') return { success: false, error: 'Missing record id' };
+        const db = await getDb();
+        if (!db) return { success: false, error: 'Database unavailable' };
+
+        if (!reviewed) {
+            await db.delete(ratingsAuditReviews).where(eq(ratingsAuditReviews.recordId, recordId));
+        } else {
+            const rows = await (db as unknown as { all: (q: unknown) => Promise<Record<string, unknown>[]> })
+                .all(sql`SELECT rating, details, comments FROM adoptions WHERE id = ${recordId} LIMIT 1`);
+            if (!rows.length) {
+                logger.warn('setRatingsAuditReviewed: record not found', { user: email, recordId });
+                return { success: false, error: 'Not found' };
+            }
+            const r = rows[0];
+            const fingerprint = ratingsAuditFingerprint(
+                r.rating === null || r.rating === undefined ? null : Number(r.rating),
+                (r.details as string) ?? null,
+                (r.comments as string) ?? null,
+            );
+            const row = { fingerprint, reviewedBy: email, reviewedAt: new Date() };
+            await db.insert(ratingsAuditReviews).values({ recordId, ...row })
+                .onConflictDoUpdate({ target: ratingsAuditReviews.recordId, set: row });
+        }
+        logAudit({ userEmail: email, action: reviewed ? 'data_quality_rating_reviewed' : 'data_quality_rating_unreviewed', target: recordId });
+        logger.info('setRatingsAuditReviewed: saved', { user: email, recordId, reviewed });
+        return { success: true };
+    } catch (e) {
+        const errorId = logger.error('setRatingsAuditReviewed: failed', { user: email, recordId, reviewed, error: e instanceof Error ? e.message : String(e) });
+        return { success: false, error: errorId };
     }
 }
 

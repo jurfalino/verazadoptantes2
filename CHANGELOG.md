@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.151] - 2026-10-10
+
+### Added — "Está bien así" on the ratings report; moderators work it fully
+
+A record a reviewer judged correct used to stay on «Calificaciones vs. notas»
+forever — the only way off was changing its rating or note.
+
+- **«Está bien así»** on every row hides it, with «Deshacer» in the toast.
+  It comes back by itself if anyone later changes that record's rating or note.
+- **«Revisados»** switch lists the hidden rows with who marked them and when,
+  and «Volver a la lista» puts one back.
+- **Moderators** can now change ratings from this report and mark rows, same as
+  admins (they could only view it before). Every change is logged with who made it.
+
 ## [2.56.150] - 2026-10-10
 
 ### Fixed — "Calificaciones vs. notas" suggesting to raise warning posts

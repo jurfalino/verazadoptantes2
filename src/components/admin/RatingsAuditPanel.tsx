@@ -1,17 +1,21 @@
 'use client';
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
-import { getRatingsAudit, saveRatingsAuditChanges, type RatingsAuditRow } from '@/app/actions/dataQuality';
+import { getRatingsAudit, saveRatingsAuditChanges, setRatingsAuditReviewed, type RatingsAuditRow } from '@/app/actions/dataQuality';
 import type { RatingsAuditQueue } from '@/domain/sentiment';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
+import { useShowToast } from '@/components/ui/Toast';
+import { handledAsStale, userFacingMessage } from '@/lib/errorMessage';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 
 /**
  * "Calificaciones vs. notas" tab of Calidad de datos: activity records whose
  * 1–5 rating disagrees with — or was never supported by — the sentiment of
  * their own note (lexicon score, src/domain/sentiment.ts). Live report: fixing
- * a record's rating or note drops the row on the next load. The "Importados"
- * switch filters by real provenance (adopters.source = 'imported'), never by
- * matching source text.
+ * a record's rating or note drops the row on the next load. "Está bien así"
+ * hides a row a reviewer judged correct until its rating or note changes; the
+ * "Revisados" switch lists those for undo. The "Importados" switch filters by
+ * real provenance (adopters.source = 'imported'), never by matching source text.
  */
 
 const NAMELESS_LABEL = 'Sin nombre';
@@ -19,8 +23,8 @@ const NAMELESS_LABEL = 'Sin nombre';
 const QUEUE_META: Record<RatingsAuditQueue, { label: string; desc: string; rule: string[]; suggested: string }> = {
     upgrade: {
         label: 'Subir calificación',
-        desc: 'Calificados 1–2 pero la nota es claramente positiva. La cola más urgente: una calificación baja equivocada perjudica a un buen adoptante. Ojo con el patrón conocido — rescatistas que narran un comienzo positivo (o sus propias buenas prácticas) antes del desenlace negativo; leé la nota completa en el perfil.',
-        rule: ['calificación ≤ 2', 'sentimiento ≥ +2'],
+        desc: 'Calificados 1–2 pero la nota es claramente positiva y no trae ninguna señal negativa. La cola más urgente: una calificación baja equivocada perjudica a un buen adoptante. Las alertas que elogian antes del desenlace («parecía responsable… pero») quedan afuera por la señal negativa; igual leé la nota completa en el perfil.',
+        rule: ['calificación ≤ 2', 'sentimiento ≥ +2', 'sin evidencia negativa'],
         suggested: '→ ★4–5 (o sin calificar)',
     },
     to_one: {
@@ -73,7 +77,11 @@ export default function RatingsAuditPanel() {
     const [pending, setPending] = useState<Map<string, number | null>>(new Map());
     const [saving, setSaving] = useState(false);
     const [saveMsg, setSaveMsg] = useState<string | null>(null);
+    const [showReviewed, setShowReviewed] = useState(false);
+    /** recordId whose "Está bien así" / undo is in flight. */
+    const [reviewing, setReviewing] = useState<string | null>(null);
     const [, start] = useTransition();
+    const toast = useShowToast();
 
     const load = () => {
         start(async () => {
@@ -118,9 +126,34 @@ export default function RatingsAuditPanel() {
         }
     }
 
+    async function markReviewed(r: RatingsAuditRow, reviewed: boolean) {
+        const failTitle = reviewed ? 'No se pudo marcar' : 'No se pudo deshacer';
+        setReviewing(r.recordId);
+        try {
+            const res = await setRatingsAuditReviewed(r.recordId, reviewed);
+            if (!res?.success) {
+                toast.error(failTitle, res?.error === 'Unauthorized' ? 'No tenés permiso.' : 'Intentá de nuevo.', res?.error && res.error !== 'Unauthorized' ? res.error : undefined);
+                return;
+            }
+            setPending(prev => { const next = new Map(prev); next.delete(r.recordId); return next; });
+            load();
+            if (reviewed) {
+                toast.success('Está bien así', 'No vuelve a aparecer mientras no cambien la calificación ni la nota.', {
+                    label: 'Deshacer',
+                    onClick: () => { void markReviewed(r, false); },
+                });
+            }
+        } catch (e) {
+            if (!handledAsStale(e)) toast.error(failTitle, userFacingMessage(e, 'Error inesperado.'), resolveErrorId(e, 'RatingsAuditPanel.markReviewed'));
+        } finally {
+            setReviewing(null);
+        }
+    }
+
+    const reviewedCount = useMemo(() => (rows ?? []).filter(r => r.reviewed).length, [rows]);
     const pool = useMemo(
-        () => (rows ?? []).filter(r => showImported || !r.imported),
-        [rows, showImported],
+        () => (rows ?? []).filter(r => (showImported || !r.imported) && !!r.reviewed === showReviewed),
+        [rows, showImported, showReviewed],
     );
     const counts = useMemo(() => {
         const m = new Map<RatingsAuditQueue, number>();
@@ -136,8 +169,8 @@ export default function RatingsAuditPanel() {
         return q.sort((a, b) => Math.abs(b.sentiment ?? 0) - Math.abs(a.sentiment ?? 0));
     }, [pool, queue]);
     const hiddenCount = useMemo(
-        () => (rows ?? []).filter(r => r.queue === queue && r.imported).length,
-        [rows, queue],
+        () => (rows ?? []).filter(r => r.queue === queue && r.imported && !!r.reviewed === showReviewed).length,
+        [rows, queue, showReviewed],
     );
 
     if (error) {
@@ -175,6 +208,15 @@ export default function RatingsAuditPanel() {
                 <label className="ml-auto flex items-center gap-2 text-xs font-semibold text-stone-600 cursor-pointer select-none">
                     <input
                         type="checkbox"
+                        checked={showReviewed}
+                        onChange={e => setShowReviewed(e.target.checked)}
+                        className="w-4 h-4 accent-teal-700"
+                    />
+                    Revisados ({reviewedCount})
+                </label>
+                <label className="flex items-center gap-2 text-xs font-semibold text-stone-600 cursor-pointer select-none">
+                    <input
+                        type="checkbox"
                         checked={showImported}
                         onChange={e => setShowImported(e.target.checked)}
                         className="w-4 h-4 accent-teal-700"
@@ -198,7 +240,7 @@ export default function RatingsAuditPanel() {
                 <p className="text-xs text-stone-400 mt-2">
                     Sentimiento: puntaje léxico de la nota, −4…+4, calculado tras limpiar líneas de fuente, «cargado por…», bloques de contacto y URLs.
                     Las colas son mutuamente excluyentes. El interruptor «Importados» filtra por procedencia real del registro (importación masiva), nunca por texto.
-                    Lista en vivo: corregir la calificación o la nota saca la fila.
+                    Lista en vivo: corregir la calificación o la nota saca la fila. «Está bien así» la oculta hasta que alguien cambie la calificación o la nota; «Revisados» las muestra para deshacer.
                 </p>
             </div>
 
@@ -206,7 +248,7 @@ export default function RatingsAuditPanel() {
                 <div className="bg-white p-10 text-center rounded-2xl border border-stone-200 text-stone-500 text-sm">
                     {hiddenCount > 0 && !showImported
                         ? `Sin registros manuales en esta cola (${hiddenCount} importados ocultos).`
-                        : 'Nada para revisar en esta cola. ✓'}
+                        : showReviewed ? 'Ningún registro marcado «Está bien así» en esta cola.' : 'Nada para revisar en esta cola. ✓'}
                 </div>
             ) : (
                 <div className="bg-white rounded-2xl shadow-sm border border-stone-200 overflow-x-auto">
@@ -220,6 +262,7 @@ export default function RatingsAuditPanel() {
                                 {showSentiment && <th className="p-3 font-semibold text-stone-500 text-sm">Sentim.</th>}
                                 <th className="p-3 font-semibold text-stone-500 text-sm">Sugerido</th>
                                 <th className="p-3 font-semibold text-stone-500 text-sm">Nota (extracto limpio)</th>
+                                {canEdit && <th className="p-3 font-semibold text-stone-500 text-sm"><span className="sr-only">Acción</span></th>}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-stone-100">
@@ -270,6 +313,22 @@ export default function RatingsAuditPanel() {
                                     <td className="p-3 text-sm text-stone-600 max-w-md">
                                         {r.excerpt || <em className="text-stone-400">— sin texto propio —</em>}
                                     </td>
+                                    {canEdit && (
+                                        <td className="p-3 text-right whitespace-nowrap">
+                                            {r.reviewed && (
+                                                <div className="text-xs text-stone-500 mb-2">
+                                                    Revisado por {r.reviewed.by} · {new Date(r.reviewed.at * 1000).toLocaleDateString('es-AR')}
+                                                </div>
+                                            )}
+                                            <button
+                                                onClick={() => markReviewed(r, !r.reviewed)}
+                                                disabled={reviewing === r.recordId}
+                                                className="px-3 py-1.5 text-xs font-semibold text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200 disabled:opacity-50"
+                                            >
+                                                {r.reviewed ? 'Volver a la lista' : 'Está bien así'}
+                                            </button>
+                                        </td>
+                                    )}
                                 </tr>
                             ))}
                         </tbody>
