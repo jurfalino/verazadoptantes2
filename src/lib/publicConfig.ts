@@ -56,6 +56,8 @@ export const PUBLIC_FLAG_KEYS = [
     'ENABLE_CUSTOM_ADOPTION_DOCS',
     // "Importar planilla" link in the /my-adopters header.
     'ENABLE_SHEET_IMPORT',
+    // «Entrevista» in the user menu.
+    'ENABLE_INTERVIEW_GUIDE',
 ] as const;
 
 export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
@@ -81,6 +83,7 @@ export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
     ENABLE_PWA_INSTALL_PROMPT: 'false',
     ENABLE_CUSTOM_ADOPTION_DOCS: 'false',
     ENABLE_SHEET_IMPORT: 'false',
+    ENABLE_INTERVIEW_GUIDE: 'false',
 };
 
 const CACHE_TTL_MS = 30 * 1000;

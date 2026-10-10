@@ -2,8 +2,11 @@ import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { withCors, corsPreflightResponse } from '@/lib/cors';
 import { runAfterResponse } from '@/lib/background';
-import { deriveSpecialNeeds, sanitizeShownSteps } from '@/domain/adoptionDocs';
+import { deriveSpecialNeeds, sanitizeShownSteps, isPhoneRequired } from '@/domain/adoptionDocs';
 import { isValidFormEmail } from '@/domain/formEmail';
+import { parseHouseholdPeople, childrenAnswer, fullName } from '@/domain/householdPeople';
+import { parseGiftRecipient, recipientFullName } from '@/domain/giftRecipient';
+import type { HouseholdMember } from '@/lib/householdMembers';
 
 export const runtime = 'edge';
 
@@ -39,6 +42,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         // notification's submittedData (where it would read as an "answer").
         const answers: Record<string, unknown> = { ...body };
         delete answers.shownSteps;
+        // "¿Quiénes viven en la casa?" (spec 2026-10-04). Re-parsed here: the
+        // client can't put junk on a profile or lie about the children count.
+        const householdPeople = parseHouseholdPeople(body.householdPeople);
+        // Gift flow (spec Part 2): the recipient is who will live with the
+        // animal. Re-parsed here; never kept on a "Para mí" submission.
+        const gift = body.intent === 'gift';
+        const recipient = gift ? parseGiftRecipient(body.giftRecipient) : null;
+        delete answers.giftRecipient;
+        if (recipient) answers.giftRecipient = recipient;
+        const sentPhone = (body.giftRecipient as { phone?: unknown } | undefined)?.phone;
+        if (recipient && !recipient.phone && typeof sentPhone === 'string' && sentPhone.trim()) {
+            // The form checks the same rule, so only an old tab or a hand-made POST gets here.
+            logger.warn('form submit: gift recipient phone dropped (bad format)', { userId });
+        }
+        if (Array.isArray(body.householdPeople) || body.livesAlone === true) {
+            answers.householdPeople = householdPeople;
+            answers.livesAlone = body.livesAlone === true && householdPeople.length === 0;
+            answers.children = childrenAnswer(householdPeople);
+        }
         const intent = body.intent as string || null;
         const household = Array.isArray(body.household) ? JSON.stringify(body.household) : null;
         // v2.14.10-2: form launched from the public showcase pre-selected
@@ -74,6 +96,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             return withCors(NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 }), origin);
         }
         const rescuerEmail = user.email;
+
+        // Spec Part 3: the phone is required unless the rescuer made it
+        // optional. Never refused here — a tab opened before the switch
+        // changed must still get through — only logged, so a client that
+        // skips its own check shows up.
+        if (!phone) {
+            const { resolveDocsForRescuer } = await import('@/lib/adoptionDocsRepo');
+            const resolved = await resolveDocsForRescuer(db, rescuerEmail);
+            if (isPhoneRequired(resolved?.hiddenSteps ?? [])) logger.warn('form submit: phone missing on a phone-required form', { userId });
+        }
 
         // Upload selfie to R2 (if provided)
         let selfieUrl: string | null = null;
@@ -156,6 +188,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                 submissionId,
                 animalId: selectedAnimalId,
                 animalName: selectedAnimalName,
+                householdMembers: [
+                    // Only fully named people become profile household members —
+                    // and in a gift, the people list is the RECIPIENT's home, not
+                    // the giver's household: those never reach the giver's profile.
+                    ...(gift ? [] : householdPeople.flatMap((p, i): HouseholdMember[] => {
+                        const memberName = fullName(p);
+                        return memberName ? [{
+                            id: `form-${submissionId}-${i}`, name: memberName, relationship: p.relationship, contactEntries: [],
+                            age: p.age, ageAsOf: new Date().toISOString().slice(0, 10), addedBy: 'form-submission',
+                        }] : [];
+                    })),
+                    // The gift's recipient, when fully named, on the giver's profile.
+                    ...(recipient && recipientFullName(recipient) ? [{
+                        id: `form-${submissionId}-recipient`, name: recipientFullName(recipient)!, relationship: recipient.relationship,
+                        giftRecipient: true, addedBy: 'form-submission',
+                        contactEntries: recipient.phone ? [{ id: crypto.randomUUID(), type: 'phone' as const, value: recipient.phone, addedBy: 'form-submission' }] : [],
+                    }] : []),
+                ],
             });
             adopterId = result.adopterId;
             matches = result.dupCandidates.map(c => ({
@@ -174,6 +224,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                 autoAdopterId: adopterId,
                 status: 'linked',
             }).where(eq(formSubmissions.id, submissionId));
+
+            // Every form shows in its profile's history ("Ver formulario
+            // completado") and counts toward "demasiados pedidos" (Jon,
+            // 2026-10-04). Idempotent; best-effort (logs, never throws).
+            const { addFormRequestRecord } = await import('@/lib/formRequest');
+            await addFormRequestRecord(db, submissionId, adopterId, rescuerEmail);
         } catch (e) {
             logger.warn('Form auto-create-adopter failed (continuing with notification only)', {
                 submissionId,

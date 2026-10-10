@@ -10,6 +10,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { LoginPanel } from '@/components/LoginModal';
+import { clearPendingOtp } from '@/lib/pendingOtp';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useShowToast } from '@/components/ui/Toast';
 import { notifyRequestError } from '@/lib/notifyError';
@@ -685,7 +686,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                                 <div data-testid="guest-login-box" className="absolute inset-x-0 top-0 flex justify-center">
                                     <LoginPanel
                                         redirectPath={`/?q=${encodeURIComponent(submittedQuery)}`}
-                                        onClose={() => setLoginBoxClosedFor(submittedQuery)}
+                                        onClose={() => { clearPendingOtp(); setLoginBoxClosedFor(submittedQuery); }}
                                     />
                                 </div>
                             </div>

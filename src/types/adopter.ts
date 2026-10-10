@@ -73,6 +73,7 @@ export interface AdoptionRecord {
     sex?: string | null;
     color?: string | null;
     microchip?: string | null;
+    interview?: { id: string; canViewAnswers: boolean };
 }
 
 export interface HistoryEntry {

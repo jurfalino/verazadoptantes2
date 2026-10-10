@@ -58,7 +58,7 @@ const DOMAIN_REDIRECTS: Record<string, string> = {
 
 // /import/sheet: every write behind it already rejects anonymous callers, so a
 // logged-out visitor used to fill in the whole wizard and only then fail.
-const PROTECTED_ROUTES = ['/my-animals', '/my-adopters', '/my-adoptions', '/settings', '/admin', '/import/sheet'];
+const PROTECTED_ROUTES = ['/my-animals', '/my-adopters', '/my-adoptions', '/settings', '/admin', '/import/sheet', '/interview'];
 
 export default async function middleware(req: NextRequest) {
     // 0. Deployment skew. `deploymentId` in next.config.ts makes the client send

@@ -88,7 +88,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         // Token path: the adopter may be another rescuer's profile. Decide for
         // the INVITING rescuer whether this invitation is still allowed and how
         // much of the profile the signature may rewrite (contactUpdateOnSign).
-        let invitedAdopter: { contactInfo: string | null; contactEntries: string | null; addressInfo: string | null } | null = null;
         let signOverwrite = false;
         if (invitation) {
             const { adopters: adoptersTable } = await import('@/db/schema');
@@ -107,7 +106,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 });
                 return withCors(NextResponse.json({ error: 'Invitation not valid', code: 'not_allowed' }, { status: 410 }), origin);
             }
-            invitedAdopter = row;
             signOverwrite = access.overwriteOnSign;
         }
 
@@ -118,7 +116,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }
 
         if (animal.adopterId) {
-            return withCors(NextResponse.json({ error: 'This animal has already been adopted' }, { status: 409 }), origin);
+            return withCors(NextResponse.json({ error: 'This animal has already been adopted', code: 'already_placed' }, { status: 409 }), origin);
         }
 
         // 2. Upload contract document to R2 FIRST — adoption only proceeds if this succeeds
@@ -163,57 +161,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         let adopterId: string;
         let matches: Array<{ adopterId: string; adopterName: string; matchTypes: string[] }> = [];
         if (invitation) {
+            // The profile is written back AFTER the adoption lands (below), so a
+            // signature that loses the animal to a concurrent adoption changes
+            // nothing on it and leaves the invitation unused.
             adopterId = invitation.adopterId;
-            // Write the signed contact back onto the profile. On the inviting
-            // rescuer's own / team profile the signed values replace the
-            // contact and name, as before. On anyone else's — even one she
-            // sees in full (admin, grant, public, gating off) — the signed
-            // values are ADDED; nothing is removed, an existing address and
-            // the name are kept (contactUpdateOnSign).
-            const { adopters: adoptersTable, adopterHistory } = await import('@/db/schema');
-            const { buildContactEntries } = await import('@/lib/contactEntries');
-            const { contactUpdateOnSign, tokenRef } = await import('@/lib/contractInvitation');
-            const contactEntries = buildContactEntries({
-                ids: dni ? [{ value: dni, label: 'Documento' }] : [],
-                emails: email ? [email] : [],
-                phones: phone ? [phone] : [],
-                socials: socialNetworks ? [socialNetworks] : [],
-                addresses: address ? [address] : [],
-            });
-            const update = contactUpdateOnSign(
-                invitedAdopter ?? { contactInfo: null, contactEntries: null, addressInfo: null },
-                { entries: contactEntries, address: address || null },
-                signOverwrite,
-            );
-
-            await db.update(adoptersTable).set({
-                ...(update.replaceName ? { name: fullName } : {}),
-                contactInfo: update.contactInfo,
-                contactEntries: update.contactEntries,
-                addressInfo: update.addressInfo,
-                updatedAt: new Date(),
-            }).where(eq(adoptersTable.id, adopterId));
-
-            await db.insert(adopterHistory).values({
-                id: crypto.randomUUID(),
-                adopterId,
-                changedBy: 'contract-signed-via-invitation',
-                changes: JSON.stringify({
-                    contract_signed_via_invitation: {
-                        token,
-                        animalId,
-                        animalName: animal.animalName,
-                    },
-                }),
-                changedAt: new Date(),
-            });
-
-            // Mark invitation used (must happen after a successful sign).
-            await db.update(contractInvitations).set({
-                usedAt: Math.floor(Date.now() / 1000),
-            }).where(eq(contractInvitations.token, token!));
-
-            logger.info('Contract signed via invitation', { animalId, adopterId, token: tokenRef(token) });
         } else {
             const { createAdopterFromSubmission } = await import('@/app/actions/_adopterFactory');
             const factoryResult = await createAdopterFromSubmission({
@@ -244,16 +195,89 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         // 5. Link the animal to the adopter (convert to adoption). Normalized
         //    write: opens an 'adoption' placement on the animal (`animal` is the
         //    reconstructed row read above; it was 'available' with no placement).
-        const { updateRecord } = await import('@/app/actions/_recordWrite');
-        await updateRecord(db, {
-            id: animalId,
-            adopterId,
-            recordType: 'adoption',
-            date: new Date(),
-            status: 'active',
-            rating: 5,
-            comments: JSON.stringify({ contractScreenshot: contractUrl }),
-        }, animal, 'contract');
+        const { updateRecord, isActivePlacementConflict } = await import('@/app/actions/_recordWrite');
+        try {
+            await updateRecord(db, {
+                id: animalId,
+                adopterId,
+                recordType: 'adoption',
+                date: new Date(),
+                status: 'active',
+                rating: 5,
+                comments: JSON.stringify({ contractScreenshot: contractUrl }),
+            }, animal, 'contract');
+        } catch (e) {
+            // Someone adopted or fostered the animal between the check above
+            // and this write (the database allows one active placement per
+            // animal, drizzle/0078). Same answer as the check gives.
+            if (!isActivePlacementConflict(e)) throw e;
+            const errorId = logger.error('Contract submit: animal placed concurrently', e, { animalId, adopterId });
+            return withCors(NextResponse.json({ error: 'This animal has already been adopted', code: 'already_placed', errorId }, { status: 409 }), origin);
+        }
+
+        if (invitation) {
+            // Write the signed contact back onto the profile. On the inviting
+            // rescuer's own / team profile the signed values replace the
+            // contact and name, as before. On anyone else's — even one she
+            // sees in full (admin, grant, public, gating off) — the signed
+            // values are ADDED; nothing is removed, an existing address and
+            // the name are kept (contactUpdateOnSign). Computed from the row
+            // as it is now and written with a compare-and-swap, so a
+            // teammate's contact edit landing in between is merged, not lost.
+            const { adopterHistory } = await import('@/db/schema');
+            const { buildContactEntries } = await import('@/lib/contactEntries');
+            const { contactUpdateOnSign, tokenRef } = await import('@/lib/contractInvitation');
+            const { casAdopterLists } = await import('@/lib/adopterListCas');
+            const contactEntries = buildContactEntries({
+                ids: dni ? [{ value: dni, label: 'Documento' }] : [],
+                emails: email ? [email] : [],
+                phones: phone ? [phone] : [],
+                socials: socialNetworks ? [socialNetworks] : [],
+                addresses: address ? [address] : [],
+            });
+            const written = await casAdopterLists(db, adopterId, (row) => {
+                const update = contactUpdateOnSign(
+                    { contactInfo: row.contactInfo, contactEntries: row.contactEntries, addressInfo: row.addressInfo },
+                    { entries: contactEntries, address: address || null },
+                    signOverwrite,
+                );
+                return {
+                    write: {
+                        ...(update.replaceName ? { name: fullName } : {}),
+                        contactInfo: update.contactInfo,
+                        contactEntries: update.contactEntries,
+                        addressInfo: update.addressInfo,
+                    },
+                    result: null,
+                };
+            }, { op: 'contractSubmit', animalId });
+            if (written.status !== 'done') {
+                // The adoption is recorded; only the contact write-back failed.
+                // Logged with an id rather than failing a signature the adopter completed.
+                logger.error('Contract submit: contact write-back did not land', new Error(written.status), { animalId, adopterId });
+            }
+
+            await db.insert(adopterHistory).values({
+                id: crypto.randomUUID(),
+                adopterId,
+                changedBy: 'contract-signed-via-invitation',
+                changes: JSON.stringify({
+                    contract_signed_via_invitation: {
+                        token,
+                        animalId,
+                        animalName: animal.animalName,
+                    },
+                }),
+                changedAt: new Date(),
+            });
+
+            // Mark invitation used (must happen after a successful sign).
+            await db.update(contractInvitations).set({
+                usedAt: Math.floor(Date.now() / 1000),
+            }).where(eq(contractInvitations.token, token!));
+
+            logger.info('Contract signed via invitation', { animalId, adopterId, token: tokenRef(token) });
+        }
 
         logger.info('Contract adoption submitted', { animalId, adopterId, adopterName: fullName, contractUrl });
 

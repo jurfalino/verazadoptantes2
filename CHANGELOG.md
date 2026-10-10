@@ -2,6 +2,161 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.149] - 2026-10-09
+
+### Fixed — signing in from Instagram/Facebook links
+
+Google refuses sign-in inside the browser built into Instagram and Facebook,
+so a visitor who opened BuenAdoptante from an Instagram link and tapped
+«Continuar con Google» was stopped on Google's side with nothing on ours
+(3 of 3 Instagram-Android attempts in 60 days, including 2026-10-08).
+
+- **Android, inside Instagram/Facebook:** the Google button («Se abre en
+  Chrome») reopens the same page in Chrome, which goes straight to Google
+  and lands back where the visitor was — also when they were heading to a
+  members-only page.
+- **If the app won't let the page out:** the email code takes over («No
+  pudimos abrir Chrome. Entrá con un código…»).
+- **iPhone, inside Instagram/Facebook:** the login box leads with the email
+  code; Google stays underneath.
+- **Email code:** survives the app reloading the page while the visitor
+  reads their mail (comes back on the code step); its errors now show an
+  error code.
+- **Diagnosis:** every Google sign-in start is logged with the browser it
+  came from; PostHog gets hand-off attempt/arrival events.
+
+## [2.56.148] - 2026-10-05
+
+### Fixed — interview-guide e2e waits for the page on slow CI servers
+
+- 2.56.147 never reached staging: one interview e2e check looked for the
+  technique screen once, before the page had loaded, on CI's slower server.
+  It now waits for the screen. No app change; the feature is still hidden.
+
+## [2.56.147] - 2026-10-05
+
+### Added — phone-interview guide (hidden: flag `ENABLE_INTERVIEW_GUIDE`, off)
+
+Nothing changes for users until an admin turns on «Guía de entrevista telefónica».
+With the flag off, `/interview` doesn't exist and none of the entry points render.
+
+- **Preparation:** enter what you know about the person (name, phones, socials,
+  email, address); possible matching profiles appear while you type.
+- **Technique:** a three-stage guide (confianza → historia → detalles).
+- **Interview:** an adaptive list of ~40 questions with a rail of past, current
+  and upcoming questions. Follow-ups appear from earlier answers, and questions
+  that tell candidate profiles apart move up. Answers save as you type, so a
+  dropped call or another device resumes where you left off.
+- **Private checks:** on someone else's protected profile the rescuer only sees
+  «coincide / no coincide», never the stored value (5 checks per profile and fact
+  per interview).
+- **Saving:** pick the profile or «Persona nueva»; new contacts and household
+  members are added only where you're allowed to edit; an optional rating and
+  summary become an observation. The timeline shows «Entrevista», and «Ver
+  respuestas» only for the interviewer, the profile's owner and team, and admins.
+- Entry points: «Entrevista» in the user menu, «Entrevistar» in a profile's ⋯ menu.
+- Migration 0079 adds the `interviews` table. Nine new server actions (155 total).
+
+## [2.56.146] - 2026-10-05
+
+### Added — "¿Quiénes viven en la casa?" as an alternative to "¿Hay niños?"
+
+Rescuers can now choose, in Ajustes → Formulario y contrato, how the adoption
+form asks about the home: the simple "¿Hay niños?" (still the default — nothing
+changes for anyone who doesn't opt in) or **"Personas del hogar (detallado)"**.
+
+- **The form step** asks "¿Quiénes viven en la casa?" (or "…en el departamento?"
+  from the housing answer), right after the housing question. The applicant
+  taps **"Vivo solo/a"** or adds each person: relationship, age, and an
+  optional first and last name.
+- **On the form screen and the animal's applicant panel**, each person shows
+  with a semáforo dot: under 5 red, 5–17 amber, adults green.
+- **People given a first and last name become household members on the
+  applicant's profile**, with their age, which stays current. Their names feed
+  duplicate detection like any relative's.
+- **Every form is now linked from its profile's history** ("Ver formulario
+  completado"), recorded at submit time. It counts toward "demasiados pedidos".
+- **Combining profiles ("Es la misma persona", the duplicates queue) carries
+  household members along**; undo takes them back off.
+- Fixes found on the way: a resumed form draft could skip a step that the
+  rescuer's settings add; a selected option chip in the form lost its selected
+  look while tapped.
+
+The settings page sits behind the custom-forms switch, which is off in
+production — production applicants keep seeing "¿Hay niños?" until it is on.
+
+### Added — when the animal is a gift, the form asks who it is for
+
+- **"Es un regalo" is followed by "¿Para quién es?"**: relationship, first name
+  (required), last name and phone (optional).
+- **The home questions then talk about that person** — "¿Dónde vive Laura?",
+  "¿Quiénes viven en la casa de Laura?" — and the ones a giver may not know
+  offer **"No sé"**.
+- **On the form screen**, "Para quién es" comes first in the applicant's data,
+  the home rows are labelled for the recipient ("Personas en el hogar de Laura"),
+  and "No sabe" answers carry no semáforo dot.
+- **On the giver's profile**, a recipient given a first and last name is added
+  as a household member marked **"Destinatario/a del regalo"**, with her phone.
+  The people living with the recipient stay on the form only — they are not the
+  giver's household.
+
+### Changed — the applicant's phone is required by default
+
+- The form's phone question must now be answered. Rescuers can make it optional
+  per form with the new **"Obligatorio"** switch under "Teléfono" in Ajustes →
+  Formulario y contrato.
+- **This applies in production too**: with the custom-forms switch off there is
+  no setting, so every form requires the phone. Submissions are never refused
+  by the server for a missing phone (a tab opened earlier still gets through);
+  they are logged.
+
+### Fixed — a bright line under the first row of lists in dark mode
+
+- Every divided list (settings questions, menus, panels) drew its first divider
+  in near-white in the dark theme; all dividers now use the theme's border colour.
+
+## [2.56.145] - 2026-10-04
+
+### Fixed — two people editing the same animal or adopter no longer overwrite each other
+
+- **Animal, adopter profile and adoption-record forms** now save only the fields you
+  changed. A tab left open no longer reverts a teammate's change to a field you
+  didn't touch. If a teammate changed the SAME field meanwhile, nothing is
+  overwritten: «Lucía cambió la edad mientras editabas.» with «Ver su versión» or
+  «Guardar la mía igual». Changes to other fields show as «Actualizado por <nombre>».
+- **Contact details and household members:** two people adding, editing or removing
+  different entries at the same moment both land (before, one could be lost without
+  notice). Editing an entry a teammate changed or deleted shows a warning instead.
+  Adding to an existing profile, contract signing, merges and the verified address
+  now use the same protection.
+- **One active adoption or foster per animal**, enforced by the database
+  (migration 0078 tidies any duplicates first; production had none). A second
+  simultaneous registration or signature gets «<Animal> ya tiene una adopción o
+  tránsito activo.» with an Error ID, in the adopter's language on the contract page.
+- The raw English «This record was modified by another user» message is gone.
+
+## [2.56.144] - 2026-10-04
+
+### Fixed — contract PDFs keep accents and ñ (standard contract too)
+
+Signed and generic contract PDFs now print «primer año», «Gómez», ¿ ¡ « » • – “ ”
+exactly as written. Our own code was stripping them; no font was added. Bullets
+print as •, and line breaks inside a field become a space instead of disappearing.
+
+### Added — custom adoption form and contract: safe for teammates editing at once
+
+(Behind ENABLE_CUSTOM_ADOPTION_DOCS, still off in production.)
+- Saving sends only what you changed: the contract sections you edited, or the
+  questions you switched on/off. If a teammate changed a different section, both
+  changes are kept and you see theirs marked «Actualizada por <nombre>».
+- If a teammate saved the SAME section while you were editing, it isn't overwritten:
+  «<Nombre> guardó cambios en esta sección mientras la editabas» with «Ver su
+  versión» (side by side, combine and save), «Quedarme con la de <Nombre>» or
+  «Guardar la mía igual». Questions get the same per-question warning.
+- Checked on the server, so an old or modified page can't skip it.
+- Editing a contract section shows a note: readers in other languages will see that
+  section as written.
+
 ## [2.56.143] - 2026-10-04
 
 ### Added — what an adopter gave you stays yours

@@ -8,9 +8,11 @@
  */
 import { CONTRACT_CONTENT } from '../i18n/contractContent'
 
+import { stripGiftAnswers } from './giftFlow'
+
 export const FORM_STEP_IDS = [
-    'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'children', 'existingPets',
-    'housingType', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience', 'willingToSterilize',
+    'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'giftRecipient', 'children', 'existingPets',
+    'housingType', 'household', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience', 'willingToSterilize',
     'vetCommitment', 'movingPlans', 'vacationPlan', 'identity-name', 'identity-email',
     'identity-phone', 'identity-address', 'ageRange', 'geo', 'selfie',
 ] as const
@@ -25,6 +27,70 @@ export function applyHiddenSteps<T extends { id: string }>(schema: T[], hiddenSt
     if (!hiddenSteps || hiddenSteps.length === 0) return schema
     const hidden = new Set(hiddenSteps)
     return schema.filter(s => !hidden.has(s.id) || LOCKED.has(s.id))
+}
+
+/**
+ * Steps the public form asks under the stored list — the app's isStepAsked,
+ * applied to the schema. "¿Hay niños?" vs the people list: the 'household'
+ * token means people; 'children' hides the household question either way.
+ * Default (no config) asks "¿Hay niños?" and never the people list.
+ */
+export function formStepsToAsk<T extends { id: string }>(schema: T[], stored: readonly string[] | null | undefined): T[] {
+    const hidden = new Set(stored ?? [])
+    const people = hidden.has('household')
+    const rowHidden = hidden.has('children')
+    return schema.filter(s => {
+        if (LOCKED.has(s.id) || DERIVED.has(s.id)) return true
+        if (s.id === 'children') return !rowHidden && !people
+        if (s.id === 'household') return !rowHidden && people
+        return !hidden.has(s.id)
+    })
+}
+
+/** Per-form options in the same stored list (mirror of the app's FORM_OPTION_TOKENS). */
+export const FORM_OPTION_TOKENS = ['phone-optional'] as const
+
+/** The phone is required unless the rescuer turned it off — also when the config couldn't load (null). */
+export function isPhoneRequired(stored: readonly string[] | null | undefined): boolean {
+    return !(stored ?? []).includes('phone-optional')
+}
+
+/** The schema with the phone field's `required` set from the stored list (spec Part 3). */
+export function withPhoneRequirement<T extends { id: string; fields?: Array<{ name: string; required?: boolean }> }>(
+    schema: T[], stored: readonly string[] | null | undefined,
+): T[] {
+    const required = isPhoneRequired(stored)
+    return schema.map(s => s.id === 'identity-phone' && s.fields
+        ? { ...s, fields: s.fields.map(f => (f.name === 'phone' ? { ...f, required } : f)) }
+        : s)
+}
+
+/** Steps that exist only because of an earlier answer (mirror of the app's DERIVED_FORM_STEPS). */
+export const DERIVED_FORM_STEPS = ['giftRecipient'] as const
+const DERIVED = new Set<string>(DERIVED_FORM_STEPS)
+
+/** Drops answer-dependent steps whose answer isn't there: "¿Para quién es?" only after "Es un regalo". */
+export function stepsForAnswers<T extends { id: string }>(schema: T[], answers: Record<string, unknown>): T[] {
+    return schema.filter(s => s.id !== 'giftRecipient' || answers.intent === 'gift')
+}
+
+/**
+ * Where "Continuar" from `step` goes, read from the answers being saved — the
+ * schema on screen before the tap may not have the step the tap adds
+ * ("Es un regalo" → "¿Para quién es?") or may still have the one it removes.
+ */
+export function stepAfter<T extends { id: string }>(configSchema: T[], step: number, nextAnswers: Record<string, unknown>): { id: string } | 'submit' {
+    const next = stepsForAnswers(configSchema, nextAnswers)[step + 1]
+    return next ? { id: next.id } : 'submit'
+}
+
+/** Mirrors src/domain/householdPeople.ts (mirror test). */
+export const FORM_RELATIONSHIPS = ['partner', 'child', 'parent', 'sibling', 'other_relative', 'housemate'] as const
+
+/** The legacy "¿Hay niños?" answer, derived from the people list (the server recomputes it). */
+export function childrenAnswer(people: ReadonlyArray<{ age: number }>): 'none' | '1' | '2' | '3+' {
+    const n = people.filter(p => p.age < 18).length
+    return n === 0 ? 'none' : n === 1 ? '1' : n === 2 ? '2' : '3+'
 }
 
 export const LEGACY_DRAFT_KEY = 'petshield_draft'
@@ -92,7 +158,14 @@ export function restoreStepIndex(schema: { id: string }[], draft: Draft, baseOrd
 export function stripHiddenAnswers(answers: Record<string, unknown>, hiddenSteps: readonly string[]): Record<string, unknown> {
     const hidden = new Set(hiddenSteps)
     const drop = new Set<string>()
+    // 'household' is a choice, not a hide. With the people list chosen the
+    // step also writes a derived `children`, which must survive.
+    const people = hidden.has('household')
+    const rowHidden = hidden.has('children')
+    if (rowHidden) drop.add('children')
+    if (rowHidden || !people) { drop.add('householdPeople'); drop.add('livesAlone') }
     for (const id of hidden) {
+        if (id === 'household' || id === 'children') continue
         if (LOCKED.has(id)) continue
         drop.add(id)
         if (id === 'species') drop.add('speciesOther')
@@ -117,7 +190,8 @@ export function buildSubmitBody(
     animalId: string | null | undefined,
     schema: readonly { id: string }[],
 ): Record<string, unknown> {
-    const cleaned = stripHiddenAnswers(finalAnswers, hiddenSteps ?? [])
+    // A "Para mí" form never carries a recipient or a "No sé" from a gift draft.
+    const cleaned = stripGiftAnswers(stripHiddenAnswers(finalAnswers, hiddenSteps ?? []))
     return {
         ...cleaned,
         ...(animalId ? { animalId } : {}),

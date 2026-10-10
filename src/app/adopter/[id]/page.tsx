@@ -184,6 +184,26 @@ export default async function AdopterPage({
     // Read here rather than on the client so the card is already pinned in the
     // server HTML — no jump from in-page to pinned after hydration.
     const pinnedVisitIntent = !isNew && await getFeatureFlag('ENABLE_PINNED_VISIT_INTENT');
+    const interviewEnabled = !isNew && await getFeatureFlag('ENABLE_INTERVIEW_GUIDE');
+
+    // Timeline «Entrevista» badge: needs isOrgMateOfOwner, so it runs after the wave above.
+    if (interviewEnabled && adopter && adoptions.length) {
+        try {
+            const { getDb } = await import('@/lib/db');
+            const { attachInterviewLinks } = await import('@/lib/interviews/links');
+            const db = await getDb();
+            if (db) {
+                adoptions = await attachInterviewLinks(db, adoptions, {
+                    viewer: currentUser, ownerEmail: adopter.addedBy ?? null, viewerIsAdmin: isAdmin, viewerIsOrgMate: isOrgMateOfOwner,
+                });
+            }
+        } catch (e) {
+            logger.warn('adopter page: interview links failed', {
+                adopterId: id, viewer: currentUser,
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+    }
 
     return (
         <AdopterProfileV2
@@ -210,6 +230,7 @@ export default async function AdopterPage({
             piiContext={piiContext}
             showDeletionRequested={showDeletionRequested}
             pinnedVisitIntent={pinnedVisitIntent}
+            interviewEnabled={interviewEnabled}
         />
     );
 }

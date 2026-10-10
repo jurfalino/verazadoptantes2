@@ -52,17 +52,21 @@ export const updateContactEntrySchema = z.object({
     locality: z.string().max(500).optional(),
     platform: z.enum(['facebook', 'instagram', 'tiktok', 'x', 'threads', 'other']).optional(),
     apps: z.array(z.enum(['whatsapp', 'telegram'])).optional(),
+    // The value the editor saw when it started editing — a teammate's change
+    // since then is refused instead of overwritten.
+    expectedValue: z.string().max(1000).optional(),
 });
 
 // removeContactEntry — owner+admin only. Removes an existing entry by id.
 export const removeContactEntrySchema = z.object({
     adopterId: z.string().min(1).max(64),
     entryId: z.string().min(1).max(64),
+    expectedValue: z.string().max(1000).optional(),
 });
 
 export const saveAdopterSchema = z.object({
     id: id.optional(),
-    name: z.string().max(5_000).optional().default(''),
+    name: z.string().max(5_000).optional(),
     contactInfo: optionalText,
     // JSON-serialized ContactEntry[]. The string is length-bounded here; the
     // structure (entry count, per-value length) is sanitized by
@@ -79,6 +83,10 @@ export const saveAdopterSchema = z.object({
     deletedAt: z.coerce.date().optional().nullable(),
     isPublic: z.boolean().optional(),
 }).superRefine((data, ctx) => {
+    // An edit of an existing profile that doesn't send `name` isn't changing
+    // it (inline edits send only the field being saved). The CREATE branch of
+    // saveAdopter re-checks the minimum identifier itself.
+    if (data.name === undefined && data.id) return;
     const contactEntries = typeof data.contactEntries === 'string' ? data.contactEntries : null;
     const contactInfo = typeof data.contactInfo === 'string' ? data.contactInfo : null;
     if (!hasMinimumIdentifier({ name: data.name, contactEntries, contactInfo })) {

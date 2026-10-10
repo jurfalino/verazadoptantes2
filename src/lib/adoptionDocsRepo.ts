@@ -10,7 +10,7 @@
  * (version rules) and §3.2 (resolution).
  */
 
-import { and, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { adoptionDocSettings, contractVersions, signedContracts, userProfiles, users, orgMembers } from '@/db/schema';
 import { getDb } from '@/lib/db';
 import { getFeatureFlag } from '@/config/features';
@@ -163,6 +163,45 @@ export async function saveHiddenSteps(db: Db, owner: DocsOwner, hiddenSteps: str
     });
 }
 
+/**
+ * Compare-and-swap on the hidden_steps column only (contract saves share the
+ * row and must not collide with it): writes `hiddenSteps` only if the stored
+ * value is still `expected` (the raw column value the caller read; null =
+ * "no row / nothing hidden"). False when someone else saved in between.
+ */
+export async function saveHiddenStepsIfUnchanged(
+    db: Db, owner: DocsOwner, hiddenSteps: string[], actorEmail: string, expected: string | null, rowExists: boolean,
+): Promise<boolean> {
+    const now = nowSeconds();
+    const json = hiddenSteps.length ? JSON.stringify(hiddenSteps) : null;
+    const ownerCond = and(eq(adoptionDocSettings.ownerType, owner.ownerType), eq(adoptionDocSettings.ownerId, owner.ownerId));
+    if (!rowExists) {
+        const ins = await db.insert(adoptionDocSettings).values({
+            id: crypto.randomUUID(), ownerType: owner.ownerType, ownerId: owner.ownerId,
+            hiddenSteps: json, updatedAt: now, updatedBy: actorEmail,
+        }).onConflictDoNothing().returning({ id: adoptionDocSettings.id });
+        return ins.length > 0;
+    }
+    const upd = await db.update(adoptionDocSettings)
+        .set({ hiddenSteps: json, updatedAt: now, updatedBy: actorEmail })
+        .where(and(ownerCond, expected === null ? isNull(adoptionDocSettings.hiddenSteps) : eq(adoptionDocSettings.hiddenSteps, expected)))
+        .returning({ id: adoptionDocSettings.id });
+    return upd.length > 0;
+}
+
+/** The owner's contract versions, newest first (bounded) — the history attribution walks. */
+export async function listOwnerVersions(db: Db, owner: DocsOwner, limit = 50): Promise<Array<{ id: string; sectionsJson: string; createdBy: string; createdAt: number }>> {
+    return db.select({
+        id: contractVersions.id, sectionsJson: contractVersions.sectionsJson,
+        createdBy: contractVersions.createdBy, createdAt: contractVersions.createdAt,
+    }).from(contractVersions)
+        .where(and(eq(contractVersions.ownerType, owner.ownerType), eq(contractVersions.ownerId, owner.ownerId)))
+        // Same-second saves tie on created_at; insertion order (rowid) breaks the tie.
+        .orderBy(desc(contractVersions.createdAt), sql`rowid DESC`)
+        .limit(limit)
+        .all();
+}
+
 async function cleanupUnsignedVersions(db: Db, owner: DocsOwner, now: number): Promise<void> {
     await db.delete(contractVersions).where(and(
         eq(contractVersions.ownerType, owner.ownerType),
@@ -173,14 +212,55 @@ async function cleanupUnsignedVersions(db: Db, owner: DocsOwner, now: number): P
     ));
 }
 
+/**
+ * `expectedVersionId` (optional) turns the final pointer update into a
+ * compare-and-swap on contract_version_id: the save only lands if the
+ * owner's current version is still the one the caller read; otherwise the
+ * new (unsigned) version is marked replaced so cleanup collects it, and the
+ * result says `raced` — the caller re-reads and re-checks. Undefined = the
+ * old unconditional behaviour.
+ */
 export async function saveContract(
     db: Db, owner: DocsOwner, sections: ContractSections, actorEmail: string,
-): Promise<{ action: 'noop' | 'setStandard' | 'insert'; versionId: string | null }> {
+    expectedVersionId?: string | null,
+): Promise<{ action: 'noop' | 'setStandard' | 'insert'; versionId: string | null; raced?: boolean }> {
     const normalized = normalizeSections(sections);
     const nextHash = isStandardSections(normalized) ? null : await sha256Hex(canonicalSectionsJson(normalized));
 
     const settingsRow = await getSettingsRow(db, owner);
+    if (expectedVersionId !== undefined && (settingsRow?.contractVersionId ?? null) !== expectedVersionId) {
+        return { action: 'noop', versionId: settingsRow?.contractVersionId ?? null, raced: true };
+    }
     const current = settingsRow?.contractVersionId ? await getContractVersion(db, settingsRow.contractVersionId) : null;
+    const cas = expectedVersionId !== undefined;
+    const ownerCond = and(eq(adoptionDocSettings.ownerType, owner.ownerType), eq(adoptionDocSettings.ownerId, owner.ownerId));
+    /** Point the owner at `versionId`; under CAS only if the pointer is still `expectedVersionId`. */
+    const pointTo = async (versionId: string | null, now: number): Promise<boolean> => {
+        if (!cas) {
+            await db.insert(adoptionDocSettings).values({
+                id: crypto.randomUUID(), ownerType: owner.ownerType, ownerId: owner.ownerId,
+                contractVersionId: versionId, updatedAt: now, updatedBy: actorEmail,
+            }).onConflictDoUpdate({
+                target: [adoptionDocSettings.ownerType, adoptionDocSettings.ownerId],
+                set: { contractVersionId: versionId, updatedAt: now, updatedBy: actorEmail },
+            });
+            return true;
+        }
+        if (!settingsRow) {
+            const ins = await db.insert(adoptionDocSettings).values({
+                id: crypto.randomUUID(), ownerType: owner.ownerType, ownerId: owner.ownerId,
+                contractVersionId: versionId, updatedAt: now, updatedBy: actorEmail,
+            }).onConflictDoNothing().returning({ id: adoptionDocSettings.id });
+            return ins.length > 0;
+        }
+        const upd = await db.update(adoptionDocSettings)
+            .set({ contractVersionId: versionId, updatedAt: now, updatedBy: actorEmail })
+            .where(and(ownerCond, expectedVersionId === null
+                ? isNull(adoptionDocSettings.contractVersionId)
+                : eq(adoptionDocSettings.contractVersionId, expectedVersionId as string)))
+            .returning({ id: adoptionDocSettings.id });
+        return upd.length > 0;
+    };
 
     const plan = planContractSave(current ? { contentHash: current.contentHash } : null, nextHash);
 
@@ -192,18 +272,8 @@ export async function saveContract(
 
     if (plan === 'setStandard') {
         // planContractSave only returns 'setStandard' when a current version exists.
+        if (!(await pointTo(null, now))) return { action: 'noop', versionId: current!.id, raced: true };
         await db.update(contractVersions).set({ replacedAt: now }).where(eq(contractVersions.id, current!.id));
-        await db.insert(adoptionDocSettings).values({
-            id: crypto.randomUUID(),
-            ownerType: owner.ownerType,
-            ownerId: owner.ownerId,
-            contractVersionId: null,
-            updatedAt: now,
-            updatedBy: actorEmail,
-        }).onConflictDoUpdate({
-            target: [adoptionDocSettings.ownerType, adoptionDocSettings.ownerId],
-            set: { contractVersionId: null, updatedAt: now, updatedBy: actorEmail },
-        });
         await cleanupUnsignedVersions(db, owner, now);
         return { action: 'setStandard', versionId: null };
     }
@@ -221,20 +291,15 @@ export async function saveContract(
         firstSignedAt: null,
         replacedAt: null,
     });
+    if (!(await pointTo(newId, now))) {
+        // Lost the race: this version never became current. Mark it replaced
+        // so the unsigned-version cleanup collects it.
+        await db.update(contractVersions).set({ replacedAt: now }).where(eq(contractVersions.id, newId));
+        return { action: 'noop', versionId: current?.id ?? null, raced: true };
+    }
     if (current) {
         await db.update(contractVersions).set({ replacedAt: now }).where(eq(contractVersions.id, current.id));
     }
-    await db.insert(adoptionDocSettings).values({
-        id: crypto.randomUUID(),
-        ownerType: owner.ownerType,
-        ownerId: owner.ownerId,
-        contractVersionId: newId,
-        updatedAt: now,
-        updatedBy: actorEmail,
-    }).onConflictDoUpdate({
-        target: [adoptionDocSettings.ownerType, adoptionDocSettings.ownerId],
-        set: { contractVersionId: newId, updatedAt: now, updatedBy: actorEmail },
-    });
     await cleanupUnsignedVersions(db, owner, now);
     return { action: 'insert', versionId: newId };
 }

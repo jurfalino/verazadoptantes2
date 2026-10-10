@@ -10,6 +10,7 @@ import { animals, placements, adopterEvents, adopterImages, animalEvents, contra
 import { eq, and, isNull, desc, ne, sql } from 'drizzle-orm';
 import { deriveEndedPlacement } from '@/domain/placements';
 import { NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
+import { canonField } from '@/domain/fieldCollab';
 
 const PLACEMENT_TYPES = ['foster', 'adoption'];
 const EVENT_TYPES = ['observation', 'adoption_request', 'follow_up', 'returned_pet'];
@@ -30,6 +31,20 @@ export function normalizeRecordType(rt: string | null | undefined): string {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Db = any;
 type RecordData = any;
+
+/**
+ * The database refused a second ACTIVE placement for one animal (unique
+ * partial index idx_placements_one_active, drizzle/0078): someone adopted or
+ * fostered it between our read and our write. The message carries the column
+ * on SQLite / D1 alike; drizzle may wrap it, so the cause chain is read too.
+ */
+export function isActivePlacementConflict(e: unknown): boolean {
+    for (let cur: unknown = e, depth = 0; cur && depth < 4; cur = (cur as { cause?: unknown }).cause, depth++) {
+        const msg = cur instanceof Error ? cur.message : String(cur);
+        if (/UNIQUE constraint failed/i.test(msg) && /placements\.animal_id|idx_placements_one_active/.test(msg)) return true;
+    }
+    return false;
+}
 
 function newId(): string {
     return crypto.randomUUID();
@@ -146,7 +161,9 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
         deletedAt: null,
     }).onConflictDoNothing();
     if (isPlacementType(recordType) && data.adopterId) {
-        await db.insert(placements).values(placementValues(animalId, data, recordType, data.adopterId, actor, date, `${animalId}-plc`)).onConflictDoNothing();
+        // A retry with the same id is a no-op; a DIFFERENT active placement
+        // for this animal is not — it raises (isActivePlacementConflict).
+        await db.insert(placements).values(placementValues(animalId, data, recordType, data.adopterId, actor, date, `${animalId}-plc`)).onConflictDoNothing({ target: placements.id });
     }
     return animalId;
 }
@@ -157,9 +174,60 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
  * identity edits to `animals`, and placement changes to `placements` — closing the
  * prior span and opening a new one on a real transition (via deriveEndedPlacement).
  */
-export async function updateRecord(db: Db, data: RecordData, existing: RecordData, actor: string): Promise<void> {
+/* ── Compare-and-swap support for collision-checked edits ──────────────────
+ * The view field each table column backs. In `cas` mode every column a patch
+ * writes is guarded: the UPDATE lands only if the column still holds what was
+ * read, and what was read must still be what the caller planned against (the
+ * view row `existing`) — otherwise someone saved in between and the caller
+ * re-reads and re-plans (src/domain/fieldCollab.ts). */
+const ANIMAL_COLS: Record<string, string> = {
+    animalName: 'name', species: 'species', details: 'details', age: 'age', estimatedBirthDate: 'estimatedBirthDate',
+    neutered: 'neutered', sex: 'sex', color: 'color', microchip: 'microchip', sourceUrl: 'sourceUrl',
+};
+const PLACEMENT_COLS: Record<string, string> = {
+    rating: 'rating', status: 'status', deliveredToHome: 'deliveredToHome', verifiedAddress: 'verifiedAddress',
+    identityVerified: 'identityVerified', onBehalfOf: 'onBehalfOf', comments: 'comments', date: 'startedAt',
+};
+const EVENT_COLS: Record<string, string> = {
+    animalName: 'animalName', species: 'species', status: 'status', rating: 'rating', details: 'details',
+    date: 'date', onBehalfOf: 'onBehalfOf', recordType: 'eventType',
+};
+
+/** `col IS <value read>` for every column in the patch that backs a view field. */
+function guards(table: any, row: any, patch: RecordData, cols: Record<string, string>): any[] {
+    const out: any[] = [];
+    for (const col of Object.values(cols)) {
+        if (!(col in patch)) continue;
+        const v = row[col];
+        out.push(v === null || v === undefined ? isNull(table[col]) : eq(table[col], v));
+    }
+    return out;
+}
+
+/**
+ * Does the view field still hold what the caller planned against, for every
+ * field in `fields` this table backs? `viewOf` derives the view's value from
+ * the rows just read — the view COALESCEs a few columns across tables
+ * (drizzle/0076: date = placement start ?? animal created_at, sourceUrl =
+ * placement's ?? animal's), so comparing the bare column would call every
+ * such save a lost race.
+ */
+function asPlanned(viewOf: (f: string) => unknown, existing: RecordData, fields: string[], cols: Record<string, string>): boolean {
+    return fields.every(f => !(f in cols) || canonField(f, viewOf(f)) === canonField(f, existing[f]));
+}
+
+/**
+ * UPDATE an existing record. With `opts.cas`, every write is conditional on the
+ * values it replaces (see above) and `{ lost: true }` means a concurrent save
+ * got there first — nothing of this call landed past that point, and the
+ * caller should re-read and re-plan. Without it, writes are unconditional (the
+ * pre-collision behaviour, kept for callers that do no checking).
+ */
+export async function updateRecord(db: Db, data: RecordData, existing: RecordData, actor: string, opts: { cas?: boolean } = {}): Promise<{ lost: boolean; landed?: string[] }> {
     const id: string = data.id;
     const now = new Date();
+    const cas = !!opts.cas;
+    const written = Object.keys(data).filter(k => data[k] !== undefined);
 
     // Event rows: identified by the existing record's type.
     if (isEventType(existing.recordType)) {
@@ -175,8 +243,17 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
         if (data.followupKey !== undefined) patch.followupKey = data.followupKey || null;
         if (data.followupSubtype !== undefined) patch.followupSubtype = data.followupSubtype || null;
         if (data.recordType !== undefined && isEventType(data.recordType)) patch.eventType = data.recordType;
-        if (Object.keys(patch).length) await db.update(adopterEvents).set(patch).where(eq(adopterEvents.id, id));
-        return;
+        if (!Object.keys(patch).length) return { lost: false };
+        if (!cas) {
+            await db.update(adopterEvents).set(patch).where(eq(adopterEvents.id, id));
+            return { lost: false };
+        }
+        const ev = await db.select().from(adopterEvents).where(eq(adopterEvents.id, id)).get();
+        if (!ev || !asPlanned(f => ev[EVENT_COLS[f]], existing, written, EVENT_COLS)) return { lost: true };
+        const won = await db.update(adopterEvents).set(patch)
+            .where(and(eq(adopterEvents.id, id), ...guards(adopterEvents, ev, patch, EVENT_COLS)))
+            .returning({ id: adopterEvents.id });
+        return { lost: !won.length };
     }
 
     // Animal-bearing rows: update identity on `animals`.
@@ -193,13 +270,65 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
     if (data.color !== undefined) animalPatch.color = data.color;
     if (data.microchip !== undefined) animalPatch.microchip = data.microchip;
     if (data.sourceUrl !== undefined) animalPatch.sourceUrl = data.sourceUrl;
-    await db.update(animals).set(animalPatch).where(eq(animals.id, id));
+    // The active placement, read before anything is written (the view's
+    // values for this record come from it too).
+    const active = await db.select().from(placements).where(and(eq(placements.animalId, id), isNull(placements.endedAt))).get();
+    if (cas) {
+        // Who holds the animal must still be what the caller planned against —
+        // checked before anything is written, so a lost race here lands nothing.
+        const holder = active ? active.adopterId : null;
+        if (canonField('adopterId', holder) !== canonField('adopterId', existing.adopterId)) return { lost: true };
+        if (active && canonField('recordType', active.recordType) !== canonField('recordType', existing.recordType)) return { lost: true };
+    }
+    let animalRow: any = null;
+    if (!cas) {
+        await db.update(animals).set(animalPatch).where(eq(animals.id, id));
+    } else {
+        const row = await db.select().from(animals).where(eq(animals.id, id)).get();
+        animalRow = row;
+        const viewOfAnimal = (f: string) => (f === 'sourceUrl' ? (active?.sourceUrl ?? row?.sourceUrl) : row?.[ANIMAL_COLS[f]]);
+        if (!row || !asPlanned(viewOfAnimal, existing, written, ANIMAL_COLS)) return { lost: true };
+        const won = await db.update(animals).set(animalPatch)
+            .where(and(eq(animals.id, id), ...guards(animals, row, animalPatch, ANIMAL_COLS)))
+            .returning({ id: animals.id });
+        if (!won.length) return { lost: true };
+    }
+    // The animal's own fields have landed. If the placement part loses below,
+    // the caller still owes history for these (`landed`), and its retry will
+    // see them as already saved.
+    const landed = cas ? written.filter(f => f in ANIMAL_COLS) : [];
+    const lostAfterAnimal = () => ({ lost: true, landed });
+    /** Open a placement; in cas mode a concurrent one (unique index) is a lost race. */
+    const openPlacement = async (values: RecordData): Promise<boolean> => {
+        if (!cas) { await db.insert(placements).values(values); return true; }
+        try {
+            await db.insert(placements).values(values);
+            return true;
+        } catch (e) {
+            if (isActivePlacementConflict(e)) return false;
+            throw e;
+        }
+    };
 
     // Placement lifecycle.
-    const active = await db.select().from(placements).where(and(eq(placements.animalId, id), isNull(placements.endedAt))).get();
     const desiredType: string = data.recordType ?? existing.recordType;
     const desiredAdopter = data.adopterId !== undefined ? data.adopterId : existing.adopterId;
     const wantsPlacement = isPlacementType(desiredType) && !!desiredAdopter;
+    // A new placement carries the current values of every field this call
+    // doesn't change (in cas mode `data` holds only the changed ones).
+    const opening = cas ? { ...pickPlacementFields(existing), ...data } : data;
+
+    /** End the active placement — only if it is still the active one. */
+    const closeActive = async (): Promise<boolean> => {
+        if (!cas) {
+            await db.update(placements).set({ endedAt: now }).where(eq(placements.id, active.id));
+            return true;
+        }
+        const won = await db.update(placements).set({ endedAt: now })
+            .where(and(eq(placements.id, active.id), isNull(placements.endedAt)))
+            .returning({ id: placements.id });
+        return won.length > 0;
+    };
 
     if (wantsPlacement) {
         if (active) {
@@ -211,8 +340,8 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
                 actor,
             );
             if (ended) {
-                await db.update(placements).set({ endedAt: now }).where(eq(placements.id, active.id));
-                await db.insert(placements).values(placementValues(id, data, desiredType, desiredAdopter, actor, data.date ?? now));
+                if (!(await closeActive())) return lostAfterAnimal();
+                if (!(await openPlacement(placementValues(id, opening, desiredType, desiredAdopter, actor, opening.date ?? now)))) return lostAfterAnimal();
             } else {
                 // Same holder + type → patch mutable fields on the active placement.
                 const pPatch: RecordData = {};
@@ -224,16 +353,36 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
                 if (data.onBehalfOf !== undefined) pPatch.onBehalfOf = data.onBehalfOf;
                 if (data.comments !== undefined) pPatch.comments = data.comments;
                 if (data.date !== undefined) pPatch.startedAt = data.date;
-                if (Object.keys(pPatch).length) await db.update(placements).set(pPatch).where(eq(placements.id, active.id));
+                if (Object.keys(pPatch).length) {
+                    if (!cas) {
+                        await db.update(placements).set(pPatch).where(eq(placements.id, active.id));
+                    } else {
+                        const viewOfPlacement = (f: string) => (f === 'date' ? (active.startedAt ?? animalRow?.createdAt) : active[PLACEMENT_COLS[f]]);
+                        if (!asPlanned(viewOfPlacement, existing, written, PLACEMENT_COLS)) return lostAfterAnimal();
+                        const won = await db.update(placements).set(pPatch)
+                            .where(and(eq(placements.id, active.id), isNull(placements.endedAt), ...guards(placements, active, pPatch, PLACEMENT_COLS)))
+                            .returning({ id: placements.id });
+                        if (!won.length) return lostAfterAnimal();
+                    }
+                }
             }
         } else {
-            // available → placed: open the first placement.
-            await db.insert(placements).values(placementValues(id, data, desiredType, desiredAdopter, actor, data.date ?? now));
+            // available → placed: open the first placement. Two people doing
+            // this at once: the database lets only one in.
+            if (!(await openPlacement(placementValues(id, opening, desiredType, desiredAdopter, actor, opening.date ?? now)))) return lostAfterAnimal();
         }
     } else if (active && (desiredType === 'available' || !desiredAdopter)) {
         // Placed → available: close the active placement.
-        await db.update(placements).set({ endedAt: now }).where(eq(placements.id, active.id));
+        if (!(await closeActive())) return lostAfterAnimal();
     }
+    return { lost: false };
+}
+
+function pickPlacementFields(existing: RecordData): RecordData {
+    const out: RecordData = {};
+    for (const f of Object.keys(PLACEMENT_COLS)) if (existing[f] !== undefined) out[f] = existing[f];
+    if (existing.sourceUrl !== undefined) out.sourceUrl = existing.sourceUrl;
+    return out;
 }
 
 /** Delete a record by its (view) id: an animal (+ its placements + adoption-linked

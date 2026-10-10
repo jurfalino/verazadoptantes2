@@ -56,6 +56,7 @@ interface ConfigData {
         ENABLE_FOLLOWUPS?: string;
         ENABLE_CUSTOM_ADOPTION_DOCS?: string;
         ENABLE_SHEET_IMPORT?: string;
+        ENABLE_INTERVIEW_GUIDE?: string;
         TELEGRAM_ADMIN_CHAT_ID?: string;
         TELEGRAM_BOT_TOKEN_SET?: string;
         TELEGRAM_WEBHOOK_SECRET_SET?: string;
@@ -100,6 +101,7 @@ const FEATURE_FLAGS = [
     { key: 'ENABLE_FOLLOWUPS', labelKey: 'flag_label_followups', descKey: 'flag_desc_followups' },
     { key: 'ENABLE_CUSTOM_ADOPTION_DOCS', labelKey: 'flag_label_custom_adoption_docs', descKey: 'flag_desc_custom_adoption_docs' },
     { key: 'ENABLE_SHEET_IMPORT', labelKey: 'flag_label_sheet_import', descKey: 'flag_desc_sheet_import' },
+    { key: 'ENABLE_INTERVIEW_GUIDE', labelKey: 'flag_label_interview_guide', descKey: 'flag_desc_interview_guide' },
 ];
 
 export default function AdminConfigPage() {
@@ -140,6 +142,7 @@ export default function AdminConfigPage() {
         ENABLE_FOLLOWUPS: true,
         ENABLE_CUSTOM_ADOPTION_DOCS: false,
         ENABLE_SHEET_IMPORT: false,
+        ENABLE_INTERVIEW_GUIDE: false,
     });
     const [instagramUrl, setInstagramUrl] = useState('');
     const [savingInstagram, setSavingInstagram] = useState(false);
@@ -211,6 +214,7 @@ export default function AdminConfigPage() {
                         ENABLE_FOLLOWUPS: data.config?.ENABLE_FOLLOWUPS !== 'false',
                         ENABLE_CUSTOM_ADOPTION_DOCS: data.config?.ENABLE_CUSTOM_ADOPTION_DOCS === 'true',
                         ENABLE_SHEET_IMPORT: data.config?.ENABLE_SHEET_IMPORT === 'true',
+                        ENABLE_INTERVIEW_GUIDE: data.config?.ENABLE_INTERVIEW_GUIDE === 'true',
                     });
                     setInstagramUrl(data.config?.INSTAGRAM_URL || '');
                     setGeminiDefaultModel(data.config?.GEMINI_DEFAULT_MODEL || '');

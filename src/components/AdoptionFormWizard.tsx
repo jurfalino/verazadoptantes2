@@ -19,6 +19,8 @@ import AnimalSelectPicker from '@/components/AnimalSelectPicker';
 import DatePicker from '@/components/ui/DatePicker';
 import { extractVideoThumbnail } from '@/lib/videoThumbnail';
 import { zarazTrack } from '@/lib/zaraz';
+import { isAnimalAlreadyPlacedError, isSaveBusyError } from '@/domain/fieldCollab';
+import { animalAlreadyPlacedMessage } from '@/lib/collabCopy';
 
 // Helpers
 function dataUrlToBlob(dataUrl: string): Blob {
@@ -571,8 +573,22 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             delete (submitData as any).verifiedLocality;
 
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const result = await saveAdoption(submitData as any);
+            // Placing an animal picked from the inventory: say what custody it
+            // was in when picked, so a teammate who placed it meanwhile is
+            // reported instead of silently overruled (src/domain/fieldCollab.ts).
+            const picked = idForSubmit ? safeAvailableAnimals.find((a: { id?: string }) => a?.id === idForSubmit) : null;
+            const result = await saveAdoption(
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                submitData as any,
+                picked ? { loaded: { adopterId: picked.adopterId ?? null, recordType: picked.recordType ?? 'available' } } : undefined,
+            );
+            if (result?.conflicts?.some(c => c.field === 'adopterId' || c.field === 'recordType')) {
+                // Nothing about custody was written; the list behind is stale.
+                toast.error(t('errors.generic'), animalAlreadyPlacedMessage(t, formData.animalName),
+                    resolveErrorId(new Error('ANIMAL_ALREADY_PLACED: placed by someone else while the wizard was open'), 'AdoptionFormWizard'));
+                router.refresh();
+                return;
+            }
 
             // v2.19.40: persist the verified delivery address to the adopter's
             // structured `contactEntries` so future viewers see it under their
@@ -650,7 +666,13 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
             await new Promise(r => setTimeout(r, 100));
             router.refresh();
         } catch (err) {
-            toast.error(t('errors.generic'), t('errors.save_failed_generic'), resolveErrorId(err, 'AdoptionFormWizard'));
+            toast.error(
+                t('errors.generic'),
+                isAnimalAlreadyPlacedError(err) ? animalAlreadyPlacedMessage(t, formData.animalName)
+                    : isSaveBusyError(err) ? t('collab.busy')
+                    : t('errors.save_failed_generic'),
+                resolveErrorId(err, 'AdoptionFormWizard'),
+            );
         } finally {
             setLoading(false);
         }

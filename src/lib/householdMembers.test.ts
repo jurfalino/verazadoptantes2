@@ -109,3 +109,32 @@ describe('isMeaningfulMember', () => {
         expect(isMeaningfulMember({ name: '  ', relationship: 'nope', contactEntries: [] })).toBe(false);
     });
 });
+
+import { currentAge, mergeHouseholdMembers } from './householdMembers';
+
+describe('member age', () => {
+    it('round-trips age + ageAsOf and drops invalid ones', () => {
+        const json = serializeHouseholdMembers([
+            { id: 'a', name: 'Tomás López', relationship: 'child', contactEntries: [], age: 7, ageAsOf: '2026-10-04' },
+            { id: 'b', name: 'Ana Ruiz', relationship: 'partner', contactEntries: [], age: -3, ageAsOf: 'yesterday' },
+        ]);
+        const [a, b] = deserializeHouseholdMembers(json);
+        expect(a.age).toBe(7); expect(a.ageAsOf).toBe('2026-10-04');
+        expect(b.age).toBeUndefined(); expect(b.ageAsOf).toBeUndefined();
+    });
+    it('currentAge adds whole years since ageAsOf', () => {
+        const m = { age: 7, ageAsOf: '2025-10-04' };
+        expect(currentAge(m, new Date('2026-10-03'))).toBe(7);
+        expect(currentAge(m, new Date('2026-10-04'))).toBe(8);
+        expect(currentAge({ age: 7 }, new Date('2030-01-01'))).toBe(7);
+        expect(currentAge({}, new Date())).toBeNull();
+    });
+});
+
+describe('mergeHouseholdMembers', () => {
+    const m = (id: string, name: string, relationship: 'child' | 'partner') => ({ id, name, relationship, contactEntries: [] });
+    it('appends the absorbed members, skipping same name + relationship', () => {
+        const out = mergeHouseholdMembers([m('1', 'Tomás López', 'child')], [m('2', ' tomás  lópez ', 'child'), m('3', 'Ana Ruiz', 'partner')]);
+        expect(out.map(x => x.id)).toEqual(['1', '3']);
+    });
+});

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { FORM_STEP_IDS, applyHiddenSteps, restoreStepIndex, stripHiddenAnswers, buildSubmitBody, draftKey, resolveDraft, isValidCustomContract, contractVersionLabel, customSectionFor, STANDARD_CONTRACT_VERSION, fnv1a, type CustomContract, type RichDoc } from './adoptionDocs'
+import { FORM_STEP_IDS, applyHiddenSteps, restoreStepIndex, stripHiddenAnswers, buildSubmitBody, draftKey, resolveDraft, isValidCustomContract, contractVersionLabel, customSectionFor, STANDARD_CONTRACT_VERSION, fnv1a, isPhoneRequired, withPhoneRequirement, stepAfter, type CustomContract, type RichDoc } from './adoptionDocs'
 
 const schema = FORM_STEP_IDS.map(id => ({ id }))
 
@@ -173,5 +173,104 @@ describe('PetShieldForm.tsx characterization', () => {
         const slice = src.slice(start, end)
         const ids = [...slice.matchAll(/\bid: '([^']+)'/g)].map(m => m[1])
         expect(ids).toEqual([...FORM_STEP_IDS])
+    })
+})
+
+import { formStepsToAsk, childrenAnswer } from './adoptionDocs'
+const HS = ['intent', 'children', 'housingType', 'household', 'hasOutdoor'].map(id => ({ id }))
+const idsOf = (x: { id: string }[]) => x.map(s => s.id)
+
+describe('formStepsToAsk', () => {
+    it('default (no config) asks "¿Hay niños?", never the people list', () => {
+        expect(idsOf(formStepsToAsk(HS, null))).toEqual(['intent', 'children', 'housingType', 'hasOutdoor'])
+        expect(idsOf(formStepsToAsk(HS, []))).toEqual(['intent', 'children', 'housingType', 'hasOutdoor'])
+    })
+    it('"household" chosen → people list instead of the children question', () => {
+        expect(idsOf(formStepsToAsk(HS, ['household']))).toEqual(['intent', 'housingType', 'household', 'hasOutdoor'])
+    })
+    it('hiding "children" hides the household question whichever is chosen', () => {
+        expect(idsOf(formStepsToAsk(HS, ['children']))).toEqual(['intent', 'housingType', 'hasOutdoor'])
+        expect(idsOf(formStepsToAsk(HS, ['children', 'household']))).toEqual(['intent', 'housingType', 'hasOutdoor'])
+    })
+    it('still hides other hidden steps and never a locked one', () => {
+        expect(idsOf(formStepsToAsk([{ id: 'legal' }, ...HS], ['legal', 'intent']))).toEqual(['legal', 'children', 'housingType', 'hasOutdoor'])
+    })
+})
+
+describe('stripHiddenAnswers with the household choice', () => {
+    const answers = { children: '2', householdPeople: [{ relationship: 'child', age: 4 }], livesAlone: false, intent: 'self' }
+    it('people chosen: keeps the people and the derived children count', () => {
+        expect(stripHiddenAnswers(answers, ['household'])).toEqual(answers)
+    })
+    it('children chosen (default): drops a stale people list', () => {
+        expect(stripHiddenAnswers(answers, [])).toEqual({ children: '2', intent: 'self' })
+    })
+    it('row hidden: drops both', () => {
+        expect(stripHiddenAnswers(answers, ['children', 'household'])).toEqual({ intent: 'self' })
+        expect(stripHiddenAnswers(answers, ['children'])).toEqual({ intent: 'self' })
+    })
+})
+
+describe('childrenAnswer (mirror)', () => {
+    it('counts under-18s', () => {
+        expect(childrenAnswer([])).toBe('none')
+        expect(childrenAnswer([{ age: 17 }, { age: 30 }])).toBe('1')
+        expect(childrenAnswer([{ age: 1 }, { age: 2 }, { age: 3 }])).toBe('3+')
+    })
+})
+
+import { stepsForAnswers } from './adoptionDocs'
+describe('gift step (derived)', () => {
+    it('exists only when the answer is "gift"', () => {
+        const S = ['intent', 'giftRecipient', 'children'].map(id => ({ id }))
+        expect(stepsForAnswers(S, { intent: 'self' }).map(s => s.id)).toEqual(['intent', 'children'])
+        expect(stepsForAnswers(S, { intent: 'gift' }).map(s => s.id)).toEqual(['intent', 'giftRecipient', 'children'])
+        expect(stepsForAnswers(S, {}).map(s => s.id)).toEqual(['intent', 'children'])
+    })
+    it('config never hides it on its own (hiding intent does, via the answer)', () => {
+        const S = ['intent', 'giftRecipient', 'children'].map(id => ({ id }))
+        expect(formStepsToAsk(S, ['giftRecipient']).map(s => s.id)).toContain('giftRecipient')
+    })
+    it('buildSubmitBody never sends gift answers on a "Para mí" form', () => {
+        const body = buildSubmitBody({ intent: 'self', giftRecipient: { firstName: 'L' }, hasOutdoor: 'unknown' }, [], null, [{ id: 'intent' }])
+        expect(body.giftRecipient).toBeUndefined()
+        expect(body.hasOutdoor).toBeUndefined()
+    })
+})
+
+describe('isPhoneRequired', () => {
+    it('required by default — and when the config could not be loaded', () => {
+        expect(isPhoneRequired([])).toBe(true)
+        expect(isPhoneRequired(null)).toBe(true)
+        expect(isPhoneRequired(undefined)).toBe(true)
+    })
+    it('optional only when the rescuer turned it off', () => {
+        expect(isPhoneRequired(['phone-optional'])).toBe(false)
+    })
+})
+
+describe('withPhoneRequirement', () => {
+    const phoneStep = { id: 'identity-phone', fields: [{ name: 'phone', label: 'Tel' }] }
+    const other = { id: 'intent' }
+    it('marks the phone field required by default and while the config loads', () => {
+        expect(withPhoneRequirement([other, phoneStep], null)[1]).toEqual({ id: 'identity-phone', fields: [{ name: 'phone', label: 'Tel', required: true }] })
+    })
+    it('leaves it optional when the rescuer turned it off; other steps untouched', () => {
+        const out = withPhoneRequirement([other, phoneStep], ['phone-optional'])
+        expect(out[0]).toBe(other)
+        expect(out[1].fields?.[0].required).toBe(false)
+    })
+})
+
+describe('stepAfter', () => {
+    const cfg = [{ id: 'intent' }, { id: 'giftRecipient' }, { id: 'children' }, { id: 'identity-phone' }]
+    it('the step after "Es un regalo" is "¿Para quién es?" — from the answers being saved, not the screen before the tap', () => {
+        expect(stepAfter(cfg, 0, { intent: 'gift' })).toEqual({ id: 'giftRecipient' })
+    })
+    it('switching back to "Para mí" goes straight to the home questions', () => {
+        expect(stepAfter(cfg, 0, { intent: 'self', giftRecipient: { firstName: 'L' } })).toEqual({ id: 'children' })
+    })
+    it('past the last step means submit', () => {
+        expect(stepAfter(cfg, 2, { intent: 'self' })).toBe('submit')
     })
 })

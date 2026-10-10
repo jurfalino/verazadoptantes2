@@ -123,6 +123,11 @@ export const FEATURE_FLAGS = {
     // entry point; the page itself stays reachable by URL. Client-visible →
     // also in PUBLIC_FLAG_KEYS. Default off.
     ENABLE_SHEET_IMPORT: false,
+    // Phone-interview guide (/interview + «Entrevistar» on profiles): prepare,
+    // learn the three-stage technique, run an adaptive question list, save to
+    // the confirmed profile. Spec: .agents/plans/interview-guide.md.
+    // Client-visible (user menu) → also in PUBLIC_FLAG_KEYS. Default off.
+    ENABLE_INTERVIEW_GUIDE: false,
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
@@ -218,6 +223,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_GUEST_NAME_MASK: false,
         ENABLE_CUSTOM_ADOPTION_DOCS: false,
         ENABLE_SHEET_IMPORT: false,
+        ENABLE_INTERVIEW_GUIDE: false,
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
         ENABLE_POSTHOG: false,

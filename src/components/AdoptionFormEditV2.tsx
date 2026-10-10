@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { saveAdoption, getAdoptionImages, deleteImage } from '@/app/actions';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
@@ -18,6 +18,9 @@ import { formatAge } from '@/lib/ageUtils';
 import DatePicker from '@/components/ui/DatePicker';
 import { extractVideoThumbnail } from '@/lib/videoThumbnail';
 import { zarazTrack } from '@/lib/zaraz';
+import { isSaveBusyError, isAnimalAlreadyPlacedError } from '@/domain/fieldCollab';
+import { FieldConflictNotice } from '@/components/collab/FieldConflictNotice';
+import { updatedByOtherMessage, needsReviewMessage, animalAlreadyPlacedMessage } from '@/lib/collabCopy';
 
 /** Convert a data URL to a Blob for FormData upload */
 function dataUrlToBlob(dataUrl: string): Blob {
@@ -114,6 +117,44 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
         identityVerified: initialData?.identityVerified || false
     });
 
+    /* Editing an existing record: what the form loaded for each field it can
+       change — sent with the save so a teammate's edit to another field is
+       never reverted and one to the same field is reported, not overwritten
+       (src/domain/fieldCollab.ts). onBehalfOf is not edited here, so it is
+       neither sent nor compared. */
+    const baselineOf = (d: any): Record<string, unknown> => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+        animalName: d.animalName ?? null, details: d.details ?? null, status: d.status ?? null, rating: d.rating ?? null,
+        comments: d.comments ?? null, species: d.species ?? null, adopterId: d.adopterId ?? null, recordType: d.recordType ?? null,
+        date: d.date ?? null, deliveredToHome: d.deliveredToHome ? 1 : 0, verifiedAddress: d.verifiedAddress ?? null,
+        identityVerified: d.identityVerified ? 1 : 0,
+    });
+    // `values`: what is stored (compared on the server). `shown`: the form as
+    // it was filled from them (display defaults like rating 5 included) — only
+    // fields that differ from `shown` are this editor's changes, and only those
+    // are sent.
+    type Baseline = { id: string; values: Record<string, unknown>; shown: typeof formData };
+    const baselineRef = useRef<Baseline | null>(initialData?.id ? { id: initialData.id, values: baselineOf(initialData), shown: { ...formData } } : null);
+    const [conflicts, setConflicts] = useState<Record<string, { by: string; value: unknown }>>({});
+    const formRef = useRef<HTMLFormElement>(null);
+    const dayOf = (v: unknown): string => {
+        if (v === null || v === undefined || v === '') return '';
+        const d = v instanceof Date ? v : new Date(typeof v === 'number' && v < 1e11 ? v * 1000 : (v as string | number));
+        return Number.isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0];
+    };
+    /** The editable fields as the save would send them — what "changed" is measured on. */
+    const editableOf = (fd: typeof formData): Record<string, unknown> => ({
+        animalName: fd.animalName.trim() || null, details: fd.details, status: fd.status, rating: Number(fd.rating),
+        comments: fd.comments, species: fd.species, recordType: fd.recordType, date: fd.date,
+        deliveredToHome: fd.deliveredToHome ? 1 : 0, verifiedAddress: fd.verifiedAddress || null, identityVerified: fd.identityVerified ? 1 : 0,
+    });
+    /** A stored value, in the form's own representation. */
+    const asFormValue = (field: string, v: unknown): unknown => {
+        if (field === 'date') return dayOf(v);
+        if (field === 'deliveredToHome' || field === 'identityVerified') return v === 1 || v === true;
+        if (field === 'rating') return v === null || v === undefined ? 5 : Number(v);
+        return (v as string | null) ?? '';
+    };
+
     // Set default date on client to avoid SSR hydration mismatch
     useEffect(() => {
         if (!formData.date) {
@@ -123,7 +164,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
 
     // Update form data when initialData changes
     if (initialData && formData.id !== initialData.id) {
-        setFormData({
+        const filled = {
             id: initialData.id,
             animalName: initialData.animalName || '',
             details: initialData.details || '',
@@ -137,7 +178,9 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
             deliveredToHome: initialData.deliveredToHome || false,
             verifiedAddress: initialData.verifiedAddress || '',
             identityVerified: initialData.identityVerified || false
-        });
+        };
+        baselineRef.current = initialData.id ? { id: initialData.id, values: baselineOf(initialData), shown: { ...filled } } : null;
+        setFormData(filled);
         setIsOpen(true);
         setMode('new');
     }
@@ -312,7 +355,10 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
             const dateParts = formData.date.split('-').map(Number);
             const localDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2] || 1, 12, 0, 0);
 
-            const result = await saveAdoption({
+            const baseline = baselineRef.current && baselineRef.current.id === formData.id ? baselineRef.current : null;
+            const base = baseline?.values ?? null;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const payload: any = {
                 ...formData,
                 adopterId: adopterId,
                 // v2.19.52: blank animalName saves as NULL (was kept as '').
@@ -323,8 +369,19 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                 deliveredToHome: formData.deliveredToHome ? 1 : 0,
                 verifiedAddress: formData.verifiedAddress || null,
                 identityVerified: formData.identityVerified ? 1 : 0
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            } as any);
+            };
+            if (baseline) {
+                // An edit sends only what this person changed: a field still as
+                // it was shown is left alone (a teammate may have changed it).
+                // «En nombre de» isn't edited here (sending null used to wipe
+                // it); the date counts as changed only if the DAY did.
+                const now = editableOf(formData);
+                const was = editableOf(baseline.shown);
+                for (const k of Object.keys(now)) if (JSON.stringify(now[k]) === JSON.stringify(was[k])) delete payload[k];
+                if (adopterId === (baseline.shown.adopterId || adopterId)) delete payload.adopterId;
+                delete payload.onBehalfOf;
+            }
+            const result = await saveAdoption(payload, base ? { loaded: { ...base } as any } : undefined); // eslint-disable-line @typescript-eslint/no-explicit-any
 
             // saveAdoption throws on failure and otherwise returns the record's
             // id, so a resolved-but-empty result means nothing was written —
@@ -342,6 +399,29 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                     ),
                 );
                 return;
+            }
+
+            if (baseline && base && result) {
+                for (const f of result.saved ?? []) if (f in payload) {
+                    base[f] = payload[f];
+                    (baseline.shown as Record<string, unknown>)[f] = (formData as Record<string, unknown>)[f];
+                }
+                // Fields a teammate changed that I didn't: show theirs.
+                const others = result.updatedByOthers ?? [];
+                for (const o of others) {
+                    base[o.field] = o.value;
+                    (baseline.shown as Record<string, unknown>)[o.field] = asFormValue(o.field, o.value);
+                    toast.info(updatedByOtherMessage(t, o.field, o.by));
+                }
+                if (others.length) setFormData(prev => ({ ...prev, ...Object.fromEntries(others.map(o => [o.field, asFormValue(o.field, o.value)])) }));
+                // Fields we both changed: nothing of theirs was overwritten.
+                // The form stays open with my values and a notice per field.
+                if (result.conflicts?.length) {
+                    setConflicts(Object.fromEntries(result.conflicts.map(c => [c.field, { by: c.by, value: c.value }])));
+                    toast.warning(needsReviewMessage(t, result.conflicts[0].field));
+                    return;
+                }
+                setConflicts({});
             }
 
             // Upload any pending media concurrently now that we have the adoption ID
@@ -383,7 +463,13 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
             }
         } catch (err) {
             console.error(err);
-            toast.error(t('errors.generic'), t('errors.save_adoption_failed'), resolveErrorId(err, 'AdoptionFormEditV2'));
+            toast.error(
+                t('errors.generic'),
+                isAnimalAlreadyPlacedError(err) ? animalAlreadyPlacedMessage(t, formData.animalName)
+                    : isSaveBusyError(err) ? t('collab.busy')
+                    : t('errors.save_adoption_failed'),
+                resolveErrorId(err, 'AdoptionFormEditV2'),
+            );
         } finally {
             setLoading(false);
         }
@@ -448,7 +534,31 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                     </div>
                 )}
 
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
+                    {Object.entries(conflicts).map(([field, c]) => (
+                        <FieldConflictNotice
+                            key={field}
+                            field={field}
+                            by={c.by}
+                            theirs={field === 'date' ? dayOf(c.value) : field === 'deliveredToHome' || field === 'identityVerified' ? (c.value === 1 ? '✓' : '—') : (c.value as string | number | null)}
+                            saving={loading}
+                            testId={`record-${field}-conflict`}
+                            onKeepTheirs={() => {
+                                if (baselineRef.current) {
+                                    baselineRef.current.values[field] = c.value;
+                                    (baselineRef.current.shown as Record<string, unknown>)[field] = asFormValue(field, c.value);
+                                }
+                                setFormData(prev => ({ ...prev, [field]: asFormValue(field, c.value) }));
+                                setConflicts(cs => { const n = { ...cs }; delete n[field]; return n; });
+                            }}
+                            onKeepMine={() => {
+                                // I have seen theirs: compare against it now.
+                                if (baselineRef.current) baselineRef.current.values[field] = c.value;
+                                setConflicts(cs => { const n = { ...cs }; delete n[field]; return n; });
+                                formRef.current?.requestSubmit();
+                            }}
+                        />
+                    ))}
                     {!isObservation && effectiveMode === 'existing' && (
                         <div className="mb-4">
                             <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">

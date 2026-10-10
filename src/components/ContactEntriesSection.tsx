@@ -19,6 +19,7 @@ import { addContactEntry } from '@/app/actions/addContactEntry';
 import { updateContactEntry } from '@/app/actions/updateContactEntry';
 import { removeContactEntry } from '@/app/actions/removeContactEntry';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { entryConflictMessage } from '@/lib/collabCopy';
 import { renderTextWithLinks } from '@/lib/textUtils';
 import DuplicateHint from '@/components/DuplicateHint';
 
@@ -362,6 +363,10 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 }
                 : { adopterId: adopterId!, type: composerType, value: composerValue.trim(), ...(composerType === 'social' && effectiveSocialPlatform ? { platform: effectiveSocialPlatform } : {}), ...(composerType === 'phone' && composerApps.length ? { apps: composerApps } : {}) };
             const res = await addContactEntry(payload);
+            if (!res.ok && res.error === 'busy' && 'errorId' in res) {
+                toast.error(t('errors.generic'), t('collab.busy'), res.errorId);
+                return { ok: false };
+            }
             if (res.ok) {
                 clearComposerInputs();
                 router.refresh();
@@ -520,10 +525,21 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                     locality: editDraft.locality.trim() || undefined,
                 }
                 : { adopterId: adopterId!, entryId: entry.id, value: editDraft.value.trim(), ...(editPlatform ? { platform: editPlatform } : {}), ...(editApps.length ? { apps: editApps } : {}) };
+            // What this person saw: a teammate's change since then is refused, not overwritten.
+            payload.expectedValue = entry.value;
             const res = await updateContactEntry(payload);
             if (res.ok) {
                 cancelEdit();
                 router.refresh();
+            } else if (res.error === 'conflict' && 'conflict' in res) {
+                // Changed: the editor stays open with what was typed, over the
+                // refreshed value — saving again is a deliberate choice.
+                // Deleted: nothing left to edit.
+                toast.warning(entryConflictMessage(t, res.conflict.kind, res.conflict.by));
+                if (res.conflict.kind === 'deleted') cancelEdit();
+                router.refresh();
+            } else if (res.error === 'busy' && 'errorId' in res) {
+                toast.error(t('errors.generic'), t('collab.busy'), res.errorId);
             } else {
                 toast.error(t('errors.generic'), res.error || t('adopter.ce_edit_error'));
             }
@@ -558,10 +574,19 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         }
 
         try {
-            const res = await removeContactEntry({ adopterId: adopterId!, entryId });
+            const res = await removeContactEntry({ adopterId: adopterId!, entryId, expectedValue: entry.value });
+            if (!res.ok && res.error === 'conflict' && 'conflict' in res) {
+                // Already gone: the refresh drops the row. Changed: it comes
+                // back with the teammate's value, not deleted unseen.
+                if (res.conflict.kind !== 'deleted') setDeletingId(null);
+                toast.warning(entryConflictMessage(t, res.conflict.kind, res.conflict.by));
+                router.refresh();
+                return;
+            }
             if (!res.ok) {
                 setDeletingId(null); // restore the row — it was not deleted
-                toast.error(t('errors.generic'), res.error || t('adopter.ce_delete_error'));
+                if (res.error === 'busy' && 'errorId' in res) toast.error(t('errors.generic'), t('collab.busy'), res.errorId);
+                else toast.error(t('errors.generic'), res.error || t('adopter.ce_delete_error'));
                 return;
             }
             // Deliberately does NOT clear deletingId: `router.refresh()` is

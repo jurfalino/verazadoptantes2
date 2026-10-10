@@ -7,8 +7,8 @@
 import { z } from 'zod';
 
 export const FORM_STEP_IDS = [
-    'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'children', 'existingPets',
-    'housingType', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience', 'willingToSterilize',
+    'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'giftRecipient', 'children', 'existingPets',
+    'housingType', 'household', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience', 'willingToSterilize',
     'vetCommitment', 'movingPlans', 'vacationPlan', 'identity-name', 'identity-email',
     'identity-phone', 'identity-address', 'ageRange', 'geo', 'selfie',
 ] as const;
@@ -16,26 +16,50 @@ export const FORM_STEP_IDS = [
 /** Terms consent + identity feed the adopter record and dedup — never hideable. */
 export const LOCKED_FORM_STEPS = ['legal', 'identity-name', 'identity-email', 'identity-phone', 'identity-address'] as const;
 
-const LOCKED = new Set<string>(LOCKED_FORM_STEPS);
-const KNOWN = new Set<string>(FORM_STEP_IDS);
+/**
+ * Steps that exist only because of an earlier answer — 'giftRecipient' only
+ * after "Es un regalo" (spec Part 2 §7). Never toggled, grouped or stored on
+ * their own: hiding `intent` hides them.
+ */
+export const DERIVED_FORM_STEPS = ['giftRecipient'] as const;
 
-export const TOGGLEABLE_FORM_STEPS = FORM_STEP_IDS.filter(id => !LOCKED.has(id));
+/**
+ * Per-form options stored in the same hidden_steps list (spec Part 3):
+ * 'phone-optional' lets an applicant leave the phone blank — absent (every
+ * existing config) means the phone is required. Not questions: never counted
+ * or shown, and they sort after the steps. Toggleable, so a teammate's change
+ * is a per-key conflict like any question.
+ */
+export const FORM_OPTION_TOKENS = ['phone-optional'] as const;
+
+const LOCKED = new Set<string>(LOCKED_FORM_STEPS);
+const DERIVED = new Set<string>(DERIVED_FORM_STEPS);
+const KNOWN = new Set<string>(FORM_STEP_IDS.filter(id => !DERIVED.has(id)));
+const OPTIONS = new Set<string>(FORM_OPTION_TOKENS);
+
+export const TOGGLEABLE_FORM_STEPS: readonly string[] = [...FORM_STEP_IDS.filter(id => !LOCKED.has(id) && !DERIVED.has(id)), ...FORM_OPTION_TOKENS];
+
+/** Whether the applicant must give a phone — the default; 'phone-optional' turns it off. */
+export function isPhoneRequired(hidden: readonly string[]): boolean {
+    return !hidden.includes('phone-optional');
+}
 
 export const FORM_STEP_GROUPS = [
     { key: 'what', steps: ['species', 'lifeStage', 'specialNeeds', 'intent'] },
-    { key: 'home', steps: ['children', 'existingPets', 'housingType', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience'] },
+    { key: 'home', steps: ['children', 'household', 'existingPets', 'housingType', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience'] },
     { key: 'commitments', steps: ['willingToSterilize', 'vetCommitment', 'movingPlans', 'vacationPlan'] },
     { key: 'person', steps: ['identity-name', 'identity-email', 'identity-phone', 'identity-address', 'ageRange', 'geo', 'selfie'] },
 ] as const;
 
-function inFormOrder(ids: Set<string>): string[] {
-    return FORM_STEP_IDS.filter(id => ids.has(id));
+/** Steps in form order, then option tokens. */
+export function inFormOrder(ids: ReadonlySet<string>): string[] {
+    return [...FORM_STEP_IDS.filter(id => ids.has(id)), ...FORM_OPTION_TOKENS.filter(id => ids.has(id))];
 }
 
 export function sanitizeHiddenSteps(input: unknown): string[] {
     if (!Array.isArray(input)) return [];
     const keep = new Set<string>();
-    for (const v of input) if (typeof v === 'string' && KNOWN.has(v) && !LOCKED.has(v)) keep.add(v);
+    for (const v of input) if (typeof v === 'string' && ((KNOWN.has(v) && !LOCKED.has(v)) || OPTIONS.has(v))) keep.add(v);
     return inFormOrder(keep);
 }
 
@@ -44,6 +68,26 @@ export function sanitizeShownSteps(input: unknown): string[] | null {
     const keep = new Set<string>();
     for (const v of input) if (typeof v === 'string' && KNOWN.has(v)) keep.add(v);
     return inFormOrder(keep);
+}
+
+/**
+ * "¿Hay niños?" vs the people list (spec 2026-10-04 §2). Stored in the same
+ * hidden_steps list: the 'household' token means "people list"; absent (every
+ * existing config) means the children question. 'children' in the list hides
+ * the household question whichever is chosen — one switch for the row.
+ * contract-app's formStepsToAsk applies the same rule to the public form.
+ */
+export function householdQuestion(hidden: readonly string[]): 'children' | 'people' {
+    return hidden.includes('household') ? 'people' : 'children';
+}
+
+/** Whether the public form asks `id` under this stored list. */
+export function isStepAsked(id: string, hidden: readonly string[]): boolean {
+    if (LOCKED.has(id)) return true;
+    const rowHidden = hidden.includes('children');
+    if (id === 'children') return !rowHidden && householdQuestion(hidden) === 'children';
+    if (id === 'household') return !rowHidden && householdQuestion(hidden) === 'people';
+    return !hidden.includes(id);
 }
 
 /**

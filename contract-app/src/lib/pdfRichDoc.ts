@@ -8,7 +8,6 @@
  * applied — i.e. the caller draws each word at `pageLeft + line.indent + word.x`.
  */
 import type { RichDoc, Block, Inline, Mark } from './adoptionDocs'
-import { stripAccents } from '../i18n/contractContent'
 
 export type Style = 'normal' | 'bold' | 'italic' | 'bolditalic'
 export type Measure = (text: string, style: Style) => number
@@ -16,28 +15,52 @@ export type LaidWord = { text: string; x: number; style: Style; underline: boole
 export type LaidLine = { words: LaidWord[]; indent: number; bullet: boolean }
 
 // ── Text the built-in helvetica font can draw ─────────────────────
-// Rescuer-typed text (pasted from Word/WhatsApp) carries typographic quotes,
-// dashes, NBSPs and emoji. helvetica's WinAnsi encoding can't draw most of
-// them, and jsPDF then mis-measures/mis-draws the whole word. Fold the common
-// ones to ASCII, strip accents exactly like the standard path, then drop any
-// remaining code point above Latin-1. Custom sections only — the standard
-// text path keeps using stripAccents alone.
-const TYPOGRAPHIC: Array<[RegExp, string]> = [
-    [/[\u201C\u201D\u201E\u201F\u00AB\u00BB]/g, '"'],
-    [/[\u2018\u2019\u201A\u201B]/g, "'"],
-    [/[\u2010-\u2015\u2212]/g, '-'],
-    [/\u2026/g, '...'],
-    [/[\u2022\u2023\u2043\u25CF\u25E6]/g, '-'],
+// jsPDF writes helvetica text in WinAnsiEncoding (cp1252): every Spanish and
+// Portuguese letter (á é í ó ú ü ñ ç ã õ â ê ô à), ¿ ¡ « » and the typographic
+// specials (• – — “ ” ‘ ’ … €) are IN that encoding and render as typed. Only
+// code points outside it (other dashes, odd spaces, emoji, CJK…) must be
+// folded or dropped, or jsPDF mis-measures/mis-draws the word. Applied to
+// EVERY string the contract PDF draws — standard text, form data, rescuer
+// sections — and before measuring, so wrap and draw see the same string.
+// (It used to strip accents from everything: «primer año» printed «primer ano».)
+
+/** The 27 cp1252 code points above U+007F that are not Latin-1. */
+const WINANSI_SPECIALS = new Set([...'€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ'])
+
+const FOLD: Array<[RegExp, string]> = [
+    [/[\u2010\u2011\u2012\u2015\u2212]/g, '-'],          // other dashes (– and — are WinAnsi)
+    [/[\u201B\u2032]/g, "'"],
+    [/[\u201F\u2033]/g, '"'],
+    [/[\u2023\u2043\u2219\u25AA\u25CF\u25E6]/g, '\u2022'], // other bullets → •
     [/[\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/g, ' '],
+    // Line breaks / tabs in a pasted value (a multi-line address, the details
+    // fallback): one space, so words never run together. jsPDF would otherwise
+    // have to place them, and WinAnsi has no glyph for them.
+    [/[\t\r\n]+/g, ' '],
 ]
 
-export function pdfSafeText(s: string): string {
-    let out = s
-    for (const [re, rep] of TYPOGRAPHIC) out = out.replace(re, rep)
-    out = stripAccents(out)
+const inWinAnsi = (ch: string): boolean => {
+    const cp = ch.codePointAt(0)!
+    return (cp >= 0x20 && cp <= 0x7E) || (cp >= 0xA0 && cp <= 0xFF) || WINANSI_SPECIALS.has(ch)
+}
+
+/** `s` reduced to what helvetica (WinAnsi) can draw; accents and ñ are kept. */
+export function toWinAnsi(s: string): string {
+    let out = s.normalize('NFC')
+    for (const [re, rep] of FOLD) out = out.replace(re, rep)
     let kept = ''
-    for (const ch of out) if (ch.codePointAt(0)! <= 0xFF) kept += ch
+    for (const ch of out) {
+        if (inWinAnsi(ch)) { kept += ch; continue }
+        // Outside WinAnsi: keep the base letter when there is one (ă → a, ő → o);
+        // otherwise (emoji, CJK, C1 controls) drop it.
+        for (const b of ch.normalize('NFD').replace(/[\u0300-\u036f]/g, '')) if (inWinAnsi(b)) kept += b
+    }
     return kept
+}
+
+/** Kept for the rich-doc path's callers; same rule as every other PDF string. */
+export function pdfSafeText(s: string): string {
+    return toWinAnsi(s)
 }
 
 /** Same document with every inline's text passed through pdfSafeText (marks and shape kept). */

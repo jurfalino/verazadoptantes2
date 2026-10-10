@@ -7,6 +7,7 @@ import { useAuthContext } from '@/context/AuthContext';
 import { ThemeSelector } from '@/components/ThemeSelector';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import Link from 'next/link';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 
 interface UserMenuProps {
     user?: {
@@ -33,6 +34,7 @@ export default function UserMenu({ user, isAdmin: isAdminFromServer }: UserMenuP
     const { data: session } = useSession();
     const [isOpen, setIsOpen] = useState(false);
     const [animalsEnabled, setAnimalsEnabled] = useState(false);
+    const [interviewEnabled, setInterviewEnabled] = useState(false);
     const [counts, setCounts] = useState<QuickCounts | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     // Single source: server-passed isAdmin (layout) > user.isAdmin (session callback) > client session
@@ -61,8 +63,9 @@ export default function UserMenu({ user, isAdmin: isAdminFromServer }: UserMenuP
                 if (cfg.config?.ENABLE_ANIMALS_FOR_ADOPTION === 'true') {
                     setAnimalsEnabled(true);
                 }
+                if (cfg.config?.ENABLE_INTERVIEW_GUIDE === 'true') setInterviewEnabled(true);
             })
-            .catch(() => { });
+            .catch((e) => { resolveErrorId(e, 'UserMenu.config'); });
     }, [user]);
 
     // Fetch quick counts (same endpoint QuickAccessStrip uses; HTTP-cached so
@@ -155,6 +158,19 @@ export default function UserMenu({ user, isAdmin: isAdminFromServer }: UserMenuP
                                     <span className="px-1.5 py-0.5 bg-stone-100 text-stone-500 rounded-full text-xs font-semibold tabular-nums">{counts.adopters}</span>
                                 )}
                             </Link>
+                            {interviewEnabled && (
+                                <Link
+                                    href="/interview"
+                                    className="flex items-center gap-2 px-4 py-2.5 text-sm text-stone-700 hover:bg-stone-50 hover:text-teal-700 font-medium transition-colors"
+                                    onClick={() => setIsOpen(false)}
+                                    data-testid="menu-interview"
+                                >
+                                    <svg className="w-4 h-4 text-stone-500" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
+                                        <path d="M5.5 3h2l1 4-1.5 1a9 9 0 004.5 4.5l1-1.5 4 1v2a2 2 0 01-2 2A13 13 0 013.5 5a2 2 0 012-2z" strokeLinejoin="round" />
+                                    </svg>
+                                    <span className="flex-1">{t('interview.menu')}</span>
+                                </Link>
+                            )}
                             {animalsEnabled && (
                                 <Link
                                     href="/my-animals"

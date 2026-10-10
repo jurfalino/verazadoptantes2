@@ -22,6 +22,7 @@ import { createNotification, resolveDisplayName } from './notifications';
 import { getAdopterApprovers } from './piiAccess';
 import { runAfterResponse } from '@/lib/background';
 import { fileAccessRequestFor } from '@/lib/piiAccessRequest';
+import { casAdopterLists } from '@/lib/adopterListCas';
 
 /**
  * Append-only contribution path. Open to ANY authenticated user, regardless
@@ -58,7 +59,7 @@ export type AddContactEntryStatus = 'appended' | 'unlocked_existing' | 'no_chang
 
 export async function addContactEntry(
     input: { adopterId: string; type: ContactEntry['type']; value: string; streetAndNumber?: string; locality?: string; platform?: SocialPlatform; apps?: MessagingApp[] },
-): Promise<{ ok: true; adopterId: string; appended: boolean; status: AddContactEntryStatus; autoRequestFiled: boolean } | { ok: false; error: string }> {
+): Promise<{ ok: true; adopterId: string; appended: boolean; status: AddContactEntryStatus; autoRequestFiled: boolean } | { ok: false; error: 'busy'; errorId: string } | { ok: false; error: string }> {
     const parsed = addContactEntrySchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: 'Invalid input' };
     const { adopterId, type, value } = parsed.data;
@@ -95,56 +96,46 @@ export async function addContactEntry(
         // silently destroying every other phone/email/address on the row.
         // After migration the structured column wins; this branch never
         // fires again for the same row.
-        let existing = deserializeContactEntries(target.contactEntries);
-        if (existing.length === 0 && target.contactInfo && target.contactInfo.trim()) {
-            const fromBlob = parseBlobToContactEntries(target.contactInfo);
-            if (fromBlob.length > 0) {
-                existing = fromBlob.map(e => ({ id: crypto.randomUUID(), ...e }));
-                logger.info('addContactEntry: lazy legacy contactEntries migration', {
-                    adopterId, parsedCount: existing.length,
-                });
+        // Merged into the CURRENT list with a compare-and-swap write; after a
+        // lost race the merge is re-done on a fresh read, so two people adding
+        // (or one adding while another edits) at the same moment both land.
+        // It used to compare `updatedAt` and refuse with a raw English error —
+        // and the check never fired (the driver reports no rowsAffected).
+        const outcome = await casAdopterLists<{ appended: boolean }>(db, adopterId, (row) => {
+            let existing = deserializeContactEntries(row.contactEntries);
+            if (existing.length === 0 && row.contactInfo && row.contactInfo.trim()) {
+                const fromBlob = parseBlobToContactEntries(row.contactInfo);
+                if (fromBlob.length > 0) {
+                    existing = fromBlob.map(e => ({ id: crypto.randomUUID(), ...e }));
+                }
             }
-        }
-        const merged = mergeContactEntries(existing, [newEntry]);
-        const appended = merged.length !== existing.length;
-        const structuralWrite = appended || merged.length !== deserializeContactEntries(target.contactEntries).length;
+            const merged = mergeContactEntries(existing, [newEntry]);
+            const appended = merged.length !== existing.length;
+            const structuralWrite = appended || merged.length !== deserializeContactEntries(row.contactEntries).length;
+            if (!structuralWrite) return { result: { appended } };
+            if (existing.length && !deserializeContactEntries(row.contactEntries).length) {
+                logger.info('addContactEntry: lazy legacy contactEntries migration', { adopterId, parsedCount: existing.length });
+            }
+            return {
+                write: { contactEntries: JSON.stringify(merged), contactInfo: contactEntriesToBlob(merged) || null },
+                result: { appended },
+            };
+        }, { op: 'addContactEntry', actor });
+        if (outcome.status === 'missing') return { ok: false, error: 'Adopter not found' };
+        if (outcome.status === 'busy') return { ok: false, error: 'busy', errorId: outcome.errorId };
+        const appended = outcome.result.appended;
 
-        if (structuralWrite) {
-            // Optimistic concurrency: only commit if updatedAt hasn't shifted
-            // since we read the row. Mirrors saveAdopter's pattern (adopters.ts:248).
-            // Without this, two contributors hitting addContactEntry on the
-            // same row at the same time both read the same `existing`, both
-            // append, last-writer-wins, and the other's entry vanishes.
-            const updateResult = await db.update(adopters)
-                .set({
-                    contactEntries: JSON.stringify(merged),
-                    contactInfo: contactEntriesToBlob(merged) || null,
-                    updatedAt: new Date(),
-                })
-                .where(and(
-                    eq(adopters.id, adopterId),
-                    target.updatedAt
-                        ? eq(adopters.updatedAt, target.updatedAt)
-                        : isNull(adopters.updatedAt),
-                ));
-            const rowsAffected = (updateResult as unknown as { rowsAffected?: number }).rowsAffected ?? 1;
-            if (rowsAffected === 0) {
-                logger.warn('addContactEntry: concurrent modification — retry needed', { adopterId, actor });
-                return { ok: false, error: 'This record was modified by another user. Please refresh and try again.' };
-            }
-
-            if (appended) {
-                // History with kind='contribution' — does NOT make the writer an editor.
-                // Intentionally omit the value from `changes` to limit PII spread.
-                await db.insert(adopterHistory).values({
-                    id: crypto.randomUUID(),
-                    adopterId,
-                    changedBy: actor,
-                    kind: 'contribution',
-                    changes: JSON.stringify({ contributed_entry: { type } }),
-                    changedAt: new Date(),
-                });
-            }
+        if (appended) {
+            // History with kind='contribution' — does NOT make the writer an editor.
+            // Intentionally omit the value from `changes` to limit PII spread.
+            await db.insert(adopterHistory).values({
+                id: crypto.randomUUID(),
+                adopterId,
+                changedBy: actor,
+                kind: 'contribution',
+                changes: JSON.stringify({ contributed_entry: { type } }),
+                changedAt: new Date(),
+            });
         }
 
         // Grant the contributor entry-scope visibility on the value they typed —

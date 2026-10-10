@@ -36,12 +36,17 @@ interface Props {
     /** Fires when this field enters/leaves its inline-edit state, so a parent can
      *  react (e.g. hide a sibling badge while the name is being edited). */
     onEditingChange?: (editing: boolean) => void;
+    /** A collision notice to show while editing (a teammate saved this field
+     *  meanwhile). Gets the current draft and a callback that closes the editor. */
+    renderConflict?: (draft: string, close: () => void) => ReactNode;
+    /** Shown beside the value in display mode (e.g. «Actualizado por …»). */
+    badge?: ReactNode;
 }
 
 export function InlineEditField({
     value, onSave, canEdit, multiline = false, required = false,
     placeholder, ariaLabel, displayRender, emptyLabel, displayClassName, inputClassName,
-    rootClassName, editButtonTestId, onEditingChange,
+    rootClassName, editButtonTestId, onEditingChange, renderConflict, badge,
 }: Props) {
     const { t } = useLanguage();
     const [editing, setEditing] = useState(false);
@@ -72,6 +77,7 @@ export function InlineEditField({
             disabled: busy,
             placeholder,
             'aria-label': ariaLabel,
+            'data-testid': editButtonTestId ? `${editButtonTestId}-input` : undefined,
             autoFocus: true,
             onChange: (e: React.ChangeEvent<HTMLInputElement & HTMLTextAreaElement>) => setDraft(e.target.value),
             onKeyDown: (e: React.KeyboardEvent) => {
@@ -83,6 +89,7 @@ export function InlineEditField({
         return (
             <div className={rootClassName}>
                 {multiline ? <textarea rows={2} {...shared} /> : <input type="text" {...shared} />}
+                {renderConflict?.(draft.trim(), () => setEditing(false))}
                 <div className="flex items-center gap-2 justify-end mt-2">
                     <button
                         type="button"
@@ -95,6 +102,7 @@ export function InlineEditField({
                     <button
                         type="button"
                         onClick={commit}
+                        data-testid={editButtonTestId ? `${editButtonTestId}-save` : undefined}
                         disabled={busy || (required && !draft.trim())}
                         className="inline-flex items-center gap-1 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
                     >
@@ -112,6 +120,7 @@ export function InlineEditField({
                 <div className={`min-w-0 flex-1 ${isEmpty ? 'italic' : ''}`} style={isEmpty ? { color: 'var(--text-muted)' } : undefined}>
                     {isEmpty ? (emptyLabel || '') : (displayRender ? displayRender(value) : value)}
                 </div>
+                {badge}
                 {canEdit && (
                     <button
                         type="button"

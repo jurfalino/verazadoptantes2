@@ -1,6 +1,6 @@
 'use server';
 
-import { adopters, adoptions, adopterHistory, adopterFlags, adopterImages, animals, placements } from '@/db/schema';
+import { adoptions, adopterHistory, adopterFlags, adopterImages, animals, placements } from '@/db/schema';
 import { eq, sql, and, or } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { logger } from '@/lib/logger';
@@ -8,16 +8,47 @@ import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { saveAdoptionSchema } from './validation';
-import { insertRecord, updateRecord, deleteRecordById, softDeleteAnimal, isAnimalBacked, countAnimalLinks, deletePlacementForAdopter } from './_recordWrite';
+import { z } from 'zod';
+import { planFieldSave, canonField, holdTogether } from '@/domain/fieldCollab';
+import { recordFieldAuthors } from '@/lib/collabAttribution';
+import { casAdopterLists } from '@/lib/adopterListCas';
+import { deserializeContactEntries, parseBlobToContactEntries, mergeContactEntries, contactEntriesToBlob } from '@/lib/contactEntries';
+import { SAVE_BUSY, ANIMAL_ALREADY_PLACED } from '@/domain/fieldCollab';
+import { insertRecord, updateRecord, isActivePlacementConflict, deleteRecordById, softDeleteAnimal, isAnimalBacked, countAnimalLinks, deletePlacementForAdopter } from './_recordWrite';
 import { decideAnimalFate, NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
 import { closePendingSearchesForAdopter } from '@/lib/pendingSearchLog';
 import { animalPrimaryFirst } from '@/lib/showcase';
 
-export async function saveAdoption(data: typeof adoptions.$inferInsert) {
+export type RecordFieldConflict = { field: string; by: string; value: unknown };
+export type RecordSaveResult = { success: true; id: string; saved?: string[]; conflicts?: RecordFieldConflict[]; updatedByOthers?: RecordFieldConflict[] };
+
+// The editable fields of a record, as the `adoptions` view names them.
+// v2.55.17-1: sex/color/microchip/age/sourceUrl/comments were once missing
+// from this list, which silently dropped edits to only those fields.
+const RECORD_FIELDS = ['animalName', 'species', 'status', 'rating', 'details', 'adopterId', 'date', 'onBehalfOf', 'recordType', 'deliveredToHome', 'verifiedAddress', 'identityVerified', 'estimatedBirthDate', 'neutered', 'sex', 'color', 'microchip', 'age', 'sourceUrl', 'comments'] as const;
+type RecordField = typeof RECORD_FIELDS[number];
+// Who holds the animal and how: one decision. If either conflicts, neither is
+// written (else «move to Ana» + a teammate's «back to available» = nonsense).
+const CUSTODY_FIELDS = ['adopterId', 'recordType'];
+// Written with a changed field, never compared (follow-up links).
+const PASS_THROUGH = ['animalId', 'followupKey', 'followupSubtype'] as const;
+
+// What the editing form had loaded for each field it may send. Values are the
+// same shapes the form sends (text, numbers, 0/1, dates as Date / ISO / epoch).
+const loadedValue = z.union([z.string().max(20_000), z.number(), z.boolean(), z.date(), z.null()]);
+const saveAdoptionOptsSchema = z.object({
+    loaded: z.partialRecord(z.enum(RECORD_FIELDS), loadedValue).optional(),
+}).strict().optional();
+
+export async function saveAdoption(data: typeof adoptions.$inferInsert, opts?: { loaded?: Partial<Record<RecordField, unknown>> }): Promise<RecordSaveResult> {
     // Validate input
     const parsed = saveAdoptionSchema.safeParse(data);
     if (!parsed.success) {
         throw new Error(`Invalid adoption data: ${parsed.error.issues.map(i => i.message).join(', ')}`);
+    }
+    const parsedOpts = saveAdoptionOptsSchema.safeParse(opts);
+    if (!parsedOpts.success) {
+        throw new Error(`Invalid adoption data: ${parsedOpts.error.issues.map(i => i.message).join(', ')}`);
     }
 
     try {
@@ -42,67 +73,11 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
                 throw new Error('Not authorized to edit this record');
             }
 
-            // Update existing
-            // Calculate changes
-            const changes: Record<string, any> = {};
-            let hasChanges = false;
-
-            // v2.55.17-1: sex/color/microchip/age/sourceUrl/comments were missing
-            // from this list — updateRecord persists them, but a payload that
-            // changed ONLY one of them (and sent no fresh `date`, whose object
-            // comparison is always "changed") computed hasChanges=false and
-            // silently dropped the edit. Bitten by the animal page's in-place
-            // identity form; latent for any caller that stops sending `date`.
-            const fields = ['animalName', 'species', 'status', 'rating', 'details', 'adopterId', 'date', 'onBehalfOf', 'recordType', 'deliveredToHome', 'verifiedAddress', 'identityVerified', 'estimatedBirthDate', 'neutered', 'sex', 'color', 'microchip', 'age', 'sourceUrl', 'comments'] as const;
-            for (const field of fields) {
-                // @ts-ignore
-                if (data[field] !== undefined && data[field] !== existing[field]) {
-                    // @ts-ignore
-                    changes[field] = { from: existing[field], to: data[field] };
-                    hasChanges = true;
-                }
-            }
-
-            if (hasChanges) {
-                // Normalized write: routes identity → animals, custody → placements
-                // (closing/opening spans on a transition). Reads still hit the view.
-                await updateRecord(db, data, existing, changedBy);
-
-                // Log to adopter history IF it is linked to an adopter
-                const targetAdopterId = data.adopterId || existing.adopterId;
-                if (targetAdopterId) {
-                    await db.insert(adopterHistory).values({
-                        id: crypto.randomUUID(),
-                        adopterId: targetAdopterId,
-                        changedBy,
-                        changes: JSON.stringify({ adoption_updated: changes }),
-                        changedAt: new Date()
-                    });
-                    revalidatePath(`/adopter/${targetAdopterId}`);
-                }
-                // Also revalidate /my-animals whenever an UPDATE touched a row
-                // (v2.18.7). The /my-animals "available" tab filters on
-                // `adopterId IS NULL AND recordType='available'`; linking an
-                // available animal to an adopter (the prod-reported bug —
-                // "the animal is still listed as 'for adoption'") flips both
-                // those conditions, so the row must drop off the page. The
-                // previous code only revalidated the adopter page, leaving
-                // /my-animals serving stale Next.js cache until the user
-                // hard-reloaded.
-                revalidatePath('/my-animals');
-            }
-            logger.info('Adoption updated', { adoptionId: data.id, adopterId: data.adopterId, changedBy });
-            logAudit({ userEmail: changedBy, action: 'adoption_updated', target: data.id as string, details: { adopterId: data.adopterId } });
-
-            // Re-tokenize adopter if onBehalfOf changed (cross-field name tokens).
-            // Awaited so duplicate detection sees the new name tokens before the
-            // response returns (Workers kill fire-and-forget).
-            const targetAdopterId2 = data.adopterId || existing.adopterId;
-            if (targetAdopterId2 && data.onBehalfOf !== undefined) {
-                await tokenizeAdopter(targetAdopterId2).catch(e => { logger.error('Tokenize adopter failed (adoption update)', e, { adopterId: targetAdopterId2 }); });
-            }
-
-            return { success: true, id: data.id };
+            // Per-field collision check (src/domain/fieldCollab.ts): only the
+            // fields this editor changed are written, each only if nobody
+            // changed it since the form loaded (`opts.loaded`). Callers that
+            // send no baseline keep the old behaviour (write what differs).
+            return await updateRecordFields(db, data, existing, opts?.loaded, changedBy);
         } else {
             // Create new — normalized write routes to animals/placements/events.
             // Returns the animal id (available/foster/adoption) or event id, which
@@ -128,12 +103,24 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
 
                 // If delivered to home with verified address, set address verified flag
                 if (data.deliveredToHome && data.verifiedAddress) {
-                    // Update adopter's address if different
-                    const adopter = await db.select().from(adopters).where(eq(adopters.id, data.adopterId)).get();
-                    if (adopter && adopter.contactInfo !== data.verifiedAddress) {
-                        const addressPrefix = 'Dirección / Address';
-                        await db.update(adopters).set({ contactInfo: adopter.contactInfo ? `${adopter.contactInfo}\n${addressPrefix}: ${data.verifiedAddress}` : `${addressPrefix}: ${data.verifiedAddress}` }).where(eq(adopters.id, data.adopterId));
-
+                    // Add the verified address to the adopter's contacts — as a
+                    // structured entry (the blob is derived from the entries, so
+                    // both stay in sync), merged into the list as it is NOW with a
+                    // compare-and-swap: a teammate's contact edit landing in
+                    // between is kept. Already there (normalized) → no write.
+                    const verified = data.verifiedAddress;
+                    const added = await casAdopterLists<{ from: string | null; to: string | null } | null>(db, data.adopterId, (row) => {
+                        const current = deserializeContactEntries(row.contactEntries);
+                        const base = current.length ? current : parseBlobToContactEntries(row.contactInfo).map(e => ({ id: crypto.randomUUID(), ...e }));
+                        const merged = mergeContactEntries(base, [{ id: crypto.randomUUID(), type: 'address', value: verified, addedBy: changedBy }]);
+                        if (merged.length === base.length) return { result: null };
+                        const blob = contactEntriesToBlob(merged) || null;
+                        return { write: { contactEntries: JSON.stringify(merged), contactInfo: blob }, result: { from: row.contactInfo, to: blob } };
+                    }, { op: 'saveAdoption.verifiedAddress', changedBy });
+                    if (added.status === 'busy') {
+                        // The record is saved; only the address copy didn't land. Logged with its id.
+                        logger.error('saveAdoption: verified address not added to contacts (busy)', new Error('busy'), { adopterId: data.adopterId, errorId: added.errorId });
+                    } else if (added.status === 'done' && added.wrote && added.result) {
                         // Log address change in audit history
                         await db.insert(adopterHistory).values({
                             id: crypto.randomUUID(),
@@ -141,13 +128,14 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
                             changedBy,
                             changes: JSON.stringify({
                                 contactInfo: {
-                                    from: adopter.contactInfo || '(empty)',
-                                    to: adopter.contactInfo ? `${adopter.contactInfo}\n${addressPrefix}: ${data.verifiedAddress}` : `${addressPrefix}: ${data.verifiedAddress}`,
+                                    from: added.result.from || '(empty)',
+                                    to: added.result.to,
                                     reason: 'verified_during_pet_delivery'
                                 }
                             }),
                             changedAt: new Date()
                         });
+                        await tokenizeAdopter(data.adopterId).catch(e => { logger.error('Tokenize adopter failed (verified address)', e, { adopterId: data.adopterId }); });
                     }
 
                     // Check if verified_address flag already exists
@@ -194,6 +182,14 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert) {
             return { success: true, id };
         }
     } catch (error) {
+        if (error instanceof Error && error.message.startsWith(SAVE_BUSY)) throw error; // already logged, keeps its id
+        if (isActivePlacementConflict(error)) {
+            // Someone adopted or fostered this animal between our read and our
+            // write — one active placement per animal (drizzle/0078). The
+            // client shows «<Animal> ya tiene una adopción o tránsito activo.».
+            const errorId = logger.error('saveAdoption: animal already placed', error, { adoptionId: data.id, adopterId: data.adopterId });
+            throw new Error(`${ANIMAL_ALREADY_PLACED} (Error ID: ${errorId})`);
+        }
         const errorId = logger.error('Save adoption failed', error, { adoptionId: data.id, adopterId: data.adopterId });
         throw new Error(`Failed to save adoption (Error ID: ${errorId})`);
     }
@@ -495,3 +491,96 @@ export async function deleteAnimalImage(imageId: string, adoptionId: string) {
     }
 }
 
+/** The update half of saveAdoption: per-field check, compare-and-swap per table, one retry. */
+async function updateRecordFields(
+    db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+    data: typeof adoptions.$inferInsert,
+    existing: typeof adoptions.$inferSelect,
+    loadedIn: Partial<Record<RecordField, unknown>> | undefined,
+    changedBy: string,
+): Promise<RecordSaveResult> {
+    const recordId = existing.id;
+    const sent = data as Record<string, unknown>;
+    const payload: Record<string, unknown> = {};
+    for (const f of RECORD_FIELDS) if (sent[f] !== undefined) payload[f] = sent[f];
+    const loaded: Record<string, unknown> = {};
+    if (loadedIn) for (const f of RECORD_FIELDS) if (f in loadedIn) loaded[f] = loadedIn[f];
+
+    /** History + activity rows (and their side effects) for fields that landed. */
+    const recordLanded = async (fields: string[], before: Record<string, unknown>, writeData: Record<string, unknown>, after: typeof existing) => {
+        const changes: Record<string, { from: unknown; to: unknown }> = {};
+        for (const f of fields) changes[f] = { from: before[f] ?? null, to: payload[f] ?? null };
+        const targetAdopterId = (writeData.adopterId as string | null | undefined) || after.adopterId;
+        if (targetAdopterId) {
+            await db.insert(adopterHistory).values({
+                id: crypto.randomUUID(),
+                adopterId: targetAdopterId,
+                changedBy,
+                changes: JSON.stringify({ adoption_updated: changes }),
+                changedAt: new Date(),
+            });
+            revalidatePath(`/adopter/${targetAdopterId}`);
+        }
+        // /my-animals filters on adopterId + recordType; a link/unlink must
+        // drop the row off the "available" tab (v2.18.7).
+        revalidatePath('/my-animals');
+        logger.info('Adoption updated', { adoptionId: recordId, adopterId: targetAdopterId, changedBy, fields });
+        // `fields` (names only) is what lets a later collision name who
+        // changed a field (src/lib/collabAttribution.ts).
+        logAudit({ userEmail: changedBy, action: 'adoption_updated', target: recordId, details: { adopterId: targetAdopterId, fields } });
+        // onBehalfOf feeds the adopter's cross-field name tokens. Awaited so
+        // duplicate detection sees them before the response (Workers kill
+        // fire-and-forget).
+        if (targetAdopterId && fields.includes('onBehalfOf')) {
+            await tokenizeAdopter(targetAdopterId).catch(e => { logger.error('Tokenize adopter failed (adoption update)', e, { adopterId: targetAdopterId }); });
+        }
+    };
+
+    let current = existing;
+    for (let attempt = 0; attempt < 2; attempt++) {
+        if (attempt > 0) {
+            const fresh = await db.select().from(adoptions).where(eq(adoptions.id, recordId)).get();
+            if (!fresh) throw new Error('Record disappeared during save');
+            current = fresh;
+        }
+        const currentVals: Record<string, unknown> = {};
+        for (const f of RECORD_FIELDS) currentVals[f] = (current as Record<string, unknown>)[f];
+        const plan = holdTogether(planFieldSave(payload, loaded, currentVals), CUSTODY_FIELDS);
+        // Without a baseline, a field equal to what is stored is not a write.
+        const apply = plan.apply.filter(f => canonField(f, payload[f]) !== canonField(f, currentVals[f]));
+        const saved = [...plan.alreadySaved, ...plan.apply.filter(f => !apply.includes(f))];
+
+        if (apply.length) {
+            const writeData: Record<string, unknown> = { id: recordId };
+            for (const f of apply) writeData[f] = payload[f];
+            for (const f of PASS_THROUGH) if (sent[f] !== undefined) writeData[f] = sent[f];
+            // Normalized write: identity → animals, custody → placements
+            // (closing/opening spans on a transition), events → adopter_events.
+            // Each table's write is conditional on the values it replaces.
+            const { lost, landed } = await updateRecord(db, writeData, current, changedBy, { cas: true });
+            if (lost) {
+                // Part of it may have landed (the animal's own fields) before the
+                // placement part lost: those get their history now; the retry
+                // sees them as already saved.
+                if (landed?.length) await recordLanded(landed, currentVals, {}, current);
+                continue; // someone saved in between — re-read and re-check
+            }
+            await recordLanded(apply, currentVals, writeData, current);
+        }
+
+        const named = await recordFieldAuthors(db, recordId, [...new Set([...plan.conflicts, ...plan.updatedByOthers])]);
+        const view = (f: string): RecordFieldConflict => ({ field: f, by: named[f] ?? '', value: currentVals[f] ?? null });
+        if (plan.conflicts.length) logger.info('saveAdoption: field conflicts', { adoptionId: recordId, changedBy, conflicts: plan.conflicts });
+        return {
+            success: true, id: recordId,
+            saved: [...apply, ...saved],
+            conflicts: plan.conflicts.map(view),
+            updatedByOthers: plan.updatedByOthers.map(view),
+        };
+    }
+    // Thrown, not returned: every caller treats a throw as "not saved" (some
+    // only check that a result came back). The client shows the localized
+    // «otra persona estaba guardando…» for this marker (isSaveBusyError).
+    const errorId = logger.error('saveAdoption: lost the race twice', new Error('busy'), { adoptionId: recordId, changedBy });
+    throw new Error(`${SAVE_BUSY} (Error ID: ${errorId})`);
+}

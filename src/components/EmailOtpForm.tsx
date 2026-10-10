@@ -8,12 +8,20 @@
  * Verification goes through signIn('email-otp', { redirect: false }) so the
  * NextAuth Credentials provider (and with it the adopter-login gate) decides;
  * this component never handles codes beyond passing them through.
+ *
+ * Once a code is sent the step is remembered in sessionStorage (pendingOtp),
+ * so an in-app browser that reloads while the visitor reads their email
+ * comes back to the code step instead of starting over.
  */
 
 import { signIn } from 'next-auth/react';
 import { useEffect, useRef, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { requestEmailOtp } from '@/app/actions/emailOtp';
+import { savePendingOtp, readPendingOtp, clearPendingOtp } from '@/lib/pendingOtp';
+import { currentReturnPath } from '@/lib/googleSignIn';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { handledAsStale } from '@/lib/errorMessage';
 
 const RESEND_COOLDOWN_SEC = 60; // matches the server's per-email min gap
 
@@ -26,12 +34,17 @@ export default function EmailOtpForm({
     autoFocusEmail?: boolean;
 }) {
     const { t, locale } = useLanguage();
-    const [step, setStep] = useState<'email' | 'code'>('email');
-    const [email, setEmail] = useState('');
+    // Read once on mount: a code sent before a reload puts us on the code step.
+    const [pending] = useState(() => (typeof window === 'undefined' ? null : readPendingOtp()));
+    const [step, setStep] = useState<'email' | 'code'>(pending ? 'code' : 'email');
+    const [email, setEmail] = useState(pending?.email ?? '');
     const [code, setCode] = useState('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [cooldown, setCooldown] = useState(0);
+    const [cooldown, setCooldown] = useState(() => (pending
+        ? Math.max(0, RESEND_COOLDOWN_SEC - Math.floor((Date.now() - pending.sentAt) / 1000))
+        : 0));
+    const returnPath = () => redirectPath || pending?.returnPath || currentReturnPath();
     const codeInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -51,8 +64,10 @@ export default function EmailOtpForm({
         try {
             const res = await requestEmailOtp(email, locale);
             if (!res) {
-                setError(t('errors.generic'));
+                const id = resolveErrorId(new Error('requestEmailOtp returned undefined'), 'EmailOtpForm.send');
+                setError(`${t('errors.generic')} (${id})`);
             } else if (res.success) {
+                savePendingOtp({ email, sentAt: Date.now(), returnPath: returnPath(), pagePath: currentReturnPath() });
                 setStep('code');
                 setCode('');
                 setCooldown(RESEND_COOLDOWN_SEC);
@@ -67,8 +82,9 @@ export default function EmailOtpForm({
                 // so the user can report something traceable.
                 setError(res.errorId ? `${t('errors.generic')} (${res.errorId})` : t('errors.generic'));
             }
-        } catch {
-            setError(t('errors.generic'));
+        } catch (e) {
+            // A tab older than the deploy: StaleDeployWatcher shows the notice.
+            if (!handledAsStale(e)) setError(`${t('errors.generic')} (${resolveErrorId(e, 'EmailOtpForm.send')})`);
         } finally {
             setBusy(false);
         }
@@ -87,9 +103,10 @@ export default function EmailOtpForm({
             }
             // Full reload so the fresh session cookie drives the whole tree,
             // same net effect as the Google OAuth redirect.
-            window.location.assign(redirectPath || window.location.pathname);
-        } catch {
-            setError(t('errors.generic'));
+            clearPendingOtp();
+            window.location.assign(returnPath());
+        } catch (e) {
+            if (!handledAsStale(e)) setError(`${t('errors.generic')} (${resolveErrorId(e, 'EmailOtpForm.verify')})`);
             setBusy(false);
         }
     };
@@ -156,7 +173,7 @@ export default function EmailOtpForm({
             {error && <p className="text-xs text-rose-600" role="alert">{error}</p>}
             <div className="flex items-center justify-between text-xs">
                 <button
-                    onClick={() => { setStep('email'); setError(null); }}
+                    onClick={() => { clearPendingOtp(); setStep('email'); setError(null); }}
                     className="text-stone-500 hover:text-teal-700 transition-colors"
                 >
                     {t('login.change_email')}

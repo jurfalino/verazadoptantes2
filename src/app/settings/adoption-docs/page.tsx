@@ -18,10 +18,12 @@ import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { fetchCustomAdoptionDocsFlag } from '@/lib/adoptionDocsFlag';
 import {
-    getAdoptionDocs, saveFormSteps, saveContractSections, type OwnerRef,
+    getAdoptionDocs, saveFormSteps, saveContractSections,
+    type OwnerRef, type ItemRevisions, type SectionConflict, type StepConflict,
 } from '@/app/actions/adoptionDocs';
-import { SECTION_KEYS, canonicalSectionsJson, type ContractSections, type SectionKey } from '@/domain/adoptionDocs';
-import { sectionsToSave, isDocsDraftDirty } from '@/domain/standardContractText';
+import { SECTION_KEYS, TOGGLEABLE_FORM_STEPS, type ContractSections, type SectionKey } from '@/domain/adoptionDocs';
+import { isDocsDraftDirty } from '@/domain/standardContractText';
+import { sectionRevisionText, storedSection, stepStates } from '@/domain/adoptionDocsCollab';
 import FormStepsEditor from '@/components/adoptionDocs/FormStepsEditor';
 import ContractSectionsEditor from '@/components/adoptionDocs/ContractSectionsEditor';
 
@@ -30,6 +32,9 @@ type Meta = { ownerName: string; updatedAt: number | null; updatedByName: string
 type Status = 'loading' | 'off' | 'forbidden' | 'error' | 'ready';
 
 const SOURCE = 'AdoptionDocsEditor';
+
+/** «otra persona del grupo» can open a sentence. */
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 const btnPrimary = 'min-h-11 py-3 px-6 rounded-xl text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors';
 const btnSecondary = 'min-h-11 py-3 px-6 rounded-xl text-sm font-bold text-teal-700 bg-teal-50 border border-teal-200 hover:bg-teal-100 hover:border-teal-400 disabled:opacity-40 transition-colors';
@@ -71,6 +76,13 @@ function AdoptionDocsEditor() {
     const [saving, setSaving] = useState(false);
     // Per-section remount counters, bumped after a save changes what an editor shows.
     const [remounts, setRemounts] = useState<Partial<Record<SectionKey, number>>>({});
+    // Collaborative editing: the revision each item was loaded at, items a
+    // teammate saved meanwhile (conflicts) and items pulled in from them.
+    const [revs, setRevs] = useState<ItemRevisions | null>(null);
+    const [conflicts, setConflicts] = useState<Partial<Record<SectionKey, SectionConflict>>>({});
+    const [updatedBy, setUpdatedBy] = useState<Partial<Record<SectionKey, string>>>({});
+    const [stepConflicts, setStepConflicts] = useState<Record<string, StepConflict>>({});
+    const [stepUpdatedBy, setStepUpdatedBy] = useState<Record<string, string>>({});
 
     // Tab lives in the hash (#contrato) so a reload or shared link keeps it.
     useEffect(() => {
@@ -119,6 +131,7 @@ function AdoptionDocsEditor() {
                 setSections(d.sections);
                 setSavedHidden(d.hiddenSteps);
                 setSavedSections(d.sections);
+                setRevs(d.revisions);
                 setStatus('ready');
             }
         } catch (error) {
@@ -146,26 +159,96 @@ function AdoptionDocsEditor() {
         return () => window.removeEventListener('beforeunload', onBeforeUnload);
     }, [dirty]);
 
-    /** Toasts the outcome; true when the save succeeded. */
-    const handleResult = async (res: { success: boolean; error?: string; errorId?: string } | undefined): Promise<boolean> => {
-        if (res?.success) {
-            toast.success(t('settings.saved'));
-            await load(false); // refresh "Última edición"
-            return true;
-        }
+    /** The failure toast for a refused / failed save. */
+    const failResult = (res: { error?: string; errorId?: string } | undefined) => {
         const errorId = res?.errorId || resolveErrorId(res, SOURCE);
         if (res?.error === 'disabled') toast.error(t('errors.generic'), t('adoptionDocs.disabled'), errorId);
         else if (res?.error === 'forbidden') toast.error(t('errors.generic'), t('adoptionDocs.forbidden'), errorId);
         else if (res?.error === 'invalid') toast.error(t('errors.generic'), t('adoptionDocs.too_long'), errorId);
+        else if (res?.error === 'busy') toast.error(t('errors.generic'), t('adoptionDocs.busy'), errorId);
         else failToast(errorId);
-        return false;
     };
 
-    const saveForm = async () => {
+    const bump = (keys: SectionKey[]) => {
+        if (!keys.length) return;
+        setRemounts(r => {
+            const next = { ...r };
+            for (const k of keys) next[k] = (next[k] ?? 0) + 1;
+            return next;
+        });
+    };
+
+    const listOf = (keys: string[]) => keys.length < 2 ? keys.join('')
+        : `${keys.slice(0, -1).join(', ')} ${t('adoptionDocs.list_and')} ${keys[keys.length - 1]}`;
+
+    // ── Contract ────────────────────────────────────────────────────────
+
+    /** Sections this editor changed since they were loaded / last saved. */
+    const changedSections = (): SectionKey[] => SECTION_KEYS.filter(k =>
+        sectionRevisionText(k, sections[k]) !== sectionRevisionText(k, savedSections[k]));
+
+    /**
+     * Send `changes` (each with the revision it was loaded at, or — when
+     * resolving a conflict — the teammate's revision). Only items that are
+     * clean here go in `loaded`, so the server never pulls a teammate's text
+     * over something unsaved in this editor.
+     */
+    const sendContract = async (changes: Array<{ key: SectionKey; expectedRev: string }>) => {
+        if (!revs) return;
+        const dirty = new Set<SectionKey>([...changedSections(), ...(Object.keys(conflicts) as SectionKey[])]);
+        const loaded: Partial<Record<SectionKey, string>> = {};
+        for (const k of SECTION_KEYS) if (!dirty.has(k) || changes.some(c => c.key === k)) loaded[k] = revs.sections[k];
         setSaving(true);
         try {
-            const saved = hidden;
-            if (await handleResult(await saveFormSteps(owner, saved))) setSavedHidden(saved);
+            const res = await saveContractSections(owner, {
+                loaded,
+                changes: changes.map(c => ({ key: c.key, doc: storedSection(c.key, sections[c.key]), expectedRev: c.expectedRev })),
+            });
+            if (!res?.success) { failResult(res); return; }
+            const d = res.data;
+            const conflictKeys = new Set(d.conflicts.map(c => c.key));
+            const pulled = d.updatedByOthers.map(u => u.key as SectionKey);
+            // Saved and pulled-in items now read as the server has them.
+            const settled = [...d.saved, ...pulled];
+            const nextSections = { ...sections };
+            const nextSaved = { ...savedSections };
+            const remount: SectionKey[] = [];
+            for (const k of settled) {
+                if (sectionRevisionText(k, nextSections[k]) !== sectionRevisionText(k, d.sections[k])) remount.push(k);
+                if (d.sections[k]) { nextSections[k] = d.sections[k]; nextSaved[k] = d.sections[k]; }
+                else { delete nextSections[k]; delete nextSaved[k]; }
+            }
+            setSections(nextSections);
+            setSavedSections(nextSaved);
+            bump(remount);
+            // Every item's revision moves to the server's, except a conflict,
+            // which keeps the one this editor loaded until it's resolved.
+            setRevs(r => r && ({ ...r, sections: Object.fromEntries(SECTION_KEYS.map(k =>
+                [k, conflictKeys.has(k) || (dirty.has(k) && !settled.includes(k)) ? r.sections[k] : d.revisions[k]])) as Record<SectionKey, string> }));
+            setConflicts(c => {
+                const next = { ...c };
+                for (const k of d.saved) delete next[k];
+                for (const k of pulled) delete next[k];
+                for (const cf of d.conflicts) next[cf.key] = cf;
+                return next;
+            });
+            setUpdatedBy(u => {
+                const next = { ...u };
+                for (const k of d.saved) delete next[k];
+                for (const x of d.updatedByOthers) next[x.key as SectionKey] = x.by;
+                return next;
+            });
+
+            const mineSaved = d.saved.filter(k => changes.some(c => c.key === k));
+            if (mineSaved.length === 1) toast.success(t('adoptionDocs.toast_saved_section').replace('{n}', mineSaved[0]));
+            else if (mineSaved.length > 1) toast.success(t('adoptionDocs.toast_saved_sections').replace('{list}', listOf(mineSaved)));
+            for (const x of d.updatedByOthers) {
+                toast.info(capitalize(t('adoptionDocs.toast_updated_by_other').replace('{name}', x.by || t('adoptionDocs.someone')).replace('{n}', x.key)));
+            }
+            // A conflict is not an error: the section's banner carries the choice.
+            for (const cf of d.conflicts) toast.warning(t('adoptionDocs.toast_needs_review').replace('{n}', cf.key));
+            if (!mineSaved.length && !d.updatedByOthers.length && !d.conflicts.length) toast.success(t('settings.saved'));
+            await load(false); // refresh "Última edición"
         } catch (error) {
             failToast(resolveErrorId(error, SOURCE));
         } finally {
@@ -174,31 +257,119 @@ function AdoptionDocsEditor() {
     };
 
     const saveContract = async () => {
+        if (!revs) return;
+        // A section in conflict waits for an explicit choice («Guardar la mía igual» / «Quedarme con…»).
+        const keys = changedSections().filter(k => !conflicts[k]);
+        await sendContract(keys.map(k => ({ key: k, expectedRev: revs.sections[k] })));
+    };
+
+    /** «Guardar la mía igual» / «Guardar esta versión»: overwrite THAT section, still checked against their revision. */
+    const keepMineSection = async (k: SectionKey) => {
+        const c = conflicts[k];
+        if (!c) return;
+        await sendContract([{ key: k, expectedRev: c.theirRev }]);
+    };
+
+    /** «Quedarme con la de <Nombre>»: take their text, nothing to save. */
+    const keepTheirsSection = (k: SectionKey) => {
+        const c = conflicts[k];
+        if (!c) return;
+        setSections(s => { const n = { ...s }; if (c.doc) n[k] = c.doc; else delete n[k]; return n; });
+        setSavedSections(s => { const n = { ...s }; if (c.doc) n[k] = c.doc; else delete n[k]; return n; });
+        setRevs(r => r && ({ ...r, sections: { ...r.sections, [k]: c.theirRev } }));
+        setConflicts(cs => { const n = { ...cs }; delete n[k]; return n; });
+        setUpdatedBy(u => ({ ...u, [k]: c.by }));
+        bump([k]);
+    };
+
+    // ── Form ────────────────────────────────────────────────────────────
+
+    const changedSteps = (): string[] => {
+        const now = stepStates(hidden);
+        const was = stepStates(savedHidden);
+        return TOGGLEABLE_FORM_STEPS.filter(id => now[id] !== was[id]);
+    };
+
+    const sendForm = async (changes: Array<{ key: string; expected: 'hidden' | 'shown' }>) => {
+        if (!revs) return;
+        const dirty = new Set([...changedSteps(), ...Object.keys(stepConflicts)]);
+        const loaded: Record<string, 'hidden' | 'shown'> = {};
+        for (const id of TOGGLEABLE_FORM_STEPS) if (!dirty.has(id) || changes.some(c => c.key === id)) loaded[id] = revs.steps[id];
+        const nowStates = stepStates(hidden);
         setSaving(true);
         try {
-            const toSave = sectionsToSave(sections);
-            if (await handleResult(await saveContractSections(owner, toSave))) {
-                // Show exactly what was saved: a section equal to the standard
-                // text, or emptied, was sent as absent and now reads as the
-                // standard text again; a kept one is shown normalized. Remount
-                // only the editors whose content changed.
-                const changed = SECTION_KEYS.filter(k =>
-                    canonicalSectionsJson(sections[k] ? { [k]: sections[k] } : {}) !== canonicalSectionsJson(toSave[k] ? { [k]: toSave[k] } : {}));
-                setSections(toSave);
-                setSavedSections(toSave);
-                if (changed.length) {
-                    setRemounts(r => {
-                        const next = { ...r };
-                        for (const k of changed) next[k] = (next[k] ?? 0) + 1;
-                        return next;
-                    });
-                }
+            const res = await saveFormSteps(owner, {
+                loaded,
+                changes: changes.map(c => ({ key: c.key, hidden: nowStates[c.key] === 'hidden', expected: c.expected })),
+            });
+            if (!res?.success) { failResult(res); return; }
+            const d = res.data;
+            const conflictKeys = new Set(d.conflicts.map(c => c.key));
+            const pulled = d.updatedByOthers.map(u => u.key);
+            const settled = new Set([...d.saved, ...pulled]);
+            const serverHidden = new Set(d.hiddenSteps);
+            // Saved and pulled-in toggles take the server's state; the rest keep this editor's draft.
+            const apply = (list: string[]) => {
+                const set = new Set(list);
+                for (const id of settled) { if (serverHidden.has(id)) set.add(id); else set.delete(id); }
+                return TOGGLEABLE_FORM_STEPS.filter(id => set.has(id));
+            };
+            setHidden(h => apply(h));
+            setSavedHidden(h => apply(h));
+            setRevs(r => r && ({ ...r, steps: Object.fromEntries(TOGGLEABLE_FORM_STEPS.map(id =>
+                [id, conflictKeys.has(id) || (dirty.has(id) && !settled.has(id)) ? r.steps[id] : d.revisions[id]])) }));
+            setStepConflicts(c => {
+                const next = { ...c };
+                for (const id of settled) delete next[id];
+                for (const cf of d.conflicts) next[cf.key] = cf;
+                return next;
+            });
+            setStepUpdatedBy(u => {
+                const next = { ...u };
+                for (const id of d.saved) delete next[id];
+                for (const x of d.updatedByOthers) next[x.key] = x.by;
+                return next;
+            });
+            const question = (id: string) => t(id === 'phone-optional' ? 'adoptionDocs.phone_required_question'
+                : id.startsWith('identity-') || id === 'selfie' ? `adoptionDocs.step_${id.replace('-', '_')}` : `petshield.fields.${id}`);
+            for (const x of d.updatedByOthers) {
+                toast.info(capitalize(t('adoptionDocs.toast_step_updated_by_other').replace('{name}', x.by || t('adoptionDocs.someone')).replace('{question}', question(x.key))));
             }
+            if (d.conflicts.length) toast.warning(t('adoptionDocs.toast_steps_need_review'));
+            if (d.saved.some(id => changes.some(c => c.key === id)) || (!d.conflicts.length && !d.updatedByOthers.length)) toast.success(t('settings.saved'));
+            await load(false); // refresh "Última edición"
         } catch (error) {
             failToast(resolveErrorId(error, SOURCE));
         } finally {
             setSaving(false);
         }
+    };
+
+    const saveForm = async () => {
+        if (!revs) return;
+        const keys = changedSteps().filter(id => !stepConflicts[id]);
+        await sendForm(keys.map(id => ({ key: id, expected: revs.steps[id] })));
+    };
+
+    const keepMineStep = async (id: string) => {
+        const c = stepConflicts[id];
+        if (!c) return;
+        await sendForm([{ key: id, expected: c.theirs }]);
+    };
+
+    const keepTheirsStep = (id: string) => {
+        const c = stepConflicts[id];
+        if (!c) return;
+        const setState = (list: string[]) => {
+            const set = new Set(list);
+            if (c.theirs === 'hidden') set.add(id); else set.delete(id);
+            return TOGGLEABLE_FORM_STEPS.filter(s => set.has(s));
+        };
+        setHidden(h => setState(h));
+        setSavedHidden(h => setState(h));
+        setRevs(r => r && ({ ...r, steps: { ...r.steps, [id]: c.theirs } }));
+        setStepConflicts(cs => { const n = { ...cs }; delete n[id]; return n; });
+        setStepUpdatedBy(u => ({ ...u, [id]: c.by }));
     };
 
     if (status === 'loading') {
@@ -245,7 +416,11 @@ function AdoptionDocsEditor() {
 
             {tab === 'form' ? (
                 <div role="tabpanel" id="panel-form" aria-labelledby="tab-form" className="space-y-6">
-                    <FormStepsEditor hidden={hidden} onChange={setHidden} />
+                    <FormStepsEditor
+                        hidden={hidden} onChange={setHidden}
+                        conflicts={stepConflicts} updatedBy={stepUpdatedBy} saving={saving}
+                        onKeepMine={id => void keepMineStep(id)} onKeepTheirs={keepTheirsStep}
+                    />
                     <div className="flex flex-wrap gap-2">
                         <button type="button" onClick={saveForm} disabled={saving} className={btnPrimary} data-testid="adoption-docs-save-form">
                             {saving ? t('animalProfile.saving') : t('common.save')}
@@ -257,7 +432,11 @@ function AdoptionDocsEditor() {
                 </div>
             ) : (
                 <div role="tabpanel" id="panel-contract" aria-labelledby="tab-contract" className="space-y-6">
-                    <ContractSectionsEditor sections={sections} onChange={setSections} remounts={remounts} />
+                    <ContractSectionsEditor
+                        sections={sections} onChange={setSections} remounts={remounts}
+                        conflicts={conflicts} updatedBy={updatedBy} saving={saving}
+                        onKeepMine={k => void keepMineSection(k)} onKeepTheirs={keepTheirsSection}
+                    />
                     <div className="space-y-2">
                         <button type="button" onClick={saveContract} disabled={saving} className={btnPrimary} data-testid="adoption-docs-save-contract">
                             {saving ? t('animalProfile.saving') : t('common.save')}

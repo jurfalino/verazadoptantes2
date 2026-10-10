@@ -9,15 +9,17 @@ describe('contractErrorKey', () => {
         expect(contractErrorKey(410, 'expired')).toBe('contract.error_expired')
         expect(contractErrorKey(410, 'already_adopted')).toBe('contract.error_already_adopted')
         expect(contractErrorKey(410, 'not_allowed')).toBe('contract.error_not_allowed')
+        expect(contractErrorKey(409, 'already_placed')).toBe('contract.error_already_placed')
     })
 
     it('falls back for anything else', () => {
         expect(contractErrorKey(410, 'other')).toBeNull()
         expect(contractErrorKey(500, 'not_allowed')).toBeNull()
+        expect(contractErrorKey(409, undefined)).toBeNull()
     })
 
     it('every key it returns exists in es, en and pt', () => {
-        for (const [status, code] of [[404, undefined], [410, 'used'], [410, 'expired'], [410, 'already_adopted'], [410, 'not_allowed']] as const) {
+        for (const [status, code] of [[404, undefined], [410, 'used'], [410, 'expired'], [410, 'already_adopted'], [410, 'not_allowed'], [409, 'already_placed']] as const) {
             const key = contractErrorKey(status, code)!
             for (const loc of ['es', 'en', 'pt'] as const) expect(contract[loc][key], `${loc} ${key}`).toBeTruthy()
         }

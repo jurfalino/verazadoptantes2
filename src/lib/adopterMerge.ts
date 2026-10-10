@@ -17,7 +17,9 @@ import { getDb } from '@/lib/db';
 import { reassignAdopterRecords } from '@/app/actions/_recordWrite';
 import { normalizeText } from '@/lib/tokenizer';
 import { deserializeContactEntries, mergeContactEntries } from '@/lib/contactEntries';
+import { deserializeHouseholdMembers, serializeHouseholdMembers, mergeHouseholdMembers } from '@/lib/householdMembers';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
+import { casAdopterLists } from '@/lib/adopterListCas';
 import { MERGED_FLAG_DETAILS_PREFIX } from '@/domain/dedupPair';
 
 export interface MergeAdoptersResult {
@@ -91,6 +93,106 @@ export async function mergeAdopters(
             annotatedFlags: [],
         };
 
+        // 6. (Runs first, so a merge that can't land its survivor write moves
+        // nothing.) Append text fields (preserve secondary data with separators).
+        // Computed from the survivor as it is NOW and written with a
+        // compare-and-swap (src/lib/adopterListCas.ts): a teammate's contact or
+        // household edit landing mid-merge is merged in, never overwritten. The
+        // undo snapshot is the row this write actually replaced.
+        // The absorbed profile's household members, re-id'd ONCE (outside the
+        // CAS retry loop) so the ids this merge adds are known and can never
+        // collide with the survivor's — undo removes exactly these.
+        const absorbedMembers = deserializeHouseholdMembers(secondary.householdMembers)
+            .map(m => ({ ...m, id: crypto.randomUUID() }));
+        const mergedFields = (p: typeof primary) => {
+            const updates: Partial<typeof adopters.$inferInsert> = {};
+
+            if (secondary.contactInfo) {
+                updates.contactInfo = p.contactInfo
+                    ? `${p.contactInfo}\n--- Merged from ${secondary.name} ---\n${secondary.contactInfo}`
+                    : secondary.contactInfo;
+            }
+
+            if (secondary.addressInfo && !p.addressInfo) {
+                updates.addressInfo = secondary.addressInfo;
+            } else if (secondary.addressInfo && p.addressInfo) {
+                updates.addressInfo = `${p.addressInfo}\n--- Merged ---\n${secondary.addressInfo}`;
+            }
+
+            if (secondary.familyMembers) {
+                updates.familyMembers = p.familyMembers
+                    ? `${p.familyMembers}\n${secondary.familyMembers}`
+                    : secondary.familyMembers;
+            }
+
+            if (secondary.sourceUrl && !p.sourceUrl) {
+                updates.sourceUrl = secondary.sourceUrl;
+            }
+
+            // Public status travels with the evidence: if EITHER side was marked
+            // publicly known, the merged profile stays public — the survivor just
+            // absorbed the publicly-sourced record. Silently dropping this (as
+            // merges did before v2.55.10) re-protected 4 prod profiles whose
+            // absorbed twin carried links to public sources.
+            if (secondary.isPublic && !p.isPublic) {
+                updates.isPublic = 1;
+            }
+
+            // 6b. Merge structured contact entries, and carry the secondary's name
+            // over as an alias. Merge does NOT merge the `name` field, so without
+            // this the absorbed record's name stops being a NAME token — a person
+            // recorded under that spelling elsewhere would silently stop matching
+            // the survivor (aliases tokenize as name_words; see extractTokens).
+            const mergedEntries = mergeContactEntries(
+                deserializeContactEntries(p.contactEntries),
+                deserializeContactEntries(secondary.contactEntries),
+            );
+            const secondaryName = (secondary.name || '').trim();
+            const knownNames = new Set(
+                [p.name || '', ...mergedEntries.filter(e => e.type === 'alias').map(e => e.value)]
+                    .map(n => normalizeText(n)),
+            );
+            if (secondaryName && !knownNames.has(normalizeText(secondaryName))) {
+                mergedEntries.push({ id: crypto.randomUUID(), type: 'alias', value: secondaryName, addedBy: actorEmail });
+            }
+            if (mergedEntries.length > 0) {
+                updates.contactEntries = JSON.stringify(mergedEntries);
+            }
+
+            // 6c. Carry the absorbed profile's household members (an adoption
+            // form can put people on the auto-created profile — spec
+            // 2026-10-04 §3). Without this, "Es la misma persona" dropped them.
+            // Read from `p`, the fresh row, like every field here (CAS-guarded).
+            if (absorbedMembers.length) {
+                updates.householdMembers = serializeHouseholdMembers(
+                    mergeHouseholdMembers(deserializeHouseholdMembers(p.householdMembers), absorbedMembers),
+                );
+            }
+
+            // Force re-tokenization on next save
+            updates.tokenHash = null;
+            updates.updatedAt = new Date();
+            return updates;
+        };
+        const written = await casAdopterLists(db, primaryId, (row) => ({ write: mergedFields(row as typeof primary), result: null }), { op: 'mergeAdopters', secondaryId });
+        if (written.status === 'missing') throw new Error('Primary adopter disappeared during merge');
+        if (written.status === 'busy') throw new Error(`Merge collided with concurrent edits (Error ID: ${written.errorId})`);
+        undo.primarySnapshot = {
+            contactInfo: written.row.contactInfo,
+            contactEntries: written.row.contactEntries,
+            addressInfo: written.row.addressInfo,
+            familyMembers: written.row.familyMembers,
+            sourceUrl: written.row.sourceUrl,
+            isPublic: written.row.isPublic,
+        };
+        if (absorbedMembers.length) {
+            // Same computation the write used, on the same row: the absorbed
+            // members that actually landed (repeats of the survivor's skipped).
+            const absorbedIds = new Set(absorbedMembers.map(m => m.id));
+            undo.addedHouseholdMemberIds = mergeHouseholdMembers(deserializeHouseholdMembers(written.row.householdMembers), absorbedMembers)
+                .map(m => m.id).filter(id => absorbedIds.has(id));
+        }
+
         // 1. Re-point adoptions (placements + adopter_events → normalized tables)
         const moved = await reassignAdopterRecords(db, secondaryId, primaryId);
         mergeDetails.adoptions = moved.count;
@@ -138,69 +240,6 @@ export async function mergeAdopters(
         const movedFormIds = movedForms.map((r: { id: string }) => r.id);
         undo.formSubmissionIds = movedFormIds;
         mergeDetails.forms = movedFormIds.length;
-
-        // 6. Append text fields (preserve secondary data with separators)
-        const updates: Partial<typeof adopters.$inferInsert> = {};
-
-        if (secondary.contactInfo) {
-            updates.contactInfo = primary.contactInfo
-                ? `${primary.contactInfo}\n--- Merged from ${secondary.name} ---\n${secondary.contactInfo}`
-                : secondary.contactInfo;
-        }
-
-        if (secondary.addressInfo && !primary.addressInfo) {
-            updates.addressInfo = secondary.addressInfo;
-        } else if (secondary.addressInfo && primary.addressInfo) {
-            updates.addressInfo = `${primary.addressInfo}\n--- Merged ---\n${secondary.addressInfo}`;
-        }
-
-        if (secondary.familyMembers) {
-            updates.familyMembers = primary.familyMembers
-                ? `${primary.familyMembers}\n${secondary.familyMembers}`
-                : secondary.familyMembers;
-        }
-
-        if (secondary.sourceUrl && !primary.sourceUrl) {
-            updates.sourceUrl = secondary.sourceUrl;
-        }
-
-        // Public status travels with the evidence: if EITHER side was marked
-        // publicly known, the merged profile stays public — the survivor just
-        // absorbed the publicly-sourced record. Silently dropping this (as
-        // merges did before v2.55.10) re-protected 4 prod profiles whose
-        // absorbed twin carried links to public sources.
-        if (secondary.isPublic && !primary.isPublic) {
-            updates.isPublic = 1;
-        }
-
-        // 6b. Merge structured contact entries, and carry the secondary's name
-        // over as an alias. Merge does NOT merge the `name` field, so without
-        // this the absorbed record's name stops being a NAME token — a person
-        // recorded under that spelling elsewhere would silently stop matching
-        // the survivor (aliases tokenize as name_words; see extractTokens).
-        const mergedEntries = mergeContactEntries(
-            deserializeContactEntries(primary.contactEntries),
-            deserializeContactEntries(secondary.contactEntries),
-        );
-        const secondaryName = (secondary.name || '').trim();
-        const knownNames = new Set(
-            [primary.name || '', ...mergedEntries.filter(e => e.type === 'alias').map(e => e.value)]
-                .map(n => normalizeText(n)),
-        );
-        if (secondaryName && !knownNames.has(normalizeText(secondaryName))) {
-            mergedEntries.push({ id: crypto.randomUUID(), type: 'alias', value: secondaryName, addedBy: actorEmail });
-        }
-        if (mergedEntries.length > 0) {
-            updates.contactEntries = JSON.stringify(mergedEntries);
-        }
-
-        // Force re-tokenization on next save
-        updates.tokenHash = null;
-        updates.updatedAt = new Date();
-
-        if (Object.keys(updates).length > 0) {
-            await db.update(adopters).set(updates).where(eq(adopters.id, primaryId));
-        }
 
         // 7. Soft-delete secondary
         await db.update(adopters).set({
@@ -381,6 +420,12 @@ interface MergeUndoPayload {
         /** Absent in payloads written before v2.55.10 — undo leaves the flag as-is then. */
         isPublic?: number;
     };
+    /**
+     * Household members this merge appended to the survivor (fresh ids). Undo
+     * removes exactly these, so a teammate's later household edit survives —
+     * restoring a whole-list snapshot would erase it. Absent before 2026-10-04.
+     */
+    addedHouseholdMemberIds?: string[];
     placementIds: string[];
     adopterEventIds: string[];
     imageIds: string[];
@@ -516,6 +561,20 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
             tokenHash: null,
             updatedAt: new Date(),
         }).where(eq(adopters.id, primaryId));
+
+        // 3b. Take back only the household members the merge added — never the
+        //     survivor's own list, which may have been edited since.
+        const addedMemberIds = new Set(undo.addedHouseholdMemberIds ?? []);
+        if (addedMemberIds.size) {
+            const out = await casAdopterLists(db, primaryId, (row) => {
+                const members = deserializeHouseholdMembers(row.householdMembers);
+                const kept = members.filter(m => !addedMemberIds.has(m.id));
+                return kept.length === members.length
+                    ? { result: null }
+                    : { write: { householdMembers: serializeHouseholdMembers(kept) }, result: null };
+            }, { op: 'unmergeAdopters.household', auditId });
+            if (out.status === 'busy') throw new Error(`Undo collided with concurrent household edits (Error ID: ${out.errorId})`);
+        }
 
         // 4. Put the touched duplicate candidates back to their prior status —
         //    grouped by target status so each group is a few chunked updates.

@@ -9,7 +9,7 @@
  * viewer (canEdit=false) sees a read-only, masked list.
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Phone, Mail, AtSign, IdCard, MapPin, UserRound, Pencil, Trash2, Plus, Check, X } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -20,8 +20,9 @@ import { SocialLogo } from '@/components/SocialLogo';
 import { PhoneAppsToggle } from '@/components/PhoneAppsToggle';
 import { MessagingLogo } from '@/components/MessagingLogo';
 import { detectSocialPlatform, type ContactEntry, type ContactEntryType, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
-import { RELATIONSHIPS, type HouseholdMember, type Relationship } from '@/lib/householdMembers';
+import { RELATIONSHIPS, currentAge, type HouseholdMember, type Relationship } from '@/lib/householdMembers';
 import { handledAsStale } from '@/lib/errorMessage';
+import { entryConflictMessage } from '@/lib/collabCopy';
 import {
     addHouseholdMember, updateHouseholdMember, removeHouseholdMember,
     addMemberContactEntry, updateMemberContactEntry, removeMemberContactEntry,
@@ -34,7 +35,9 @@ const TYPE_ICON: Record<ContactEntryType, typeof Phone> = {
 
 interface Draft { type: ContactEntryType; value: string; platform: SocialPlatform | null; apps: MessagingApp[] }
 interface MemberUI extends HouseholdMember {
-    editing?: boolean; draftName?: string; draftRel?: Relationship | null;
+    editing?: boolean; draftName?: string; draftRel?: Relationship | null; draftAge?: string;
+    /** The age as shown when the edit opened — sent as `expected.age`, and to tell whether the rescuer changed it. */
+    openAge?: string;
     composer?: { stage: 'pick' } | ({ stage: 'edit' } & Draft) | null;
 }
 interface CEditing extends ContactEntry { editing?: boolean; draft?: Draft }
@@ -56,13 +59,51 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
         | null
     >(null);
 
+    // Fresh server data (after any refresh) replaces what's shown — while
+    // keeping open editors and their drafts — so a teammate's change is
+    // visible, and becomes what the next save is compared against.
+    const serverKey = useMemo(() => JSON.stringify(initialMembers), [initialMembers]);
+    useEffect(() => {
+        setMembers(prev => {
+            const merged: MemberUI[] = initialMembers.map(sm => {
+                const lm = prev.find(x => x.id === sm.id);
+                if (!lm) return { ...sm };
+                return {
+                    ...sm,
+                    editing: lm.editing, draftName: lm.draftName, draftRel: lm.draftRel, draftAge: lm.draftAge, openAge: lm.openAge, composer: lm.composer,
+                    contactEntries: sm.contactEntries.map(se => {
+                        const le = lm.contactEntries.find(e => e.id === se.id) as CEditing | undefined;
+                        return le?.editing ? { ...se, editing: true, draft: le.draft } as CEditing : se;
+                    }),
+                };
+            });
+            // Members being added here and not yet saved stay (a saved one is
+            // already in the server list — never show it twice).
+            return [...merged, ...prev.filter(x => (x as MemberUI & { isNew?: boolean }).isNew && !initialMembers.some(sm => sm.id === x.id))];
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [serverKey]);
+
     const relLabel = (r: Relationship | null | undefined) => r ? t(`adopter.hh_rel_${r}`) : '';
     const patch = (id: string, up: Partial<MemberUI>) => setMembers(prev => prev.map(m => m.id === id ? { ...m, ...up } : m));
-    async function run<T extends { ok: boolean; error?: string }>(fn: () => Promise<T>): Promise<Extract<T, { ok: true }> | null> {
+    /** `onConflict` runs when a teammate changed/removed the item meanwhile (after the warning). */
+    async function run<T extends { ok: boolean; error?: string }>(fn: () => Promise<T>, onConflict?: (kind: 'changed' | 'deleted') => void): Promise<Extract<T, { ok: true }> | null> {
         setBusy(true);
         try {
             const res = await fn();
-            if (!res.ok) { toast.error(t('errors.generic') || 'Error', t('errors.save_household_failed') || 'No se pudo guardar el grupo familiar. Volvé a intentar.'); return null; }
+            if (!res.ok) {
+                const r = res as { error?: string; conflict?: { kind: 'changed' | 'deleted'; by: string }; errorId?: string };
+                if (r.error === 'conflict' && r.conflict) {
+                    toast.warning(entryConflictMessage(t, r.conflict.kind, r.conflict.by));
+                    onConflict?.(r.conflict.kind);
+                    router.refresh();
+                } else if (r.error === 'busy') {
+                    toast.error(t('errors.generic') || 'Error', t('collab.busy'), r.errorId);
+                } else {
+                    toast.error(t('errors.generic') || 'Error', t('errors.save_household_failed') || 'No se pudo guardar el grupo familiar. Volvé a intentar.');
+                }
+                return null;
+            }
             return res as Extract<T, { ok: true }>;
         } catch (e) {
             if (!handledAsStale(e)) toast.error('Error', e instanceof Error ? e.message : 'Error inesperado'); return null;
@@ -76,22 +117,34 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
     async function saveMember(m: MemberUI) {
         const name = (m.draftName ?? '').trim();
         const relationship = m.draftRel ?? null;
+        // Sent only when the rescuer changed it, so saving a name fix can never
+        // write back a stale age over a teammate's newer one. '' clears it.
+        const ageChanged = m.draftAge !== undefined && m.draftAge.trim() !== (m.openAge ?? '');
+        const age = !ageChanged ? undefined : m.draftAge!.trim() === '' ? null : Number(m.draftAge);
         const isNew = (m as MemberUI & { isNew?: boolean }).isNew;
         if (isNew) {
-            const res = await run(() => addHouseholdMember({ adopterId, name, relationship }));
+            const res = await run(() => addHouseholdMember({ adopterId, name, relationship, age: age ?? undefined }));
             if (!res) return;
-            patch(m.id, { id: res.memberId, name, relationship, editing: false, draftName: undefined, draftRel: undefined });
-            setMembers(prev => prev.map(x => x.id === m.id ? { ...x, id: res.memberId } : x));
+            setMembers(prev => prev.map(x => x.id === m.id
+                ? { ...x, id: res.memberId, name, relationship, ...(typeof age === 'number' ? { age, ageAsOf: new Date().toISOString().slice(0, 10) } : {}), editing: false, draftName: undefined, draftRel: undefined, draftAge: undefined, isNew: false } as MemberUI
+                : x));
         } else {
-            const res = await run(() => updateHouseholdMember({ adopterId, memberId: m.id, name, relationship }));
+            const res = await run(
+                () => updateHouseholdMember({ adopterId, memberId: m.id, name, relationship, age, expected: { name: m.name, relationship: m.relationship ?? null, age: m.openAge ? Number(m.openAge) : null } }),
+                (kind) => { if (kind === 'deleted') setMembers(prev => prev.filter(x => x.id !== m.id)); },
+            );
             if (!res) return;
-            patch(m.id, { name, relationship, editing: false, draftName: undefined, draftRel: undefined });
+            patch(m.id, {
+                name, relationship,
+                ...(age === null ? { age: undefined, ageAsOf: undefined } : typeof age === 'number' ? { age, ageAsOf: new Date().toISOString().slice(0, 10) } : {}),
+                editing: false, draftName: undefined, draftRel: undefined, draftAge: undefined, openAge: undefined,
+            });
         }
         router.refresh();
     }
     function cancelMember(m: MemberUI) {
         if ((m as MemberUI & { isNew?: boolean }).isNew) setMembers(prev => prev.filter(x => x.id !== m.id));
-        else patch(m.id, { editing: false, draftName: undefined, draftRel: undefined });
+        else patch(m.id, { editing: false, draftName: undefined, draftRel: undefined, draftAge: undefined, openAge: undefined });
     }
     function deleteMember(m: MemberUI) {
         setConfirmTarget({ kind: 'member', member: m });
@@ -115,7 +168,10 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
     async function saveEditContact(m: MemberUI, ce: CEditing) {
         const d = ce.draft; if (!d) return;
         const platform = ce.type === 'social' ? (detectSocialPlatform(d.value) ?? d.platform ?? ce.platform ?? undefined) : ce.platform;
-        const res = await run(() => updateMemberContactEntry({ adopterId, memberId: m.id, entryId: ce.id!, value: d.value.trim(), platform: platform ?? undefined, apps: d.apps }));
+        const res = await run(
+            () => updateMemberContactEntry({ adopterId, memberId: m.id, entryId: ce.id!, value: d.value.trim(), platform: platform ?? undefined, apps: d.apps, expectedValue: ce.value }),
+            (kind) => { if (kind === 'deleted') patch(m.id, { contactEntries: m.contactEntries.filter(e => e.id !== ce.id) }); },
+        );
         if (!res) return;
         patch(m.id, { contactEntries: m.contactEntries.map(e => e.id === ce.id ? { ...e, value: d.value.trim(), platform, apps: d.apps, editing: false, draft: undefined } as CEditing : e) });
         router.refresh();
@@ -136,12 +192,18 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
         if (!target) return;
 
         if (target.kind === 'member') {
-            const res = await run(() => removeHouseholdMember({ adopterId, memberId: target.member.id }));
+            const res = await run(
+                () => removeHouseholdMember({ adopterId, memberId: target.member.id, expected: { name: target.member.name, relationship: target.member.relationship ?? null } }),
+                (kind) => { if (kind === 'deleted') setMembers(prev => prev.filter(x => x.id !== target.member.id)); },
+            );
             if (!res) { setConfirmTarget(null); return; }
             setMembers(prev => prev.filter(x => x.id !== target.member.id));
         } else {
             const m = target.member;
-            const res = await run(() => removeMemberContactEntry({ adopterId, memberId: m.id, entryId: target.entry.id! }));
+            const res = await run(
+                () => removeMemberContactEntry({ adopterId, memberId: m.id, entryId: target.entry.id!, expectedValue: target.entry.value }),
+                (kind) => { if (kind === 'deleted') patch(m.id, { contactEntries: m.contactEntries.filter(e => e.id !== target.entry.id) }); },
+            );
             if (!res) { setConfirmTarget(null); return; }
             patch(m.id, { contactEntries: m.contactEntries.filter(e => e.id !== target.entry.id) });
         }
@@ -189,13 +251,13 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
         <div className="space-y-3">
             {members.length === 0 && !canEdit && !hasLegacyText && <p className="text-sm text-stone-500 italic">{t('adopter.no_family')}</p>}
             {members.map(m => (
-                <div key={m.id} className="border border-stone-200 rounded-xl p-3.5 bg-stone-50">
+                <div key={m.id} className="border border-stone-200 rounded-xl p-3.5 bg-stone-50" data-testid="household-member">
                     {m.editing ? (
                         <div className="space-y-2">
                             <div className="flex gap-2 flex-wrap">
                                 <div className="flex-1 min-w-[140px]">
                                     <label className="block text-[11px] font-semibold text-stone-500 mb-1">{t('adopter.hh_name')}</label>
-                                    <input autoFocus type="text" value={m.draftName ?? ''} onChange={e => patch(m.id, { draftName: e.target.value })} placeholder={t('adopter.hh_name_ph')} className="w-full px-2.5 py-1.5 border border-stone-300 rounded text-sm outline-none focus:border-teal-500" />
+                                    <input autoFocus type="text" data-testid="household-member-name-input" value={m.draftName ?? ''} onChange={e => patch(m.id, { draftName: e.target.value })} placeholder={t('adopter.hh_name_ph')} className="w-full px-2.5 py-1.5 border border-stone-300 rounded text-sm outline-none focus:border-teal-500" />
                                 </div>
                                 <div className="flex-1 min-w-[140px]">
                                     <label className="block text-[11px] font-semibold text-stone-500 mb-1">{t('adopter.hh_rel')}</label>
@@ -204,10 +266,14 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                                         {RELATIONSHIPS.map(r => <option key={r} value={r}>{t(`adopter.hh_rel_${r}`)}</option>)}
                                     </select>
                                 </div>
+                                <div className="w-24">
+                                    <label className="block text-[11px] font-semibold text-stone-500 mb-1">{t('adopter.hh_age')}</label>
+                                    <input type="number" inputMode="numeric" min={0} max={120} step={1} data-testid="household-member-age-input" value={m.draftAge ?? ''} onChange={e => patch(m.id, { draftAge: e.target.value })} className="w-full px-2.5 py-1.5 border border-stone-300 rounded text-base outline-none focus:border-teal-500" />
+                                </div>
                             </div>
                             <div className="flex items-center gap-2 justify-end">
                                 <button type="button" onClick={() => cancelMember(m)} disabled={busy} className="text-xs font-medium px-3 py-1.5 rounded text-stone-700 bg-stone-100 hover:bg-stone-200 disabled:opacity-50"><X className="w-3.5 h-3.5 inline" /> {t('adopter.ce_edit_cancel')}</button>
-                                <button type="button" onClick={() => saveMember(m)} disabled={busy || !((m.draftName ?? '').trim() || m.draftRel)} className="text-xs font-semibold px-3.5 py-1.5 rounded bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40"><Check className="w-3.5 h-3.5 inline" /> {t('adopter.ce_edit_save')}</button>
+                                <button type="button" data-testid="household-member-save" onClick={() => saveMember(m)} disabled={busy || !((m.draftName ?? '').trim() || m.draftRel)} className="text-xs font-semibold px-3.5 py-1.5 rounded bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40"><Check className="w-3.5 h-3.5 inline" /> {t('adopter.ce_edit_save')}</button>
                             </div>
                         </div>
                     ) : (
@@ -215,14 +281,18 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                             <div className="flex items-start gap-2.5">
                                 <div className="w-9 h-9 rounded-lg bg-teal-600 text-white font-bold text-sm flex items-center justify-center shrink-0">{(m.name.trim()[0] || '?').toUpperCase()}</div>
                                 <div className="min-w-0 flex-1">
-                                    <div className="font-semibold text-[15px] text-stone-900 break-words">{m.name || <span className="italic text-stone-400">{t('adopter.hh_name')}</span>}</div>
+                                    <div className="font-semibold text-[15px] text-stone-900 break-words">
+                                        {m.name || <span className="italic text-stone-400">{t('adopter.hh_name')}</span>}
+                                        {m.giftRecipient && <span className="ml-1.5 inline-block whitespace-nowrap align-middle text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-700">{t('adopter.hh_gift_recipient')}</span>}
+                                    </div>
                                     <div className={`text-xs ${m.relationship ? 'text-stone-500' : 'text-stone-400 italic'}`}>
                                         {m.relationship === 'unknown' ? t('adopter.hh_rel_unknown_display') : m.relationship ? relLabel(m.relationship) : t('adopter.hh_rel_none')}
+                                        {currentAge(m) !== null && <> · {t('adopter.hh_years').replace('{n}', String(currentAge(m)))}</>}
                                     </div>
                                 </div>
                                 {canEdit && (
                                     <div className="flex gap-0.5 shrink-0">
-                                        <button type="button" onClick={() => patch(m.id, { editing: true, draftName: m.name, draftRel: m.relationship })} title={t('adopter.ce_edit_label')} className="p-1.5 text-stone-500 hover:text-teal-700 hover:bg-teal-50 rounded"><Pencil className="w-3.5 h-3.5" /></button>
+                                        <button type="button" data-testid="household-member-edit" onClick={() => { const shown = m.age !== undefined ? String(currentAge(m)) : ''; patch(m.id, { editing: true, draftName: m.name, draftRel: m.relationship, draftAge: shown, openAge: shown }); }} title={t('adopter.ce_edit_label')} className="p-1.5 text-stone-500 hover:text-teal-700 hover:bg-teal-50 rounded"><Pencil className="w-3.5 h-3.5" /></button>
                                         <button type="button" onClick={() => deleteMember(m)} title="Quitar" className="p-1.5 text-stone-500 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
                                     </div>
                                 )}
@@ -277,7 +347,7 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                 </div>
             ))}
             {canEdit && (
-                <button type="button" onClick={startAdd} disabled={busy} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-md disabled:opacity-50">
+                <button type="button" data-testid="household-add-member" onClick={startAdd} disabled={busy} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-md disabled:opacity-50">
                     <Plus className="w-4 h-4" />{t('adopter.hh_cta_add')}
                 </button>
             )}

@@ -188,6 +188,137 @@ test.describe('form-results: linking to an existing profile', () => {
         await expect(page.locator('div.flex.items-baseline', { hasText: /Home type|Tipo de vivienda|Tipo de moradia/ }).locator('[data-signal]')).toHaveCount(0);
     });
 
+    test('household people: only the fully named one reaches the profile, children is recomputed, the request is recorded at submit', async ({ request }) => {
+        const stamp = Date.now();
+        const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+            name: `E2E Hogar ${stamp}`, email: `e2e-hogar-${stamp}@example.com`, phone: `22${String(stamp).slice(-8)}`,
+            address: '1 Hogar St', intent: 'self', housingType: 'house',
+            householdPeople: [
+                { relationship: 'child', age: 3, firstName: 'Tomás', lastName: 'López' },
+                { relationship: 'child', age: 11 },
+                { relationship: 'partner', age: 38, firstName: 'Laura' },
+                { relationship: 'boss', age: 50, firstName: 'Bad', lastName: 'Row' },
+            ],
+            livesAlone: false, children: 'none', // a lying count — the server recomputes it
+        } });
+        expect(res.ok(), await res.text()).toBeTruthy();
+        const { submissionId } = await res.json();
+
+        const row = one(`SELECT auto_adopter_id, answers_json FROM form_submissions WHERE id = '${submissionId}'`);
+        const answers = JSON.parse(String(row.answers_json));
+        expect(answers.children).toBe('2');
+        expect(answers.householdPeople).toHaveLength(3); // the unknown relationship is dropped
+
+        const prof = one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`);
+        const members = JSON.parse(String(prof.household_members));
+        expect(members.map((m: { name: string }) => m.name)).toEqual(['Tomás López']);
+        expect(members[0]).toMatchObject({ relationship: 'child', age: 3, addedBy: 'form-submission' });
+        expect(members[0].ageAsOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+        // Every form is linked from its profile: the request exists from submit time.
+        expect(rows(`SELECT id FROM adoptions WHERE adopter_id = '${row.auto_adopter_id}' AND source_url = 'form:${submissionId}'`)).toHaveLength(1);
+    });
+
+    test('household people: the form screen shows each person with a dot; the profile shows the age and links back', async ({ page, request }) => {
+        const stamp = Date.now();
+        const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+            name: `E2E HogarUI ${stamp}`, email: `e2e-hogarui-${stamp}@example.com`, phone: `23${String(stamp).slice(-8)}`,
+            address: '2 Hogar St', intent: 'self', housingType: 'house',
+            householdPeople: [
+                { relationship: 'child', age: 3, firstName: 'Tomás', lastName: 'López' },
+                { relationship: 'child', age: 11 },
+                { relationship: 'partner', age: 38, firstName: 'Laura' },
+            ],
+            livesAlone: false,
+        } });
+        expect(res.ok(), await res.text()).toBeTruthy();
+        const { submissionId } = await res.json();
+        const row = one(`SELECT auto_adopter_id FROM form_submissions WHERE id = '${submissionId}'`);
+
+        await page.goto(`/form-results/${submissionId}`);
+        await dismissCountryBanner(page);
+        const answers = page.getByRole('button', { name: /Complete answers|Respuestas completas|Respostas completas/ });
+        if ((await answers.getAttribute('aria-expanded')) === 'false') await answers.click();
+        const people = page.getByTestId('household-people');
+        await expect(people.locator('[data-signal="risk"]')).toHaveCount(1);    // 3
+        await expect(people.locator('[data-signal="caution"]')).toHaveCount(1); // 11
+        await expect(people.locator('[data-signal="ok"]')).toHaveCount(1);      // 38
+        await expect(people).toContainText('Tomás López');
+        // The derived count is not shown twice next to the list.
+        await expect(page.locator('div.flex.items-baseline', { hasText: /Children in household|Niños en el hogar/ })).toHaveCount(0);
+
+        await page.goto(`/adopter/${row.auto_adopter_id}`);
+        await dismissCountryBanner(page);
+        await expect(page.getByText('Tomás López').first()).toBeVisible();
+        await expect(page.getByText(/3 years old|3 años|3 anos/).first()).toBeVisible();
+        await expect(page.locator(`a[href="/form-results/${submissionId}"]`).first()).toBeVisible();
+    });
+
+    test("gift: only the fully named recipient reaches the giver's profile; the recipient's housemates stay on the form", async ({ page, request }) => {
+        const stamp = Date.now();
+        const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+            name: `E2E Regalo ${stamp}`, email: `e2e-regalo-${stamp}@example.com`, phone: `25${String(stamp).slice(-8)}`, address: '1 Gift St',
+            intent: 'gift', giftRecipient: { relationship: 'child', firstName: 'Laura', lastName: 'Pérez', phone: '11 5555 1234' },
+            householdPeople: [{ relationship: 'partner', age: 30, firstName: 'Marcos', lastName: 'Gómez' }], livesAlone: false,
+            hasOutdoor: 'unknown', isSafe: 'unknown', vacationPlan: 'unknown',
+        } });
+        expect(res.ok(), await res.text()).toBeTruthy();
+        const { submissionId } = await res.json();
+        const row = one(`SELECT auto_adopter_id, answers_json FROM form_submissions WHERE id = '${submissionId}'`);
+        expect(JSON.parse(String(row.answers_json)).giftRecipient).toMatchObject({ firstName: 'Laura', lastName: 'Pérez' });
+        const members = JSON.parse(String(one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`).household_members));
+        expect(members.map((m: { name: string }) => m.name)).toEqual(['Laura Pérez']);
+        expect(members[0]).toMatchObject({ relationship: 'child', giftRecipient: true });
+        expect(JSON.stringify(members[0].contactEntries)).toContain('11 5555 1234');
+
+        // The form screen: who it is for comes first, the home rows talk about her, "No sabe" carries no dot.
+        await page.goto(`/form-results/${submissionId}`);
+        await dismissCountryBanner(page);
+        const answers = page.getByRole('button', { name: /Complete answers|Respuestas completas|Respostas completas/ });
+        if ((await answers.getAttribute('aria-expanded')) === 'false') await answers.click();
+        const forWhom = page.getByTestId('gift-recipient');
+        await expect(forWhom).toContainText('Laura Pérez');
+        await expect(forWhom).toContainText('11 5555 1234');
+        await expect(page.getByText(/(People in|Personas en el hogar de|Pessoas na casa de) Laura/)).toBeVisible();
+        // Every reworded question keeps its gift wording as the label (spec §10).
+        await expect(page.getByText(/Patio o jardín de Laura|Laura's patio or yard|Quintal ou jardim de Laura/)).toBeVisible();
+        await expect(page.getByText(/Plan para vacaciones de Laura|Laura's vacation plan|Plano de férias de Laura/)).toBeVisible();
+        for (const label of [/patio or yard|patio o jardín|quintal ou jardim/i, /Protected spaces|Secure spaces|Espacios protegidos|Espaços protegidos/]) {
+            const line = page.locator('div.flex.items-baseline', { hasText: label });
+            await expect(line).toContainText(/No sabe|Doesn't know|Não sabe/);
+            await expect(line.locator('[data-signal]')).toHaveCount(0);
+        }
+
+        // The profile marks her as the person the animal is for.
+        await page.goto(`/adopter/${row.auto_adopter_id}`);
+        await dismissCountryBanner(page);
+        await expect(page.getByText(/Gift recipient|Destinatario\/a del regalo|Destinatário\/a do presente/).first()).toBeVisible();
+    });
+
+    test('a submission without a phone is still stored — the server never refuses it (spec Part 3)', async ({ request }) => {
+        const stamp = Date.now();
+        const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+            name: `E2E SinTel ${stamp}`, email: `e2e-sintel-${stamp}@example.com`, address: '1 No Phone St', intent: 'self',
+        } });
+        expect(res.ok(), await res.text()).toBeTruthy();
+        const { submissionId } = await res.json();
+        expect(one(`SELECT auto_adopter_id FROM form_submissions WHERE id = '${submissionId}'`).auto_adopter_id).toBeTruthy();
+    });
+
+    test('gift with a first-name-only recipient: nothing on the profile', async ({ request }) => {
+        const stamp = Date.now();
+        const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+            name: `E2E Regalo2 ${stamp}`, email: `e2e-regalo2-${stamp}@example.com`, phone: `26${String(stamp).slice(-8)}`, address: '2 Gift St',
+            intent: 'gift', giftRecipient: { relationship: 'sibling', firstName: 'Ana' },
+        } });
+        expect(res.ok(), await res.text()).toBeTruthy();
+        const { submissionId } = await res.json();
+        const row = one(`SELECT auto_adopter_id, answers_json FROM form_submissions WHERE id = '${submissionId}'`);
+        expect(JSON.parse(String(row.answers_json)).giftRecipient).toMatchObject({ firstName: 'Ana' });
+        const prof = one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`);
+        expect(isNull(prof.household_members) || JSON.parse(String(prof.household_members)).length === 0).toBe(true);
+    });
+
     test('a fresh submission with no look-alikes reads as a new profile, not as "linked"', async ({ page, request }) => {
         const stamp = Date.now();
         const name = `E2E Formlink Solo ${stamp}`;

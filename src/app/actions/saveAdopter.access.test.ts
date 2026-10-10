@@ -46,6 +46,7 @@ describe('saveAdopter — session and column whitelist', () => {
             addedBy: STRANGER, createdAt: new Date(0), deletedAt: new Date(), isDemo: 1, tokenHash: 'forged',
         } as never);
         expect(res.success).toBe(true);
+        if (!res.success) throw new Error('save failed');
         expect(res.id).not.toBe('client-chosen-id');
         const r = row(res.id as string);
         expect(r.added_by).toBe(OWNER);

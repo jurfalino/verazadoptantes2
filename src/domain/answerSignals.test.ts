@@ -27,3 +27,21 @@ describe('answerSignal', () => {
         expect(answerSignal('housingType', 'apartment')).toBeNull();
     });
 });
+
+import { personSignal } from './answerSignals';
+describe('personSignal', () => {
+    it('under 5 is red, 5–17 amber, adults green', () => {
+        expect(personSignal(0)).toBe('risk');
+        expect(personSignal(4)).toBe('risk');
+        expect(personSignal(5)).toBe('caution');
+        expect(personSignal(17)).toBe('caution');
+        expect(personSignal(18)).toBe('ok');
+        expect(personSignal(80)).toBe('ok');
+    });
+});
+
+describe('"No sé" never gets a dot', () => {
+    it('unknown is null', () => {
+        for (const f of ['children', 'isSafe', 'intent']) expect(answerSignal(f, 'unknown')).toBeNull();
+    });
+});
