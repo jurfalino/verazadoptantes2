@@ -10,9 +10,14 @@
  * ratings on the 2026-09 production corpus — far too weak to rate anyone).
  */
 
-/** Lower-case and strip accents so lexicon entries match all spellings. */
+/**
+ * Lower-case and strip accents so lexicon entries match all spellings, and undo
+ * digit-for-vowel spelling inside words ("mutil4r", "mat4r") that warning posts
+ * use to dodge social-media filters. Standalone numbers are untouched.
+ */
 function normalize(s: string): string {
-    return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[a-z]+[0-9][a-z0-9]*[a-z]/g, w => w.replace(/4/g, 'a').replace(/3/g, 'e').replace(/1/g, 'i').replace(/0/g, 'o'));
 }
 
 /**
@@ -52,7 +57,12 @@ const PHRASES: [RegExp, number][] = [
     [/no permite (seguimiento|visita)/g, -2],
     [/corto (el )?contacto/g, -2],
     [/perdio (el|al) (gato|perro|animal)/g, -2],
-    [/se (escapo|perdio)/g, -1],
+    [/se (escapo|escaparon|perdio|perdieron)/g, -1],
+    [/se hace pasar/g, -3],
+    [/no (le |les )?(entreguen|entregar|den|des)\b/g, -3],
+    [/no (quiere|quiso|acepta|acepto) (el |ningun )?compromiso/g, -2],
+    [/\bmutil\w*/g, -3],
+    [/\btortur\w*/g, -3],
     [/en mal estado/g, -2],
     [/estado deplorable/g, -3],
     // strong positive
@@ -75,13 +85,16 @@ const PHRASES: [RegExp, number][] = [
 // Single-word weights (normalized spelling). ±3 strong, ±1 mild.
 const WORDS: Record<string, number> = {
     // negative: cruelty / death / abandonment
-    mato: -3, asesino: -3, asesina: -3, murio: -2, fallecio: -2, muerto: -2, muerta: -2,
+    mato: -3, matar: -3, asesino: -3, asesina: -3, murio: -2, fallecio: -2, muerto: -2, muerta: -2,
     maltrato: -3, maltrata: -3, maltratado: -3, maltratada: -3, golpea: -3, pateada: -2, pateado: -2,
     abandono: -3, abandonado: -3, abandonada: -3, abandonar: -3, abandonaron: -3,
     tiro: -1, tiraron: -2, echo: -1, echaron: -1, regalo: -1, regalaron: -1,
     devolvio: -2, devuelto: -2, devuelta: -2, devolucion: -2, rechazada: -1, rechazado: -1,
     desnutrido: -2, desnutrida: -2, enfermo: -1, enferma: -1, lastimado: -2, lastimada: -2,
-    desaparecio: -2, desaparecida: -2, bloqueo: -2, bloqueado: -1, bloqueada: -1,
+    desaparecio: -2, desaparecida: -2, desaparecido: -2, desaparecidos: -2, desaparecieron: -2,
+    robo: -2, roba: -2, robar: -2, robado: -2, robada: -2, robados: -2, robaron: -2,
+    bloqueo: -2, bloqueado: -1, bloqueada: -1,
+    irresponsable: -3, irresponsables: -3, reticente: -2,
     denuncia: -2, denunciada: -2, denunciado: -2, denuncias: -2,
     amenaza: -2, amenazar: -2, amenazo: -2, insulta: -2, insultar: -2, insulto: -2,
     agresivo: -2, agresiva: -2, violento: -2, violenta: -2,
@@ -118,20 +131,28 @@ export interface SentimentResult {
     hasSignal: boolean;
     /** The cleaned text the score was computed from (excerpt source for UIs). */
     cleaned: string;
+    /**
+     * Sum of the negative contributions alone (≤ 0), before clamping. A warning
+     * post praises the con ("buena dicción, te ofrece ayuda… ya ha robado"), so
+     * a positive net score can still carry clear negative evidence.
+     */
+    negative: number;
 }
 
 /** Score one note. Negated words (negator within the 3 preceding tokens) flip sign and damp ×0.5. */
 export function scoreNoteSentiment(rawText: string): SentimentResult {
     const cleaned = cleanNoteForSentiment(rawText);
     let t = normalize(cleaned);
-    if (t.length < 3) return { score: null, hasSignal: false, cleaned };
+    if (t.length < 3) return { score: null, hasSignal: false, cleaned, negative: 0 };
 
     let total = 0;
     let hits = 0;
+    let negative = 0;
     for (const [pattern, weight] of PHRASES) {
         const matches = t.match(pattern);
         if (matches) {
             total += weight * matches.length;
+            if (weight < 0) negative += weight * matches.length;
             hits += matches.length;
             t = t.replace(pattern, ' ');
         }
@@ -145,10 +166,11 @@ export function scoreNoteSentiment(rawText: string): SentimentResult {
             if (NEGATORS.has(tokens[j])) { w = -w * 0.5; break; }
         }
         total += w;
+        if (w < 0) negative += w;
         hits++;
     }
-    if (hits === 0) return { score: 0, hasSignal: false, cleaned };
-    return { score: Math.max(-4, Math.min(4, total)), hasSignal: true, cleaned };
+    if (hits === 0) return { score: 0, hasSignal: false, cleaned, negative };
+    return { score: Math.max(-4, Math.min(4, total)), hasSignal: true, cleaned, negative };
 }
 
 export type RatingsAuditQueue = 'upgrade' | 'downgrade' | 'to_one' | 'no_evidence' | 'neutral_evidence';
@@ -156,7 +178,12 @@ export type RatingsAuditQueue = 'upgrade' | 'downgrade' | 'to_one' | 'no_evidenc
 /**
  * Assign a record to a ratings-audit queue, or null when rating and text agree.
  * Queues are mutually exclusive. Thresholds calibrated on the 2026-09 corpus:
- *  - upgrade:          rating ≤ 2 with clearly positive text (score ≥ +2)
+ *  - upgrade:          rating ≤ 2 with clearly positive text (score ≥ +2) and no
+ *                      real negative evidence (negative > −2: one mild word like
+ *                      "ojo"/"cuidado" is tolerated, a strong one or two mild vetoes).
+ *                      Without the veto, all 9 production upgrade rows on
+ *                      2026-10-09 were warning posts; the one past real catch
+ *                      ("todo muy bien… siempre nos manda fotos") still passes.
  *  - downgrade:        rating ≥ 4 with negative text (score ≤ −1)
  *  - to_one:           rating 2–3 with strongly negative text (score ≤ −3)
  *  - no_evidence:      rating 2 with no sentiment-bearing words and no cleaned text
@@ -164,7 +191,7 @@ export type RatingsAuditQueue = 'upgrade' | 'downgrade' | 'to_one' | 'no_evidenc
  */
 export function classifyRatingsAudit(rating: number | null, sentiment: SentimentResult): RatingsAuditQueue | null {
     if (sentiment.hasSignal && rating !== null && sentiment.score !== null) {
-        if (rating <= 2 && sentiment.score >= 2) return 'upgrade';
+        if (rating <= 2 && sentiment.score >= 2 && sentiment.negative > -2) return 'upgrade';
         if (rating >= 4 && sentiment.score <= -1) return 'downgrade';
         if ((rating === 2 || rating === 3) && sentiment.score <= -3) return 'to_one';
         return null;

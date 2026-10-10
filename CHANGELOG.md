@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.150] - 2026-10-10
+
+### Fixed — "Calificaciones vs. notas" suggesting to raise warning posts
+
+The admin report's «subir calificación» list was offering to raise the rating
+on alerts about dangerous people — one adopter showed up in both «subir» and
+«bajar a 1» at once. All 9 rows it held were warning posts: they describe how
+good the person *seemed* ("buena dicción, te ofrece ayuda… ya ha robado") and
+the scorer only added up words.
+
+- **«Subir» now needs a clean note:** a note with real negative evidence (one
+  strong word, or two mild ones) is never suggested for a higher rating, however
+  positive the rest reads. Genuine praise rated too low ("todo muy bien…
+  siempre nos manda fotos") is still caught.
+- **Warning words it was missing:** theft (robado, robaron…), "se hace pasar",
+  "no le entreguen", "irresponsable", "no quiere compromiso de castración",
+  and cruelty spelled with digits ("mutil4r", "mat4r"). Seven more warning
+  posts now appear in «bajar a 1».
+
 ## [2.56.149] - 2026-10-09
 
 ### Fixed — signing in from Instagram/Facebook links
