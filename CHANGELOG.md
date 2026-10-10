@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.154] - 2026-10-10
+
+### Fixed — re-formatting a contact said «guardado» but kept the old value
+
+Changing how a phone is written without changing its digits (`1164723109` →
+`11 6472-3109`), or only switching WhatsApp/Telegram on or off, closed the
+editor as if it had saved, and the old value stayed. The server treated "same
+digits" as "nothing to save". It now saves anything that differs from what is
+stored; a save of exactly what is stored still writes nothing.
+
 ## [2.56.153] - 2026-10-10
 
 ### Fixed — «Está bien así» was cut off at the table's right edge

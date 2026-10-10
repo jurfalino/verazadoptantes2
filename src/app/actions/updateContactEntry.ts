@@ -22,6 +22,15 @@ import { itemAuthors } from '@/lib/collabAttribution';
 // History rows that name an entry by id when it is edited or removed.
 const ENTRY_HISTORY_KEYS = ['updated_entry', 'removed_entry'] as const;
 
+/** Every field an edit can change, as stored. */
+function sameEntry(a: ContactEntry, b: ContactEntry): boolean {
+    return a.value === b.value
+        && (a.platform ?? null) === (b.platform ?? null)
+        && (a.apps ?? []).join() === (b.apps ?? []).join()
+        && (a.streetAndNumber ?? '') === (b.streetAndNumber ?? '')
+        && (a.locality ?? '') === (b.locality ?? '');
+}
+
 /**
  * Owner+admin-gated update of a single contact entry, identified by its stable
  * `id`. Type is not editable here — change-of-type is delete + add.
@@ -132,10 +141,12 @@ export async function updateContactEntry(
                         : {}),
                 };
             const newValueHash = hashEntryValue(updated.type, updated.value);
-            // No-op update (same normalized value) — including a teammate
-            // having already saved exactly this. Authoritative success; no
-            // write, history or tokenize.
-            if (previousValueHash === newValueHash) return { result: { kind: 'noop' } };
+            // No-op update (nothing the person can see changed) — including a
+            // teammate having already saved exactly this. Authoritative success;
+            // no write, history or tokenize. Compared as stored, NOT by hash: the
+            // hash is digits-only for phones, so "1164723109" → "11 6472-3109"
+            // (or a WhatsApp toggle) used to come back "saved" and stay unsaved.
+            if (sameEntry(original, updated)) return { result: { kind: 'noop' } };
             // A teammate changed this entry since the form opened: refuse.
             if (expectedValue !== undefined && hashEntryValue(original.type, expectedValue) !== previousValueHash) {
                 return { result: { kind: 'changed' } };
