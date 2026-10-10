@@ -267,7 +267,6 @@ export default function RatingsAuditPanel() {
                                 {showSentiment && <th className="p-3 font-semibold text-stone-500 text-sm">Sentim.</th>}
                                 <th className="p-3 font-semibold text-stone-500 text-sm">Sugerido</th>
                                 <th className="p-3 font-semibold text-stone-500 text-sm">Nota (extracto limpio)</th>
-                                {canEdit && <th className="p-3 font-semibold text-stone-500 text-sm"><span className="sr-only">Acción</span></th>}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-stone-100">
@@ -306,6 +305,24 @@ export default function RatingsAuditPanel() {
                                         ) : (
                                             <span className="text-sm font-semibold text-stone-700">★{r.rating}</span>
                                         )}
+                                        {/* Same cell as the rating: "change it" and "it's fine" are one decision. */}
+                                        {canEdit && (
+                                            <div className="mt-2">
+                                                {r.reviewed && (
+                                                    <div className="text-xs text-stone-500 mb-2 whitespace-normal">
+                                                        Revisado por {r.reviewed.by} · {new Date(r.reviewed.at * 1000).toLocaleDateString('es-AR')}
+                                                    </div>
+                                                )}
+                                                <button
+                                                    onClick={() => markReviewed(r, !r.reviewed)}
+                                                    disabled={reviewing.has(r.recordId) || pending.has(r.recordId)}
+                                                    title={pending.has(r.recordId) ? 'Guardá o descartá el cambio de calificación primero.' : undefined}
+                                                    className="px-3 py-1.5 text-xs font-semibold text-stone-600 bg-stone-100 border border-stone-200 rounded-lg hover:bg-stone-200 disabled:opacity-50"
+                                                >
+                                                    {r.reviewed ? 'Volver a la lista' : 'Está bien así'}
+                                                </button>
+                                            </div>
+                                        )}
                                     </td>
                                     {showSentiment && (
                                         <td className="p-3">
@@ -318,23 +335,6 @@ export default function RatingsAuditPanel() {
                                     <td className="p-3 text-sm text-stone-600 max-w-md">
                                         {r.excerpt || <em className="text-stone-400">— sin texto propio —</em>}
                                     </td>
-                                    {canEdit && (
-                                        <td className="p-3 text-right whitespace-nowrap">
-                                            {r.reviewed && (
-                                                <div className="text-xs text-stone-500 mb-2">
-                                                    Revisado por {r.reviewed.by} · {new Date(r.reviewed.at * 1000).toLocaleDateString('es-AR')}
-                                                </div>
-                                            )}
-                                            <button
-                                                onClick={() => markReviewed(r, !r.reviewed)}
-                                                disabled={reviewing.has(r.recordId) || pending.has(r.recordId)}
-                                                title={pending.has(r.recordId) ? 'Guardá o descartá el cambio de calificación primero.' : undefined}
-                                                className="px-3 py-1.5 text-xs font-semibold text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200 disabled:opacity-50"
-                                            >
-                                                {r.reviewed ? 'Volver a la lista' : 'Está bien así'}
-                                            </button>
-                                        </td>
-                                    )}
                                 </tr>
                             ))}
                         </tbody>

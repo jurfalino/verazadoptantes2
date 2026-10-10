@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.153] - 2026-10-10
+
+### Fixed — «Está bien así» was cut off at the table's right edge
+
+On a laptop-width screen the new button sat in its own column past the edge of
+the table. It now sits under the rating selector — the two choices for a
+record's rating side by side — with a visible border in dark mode.
+
 ## [2.56.152] - 2026-10-10
 
 ### Fixed — «Está bien así» edge cases (independent review of 2.56.151)
