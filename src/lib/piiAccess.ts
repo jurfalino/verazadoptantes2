@@ -14,7 +14,9 @@ import {
     parseBlobToContactEntries,
     normalizeEntryValue,
     buildContactEntries,
+    looksLikeStreetAddress,
 } from './contactEntries';
+import { phoneMatchesQuery, samePhone } from '@/domain/phoneNumber';
 import { deserializeHouseholdMembers, serializeHouseholdMembers, type HouseholdMember } from './householdMembers';
 import { PHONE_SEARCH_MIN_DIGITS } from '@/config/constants';
 import { normalizeText, extractAddressWords } from './tokenizer';
@@ -275,25 +277,12 @@ function idMatchesAsAnchor(idValue: string, query: string): boolean {
 export function matchSearchEntries(
     entries: ContactEntry[],
     query: string,
-    options: { anchorRequiredForSecondary?: boolean } = {},
+    options: { anchorRequiredForSecondary?: boolean; country?: string | null } = {},
 ): SearchEntryMatch[] {
     const q = query.trim();
     if (!q) return [];
-    const qDigits = q.replace(/\D/g, '');
     const qLower = q.toLowerCase();
     const qNormalized = normalizeText(q);
-    // Plausible phone shapes in the query, deduped: the full concatenated
-    // digits (catches a single formatted phone like "+54 11 2345-6789" filling
-    // the whole query) plus each whitespace-separated token's digits (catches
-    // mixed queries, including a phone with internal separators living
-    // alongside other text, e.g. "11 2345-6789 Corrientes 3444" → "23456789").
-    const phoneCandSet = new Set<string>();
-    if (qDigits.length >= PHONE_SEARCH_MIN_DIGITS) phoneCandSet.add(qDigits);
-    for (const token of q.split(/\s+/)) {
-        const d = token.replace(/\D/g, '');
-        if (d.length >= PHONE_SEARCH_MIN_DIGITS) phoneCandSet.add(d);
-    }
-    const phoneCandidates = [...phoneCandSet];
 
     // ── Phase 1: any-type anchor ──
     const out: SearchEntryMatch[] = [];
@@ -302,8 +291,10 @@ export function matchSearchEntries(
     for (const e of entries) {
         let matched = false;
         if (e.type === 'phone') {
-            const entryDigits = e.value.replace(/\D/g, '');
-            matched = phoneCandidates.some(c => entryDigits.includes(c));
+            // Same rule as the search (src/domain/phoneNumber.ts): any format of
+            // the number, or a partial the number ENDS with — read by country,
+            // so "+54 9 11 …" reveals a stored "11 …".
+            matched = phoneMatchesQuery(e.value, q, options.country, PHONE_SEARCH_MIN_DIGITS);
         } else if (e.type === 'email') {
             matched = q.includes('@') && q.length >= 6 && e.value.toLowerCase().includes(qLower);
         } else if (e.type === 'social') {
@@ -707,7 +698,14 @@ export function maskContactEntries(
     const out = entries.map((e): ContactEntry => {
         // `other` (notes) and `alias` (name-like) are never masked. `alias`
         // mirrors how `adopters.name` itself is treated — name data, not PII.
-        if (e.type === 'other' || e.type === 'alias') return e;
+        if (e.type === 'alias') return e;
+        // A note that is really a street address ("Belgrano 1234, Quilmes"
+        // saved without a keyword) is masked like one; other notes stay visible.
+        if (e.type === 'other') {
+            if (!looksLikeStreetAddress(e.value)) return e;
+            maskedCount++;
+            return { ...partialReveal({ ...e, type: 'address' }), type: 'other' };
+        }
         // Per-entry "sourced from a public channel" flag (v2.16.0-12+) —
         // unmasked even for non-privileged viewers. Distinct from
         // `adopterIsPublic`: this only exposes the entry that was itself
@@ -811,23 +809,18 @@ export function reachablePhoneForViewer(
 ): ReachablePhone | null {
     const options = access.maskOptions ?? {};
     const fullyVisible = !access.gatingOn || access.visibility.nothingMasked || !!options.adopterIsPublic;
-    const parsed = deserializeContactEntries(adopter.contactEntries ?? null);
-    const visible = fullyVisible
-        ? parsed
-        : maskContactEntries(
-            parsed.length > 0 ? parsed : parseBlobToContactEntries(adopter.contactInfo ?? null),
-            access.visibility,
-            options,
-        ).entries;
+    // A legacy row without entries is read as typed entries parsed from its blob.
+    const stored = deserializeContactEntries(adopter.contactEntries ?? null);
+    const parsed = stored.length > 0 ? stored : parseBlobToContactEntries(adopter.contactInfo ?? null);
+    const visible = fullyVisible ? parsed : maskContactEntries(parsed, access.visibility, options).entries;
     const phones = visible.filter(e => e.type === 'phone' && e.value && !e.masked);
     const tg = phones.find(e => e.apps?.includes('telegram') && !e.apps?.includes('whatsapp'));
     const wa = phones.find(e => e.apps?.includes('whatsapp')) || phones[0];
     if (wa) return { phone: wa.value, channel: 'whatsapp' };
     if (tg) return { phone: tg.value, channel: 'telegram' };
-    if (fullyVisible && adopter.contactInfo) {
-        const m = String(adopter.contactInfo).match(/\+?[\d][\d\s\-().]{7,}/);
-        if (m) return { phone: m[0], channel: 'whatsapp' };
-    }
+    // No blob fallback: a regex over the contact text offered a DNI, a Facebook
+    // id or an address number as a WhatsApp number. Only a phone entry is a phone
+    // (a legacy row without entries is parsed into typed entries above).
     return null;
 }
 
@@ -876,11 +869,13 @@ const MATCH_CARD_PHONE_MIN_DIGITS = 8;
 
 /** Same phone number: one digit string ends with the other (a +54 9 / area-code
  *  prefix may be present on one side only), with at least 8 digits compared. */
-function samePhoneNumber(a: string, b: string): boolean {
+function samePhoneNumber(a: string, b: string, country?: string | null): boolean {
     const da = a.replace(/\D/g, '');
     const db = b.replace(/\D/g, '');
     if (da.length < MATCH_CARD_PHONE_MIN_DIGITS || db.length < MATCH_CARD_PHONE_MIN_DIGITS) return false;
-    return da.length >= db.length ? da.endsWith(db) : db.endsWith(da);
+    // Read by country: "+54 9 11 6585-1333" and "1165851333" are the same number,
+    // "351 412-3456" and "341 412-3456" are not (their last 8 digits agree).
+    return samePhone(a, b, country);
 }
 
 /**
@@ -902,16 +897,17 @@ function samePhoneNumber(a: string, b: string): boolean {
 export function submissionUnlockHashes(
     entries: ContactEntry[],
     submitted: Array<string | null | undefined>,
+    country?: string | null,
 ): Set<string> {
     const out = new Set<string>();
     for (const raw of submitted) {
         const q = (raw ?? '').trim();
         if (!q) continue;
-        for (const m of matchSearchEntries(entries, q)) {
+        for (const m of matchSearchEntries(entries, q, { country })) {
             const e = m.entry;
             if (e.type === 'address') continue;
             const same = e.type === 'phone'
-                ? samePhoneNumber(e.value, q)
+                ? samePhoneNumber(e.value, q, country)
                 : hashEntryValue(e.type, q) === m.hash;
             if (same) out.add(m.hash);
         }

@@ -5,7 +5,7 @@ const base = { name: 'Juan Pérez', contactInfo: null, addressInfo: null, family
 
 describe('extractTokens — household members (household redesign v5)', () => {
     it("tokenizes a household member's name as name tokens (abuse-detection: relative's name)", () => {
-        const tokens = extractTokens(base, [], [], [], [
+        const tokens = extractTokens(base, [], [], [
             { name: 'María Gómez', contactEntries: [] },
         ]);
         expect(tokens.some(t => t.type === 'name_word' && t.value === 'maria')).toBe(true);
@@ -14,7 +14,7 @@ describe('extractTokens — household members (household redesign v5)', () => {
     });
 
     it("tokenizes a household member's phone (a shared household phone links records)", () => {
-        const tokens = extractTokens(base, [], [], [], [
+        const tokens = extractTokens(base, [], [], [
             { name: 'María', contactEntries: [{ type: 'phone', value: '11 2345-6789' }] },
         ]);
         expect(tokens.some(t => t.type === 'phone')).toBe(true);
@@ -22,7 +22,7 @@ describe('extractTokens — household members (household redesign v5)', () => {
     });
 
     it("emits dual social tokens for a household member's social (with platform)", () => {
-        const tokens = extractTokens(base, [], [], [], [
+        const tokens = extractTokens(base, [], [], [
             { name: 'María', contactEntries: [{ type: 'social', value: 'instagram.com/maria.g', platform: 'instagram' }] },
         ]);
         expect(tokens.some(t => t.type === 'social_handle' && t.value === 'maria.g')).toBe(true);
@@ -30,7 +30,7 @@ describe('extractTokens — household members (household redesign v5)', () => {
     });
 
     it("tokenizes a household member's email + id", () => {
-        const tokens = extractTokens(base, [], [], [], [
+        const tokens = extractTokens(base, [], [], [
             { name: '', contactEntries: [{ type: 'email', value: 'maria@example.com' }, { type: 'id', value: 'DNI 30123456' }] },
         ]);
         expect(tokens.some(t => t.type === 'email' && t.value === 'maria@example.com')).toBe(true);
@@ -43,7 +43,7 @@ describe('extractTokens — household members (household redesign v5)', () => {
 });
 
 describe('name_full weighting (v6) — a shared first name is not a full-name match', () => {
-    const of = (name: string) => extractTokens({ ...base, name }, [], [], [], []);
+    const of = (name: string) => extractTokens({ ...base, name }, [], [], []);
 
     it('does NOT emit name_full for a one-word name', () => {
         // Two records both called "Cristina" scored name_full(2) + name_word(1)

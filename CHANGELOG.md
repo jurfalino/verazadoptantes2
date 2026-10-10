@@ -2,6 +2,55 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.155] - 2026-10-10
+
+### Fixed — a phone typed in any format finds the person; nothing else is read as a phone
+
+"+54 9 11 6585 1333" found nobody for a record saved as "1165851333" — two
+rescuers got 0 results on 2026-10-09/10. The phone lookup asked whether a stored
+number CONTAINED the typed digits, which a number written with its country code
+never is, and the word-by-word fallback stopped at 20 rows, all taken by records
+containing "11".
+
+- **Numbers are read, not compared as digits** (`src/domain/phoneNumber.ts`,
+  Google's libphonenumber, metadata only): the record's country when indexing,
+  the rescuer's when searching. "+54 9 11 …", "011 15 …", "11-…" and "1165851333"
+  are one number; Córdoba 351 and Rosario 341 numbers with the same ending are
+  not. A number saved without an area code stays incomplete — nothing is
+  invented — and is found by its ending.
+- **Search:** a complete number, or a partial of 8+ digits that a stored number
+  ENDS with, is a main-list result; a 6–7 digit partial only reaches "Otras
+  posibles coincidencias"; under 6 digits looks nothing up. A country or area
+  code alone never matches. Phone-shaped queries skip the word-by-word search.
+- **DNI search:** an exact identity-number lookup, so "27.111.222" and
+  "27111222" both find the record (a digits-only search missed 43 of 75).
+- The same rule reveals a typed number on a protected record, and matches
+  adoption-form and contract applicants (`samePhone`).
+
+### Fixed — contact data indexed as the wrong type (audit 2026-10-10)
+
+The search index scanned the joined contact text and guessed types from digits.
+It now reads **typed entries only**, each by its own type's rules (titular and
+each household member):
+- Facebook profile ids, post links and TikTok video ids are no longer phones
+  (32 tokens on 24 records).
+- Links to a post, photo, share, group or reel are no longer social "profiles"
+  (`photo.php`, `share`… paired 11 records; all 22 pending social-only duplicate
+  suggestions came from this).
+- A household member's phone and DNI are indexed separately (all 5 were merged
+  into meaningless numbers).
+- Address entries are indexed by street and locality (907 entries never were).
+- The form/contract duplicate check matches the DNI as an id, not a phone.
+- Pasted or legacy contact text: digits inside a link never become a phone, and
+  "Belgrano 1234, Quilmes" without a keyword is an address; such a note is masked
+  like one.
+- WhatsApp is only offered for a phone entry, never a DNI or Facebook id.
+- An email ending in "_" before the @ no longer yields its domain as a handle.
+
+**After deploying:** run Scan in /admin/duplicates until no records are pending.
+The tokenizer version (v7) marks every record for re-indexing; until a record is
+re-indexed, search still finds its old-format phone.
+
 ## [2.56.154] - 2026-10-10
 
 ### Fixed — re-formatting a contact said «guardado» but kept the old value

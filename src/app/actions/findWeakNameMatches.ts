@@ -35,9 +35,11 @@ export async function findWeakNameMatches(
         const db = await getDb();
         if (!db) return { results: [] };
 
-        // Duplicate engine self-extracts phones/emails from the raw name blob.
+        // The raw query also goes in as contact text, which the duplicate engine
+        // parses into typed values — so a phone typed in the search still counts
+        // as a phone (and a URL in it does not).
         const dup = await findAdopters(
-            { name },
+            { name, contactInfo: name },
             { mode: 'duplicate', minRelevance: 15, limit: WEAK_LIMIT + excludeIds.length },
         );
         const exclude = new Set(excludeIds);

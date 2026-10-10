@@ -8,8 +8,7 @@ import { auth } from '@/auth';
 import { isAdminAsync } from '@/config/admins';
 import { logger } from '@/lib/logger';
 import { extractTokens, computeTokenHash } from '@/lib/tokenizer';
-import { deserializeContactEntries } from '@/lib/contactEntries';
-import { deserializeHouseholdMembers } from '@/lib/householdMembers';
+import { tokenInputsFor } from '@/lib/adopterTokenize';
 import { computeAvgRating } from '@/domain/ratings';
 import { getRequestContext } from '@/lib/requestContext';
 
@@ -198,6 +197,8 @@ export async function GET(request: Request) {
                 familyMembers: adopters.familyMembers,
                 householdMembers: adopters.householdMembers,
                 sourceUrl: adopters.sourceUrl,
+                contactEntries: adopters.contactEntries,
+                country: adopters.country,
                 tokenHash: adopters.tokenHash,
             }).from(adopters).where(isNull(adopters.deletedAt));
             for (const a of hashable) {
@@ -385,6 +386,7 @@ export async function POST(request: Request) {
                 familyMembers: adopters.familyMembers,
                 householdMembers: adopters.householdMembers,
                 sourceUrl: adopters.sourceUrl,
+                country: adopters.country,
                 tokenHash: adopters.tokenHash,
             })
                 .from(adopters)
@@ -443,14 +445,10 @@ export async function POST(request: Request) {
                 // Fetch adoptions for onBehalfOf
                 const adopterAdoptions = adoptionsByAdopter.get(adopter.id) ?? [];
 
-                // Aliases tokenize as name_words (see extractTokens docs); structured
-                // socials carry `platform` so the tokenizer emits `social`=`platform|handle`.
-                const entries = deserializeContactEntries(adopter.contactEntries);
-                const aliases = entries.filter(e => e.type === 'alias').map(e => e.value);
-                const socials = entries.filter(e => e.type === 'social').map(e => ({ value: e.value, platform: e.platform ?? null }));
-                const household = deserializeHouseholdMembers(adopter.householdMembers).map(m => ({ name: m.name, contactEntries: m.contactEntries }));
-
-                const tokens = extractTokens(adopter, adopterAdoptions, aliases, socials, household);
+                // Typed entries only (titular + each household member) — the same
+                // inputs save-time tokenizing uses (tokenInputsFor).
+                const { entries, household } = tokenInputsFor(adopter);
+                const tokens = extractTokens(adopter, adopterAdoptions, entries, household);
 
                 // Replace tokens. ONE multi-row insert, not one per token: at ~6
                 // tokens per record that is the difference between ~8 and ~3 D1

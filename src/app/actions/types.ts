@@ -119,12 +119,16 @@ export interface FindAdoptersInput {
     name?: string;
     /** Free-text contact block — phones/emails/socials extracted if structured fields absent. */
     contactInfo?: string;
-    /** Pre-parsed phone digit strings. Skips extraction from contactInfo when supplied. */
+    /** Phone values as typed (any format). Skips extraction from contactInfo when supplied. */
     phones?: string[];
     /** Pre-parsed email addresses. Skips extraction from contactInfo when supplied. */
     emails?: string[];
     /** Pre-parsed social handles. Skips extraction from contactInfo when supplied. */
     socials?: string[];
+    /** Identity numbers (DNI, CUIT, …) — matched against `id_number`, never as phones. */
+    ids?: string[];
+    /** Country (ISO alpha-2) the phones are read with; defaults to Argentina. */
+    country?: string | null;
     /** Alias ("aka") names — contactEntries type='alias' values. Tokenised as name_full + name_word, exactly like `name`. */
     aliases?: string[];
     /** Family / household members (free text). Tokenised as name_full + name_word, exactly like `name`. */

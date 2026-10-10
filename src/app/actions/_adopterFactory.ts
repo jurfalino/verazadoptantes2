@@ -218,21 +218,18 @@ export async function createAdopterFromSubmission(
     let dupCandidates: DupCandidateSummary[] = [];
     try {
         const { findAdopters } = await import('@/app/actions/findAdopters');
-        const { extractPhones, extractEmails, extractSocials } = await import('@/lib/tokenizer');
-
-        const phones = input.phone ? extractPhones(input.phone) : [];
-        // Mirror the contract-submit semantic: DNI / Documento digits are
-        // appended to phones because the duplicate matcher historically
-        // treats them as phone-style tokens.
-        if (input.documentId) {
-            const digits = input.documentId.replace(/\D/g, '');
-            if (digits.length >= 5) phones.push(digits);
-        }
+        const { extractEmails, extractSocials } = await import('@/lib/tokenizer');
 
         const dupResult = await findAdopters(
             {
                 name: trimmedName,
-                phones,
+                // The phone as typed — the matcher reads it by country, so a
+                // "+54 9 11 …" applicant finds a record saved as "11 …".
+                phones: input.phone?.trim() ? [input.phone.trim()] : [],
+                // The DNI is matched as an identity number. It used to be pushed
+                // into `phones`, so it was probed as a phone and never against
+                // the id index — a returning applicant's DNI found nobody.
+                ids: input.documentId?.trim() ? [input.documentId.trim()] : [],
                 emails: input.email ? extractEmails(input.email) : [],
                 socials: input.socials ? extractSocials(input.socials) : [],
                 excludeAdopterId: adopterId,
