@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.149] - 2026-10-09
+
+### Fixed — signing in from Instagram/Facebook links
+
+Google refuses sign-in inside the browser built into Instagram and Facebook,
+so a visitor who opened BuenAdoptante from an Instagram link and tapped
+«Continuar con Google» was stopped on Google's side with nothing on ours
+(3 of 3 Instagram-Android attempts in 60 days, including 2026-10-08).
+
+- **Android, inside Instagram/Facebook:** the Google button («Se abre en
+  Chrome») reopens the same page in Chrome, which goes straight to Google
+  and lands back where the visitor was — also when they were heading to a
+  members-only page.
+- **If the app won't let the page out:** the email code takes over («No
+  pudimos abrir Chrome. Entrá con un código…»).
+- **iPhone, inside Instagram/Facebook:** the login box leads with the email
+  code; Google stays underneath.
+- **Email code:** survives the app reloading the page while the visitor
+  reads their mail (comes back on the code step); its errors now show an
+  error code.
+- **Diagnosis:** every Google sign-in start is logged with the browser it
+  came from; PostHog gets hand-off attempt/arrival events.
+
 ## [2.56.148] - 2026-10-05
 
 ### Fixed — interview-guide e2e waits for the page on slow CI servers
