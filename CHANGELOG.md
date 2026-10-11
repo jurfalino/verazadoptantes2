@@ -2,6 +2,32 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.157] - 2026-10-11
+
+### Fixed — three issues the pre-production review found in 2.56.155
+
+- **Scan no longer pairs records on common address words.** 2.56.155 started
+  indexing address entries, and Scan pairs any two records sharing two address
+  words — "villa" is on 95 records, "caba" on 41 — so a Scan would have rebuilt
+  the queue with ~2,000 suggestions for people who merely live in the same area.
+  An address word shared by more than 5 records now pairs nobody, the same rule
+  social handles already had above 8 (`src/domain/duplicatePairing.ts`).
+- **A long number that is not a phone never matches one.** A microchip, a CUIT
+  or a typo with more than 8 digits (after dialling prefixes) was cut to its last
+  8 and treated as a strong phone match — which also revealed the phone and name
+  of whoever's number ended in those digits. Such a reading is now marked
+  `overlong`: a search never looks it up, it never reveals a stored number, and a
+  stored one never proves a match on form/contract cards. Digit runs are no
+  longer pulled out of a single word either, so the DNI inside a CUIT is not
+  searched as a phone. (7 production phone fields are over-long; they stay
+  findable by their ending, but never reveal.)
+- **Inland "15" mobiles keep all their digits.** "15 456-7890" (a 7-digit local
+  number) was read as "54567890"; the "15" now comes off whenever a 6–7 or 8 digit
+  local number follows. 4 production fields read correctly again.
+
+Scan is still not to be run in production until its own failure (stuck in
+`error` since 2026-09-03) is understood.
+
 ## [2.56.156] - 2026-10-11
 
 ### Fixed — a phone field holding two numbers indexes both again
