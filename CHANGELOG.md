@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.156] - 2026-10-11
+
+### Fixed — a phone field holding two numbers indexes both again
+
+2.56.155 read each phone field as one number, so a field like
+"2002-4040 / 15-4156-3909" glued both into one long string and only the last
+number stayed searchable (4 of 1,082 production fields; the old index read
+both). `readPhones` (src/domain/phoneNumber.ts) now splits a field at "/", ",",
+";", "|" or a standalone "o"/"y" when that finds two or more numbers, and reads
+each — for the index, the duplicate check, the reveal-on-typed-number check and
+form/contract matching. A single number is never split ("11, 4455-6677",
+"Casa o trabajo 11 4790 2355"), and only dialling characters reach the parser,
+so a comma or a word next to a number no longer cuts it short. Checked against
+every production phone field: exactly those 4 now yield two numbers; no
+single-number field is read differently.
+
 ## [2.56.155] - 2026-10-10
 
 ### Fixed — a phone typed in any format finds the person; nothing else is read as a phone

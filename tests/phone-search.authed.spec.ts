@@ -4,7 +4,7 @@ import { dismissCountryBanner } from './helpers';
 import { phoneIndexTokens } from '../src/domain/phoneNumber';
 
 /**
- * Phone and DNI search (2.56.155). A rescuer types a number in whatever format
+ * Phone and DNI search (2.56.155; two numbers in one field 2.56.156). A rescuer types a number in whatever format
  * they have it; the record must come up in the MAIN list, and never on a
  * country/area code alone or on digits that are not a phone.
  *
@@ -19,6 +19,7 @@ const FULL = 'test-phonesearch-fixture-full';   // saved as "11 4455-6677"
 const LOCAL = 'test-phonesearch-fixture-local'; // saved as "5566-7788" (no area code)
 const DNI = 'test-phonesearch-fixture-dni';     // DNI 27.111.222, no phone
 const FB = 'test-phonesearch-fixture-fb';       // only a Facebook profile link
+const MULTI = 'test-phonesearch-fixture-multi'; // two numbers in one phone field
 
 function execD1(sql: string): string {
     return execSync(
@@ -43,7 +44,7 @@ function insertAdopter(id: string, name: string, entries: Array<{ type: string; 
 }
 
 function cleanup() {
-    for (const id of [FULL, LOCAL, DNI, FB]) {
+    for (const id of [FULL, LOCAL, DNI, FB, MULTI]) {
         execD1(`DELETE FROM duplicate_tokens WHERE adopter_id=${q(id)}`);
         execD1(`DELETE FROM adopters WHERE id=${q(id)}`);
     }
@@ -69,6 +70,7 @@ test.describe('phone and DNI search', () => {
         insertAdopter(DNI, 'Fixture Documento', [{ type: 'id', value: '27.111.222' }], [{ type: 'id_number', value: '27111222' }]);
         insertAdopter(FB, 'Fixture Facebook', [{ type: 'social', value: 'https://www.facebook.com/profile.php?id=1300000006' }],
             [{ type: 'social_handle', value: 'id:1300000006' }, { type: 'social', value: 'facebook|id:1300000006' }]);
+        insertAdopter(MULTI, 'Fixture Dos Telefonos', [{ type: 'phone', value: '3003-5050 / 15-5252-6363' }], phoneIndexTokens('3003-5050 / 15-5252-6363', 'AR'));
     });
     test.afterAll(cleanup);
 
@@ -99,6 +101,13 @@ test.describe('phone and DNI search', () => {
     test('country and area code alone match nothing', async ({ page }) => {
         await search(page, '+54 11 44');
         await expect(anyCard(page, FULL)).toHaveCount(0);
+    });
+
+    test('either number of a field holding two is found (2.56.156)', async ({ page }) => {
+        for (const typed of ['3003 5050', '+54 9 11 5252-6363']) {
+            await search(page, typed);
+            await expect(mainCard(page, MULTI)).toBeVisible({ timeout: 30000 });
+        }
     });
 
     test('a DNI is found in any format', async ({ page }) => {

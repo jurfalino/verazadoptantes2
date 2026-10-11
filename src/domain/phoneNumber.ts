@@ -76,7 +76,10 @@ export function readPhone(value: string, country?: string | null): ReadPhone | n
     if (digits.length < MIN_LOCAL_DIGITS || isPlaceholderPhone(digits)) return null;
     const cc = region(country);
 
-    const parsed = parsePhoneNumberFromString(value, cc);
+    // Only dialling characters reach the parser: a comma, a word ("Cel:",
+    // "Trabajo") or an "x" makes it stop early or read an extension.
+    const dialable = value.replace(/[^\d+()\-.\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    const parsed = parsePhoneNumberFromString(dialable, cc);
     if (parsed && parsed.isValid()) {
         let national = String(parsed.nationalNumber);
         const calling = String(parsed.countryCallingCode);
@@ -88,6 +91,32 @@ export function readPhone(value: string, country?: string | null): ReadPhone | n
     if (local.length < MIN_LOCAL_DIGITS || isPlaceholderPhone(local)) return null;
     if (local.length > MAX_LOCAL_DIGITS) local = local.slice(-MAX_LOCAL_DIGITS);
     return { kind: 'incomplete', local };
+}
+
+/**
+ * Where one phone field holds more than one number: "2002-4040 / 15-4156-3909",
+ * "4793 8772 o 15 5 1313527", "cel es 156-943-1480.y el d mi casa es 4738-5524".
+ * The separators are a slash, comma, semicolon or pipe, or the words "o"/"y"
+ * standing alone (also right after a period).
+ */
+const MULTI_NUMBER_SEPARATOR = /\s*[\/,;|]\s*|(?:\s+|\.)(?:o|y)\s+/i;
+
+/**
+ * Every number in one phone field. When splitting at the separators finds two
+ * or more numbers, each is read on its own — read whole, their digits would
+ * glue into one long number and only the last would survive. Otherwise the
+ * field is read whole ("011 15 6585-1333", "Casa o trabajo 11 4790 2355").
+ */
+export function readPhones(value: string, country?: string | null): ReadPhone[] {
+    const parts = (value || '').split(MULTI_NUMBER_SEPARATOR).map(p => p.trim()).filter(Boolean);
+    const read = parts.length > 1
+        ? parts.map(p => readPhone(p, country)).filter((r): r is ReadPhone => r !== null)
+        : [];
+    // Split only when it really finds several numbers — "11, 4455-6677" is one
+    // number with a stray comma, and splitting it would drop its area code.
+    if (read.length >= 2) return read;
+    const whole = readPhone(value, country);
+    return whole ? [whole] : read;
 }
 
 /** The endings of a national number that a local-only record could have been saved as. */
@@ -106,11 +135,12 @@ export type PhoneToken = { type: 'phone' | 'phone_suffix'; value: string };
  *   incomplete → `phone` = local digits.
  */
 export function phoneIndexTokens(value: string, country?: string | null): PhoneToken[] {
-    const r = readPhone(value, country);
-    if (!r) return [];
-    if (r.kind === 'incomplete') return [{ type: 'phone', value: r.local }];
-    const out: PhoneToken[] = [{ type: 'phone', value: r.key }];
-    if (r.national.length >= MIN_NATIONAL_FOR_SUFFIX) out.push({ type: 'phone_suffix', value: r.national.slice(-8) });
+    const out: PhoneToken[] = [];
+    for (const r of readPhones(value, country)) {
+        if (r.kind === 'incomplete') { out.push({ type: 'phone', value: r.local }); continue; }
+        out.push({ type: 'phone', value: r.key });
+        if (r.national.length >= MIN_NATIONAL_FOR_SUFFIX) out.push({ type: 'phone_suffix', value: r.national.slice(-8) });
+    }
     return out;
 }
 
@@ -119,16 +149,17 @@ export function phoneIndexTokens(value: string, country?: string | null): PhoneT
  * Mirrors `phoneIndexTokens`, plus the endings a local-only stored record could hold.
  */
 export function phoneDuplicateTokens(value: string, country?: string | null): PhoneToken[] {
-    const r = readPhone(value, country);
-    if (!r) return [];
-    if (r.kind === 'incomplete') {
-        const out: PhoneToken[] = [{ type: 'phone', value: r.local }];
-        if (r.local.length === 8) out.push({ type: 'phone_suffix', value: r.local });
-        return out;
+    const out: PhoneToken[] = [];
+    for (const r of readPhones(value, country)) {
+        if (r.kind === 'incomplete') {
+            out.push({ type: 'phone', value: r.local });
+            if (r.local.length === 8) out.push({ type: 'phone_suffix', value: r.local });
+            continue;
+        }
+        out.push({ type: 'phone', value: r.key });
+        if (r.national.length >= MIN_NATIONAL_FOR_SUFFIX) out.push({ type: 'phone_suffix', value: r.national.slice(-8) });
+        for (const end of localEndings(r.national)) out.push({ type: 'phone', value: end });
     }
-    const out: PhoneToken[] = [{ type: 'phone', value: r.key }];
-    if (r.national.length >= MIN_NATIONAL_FOR_SUFFIX) out.push({ type: 'phone_suffix', value: r.national.slice(-8) });
-    for (const end of localEndings(r.national)) out.push({ type: 'phone', value: end });
     return out;
 }
 
@@ -196,18 +227,19 @@ export function phoneQueryPlan(query: string, country: string | null | undefined
  */
 export function phoneMatchesQuery(entryValue: string, query: string, country: string | null | undefined, minDigits: number): boolean {
     const plan = phoneQueryPlan(query, country, minDigits);
-    const r = readPhone(entryValue, country);
-    if (!plan || !r) return false;
-    const stored = r.kind === 'complete' ? r.key : r.local;
-    if (plan.exact.includes(stored)) return true;
-    return plan.endsWith.some(e => stored.endsWith(e.digits));
+    if (!plan) return false;
+    return readPhones(entryValue, country).some(r => {
+        const stored = r.kind === 'complete' ? r.key : r.local;
+        return plan.exact.includes(stored) || plan.endsWith.some(e => stored.endsWith(e.digits));
+    });
 }
 
 /** Two phone values are the same number (both read with the same country). */
 export function samePhone(a: string, b: string, country?: string | null): boolean {
-    const ra = readPhone(a, country);
-    const rb = readPhone(b, country);
-    if (!ra || !rb) return false;
+    return readPhones(a, country).some(ra => readPhones(b, country).some(rb => sameReadPhone(ra, rb)));
+}
+
+function sameReadPhone(ra: ReadPhone, rb: ReadPhone): boolean {
     if (ra.kind === 'complete' && rb.kind === 'complete') return ra.key === rb.key;
     if (ra.kind === 'complete' && rb.kind === 'incomplete') return ra.national.endsWith(rb.local);
     if (ra.kind === 'incomplete' && rb.kind === 'complete') return rb.national.endsWith(ra.local);

@@ -114,3 +114,29 @@ describe('phoneDuplicateTokens / samePhone', () => {
         expect(samePhone('351 412-3456', '341 412-3456', 'AR')).toBe(false);
     });
 });
+
+describe('one phone field holding several numbers (the 4 production shapes)', () => {
+    it.each([
+        ['2002-4040 / 15-4156-3909', ['phone:20024040', 'phone:41563909']],
+        ['15 6539 4605 / 4765 3008', ['phone:65394605', 'phone:47653008']],
+        ['4793 8772 o 15 5 1313527', ['phone:47938772', 'phone:51313527']],
+        ['cel es 156-943-1480.y el d mi casa es 4738-5524', ['phone:69431480', 'phone:47385524']],
+    ])('%s → each number indexed', (value, expected) => {
+        expect(phoneIndexTokens(value, 'AR').map(t => `${t.type}:${t.value}`)).toEqual(expect.arrayContaining(expected));
+    });
+
+    it('a search for either number reveals the field', () => {
+        expect(phoneMatchesQuery('2002-4040 / 15-4156-3909', '2002-4040', 'AR', MIN)).toBe(true);
+        expect(phoneMatchesQuery('2002-4040 / 15-4156-3909', '11 4156-3909', 'AR', MIN)).toBe(true);
+    });
+
+    it('a single number is never split', () => {
+        expect(phoneIndexTokens('011 15 6585-1333', 'AR')[0]).toEqual({ type: 'phone', value: '541165851333' });
+        expect(phoneIndexTokens('11, 4455-6677', 'AR')[0]).toEqual({ type: 'phone', value: '541144556677' });
+        expect(phoneIndexTokens('Casa o trabajo 11 4790 2355', 'AR')[0]).toEqual({ type: 'phone', value: '541147902355' });
+    });
+
+    it('samePhone matches either number in the field', () => {
+        expect(samePhone('4793 8772 o 15 5 1313527', '15-5131-3527', 'AR')).toBe(true);
+    });
+});
