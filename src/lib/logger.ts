@@ -10,6 +10,22 @@
 import { getRequestContext } from '@/lib/requestContext';
 
 // Generate short unique error ID (8 chars)
+/**
+ * The `cause` chain of an error, as name + message (no stacks, at most 3 deep).
+ * Drizzle wraps every D1 failure as "Failed query: …" and puts the database's
+ * own reason in `cause` — without it a failed duplicate Scan (2026-10-10,
+ * errorId 60d0dc35) was logged with the SQL but not why D1 rejected it.
+ */
+export function causeChain(error: Error): { cause?: Array<{ name: string; message: string }> } {
+    const chain: Array<{ name: string; message: string }> = [];
+    let c: unknown = (error as { cause?: unknown }).cause;
+    while (c && chain.length < 3) {
+        chain.push(c instanceof Error ? { name: c.name, message: c.message } : { name: 'Unknown', message: String(c) });
+        c = c instanceof Error ? (c as { cause?: unknown }).cause : undefined;
+    }
+    return chain.length ? { cause: chain } : {};
+}
+
 export function generateErrorId(): string {
     return crypto.randomUUID().slice(0, 8);
 }
@@ -28,6 +44,8 @@ interface LogEntry {
         name: string;
         message: string;
         stack?: string;
+        /** The underlying error's chain (`error.cause`), outermost first. */
+        cause?: Array<{ name: string; message: string }>;
     };
     [key: string]: unknown;
 }
@@ -258,7 +276,8 @@ export const logger = {
             entry.error = {
                 name: error.name,
                 message: error.message,
-                stack: error.stack
+                stack: error.stack,
+                ...causeChain(error),
             };
         } else if (error) {
             entry.error = {
