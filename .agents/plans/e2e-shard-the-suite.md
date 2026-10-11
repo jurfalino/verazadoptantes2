@@ -1,8 +1,10 @@
 # Shard the e2e suite
 
-> Status: PROPOSED (2026-10-03). Not started. Schedule as its own piece of
-> work — the risky part is the test coupling it exposes, and that is not
-> something to discover while a release is waiting.
+> Status: IMPLEMENTED (v2.56.131, file-level shards: `user` ×2, `authed` ×4,
+> `rest` ×1). 2026-10-11: `user` raised to ×3 — user-1 (~36 tests, ~9 min)
+> still reached the memory ceiling and failed four pipelines in a row on the
+> same test. If a leg starts restarting again, split that leg further; the
+> sections below are the original proposal, kept for the reasoning.
 
 ## The problem, measured
 
