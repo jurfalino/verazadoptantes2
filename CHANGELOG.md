@@ -2,6 +2,32 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.158] - 2026-10-11
+
+### Changed — a shared street is not a shared address
+
+Since 2.56.155 indexes address entries, Scan's address rule (two shared address
+words = 25 points, "medium") ran on real data for the first time. A simulated
+production Scan put 48 pairs in the medium tier — shown to rescuers — for
+sharing only a street name and a town, no house number. Address words now count
+as a real shared address (medium) only when the house number is among them;
+otherwise the pair is low. Scan scoring moved to `scorePair` /
+`confidenceOf` in `src/domain/duplicatePairing.ts`, with tests.
+
+Simulated against production data, a Scan would now leave 618 suggestions
+(6 high, 7 medium, 605 low) instead of today's 637 (4 / 117 / 516). The medium
+drop is mostly intended removals: 94 pairs sharing only one first name (the v6
+rule, never re-applied), 22 pairs from Facebook photo/share links, and 14 rows
+pointing at deleted records.
+
+### Fixed — error logs keep the database's reason
+
+`logger.error` now records the error's `cause` chain. Drizzle wraps every D1
+failure as "Failed query: …" and puts D1's own message in `cause`, so the one
+failed production Scan (2026-10-10, errorId 60d0dc35) showed the SQL but not why
+it failed. It was a single transient failure on one record, which has saved
+fine since; Scan itself works (staging ran it to completion).
+
 ## [2.56.157] - 2026-10-11
 
 ### Fixed — three issues the pre-production review found in 2.56.155

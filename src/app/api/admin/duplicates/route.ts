@@ -9,7 +9,7 @@ import { isAdminAsync } from '@/config/admins';
 import { logger } from '@/lib/logger';
 import { extractTokens, computeTokenHash } from '@/lib/tokenizer';
 import { tokenInputsFor } from '@/lib/adopterTokenize';
-import { pairsOnSharedToken } from '@/domain/duplicatePairing';
+import { pairsOnSharedToken, scorePair, confidenceOf } from '@/domain/duplicatePairing';
 import { computeAvgRating } from '@/domain/ratings';
 import { getRequestContext } from '@/lib/requestContext';
 
@@ -550,15 +550,6 @@ export async function POST(request: Request) {
             }
 
             // Step 5: Score pairs
-            const SCORE_MAP: Record<string, number> = {
-                source_url: 100,
-                phone: 50,
-                email: 50,
-                social: 40,
-                name_full: 30,
-                address_word: 25,  // only if 2+ words shared
-                name_word: 20,     // only if 2+ words shared
-            };
 
             let newCandidates = 0;
 
@@ -596,24 +587,14 @@ export async function POST(request: Request) {
             for (const [pairKey, signal] of pairSignals) {
                 if (dismissedKeys.has(pairKey)) continue;
 
-                let score = 0;
+                // Weights and the address rule live in scorePair
+                // (src/domain/duplicatePairing.ts).
+                const score = scorePair(signal.values);
                 const types = Array.from(signal.types);
-
-                for (const type of types) {
-                    const count = signal.values[type]?.length || 0;
-                    if (type === 'name_word') {
-                        score += count >= 2 ? SCORE_MAP.name_word : 5; // 1 word = 5pts
-                    } else if (type === 'address_word') {
-                        if (count >= 2) score += SCORE_MAP.address_word;
-                        // 1 address word = 0pts (too noisy)
-                    } else {
-                        score += SCORE_MAP[type] || 0;
-                    }
-                }
 
                 if (score < 10) continue; // Below threshold
 
-                const confidence = score >= 50 ? 'high' : score >= 25 ? 'medium' : 'low';
+                const confidence = confidenceOf(score);
                 const [id1, id2] = pairKey.split('|');
 
                 // Collected, not inserted one at a time — see the chunked write
