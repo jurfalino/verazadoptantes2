@@ -9,6 +9,7 @@ import { isAdminAsync } from '@/config/admins';
 import { logger } from '@/lib/logger';
 import { extractTokens, computeTokenHash } from '@/lib/tokenizer';
 import { tokenInputsFor } from '@/lib/adopterTokenize';
+import { pairsOnSharedToken } from '@/domain/duplicatePairing';
 import { computeAvgRating } from '@/domain/ratings';
 import { getRequestContext } from '@/lib/requestContext';
 
@@ -498,11 +499,9 @@ export async function POST(request: Request) {
                 });
             }
 
-            // A social handle shared by more than this many adopters is almost
-            // certainly a shared/rescuer contact mis-entered across records (not a
-            // real duplicate). Skip pair generation for it — otherwise one handle on
-            // N records spawns C(N,2) false candidates. See dedup spec §4 (#3-revised).
-            const SHARED_SOCIAL_HANDLE_CAP = 8;
+            // A social handle or address word shared by many records pairs nobody
+            // (a rescuer's contact pasted across imports; a place like "villa").
+            // See pairsOnSharedToken (src/domain/duplicatePairing.ts).
             let skippedSharedHandles = 0;
 
             // Step 3: Find shared tokens (GROUP BY)
@@ -520,8 +519,7 @@ export async function POST(request: Request) {
             const pairSignals = new Map<string, { types: Set<string>; values: Record<string, string[]>; }>();
 
             for (const row of sharedTokens) {
-                // Rescuer/shared social handle on many records → skip (spec §4).
-                if ((row.tokenType === 'social' || row.tokenType === 'social_handle') && row.count > SHARED_SOCIAL_HANDLE_CAP) {
+                if (!pairsOnSharedToken(row.tokenType, row.count)) {
                     skippedSharedHandles++;
                     continue;
                 }

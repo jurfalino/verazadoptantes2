@@ -140,3 +140,30 @@ describe('one phone field holding several numbers (the 4 production shapes)', ()
         expect(samePhone('4793 8772 o 15 5 1313527', '15-5131-3527', 'AR')).toBe(true);
     });
 });
+
+describe('review 2026-10-11 follow-ups', () => {
+    it('inland "15" + 7-digit local number keeps all 7 digits', () => {
+        expect(readPhone('15 456-7890', 'AR')).toEqual({ kind: 'incomplete', local: '4567890' });
+        expect(phoneMatchesQuery('15 456-7890', '456-7890', 'AR', MIN)).toBe(true);
+    });
+
+    it('a number written without its "+" is still complete', () => {
+        expect(readPhone('5491165851333', 'AR')).toMatchObject({ kind: 'complete', key: '541165851333' });
+    });
+
+    it('a long non-phone number (microchip, CUIT, typo) is never looked up', () => {
+        expect(phoneQueryPlan('982012345678901', 'AR', MIN)).toBeNull();   // 15-digit microchip
+        expect(phoneQueryPlan('20-30123456-7', 'AR', MIN)).toBeNull();     // CUIT
+        expect(phoneQueryPlan('265851333', 'AR', MIN)).toBeNull();         // a typo, 9 digits
+    });
+
+    it('…and never reveals a stored phone that shares its last 8 digits', () => {
+        expect(phoneMatchesQuery('1165851333', '265851333', 'AR', MIN)).toBe(false);
+        expect(phoneMatchesQuery('11 2345-6789', '982012323456789', 'AR', MIN)).toBe(false);
+    });
+
+    it('a stored over-long value never proves a match', () => {
+        expect(phoneMatchesQuery('982012365851333', '11 6585 1333', 'AR', MIN)).toBe(false);
+        expect(samePhone('982012365851333', '11 6585 1333', 'AR')).toBe(false);
+    });
+});

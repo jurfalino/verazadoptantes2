@@ -47,7 +47,14 @@ export function isPlaceholderPhone(digits: string): boolean {
 
 export type ReadPhone =
     | { kind: 'complete'; key: string; national: string }
-    | { kind: 'incomplete'; local: string };
+    /**
+     * `overlong`: more than 8 digits even after dialling prefixes came off, so
+     * it is not a local number — a typo, a microchip, a CUIT. Only its last 8
+     * digits are kept, which is a guess: a search never looks it up and it
+     * never proves a match (review 2026-10-11 — a 15-digit chip number revealed
+     * the phone and name of whoever's number ended in its last 8 digits).
+     */
+    | { kind: 'incomplete'; local: string; overlong?: boolean };
 
 function region(country: string | null | undefined): CountryCode {
     const c = (country || '').trim().toUpperCase();
@@ -63,7 +70,9 @@ function localDigits(value: string, country: CountryCode): string {
             d = d.replace(/^0{0,2}54/, '').replace(/^9/, '');
         }
         d = d.replace(/^0/, '');                       // trunk prefix
-        if (d.length === 10 && d.startsWith('15')) d = d.slice(2); // old "15-xxxx-xxxx"
+        // The old "15" mobile prefix in front of a local number: 8 digits in
+        // Buenos Aires ("15-6585-1333"), 6–7 inland ("15 456-7890").
+        if ((d.length === 9 || d.length === 10) && d.startsWith('15')) d = d.slice(2);
     } else {
         d = d.replace(/^0/, '');
     }
@@ -87,9 +96,9 @@ export function readPhone(value: string, country?: string | null): ReadPhone | n
         return { kind: 'complete', key: calling + national, national };
     }
 
-    let local = localDigits(value, cc);
+    const local = localDigits(value, cc);
     if (local.length < MIN_LOCAL_DIGITS || isPlaceholderPhone(local)) return null;
-    if (local.length > MAX_LOCAL_DIGITS) local = local.slice(-MAX_LOCAL_DIGITS);
+    if (local.length > MAX_LOCAL_DIGITS) return { kind: 'incomplete', local: local.slice(-MAX_LOCAL_DIGITS), overlong: true };
     return { kind: 'incomplete', local };
 }
 
@@ -196,8 +205,10 @@ export function phoneQueryPlan(query: string, country: string | null | undefined
     if (wholeIsOneNumber) {
         candidates.add(whole);
     } else {
+        // Space-separated words only. Digit runs are not pulled out of a single
+        // word: the middle of a CUIT ("20-30123456-7") is a DNI, and the tail of
+        // a microchip number is nobody's phone.
         for (const piece of whole.split(/\s+/)) if (enough(piece)) candidates.add(piece);
-        for (const run of whole.match(new RegExp(`\\+?\\d{${minDigits},}`, 'g')) ?? []) candidates.add(run);
     }
 
     const exact = new Set<string>();
@@ -212,7 +223,7 @@ export function phoneQueryPlan(query: string, country: string | null | undefined
             exact.add(r.national);
             if (r.key.startsWith('54')) { exact.add(`549${r.national}`); exact.add(`0${r.national}`); }
             for (const end of localEndings(r.national)) exact.add(end);
-        } else if (r.local.length >= minDigits) {
+        } else if (!r.overlong && r.local.length >= minDigits) {
             endsWith.set(r.local, (endsWith.get(r.local) ?? false) || r.local.length >= STRONG_PARTIAL_DIGITS);
         }
     }
@@ -229,6 +240,7 @@ export function phoneMatchesQuery(entryValue: string, query: string, country: st
     const plan = phoneQueryPlan(query, country, minDigits);
     if (!plan) return false;
     return readPhones(entryValue, country).some(r => {
+        if (r.kind === 'incomplete' && r.overlong) return false;
         const stored = r.kind === 'complete' ? r.key : r.local;
         return plan.exact.includes(stored) || plan.endsWith.some(e => stored.endsWith(e.digits));
     });
@@ -240,6 +252,7 @@ export function samePhone(a: string, b: string, country?: string | null): boolea
 }
 
 function sameReadPhone(ra: ReadPhone, rb: ReadPhone): boolean {
+    if ((ra.kind === 'incomplete' && ra.overlong) || (rb.kind === 'incomplete' && rb.overlong)) return false;
     if (ra.kind === 'complete' && rb.kind === 'complete') return ra.key === rb.key;
     if (ra.kind === 'complete' && rb.kind === 'incomplete') return ra.national.endsWith(rb.local);
     if (ra.kind === 'incomplete' && rb.kind === 'complete') return rb.national.endsWith(ra.local);
