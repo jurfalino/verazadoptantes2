@@ -84,8 +84,9 @@ function buildInput(type: ContactEntryType, value: string, excludeAdopterId?: st
         case 'social':
             return { socials: [v.toLowerCase()], excludeAdopterId };
         case 'id':
-            // No structured `ids` input; pass via contactInfo so the extractor picks it up.
-            return { contactInfo: v, excludeAdopterId };
+            // As an identity number: through contactInfo an unlabeled DNI was read
+            // as a phone and never reached the id index.
+            return { ids: [v], excludeAdopterId };
         default:
             return null;
     }

@@ -134,6 +134,33 @@ describe('contact entries — concurrent edits', () => {
         expect(res.ok).toBe(true);
     });
 
+    // Production 2026-10-10: a reformat came back «guardado» four times and never
+    // landed — the no-op check compared the digits-only hash, not the value.
+    it('reformatting a phone (same digits) is saved, not dropped as a no-op', async () => {
+        const res = await updateContactEntry({ adopterId: ID, entryId: 'e-phone', value: '11 5555-1111', expectedValue: '1155551111' });
+        expect(res.ok).toBe(true);
+        expect(valueOf('e-phone')).toBe('11 5555-1111');
+        expect(historyCount()).toBe(1);
+    });
+
+    it('turning on WhatsApp for an unchanged number is saved', async () => {
+        await updateContactEntry({ adopterId: ID, entryId: 'e-phone', value: '1155551111', apps: ['whatsapp'], expectedValue: '1155551111' } as Parameters<typeof updateContactEntry>[0]);
+        expect((entries().find(e => e.id === 'e-phone') as { apps?: string[] }).apps).toEqual(['whatsapp']);
+    });
+
+    it('turning off the last messaging app is saved', async () => {
+        setEntries([{ ...ENTRIES[0], apps: ['whatsapp'] }, ENTRIES[1]]);
+        await updateContactEntry({ adopterId: ID, entryId: 'e-phone', value: '1155551111', apps: [], expectedValue: '1155551111' } as Parameters<typeof updateContactEntry>[0]);
+        expect((entries().find(e => e.id === 'e-phone') as { apps?: string[] }).apps).toBeUndefined();
+    });
+
+    it('saving exactly what is stored writes nothing', async () => {
+        const res = await updateContactEntry({ adopterId: ID, entryId: 'e-phone', value: '1155551111', expectedValue: '1155551111' });
+        expect(res.ok).toBe(true);
+        expect(historyCount()).toBe(0);
+        expect(tokenize.calls).toBe(0);
+    });
+
     it('editing or removing an entry a teammate deleted: «ya no existe», with their name', async () => {
         await as(MATE, () => removeContactEntry({ adopterId: ID, entryId: 'e-mail', expectedValue: 'carla@example.com' }));
         const upd = await updateContactEntry({ adopterId: ID, entryId: 'e-mail', value: 'x@example.com', expectedValue: 'carla@example.com' });

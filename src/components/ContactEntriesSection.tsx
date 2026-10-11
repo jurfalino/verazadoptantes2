@@ -524,7 +524,9 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                     streetAndNumber: editDraft.streetAndNumber.trim() || undefined,
                     locality: editDraft.locality.trim() || undefined,
                 }
-                : { adopterId: adopterId!, entryId: entry.id, value: editDraft.value.trim(), ...(editPlatform ? { platform: editPlatform } : {}), ...(editApps.length ? { apps: editApps } : {}) };
+                // A phone always sends its apps — even none — or switching the last
+                // one off would read as "keep what's stored" on the server.
+                : { adopterId: adopterId!, entryId: entry.id, value: editDraft.value.trim(), ...(editPlatform ? { platform: editPlatform } : {}), ...(effType === 'phone' ? { apps: editApps } : {}) };
             // What this person saw: a teammate's change since then is refused, not overwritten.
             payload.expectedValue = entry.value;
             const res = await updateContactEntry(payload);

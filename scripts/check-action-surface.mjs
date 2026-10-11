@@ -200,7 +200,11 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // it becomes 155 when Task 13 imports it.
 // Task 13: completeInterview became wired in this commit (InterviewReview imports it);
 // MEASURED 155 = 146 + 9.
-const EXPECTED_ACTIONS = 155;
+// v2.56.151: setRatingsAuditReviewed(recordId, reviewed) — "Está bien así" on the
+// Calificaciones vs. notas report. Moderators + admins; fingerprint taken server-side
+// from the persisted rating + note (never client-supplied); writes only
+// ratings_audit_reviews; audited. 156 = 155 + 1.
+const EXPECTED_ACTIONS = 156;
 
 let manifest;
 try {

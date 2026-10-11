@@ -552,7 +552,7 @@ export async function verifyKnownInfo(
         if (!db) return { ok: false, revealed: 0, error: 'No database' };
 
         const adopter = await db.select({
-            id: adopters.id, addedBy: adopters.addedBy, name: adopters.name, contactEntries: adopters.contactEntries,
+            id: adopters.id, addedBy: adopters.addedBy, name: adopters.name, contactEntries: adopters.contactEntries, country: adopters.country,
         }).from(adopters).where(eq(adopters.id, adopterId)).get();
         if (!adopter) return { ok: false, revealed: 0, error: 'Adopter not found' };
 
@@ -567,7 +567,7 @@ export async function verifyKnownInfo(
         // the name (the common "is this who I think it is?" case after a phone
         // match) stays unconfirmable.
         const entries = deserializeContactEntries(adopter.contactEntries);
-        const entryMatches = matchSearchEntries(entries, info, { anchorRequiredForSecondary: false });
+        const entryMatches = matchSearchEntries(entries, info, { anchorRequiredForSecondary: false, country: adopter.country });
         const nameTokenMatches = matchSearchNameTokens(adopter.name, info);
 
         const newEntryGrants = entryMatches.filter(m => !visibility.unlockedEntryHashes.has(m.hash));

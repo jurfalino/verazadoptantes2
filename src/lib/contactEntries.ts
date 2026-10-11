@@ -372,13 +372,28 @@ function isMeaningfulProse(s: string): boolean {
  * Detection is label-first and conservative; the chip UI's type selector is
  * the safety net for the cases a heuristic gets wrong.
  */
+/**
+ * A street and its number with no keyword: "Belgrano 1234, Quilmes",
+ * "Mario Bravo 64, Almagro", "Rivadavia 5400". Either the number is followed
+ * by a comma and a locality, or the whole line is at most three words and a
+ * 3–5 digit number — so prose like "edad 25", "le di 30 pesos" or "llamar
+ * después de las 1800" stays a note. Exported so masking can treat such a note
+ * as an address.
+ */
+const STREET_THEN_LOCALITY_RE = /^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.'\s]{2,40}\s\d{1,5}\s*,\s*[A-Za-zÀ-ÿ]/;
+const SHORT_STREET_NUMBER_RE = /^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.']*(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.']*){0,2}\s+\d{3,5}$/;
+export function looksLikeStreetAddress(text: string): boolean {
+    const t = text.trim();
+    return STREET_THEN_LOCALITY_RE.test(t) || SHORT_STREET_NUMBER_RE.test(t);
+}
+
 function addressOrOther(text: string): ContactEntry {
     const t = text.trim();
     const labelMatch = t.match(ADDRESS_LABEL_RE);
     if (labelMatch) {
         const value = t.slice(labelMatch[0].length).trim();
         if (value) return { type: 'address', value };
-    } else if (ADDRESS_STREET_RE.test(t)) {
+    } else if (ADDRESS_STREET_RE.test(t) || looksLikeStreetAddress(t)) {
         return { type: 'address', value: t };
     }
     return { type: 'other', value: t };
@@ -393,6 +408,8 @@ function addressOrOther(text: string): ContactEntry {
  * normalize to digits anyway, so a formatted stored value is safe.
  */
 const PHONE_RUN_RE = /\+?\(?\d[\d\s().+\-]{5,}\d/g;
+/** A URL or a bare domain-with-path ("facebook.com/x", "www.ig.com/y"). */
+const LINK_RE = /(?:https?:\/\/|www\.)\S+|\b[\w.-]+\.(?:com|net|org|me|ar|co|io)\/\S*/gi;
 function formattedPhonesIn(text: string): string[] {
     const out: string[] = [];
     for (const run of text.match(PHONE_RUN_RE) || []) {
@@ -419,8 +436,12 @@ export function categorizeContactText(text: string | null | undefined): ContactE
     for (const rawLine of text.split(/\r?\n/)) {
         if (!rawLine.trim()) continue;
 
-        const ids = extractIds(rawLine);
-        const phones = formattedPhonesIn(stripIdsFromText(rawLine));
+        // Digits inside a link (a Facebook profile id, a post id) are part of
+        // the link, never a phone or an id: read numbers from the line with its
+        // links blanked out. The links themselves still become social entries.
+        const noLinks = rawLine.replace(LINK_RE, ' ');
+        const ids = extractIds(noLinks);
+        const phones = formattedPhonesIn(stripIdsFromText(noLinks));
         const emails = extractEmails(rawLine);
         const socials = extractSocials(rawLine);
 

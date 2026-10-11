@@ -2,6 +2,134 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.156] - 2026-10-11
+
+### Fixed — a phone field holding two numbers indexes both again
+
+2.56.155 read each phone field as one number, so a field like
+"2002-4040 / 15-4156-3909" glued both into one long string and only the last
+number stayed searchable (4 of 1,082 production fields; the old index read
+both). `readPhones` (src/domain/phoneNumber.ts) now splits a field at "/", ",",
+";", "|" or a standalone "o"/"y" when that finds two or more numbers, and reads
+each — for the index, the duplicate check, the reveal-on-typed-number check and
+form/contract matching. A single number is never split ("11, 4455-6677",
+"Casa o trabajo 11 4790 2355"), and only dialling characters reach the parser,
+so a comma or a word next to a number no longer cuts it short. Checked against
+every production phone field: exactly those 4 now yield two numbers; no
+single-number field is read differently.
+
+## [2.56.155] - 2026-10-10
+
+### Fixed — a phone typed in any format finds the person; nothing else is read as a phone
+
+"+54 9 11 6585 1333" found nobody for a record saved as "1165851333" — two
+rescuers got 0 results on 2026-10-09/10. The phone lookup asked whether a stored
+number CONTAINED the typed digits, which a number written with its country code
+never is, and the word-by-word fallback stopped at 20 rows, all taken by records
+containing "11".
+
+- **Numbers are read, not compared as digits** (`src/domain/phoneNumber.ts`,
+  Google's libphonenumber, metadata only): the record's country when indexing,
+  the rescuer's when searching. "+54 9 11 …", "011 15 …", "11-…" and "1165851333"
+  are one number; Córdoba 351 and Rosario 341 numbers with the same ending are
+  not. A number saved without an area code stays incomplete — nothing is
+  invented — and is found by its ending.
+- **Search:** a complete number, or a partial of 8+ digits that a stored number
+  ENDS with, is a main-list result; a 6–7 digit partial only reaches "Otras
+  posibles coincidencias"; under 6 digits looks nothing up. A country or area
+  code alone never matches. Phone-shaped queries skip the word-by-word search.
+- **DNI search:** an exact identity-number lookup, so "27.111.222" and
+  "27111222" both find the record (a digits-only search missed 43 of 75).
+- The same rule reveals a typed number on a protected record, and matches
+  adoption-form and contract applicants (`samePhone`).
+
+### Fixed — contact data indexed as the wrong type (audit 2026-10-10)
+
+The search index scanned the joined contact text and guessed types from digits.
+It now reads **typed entries only**, each by its own type's rules (titular and
+each household member):
+- Facebook profile ids, post links and TikTok video ids are no longer phones
+  (32 tokens on 24 records).
+- Links to a post, photo, share, group or reel are no longer social "profiles"
+  (`photo.php`, `share`… paired 11 records; all 22 pending social-only duplicate
+  suggestions came from this).
+- A household member's phone and DNI are indexed separately (all 5 were merged
+  into meaningless numbers).
+- Address entries are indexed by street and locality (907 entries never were).
+- The form/contract duplicate check matches the DNI as an id, not a phone.
+- Pasted or legacy contact text: digits inside a link never become a phone, and
+  "Belgrano 1234, Quilmes" without a keyword is an address; such a note is masked
+  like one.
+- WhatsApp is only offered for a phone entry, never a DNI or Facebook id.
+- An email ending in "_" before the @ no longer yields its domain as a handle.
+
+**After deploying:** run Scan in /admin/duplicates until no records are pending.
+The tokenizer version (v7) marks every record for re-indexing; until a record is
+re-indexed, search still finds its old-format phone.
+
+## [2.56.154] - 2026-10-10
+
+### Fixed — re-formatting a contact said «guardado» but kept the old value
+
+Changing how a phone is written without changing its digits (`1164723109` →
+`11 6472-3109`), or only switching WhatsApp/Telegram on or off, closed the
+editor as if it had saved, and the old value stayed. The server treated "same
+digits" as "nothing to save". It now saves anything that differs from what is
+stored; a save of exactly what is stored still writes nothing.
+
+## [2.56.153] - 2026-10-10
+
+### Fixed — «Está bien así» was cut off at the table's right edge
+
+On a laptop-width screen the new button sat in its own column past the edge of
+the table. It now sits under the rating selector — the two choices for a
+record's rating side by side — with a visible border in dark mode.
+
+## [2.56.152] - 2026-10-10
+
+### Fixed — «Está bien así» edge cases (independent review of 2.56.151)
+
+- **Two reviewers at once:** if someone changed a record's rating or note after
+  the list loaded, «Está bien así» no longer hides it — it says the record
+  changed and reloads the list so it can be reviewed as it is now.
+- **Unsaved star change:** «Está bien así» is disabled on a row with an unsaved
+  rating change instead of silently dropping it.
+- **Errors:** every failure is logged; the toast shows an error code only when
+  there is one.
+
+## [2.56.151] - 2026-10-10
+
+### Added — "Está bien así" on the ratings report; moderators work it fully
+
+A record a reviewer judged correct used to stay on «Calificaciones vs. notas»
+forever — the only way off was changing its rating or note.
+
+- **«Está bien así»** on every row hides it, with «Deshacer» in the toast.
+  It comes back by itself if anyone later changes that record's rating or note.
+- **«Revisados»** switch lists the hidden rows with who marked them and when,
+  and «Volver a la lista» puts one back.
+- **Moderators** can now change ratings from this report and mark rows, same as
+  admins (they could only view it before). Every change is logged with who made it.
+
+## [2.56.150] - 2026-10-10
+
+### Fixed — "Calificaciones vs. notas" suggesting to raise warning posts
+
+The admin report's «subir calificación» list was offering to raise the rating
+on alerts about dangerous people — one adopter showed up in both «subir» and
+«bajar a 1» at once. All 9 rows it held were warning posts: they describe how
+good the person *seemed* ("buena dicción, te ofrece ayuda… ya ha robado") and
+the scorer only added up words.
+
+- **«Subir» now needs a clean note:** a note with real negative evidence (one
+  strong word, or two mild ones) is never suggested for a higher rating, however
+  positive the rest reads. Genuine praise rated too low ("todo muy bien…
+  siempre nos manda fotos") is still caught.
+- **Warning words it was missing:** theft (robado, robaron…), "se hace pasar",
+  "no le entreguen", "irresponsable", "no quiere compromiso de castración",
+  and cruelty spelled with digits ("mutil4r", "mat4r"). Seven more warning
+  posts now appear in «bajar a 1».
+
 ## [2.56.149] - 2026-10-09
 
 ### Fixed — signing in from Instagram/Facebook links

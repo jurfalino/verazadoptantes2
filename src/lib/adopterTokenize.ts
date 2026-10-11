@@ -9,9 +9,27 @@ import { adopters, adoptions, duplicateTokens } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { getDb } from '@/lib/db';
-import { extractTokens, computeTokenHash, type Token } from '@/lib/tokenizer';
+import { extractTokens, computeTokenHash, type Token, type TokenEntry } from '@/lib/tokenizer';
 import { deserializeHouseholdMembers } from '@/lib/householdMembers';
-import { deserializeContactEntries } from '@/lib/contactEntries';
+import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
+
+/**
+ * The typed entries the tokenizer reads for one adopter: its `contactEntries`
+ * (or, for a legacy row that never got them, the blob parsed into entries) and
+ * each household member's own entries. Shared by save-time tokenizing and the
+ * admin rescan so the two can never index the same record differently.
+ */
+export function tokenInputsFor(adopter: {
+    contactEntries?: string | null;
+    contactInfo?: string | null;
+    householdMembers?: string | null;
+}): { entries: TokenEntry[]; household: Array<{ name: string; contactEntries: TokenEntry[] }> } {
+    const parsed = deserializeContactEntries(adopter.contactEntries ?? null);
+    const entries = parsed.length > 0 ? parsed : parseBlobToContactEntries(adopter.contactInfo ?? null);
+    const household = deserializeHouseholdMembers(adopter.householdMembers ?? null)
+        .map(m => ({ name: m.name, contactEntries: m.contactEntries }));
+    return { entries, household };
+}
 
 /**
  * Tokenize an adopter for duplicate detection.
@@ -41,19 +59,9 @@ export async function tokenizeAdopter(adopterId: string): Promise<void> {
             onBehalfOf: adoptions.onBehalfOf,
         }).from(adoptions).where(eq(adoptions.adopterId, adopterId));
 
-        // Aliases (contactEntries with type='alias') tokenize as name_words so
-        // searching for an alternate name finds the adopter.
-        const entries = deserializeContactEntries(adopter.contactEntries);
-        const aliases = entries.filter(e => e.type === 'alias').map(e => e.value);
-        // Structured socials carry `platform` → the tokenizer emits the precise
-        // `social`=`platform|handle` token, not just the handle. Mirror the aliases
-        // pattern (caller deserializes to avoid the tokenizer→contactEntries cycle).
-        const socials = entries.filter(e => e.type === 'social').map(e => ({ value: e.value, platform: e.platform ?? null }));
-        // Household members: names + their contacts feed name/phone/email/social/id tokens.
-        const household = deserializeHouseholdMembers(adopter.householdMembers).map(m => ({ name: m.name, contactEntries: m.contactEntries }));
-
-        // Extract tokens
-        const tokens: Token[] = extractTokens(adopter, adopterAdoptions, aliases, socials, household);
+        // Typed entries only (titular + each household member) — see extractTokens.
+        const { entries, household } = tokenInputsFor(adopter);
+        const tokens: Token[] = extractTokens(adopter, adopterAdoptions, entries, household);
 
         // Delete old tokens for this adopter
         await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopterId));

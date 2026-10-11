@@ -147,6 +147,19 @@ export const pendingSearches = sqliteTable("pending_searches", {
     adopterIdx: index("idx_pending_searches_adopter").on(table.adopterId),
 }));
 
+/**
+ * "Calificaciones vs. notas" rows a moderator/admin judged correct as they are
+ * ("Está bien así"). Keyed by the adoptions-view record id (event or animal id).
+ * Content-bound: `fingerprint` hashes the rating + note at review time, so any
+ * later edit to either re-surfaces the row. Undo = delete the row.
+ */
+export const ratingsAuditReviews = sqliteTable("ratings_audit_reviews", {
+    recordId: text("record_id").primaryKey(),
+    fingerprint: text("fingerprint").notNull(),
+    reviewedBy: text("reviewed_by").notNull(),
+    reviewedAt: integer("reviewed_at", { mode: "timestamp" }).notNull(),
+});
+
 // Interview guide (ENABLE_INTERVIEW_GUIDE). prep_json = { prep, leadCandidateId,
 // confirmedAdopterId }; answers_json = { answers, visited, custom }. The question
 // queue is NOT stored: it is buildQueue() of this state. See

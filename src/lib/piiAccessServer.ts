@@ -385,6 +385,7 @@ export async function replaySearchMatchGrants(opts: {
             name: adoptersTable.name,
             contactEntries: adoptersTable.contactEntries,
             addedBy: adoptersTable.addedBy,
+            country: adoptersTable.country,
         }).from(adoptersTable).where(eq(adoptersTable.id, adopterId)).limit(1);
         if (!adopter) return { written: 0 };
 
@@ -412,7 +413,7 @@ export async function replaySearchMatchGrants(opts: {
 
         const toInsert: Array<{ scope: 'entry' | 'name_token'; entryRef: string }> = [];
 
-        const entryMatches = matchSearchEntries(deserializeContactEntries(adopter.contactEntries), q);
+        const entryMatches = matchSearchEntries(deserializeContactEntries(adopter.contactEntries), q, { country: adopter.country });
         for (const m of entryMatches) {
             if (!existingEntry.has(m.hash)) {
                 existingEntry.add(m.hash);

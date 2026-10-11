@@ -946,10 +946,23 @@ describe('reachablePhoneForViewer — one-tap contact offers only what the profi
             .toEqual({ phone: PHONE, channel: 'whatsapp' });
     });
 
-    it('free-text contactInfo fallback only when nothing is masked', () => {
-        const adopter = { contactEntries: JSON.stringify([{ type: 'email', value: 'carla@example.com' }]), contactInfo: `cel ${PHONE}` };
+    it('a legacy row without entries offers its parsed phone, and only when nothing is masked', () => {
+        const adopter = { contactEntries: null, contactInfo: `cel ${PHONE}` };
         expect(reachablePhoneForViewer(adopter, { gatingOn: true, visibility: vis({ nothingMasked: true }) })?.phone).toBe(PHONE);
         expect(reachablePhoneForViewer(adopter, { gatingOn: true, visibility: stranger })).toBeNull();
+    });
+
+    it('never offers a DNI, a Facebook id or an address number as a phone', () => {
+        // Wrong-type audit #8: the old blob regex offered these for WhatsApp.
+        const adopter = {
+            contactEntries: JSON.stringify([
+                { type: 'id', value: '30.123.456' },
+                { type: 'social', value: 'https://www.facebook.com/profile.php?id=1300000006' },
+                { type: 'address', value: 'Belgrano 1234, Quilmes' },
+            ]),
+            contactInfo: 'DNI 30.123.456\nRedes: https://www.facebook.com/profile.php?id=1300000006\nDirección: Belgrano 1234, Quilmes',
+        };
+        expect(reachablePhoneForViewer(adopter, { gatingOn: true, visibility: vis({ nothingMasked: true }) })).toBeNull();
     });
 
     it('no phone on file: null', () => {

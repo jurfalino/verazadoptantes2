@@ -36,14 +36,15 @@ import type {
 import { enrichAdopters } from './enrichAdopters';
 import { normalizeConfidence, fuzzyNameScore, nameTokenMatches, SEARCH_SCORE_CEILING, PRACTICAL_MAX_DUPLICATE, DUPLICATE_MATCH_WEIGHTS, FUZZY_NAME_MATCH_TYPE } from '@/lib/scoring';
 import { classifyNameMatch, NAME_MATCH_WEIGHT, NAME_MATCH_TYPE, isNameLikeQuery, qualifiesForMainList } from '@/lib/searchRanking';
-import { normalizeText, extractPhones, extractEmails, extractSocials, isPlaceholderPhone, extractIds, stripIdsFromText, normalizeSocialHandle, detectSocialPlatformFromValue } from '@/lib/tokenizer';
+import { phoneQueryPlan, phoneDuplicateTokens } from '@/domain/phoneNumber';
+import { normalizeText, extractEmails, extractIds, normalizeSocialHandle, detectSocialPlatformFromValue, normalizeIdValue } from '@/lib/tokenizer';
 import { count } from 'drizzle-orm';
 import { matchSearchEntries, matchSearchNameTokens, hashNameToken, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
 import { assembleDiscoveryMatch } from '@/lib/discoveryMatch';
 import { toGuestMatch } from '@/lib/guestMatch';
 import { getFeatureFlag } from '@/config/features';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
-import { deserializeContactEntries, TYPE_LABEL } from '@/lib/contactEntries';
+import { deserializeContactEntries, parseBlobToContactEntries, TYPE_LABEL } from '@/lib/contactEntries';
 import { deserializeHouseholdMembers } from '@/lib/householdMembers';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -270,56 +271,75 @@ async function searchAdoptionMatches(db: any, tokens: string[]): Promise<DeepMat
 }
 
 /**
- * Phone-token lookup against `duplicate_tokens` (v2.16.0-17). The discovery LIKE
- * path runs on `adopters.contactInfo` which stores the user's verbatim phone
- * formatting ("Tel: 6462-2274"), so a digit-only query ("64622274") slides past
- * the LIKE substring. The tokenizer canonicalizes phones to digits-only when
- * populating duplicate_tokens, so the same digit-only query matches there.
+ * Phone lookup against `duplicate_tokens`. The query is read by the same rules
+ * the index was built with (`src/domain/phoneNumber.ts`, with the searcher's
+ * country), so every format of a number — "+54 9 11 6585-1333", "011 15 …",
+ * "1165851333" — finds the same record, and a phone typed inside a name query
+ * ("jonathan 1165851333") still counts.
  *
- * v2.26.6: also fire on a phone number typed INSIDE a mixed "name + phone" query
- * (e.g. "jonathan urfalino 1165851333"). Previously this whole function was
- * gated on `isPhoneLikeQuery(WHOLE query)`, which is false when letters dominate,
- * so the format-agnostic phone match was skipped and the only phone matching left
- * was a raw contactInfo LIKE that breaks on "+549"/formatting — the record was
- * silently missed even though the searcher typed the exact number. We now gather
- * candidate digit-strings two ways and union the lookups:
- *   1. whole-query concatenation when the query is phone-shaped (formatted pure-
- *      phone queries like "6462-2274" / "11 6585 1333") — the original behaviour.
- *   2. each contiguous digit run of >= PHONE_SEARCH_MIN_DIGITS anywhere in the
- *      query — catches an unformatted phone token embedded in a name query.
- * The min-digits floor keeps the anti-fishing posture; short address numbers
- * ("calle 6462") don't qualify. Additive — IDs flow through the same extras
- * union + enrichment + masking pipeline as history/adoption matches.
+ *   strong — a complete number matched exactly (or a record saved without an
+ *            area code whose local number is its end), or a partial of ≥ 8
+ *            digits that a stored number ENDS with → main list;
+ *   weak   — a partial of 6–7 digits a stored number ends with → only the
+ *            "Otras posibles coincidencias" tier.
+ *
+ * Matching an END, never a beginning, is what keeps a country or area code
+ * alone from ever matching. Every lookup is an equality or an anchored suffix —
+ * no `IN (...)` (D1 does not expand arrays).
  */
-async function searchPhoneTokenMatches(db: any, normalizedQuery: string): Promise<string[]> {
+async function searchPhoneTokenMatches(db: any, normalizedQuery: string, country: string | null): Promise<{ strong: string[]; weak: string[] }> {
+    const empty = { strong: [] as string[], weak: [] as string[] };
+    const plan = phoneQueryPlan(normalizedQuery, country, PHONE_SEARCH_MIN_DIGITS);
+    if (!plan) return empty;
     try {
-        const candidates = new Set<string>();
-        // (1) formatted pure-phone queries: concatenate all digits.
-        if (isPhoneLikeQuery(normalizedQuery)) {
-            const allDigits = normalizedQuery.replace(/\D/g, '');
-            if (allDigits.length >= PHONE_SEARCH_MIN_DIGITS) candidates.add(allDigits);
-        }
-        // (2) an unformatted phone token embedded in a mixed query.
-        for (const run of normalizedQuery.match(new RegExp(`\\d{${PHONE_SEARCH_MIN_DIGITS},}`, 'g')) ?? []) {
-            candidates.add(run);
-        }
-        if (candidates.size === 0) return [];
+        const lookup = (cond: any) => db.select({ adopterId: duplicateTokens.adopterId })
+            .from(duplicateTokens)
+            .where(and(eq(duplicateTokens.tokenType, 'phone'), cond))
+            .limit(SEARCH_RESULT_LIMIT) as Promise<Array<{ adopterId: string }>>;
 
-        const digitConds = Array.from(candidates).map(d =>
-            like(duplicateTokens.tokenValue, `%${escapeLike(d)}%`));
+        const [exactRows, ...endRows] = await Promise.all([
+            plan.exact.length ? lookup(or(...plan.exact.map(v => eq(duplicateTokens.tokenValue, v)))) : Promise.resolve([]),
+            ...plan.endsWith.map(e => lookup(like(duplicateTokens.tokenValue, `%${escapeLike(e.digits)}`))),
+        ]);
+        const strong = new Set<string>(exactRows.map(r => r.adopterId));
+        const weak = new Set<string>();
+        plan.endsWith.forEach((e, i) => {
+            for (const r of endRows[i]) (e.strong ? strong : weak).add(r.adopterId);
+        });
+        for (const id of strong) weak.delete(id);
+        return { strong: [...strong], weak: [...weak] };
+    } catch (e) {
+        logger.warn('Phone-token search error', { error: e instanceof Error ? e.message : String(e) });
+        return empty;
+    }
+}
+
+/**
+ * Exact identity-number lookup (DNI, CUIT, RUT, …). The index stores ids
+ * normalized to lowercase letters and digits, so "25.999.890", "25999890" and
+ * "DNI 25 999 890" all find the same record — a raw text search missed 43 of 75
+ * production DNIs typed digits-only. Only a query that is mostly an identifier
+ * (≥ 5 normalized characters, ≥ 4 digits) is looked up.
+ */
+async function searchIdTokenMatches(db: any, normalizedQuery: string): Promise<string[]> {
+    const candidates = new Set<string>();
+    for (const id of extractIds(normalizedQuery)) candidates.add(id);
+    if (isPhoneLikeQuery(normalizedQuery)) {
+        const whole = normalizeIdValue(normalizedQuery);
+        if (whole.length >= 5 && (whole.match(/\d/g) ?? []).length >= 4) candidates.add(whole);
+    }
+    if (candidates.size === 0) return [];
+    try {
         const rows = await db.select({ adopterId: duplicateTokens.adopterId })
             .from(duplicateTokens)
             .where(and(
-                or(
-                    eq(duplicateTokens.tokenType, 'phone'),
-                    eq(duplicateTokens.tokenType, 'phone_suffix'),
-                ),
-                or(...digitConds),
+                eq(duplicateTokens.tokenType, 'id_number'),
+                or(...[...candidates].map(v => eq(duplicateTokens.tokenValue, v))),
             ))
             .limit(SEARCH_RESULT_LIMIT);
         return rows.map((r: { adopterId: string }) => r.adopterId);
     } catch (e) {
-        logger.warn('Phone-token search error', { error: e instanceof Error ? e.message : String(e) });
+        logger.warn('Id-token search error', { error: e instanceof Error ? e.message : String(e) });
         return [];
     }
 }
@@ -410,23 +430,14 @@ function buildProfileSearchConditions(tokens: string[]) {
  */
 const SOCIAL_STOPWORDS = new Set(['instagram', 'insta', 'facebook', 'face', 'fb', 'tiktok', 'tik', 'twitter', 'x', 'threads', 'thread', 'social', 'profile', 'com', 'www']);
 function socialLikeNeedle(value: string): string | null {
-    let v = (value || '').toLowerCase().trim().replace(/^@+/, '');
-    v = v.replace(/^https?:\/\//, '').replace(/^www\./, '');
-    // Facebook numeric profile: the searchable token in the contact_info blob is
-    // the id digits (stored as "...id=N"), NOT a path segment. Without this a
-    // profile.php URL reduces to the garbage needle "profile.php" that LIKE-matches
-    // every numeric FB profile (the latent bug flagged in the dedup spec).
-    const fbNum = v.match(/(?:profile\.php\?id=|\/people\/[^/]*\/)(\d{5,})/) || v.match(/\bid=(\d{5,})\b/);
-    if (fbNum) return fbNum[1];
-    if (v.includes('/')) {
-        const path = v.slice(v.indexOf('/') + 1).replace(/[?#].*$/, '').replace(/\/+$/, '');
-        if (!path) return null; // bare domain, no handle
-        v = (path.split('/').filter(Boolean).pop() || '').replace(/^@+/, '');
-    } else if (detectSocialPlatformFromValue(v)) {
-        return null; // bare social domain (e.g. "instagram.com"), no handle
-    }
-    if (!v || v.length < 4 || v === 'profile.php' || SOCIAL_STOPWORDS.has(v)) return null;
-    return v;
+    // The same handle the index stores (normalizeSocialHandle: Facebook numeric
+    // id, the profile segment — never a post/photo/share path), so the fallback
+    // cannot match on what the index deliberately refuses to treat as a profile.
+    const handle = normalizeSocialHandle(value, detectSocialPlatformFromValue(value));
+    if (!handle) return null;
+    const needle = handle.startsWith('id:') ? handle.slice(3) : handle;
+    if (needle.length < 4 || SOCIAL_STOPWORDS.has(needle)) return null;
+    return needle;
 }
 
 async function runDuplicateMode(
@@ -465,33 +476,30 @@ async function runDuplicateMode(
         }
     }
 
-    // Harvest IDs / phones / emails / socials across ALL free-text input fields so a
-    // phone typed in the name field (or address) doesn't fragment into name_word
-    // tokens. Mirrors the tokenizer's all-text concatenation. IDs are extracted
-    // first and stripped from the phone-extraction text so a "DNI: 12345678" can't
-    // also tokenize as a phone.
-    const allInputText = [
-        input.contactInfo || '',
-        input.name || '',
-        (input.aliases ?? []).join('\n'),
-        input.familyMembers || '',
-    ].join('\n');
-    const ids = extractIds(allInputText);
-    for (const id of ids) rawTokens.push({ type: 'id_number', value: id });
+    // Contact tokens from TYPED values only, read by the same rules the index
+    // uses. Structured fields win; otherwise the free-text contact block is parsed
+    // into typed entries first — scanning it whole read Facebook ids as phones and
+    // a DNI as a phone. A labeled id inside the name (or aliases/family text) still
+    // counts as an id.
+    const parsedEntries = parseBlobToContactEntries(input.contactInfo ?? null);
+    const typedValues = (type: string) => parsedEntries.filter(e => e.type === type).map(e => e.value).filter(Boolean);
 
-    const phoneText = stripIdsFromText(allInputText);
-    const rawPhones = input.phones?.length ? input.phones : extractPhones(phoneText);
-    // Apply placeholder filter to pre-parsed phones too — extractPhones already filters internally.
-    const phones = rawPhones.filter(p => !isPlaceholderPhone(p.replace(/\D/g, '')));
-    const emails = input.emails?.length ? input.emails : extractEmails(allInputText);
-    const socials = input.socials?.length ? input.socials : extractSocials(allInputText);
+    const idTexts = [input.name || '', (input.aliases ?? []).join('\n'), input.familyMembers || ''].join('\n');
+    const ids = new Set<string>([
+        ...(input.ids ?? []).map(normalizeIdValue),
+        ...typedValues('id').map(normalizeIdValue),
+        ...extractIds(idTexts),
+    ]);
+    for (const id of ids) {
+        if (id.length >= 5 && (id.match(/\d/g) ?? []).length >= 4) rawTokens.push({ type: 'id_number', value: id });
+    }
+
+    const phones = input.phones?.length ? input.phones : typedValues('phone');
+    const emails = input.emails?.length ? input.emails : typedValues('email').flatMap(v => extractEmails(v));
+    const socials = input.socials?.length ? input.socials : typedValues('social');
 
     for (const phone of phones) {
-        const digits = phone.replace(/\D/g, '');
-        if (digits.length >= 6) {
-            rawTokens.push({ type: 'phone', value: digits });
-            rawTokens.push({ type: 'phone_suffix', value: digits.slice(-8) });
-        }
+        for (const t of phoneDuplicateTokens(phone, input.country)) rawTokens.push(t);
     }
     for (const email of emails) rawTokens.push({ type: 'email', value: email.toLowerCase().trim() });
     // Build the SAME dual tokens the index uses (see tokenizer.normalizeSocialHandle):
@@ -874,18 +882,32 @@ async function runDiscoveryMode(
         );
     }
 
-    const [directResults, historyMatches, adoptionMatches, phoneTokenIds, nameTokenIds] = await Promise.all([
-        db.select().from(adopters).where(and(...profileConds)).limit(SEARCH_ENRICHMENT_LIMIT),
+    // A phone-shaped query ("+54 9 11 6585-1333") is answered by the phone and
+    // id index, not word by word: its pieces ("54", "11", "6585") match any
+    // record containing them, and those filled the 20-row window ahead of the
+    // real number. The anchor rule kept them out of the main list, but they
+    // still crowded it out — and surfaced under "Otras posibles coincidencias"
+    // on nothing but an area code.
+    const phoneShapedQuery = isPhoneLikeQuery(normalizedQuery);
+    const [directResults, historyMatches, adoptionMatches, phoneMatches, nameTokenIds, idTokenIds] = await Promise.all([
+        phoneShapedQuery
+            ? Promise.resolve([] as typeof adopters.$inferSelect[])
+            : db.select().from(adopters).where(and(...profileConds)).limit(SEARCH_ENRICHMENT_LIMIT),
         searchHistoryMatches(db, tokens),
         searchAdoptionMatches(db, tokens),
         // v2.16.0-17: catches digit-only phone queries (e.g. "64622274") that
         // the LIKE search above misses because the stored contactInfo blob
         // keeps the user's verbatim formatting ("Tel: 6462-2274").
-        searchPhoneTokenMatches(db, normalizedQuery),
+        searchPhoneTokenMatches(db, normalizedQuery, userCountry),
         // v2.26.7: accent-insensitive name recall — surfaces "José" for "jose"
         // via the NFD-stripped name-token index (the direct LIKE is accent-sensitive).
         searchNameTokenMatches(db, tokens),
+        searchIdTokenMatches(db, normalizedQuery),
     ]);
+    // Phone and id hits are identifier matches: they justify a result on their own
+    // (strong → main list). A short partial phone only earns the weak tier.
+    const phoneTokenIds = [...phoneMatches.strong, ...idTokenIds];
+    const weakPhoneIds = new Set(phoneMatches.weak);
 
     const historyTextMap = new Map<string, string>();
     const adoptionTextMap = new Map<string, string>();
@@ -921,7 +943,7 @@ async function runDiscoveryMode(
         logger.warn('findAdopters: onBehalfOf fetch fallback hit', { error: e instanceof Error ? e.message : String(e) });
     }
 
-    const extraIds = new Set([...historyIds, ...adoptionIds, ...phoneTokenIds, ...nameTokenIds]);
+    const extraIds = new Set([...historyIds, ...adoptionIds, ...phoneTokenIds, ...weakPhoneIds, ...nameTokenIds]);
     directResults.forEach((r: any) => extraIds.delete(r.id));
 
     // D1-compatible: fan out with eq() per ID instead of inArray() which silently breaks on D1
@@ -1231,7 +1253,7 @@ async function runDiscoveryMode(
         // the unlocked values. (The actual masking is done by the shared
         // assembler below, the same path the walkthrough demo uses.)
         if (vis && !vis.nothingMasked && !maskOpts.adopterIsPublic && !isUnauthenticated) {
-            const entryMatches = matchSearchEntries(deserializeContactEntries(a.contactEntries), normalizedQuery);
+            const entryMatches = matchSearchEntries(deserializeContactEntries(a.contactEntries), normalizedQuery, { country: a.country });
             if (entryMatches.length > 0) {
                 const unlocked = new Set(vis.unlockedEntryHashes);
                 for (const m of entryMatches) {
@@ -1280,7 +1302,7 @@ async function runDiscoveryMode(
     // scored ("av" inside "GustAVo"/"por faVor"), and (b) records matched ONLY by a
     // ≤2-char supporting token ("av" starting "Avellaneda") with no anchor. Supporting
     // tokens still refine coverage/ranking above (Av. Maipú full vs Calle Maipú partial).
-    const strongSignalIds = new Set<string>([...phoneTokenIds, ...nameTokenIds]);
+    const strongSignalIds = new Set<string>([...phoneTokenIds, ...weakPhoneIds, ...nameTokenIds]);
     allResults = allResults.filter(r =>
         strongSignalIds.has(r.adopterId)
         || (r.matchTypes.length > 0 && (anchorHitById.get(r.adopterId) ?? false))
@@ -1301,7 +1323,9 @@ async function runDiscoveryMode(
     // Demotion is not deletion: these appear under "Ampliar la búsqueda".
     const strongIdMatch = new Set<string>(phoneTokenIds);
     const queryIsNameLike = isNameLikeQuery(normalizedQuery);
-    const isStrong = (r: DiscoveryMatch) => qualifiesForMainList({
+    // A 6–7 digit partial phone is too short to vouch for a person on its own:
+    // on a phone-shaped query it only ever reaches the weak tier.
+    const isStrong = (r: DiscoveryMatch) => !(phoneShapedQuery && weakPhoneIds.has(r.adopterId) && !strongIdMatch.has(r.adopterId)) && qualifiesForMainList({
         relevancePercent: r.relevancePercent,
         matchTypes: r.matchTypes ?? [],
         coverage: coverageById.get(r.adopterId) ?? 1,
