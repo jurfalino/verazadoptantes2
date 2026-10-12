@@ -7,7 +7,7 @@ import { SEARCH_RESULT_LIMIT } from '@/config/constants';
 import { logger } from '@/lib/logger';
 import type { DiscoveryMatch } from '@/app/actions/types';
 import { ApiError, claimIdempotencyKey, enforceDailyCap, replayIdempotent, requireScope, type ApiCallContext, type ApiResult } from './handler';
-import { buildProfileSummaries, findIdentifierHits, profileUrl, ratingFields } from './profiles';
+import { buildProfileSummaries, findIdentifierHits, ownerCountry, profileUrl, ratingFields } from './profiles';
 import { saveApiRecord } from './records';
 import { checkSearchRules, searchRequestSchema, type ExactResponse, type FuzzyResponse, type SearchRequest } from './schemas';
 
@@ -57,7 +57,8 @@ export async function runSearch(ctx: ApiCallContext): Promise<ApiResult> {
 }
 
 async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiResult> {
-    const hits = await findIdentifierHits(ctx.db, req.person, ctx.requestId);
+    const country = req.person.phone ? await ownerCountry(ctx.db, ctx.key.ownerEmail, ctx.requestId) : null;
+    const hits = await findIdentifierHits(ctx.db, req.person, ctx.requestId, country);
     const outcome = decideExactOutcome(req.person.fullName!, hits.candidates);
     ctx.log.outcome = outcome.result;
 

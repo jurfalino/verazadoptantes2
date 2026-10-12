@@ -112,7 +112,7 @@ Add a new table, `api_keys`, through a hand-written migration (drizzle-kit hangs
 | Field | Token | Normalization |
 |---|---|---|
 | email | `email` | lowercase, trimmed |
-| phone | `phone` **and** `phone_suffix` | Digits only. Take the **incoming** number's last 8 digits, whatever its length, and match them against stored `phone` values **and** stored `phone_suffix` values. The tokenizer only writes a suffix for phones of ≥9 digits (`MIN_PHONE_FOR_SUFFIX`); prod has 1,126 phone tokens but only 740 suffixes. So a stored "6462-2274" exists only as `phone=64622274`, and an incoming "+54 9 11 6462-2274" finds it only through that cross-match. Also try the full incoming digits against `phone`. |
+| phone | `phone`, `phone_suffix` | **Superseded at merge (2026-10-12):** tokenizer v7 (v2.56.155) reads phones by country with libphonenumber. The API uses the same reader as the index and the duplicate check, `phoneDuplicateTokens(phone, keyOwnerCountry)` (src/domain/phoneNumber.ts), so "+54 9 11 6585-1333" and "11 6585-1333" are one number. Validation uses `readPhones`. |
 | documentId | `id_number` | `[a-z0-9]` only |
 
 **Name check.** It runs against each identifier hit.

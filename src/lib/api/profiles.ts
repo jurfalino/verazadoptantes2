@@ -6,14 +6,15 @@
  * Promise.all over single-value queries.
  */
 import { and, count, eq, isNull, max } from 'drizzle-orm';
-import { adopters, adoptions, duplicateTokens } from '@/db/schema';
+import { adopters, adoptions, duplicateTokens, userProfiles, users } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { deserializeHouseholdMembers } from '@/lib/householdMembers';
 import { enrichAdopters } from '@/app/actions/enrichAdopters';
 import { getRatingDisplayLevel, getRatingLabelKey } from '@/domain/ratings';
 import { RECORD_TYPES } from '@/domain/constants';
-import { normalizeDocumentId, phoneLookups, type CandidateNames } from '@/domain/apiExactMatch';
+import { normalizeDocumentId, type CandidateNames } from '@/domain/apiExactMatch';
+import { phoneDuplicateTokens } from '@/domain/phoneNumber';
 import type { ProfileSummary, SearchRequest } from './schemas';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -33,11 +34,30 @@ export function recordUrl(origin: string, profileId: string, recordId: string): 
     return `${profileUrl(origin, profileId)}?record=${encodeURIComponent(recordId)}`;
 }
 
-/** Live profiles whose indexed email / phone / document id equals what the client sent. */
-export async function findIdentifierHits(db: Db, person: SearchRequest['person'], requestId: string): Promise<IdentifierHits> {
+/** The key owner's country (user_profiles), which a phone is read with — as the rescuer's own search does. */
+export async function ownerCountry(db: Db, ownerEmail: string, requestId: string): Promise<string | null> {
+    try {
+        const row = await db.select({ country: userProfiles.country })
+            .from(userProfiles).innerJoin(users, eq(users.id, userProfiles.userId))
+            .where(eq(users.email, ownerEmail)).get();
+        return row?.country?.trim() || null;
+    } catch (e) {
+        // Phones are then read as Argentine (the default region), never dropped.
+        logger.warn('api: owner country lookup failed', { requestId, error: e instanceof Error ? e.message : String(e) });
+        return null;
+    }
+}
+
+/**
+ * Live profiles whose indexed email / phone / document id equals what the
+ * client sent. Phones go through the SAME reader as the index and the
+ * duplicate check (src/domain/phoneNumber.ts, phoneDuplicateTokens): read with
+ * `country`, so "+54 9 11 6585-1333" and "11 6585-1333" are one number.
+ */
+export async function findIdentifierHits(db: Db, person: SearchRequest['person'], requestId: string, country: string | null): Promise<IdentifierHits> {
     const lookups: Array<{ type: string; value: string; field: MatchedOn }> = [];
     if (person.email) lookups.push({ type: 'email', value: person.email.trim().toLowerCase(), field: 'email' });
-    if (person.phone) for (const l of phoneLookups(person.phone)) lookups.push({ ...l, field: 'phone' });
+    if (person.phone) for (const t of phoneDuplicateTokens(person.phone, country)) lookups.push({ type: t.type, value: t.value, field: 'phone' });
     if (person.documentId) lookups.push({ type: 'id_number', value: normalizeDocumentId(person.documentId.value), field: 'documentId' });
 
     const rows = await Promise.all(lookups.map(l =>

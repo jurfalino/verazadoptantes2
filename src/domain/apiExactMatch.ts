@@ -104,21 +104,6 @@ export function decideExactOutcome(inputName: string, candidates: CandidateNames
     return { result: 'ambiguous', reason: 'multiple_profiles', profileIds: allIds };
 }
 
-/** Phone lookup values: the full digits, plus the last 8 digits matched against
- *  both stored phones and stored 8-digit suffixes (the tokenizer only writes a
- *  suffix for phones of 9+ digits, so a stored 8-digit phone exists only as `phone`). */
-export function phoneLookups(phone: string): Array<{ type: 'phone' | 'phone_suffix'; value: string }> {
-    const digits = phone.replace(/\D/g, '');
-    if (digits.length < 7) return [];
-    const out: Array<{ type: 'phone' | 'phone_suffix'; value: string }> = [{ type: 'phone', value: digits }];
-    if (digits.length >= 8) {
-        const last8 = digits.slice(-8);
-        if (last8 !== digits) out.push({ type: 'phone', value: last8 });
-        out.push({ type: 'phone_suffix', value: last8 });
-    }
-    return out;
-}
-
 /** Document id as the tokenizer stores it (`id_number`): lowercase [a-z0-9] only. */
 export function normalizeDocumentId(raw: string): string {
     return raw.toLowerCase().replace(/[^a-z0-9]/g, '');

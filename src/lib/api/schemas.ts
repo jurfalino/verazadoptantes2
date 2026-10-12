@@ -6,7 +6,8 @@
  */
 import { z } from 'zod';
 import { RECORD_TYPES } from '@/domain/constants';
-import { isFullName, isUsableDocumentId, phoneLookups } from '@/domain/apiExactMatch';
+import { isFullName, isUsableDocumentId } from '@/domain/apiExactMatch';
+import { readPhones } from '@/domain/phoneNumber';
 
 /** What the person is doing. RECORD_TYPES minus `available` (that describes an animal, not a person). */
 export const API_CONTEXTS = [
@@ -25,7 +26,7 @@ const personSchema = z.object({
         .meta({ description: 'Full name: first name and surname. Required in exact mode.', example: 'María José Pérez' }),
     email: z.string().trim().max(254).optional().meta({ example: 'maria@example.com' }),
     phone: z.string().trim().max(40).optional()
-        .meta({ description: 'Any format. Matched on its last 8 digits, so country and area codes do not matter.', example: '+54 9 11 6462-2274' }),
+        .meta({ description: 'Any format. Read like BuenAdoptante reads phones, with your country: "+54 9 11 6462-2274" and "11 6462-2274" are the same number.', example: '+54 9 11 6462-2274' }),
     documentId: z.object({
         value: z.string().trim().min(1).max(40).meta({ example: '30.123.456' }),
         country: z.string().trim().length(2).optional().meta({ description: 'ISO 3166-1 alpha-2', example: 'AR' }),
@@ -75,7 +76,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 export function checkSearchRules(req: SearchRequest): { code: ApiErrorCode; message: string } | null {
     const p = req.person;
     if (p.email && !EMAIL_RE.test(p.email)) return { code: 'invalid_email', message: 'person.email is not a valid email address' };
-    if (p.phone && phoneLookups(p.phone).length === 0) return { code: 'invalid_phone', message: 'person.phone needs at least 7 digits' };
+    if (p.phone && readPhones(p.phone).length === 0) return { code: 'invalid_phone', message: 'person.phone is not a readable phone number' };
     if (p.documentId && !isUsableDocumentId(p.documentId.value)) {
         return { code: 'invalid_document_id', message: 'person.documentId.value needs at least 5 characters including 4 digits' };
     }

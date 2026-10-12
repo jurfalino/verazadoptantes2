@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-    isFullName, namesCompatible, decideExactOutcome, phoneLookups,
+    isFullName, namesCompatible, decideExactOutcome,
     normalizeDocumentId, isUsableDocumentId, type CandidateNames,
 } from './apiExactMatch';
 
@@ -64,25 +64,6 @@ describe('decideExactOutcome', () => {
             .toEqual({ result: 'ambiguous', reason: 'multiple_profiles', profileIds: ['a', 'b'] });
         expect(decideExactOutcome('Ana Ruiz', [cand('a', 'María Pérez'), cand('b', 'Laura Gómez')]))
             .toMatchObject({ result: 'ambiguous', reason: 'multiple_profiles' });
-    });
-});
-
-describe('phoneLookups', () => {
-    it('an international number also looks up its last 8 digits as phone and suffix', () => {
-        expect(phoneLookups('+54 9 11 6462-2274')).toEqual([
-            { type: 'phone', value: '5491164622274' },
-            { type: 'phone', value: '64622274' },
-            { type: 'phone_suffix', value: '64622274' },
-        ]);
-    });
-    it('an 8-digit number is its own suffix', () => {
-        expect(phoneLookups('6462-2274')).toEqual([
-            { type: 'phone', value: '64622274' },
-            { type: 'phone_suffix', value: '64622274' },
-        ]);
-    });
-    it('too short to be a phone → nothing', () => {
-        expect(phoneLookups('12-345')).toEqual([]);
     });
 });
 
