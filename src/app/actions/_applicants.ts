@@ -66,12 +66,20 @@ export async function canAccessFormSubmission(
     }
     if (!ref) return false;
 
-    const { isOwnerOrOrgMate, getTeamEmails } = await import('@/lib/orgMembership');
-    const { isAdminAsync } = await import('@/config/admins');
+    // STRICT variants: a D1 failure throws instead of reading as "not a
+    // teammate / not an admin", so callers show an error with its errorId
+    // (and log it) rather than a 404 to someone who is allowed in.
+    const { isOrgMateStrict, getTeamEmails } = await import('@/lib/orgMembership');
+    const { isAdminAsyncStrict } = await import('@/config/admins');
     const { canViewerAccessFormSubmission } = await import('@/lib/formSubmissionAccess');
+    const norm = (e: string | null | undefined) => (e ?? '').trim().toLowerCase();
     return canViewerAccessFormSubmission(viewerEmail, ref, {
-        isOwnerOrOrgMate,
-        isAdmin: isAdminAsync,
+        isOwnerOrOrgMate: async (viewer, owner) => {
+            const v = norm(viewer), o = norm(owner);
+            if (!v || !o) return false;
+            return v === o || isOrgMateStrict(v, o);
+        },
+        isAdmin: isAdminAsyncStrict,
         getTeamEmails,
         // Same table and deleted-check as the animal page (getAnimalProfile).
         getAnimalOwner: async (animalId) => {
