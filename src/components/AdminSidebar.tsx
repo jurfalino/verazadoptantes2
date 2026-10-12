@@ -29,6 +29,7 @@ const SECTIONS: Array<{ titleKey: string; items: NavItem[] }> = [
         { href: '/admin/organizations', labelKey: 'nav_organizations', icon: '🏢', minRole: 'admin' },
         { href: '/admin/config', labelKey: 'nav_config', icon: '⚙️', minRole: 'admin' },
         { href: '/admin/notifications', labelKey: 'nav_communications', icon: '📡', minRole: 'admin' },
+        { href: '/admin/api', labelKey: 'nav_api', icon: '🔌', minRole: 'admin' },
         { href: '/admin/walkthrough', labelKey: 'nav_walkthrough', icon: '🎯', minRole: 'admin' },
     ] },
     { titleKey: 'nav_sect_system', items: [

@@ -128,6 +128,11 @@ export const FEATURE_FLAGS = {
     // the confirmed profile. Spec: .agents/plans/interview-guide.md.
     // Client-visible (user menu) → also in PUBLIC_FLAG_KEYS. Default off.
     ENABLE_INTERVIEW_GUIDE: false,
+    // Third-party API v1 (/api/v1/*, the key admin page, Settings → API).
+    // Plan: .agents/plans/2026-10-09-third-party-api.md. Off = every /api/v1
+    // call answers 404 api_disabled. Client-visible (Settings) → also in
+    // PUBLIC_FLAG_KEYS. Default off.
+    ENABLE_PUBLIC_API: false,
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
@@ -224,6 +229,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_CUSTOM_ADOPTION_DOCS: false,
         ENABLE_SHEET_IMPORT: false,
         ENABLE_INTERVIEW_GUIDE: false,
+        ENABLE_PUBLIC_API: false,
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
         ENABLE_POSTHOG: false,

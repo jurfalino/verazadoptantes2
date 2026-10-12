@@ -58,6 +58,8 @@ export const PUBLIC_FLAG_KEYS = [
     'ENABLE_SHEET_IMPORT',
     // «Entrevista» in the user menu.
     'ENABLE_INTERVIEW_GUIDE',
+    // «API» in /settings (the rescuer's own keys and transactions).
+    'ENABLE_PUBLIC_API',
 ] as const;
 
 export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
@@ -84,6 +86,7 @@ export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
     ENABLE_CUSTOM_ADOPTION_DOCS: 'false',
     ENABLE_SHEET_IMPORT: 'false',
     ENABLE_INTERVIEW_GUIDE: 'false',
+    ENABLE_PUBLIC_API: 'false',
 };
 
 const CACHE_TTL_MS = 30 * 1000;

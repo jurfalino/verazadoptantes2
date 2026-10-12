@@ -47,6 +47,7 @@ function timeAgo(date: Date, locale: string): string {
 const TYPE_LABELS: Record<string, { es: string; en: string; icon: string }> = {
     contract_result: { es: 'Contrato', en: 'Contract', icon: '📋' },
     form_submission: { es: 'Formulario', en: 'Form', icon: '📝' },
+    api_record: { es: 'Herramienta conectada', en: 'Connected tool', icon: '🔌' },
     system: { es: 'Sistema', en: 'System', icon: '⚙️' },
     pii_access_request: { es: 'Acceso a contacto', en: 'Contact access', icon: '🔒' },
     pii_access_approved: { es: 'Acceso aprobado', en: 'Access approved', icon: '✅' },
