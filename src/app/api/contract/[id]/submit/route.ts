@@ -203,7 +203,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 recordType: 'adoption',
                 date: new Date(),
                 status: 'active',
-                rating: 5,
+                // Signing is not a judgement of the adopter: no rating (Jon, 2026-10-09).
+                rating: null,
                 comments: JSON.stringify({ contractScreenshot: contractUrl }),
             }, animal, 'contract');
         } catch (e) {

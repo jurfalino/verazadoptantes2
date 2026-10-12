@@ -935,7 +935,7 @@ export default function ImportWizard() {
                         animalName: extractedData.animalName?.trim() || undefined,
                         species: extractedData.animalSpecies,
                         recordType: extractedData.recordType || 'observation',
-                        rating: extractedData.adoptionRating || 2,
+                        rating: extractedData.adoptionRating || undefined,
                         date: extractedData.adoptionDate || new Date().toISOString().split('T')[0],
                     },
                 }),
@@ -1094,7 +1094,7 @@ export default function ImportWizard() {
                     animalName: extractedData.animalName?.trim() || undefined,
                     species: extractedData.animalSpecies,
                     recordType: extractedData.recordType || 'observation',
-                    rating: extractedData.adoptionRating || 2,
+                    rating: extractedData.adoptionRating || undefined,
                     date: extractedData.adoptionDate || new Date().toISOString().split('T')[0],
                 },
                 images: [
@@ -1803,7 +1803,7 @@ export default function ImportWizard() {
                             <div>
                                 <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.rating') || 'Rating'}</label>
                                 <StarRating
-                                    value={extractedData.adoptionRating || 2}
+                                    value={extractedData.adoptionRating || 0}
                                     onChange={(r: number) => setExtractedData({ ...extractedData, adoptionRating: r })}
                                     size="md"
                                     showLabel

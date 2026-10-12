@@ -1182,6 +1182,8 @@ export const en = {
         average: 'Fair',
         good: 'Good',
         excellent: 'Excellent',
+        none: 'Not rated',
+        clear: 'Clear',
         scale_title: 'Rating scale',
         search_label: {
             dangerous: 'Dangerous Adopter',

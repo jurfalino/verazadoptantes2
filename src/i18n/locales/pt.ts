@@ -1187,6 +1187,8 @@ export const pt = {
         average: 'Regular',
         good: 'Bom',
         excellent: 'Excelente',
+        none: 'Sem avaliação',
+        clear: 'Remover',
         scale_title: 'Escala de avaliação',
         search_label: {
             dangerous: 'Adotante Perigoso',

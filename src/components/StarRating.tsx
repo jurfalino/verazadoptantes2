@@ -31,7 +31,7 @@ export function StarRating({ value, onChange, size = 'md', showLabel = false }: 
     const label = level === 0 ? '' : (t(`ratings.${getRatingLabelKey(level)}` as any) || '');
 
     return (
-        <div className={`inline-flex items-center ${config.gap}`}>
+        <div className={`inline-flex flex-wrap items-center ${config.gap}`}>
             <div className={`flex items-center ${config.gap}`}>
                 {[1, 2, 3, 4, 5].map((star) => {
                     const filled = star <= level;
@@ -40,7 +40,9 @@ export function StarRating({ value, onChange, size = 'md', showLabel = false }: 
                             key={star}
                             type="button"
                             disabled={!interactive}
-                            onClick={() => onChange?.(star)}
+                            // Tapping the current rating again clears it back to "not rated".
+                            onClick={() => onChange?.(star === level ? 0 : star)}
+                            aria-pressed={interactive ? filled : undefined}
                             className={`${config.star} flex-shrink-0 transition-all ${interactive
                                     ? 'cursor-pointer hover:scale-110 active:scale-95'
                                     : 'cursor-default'
@@ -56,6 +58,22 @@ export function StarRating({ value, onChange, size = 'md', showLabel = false }: 
                 <span className={`${config.text} font-semibold ${colors.text} ml-1`}>
                     {label}
                 </span>
+            )}
+            {/* Rating is optional and never inferred (Jon, 2026-10-09): an input
+                says so when empty, and can always go back to empty. */}
+            {showLabel && interactive && level === 0 && (
+                <span className={`${config.text} text-stone-500 ml-1`}>
+                    {t('ratings.none')}
+                </span>
+            )}
+            {interactive && level > 0 && (
+                <button
+                    type="button"
+                    onClick={() => onChange?.(0)}
+                    className={`${config.text} text-stone-500 hover:text-stone-700 underline underline-offset-2 ml-2 px-1 py-1`}
+                >
+                    {t('ratings.clear')}
+                </button>
             )}
         </div>
     );
