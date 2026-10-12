@@ -12,7 +12,8 @@ import { test, expect } from '@playwright/test';
 test.describe('shared notification links for non-owners', () => {
     test('form-results of a teammate\'s link: the team sees it, not "no permission" or the 404', async ({ page }) => {
         await page.goto('/form-results/test-formsub-fixture-teammate-1');
-        await expect(page.locator('body')).toContainText('Solicitante Fixture', { timeout: 30000 });
+        // The form results render (this fixture has no notification, so no submitter line).
+        await expect(page.getByRole('heading', { name: /Form responses|Respuestas del formulario|Respostas do formulário/ })).toBeVisible({ timeout: 30000 });
         await expect(page.locator('body')).not.toContainText(/No tenés permiso/);
         await expect(page.getByTestId('not-found-page')).toHaveCount(0);
     });
