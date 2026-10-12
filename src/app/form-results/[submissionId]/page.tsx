@@ -106,9 +106,19 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
     // 404, so we never confirm a submission exists (applicant PII).
     if (!ownerCheck) notFound();
     const isFormOwner = ownerCheck.userId.trim().toLowerCase() === currentUser.trim().toLowerCase();
-    if (!isFormOwner && !(await canAccessFormSubmission(db, ownerCheck, currentUser))) {
-        logger.info('form-results: denied', { submissionId, userEmail: currentUser });
-        notFound();
+    if (!isFormOwner) {
+        let allowed: boolean;
+        try {
+            allowed = await canAccessFormSubmission(db, ownerCheck, currentUser);
+        } catch (e) {
+            // Fails closed, but never silently: the lookup itself broke (D1), not a denial.
+            const errorId = logger.error('form-results: access check failed', e, { submissionId, user: currentUser });
+            return <ErrorState message="No pudimos cargar este formulario. Probá de nuevo en un rato." errorId={errorId} />;
+        }
+        if (!allowed) {
+            logger.info('form-results: denied', { submissionId, userEmail: currentUser });
+            notFound();
+        }
     }
 
     // The duplicate-match data lives on the FORM-LINK OWNER's notification;
@@ -291,11 +301,12 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
     );
 }
 
-function ErrorState({ message }: { message: string }) {
+function ErrorState({ message, errorId }: { message: string; errorId?: string }) {
     return (
         <main className="container mx-auto px-4 py-16 text-center">
             <p className="text-2xl mb-2">😕</p>
             <p className="text-sm text-stone-500 font-medium">{message}</p>
+            {errorId && <p className="text-xs text-stone-400 font-mono mt-2">Error ID: {errorId}</p>}
             <Link href="/" className="text-sm text-blue-600 hover:text-blue-700 mt-4 inline-block">
                 ← Volver al inicio
             </Link>
