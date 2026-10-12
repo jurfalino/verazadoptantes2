@@ -499,7 +499,7 @@ export async function POST(request: Request) {
                 animalName: adoption.animalName?.trim() || null,
                 species: adoption.species || 'other',
                 status: 'completed',
-                rating: adoption.rating || 2,
+                rating: adoption.rating || null,
                 recordType: adoptionRecordType,
                 // NULL (not now()) when the row has no date: fabricating import-time
                 // as the event date is misleading for a historical entry, AND it

@@ -1179,6 +1179,8 @@ export const es = {
         average: 'Regular',
         good: 'Bueno',
         excellent: 'Excelente',
+        none: 'Sin calificar',
+        clear: 'Quitar',
         scale_title: 'Escala de calificación',
         search_label: {
             dangerous: 'Adoptante Peligroso',

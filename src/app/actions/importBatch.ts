@@ -89,7 +89,7 @@ function recordDataFrom(a: ImportAdoption, id: string, adopterId: string) {
         animalName: a.animalName?.trim() || null,
         species: a.species || 'other',
         status: 'completed' as const,
-        rating: a.rating || 2,
+        rating: a.rating || null,
         recordType: a.recordType,
         date: a.date ? importDateToNoon(a.date) : null,
         sourceUrl: null,
