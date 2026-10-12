@@ -11,6 +11,7 @@ import { inferDateOrder } from '@/domain/importRow';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType, normalizeNeutered } from '@/domain/importRow';
 import { userFacingMessage } from '@/lib/errorMessage';
+import { zarazTrack } from '@/lib/zaraz';
 import {
     TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE,
     applyColumnMap, emptyMappedRow, guessColumnMap,
@@ -705,6 +706,7 @@ export default function SpreadsheetImportWizard() {
         setProgress({ done: 0, total: targets.length });
         const runId = crypto.randomUUID();
         startImportRun({ runId, source: fileName, total: targets.length }).catch(() => { /* best-effort */ });
+        zarazTrack('list_import_started', { rows: targets.length });
         try {
             // Build all rows client-side (validate + AI cleanup). Invalid rows become
             // immediate 'skipped' results and are never sent to the server.

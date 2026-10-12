@@ -19,6 +19,7 @@ import { getRatingColors } from '@/lib/ratingColors';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { createContractInvitation } from '@/app/actions/contract';
+import { zarazTrack } from '@/lib/zaraz';
 import ApplicantDetailPanel from '@/components/ApplicantDetailPanel';
 import { AdopterName } from '@/components/AdopterName';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
@@ -226,6 +227,7 @@ export default function AnimalApplicants({
         try {
             const result = await createContractInvitation(animalId, applicant.adopterId, locale);
             if (result.success && result.url) {
+                zarazTrack('contract_issued', { surface: 'applicants_list' });
                 setShareUrl({ url: result.url, adopterName: applicant.adopterName });
             } else {
                 const message = result.error === 'not_allowed'
