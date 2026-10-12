@@ -163,14 +163,16 @@ test.describe('Team applicants: org-mates see the applicants of team animals', (
             const page = await ctx.newPage();
             await page.goto('/form-results/test-sub-fixture-apl-link');
             await expect(page.getByText(MATCH_NAME).first()).toBeVisible({ timeout: 30000 });
-            await page.getByRole('button', { name: /Link to this profile|Vincular a este perfil/i }).first().click();
+            // «Es la misma persona» on the match card (staging's link flow), confirmed in its dialog.
+            const card = page.locator('article').filter({ hasText: MATCH_NAME });
+            await card.getByRole('button', { name: /^(Same person|Es la misma persona|É a mesma pessoa)$/ }).click();
+            await page.getByRole('dialog').getByRole('button', { name: /Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa/ }).click();
             // Success navigates to the profile; a refused link toasts and stays.
             await expect(page).toHaveURL(/\/adopter\/test-adopter-fixture-apl-match/, { timeout: 30000 });
 
-            // And the submission now reads as linked.
+            // And the submission now reads as linked to that existing profile.
             await page.goto('/form-results/test-sub-fixture-apl-link');
-            await expect(page.getByRole('link', { name: /View linked adopter profile|Ver perfil del adoptante vinculado|Ver perfil do adotante vinculado/i }).first())
-                .toBeVisible({ timeout: 30000 });
+            await expect(page.getByTestId('form-status-banner')).toHaveAttribute('data-state', 'linked_existing', { timeout: 30000 });
         } finally {
             await ctx.close();
         }
