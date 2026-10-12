@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import DuplicateMergeModal from '@/components/DuplicateMergeModal';
 import { useLanguage } from '@/context/LanguageContext';
+import { scanRetryDelayMs, SCAN_MAX_CONSECUTIVE_FAILURES } from '@/domain/scanResilience';
 
 /**
  * Duplicate-detection review panel. Moved from the standalone `/admin/duplicates`
@@ -302,37 +303,67 @@ export default function DuplicatesPanel() {
     async function handleScan() {
         setScanning(true);
         setScanResult(null);
-        const maxBatches = 100;
+        const maxBatches = 200;
         let totalTokenized = 0;
         let lastRemaining = Infinity;
+        // Consecutive failed requests. A dropped connection cancels the batch in
+        // flight (Cloudflare `clientDisconnected`) but keeps everything already
+        // re-indexed, so the page waits and carries on instead of stopping —
+        // see src/domain/scanResilience.ts.
+        let failures = 0;
+        const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
+        /** Count a failure; false when it is time to give up. */
+        const retryAfter = async (why: string, retryInMs?: number): Promise<boolean> => {
+            failures++;
+            const delay = scanRetryDelayMs(failures, retryInMs);
+            if (delay === null) {
+                setScanResult(`❌ ${why} — gave up after ${SCAN_MAX_CONSECUTIVE_FAILURES} retries` +
+                    `${totalTokenized ? ` (${totalTokenized} profiles done, kept)` : ''}. Run Scan again to continue.`);
+                return false;
+            }
+            setScanResult(`⏳ ${why} — retrying in ${Math.round(delay / 1000)} s` +
+                `${totalTokenized ? ` (${totalTokenized} done so far, kept)` : ''}…`);
+            await wait(delay);
+            return true;
+        };
 
         try {
             for (let batch = 0; batch < maxBatches; batch++) {
-                const res = await fetch('/api/admin/duplicates', { method: 'POST' });
-
-                // Read as text first. A Worker killed mid-request (subrequest
-                // ceiling, CPU limit) returns an HTML/plain error page, and
-                // calling res.json() on that throws — which used to land in the
-                // catch below as a bare "Scan failed", hiding both the status
-                // code and the fact that the run had died rather than errored.
-                const raw = await res.text();
-                let data: {
-                    done?: boolean; tokenized?: number; remaining?: number;
-                    staleBefore?: number; newCandidates?: number; error?: string;
-                } = {};
-                try { data = JSON.parse(raw); } catch {
-                    setScanResult(
-                        `❌ HTTP ${res.status} — the scan worker died mid-batch` +
-                        `${totalTokenized ? ` after ${totalTokenized} profiles` : ''}. ` +
-                        `Try a smaller batch. Response: ${raw.slice(0, 120)}`
-                    );
+                let res: Response;
+                try {
+                    res = await fetch('/api/admin/duplicates', { method: 'POST' });
+                } catch {
+                    if (await retryAfter('Connection dropped')) continue;
                     return;
                 }
 
+                // Read as text first. A Worker killed mid-request (subrequest
+                // ceiling, CPU limit) returns an HTML/plain error page, and
+                // calling res.json() on that throws.
+                const raw = await res.text();
+                let data: {
+                    done?: boolean; tokenized?: number; remaining?: number;
+                    staleBefore?: number; newCandidates?: number; error?: string; retryInMs?: number;
+                } = {};
+                try { data = JSON.parse(raw); } catch {
+                    if (await retryAfter(`HTTP ${res.status} — the scan worker died mid-batch`)) continue;
+                    return;
+                }
+
+                // Busy lock: usually our own interrupted batch, reclaimable within a minute.
+                if (res.status === 409) {
+                    if (await retryAfter('Waiting for the previous batch to release', data.retryInMs)) continue;
+                    return;
+                }
+                if (res.status >= 500) {
+                    if (await retryAfter(`HTTP ${res.status}: ${data.error ?? 'server error'}`)) continue;
+                    return;
+                }
                 if (!res.ok) {
                     setScanResult(`❌ HTTP ${res.status}: ${data.error ?? 'unknown error'}${totalTokenized ? ` (${totalTokenized} tokenized before the failure)` : ''}`);
                     return;
                 }
+                failures = 0;
 
                 totalTokenized += data.tokenized ?? 0;
                 const remaining = data.remaining ?? 0;
