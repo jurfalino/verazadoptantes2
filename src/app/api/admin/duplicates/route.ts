@@ -10,6 +10,7 @@ import { logger } from '@/lib/logger';
 import { extractTokens, computeTokenHash } from '@/lib/tokenizer';
 import { tokenInputsFor } from '@/lib/adopterTokenize';
 import { pairsOnSharedToken, scorePair, confidenceOf } from '@/domain/duplicatePairing';
+import { lockWaitMs } from '@/domain/scanResilience';
 import { computeAvgRating } from '@/domain/ratings';
 import { getRequestContext } from '@/lib/requestContext';
 
@@ -289,14 +290,17 @@ export async function GET(request: Request) {
  * batch sized off the 6.1 average could quietly cost 3x its estimate. v2.49.3
  * shipped a batch of 100 on that average and was hard-killed on the first click
  * against production-scale data — no catch block runs on a subrequest kill, so
- * it also left the scan lock wedged at `running` (see SCAN_LOCK_STALE_MS).
+ * it also left the scan lock wedged at `running` (see lockWaitMs).
  *
  * 50 × 3 = 150, plus a handful of surrounding queries. Deliberately ~6x under
  * the ceiling rather than shaving it: the loop is automatic, so more batches
  * costs a few seconds, while one over-large batch costs a failed run. Callers
  * that want fewer round trips can pass `?limit=` up to SCAN_BATCH_MAX.
  */
-const SCAN_BATCH_DEFAULT = 50;
+// 25 since 2.56.159: a batch of 50 took ~30 s, and a dropped browser
+// connection cancels the batch in flight — a shorter one loses less and lets
+// the page retry sooner (see src/domain/scanResilience.ts).
+const SCAN_BATCH_DEFAULT = 25;
 const SCAN_BATCH_MAX = 200;
 
 /**
@@ -323,16 +327,15 @@ const TOKEN_INSERT_CHUNK = 20;
 const CANDIDATE_INSERT_CHUNK = 10;
 
 /**
- * A `running` lock older than this is treated as abandoned and reclaimed.
+ * A `running` lock is reclaimed once abandoned — see lockWaitMs
+ * (src/domain/scanResilience.ts): after 5 minutes for anyone, after 1 minute for
+ * the admin who holds it (their own batch, cut off by a dropped connection).
  *
- * Load-bearing: when a Worker is hard-killed (subrequest ceiling, CPU limit)
- * the `catch` below never runs, so the lock stays `running` forever and every
- * subsequent scan 409s. That happened on staging 2026-09-02 and needed a manual
+ * Load-bearing: when a Worker is hard-killed or its client disconnects, the
+ * `catch` below never runs, so the lock stays `running` and every subsequent
+ * scan would 409. That happened on staging 2026-09-02 and needed a manual
  * UPDATE to recover — unacceptable for a production runbook step.
- *
- * Generous relative to a batch (seconds), so it cannot reclaim a live scan.
  */
-const SCAN_LOCK_STALE_MS = 5 * 60 * 1000;
 
 export async function POST(request: Request) {
     const session = await auth();
@@ -348,16 +351,15 @@ export async function POST(request: Request) {
         const lockRow = await db.select().from(appConfig).where(eq(appConfig.key, 'duplicate_scan_status')).get();
         if (lockRow?.value === 'running') {
             // Reclaim an abandoned lock rather than 409 forever — a hard-killed
-            // Worker leaves this set with no catch block to clear it.
+            // Worker or a dropped connection leaves this set with no catch block
+            // to clear it.
             const lockAgeMs = lockRow.updatedAt ? Date.now() - new Date(lockRow.updatedAt).getTime() : Infinity;
-            if (lockAgeMs < SCAN_LOCK_STALE_MS) {
-                return NextResponse.json({
-                    error: 'Scan already in progress',
-                    retryInMs: SCAN_LOCK_STALE_MS - lockAgeMs,
-                }, { status: 409 });
+            const waitMs = lockWaitMs(lockAgeMs, lockRow.updatedBy, session.user.email);
+            if (waitMs > 0) {
+                return NextResponse.json({ error: 'Scan already in progress', retryInMs: waitMs }, { status: 409 });
             }
             logger.warn('Duplicate scan: reclaiming stale lock', {
-                lockAgeMs, staleAfterMs: SCAN_LOCK_STALE_MS, user: session.user.email,
+                lockAgeMs, sameUser: lockRow.updatedBy === session.user.email, user: session.user.email,
             });
         }
 

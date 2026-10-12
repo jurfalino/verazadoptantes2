@@ -247,16 +247,23 @@ jobs:
           # 3.0, because `authed` holds ~78% of the suite's test time
           # (view-as 2.8, pending-searches 2.4, landing-pages 1.7 CI-minutes).
           # One leg at 11.8 set the whole pipeline's length. Hence 4 legs for
-          # `authed`, 2 for `user`, 1 for the rest.
+          # `authed`, 3 for `user`, 1 for the rest.
+          #
+          # `user` went from 2 legs to 3 on 2026-10-11: user-1 (36 tests,
+          # ~9 min) kept reaching Next dev's memory ceiling, and the restart
+          # landed on the same test every run (adopter.spec.ts composer flow),
+          # failing four pipelines in a row on code that passed locally.
           #
           # `--shard` rather than naming files per leg: a new spec joins a
           # shard automatically. Listing files by hand means a spec someone
           # forgets to add runs NOWHERE, and silently passing by not running
           # is the worst failure this pipeline could have.
           - group: user-1
-            projects: --project=user --shard=1/2
+            projects: --project=user --shard=1/3
           - group: user-2
-            projects: --project=user --shard=2/2
+            projects: --project=user --shard=2/3
+          - group: user-3
+            projects: --project=user --shard=3/3
           - group: authed-1
             projects: --project=authed --shard=1/4
           - group: authed-2

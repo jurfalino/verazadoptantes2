@@ -2,6 +2,30 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.159] - 2026-10-11
+
+### Fixed — the duplicate Scan carries on when the connection drops
+
+Scan runs as many short requests driven by the admin page. In production on
+2026-10-11 the browser's connection dropped after 800 of 1,253 profiles —
+Cloudflare analytics show `clientDisconnected`, no CPU or memory kill — which
+cancels the batch in flight, leaves the lock `running`, and made the page stop
+with "Scan failed". Now (`src/domain/scanResilience.ts`):
+- the page retries a dropped connection, a dead worker or a 5xx with backoff
+  (2 s → 30 s) and gives up only after 5 failures in a row, saying the work done
+  so far is kept;
+- a busy lock tells the page how long to wait, and the admin whose own batch
+  was cut off can take the lock over after 1 minute (others still wait 5);
+- batches are 25 profiles instead of 50 (~15 s each), so a drop loses less.
+`tests/duplicate-scan-resilience.authed.spec.ts` cuts the first two requests
+and fakes a busy lock; it fails on the previous page and passes now.
+
+### Changed — CI: the `user` e2e project runs in 3 legs
+
+`user-1` (~36 tests, ~9 min) kept reaching Next dev's memory ceiling and the
+restart landed on the same test, failing four pipelines in a row on code that
+passed locally. A third leg keeps each test server's life short.
+
 ## [2.56.158] - 2026-10-11
 
 ### Changed — a shared street is not a shared address
