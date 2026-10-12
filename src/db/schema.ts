@@ -748,6 +748,8 @@ export const formSubmissions = sqliteTable("form_submissions", {
 }, (table) => ({
     userIdx: index("idx_form_user").on(table.userId),
     statusIdx: index("idx_form_status").on(table.status),
+    // 0081: the per-animal applicant scope (src/lib/applicantScope.ts).
+    selectedAnimalIdx: index("idx_form_selected_animal").on(table.selectedAnimalId),
 }));
 
 // ── Contract Invitations ─────────────────────────────────────────
