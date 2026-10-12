@@ -16,6 +16,7 @@ import { buildFlags } from '@/domain/flags';
 import { applicantScopeWhere } from '@/lib/applicantScope';
 import type { AdopterFlags } from '@/types/adopter';
 import type { ApplicantSummary, ApplicantAdopterContext } from './applicants';
+import type { FormSubmissionRef } from '@/lib/formSubmissionAccess';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- the D1/better-sqlite db union is untyped here, as in the callers */
 type Db = any;
@@ -38,26 +39,49 @@ export async function isOwnerOrgMateOrAdmin(
 }
 
 /**
- * May `viewerEmail` read / act on form submission `submissionId`? True for
- * the form-link owner (`user_id`), any org-mate of theirs, or an admin —
- * the /form-results gate. Shared by the prefill and link actions so the
- * «Crear adoptante» / «Vincular» buttons a teammate sees actually work.
- * False when the submission does not exist.
+ * May `viewerEmail` open / act on a form submission? The ONE rule shared by
+ * /form-results, the «Crear adoptante» prefill and «Vincular» — see
+ * src/lib/formSubmissionAccess.ts (form-link owner's team, admin, or the
+ * animal owner's team with the form link inside it). Pass the submission
+ * row when the caller already has it, else its id. False when it does not
+ * exist.
  */
 export async function canAccessFormSubmission(
     db: Db,
-    submissionId: string,
+    submission: string | FormSubmissionRef,
     viewerEmail: string | null | undefined,
 ): Promise<boolean> {
-    if (!submissionId || !viewerEmail) return false;
-    const { formSubmissions } = await import('@/db/schema');
+    if (!viewerEmail) return false;
+    const { formSubmissions, animals } = await import('@/db/schema');
     const { eq } = await import('drizzle-orm');
-    const row = await db.select({ userId: formSubmissions.userId })
-        .from(formSubmissions)
-        .where(eq(formSubmissions.id, submissionId))
-        .get() as { userId: string } | undefined;
-    if (!row) return false;
-    return isOwnerOrgMateOrAdmin(viewerEmail, row.userId);
+    let ref: FormSubmissionRef | undefined;
+    if (typeof submission === 'string') {
+        if (!submission) return false;
+        ref = await db.select({ userId: formSubmissions.userId, selectedAnimalId: formSubmissions.selectedAnimalId })
+            .from(formSubmissions)
+            .where(eq(formSubmissions.id, submission))
+            .get() as FormSubmissionRef | undefined;
+    } else {
+        ref = submission;
+    }
+    if (!ref) return false;
+
+    const { isOwnerOrOrgMate, getTeamEmails } = await import('@/lib/orgMembership');
+    const { isAdminAsync } = await import('@/config/admins');
+    const { canViewerAccessFormSubmission } = await import('@/lib/formSubmissionAccess');
+    return canViewerAccessFormSubmission(viewerEmail, ref, {
+        isOwnerOrOrgMate,
+        isAdmin: isAdminAsync,
+        getTeamEmails,
+        // Same table and deleted-check as the animal page (getAnimalProfile).
+        getAnimalOwner: async (animalId) => {
+            const animal = await db.select({ addedBy: animals.addedBy, deletedAt: animals.deletedAt })
+                .from(animals)
+                .where(eq(animals.id, animalId))
+                .get() as { addedBy: string | null; deletedAt: unknown } | undefined;
+            return animal && !animal.deletedAt ? animal.addedBy : null;
+        },
+    });
 }
 
 /**

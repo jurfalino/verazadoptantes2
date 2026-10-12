@@ -1,4 +1,5 @@
 import { test, expect, type Browser, type BrowserContext } from '@playwright/test';
+import { execSync } from 'child_process';
 
 /**
  * 2026-09-30 product decision: applicants (form submissions) of a team
@@ -30,15 +31,23 @@ const FORBIDDEN = /No tenés permiso|permission/i;
 const TWO_APPLICANTS = /^\W*2 (interested applicants|personas interesadas|pessoas interessadas)/i;
 
 const TEAMMATE = { email: 'e2e-teammate@example.com', name: 'Vero E2E', sub: 'test-teammate-id' };
+/** Cross-org viewer: shares org-x1 with the animal owner, nothing with the form-link owner. */
+const XORG_VIEWER = { email: 'e2e-xorg-viewer@example.com', name: 'Vilma Xorg', sub: 'test-xorg-viewer-id' };
 
-/** A signed session for the teammate, built exactly like tests/auth.setup.ts. */
-async function teammateContext(browser: Browser): Promise<BrowserContext> {
+/** The matched adopter's PII (owned by 'test-seed', outside every test team). */
+const MATCH_PHONE = '555-0377';
+const MATCH_STREET = 'Calle Fixturera 77';
+
+type Persona = { email: string; name: string; sub: string };
+
+/** A signed session for a non-admin persona, built exactly like tests/auth.setup.ts. */
+async function personaContext(browser: Browser, persona: Persona = TEAMMATE): Promise<BrowserContext> {
     const secret = process.env.AUTH_SECRET;
-    if (!secret) throw new Error('AUTH_SECRET is required to sign the teammate session (see .env.local).');
+    if (!secret) throw new Error('AUTH_SECRET is required to sign the persona session (see .env.local).');
     const { encode } = await import('next-auth/jwt');
     const token = await encode({
         secret,
-        token: { email: TEAMMATE.email, name: TEAMMATE.name, sub: TEAMMATE.sub, sessionVersion: 3 },
+        token: { email: persona.email, name: persona.name, sub: persona.sub, sessionVersion: 3 },
         salt: 'authjs.session-token',
     });
     const context = await browser.newContext();
@@ -51,9 +60,30 @@ async function teammateContext(browser: Browser): Promise<BrowserContext> {
             localStorage.setItem(`country_confirmed_${email}`, '1');
             localStorage.setItem('playwright_test_mode', '1');
         } catch { /* storage unavailable — the banner may show; tests anchor on content */ }
-    }, TEAMMATE.email);
+    }, persona.email);
     return context;
 }
+const teammateContext = (browser: Browser) => personaContext(browser, TEAMMATE);
+
+/** Everything the server sends for a page: the SSR HTML (with the inlined RSC
+ *  payload) and the RSC flight response a client navigation would fetch. */
+async function serverPayload(ctx: BrowserContext, path: string): Promise<string> {
+    const html = await (await ctx.request.get(path)).text();
+    const rsc = await (await ctx.request.get(path, { headers: { RSC: '1' } })).text();
+    return `${html}\n${rsc}`;
+}
+
+/** Read the local D1 dev DB the dev server writes to (same helper as adoption-docs.spec.ts). */
+function queryD1(sql: string): Array<Record<string, unknown>> {
+    const out = execSync(
+        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
+        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
+    );
+    const wrapped = JSON.parse(out);
+    const first = Array.isArray(wrapped) ? wrapped[0] : wrapped;
+    return first?.results ?? [];
+}
+const isD1Null = (v: unknown) => v === null || v === 'null';
 
 test.describe('Team applicants: org-mates see the applicants of team animals', () => {
 
@@ -111,8 +141,17 @@ test.describe('Team applicants: org-mates see the applicants of team animals', (
             await expect(page.getByText(OWNER_APPLICANT).first()).toBeVisible({ timeout: 30000 });
             await expect(page.getByText(FORBIDDEN)).toHaveCount(0);
             // The duplicate-match data lives on the form-link owner's notification;
-            // the teammate sees the same matched profile the owner does.
+            // the teammate sees the same matched profile the owner does —
             await expect(page.getByText(MATCH_NAME).first()).toBeVisible({ timeout: 30000 });
+            // — but that adopter belongs to another rescuer, so its phone and
+            // street go through the PII model: masked on screen AND absent from
+            // everything the server sent (HTML, inlined RSC, RSC flight).
+            await expect(page.getByText(MATCH_PHONE)).toHaveCount(0);
+            await expect(page.getByText(MATCH_STREET)).toHaveCount(0);
+            const payload = await serverPayload(ctx, '/form-results/test-sub-fixture-apl-owner');
+            expect(payload).toContain(MATCH_NAME);
+            expect(payload).not.toContain(MATCH_PHONE);
+            expect(payload).not.toContain(MATCH_STREET);
 
             // «Crear adoptante» prefill works for the teammate too.
             await page.goto('/adopter/create?fromForm=test-sub-fixture-apl-owner');
@@ -152,6 +191,77 @@ test.describe('Team applicants: org-mates see the applicants of team animals', (
             await page.goto('/adopter/create?fromForm=test-sub-fixture-apl-outsider');
             await expect(page.getByPlaceholder(/name|nombre/i).first()).toBeVisible({ timeout: 30000 });
             await expect(page.getByPlaceholder(/name|nombre/i).first()).not.toHaveValue(OUTSIDER_APPLICANT);
+        } finally {
+            await ctx.close();
+        }
+    });
+
+    test('the form-link owner keeps the raw match data (pre-existing behaviour, flagged for product)', async ({ browser }) => {
+        // Positive control for the masking assertions above: the fixture really
+        // carries the phone and street, and the owner's view is unchanged.
+        const ctx = await browser.newContext({ storageState: '.auth/admin.json' });
+        try {
+            const page = await ctx.newPage();
+            await page.goto('/form-results/test-sub-fixture-apl-owner');
+            await expect(page.getByText(MATCH_NAME).first()).toBeVisible({ timeout: 30000 });
+            await expect(page.getByText(MATCH_PHONE).first()).toBeVisible();
+            await expect(page.getByText(MATCH_STREET).first()).toBeVisible();
+        } finally {
+            await ctx.close();
+        }
+    });
+
+    test('a teammate cannot link the outsider\'s submission (create-from-form flow)', async ({ browser }) => {
+        const ctx = await teammateContext(browser);
+        try {
+            const page = await ctx.newPage();
+            const name = `Vinculo Ajeno ${Date.now()}`;
+            await page.goto('/adopter/create?fromForm=test-sub-fixture-apl-outsider');
+            await page.getByPlaceholder(/name|nombre/i).first().fill(name);
+            await page.getByTestId('adopter-form-submit').click();
+            const createAnyway = page.getByRole('button', { name: /Create new profile anyway|Crear perfil nuevo/i });
+            try {
+                await createAnyway.waitFor({ state: 'visible', timeout: 3000 });
+                await createAnyway.click();
+            } catch { /* no duplicate modal */ }
+            // The save (and the link attempt it awaits) is done once we land on the profile.
+            await expect(page).not.toHaveURL(/\/create/, { timeout: 30000 });
+
+            const [row] = queryD1(`SELECT linked_adopter_id, status FROM form_submissions WHERE id = 'test-sub-fixture-apl-outsider'`);
+            expect(row, 'the outsider fixture row must exist').toBeTruthy();
+            expect(isD1Null(row.linked_adopter_id), `outsider submission must stay unlinked (got ${JSON.stringify(row.linked_adopter_id)})`).toBe(true);
+            expect(row.status).toBe('pending');
+        } finally {
+            await ctx.close();
+        }
+    });
+
+    test('cross-org: a viewer in one of the owner\'s groups opens the applicant from the owner\'s OTHER group', async ({ browser }) => {
+        // O shares org-x1 with V (the viewer) and org-x2 with T (the form-link
+        // owner); V and T share nothing. Access must come from the ANIMAL
+        // OWNER's team — V's own team does not contain T.
+        const ctx = await personaContext(browser, XORG_VIEWER);
+        try {
+            const page = await ctx.newPage();
+
+            // The animal page lists T's-link applicant (and not the outsider's)…
+            await page.goto('/my-animals/test-animal-fixture-xorg');
+            await expect(page.getByTestId('animal-name')).toHaveText('Brisa', { timeout: 30000 });
+            const block = page.locator('#applicants');
+            await block.getByRole('button', { name: /^\W*1 (interested applicant|persona interesada|pessoa interessada)/i }).click();
+            await expect(block.getByText('Postulante Crucefixture')).toBeVisible();
+            await expect(block.getByText('Postulante Ajenafixture')).toHaveCount(0);
+
+            // …so /form-results for it opens too.
+            await page.goto('/form-results/test-sub-fixture-xorg-mate');
+            await expect(page.getByRole('heading', { name: /Form responses|Respuestas del formulario|Respostas do formulário/ })).toBeVisible({ timeout: 30000 });
+            await expect(page.getByText('Postulante Crucefixture').first()).toBeVisible();
+            await expect(page.getByText(FORBIDDEN)).toHaveCount(0);
+
+            // The outsider-link row for the same animal stays forbidden.
+            await page.goto('/form-results/test-sub-fixture-xorg-outsider');
+            await expect(page.getByText(FORBIDDEN)).toBeVisible({ timeout: 30000 });
+            await expect(page.getByText('Postulante Ajenafixture')).toHaveCount(0);
         } finally {
             await ctx.close();
         }

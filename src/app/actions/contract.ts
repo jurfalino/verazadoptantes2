@@ -54,16 +54,18 @@ export async function createContractInvitation(
         const { adoptions, adopters, contractInvitations } = await import('@/db/schema');
         const { eq, and, isNull } = await import('drizzle-orm');
 
-        // Authorize: caller must be the rescuer who added the animal.
+        // Authorize: the animal's owner, an org-mate of theirs, or an admin.
         const animal = await db.select({
             id: adoptions.id,
             addedBy: adoptions.addedBy,
             adopterId: adoptions.adopterId,
         }).from(adoptions).where(eq(adoptions.id, animalId)).get();
         if (!animal) return { success: false, error: 'Animal not found' };
-        // v2.55.18: org-mates get full parity on team animals.
-        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
-        if (!(await isOwnerOrOrgMate(userEmail, animal.addedBy))) return { success: false, error: 'Not authorized for this animal' };
+        // v2.55.18: org-mates get full parity on team animals. Admins too, like
+        // the animal page and its applicants list — sending the contract is the
+        // next step from that list.
+        const { isOwnerOrgMateOrAdmin } = await import('./_applicants');
+        if (!(await isOwnerOrgMateOrAdmin(userEmail, animal.addedBy))) return { success: false, error: 'Not authorized for this animal' };
         if (animal.adopterId) return { success: false, error: 'Animal already adopted' };
 
         // Confirm the adopter exists and is not soft-deleted.

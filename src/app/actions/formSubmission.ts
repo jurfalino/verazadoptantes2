@@ -124,7 +124,7 @@ function revalidateFormLink(submissionId: string, adopterId: string): void {
  * status = 'linked', and adds the form's adoption request to the profile.
  * Only the form-link owner, an org-mate of theirs, or an admin may link — the
  * same rule as /form-results, whose buttons call this (team applicants,
- * Jon 2026-09-30).
+ * Jon 2026-09-30; src/lib/formSubmissionAccess.ts).
  *
  * Choosing one of the form's MATCHES goes through linkFormToExistingAdopter,
  * which also folds the auto-created profile in.
@@ -143,10 +143,10 @@ export async function linkFormSubmissionToAdopter(submissionId: string, adopterI
         // Gate on the submission's form-link owner (read by id first, so the
         // UPDATE below is keyed by id alone — a `user_id = <viewer>` clause
         // would silently no-op for a teammate).
-        const owner = await db.select({ userId: formSubmissions.userId })
+        const owner = await db.select({ userId: formSubmissions.userId, selectedAnimalId: formSubmissions.selectedAnimalId })
             .from(formSubmissions).where(eq(formSubmissions.id, submissionId)).get();
-        const { isOwnerOrgMateOrAdmin } = await import('./_applicants');
-        if (!owner || !(await isOwnerOrgMateOrAdmin(currentUser, owner.userId))) {
+        const { canAccessFormSubmission } = await import('./_applicants');
+        if (!owner || !(await canAccessFormSubmission(db, owner, currentUser))) {
             return { success: false, error: 'Submission not found or not owned' };
         }
 
@@ -254,14 +254,15 @@ export async function linkFormToExistingAdopter(
 
         const sub = await db.select({
             userId: formSubmissions.userId,
+            selectedAnimalId: formSubmissions.selectedAnimalId,
             linkedAdopterId: formSubmissions.linkedAdopterId,
             autoAdopterId: formSubmissions.autoAdopterId,
         }).from(formSubmissions).where(eq(formSubmissions.id, submissionId)).get();
         // The form-link owner, an org-mate of theirs, or an admin — the same
         // rule the page applies before rendering the cards (team applicants,
         // Jon 2026-09-30).
-        const { isOwnerOrgMateOrAdmin } = await import('./_applicants');
-        if (!sub || !(await isOwnerOrgMateOrAdmin(actorEmail, sub.userId))) return { success: false, error: 'Submission not found or not owned' };
+        const { canAccessFormSubmission } = await import('./_applicants');
+        if (!sub || !(await canAccessFormSubmission(db, sub, actorEmail))) return { success: false, error: 'Submission not found or not owned' };
 
         const [notif, target, auto] = await Promise.all([
             db.select({ metadata: notifications.metadata })

@@ -8,7 +8,7 @@ import { sql } from 'drizzle-orm';
 import { getUser } from '@/app/actions/_db';
 import { markNotificationRead } from '@/app/actions/notifications';
 import FormResultsContent from '@/components/FormResultsContent';
-import { isOwnerOrgMateOrAdmin } from '@/app/actions/_applicants';
+import { canAccessFormSubmission } from '@/app/actions/_applicants';
 import { logger } from '@/lib/logger';
 import Link from 'next/link';
 import { formLinkKind } from '@/domain/formLink';
@@ -73,7 +73,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
                 return null;
             });
     const [ownerCheck, notif, submission] = await Promise.all([
-        db.select({ userId: formSubmissions.userId })
+        db.select({ userId: formSubmissions.userId, selectedAnimalId: formSubmissions.selectedAnimalId })
             .from(formSubmissions)
             .where(eq(formSubmissions.id, submissionId))
             .get(),
@@ -99,13 +99,14 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
             .get(),
     ]);
 
-    // Auth: the form-link owner, any org-mate of theirs (2026-09-30 — the team
-    // sees its applicants; the teammate notification links here), or an admin
-    // (same rule as the animal page). Missing or a stranger → 404, so we never
-    // confirm a submission exists (applicant PII). `userId` holds the owner's email.
+    // Auth: ONE rule shared with the prefill and link actions, agreeing with
+    // the animal page (src/lib/formSubmissionAccess.ts): the form-link owner's
+    // team, an admin, or the animal owner's team when the form link is inside
+    // it (2026-09-30 — the team sees its applicants). Missing or a stranger →
+    // 404, so we never confirm a submission exists (applicant PII).
     if (!ownerCheck) notFound();
     const isFormOwner = ownerCheck.userId.trim().toLowerCase() === currentUser.trim().toLowerCase();
-    if (!isFormOwner && !(await isOwnerOrgMateOrAdmin(currentUser, ownerCheck.userId))) {
+    if (!isFormOwner && !(await canAccessFormSubmission(db, ownerCheck, currentUser))) {
         logger.info('form-results: denied', { submissionId, userEmail: currentUser });
         notFound();
     }

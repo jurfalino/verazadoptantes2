@@ -9,11 +9,12 @@
  * three resolve it for the INVITING rescuer (`contract_invitations.created_by`).
  */
 
-import { formSubmissions } from '@/db/schema';
+import { animals, formSubmissions } from '@/db/schema';
 import { and, eq, or } from 'drizzle-orm';
+import { applicantScopeWhere } from '@/lib/applicantScope';
 import type { getDb } from '@/lib/db';
 import { isPiiGatingEnabled, resolveAdopterVisibility, buildMaskOptions } from '@/lib/piiAccessServer';
-import { isOwnerOrOrgMate } from '@/lib/orgMembership';
+import { getTeamEmails, isOwnerOrOrgMate } from '@/lib/orgMembership';
 import type { Visibility, MaskContactOptions } from '@/lib/piiAccess';
 import { decideInvitationAccess, type InvitationAccessDecision } from '@/lib/contractInvitation';
 
@@ -30,11 +31,13 @@ export interface InvitationAccess extends InvitationAccessDecision {
 /**
  * Resolve whether `rescuerEmail` may invite `adopter` to sign for `animalId`.
  *
- * "Applicant" uses the applicants panel's own predicate (getApplicantsForAnimal):
- * a form submission with `selected_animal_id = animalId` received by this
- * rescuer (`user_id`), linked to the adopter — `linked_adopter_id` (which «Es
- * la misma persona» re-points to the chosen profile) or `auto_adopter_id`.
- * Throws on a DB error; callers fail closed.
+ * "Applicant" uses the applicants panel's own predicate (getApplicantsForAnimal,
+ * src/lib/applicantScope.ts): a form submission for `animalId` that came
+ * through a form link of anyone in the ANIMAL OWNER's team (2026-09-30: the
+ * team sees its applicants), linked to the adopter — `linked_adopter_id`
+ * (which «Es la misma persona» re-points to the chosen profile) or
+ * `auto_adopter_id`. A forged `/form?u=<stranger>&animal=<ours>` row is
+ * outside that team and never counts. Throws on a DB error; callers fail closed.
  */
 export async function resolveInvitationAccess(
     db: Db,
@@ -42,15 +45,20 @@ export async function resolveInvitationAccess(
     animalId: string,
     adopter: { id: string; addedBy: string | null; isPublic: number | boolean | null },
 ): Promise<InvitationAccess> {
+    const animal = await db.select({ addedBy: animals.addedBy, deletedAt: animals.deletedAt })
+        .from(animals).where(eq(animals.id, animalId)).get();
+    const scope = animal && !animal.deletedAt ? applicantScopeWhere(animalId, await getTeamEmails(animal.addedBy)) : null;
     const [submissions, gatingOn, visibility, maskOptions, isOwnerOrTeammate] = await Promise.all([
-        db.select({ email: formSubmissions.email, phone: formSubmissions.phone })
-            .from(formSubmissions)
-            .where(and(
-                eq(formSubmissions.selectedAnimalId, animalId),
-                eq(formSubmissions.userId, rescuerEmail),
-                or(eq(formSubmissions.linkedAdopterId, adopter.id), eq(formSubmissions.autoAdopterId, adopter.id)),
-            ))
-            .all() as Promise<Array<{ email: string | null; phone: string | null }>>,
+        // No scope (unknown or deleted animal, empty team) → not an applicant: fail closed.
+        scope
+            ? db.select({ email: formSubmissions.email, phone: formSubmissions.phone })
+                .from(formSubmissions)
+                .where(and(
+                    scope,
+                    or(eq(formSubmissions.linkedAdopterId, adopter.id), eq(formSubmissions.autoAdopterId, adopter.id)),
+                ))
+                .all() as Promise<Array<{ email: string | null; phone: string | null }>>
+            : Promise.resolve([] as Array<{ email: string | null; phone: string | null }>),
         isPiiGatingEnabled(),
         resolveAdopterVisibility(rescuerEmail, { id: adopter.id, addedBy: adopter.addedBy }),
         buildMaskOptions(adopter),

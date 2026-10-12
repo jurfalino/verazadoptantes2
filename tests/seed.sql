@@ -382,8 +382,13 @@ INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered
 ('test-animal-fixture-apl', 'Lupa', 'dog', 'Perra fixture con postulantes del equipo', 'hembra', 'negra', 0, 'gatitosolivos@gmail.com', strftime('%s','now','-10 days'), strftime('%s','now'));
 
 -- The adopter the match notifications point at (and that the link test links to).
-INSERT OR REPLACE INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES
-('test-adopter-fixture-apl-match', 'Zulema Coincidefixture', 'Tel: 555-0377', '4', 'test-seed', strftime('%s','now'), strftime('%s','now'));
+-- Owned by 'test-seed' (no org): its contact and address are PII none of the
+-- team may see raw — the match card must mask them for non-form-owners.
+INSERT OR REPLACE INTO adopters (id, name, contact_info, address_info, status, added_by, created_at, updated_at) VALUES
+('test-adopter-fixture-apl-match', 'Zulema Coincidefixture', 'Tel: 555-0377', 'Calle Fixturera 77, Rosario', '4', 'test-seed', strftime('%s','now'), strftime('%s','now'));
+-- A soft-deleted adopter: linking a submission to it must be refused.
+INSERT OR REPLACE INTO adopters (id, name, contact_info, status, added_by, deleted_at, created_at, updated_at) VALUES
+('test-adopter-fixture-apl-deleted', 'Borrada Fixturelink', 'Tel: 555-0378', '3', 'test-seed', strftime('%s','now'), strftime('%s','now'), strftime('%s','now'));
 
 -- Applicants of Lupa:
 --   via the owner's link   (user_id = admin)
@@ -404,4 +409,46 @@ INSERT OR REPLACE INTO notifications (id, user_id, type, title, body, url, icon,
  strftime('%s','now','-3 days')),
 ('test-notif-fixture-apl-link', 'gatitosolivos@gmail.com', 'form_submission', 'Postulante Vinculofixture completó el formulario — 1 coincidencia', 'Se encontraron posibles registros previos.', '/form-results/test-sub-fixture-apl-link', '⚠️', 1, 0,
  '{"submissionId":"test-sub-fixture-apl-link","matchCount":1,"submittedData":{"name":"Postulante Vinculofixture","email":"apl-link@example.com","phone":"555-0374"},"matchedAdopters":[{"id":"test-adopter-fixture-apl-match","name":"Zulema Coincidefixture","matchTypes":["phone"]}]}',
+ strftime('%s','now','-1 days'));
+
+-- ------------------------------------------------------------
+-- CROSS-ORG applicants (2026-10-01): O shares org-x1 with V and org-x2 with
+-- T. V and T share NO org. V sees T's-link applicant on O's animal page, so V
+-- must be able to open it on /form-results too — through the ANIMAL OWNER's
+-- team, never V's own (which does not contain T). The outsider-link row for
+-- the same animal stays forbidden. Used by tests/team-applicants.spec.ts.
+-- ------------------------------------------------------------
+INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES
+('test-xorg-owner-id', 'Olga Xorg', 'e2e-xorg-owner@example.com', strftime('%s','now'), NULL),
+('test-xorg-viewer-id', 'Vilma Xorg', 'e2e-xorg-viewer@example.com', strftime('%s','now'), NULL),
+('test-xorg-mate-id', 'Tomas Xorg', 'e2e-xorg-mate@example.com', strftime('%s','now'), NULL);
+
+INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms_version, terms_accepted_at) VALUES
+('test-xorg-viewer-id', 'AR', 1, 1, strftime('%s','now'));
+
+INSERT OR REPLACE INTO organizations (id, name, created_by, created_at, slug) VALUES
+('test-org-fixture-xorg1', 'Refugio Xorg Uno', 'e2e-xorg-owner@example.com', strftime('%s','now'), 'refugio-xorg-uno'),
+('test-org-fixture-xorg2', 'Refugio Xorg Dos', 'e2e-xorg-owner@example.com', strftime('%s','now'), 'refugio-xorg-dos');
+
+INSERT OR REPLACE INTO org_members (id, org_id, user_email, role, joined_at) VALUES
+('test-orgm-fixture-xorg1-o', 'test-org-fixture-xorg1', 'e2e-xorg-owner@example.com', 'owner', strftime('%s','now')),
+('test-orgm-fixture-xorg1-v', 'test-org-fixture-xorg1', 'e2e-xorg-viewer@example.com', 'member', strftime('%s','now')),
+('test-orgm-fixture-xorg2-o', 'test-org-fixture-xorg2', 'e2e-xorg-owner@example.com', 'owner', strftime('%s','now')),
+('test-orgm-fixture-xorg2-t', 'test-org-fixture-xorg2', 'e2e-xorg-mate@example.com', 'member', strftime('%s','now'));
+
+INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered, added_by, created_at, updated_at) VALUES
+('test-animal-fixture-xorg', 'Brisa', 'cat', 'Gata fixture de dos grupos', 'hembra', 'gris', 0, 'e2e-xorg-owner@example.com', strftime('%s','now','-5 days'), strftime('%s','now'));
+
+INSERT OR REPLACE INTO form_submissions (id, user_id, name, email, phone, status, selected_animal_id, created_at) VALUES
+('test-sub-fixture-xorg-mate', 'e2e-xorg-mate@example.com', 'Postulante Crucefixture', 'xorg-mate@example.com', '555-0381', 'pending', 'test-animal-fixture-xorg', strftime('%s','now','-2 days')),
+('test-sub-fixture-xorg-outsider', 'e2e-outsider@example.com', 'Postulante Ajenafixture', 'xorg-outsider@example.com', '555-0382', 'pending', 'test-animal-fixture-xorg', strftime('%s','now','-1 days'));
+
+-- The form-link owner's notifications, as the submit route writes them: the
+-- page renders «Completado por» / the identity rows from their submittedData.
+INSERT OR REPLACE INTO notifications (id, user_id, type, title, body, url, icon, read, dismissed, metadata, created_at) VALUES
+('test-notif-fixture-xorg-mate', 'e2e-xorg-mate@example.com', 'form_submission', 'Postulante Crucefixture aplicó para Brisa', 'No se encontraron registros previos.', '/form-results/test-sub-fixture-xorg-mate', '📋', 1, 0,
+ '{"submissionId":"test-sub-fixture-xorg-mate","matchCount":0,"submittedData":{"name":"Postulante Crucefixture","email":"xorg-mate@example.com","phone":"555-0381"},"selectedAnimalId":"test-animal-fixture-xorg","selectedAnimalName":"Brisa"}',
+ strftime('%s','now','-2 days')),
+('test-notif-fixture-xorg-outsider', 'e2e-outsider@example.com', 'form_submission', 'Postulante Ajenafixture aplicó para Brisa', 'No se encontraron registros previos.', '/form-results/test-sub-fixture-xorg-outsider', '📋', 1, 0,
+ '{"submissionId":"test-sub-fixture-xorg-outsider","matchCount":0,"submittedData":{"name":"Postulante Ajenafixture","email":"xorg-outsider@example.com","phone":"555-0382"},"selectedAnimalId":"test-animal-fixture-xorg","selectedAnimalName":"Brisa"}',
  strftime('%s','now','-1 days'));
