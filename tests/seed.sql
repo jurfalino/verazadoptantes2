@@ -363,7 +363,7 @@ INSERT OR REPLACE INTO form_submissions (id, user_id, name, status, created_at) 
 
 INSERT OR REPLACE INTO notifications (id, user_id, type, title, body, url, icon, read, metadata, created_at) VALUES
 ('test-notif-fixture-teammate-1', 'e2e-teammate@example.com', 'contract_result', 'Fixture contrato', 'Fixture', '/contract-results/test-notif-fixture-teammate-1', '📋', 1, '{}', strftime('%s','now'));
-=======
+-- ============================================================
 -- TEAM APPLICANTS FIXTURES (2026-09-30)
 -- Applicants of a team animal are visible to the whole team, whichever
 -- member's form link the person used. Scope = the animal OWNER's team, so a
