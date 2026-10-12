@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.161] - 2026-10-12
+
+### Fixed — the service worker no longer intercepts other sites
+
+The app's service worker re-fetched every request, including scripts and
+beacons from other sites. Its own fetches are bound by sw.js's security
+policy, which allows neither jsDelivr nor Cloudflare's analytics host, so they
+came back «Offline» 503. For any returning visitor that blanked the new API
+explorer (/api/v1/docs) and broke the Cloudflare Web Analytics beacon on every
+page. It now leaves other sites to the browser and never caches /api/v1/.
+Test: src/lib/swFetchRouting.test.ts.
+
 ## [2.56.160] - 2026-10-12
 
 One release bringing in four branches that were waiting, each rebuilt on
