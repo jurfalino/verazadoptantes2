@@ -2,6 +2,59 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.160] - 2026-10-12
+
+One release bringing in four branches that were waiting, each rebuilt on
+current staging (the merge and cherry-pick commits of this version).
+
+### Added — the team sees its applicants (Jon, 2026-09-30)
+
+An animal's applicants are visible to everyone in the animal OWNER's group,
+whichever member's form link the person used — before, each rescuer saw only
+applicants from their own link, and a teammate's notification opened on «No
+tenés permiso».
+- One scope rule (`src/lib/applicantScope.ts`) for the animal page and the
+  /my-animals count; one access rule (`src/lib/formSubmissionAccess.ts`) for
+  /form-results, the «Crear adoptante» prefill, «Vincular» and «Es la misma
+  persona». Staging's linking checks are unchanged; only WHO may act widened.
+- A forged `/form?u=<stranger>&animal=<ours>` row never shows, counts, or names
+  the animal in teammates' notifications; strangers still get the 404.
+- Contract invitations treat applicants by the same team scope, and admins may
+  send them from the applicants list.
+- Teammates' form notification names the animal, like the owner's.
+- Index `form_submissions(selected_animal_id)` (drizzle/0081).
+- Records added by a contract or a form say so: «Agregado por contrato
+  digital» / «formulario de adopción».
+
+### Added — third-party API v1, behind ENABLE_PUBLIC_API (off)
+
+Rescues' own tools search and record adopters with a per-rescuer key:
+`POST /api/v1/search` (exact: full name + email/phone/document → found /
+not_found / ambiguous, optionally saving the record; fuzzy: the homepage
+search), `GET /api/v1/me`, `POST /api/v1/records/{id}/void`, an OpenAPI spec
+and a locked-down explorer at `/api/v1/docs`. Every call is logged
+(`api_requests`, drizzle/0082) for Admin → API and each rescuer's Settings →
+API. Phones are read like the index (tokenizer v7). Plan and decisions:
+`.agents/plans/2026-10-09-third-party-api.md`.
+
+### Fixed — ratings are optional and never inferred (Jon, 2026-10-09)
+
+A record saved without a rating stays unrated. Removed the fallbacks that
+invented one (2★ on imports and the add-record APIs, 5★ preselected in the
+record forms and on contract signing). The star input has a «Sin calificar»
+state and a «Quitar» control. Existing 2★ ratings are untouched.
+
+### Changed — the duplicate Scan writes each group of records atomically
+
+Ten records' token writes go out as one D1 batch (one round trip, all or
+nothing, retried once), so a dropped call can no longer leave a record
+half-written. New e2e `tests/duplicate-scan.authed.spec.ts`.
+
+### Changed — product events
+
+`form_shared` (was mislabelled `contract_shared`), `contract_issued`,
+`list_import_started`; `scripts/analytics/retention-baseline.py`.
+
 ## [2.56.159] - 2026-10-11
 
 ### Fixed — the duplicate Scan carries on when the connection drops
