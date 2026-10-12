@@ -884,3 +884,59 @@ export const chatMessages = sqliteTable("chat_messages", {
     convIdx: index("idx_chat_msgs_conv").on(table.conversationId),
     convCreatedIdx: index("idx_chat_msgs_conv_created").on(table.conversationId, table.createdAt),
 }));
+
+// ── Third-party API v1 (drizzle/0082, .agents/plans/2026-10-09-third-party-api.md) ──
+// A key belongs to one rescuer (owner_email = addedBy of everything it writes).
+// Only the SHA-256 of the secret is stored.
+export const apiKeys = sqliteTable("api_keys", {
+    id: text("id").primaryKey(),
+    ownerEmail: text("owner_email").notNull(),
+    orgId: text("org_id"),
+    name: text("name").notNull(),
+    keyHash: text("key_hash").notNull(),
+    keyPrefix: text("key_prefix").notNull(),
+    environment: text("environment").notNull().default("live"), // 'live' | 'test'
+    scopes: text("scopes").notNull(),                            // JSON: ApiScope[]
+    dailyCapExact: integer("daily_cap_exact").notNull().default(500),
+    dailyCapFuzzy: integer("daily_cap_fuzzy").notNull().default(50),
+    createdBy: text("created_by").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
+    revokedAt: integer("revoked_at", { mode: "timestamp" }),
+    revokedBy: text("revoked_by"),
+}, (table) => ({
+    hashIdx: uniqueIndex("idx_api_keys_hash").on(table.keyHash),
+    ownerIdx: index("idx_api_keys_owner").on(table.ownerEmail),
+}));
+
+// Every API call. request_body (PII the client sent) is purged after 90 days.
+export const apiRequests = sqliteTable("api_requests", {
+    id: text("id").primaryKey(),                 // = requestId returned to the client
+    keyId: text("key_id").notNull(),
+    ownerEmail: text("owner_email").notNull(),
+    endpoint: text("endpoint").notNull(),        // 'search' | 'me' | 'void'
+    mode: text("mode"),                          // 'exact' | 'fuzzy'
+    context: text("context"),                    // record type
+    outcome: text("outcome"),                    // found | not_found | ambiguous | results | voided | error
+    httpStatus: integer("http_status").notNull(),
+    errorId: text("error_id"),
+    requestBody: text("request_body"),
+    responseBody: text("response_body"),
+    profileIds: text("profile_ids"),             // JSON string[]
+    recordId: text("record_id"),
+    profileCreated: integer("profile_created").notNull().default(0),
+    idempotencyKey: text("idempotency_key"),
+    externalId: text("external_id"),
+    voidedAt: integer("voided_at", { mode: "timestamp" }),
+    voidedBy: text("voided_by"),
+    durationMs: integer("duration_ms"),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+}, (table) => ({
+    keyTimeIdx: index("idx_api_requests_key_time").on(table.keyId, table.createdAt),
+    ownerTimeIdx: index("idx_api_requests_owner_time").on(table.ownerEmail, table.createdAt),
+    timeIdx: index("idx_api_requests_time").on(table.createdAt),
+    recordIdx: index("idx_api_requests_record").on(table.recordId),
+    externalIdx: index("idx_api_requests_external").on(table.keyId, table.externalId),
+    // Idempotent saves depend on this (src/lib/api/handler.ts claimIdempotencyKey).
+    idempotencyIdx: uniqueIndex("idx_api_requests_idempotency").on(table.keyId, table.idempotencyKey).where(sql`idempotency_key IS NOT NULL`),
+}));

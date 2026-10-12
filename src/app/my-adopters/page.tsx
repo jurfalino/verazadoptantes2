@@ -149,6 +149,11 @@ function SourcePill({ source, t }: { source?: string; t: (key: string) => string
             📥 {t('myAdopters.source_imported') || 'Imported'}
         </span>
     );
+    if (source === 'api') return (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-stone-100 text-stone-600" title={t('myAdopters.source_api_full')}>
+            {t('myAdopters.source_api')}
+        </span>
+    );
     return null;
 }
 

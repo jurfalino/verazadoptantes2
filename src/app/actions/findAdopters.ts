@@ -811,12 +811,20 @@ async function runDuplicateMode(
 
 // ── Discovery mode engine ─────────────────────────────────────────────────────
 
+/** Server-side caller context the browser can never set (it is not part of
+ *  FindAdoptersOptions, which the session action forwards from the client). */
+interface DiscoveryOrigin { origin: 'app' | 'api' }
+
 async function runDiscoveryMode(
     input: FindAdoptersInput,
     options: FindAdoptersOptions,
     db: any,
     user: string,
+    caller: DiscoveryOrigin = { origin: 'app' },
 ): Promise<FindAdoptersResponse> {
+    // API traffic is a machine: it must not count as people searching (the
+    // popular-searches log) or as profile views in other rescuers' stats.
+    const isApi = caller.origin === 'api';
     const limit = options.limit ?? SEARCH_RESULT_LIMIT;
     const shouldEnrich = options.enrich !== false; // default true
     const normalizedQuery = (input.raw || input.name || '').trim();
@@ -853,7 +861,7 @@ async function runDiscoveryMode(
     } catch { /* best-effort */ }
 
     // Log search query (fire-and-forget)
-    (async () => {
+    if (!isApi) (async () => {
         try {
             await db.insert(searches).values({
                 id: crypto.randomUUID(), query: normalizedQuery, type: 'general',
@@ -1016,7 +1024,7 @@ async function runDiscoveryMode(
     const enrichmentMap = shouldEnrich ? await enrichAdopters(db, adopterIds) : new Map();
 
     // Log search hits (fire-and-forget)
-    (async () => {
+    if (!isApi) (async () => {
         try {
             for (const a of allProfiles) {
                 await db.insert(adopterStats).values({
@@ -1364,7 +1372,7 @@ async function runDiscoveryMode(
         ? allResults.length : undefined;
 
     const totalCount = mainResults.length;
-    if (options.trackPending) {
+    if (options.trackPending && !isApi) {
         // Only THIS search's own single match may identify the person later, and
         // only with its relevance carried along: the deck has to be able to tell
         // a certain match from a lucky one before it names anybody.
@@ -1376,8 +1384,11 @@ async function runDiscoveryMode(
             matchConfidence: only ? Math.round(only.relevancePercent) : null,
         });
     }
-    logger.info('findAdopters:discovery', { query: normalizedQuery, tokens: tokens.length, resultCount: Math.min(totalCount, limit), user });
-    logAudit({ userEmail: user, action: 'search', details: { query: normalizedQuery, resultCount: Math.min(totalCount, limit) } });
+    // An API query is the person's full name + email + phone + document joined
+    // together: log its size, never its text (CLAUDE.md privacy rule).
+    const loggedQuery = isApi ? { queryLength: normalizedQuery.length, origin: 'api' } : { query: normalizedQuery };
+    logger.info('findAdopters:discovery', { ...loggedQuery, tokens: tokens.length, resultCount: Math.min(totalCount, limit), user });
+    logAudit({ userEmail: user, action: 'search', details: { ...loggedQuery, resultCount: Math.min(totalCount, limit) } });
 
     // PII access gating: persist search-match grants — one row per newly matched
     // entry. Awaited so the reveal survives to the viewer's next visit. A write
@@ -1488,4 +1499,27 @@ export async function findAdopters(
         const errorId = logger.error('findAdopters failed', error, { mode: options.mode, user });
         throw new Error(`findAdopters failed (ID: ${errorId})`);
     }
+}
+
+/**
+ * Discovery search exactly as the homepage runs it, for a viewer identified
+ * WITHOUT a session: the third-party API, authenticated by the rescuer's key.
+ * Same ranking, masking and access grants as that rescuer's own search box;
+ * no popular-search log, no search-hit stats, no pending-search capture.
+ *
+ * Server-only. Not reachable from the browser: the session action
+ * (findAdoptersAction.ts) only ever calls `findAdopters`.
+ */
+export async function findAdoptersAsViewer(
+    input: FindAdoptersInput,
+    options: Omit<FindAdoptersOptions, 'mode' | 'trackPending'>,
+    viewerEmail: string,
+): Promise<FindAdoptersResponse> {
+    const db = await getDb();
+    if (!db) throw new Error('findAdoptersAsViewer: database unavailable');
+    return withTrace(
+        'findAdopters.discovery',
+        () => runDiscoveryMode(input, { ...options, mode: 'discovery' }, db, viewerEmail, { origin: 'api' }),
+        { rawLen: (input.raw || '').length, origin: 'api' },
+    );
 }

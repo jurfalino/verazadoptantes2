@@ -68,7 +68,11 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: '/(.*)',
+        // Every path except /api/v1/docs, which sends its OWN stricter CSP
+        // (pinned + SRI-checked Scalar from jsDelivr, connect-src 'self'; see
+        // src/lib/api/docsPage.ts). Two CSPs both apply, so this one would block
+        // that script.
+        source: '/((?!api/v1/docs$).*)',
         headers: [
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'DENY' },

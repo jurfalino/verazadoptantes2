@@ -234,6 +234,14 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
         }
     };
 
+    // `?record=<id>`: the link the third-party API returns for a saved record
+    // (and the API log's «Ver registro») lands on that record's card.
+    const recordParam = searchParams.get('record');
+    useEffect(() => {
+        if (!recordParam || !adoptions?.some(a => a.id === recordParam)) return;
+        return flashActivityCard(recordParam);
+    }, [recordParam, adoptions]);
+
     // v2.19.37: when the profile is opened from a search result with a `?q=`
     // term, scroll the matched activity into view + flash it briefly so the
     // user lands on the part of the record their query actually matched.
@@ -260,29 +268,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             return haystack.includes(needle);
         });
         if (!matched) return;
-
-        // Defer a tick so the CollapsibleSection has rendered its open state
-        // and getElementById can find the activity card. The 300ms delay is
-        // generous — image lazy-loading inside the card might still be in
-        // flight, but the outer container's geometry is settled.
-        const t = setTimeout(() => {
-            const el = document.getElementById(`adoption-${matched.id}`);
-            if (!el) return;
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            // Brief accent-ring flash so the eye lands on the matched card
-            // even after scroll. Uses --accent so both themes get a tinted
-            // ring, not a raw colour. Cleared 2s in so the card returns to
-            // its normal resting state.
-            el.style.transition = 'box-shadow 0.3s ease-out';
-            el.style.boxShadow = '0 0 0 3px var(--accent)';
-            const fade = setTimeout(() => {
-                el.style.boxShadow = '';
-                const clear = setTimeout(() => { el.style.transition = ''; }, 400);
-                return () => clearTimeout(clear);
-            }, 1800);
-            return () => clearTimeout(fade);
-        }, 300);
-        return () => clearTimeout(t);
+        return flashActivityCard(matched.id);
     }, [q, adoptions, adopter?.name]);
 
     const ref = searchParams.get('ref');
@@ -878,4 +864,26 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             </div>
         </main>
     );
+}
+
+/**
+ * Scroll an activity card into view and flash it, so the eye lands on it.
+ * Deferred a tick so the CollapsibleSection has rendered its open state; the
+ * ring uses --accent so both themes get a tinted ring. Returns the cleanup.
+ */
+function flashActivityCard(recordId: string): () => void {
+    let fade: ReturnType<typeof setTimeout> | undefined;
+    let clear: ReturnType<typeof setTimeout> | undefined;
+    const start = setTimeout(() => {
+        const el = document.getElementById(`adoption-${recordId}`);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.style.transition = 'box-shadow 0.3s ease-out';
+        el.style.boxShadow = '0 0 0 3px var(--accent)';
+        fade = setTimeout(() => {
+            el.style.boxShadow = '';
+            clear = setTimeout(() => { el.style.transition = ''; }, 400);
+        }, 1800);
+    }, 300);
+    return () => { clearTimeout(start); clearTimeout(fade); clearTimeout(clear); };
 }

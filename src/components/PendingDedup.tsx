@@ -104,6 +104,7 @@ function SourceBadge({ source, t }: { source: string; t: (k: string) => string }
     if (source === 'form') return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-700 font-semibold">📝 {t('myAdopters.source_form') || 'Form'}</span>;
     if (source === 'contract') return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 font-semibold">✍️ {t('myAdopters.source_contract') || 'Contract'}</span>;
     if (source === 'imported') return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600 font-semibold">📥 {t('myAdopters.source_imported') || 'Imported'}</span>;
+    if (source === 'api') return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600 font-semibold">{t('myAdopters.source_api')}</span>;
     return null;
 }
 

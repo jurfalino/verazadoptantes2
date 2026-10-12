@@ -1,0 +1,256 @@
+import { test, expect, request as pwRequest, type APIRequestContext } from '@playwright/test';
+import { execSync } from 'child_process';
+
+/**
+ * Third-party API v1 (.agents/plans/2026-10-09-third-party-api.md), end to end:
+ * the admin issues a key, a "partner" (no cookies, Bearer key) searches,
+ * saves, retries and voids, and both review surfaces show the calls.
+ *
+ * ENABLE_PUBLIC_API is off in the seed; this file turns it on for itself and
+ * is the ONLY spec that touches it (serial). Every person it creates is unique
+ * to the run (letters-only stamp: digits in a name would tokenize as a phone).
+ */
+function execD1(sql: string): string {
+    return execSync(`npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+}
+const flagOn = () => execD1(`INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES ('ENABLE_PUBLIC_API', 'true', strftime('%s','now'), 'e2e')`);
+const flagOff = () => execD1(`DELETE FROM app_config WHERE key = 'ENABLE_PUBLIC_API'`);
+
+const STAMP = String(Date.now());
+const TAG = STAMP.split('').map(d => 'abcdefghij'[Number(d)]).join('');
+const NAME = `Apifixture ${TAG.charAt(0).toUpperCase()}${TAG.slice(1)}`;
+const PHONE_TAIL = STAMP.slice(-8);
+const LOCAL_PHONE = `11 ${PHONE_TAIL.slice(0, 4)}-${PHONE_TAIL.slice(4)}`;
+const INTL_PHONE = `+54 9 11 ${PHONE_TAIL.slice(0, 4)} ${PHONE_TAIL.slice(4)}`;
+const EMAIL = `api-${STAMP}@example.com`;
+const ADMIN_EMAIL = 'gatitosolivos@gmail.com';
+
+test.describe.configure({ mode: 'serial' });
+
+test.describe('public API v1', () => {
+    let secret = '';
+    let keyId = '';
+    let api: APIRequestContext;
+    let recordId = '';
+    let profileId = '';
+
+    test.beforeAll(async ({ baseURL }) => {
+        flagOn();
+        api = await pwRequest.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
+    });
+    test.afterAll(async () => {
+        flagOff();
+        await api?.dispose();
+    });
+
+    const auth = (extra: Record<string, string> = {}) => ({ authorization: `Bearer ${secret}`, ...extra });
+    const search = (data: unknown, headers: Record<string, string> = {}) =>
+        api.post('/api/v1/search', { data, headers: auth(headers) });
+
+    test('admin issues a key; the secret is shown once and works for /me', async ({ page }) => {
+        const res = await page.request.post('/api/admin/api-keys', { data: { ownerEmail: ADMIN_EMAIL, name: `E2E ${TAG}` } });
+        expect(res.status()).toBe(201);
+        const issued = await res.json();
+        expect(issued.secret).toMatch(/^ba_test_[A-Za-z0-9]{43}$/);
+        secret = issued.secret;
+        keyId = issued.id;
+
+        expect((await api.get('/api/v1/me')).status()).toBe(401);
+        expect((await api.get('/api/v1/me', { headers: { authorization: 'Bearer ba_test_notarealkeynotarealkeynotarealkey12345' } })).status()).toBe(401);
+        const me = await api.get('/api/v1/me', { headers: auth() });
+        expect(me.status()).toBe(200);
+        const body = await me.json();
+        expect(body.rescuer.email).toBe(ADMIN_EMAIL);
+        expect(body.key.scopes).toEqual(['search', 'search:fuzzy', 'record:write']);
+        expect(me.headers()['x-request-id']).toBe(body.requestId);
+    });
+
+    test('validation: full name + identifier, a real full name, no save in fuzzy', async () => {
+        const noId = await search({ mode: 'exact', context: 'adoption_request', person: { fullName: NAME } });
+        expect(noId.status()).toBe(422);
+        expect((await noId.json()).error.code).toBe('exact_requires_name_and_identifier');
+
+        const oneWord = await search({ mode: 'exact', context: 'adoption_request', person: { fullName: 'María', phone: LOCAL_PHONE } });
+        expect((await oneWord.json()).error.code).toBe('full_name_required');
+
+        const fuzzySave = await search({ mode: 'fuzzy', context: 'adoption_request', person: { fullName: NAME }, save: {} });
+        expect((await fuzzySave.json()).error.code).toBe('save_requires_exact');
+
+        const badRating = await search({ mode: 'exact', context: 'observation', person: { fullName: NAME, phone: LOCAL_PHONE }, save: { rating: 7 } }, { 'idempotency-key': `bad-${STAMP}` });
+        expect(badRating.status()).toBe(422);
+
+        const noKey = await search({ mode: 'exact', context: 'adoption_request', person: { fullName: NAME, phone: LOCAL_PHONE }, save: {} });
+        expect((await noKey.json()).error.code).toBe('idempotency_key_required');
+    });
+
+    test('unknown person → not_found; saving creates the profile and the record, unrated', async () => {
+        const check = await search({ mode: 'exact', context: 'adoption_request', person: { fullName: NAME, phone: LOCAL_PHONE } });
+        expect(check.status()).toBe(200);
+        expect((await check.json()).result).toBe('not_found');
+
+        const body = { mode: 'exact', context: 'adoption_request', person: { fullName: NAME, phone: LOCAL_PHONE, email: EMAIL }, save: { externalId: `ext-${STAMP}`, animalName: 'Luna', species: 'dog' } };
+        const saved = await search(body, { 'idempotency-key': `save-${STAMP}` });
+        expect(saved.status()).toBe(200);
+        const s = await saved.json();
+        expect(s.result).toBe('not_found');
+        expect(s.saved.profileCreated).toBe(true);
+        expect(s.saved.recordUrl).toContain(`/adopter/${s.saved.profileId}?record=${s.saved.recordId}`);
+        recordId = s.saved.recordId;
+        profileId = s.saved.profileId;
+
+        // A retry with the same key and body replays the answer and writes nothing.
+        const replay = await search(body, { 'idempotency-key': `save-${STAMP}` });
+        const r = await replay.json();
+        expect(r.replayed).toBe(true);
+        expect(r.saved.recordId).toBe(recordId);
+        // Same key, different body → refused.
+        const clash = await search({ ...body, context: 'observation' }, { 'idempotency-key': `save-${STAMP}` });
+        expect(clash.status()).toBe(409);
+        // Same externalId under a new idempotency key → refused.
+        const dupExt = await search(body, { 'idempotency-key': `save2-${STAMP}` });
+        expect((await dupExt.json()).error.code).toBe('external_id_reused');
+    });
+
+    test('the same person in another phone format → found, with one request and no rating', async () => {
+        const res = await search({ mode: 'exact', context: 'adoption_request', person: { fullName: `${NAME.split(' ')[1]}, ${NAME.split(' ')[0]}`, phone: INTL_PHONE } });
+        const b = await res.json();
+        expect(b.result).toBe('found');
+        expect(b.profile.profileId).toBe(profileId);
+        expect(b.profile.matchedOn).toEqual(['phone']);
+        expect(b.profile.nameMatchedAs).toBe('profile');
+        expect(b.profile.records).toEqual({ adoption_request: 1 });
+        expect(b.profile.ratingLabel).toBe('not_rated');
+        expect(b.profile.url).toContain(`/adopter/${profileId}`);
+
+        const byEmail = await search({ mode: 'exact', context: 'adoption_request', person: { fullName: NAME, email: EMAIL.toUpperCase() } });
+        expect((await byEmail.json()).profile.matchedOn).toEqual(['email']);
+    });
+
+    let secondRecordId = '';
+    test('a known person + save → the record goes on THAT profile; the answer is the person before the call', async () => {
+        const res = await search(
+            { mode: 'exact', context: 'observation', person: { fullName: NAME, email: EMAIL }, save: { rating: 1, notes: 'No respondió más' } },
+            { 'idempotency-key': `obs-${STAMP}` },
+        );
+        const b = await res.json();
+        expect(b.result).toBe('found');
+        expect(b.saved.profileCreated).toBe(false);
+        expect(b.saved.profileId).toBe(profileId);
+        expect(b.profile.records).toEqual({ adoption_request: 1 }); // before this call
+        expect(b.profile.ratingLabel).toBe('not_rated');
+        secondRecordId = b.saved.recordId;
+
+        const after = await (await search({ mode: 'exact', context: 'observation', person: { fullName: NAME, email: EMAIL } })).json();
+        expect(after.profile.records).toEqual({ adoption_request: 1, observation: 1 });
+        expect(after.profile.ratingLabel).toBe('dangerous');
+    });
+
+    test('same phone, unrelated name → ambiguous name_mismatch, never a guess', async () => {
+        const res = await search({ mode: 'exact', context: 'adoption_request', person: { fullName: 'Otra Persona Distinta', phone: LOCAL_PHONE } });
+        const b = await res.json();
+        expect(b.result).toBe('ambiguous');
+        expect(b.reason).toBe('name_mismatch');
+        expect(b.candidates).toBe(1);
+        // The previous test rated this person 1★: an ambiguous answer still lets the client block.
+        expect(b.worstRating.ratingLabel).toBe('dangerous');
+        expect(b.profile).toBeUndefined();
+    });
+
+    test('fuzzy search finds the person like the homepage does', async () => {
+        const res = await search({ mode: 'fuzzy', context: 'adoption_request', person: { fullName: NAME } });
+        expect(res.status()).toBe(200);
+        const b = await res.json();
+        expect(b.results.map((r: { profile: { profileId: string } }) => r.profile.profileId)).toContain(profileId);
+    });
+
+    test('the record link opens the profile on that record', async ({ page }) => {
+        await page.goto(`/adopter/${profileId}?record=${recordId}`);
+        await expect(page.locator(`[id="adoption-${recordId}"]`)).toBeVisible({ timeout: 30000 });
+    });
+
+    test('both review surfaces list the calls', async ({ page }) => {
+        const admin = await page.request.get(`/api/admin/api-requests?keyId=${keyId}`);
+        const rows = (await admin.json()).rows as Array<{ recordId: string | null; outcome: string }>;
+        expect(rows.some(r => r.recordId === recordId)).toBe(true);
+        expect(rows.some(r => r.outcome === 'ambiguous')).toBe(true);
+
+        await page.goto('/admin/api');
+        await expect(page.getByTestId('api-keys')).toContainText(`E2E ${TAG}`, { timeout: 30000 });
+        await expect(page.getByTestId('api-transaction').first()).toBeVisible();
+
+        await page.goto('/settings');
+        await expect(page.getByTestId('settings-api')).toContainText(`E2E ${TAG}`, { timeout: 30000 });
+    });
+
+    test('ambiguous + save → a NEW profile, registered as a possible duplicate', async () => {
+        const res = await search(
+            { mode: 'exact', context: 'adoption_request', person: { fullName: 'Otra Persona Distinta', phone: LOCAL_PHONE }, save: {} },
+            { 'idempotency-key': `amb-${STAMP}` },
+        );
+        const b = await res.json();
+        expect(b.result).toBe('ambiguous');
+        expect(b.saved.profileCreated).toBe(true);
+        expect(b.saved.profileId).not.toBe(profileId);
+        const pair = JSON.parse(execD1(`SELECT count(*) AS n FROM duplicate_candidates WHERE (adopter1_id = '${b.saved.profileId}' AND adopter2_id = '${profileId}') OR (adopter1_id = '${profileId}' AND adopter2_id = '${b.saved.profileId}')`));
+        expect(pair[0].results[0].n).toBe(1);
+        // Now the phone belongs to two people: the original is still found by
+        // name, and the answer says another profile shares the identifier.
+        const found = await (await search({ mode: 'exact', context: 'adoption_request', person: { fullName: NAME, phone: LOCAL_PHONE } })).json();
+        expect(found.result).toBe('found');
+        expect(found.profile.profileId).toBe(profileId);
+        expect(found.otherMatches.count).toBe(1);
+        expect(found.otherMatches.urls[0]).toContain(b.saved.profileId);
+        // Clean up through the API itself.
+        const v = await api.post(`/api/v1/records/${b.saved.recordId}/void`, { headers: auth() });
+        expect((await v.json()).profileVoided).toBe(true);
+    });
+
+    test('void: only once; the API-created profile goes only when nothing is left on it', async () => {
+        const first = await api.post(`/api/v1/records/${secondRecordId}/void`, { headers: auth() });
+        expect(first.status()).toBe(200);
+        expect((await first.json()).profileVoided).toBe(false); // added to an existing profile
+
+        const res = await api.post(`/api/v1/records/${recordId}/void`, { headers: auth() });
+        expect(res.status()).toBe(200);
+        expect((await res.json()).profileVoided).toBe(true);
+        const again = await api.post(`/api/v1/records/${recordId}/void`, { headers: auth() });
+        expect(again.status()).toBe(200);
+        expect((await again.json()).alreadyVoided).toBe(true);
+        // Not this key's record → 404 too.
+        expect((await api.post('/api/v1/records/test-adoption-5/void', { headers: auth() })).status()).toBe(404);
+
+        const after = await search({ mode: 'exact', context: 'adoption_request', person: { fullName: NAME, phone: LOCAL_PHONE } });
+        expect((await after.json()).result).toBe('not_found');
+    });
+
+    test('daily cap → 429 with Retry-After', async ({ page }) => {
+        const me = await (await api.get('/api/v1/me', { headers: auth() })).json();
+        await page.request.patch(`/api/admin/api-keys/${keyId}`, { data: { dailyCapFuzzy: me.usedToday.fuzzy + 1 } });
+        expect((await search({ mode: 'fuzzy', context: 'observation', person: { fullName: NAME } })).status()).toBe(200);
+        const capped = await search({ mode: 'fuzzy', context: 'observation', person: { fullName: NAME } });
+        expect(capped.status()).toBe(429);
+        expect(Number(capped.headers()['retry-after'])).toBeGreaterThan(0);
+    });
+
+    test('docs and spec are served; a revoked key stops working', async ({ page }) => {
+        const spec = await api.get('/api/v1/openapi.json');
+        expect((await spec.json()).paths['/api/v1/search']).toBeTruthy();
+        const docs = await api.get('/api/v1/docs');
+        expect(docs.headers()['content-type']).toContain('text/html');
+        expect(docs.headers()['content-security-policy']).toContain("connect-src 'self'");
+        // The pinned, integrity-checked explorer actually renders under that CSP.
+        await page.goto('/api/v1/docs');
+        await expect(page.getByText('BuenAdoptante API').first()).toBeVisible({ timeout: 30000 });
+
+        await page.request.patch(`/api/admin/api-keys/${keyId}`, { data: { revoke: true } });
+        expect((await api.get('/api/v1/me', { headers: auth() })).status()).toBe(401);
+    });
+
+    test('flag off → every endpoint answers 404 api_disabled', async () => {
+        flagOff();
+        const res = await api.get('/api/v1/me', { headers: auth() });
+        expect(res.status()).toBe(404);
+        expect((await res.json()).error.code).toBe('api_disabled');
+        flagOn();
+    });
+});

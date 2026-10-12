@@ -34,21 +34,23 @@
 import { logger } from '@/lib/logger';
 import { serializeHouseholdMembers, type HouseholdMember } from '@/lib/householdMembers';
 
-export type AdopterSource = 'manual' | 'form' | 'contract' | 'imported';
+export type AdopterSource = 'manual' | 'form' | 'contract' | 'imported' | 'api';
 
 export interface CreateAdopterInput {
     /** Fully named people from "¿Quiénes viven en la casa?" (spec 2026-10-04 §3). Written before tokenizing so their names reach dedup. */
     householdMembers?: HouseholdMember[];
-    /** Always 'form' or 'contract' here; 'manual'/'imported' use their own paths. */
-    source: Extract<AdopterSource, 'form' | 'contract'>;
+    /** 'form', 'contract' or 'api' here; 'manual'/'imported' use their own paths. */
+    source: Extract<AdopterSource, 'form' | 'contract' | 'api'>;
+    /** source 'api' only: which key and call created the profile, for its history. */
+    api?: { keyName: string; requestId: string; context: string };
     name: string;
     /** Rescuer email — owns the row. Falls back to 'anonymous' only if no rescuer is known. */
     addedBy: string;
     email?: string | null;
     phone?: string | null;
     address?: string | null;
-    /** Free-form social handles or extra contact lines, joined into contactInfo. */
-    socials?: string | null;
+    /** Social profiles (handles or URLs), one contact entry each. */
+    socials?: string | string[] | null;
     /** Document ID (DNI/Documento) — joined into contactInfo for the contract path. */
     documentId?: string | null;
     /** Optional history context: form submission id (for `source: 'form'`). */
@@ -100,11 +102,12 @@ export async function createAdopterFromSubmission(
     // Dynamic import to match this module's edge-route import convention.
     // `address` is intentionally excluded — it goes to addressInfo, not contactEntries.
     const { buildContactEntries, contactEntriesToBlob } = await import('@/lib/contactEntries');
+    const socialList = Array.isArray(input.socials) ? input.socials.filter(Boolean) : input.socials ? [input.socials] : [];
     const contactEntries = buildContactEntries({
         ids: input.documentId ? [{ value: input.documentId, label: 'Documento' }] : [],
         emails: input.email ? [input.email] : [],
         phones: input.phone ? [input.phone] : [],
-        socials: input.socials ? [input.socials] : [],
+        socials: socialList,
         addresses: input.address ? [input.address] : [],
     });
     const contactInfo = contactEntriesToBlob(contactEntries);
@@ -160,7 +163,16 @@ export async function createAdopterFromSubmission(
     });
 
     // 2. Log history. Shape distinct per source so the timeline reads sensibly.
-    const changes = input.source === 'form'
+    const changes = input.source === 'api'
+        ? {
+            created_via_api: {
+                keyName: input.api?.keyName ?? null,
+                requestId: input.api?.requestId ?? null,
+                context: input.api?.context ?? null,
+                name: trimmedName,
+            },
+        }
+        : input.source === 'form'
         ? {
             auto_created_from_form: {
                 submissionId: input.submissionId || null,
@@ -183,7 +195,7 @@ export async function createAdopterFromSubmission(
     await db.insert(adopterHistory).values({
         id: crypto.randomUUID(),
         adopterId,
-        changedBy: input.source === 'form' ? 'form-submission' : 'contract-submission',
+        changedBy: input.source === 'api' ? `api:${input.api?.keyName ?? 'unknown'}` : input.source === 'form' ? 'form-submission' : 'contract-submission',
         changes: JSON.stringify(changes),
         changedAt: now,
     });
@@ -231,7 +243,7 @@ export async function createAdopterFromSubmission(
                 // the id index — a returning applicant's DNI found nobody.
                 ids: input.documentId?.trim() ? [input.documentId.trim()] : [],
                 emails: input.email ? extractEmails(input.email) : [],
-                socials: input.socials ? extractSocials(input.socials) : [],
+                socials: socialList.length ? extractSocials(socialList.join('\n')) : [],
                 excludeAdopterId: adopterId,
             },
             { mode: 'duplicate', minRelevance: 0, limit: 5 },
