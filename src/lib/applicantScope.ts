@@ -60,3 +60,20 @@ export function applicantScopeWhere(
     if (!linkOwnerInTeam) return null;
     return and(eq(formSubmissions.selectedAnimalId, animalId), linkOwnerInTeam) ?? null;
 }
+
+/**
+ * The animal a form-submission notification may name to the FORM-LINK
+ * OWNER's org-mates: only when the animal's owner is in that team. A forged
+ * `/form?u=<x>&animal=<another team's animal>` row would otherwise show x's
+ * teammates another team's animal name. Null → generic title, no animal in
+ * the metadata.
+ */
+export function teammateVisibleAnimal(
+    animal: { id: string | null; name: string | null; owner: string | null },
+    formLinkOwnerTeam: ReadonlyArray<string | null | undefined>,
+): { id: string; name: string } | null {
+    if (!animal.id || !animal.name?.trim() || !animal.owner) return null;
+    return isInTeamScope(animal.owner, normalizeTeamScope(formLinkOwnerTeam))
+        ? { id: animal.id, name: animal.name }
+        : null;
+}

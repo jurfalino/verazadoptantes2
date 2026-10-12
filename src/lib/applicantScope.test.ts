@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core';
-import { normalizeTeamScope, applicantScopeWhere, isInTeamScope } from './applicantScope';
+import { normalizeTeamScope, applicantScopeWhere, isInTeamScope, teammateVisibleAnimal } from './applicantScope';
 
 /**
  * Which applicants belong to an animal (2026-09-30, product decision): a
@@ -80,5 +80,25 @@ describe('applicantScopeWhere', () => {
 
     it('fails CLOSED for a blank animal id', () => {
         expect(applicantScopeWhere('', ['owner@example.com'])).toBeNull();
+    });
+});
+
+describe('teammateVisibleAnimal (form notification fan-out)', () => {
+    const team = ['Owner@Example.com', 'mate@example.com'];
+
+    it('keeps the animal when its owner is in the form-link owner\'s team (case-insensitive)', () => {
+        expect(teammateVisibleAnimal({ id: 'a1', name: 'Luna', owner: 'MATE@example.com' }, team))
+            .toEqual({ id: 'a1', name: 'Luna' });
+    });
+
+    it('withholds it for a forged ?animal= row (owner outside the team)', () => {
+        expect(teammateVisibleAnimal({ id: 'a1', name: 'Luna', owner: 'stranger@example.com' }, team)).toBeNull();
+    });
+
+    it('withholds it when anything is missing or the team is empty (fail closed)', () => {
+        expect(teammateVisibleAnimal({ id: 'a1', name: 'Luna', owner: null }, team)).toBeNull();
+        expect(teammateVisibleAnimal({ id: null, name: 'Luna', owner: 'mate@example.com' }, team)).toBeNull();
+        expect(teammateVisibleAnimal({ id: 'a1', name: null, owner: 'mate@example.com' }, team)).toBeNull();
+        expect(teammateVisibleAnimal({ id: 'a1', name: 'Luna', owner: 'mate@example.com' }, [])).toBeNull();
     });
 });

@@ -35,8 +35,12 @@ const TEAMMATE = { email: 'e2e-teammate@example.com', name: 'Vero E2E', sub: 'te
 const XORG_VIEWER = { email: 'e2e-xorg-viewer@example.com', name: 'Vilma Xorg', sub: 'test-xorg-viewer-id' };
 
 /** The matched adopter's PII (owned by 'test-seed', outside every test team). */
-const MATCH_PHONE = '555-0377';
+const MATCH_PHONE = '4555-0377';
 const MATCH_STREET = 'Calle Fixturera 77';
+const MATCH_EMAIL = 'zulema.fixture@example.com';
+/** The matched adopter's Instagram (stored as a URL; the applicant's free-text
+ *  guess is «@Zulema.FX», so this string only appears if the entry is revealed). */
+const MATCH_SOCIAL = 'instagram.com/zulema.fx';
 
 type Persona = { email: string; name: string; sub: string };
 
@@ -141,17 +145,9 @@ test.describe('Team applicants: org-mates see the applicants of team animals', (
             await expect(page.getByText(OWNER_APPLICANT).first()).toBeVisible({ timeout: 30000 });
             await expect(page.getByText(FORBIDDEN)).toHaveCount(0);
             // The duplicate-match data lives on the form-link owner's notification;
-            // the teammate sees the same matched profile the owner does —
+            // the teammate sees the same matched profile the owner does. (What its
+            // contact details show is covered with PII gating on, below.)
             await expect(page.getByText(MATCH_NAME).first()).toBeVisible({ timeout: 30000 });
-            // — but that adopter belongs to another rescuer, so its phone and
-            // street go through the PII model: masked on screen AND absent from
-            // everything the server sent (HTML, inlined RSC, RSC flight).
-            await expect(page.getByText(MATCH_PHONE)).toHaveCount(0);
-            await expect(page.getByText(MATCH_STREET)).toHaveCount(0);
-            const payload = await serverPayload(ctx, '/form-results/test-sub-fixture-apl-owner');
-            expect(payload).toContain(MATCH_NAME);
-            expect(payload).not.toContain(MATCH_PHONE);
-            expect(payload).not.toContain(MATCH_STREET);
 
             // «Crear adoptante» prefill works for the teammate too.
             await page.goto('/adopter/create?fromForm=test-sub-fixture-apl-owner');
@@ -185,7 +181,8 @@ test.describe('Team applicants: org-mates see the applicants of team animals', (
         try {
             const page = await ctx.newPage();
             await page.goto('/form-results/test-sub-fixture-apl-outsider');
-            await expect(page.getByText(FORBIDDEN)).toBeVisible({ timeout: 30000 });
+            // A stranger gets the friendly 404 (never confirms the submission exists).
+            await expect(page.getByTestId('not-found-page')).toBeVisible({ timeout: 30000 });
             await expect(page.getByText(OUTSIDER_APPLICANT)).toHaveCount(0);
 
             await page.goto('/adopter/create?fromForm=test-sub-fixture-apl-outsider');
@@ -196,19 +193,119 @@ test.describe('Team applicants: org-mates see the applicants of team animals', (
         }
     });
 
-    test('the form-link owner keeps the raw match data (pre-existing behaviour, flagged for product)', async ({ browser }) => {
-        // Positive control for the masking assertions above: the fixture really
-        // carries the phone and street, and the owner's view is unchanged.
-        const ctx = await browser.newContext({ storageState: '.auth/admin.json' });
+    test('PII gating OFF: the match card shows what the profile shows — everything', async ({ browser }) => {
+        const ctx = await teammateContext(browser);
         try {
             const page = await ctx.newPage();
             await page.goto('/form-results/test-sub-fixture-apl-owner');
             await expect(page.getByText(MATCH_NAME).first()).toBeVisible({ timeout: 30000 });
-            await expect(page.getByText(MATCH_PHONE).first()).toBeVisible();
+            await expect(page.getByText(MATCH_EMAIL).first()).toBeVisible();
             await expect(page.getByText(MATCH_STREET).first()).toBeVisible();
+
+            // /contract-results follows the same rule.
+            await page.goto('/contract-results/test-notif-fixture-contract-mate');
+            await expect(page.getByText(MATCH_EMAIL).first()).toBeVisible({ timeout: 30000 });
         } finally {
             await ctx.close();
         }
+    });
+
+    // Staging's rule (5d3b365a / 1ca90822, maskMatchCardsForViewer): a match
+    // card shows what the profile shows this viewer, plus the entries equal to
+    // the phone / email this applicant typed (phone: same number, ≥ 8 digits).
+    // Free text never unlocks anything.
+    test.describe('PII gating ON: match cards follow the profile screen, revealing only what the applicant typed', () => {
+        test.beforeAll(() => {
+            queryD1(`INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES ('ENABLE_PII_ACCESS_GATING', 'true', strftime('%s','now'), 'e2e-team-applicants')`);
+        });
+        test.afterAll(() => {
+            queryD1(`DELETE FROM app_config WHERE key = 'ENABLE_PII_ACCESS_GATING'`);
+        });
+
+        test('teammate: the phone the applicant typed is revealed; the email and street stay masked', async ({ browser }) => {
+            // The owner-link applicant typed «4555 0377»; the matched adopter has
+            // «4555-0377» (same number) plus an email and a street the applicant
+            // never typed. The adopter is another rescuer's, so its profile is
+            // masked for Vero.
+            const ctx = await teammateContext(browser);
+            try {
+                const page = await ctx.newPage();
+                await page.goto('/form-results/test-sub-fixture-apl-owner');
+                await expect(page.getByText(MATCH_NAME).first()).toBeVisible({ timeout: 30000 });
+                await expect(page.getByText(MATCH_PHONE).first()).toBeVisible();
+                await expect(page.getByText(MATCH_EMAIL)).toHaveCount(0);
+                await expect(page.getByText(MATCH_STREET)).toHaveCount(0);
+                // Not just hidden: never sent (SSR HTML, inlined RSC, RSC flight).
+                const payload = await serverPayload(ctx, '/form-results/test-sub-fixture-apl-owner');
+                expect(payload).toContain(MATCH_PHONE);
+                expect(payload).not.toContain(MATCH_EMAIL);
+                expect(payload).not.toContain(MATCH_STREET);
+                // The applicant pasted «@Zulema.FX» into a free-text answer (and the
+                // notification even lists `social`): free text is never an oracle.
+                expect(payload).toContain('@Zulema.FX');
+                expect(payload).not.toContain(MATCH_SOCIAL);
+            } finally {
+                await ctx.close();
+            }
+        });
+
+        test('form-link owner: same treatment — the phone they typed is revealed, nothing else', async ({ browser }) => {
+            // Vero's OWN link (test-sub-fixture-apl-mate): the applicant typed
+            // «4555 0377», Zulema's number, so that entry unlocks; her email,
+            // street and Instagram were never typed and stay masked.
+            const ctx = await teammateContext(browser);
+            try {
+                const page = await ctx.newPage();
+                await page.goto('/form-results/test-sub-fixture-apl-mate');
+                await expect(page.getByText(MATCH_NAME).first()).toBeVisible({ timeout: 30000 });
+                await expect(page.getByText(MATCH_PHONE).first()).toBeVisible();
+                await expect(page.getByText(MATCH_EMAIL)).toHaveCount(0);
+                await expect(page.getByText(MATCH_STREET)).toHaveCount(0);
+                const payload = await serverPayload(ctx, '/form-results/test-sub-fixture-apl-mate');
+                expect(payload).toContain(MATCH_NAME);
+                expect(payload).toContain(MATCH_PHONE);
+                expect(payload).not.toContain(MATCH_EMAIL);
+                expect(payload).not.toContain(MATCH_STREET);
+                expect(payload).not.toContain(MATCH_SOCIAL);
+            } finally {
+                await ctx.close();
+            }
+        });
+
+        test('/contract-results: the recipient sees the profile rule + only the matched, typed phone', async ({ browser }) => {
+            const ctx = await teammateContext(browser);
+            try {
+                const page = await ctx.newPage();
+                await page.goto('/contract-results/test-notif-fixture-contract-mate');
+                await expect(page.getByText(MATCH_NAME).first()).toBeVisible({ timeout: 30000 });
+                await expect(page.getByText(MATCH_PHONE).first()).toBeVisible();
+                await expect(page.getByText(MATCH_EMAIL)).toHaveCount(0);
+                const payload = await serverPayload(ctx, '/contract-results/test-notif-fixture-contract-mate');
+                expect(payload).toContain(MATCH_NAME);
+                expect(payload).toContain(MATCH_PHONE);
+                expect(payload).not.toContain(MATCH_EMAIL);
+                expect(payload).not.toContain(MATCH_SOCIAL);
+            } finally {
+                await ctx.close();
+            }
+        });
+
+        test('admin (form-link owner here): sees everything, as on the profile screen', async ({ browser }) => {
+            // Positive control: the fixture really carries the email and street,
+            // and an admin's profile view is unmasked.
+            const ctx = await browser.newContext({ storageState: '.auth/admin.json' });
+            try {
+                const page = await ctx.newPage();
+                await page.goto('/form-results/test-sub-fixture-apl-owner');
+                await expect(page.getByText(MATCH_NAME).first()).toBeVisible({ timeout: 30000 });
+                await expect(page.getByText(MATCH_PHONE).first()).toBeVisible();
+                await expect(page.getByText(MATCH_EMAIL).first()).toBeVisible();
+                await expect(page.getByText(MATCH_STREET).first()).toBeVisible();
+                await expect(page.getByText(MATCH_SOCIAL).first()).toBeVisible();
+            } finally {
+                await ctx.close();
+            }
+        });
     });
 
     test('a teammate cannot link the outsider\'s submission (create-from-form flow)', async ({ browser }) => {
@@ -258,12 +355,80 @@ test.describe('Team applicants: org-mates see the applicants of team animals', (
             await expect(page.getByText('Postulante Crucefixture').first()).toBeVisible();
             await expect(page.getByText(FORBIDDEN)).toHaveCount(0);
 
-            // The outsider-link row for the same animal stays forbidden.
+            // The outsider-link row for the same animal stays forbidden (404).
             await page.goto('/form-results/test-sub-fixture-xorg-outsider');
-            await expect(page.getByText(FORBIDDEN)).toBeVisible({ timeout: 30000 });
+            await expect(page.getByTestId('not-found-page')).toBeVisible({ timeout: 30000 });
             await expect(page.getByText('Postulante Ajenafixture')).toHaveCount(0);
         } finally {
             await ctx.close();
         }
+    });
+
+    test('teammates\' bell names the animal when the form targeted one', async ({ request }) => {
+        // Through the admin's form link, for the teammate's animal «Nube»
+        // (not Lupa, whose applicant counts other tests assert). Vero is the
+        // admin's org-mate, so she gets the fan-out copy.
+        const name = `Valeria Fixturebell ${Date.now()}`;
+        const res = await request.post('/api/form/test-admin-id/submit', {
+            data: { name, email: `bell-${Date.now()}@example.com`, phone: `11${Date.now() % 100000000}`, address: `${Date.now()} Bell St`, animalId: 'test-animal-fixture-2' },
+        });
+        const body = await res.text();
+        expect(res.ok(), `submit failed: ${body}`).toBeTruthy();
+        const { submissionId } = JSON.parse(body) as { submissionId: string };
+
+        // The fan-out runs after the response (runAfterResponse) — poll for it.
+        await expect.poll(() => queryD1(
+            `SELECT title FROM notifications WHERE user_id = '${TEAMMATE.email}' AND json_extract(metadata, '$.submissionId') = '${submissionId}'`,
+        ).map(r => String(r.title)), { timeout: 30000, intervals: [1000] }).toHaveLength(1);
+        const [{ title }] = queryD1(
+            `SELECT title FROM notifications WHERE user_id = '${TEAMMATE.email}' AND json_extract(metadata, '$.submissionId') = '${submissionId}'`,
+        );
+        // The owner's wording, word for word (a match-count suffix appears when
+        // earlier local runs left look-alike adopters behind).
+        expect(String(title)).toMatch(new RegExp(`^${name} aplicó para Nube( — \\d+ coincidencias?)?$`));
+        const [ownerRow] = queryD1(
+            `SELECT title FROM notifications WHERE user_id = 'gatitosolivos@gmail.com' AND json_extract(metadata, '$.submissionId') = '${submissionId}'`,
+        );
+        expect(title).toBe(ownerRow.title);
+
+        const [row] = queryD1(
+            `SELECT json_extract(metadata, '$.selectedAnimalId') AS animalId, json_extract(metadata, '$.selectedAnimalName') AS animalName ` +
+            `FROM notifications WHERE user_id = '${TEAMMATE.email}' AND json_extract(metadata, '$.submissionId') = '${submissionId}'`,
+        );
+        expect(row).toMatchObject({ animalId: 'test-animal-fixture-2', animalName: 'Nube' });
+    });
+
+    test('without an animal, teammates keep the generic title', async ({ request }) => {
+        const name = `Generico Fixturebell ${Date.now()}`;
+        const res = await request.post('/api/form/test-admin-id/submit', {
+            data: { name, email: `bell-gen-${Date.now()}@example.com`, phone: `12${Date.now() % 100000000}`, address: `${Date.now()} Bell St` },
+        });
+        expect(res.ok()).toBeTruthy();
+        const { submissionId } = await res.json() as { submissionId: string };
+        await expect.poll(() => queryD1(
+            `SELECT title FROM notifications WHERE user_id = '${TEAMMATE.email}' AND json_extract(metadata, '$.submissionId') = '${submissionId}'`,
+        ).map(r => r.title), { timeout: 30000, intervals: [1000] }).toEqual(['Nueva respuesta al formulario']);
+    });
+
+    test('a forged ?animal= row never names another team\'s animal to teammates', async ({ request }) => {
+        // Through the admin's link, for «Brisa» — owned by the xorg owner, who is
+        // NOT in the admin's team. The admin's own copy is unchanged; Vero's
+        // (the admin's org-mate) gets the generic title and no animal.
+        const name = `Forjado Fixturebell ${Date.now()}`;
+        const res = await request.post('/api/form/test-admin-id/submit', {
+            data: { name, email: `forged-${Date.now()}@example.com`, phone: `13${Date.now() % 100000000}`, address: `${Date.now()} Forged St`, animalId: 'test-animal-fixture-xorg' },
+        });
+        expect(res.ok()).toBeTruthy();
+        const { submissionId } = await res.json() as { submissionId: string };
+        const teammateRow = () => queryD1(
+            `SELECT title, json_extract(metadata, '$.selectedAnimalName') AS animalName, json_extract(metadata, '$.selectedAnimalId') AS animalId ` +
+            `FROM notifications WHERE user_id = '${TEAMMATE.email}' AND json_extract(metadata, '$.submissionId') = '${submissionId}'`,
+        );
+        await expect.poll(() => teammateRow().length, { timeout: 30000, intervals: [1000] }).toBe(1);
+        const [row] = teammateRow();
+        expect(row.title).toBe('Nueva respuesta al formulario');
+        expect(isD1Null(row.animalName)).toBe(true);
+        expect(isD1Null(row.animalId)).toBe(true);
+        expect(String(row.title)).not.toContain('Brisa');
     });
 });

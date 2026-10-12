@@ -158,15 +158,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         // instead of "Juana completó el formulario". Best-effort: if the
         // lookup fails we fall back to the generic copy.
         let selectedAnimalName: string | null = null;
+        // Its owner — the teammate fan-out names the animal only when that
+        // owner is in the form-link owner's team (forged ?animal= rows).
+        let selectedAnimalOwner: string | null = null;
         if (selectedAnimalId) {
             try {
                 const { adoptions } = await import('@/db/schema');
-                const animal = await db.select({ animalName: adoptions.animalName })
+                const animal = await db.select({ animalName: adoptions.animalName, addedBy: adoptions.addedBy })
                     .from(adoptions)
                     .where(eq(adoptions.id, selectedAnimalId))
                     .get();
                 if (animal?.animalName) selectedAnimalName = animal.animalName;
-            } catch { /* fall through */ }
+                selectedAnimalOwner = animal?.addedBy ?? null;
+            } catch (e) {
+                logger.warn('Form submit: animal lookup failed — generic notification copy', {
+                    submissionId, selectedAnimalId, error: e instanceof Error ? e.message : String(e),
+                });
+            }
         }
 
         // v2.14.10-18: auto-create an adopter row + run duplicate detection
@@ -296,19 +304,34 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             logger.info('Form fuzzy search completed', { submissionId, matchCount });
 
             // Fan-out to org members (after the response, kept alive — see src/lib/background.ts).
-            // With an animal, teammates get the owner's title («Juana aplicó
-            // para Luna …») and the animal in metadata, like the owner's copy.
-            const teammateTitle = formSubmissionTeammateTitle(titleInput);
+            // With an animal of THIS team, teammates get the owner's title
+            // («Juana aplicó para Luna …») and the animal in metadata, like the
+            // owner's copy. A forged ?animal= row (another team's animal) gets
+            // the generic title and no animal: never name another team's
+            // animal to these teammates.
             await runAfterResponse('formSubmit.notifyOrgMembers', async () => {
-                const { notifyOrgMembers } = await import('@/app/actions/notifications');
+                const [{ notifyOrgMembers }, { getTeamEmails }, { teammateVisibleAnimal }] = await Promise.all([
+                    import('@/app/actions/notifications'),
+                    import('@/lib/orgMembership'),
+                    import('@/lib/applicantScope'),
+                ]);
+                const animal = selectedAnimalId
+                    ? teammateVisibleAnimal(
+                        { id: selectedAnimalId, name: selectedAnimalName, owner: selectedAnimalOwner },
+                        await getTeamEmails(rescuerEmail),
+                    )
+                    : null;
                 await notifyOrgMembers({
                     actorEmail: rescuerEmail,
                     type: 'form_submission',
-                    title: teammateTitle,
+                    title: formSubmissionTeammateTitle({ ...titleInput, animalName: animal?.name ?? null }),
                     body: `${name} completó el formulario de adopción compartido por ${rescuerEmail}.`,
                     url: `/form-results/${submissionId}`,
                     icon: '📋',
-                    metadata: { submissionId, submitterName: name, selectedAnimalId, selectedAnimalName },
+                    metadata: {
+                        submissionId, submitterName: name,
+                        selectedAnimalId: animal?.id ?? null, selectedAnimalName: animal?.name ?? null,
+                    },
                 });
             }, { submissionId, rescuerEmail, selectedAnimalId });
         } catch (searchErr) {
