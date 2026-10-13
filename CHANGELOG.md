@@ -2,6 +2,40 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.168] - 2026-10-13
+
+### Changed — «Pide adoptar demasiado seguido» counts different rescues
+
+Not behind a flag: reaches production with the next release. The flag now
+means "asked to adopt at N DIFFERENT rescues within the period" (N and the
+period are the existing settings). Several requests to the same rescue — one
+form per animal — count once; an organization counts as one rescue; records
+with an unknown rescuer each count on their own. Same rule on search cards,
+profile, adopter form, pick-adopter, dashboard and the login gate. Wording
+updated (es/en/pt) and the admin setting re-labelled.
+
+### Changed — API (flag off): the activity contract
+
+- Request: `person` + `activity { activityType, externalId?, animalName?,
+  species?, date?, rating?, notes?, formContent? }`. `formContent` (any JSON,
+  ≤50 KB, adoption requests only) is stored as sent and shown on the activity
+  as question → answer to the registering rescue and admins.
+- An exact call without `activity` is a look-up, answered only for people the
+  caller's rescue already registered (`422 activity_required` otherwise).
+- Every exact answer carries `risk`: worst rating + flags across every
+  profile the email/phone/document matched.
+- Ambiguous with names that fit: the activity goes on the best match; no name
+  fits: a new profile as before.
+- Found on the profile's own name: a new email/phone/document is added to the
+  profile, logged in its history and in `activity.contactsAdded`; voiding the
+  call takes it back. Void moved to `/api/v1/activities/{id}/void`.
+- Migration 0084 (`activity_forms`, `api_requests.contacts_added`).
+
+### Added — Admin → Calidad de datos → «Datos compartidos»
+
+Phones, emails and documents on 2+ live profiles (who an exact API call can
+answer "ambiguous" for), likely duplicates first.
+
 ## [2.56.167] - 2026-10-13
 
 ### Changed — API: every exact search is recorded
