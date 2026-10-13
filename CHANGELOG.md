@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.173] - 2026-10-13
+
+### Changed — only 1★ bans from adopting
+
+The adopter sign-in check blocked anyone whose profile averaged below 4★. Now
+only a profile shown as 1★ «peligroso» is blocked; 2★–5★ and unrated sign in
+normally (the «demasiado seguido» flags still block). Not flag-gated. For an
+imported blacklist, set «1 ★ a todos» in the import's Rating column.
+
+### Changed — admins don't merge organizations in «pide adoptar demasiado seguido»
+
+An admin who belongs to several organizations no longer makes them count as one
+rescue.
+
+### Fixed — pre-release audit
+
+- Old-style «Ver contrato firmado» links only for a genuine old contract file.
+- A form selfie is copied only onto that form's own profile.
+- «Datos compartidos»: its own error handling; partial phone matches labelled.
+- Search card no longer says «… en 0 días».
+
 ## [2.56.172] - 2026-10-13
 
 ### Added — the adopter keeps a copy of the contract
