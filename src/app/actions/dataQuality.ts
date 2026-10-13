@@ -10,6 +10,7 @@ import { logAudit } from '@/lib/audit';
 import { getDb, checkIsModeratorOrAdminAsync } from './_db';
 import { detectNotePii, noteHash, type NotePiiFlags } from '@/domain/notePii';
 import { scoreNoteSentiment, classifyRatingsAudit, ratingsAuditFingerprint, type RatingsAuditQueue } from '@/domain/sentiment';
+import { groupSharedIdentifiers, type SharedIdentifierGroup } from '@/domain/sharedIdentifiers';
 
 /**
  * "Calidad de datos" moderation report.
@@ -42,7 +43,40 @@ export interface PiiNoteRow {
 
 export interface DataQualityReport {
     pii: PiiNoteRow[];
+    /** Phones / emails / documents on 2+ live profiles: what an exact API call can answer "ambiguous" for. */
+    shared: SharedIdentifierGroup[];
     error?: string;
+}
+
+// The identifier tokens the API's exact match looks up (src/lib/api/profiles.ts
+// findIdentifierHits), on live, non-demo profiles only.
+const SHARED_SQL = `
+SELECT dt.token_type AS tokenType, dt.token_value AS tokenValue, GROUP_CONCAT(DISTINCT dt.adopter_id) AS ids
+FROM duplicate_tokens dt
+JOIN adopters a ON a.id = dt.adopter_id AND a.deleted_at IS NULL AND a.is_demo = 0
+WHERE dt.token_type IN ('email', 'phone', 'phone_suffix', 'id_number')
+GROUP BY dt.token_type, dt.token_value
+HAVING COUNT(DISTINCT dt.adopter_id) > 1
+LIMIT 1000
+`.trim();
+
+async function loadSharedIdentifiers(email: string): Promise<SharedIdentifierGroup[]> {
+    const { rows } = await runReadonly(SHARED_SQL);
+    const tokenRows = rows.map(r => ({ tokenType: String(r.tokenType), tokenValue: String(r.tokenValue), adopterIds: String(r.ids ?? '').split(',').filter(Boolean) }));
+    const ids = [...new Set(tokenRows.flatMap(r => r.adopterIds))];
+    const db = await getDb();
+    const names = new Map<string, string>();
+    if (db) {
+        await Promise.all(ids.map(async id => {
+            const row = await db.select({ name: adopters.name }).from(adopters).where(and(eq(adopters.id, id), isNull(adopters.deletedAt))).get()
+                .catch((e: unknown) => {
+                    logger.warn('getDataQualityReport: shared-identifier name D1 fallback hit', { user: email, adopterId: id, error: e instanceof Error ? e.message : String(e) });
+                    return undefined;
+                });
+            if (row) names.set(id, row.name ?? '');
+        }));
+    }
+    return groupSharedIdentifiers(tokenRows, names);
 }
 
 // One row per PII-bearing EVENT (not grouped) so each note maps to its own
@@ -104,11 +138,11 @@ export async function getDataQualityReport(): Promise<DataQualityReport> {
     try {
         if (!email || !(await checkIsModeratorOrAdminAsync(email))) {
             logger.warn('getDataQualityReport: unauthorized', { user: email });
-            return { pii: [], error: 'Unauthorized' };
+            return { pii: [], shared: [], error: 'Unauthorized' };
         }
 
         const t0 = Date.now();
-        const { rows: piiRows, rowsRead, dbMs } = await runReadonly(PII_SQL);
+        const [{ rows: piiRows, rowsRead, dbMs }, shared] = await Promise.all([runReadonly(PII_SQL), loadSharedIdentifiers(email)]);
         const pii: PiiNoteRow[] = [];
         for (const r of piiRows) {
             const note = (r.note as string) ?? '';
@@ -134,15 +168,16 @@ export async function getDataQualityReport(): Promise<DataQualityReport> {
         logger.info('getDataQualityReport: served', {
             user: email,
             piiCount: pii.length,          // rows shown after JS authority + dismissal filter
+            sharedCount: shared.length,    // identifiers on 2+ profiles (API "ambiguous" candidates)
             prefilterRows: piiRows.length, // rows the SQL prefilter returned (processed in JS)
             rowsRead,                      // D1 full-scan rows read — the P3.3 trigger metric
             dbMs,                          // D1-reported query time (ms)
             durationMs: Date.now() - t0,   // wall time incl. JS processing
         });
-        return { pii };
+        return { pii, shared };
     } catch (e) {
         const errorId = logger.error('getDataQualityReport: failed', { user: email, error: e instanceof Error ? e.message : String(e) });
-        return { pii: [], error: errorId };
+        return { pii: [], shared: [], error: errorId };
     }
 }
 

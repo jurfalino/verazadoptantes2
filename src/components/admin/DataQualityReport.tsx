@@ -6,8 +6,9 @@ import PiiNotesPanel from './PiiNotesPanel';
 import DuplicatesPanel from './DuplicatesPanel';
 import ReportedContentPanel from './ReportedContentPanel';
 import RatingsAuditPanel from './RatingsAuditPanel';
+import SharedIdentifiersPanel from './SharedIdentifiersPanel';
 
-type TabId = 'pii' | 'dup' | 'flags' | 'ratings';
+type TabId = 'pii' | 'dup' | 'flags' | 'ratings' | 'shared';
 
 export default function DataQualityReport({ data }: { data: ReportData }) {
     const [tab, setTab] = useState<TabId>('pii');
@@ -52,6 +53,7 @@ export default function DataQualityReport({ data }: { data: ReportData }) {
                 <TabBtn id="dup" label="Duplicados" />
                 <TabBtn id="flags" label="Contenido reportado" />
                 <TabBtn id="ratings" label="Calificaciones vs. notas" />
+                <TabBtn id="shared" label="Datos compartidos" n={data.shared.length} />
             </div>
 
             {/* ── Tab 1: PII in notes (editable) ── */}
@@ -70,6 +72,9 @@ export default function DataQualityReport({ data }: { data: ReportData }) {
                     <ReportedContentPanel />
                 </div>
             )}
+
+            {/* ── Tab 5: identifiers on 2+ profiles (API "ambiguous" candidates) ── */}
+            {tab === 'shared' && <SharedIdentifiersPanel groups={data.shared} />}
 
             {/* ── Tab 4: ratings vs. note sentiment (lazy) ── */}
             {visitedRatings && (
