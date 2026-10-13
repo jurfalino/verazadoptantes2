@@ -204,6 +204,8 @@ export const form: CatalogSlice = {
         'form.err_network': 'Error de red. Verificá tu conexión e intentá de nuevo.',
         'form.err_geo': 'No se pudo obtener la ubicación. Podés continuar sin ella.',
         'form.err_images_only': 'Solo se permiten imágenes.',
+        'form.err_selfie_read': 'No pudimos leer esa foto. Probá con otra o sacala de nuevo.',
+        'form.err_selfie_not_saved': 'Tu formulario se envió, pero la foto no se pudo guardar. Si te la piden, mandala por otro medio.',
 
         // ── Completion / invalid-link screens ──
         'form.complete_title': '¡Listo!',
@@ -407,6 +409,8 @@ export const form: CatalogSlice = {
         'form.err_network': 'Network error. Check your connection and try again.',
         'form.err_geo': 'Location could not be obtained. You can continue without it.',
         'form.err_images_only': 'Only images are allowed.',
+        'form.err_selfie_read': 'We couldn\'t read that photo. Try another one or take it again.',
+        'form.err_selfie_not_saved': 'Your form was sent, but the photo couldn\'t be saved. If they ask for it, send it another way.',
 
         // ── Completion / invalid-link screens ──
         'form.complete_title': 'Done!',
@@ -610,6 +614,8 @@ export const form: CatalogSlice = {
         'form.err_network': 'Erro de rede. Verifique sua conexão e tente de novo.',
         'form.err_geo': 'Não foi possível obter a localização. Você pode continuar sem ela.',
         'form.err_images_only': 'Somente imagens são permitidas.',
+        'form.err_selfie_read': 'Não conseguimos ler essa foto. Tente outra ou tire de novo.',
+        'form.err_selfie_not_saved': 'Seu formulário foi enviado, mas a foto não pôde ser salva. Se pedirem, envie por outro meio.',
 
         // ── Completion / invalid-link screens ──
         'form.complete_title': 'Pronto!',

@@ -1,5 +1,6 @@
 import { test, expect, request as pwRequest } from '@playwright/test';
 import { execSync } from 'child_process';
+import { writeFileSync } from 'fs';
 
 /**
  * Signed contracts go to PRIVATE storage with a random file name per signing
@@ -86,7 +87,8 @@ test.describe('signed contracts: private storage', () => {
         const otherAnimal = `test-animal-contract-other-${Date.now()}`;
         const publicKey = `contracts/${legacyAnimal}/signed-contract.png`;
         const file = `${process.cwd()}/test-results/legacy-contract.png`;
-        execSync(`mkdir -p test-results && printf 'PNGfake' > ${file}`);
+        execSync('mkdir -p test-results');
+        writeFileSync(file, Buffer.from(TINY_PNG.split(',')[1], 'base64'));
         execSync(`npx wrangler r2 object put buenadoptante-images/${publicKey} --file ${file} --content-type image/png --local`, { stdio: 'ignore' });
         for (const id of [legacyAnimal, otherAnimal]) {
             execD1(`INSERT INTO animals (id, name, species, details, added_by, created_at, updated_at) VALUES ('${id}', 'Legadofixture', 'dog', 'E2E fixture', 'gatitosolivos@gmail.com', strftime('%s','now'), strftime('%s','now'))`);
@@ -102,7 +104,7 @@ test.describe('signed contracts: private storage', () => {
         expect(planned).not.toContain(otherAnimal);
 
         const moved = await (await page.request.post('/api/admin/contracts/migrate')).json();
-        expect(moved.results.find((r: { animalId: string }) => r.animalId === legacyAnimal)).toMatchObject({ status: 'moved', publicDeleted: true });
+        expect(moved.contracts.find((r: { id: string }) => r.id === legacyAnimal)).toMatchObject({ status: 'moved', publicDeleted: true });
         const row = rows(`SELECT comments, contract_key FROM placements WHERE id = '${legacyAnimal}-plc'`)[0];
         expect(String(row.contract_key)).toMatch(/^contracts\/[0-9a-f-]{36}\.png$/);
         expect(JSON.parse(String(row.comments))).toEqual({ note: 'keep me' });
@@ -111,7 +113,7 @@ test.describe('signed contracts: private storage', () => {
         try { execSync(`npx wrangler r2 object get buenadoptante-images/${publicKey} --pipe --local`, { stdio: 'pipe' }); } catch { stillThere = false; }
         expect(stillThere).toBe(false);
         // Running it again changes nothing.
-        expect((await (await page.request.post('/api/admin/contracts/migrate')).json()).results.some((r: { animalId: string }) => r.animalId === legacyAnimal)).toBe(false);
+        expect((await (await page.request.post('/api/admin/contracts/migrate')).json()).contracts.some((r: { id: string }) => r.id === legacyAnimal)).toBe(false);
     });
 
     test('a form selfie is stored privately; only who may see the form results opens it', async ({ page, baseURL, browser }) => {

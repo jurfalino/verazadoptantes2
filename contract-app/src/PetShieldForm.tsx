@@ -812,7 +812,10 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                 setToast({ message: data.error || t('form.err_submit'), id: errIdMatch?.[1] })
                 return
             }
-            // Success
+            // Success. The form is saved even if its photo wasn't: say so, so the
+            // applicant can send it another way.
+            const ok = await res.json().catch(() => ({})) as { selfieSaved?: boolean }
+            if (ok.selfieSaved === false) setToast({ message: t('form.err_selfie_not_saved'), id: 'ERR-FILE-303' })
             localStorage.removeItem(DRAFT_KEY)
             setSubmitted(true)
         } catch (err) {
@@ -861,8 +864,27 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             setToast({ message: t('form.err_images_only'), id: 'ERR-FILE-301' })
             return
         }
+        // Shrunk and re-encoded as JPEG here: the server only keeps PNG / JPEG /
+        // WebP up to 5 MB, and phones hand over 10 MB photos and HEIC files.
         const reader = new FileReader()
-        reader.onload = () => setAnswer('selfie', reader.result as string)
+        reader.onload = () => {
+            const img = new Image()
+            img.onload = () => {
+                const max = 1600
+                let w = img.width, h = img.height
+                if (w > max || h > max) { const k = max / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k) }
+                const canvas = document.createElement('canvas')
+                canvas.width = w; canvas.height = h
+                const ctx = canvas.getContext('2d')
+                if (!ctx) { setToast({ message: t('form.err_selfie_read'), id: 'ERR-FILE-302' }); return }
+                ctx.drawImage(img, 0, 0, w, h)
+                setAnswer('selfie', canvas.toDataURL('image/jpeg', 0.8))
+            }
+            // A format this browser can't decode (e.g. HEIC outside Safari).
+            img.onerror = () => setToast({ message: t('form.err_selfie_read'), id: 'ERR-FILE-302' })
+            img.src = reader.result as string
+        }
+        reader.onerror = () => setToast({ message: t('form.err_selfie_read'), id: 'ERR-FILE-302' })
         reader.readAsDataURL(file)
     }
 

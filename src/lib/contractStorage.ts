@@ -35,6 +35,19 @@ function bucket(): R2Like {
     return b;
 }
 
+/** Does the file start like what it claims to be? A mislabelled upload is refused, never stored. */
+export function looksLike(contentType: string, data: ArrayBuffer): boolean {
+    const b = new Uint8Array(data.slice(0, 12));
+    const at = (i: number, bytes: number[]) => bytes.every((x, k) => b[i + k] === x);
+    switch (contentType) {
+        case 'application/pdf': return at(0, [0x25, 0x50, 0x44, 0x46]); // %PDF
+        case 'image/png': return at(0, [0x89, 0x50, 0x4e, 0x47]);
+        case 'image/jpeg': return at(0, [0xff, 0xd8, 0xff]);
+        case 'image/webp': return at(0, [0x52, 0x49, 0x46, 0x46]) && at(8, [0x57, 0x45, 0x42, 0x50]); // RIFF....WEBP
+        default: return false;
+    }
+}
+
 async function sha256Hex(data: ArrayBuffer): Promise<string> {
     const digest = await crypto.subtle.digest('SHA-256', data);
     return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -45,6 +58,7 @@ export async function storeContract(data: ArrayBuffer, contentType: string, meta
     const ext = CONTRACT_CONTENT_TYPES[contentType];
     if (!ext) throw new ContractStorageError(`unsupported contract type ${contentType}`);
     if (data.byteLength > CONTRACT_MAX_BYTES) throw new ContractStorageError(`contract larger than ${CONTRACT_MAX_BYTES} bytes`);
+    if (!looksLike(contentType, data)) throw new ContractStorageError(`the file is not a valid ${ext.toUpperCase()}`);
     const key = `contracts/${crypto.randomUUID()}.${ext}`;
     // Re-read through Response: the platform's own buffer type, which both the
     // digest and the bucket accept wherever the body was read (the API handler
@@ -73,10 +87,12 @@ export const SELFIE_CONTENT_TYPES: Record<string, string> = { 'image/png': 'png'
  * random key, server-written column (form_submissions.selfie_key), served only
  * by /api/files/selfie/[submissionId] for whoever may see that form's results.
  */
-export async function storeSelfie(data: ArrayBuffer, contentType: string, submissionId: string): Promise<{ key: string; size: number }> {
+export async function storeSelfie(data: ArrayBuffer, rawContentType: string, submissionId: string): Promise<{ key: string; size: number }> {
+    const contentType = rawContentType === 'image/jpg' ? 'image/jpeg' : rawContentType; // a common mislabel
     const ext = SELFIE_CONTENT_TYPES[contentType];
     if (!ext) throw new ContractStorageError(`unsupported selfie type ${contentType}`);
     if (data.byteLength > CONTRACT_MAX_BYTES) throw new ContractStorageError(`selfie larger than ${CONTRACT_MAX_BYTES} bytes`);
+    if (!looksLike(contentType, data)) throw new ContractStorageError(`the file is not a valid ${ext.toUpperCase()}`);
     const key = `selfies/${crypto.randomUUID()}.${ext}`;
     const buf = await new Response(new Uint8Array(data)).arrayBuffer();
     await bucket().put(key, buf, { httpMetadata: { contentType, cacheControl: 'private, no-store' }, customMetadata: { submissionId } });

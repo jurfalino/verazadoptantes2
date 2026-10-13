@@ -341,6 +341,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         return withCors(NextResponse.json({
             success: true,
             submissionId,
+            // false: a selfie was sent but couldn't be stored (the form is saved anyway).
+            selfieSaved: selfieData && selfieData.startsWith('data:') ? !!selfieKey : null,
         }), origin);
     } catch (error) {
         const errorId = logger.error('Form submission failed', error);
