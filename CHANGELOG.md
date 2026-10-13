@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.164] - 2026-10-13
+
+### Added — Admin → API: easier keys
+
+- The rescuer's email suggests users as you type (by name or email).
+- The key name says what it is for: it shows in the calls and in the
+  rescuer's notifications.
+- «Regenerar»: a new secret for an existing key when a rescue loses theirs;
+  the old secret stops working at once and the key keeps its history. Keys
+  are still never shown again (only a fingerprint is stored).
+
 ## [2.56.163] - 2026-10-13
 
 ### Changed — CI: the `authed` e2e project runs in 6 legs
