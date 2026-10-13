@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.171] - 2026-10-13
+
+### Security — form selfies move to private storage
+
+The adoption form's selfie was saved to PUBLIC photo storage (an unguessable
+address, but open to anyone with the link, which also carried the rescuer's
+email). Production had 0 form submissions.
+
+- Stored privately, opened through `/api/files/selfie/{id}` only by whoever may
+  see that form's results; no selfie address in stored answers or notifications.
+- The form shrinks the photo to JPEG before sending and tells the applicant if
+  it couldn't be saved. Files must match their type (contracts too).
+- "Create profile from form" copies the selfie into the profile's photos.
+- Removed an unused, unauthenticated action that returned linked forms' answers.
+- The admin one-time move also handles old selfies and can be re-run safely.
+
 ## [2.56.170] - 2026-10-13
 
 ### Security — signed contracts move to private storage
