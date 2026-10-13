@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.175] - 2026-10-13
+
+### Added — Admin → API: activities and voids per key
+
+Each key shows what it saved and voided in the last 30 days, with a «Muchas
+anulaciones» badge when a key voids much of what it registers (a way to look
+people up without leaving a trace). Flag-off in production.
+
 ## [2.56.174] - 2026-10-13
 
 ### Tests — no more 3-second guess on the duplicate dialog
