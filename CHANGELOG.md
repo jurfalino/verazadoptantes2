@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.169] - 2026-10-13
+
+### Fixed — independent review of 2.56.168
+
+- API look-ups (flag off) show only profiles the calling rescue registered;
+  refusals record nothing about who matched. New contacts are never copied
+  from another person's matched profile.
+- «Rescates distintos» wording everywhere the flag shows; one organization
+  read per page instead of one per rescuer; ties report the tightest window.
+- «Datos compartidos» loads in one query. API entries in a profile's history
+  are labelled instead of showing "— ➜ —".
+
 ## [2.56.168] - 2026-10-13
 
 ### Changed — «Pide adoptar demasiado seguido» counts different rescues
