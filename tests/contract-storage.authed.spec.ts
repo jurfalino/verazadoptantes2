@@ -113,5 +113,32 @@ test.describe('signed contracts: private storage', () => {
         // Running it again changes nothing.
         expect((await (await page.request.post('/api/admin/contracts/migrate')).json()).results.some((r: { animalId: string }) => r.animalId === legacyAnimal)).toBe(false);
     });
+
+    test('a form selfie is stored privately; only who may see the form results opens it', async ({ page, baseURL, browser }) => {
+        const anon = await pwRequest.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
+        const res = await anon.post('/api/form/test-admin-id/submit', {
+            data: { legal: true, name: `Selfiefixture ${Date.now()}`, email: `selfie-${Date.now()}@example.com`, phone: '555-0144', address: '1 E2E Ave', intent: 'self', selfie: TINY_PNG },
+        });
+        expect(res.ok(), await res.text()).toBeTruthy();
+        const { submissionId } = await res.json();
+        const row = rows(`SELECT selfie_key, selfie_url, answers_json FROM form_submissions WHERE id = '${submissionId}'`)[0];
+        expect(String(row.selfie_key)).toMatch(/^selfies\/[0-9a-f-]{36}\.png$/);
+        expect(row.selfie_url === null || row.selfie_url === 'null').toBe(true);
+        expect(String(row.answers_json)).not.toContain('r2.dev');
+
+        // The form's owner (the admin) opens it; another rescue and nobody signed in don't.
+        const mine = await page.request.get(`/api/files/selfie/${submissionId}`);
+        expect(mine.status()).toBe(200);
+        expect(mine.headers()['content-type']).toBe('image/png');
+        const other = await browser.newContext({ storageState: '.auth/user.json' });
+        expect((await other.request.get(`/api/files/selfie/${submissionId}`)).status()).toBe(404);
+        await other.close();
+        expect((await anon.get(`/api/files/selfie/${submissionId}`)).status()).toBe(401);
+        await anon.dispose();
+
+        // The form results page shows it through the checked route.
+        await page.goto(`/form-results/${submissionId}`);
+        await expect(page.locator(`img[src="/api/files/selfie/${submissionId}"]`).first()).toBeVisible({ timeout: 30000 });
+    });
 });
 

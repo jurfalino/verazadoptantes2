@@ -65,6 +65,36 @@ export async function storeContract(data: ArrayBuffer, contentType: string, meta
     }
 }
 
+export const SELFIE_CONTENT_TYPES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
+
+/**
+ * An applicant's selfie from the adoption form, in the same private storage
+ * (prefix selfies/), tagged with its form submission. Same rules as contracts:
+ * random key, server-written column (form_submissions.selfie_key), served only
+ * by /api/files/selfie/[submissionId] for whoever may see that form's results.
+ */
+export async function storeSelfie(data: ArrayBuffer, contentType: string, submissionId: string): Promise<{ key: string; size: number }> {
+    const ext = SELFIE_CONTENT_TYPES[contentType];
+    if (!ext) throw new ContractStorageError(`unsupported selfie type ${contentType}`);
+    if (data.byteLength > CONTRACT_MAX_BYTES) throw new ContractStorageError(`selfie larger than ${CONTRACT_MAX_BYTES} bytes`);
+    const key = `selfies/${crypto.randomUUID()}.${ext}`;
+    const buf = await new Response(new Uint8Array(data)).arrayBuffer();
+    await bucket().put(key, buf, { httpMetadata: { contentType, cacheControl: 'private, no-store' }, customMetadata: { submissionId } });
+    logger.info('selfie stored', { submissionId, key, size: data.byteLength });
+    return { key, size: data.byteLength };
+}
+
+/** The selfie, only if it was stored for this submission. */
+export async function readSelfie(key: string, submissionId: string): Promise<R2Object | null> {
+    const file = await bucket().get(key);
+    if (!file) return null;
+    if (file.customMetadata?.submissionId !== submissionId) {
+        logger.warn('selfie file: stored for another submission, refused', { key, submissionId });
+        return null;
+    }
+    return file;
+}
+
 /** The file, only if it was stored for this animal (a key copied onto another record serves nothing). */
 export async function readContract(key: string, animalId: string): Promise<R2Object | null> {
     const file = await bucket().get(key);

@@ -9,13 +9,13 @@
 // Production has no legacy contracts; this exists for staging's test ones.
 import { NextResponse } from 'next/server';
 import { and, eq, isNull, like } from 'drizzle-orm';
-import { placements, signedContracts } from '@/db/schema';
+import { adopterImages, formSubmissions, placements, signedContracts } from '@/db/schema';
 import { getDb } from '@/lib/db';
 import { getRequestContext } from '@/lib/requestContext';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { adminEmailOr401 } from '@/lib/api/sessionGuards';
-import { contractExists, storeContract } from '@/lib/contractStorage';
+import { contractExists, readSelfie, storeContract, storeSelfie } from '@/lib/contractStorage';
 import { R2_PUBLIC_URL } from '@/lib/r2';
 
 export const runtime = 'edge';
@@ -44,6 +44,20 @@ async function legacyRows(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, pu
     return rows.map(r => ({ ...r, publicKey: legacyKeyFor(r.comments, r.animalId, publicBase) })).filter(r => r.publicKey);
 }
 
+/** A legacy public selfie: forms/{form owner}/{uuid}.{jpg|png} on our public bucket — server-written, still checked. */
+function legacySelfieKeyFor(url: string | null, owner: string, publicBase: string): string | null {
+    if (!url || !owner) return null;
+    const m = url.match(/^(.+)\/(forms\/(.+)\/[0-9a-f-]{36}\.(jpg|png))$/);
+    if (!m || m[1] !== publicBase.replace(/\/$/, '') || m[3] !== owner) return null;
+    return m[2];
+}
+
+async function legacySelfies(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, publicBase: string) {
+    const rows = await db.select({ id: formSubmissions.id, userId: formSubmissions.userId, selfieUrl: formSubmissions.selfieUrl })
+        .from(formSubmissions).where(and(like(formSubmissions.selfieUrl, '%/forms/%'), isNull(formSubmissions.selfieKey))).all() as Array<{ id: string; userId: string; selfieUrl: string | null }>;
+    return rows.map(r => ({ ...r, publicKey: legacySelfieKeyFor(r.selfieUrl, r.userId, publicBase) })).filter(r => r.publicKey);
+}
+
 function publicBase(): string {
     return R2_PUBLIC_URL; // the photos bucket's public address, where legacy contracts sit
 }
@@ -58,7 +72,9 @@ export async function GET() {
     const signings = await db.select({ animalId: signedContracts.animalId }).from(signedContracts).all() as Array<{ animalId: string }>;
     const counts = new Map<string, number>();
     for (const r of signings) counts.set(r.animalId, (counts.get(r.animalId) ?? 0) + 1);
+    const selfies = await legacySelfies(db, publicBase());
     return NextResponse.json({
+        selfiesToMove: selfies.map(r => ({ submissionId: r.id, publicKey: r.publicKey })),
         toMove: rows.map(r => ({ placementId: r.id, animalId: r.animalId, publicKey: r.publicKey })),
         animalsSignedMoreThanOnce: [...counts].filter(([, n]) => n > 1).map(([animalId, n]) => ({ animalId, signings: n })),
     });
@@ -98,8 +114,28 @@ export async function POST() {
             results.push({ placementId: r.id, animalId: r.animalId, status: 'failed', errorId });
         }
     }
+    // Form selfies: same steps. A public copy already used as a profile photo
+    // (adopter_images points at it) stays: that photo was put there on purpose.
+    const selfieResults: Array<{ submissionId: string; status: 'moved' | 'missing' | 'failed'; publicDeleted?: boolean; errorId?: string }> = [];
+    for (const r of await legacySelfies(db, publicBase())) {
+        try {
+            const obj = await images.get(r.publicKey!);
+            if (!obj) { selfieResults.push({ submissionId: r.id, status: 'missing' }); continue; }
+            const stored = await storeSelfie(await obj.arrayBuffer(), obj.httpMetadata?.contentType ?? 'image/jpeg', r.id);
+            if (!(await readSelfie(stored.key, r.id))) throw new Error('private copy not readable after write');
+            await db.update(formSubmissions).set({ selfieKey: stored.key, selfieUrl: null }).where(eq(formSubmissions.id, r.id));
+            const usedAsPhoto = await db.select({ id: adopterImages.id }).from(adopterImages).where(eq(adopterImages.url, r.selfieUrl!)).get();
+            if (!usedAsPhoto) await images.delete(r.publicKey!);
+            selfieResults.push({ submissionId: r.id, status: 'moved', publicDeleted: !usedAsPhoto });
+        } catch (e) {
+            const errorId = logger.error('contracts migrate: selfie move failed', e, { submissionId: r.id });
+            selfieResults.push({ submissionId: r.id, status: 'failed', errorId });
+        }
+    }
+
     const tally = { moved: results.filter(x => x.status === 'moved').length, missing: results.filter(x => x.status === 'missing').length, failed: results.filter(x => x.status === 'failed').length };
     logAudit({ userEmail: admin, action: 'contracts_moved_to_private', details: tally });
     logger.info('contracts migrate: done', { admin, ...tally });
-    return NextResponse.json({ results });
+    logger.info('contracts migrate: selfies done', { admin, moved: selfieResults.filter(x => x.status === 'moved').length, failed: selfieResults.filter(x => x.status === 'failed').length });
+    return NextResponse.json({ results, selfies: selfieResults });
 }

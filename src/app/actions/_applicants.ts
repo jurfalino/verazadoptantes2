@@ -10,6 +10,7 @@
  * `src/lib/applicantScope.ts` so the page and the card share it verbatim.
  */
 
+import { selfieUrlColumn } from '@/lib/selfieLink';
 import { logger } from '@/lib/logger';
 import { computeAvgRating } from '@/domain/ratings';
 import { buildFlags } from '@/domain/flags';
@@ -159,7 +160,7 @@ export async function loadApplicantsForAnimal(
         email: formSubmissions.email,
         phone: formSubmissions.phone,
         address: formSubmissions.address,
-        selfieUrl: formSubmissions.selfieUrl,
+        selfieUrl: selfieUrlColumn, // private selfies → their checked route (src/lib/selfieLink.ts)
         latitude: formSubmissions.latitude,
         longitude: formSubmissions.longitude,
         intent: formSubmissions.intent,

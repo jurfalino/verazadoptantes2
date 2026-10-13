@@ -107,27 +107,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             if (isPhoneRequired(resolved?.hiddenSteps ?? [])) logger.warn('form submit: phone missing on a phone-required form', { userId });
         }
 
-        // Upload selfie to R2 (if provided)
-        let selfieUrl: string | null = null;
+        const submissionId = crypto.randomUUID();
+
+        // The applicant's selfie (if any) goes to PRIVATE storage, tagged with
+        // this submission; it opens only through /api/files/selfie/{id} for whoever
+        // may see this form's results (src/lib/contractStorage.ts storeSelfie).
+        let selfieKey: string | null = null;
         if (selfieData && selfieData.startsWith('data:')) {
             try {
                 const match = selfieData.match(/^data:([^;]+);base64,([\s\S]+)$/);
                 if (match) {
                     const contentType = match[1];
                     const base64Data = match[2].replace(/\s/g, '');
-                    const ext = contentType.includes('png') ? 'png' : 'jpg';
-                    const { uploadToR2 } = await import('@/lib/r2');
+                    const { storeSelfie } = await import('@/lib/contractStorage');
                     const blobFromBase64 = await fetch(`data:${contentType};base64,${base64Data}`).then(r => r.arrayBuffer());
-                    const key = `forms/${rescuerEmail}/${crypto.randomUUID()}.${ext}`;
-                    selfieUrl = await uploadToR2(key, blobFromBase64, contentType);
-                    logger.info('Form selfie uploaded to R2', { key });
+                    selfieKey = (await storeSelfie(blobFromBase64, contentType, submissionId)).key;
                 }
             } catch (uploadErr) {
-                logger.warn('Form selfie upload failed (non-blocking)', { error: (uploadErr as Error).message });
+                logger.warn('Form selfie upload failed (non-blocking)', { submissionId, error: (uploadErr as Error).message });
             }
         }
 
-        const submissionId = crypto.randomUUID();
         const notificationId = crypto.randomUUID();
 
         // Store in form_submissions
@@ -140,13 +140,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             address,
             latitude,
             longitude,
-            selfieUrl,
+            selfieKey,
             species,
             lifeStage,
             specialNeeds,
             intent,
             household,
-            answersJson: JSON.stringify({ ...answers, selfie: selfieUrl || '[removed]' }),
+            answersJson: JSON.stringify({ ...answers, selfie: selfieKey ? '[private]' : '[removed]' }),
             notificationId,
             selectedAnimalId,
             createdAt: new Date(),
@@ -272,7 +272,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     metadata: {
                         submissionId,
                         matchCount,
-                        submittedData: { ...answers, selfie: selfieUrl || '[removed]' },
+                        submittedData: { ...answers, selfie: selfieKey ? '[private]' : '[removed]' },
                         matchedAdopters: matches.map(m => ({
                             id: m.adopterId,
                             name: m.adopterName,
@@ -294,7 +294,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     metadata: {
                         submissionId,
                         matchCount: 0,
-                        submittedData: { ...answers, selfie: selfieUrl || '[removed]' },
+                        submittedData: { ...answers, selfie: selfieKey ? '[private]' : '[removed]' },
                         selectedAnimalId,
                         selectedAnimalName,
                     },

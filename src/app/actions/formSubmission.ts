@@ -1,5 +1,6 @@
 'use server';
 
+import { selfieUrlColumn } from '@/lib/selfieLink';
 import { formSubmissions, adopters, notifications, auditLog } from '@/db/schema';
 import { eq, and, or, ne, isNull, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
@@ -57,7 +58,7 @@ export async function getFormSubmissionPrefill(submissionId: string): Promise<Fo
                 email: formSubmissions.email,
                 phone: formSubmissions.phone,
                 address: formSubmissions.address,
-                selfieUrl: formSubmissions.selfieUrl,
+                selfieUrl: selfieUrlColumn, // private selfies → their checked route (src/lib/selfieLink.ts)
                 species: formSubmissions.species,
                 lifeStage: formSubmissions.lifeStage,
                 intent: formSubmissions.intent,

@@ -1,5 +1,6 @@
 export const runtime = 'edge';
 
+import { selfieUrlColumn } from '@/lib/selfieLink';
 import { redirect, notFound } from 'next/navigation';
 import { getDb } from '@/lib/db';
 import { notifications, adopters, formSubmissions, adopterImages, adoptions } from '@/db/schema';
@@ -80,7 +81,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         notifFor(currentUser, 'viewer'),
         db.select({
             id: formSubmissions.id,
-            selfieUrl: formSubmissions.selfieUrl,
+            selfieUrl: selfieUrlColumn, // private selfies → their checked route (src/lib/selfieLink.ts)
             species: formSubmissions.species,
             lifeStage: formSubmissions.lifeStage,
             specialNeeds: formSubmissions.specialNeeds,

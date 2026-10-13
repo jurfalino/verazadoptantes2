@@ -104,8 +104,14 @@ export async function saveImage(
     try {
         const id = crypto.randomUUID();
 
-        // Persist external URLs (Facebook CDN etc.) to R2 for permanent storage
-        const persistedUrl = await processImageForStorage(url, adopterId, id);
+        // A form selfie the rescuer turns into a profile photo (AdopterForm, "create
+        // profile from this form"): copied out of private storage into the
+        // profile's own photos — only if this user may see that form at all.
+        const selfie = url.match(/^\/api\/files\/selfie\/([^/?#]+)$/);
+        const persistedUrl = selfie
+            ? await copySelfieToProfilePhotos(db, decodeURIComponent(selfie[1]), adopterId, id, addedBy)
+            : // Persist external URLs (Facebook CDN etc.) to R2 for permanent storage
+              await processImageForStorage(url, adopterId, id);
 
         // If marking this image as the profile picture, demote any existing one first
         // so the "exactly one profile picture per adopter" invariant holds.
@@ -327,4 +333,21 @@ export async function deleteImage(imageId: string, adopterId: string) {
         const errorId = logger.error('Delete image failed', error, { imageId, adopterId });
         throw new Error(`Failed to delete image (Error ID: ${errorId})`);
     }
+}
+
+/** A private form selfie → a profile photo (IMAGES_BUCKET, like every other profile photo). Throws when not allowed. */
+async function copySelfieToProfilePhotos(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, submissionId: string, adopterId: string, imageId: string, actor: string): Promise<string> {
+    const { formSubmissions } = await import('@/db/schema');
+    const { eq } = await import('drizzle-orm');
+    const { canAccessFormSubmission } = await import('./_applicants');
+    const { readSelfie } = await import('@/lib/contractStorage');
+    const { uploadToR2 } = await import('@/lib/r2');
+    const row = await db.select({ selfieKey: formSubmissions.selfieKey }).from(formSubmissions).where(eq(formSubmissions.id, submissionId)).get();
+    if (!row?.selfieKey || !(await canAccessFormSubmission(db, submissionId, actor))) throw new Error('Selfie not available');
+    const file = await readSelfie(row.selfieKey, submissionId);
+    if (!file) throw new Error('Selfie not available');
+    const contentType = file.httpMetadata?.contentType ?? 'image/jpeg';
+    const ext = contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : 'jpg';
+    const bytes = await new Response(file.body).arrayBuffer();
+    return uploadToR2(`adopters/${adopterId}/${imageId}.${ext}`, bytes, contentType);
 }
