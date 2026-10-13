@@ -34,11 +34,15 @@ export async function storeContract(data: ArrayBuffer, contentType: string, ctx:
     if (!ext) throw new Error(`unsupported contract type ${contentType}`);
     if (data.byteLength > CONTRACT_MAX_BYTES) throw new Error(`contract larger than ${CONTRACT_MAX_BYTES} bytes`);
     const key = `contracts/${crypto.randomUUID()}.${ext}`;
-    const sha256 = await sha256Hex(data);
+    // Re-read through Response: the platform's own buffer type, which both the
+    // digest and the bucket accept wherever the body was read (the API handler
+    // reads it in another realm under `next dev`).
+    const buf = await new Response(new Uint8Array(data)).arrayBuffer();
+    const sha256 = await sha256Hex(buf);
     const b = bucket();
     for (let attempt = 0; ; attempt++) {
         try {
-            await b.put(key, data, { httpMetadata: { contentType, cacheControl: 'private, no-store' }, customMetadata: { sha256 } });
+            await b.put(key, buf, { httpMetadata: { contentType, cacheControl: 'private, no-store' }, customMetadata: { sha256 } });
             logger.info('contract stored', { ...ctx, key, size: data.byteLength });
             return { key, sha256, size: data.byteLength };
         } catch (e) {

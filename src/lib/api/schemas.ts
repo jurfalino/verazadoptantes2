@@ -8,6 +8,10 @@ import { z } from 'zod';
 import { RECORD_TYPES } from '@/domain/constants';
 import { isFullName, isUsableDocumentId } from '@/domain/apiExactMatch';
 import { readPhones } from '@/domain/phoneNumber';
+import { parseAgeText } from '@/domain/animalAge';
+
+/** Activity types that place the animal with the person (they create it in the rescue's list). */
+export const PLACEMENT_TYPES: readonly string[] = [RECORD_TYPES.ADOPTION, RECORD_TYPES.FOSTER];
 
 /** What the person is doing. RECORD_TYPES minus `available` (that describes an animal, not a person). */
 export const API_CONTEXTS = [
@@ -56,7 +60,14 @@ const activitySchema = z.object({
         .meta({ description: 'Your own id for this activity (e.g. your form submission id). Must be unique per key; a repeat is refused.', example: 'jotform-5512' }),
     animalName: z.string().trim().max(100).optional().meta({ example: 'Luna' }),
     species: z.string().trim().max(50).optional()
-        .meta({ description: 'dog, cat, bird or other. Spanish words and one-letter codes are read too (perro / P, gato / G…).', example: 'dog' }),
+        .meta({ description: 'dog, cat, bird or other. Spanish words and one-letter codes are read too (perro / P, gato / G…). REQUIRED for adoption and foster.', example: 'dog' }),
+    age: z.string().trim().max(40).optional()
+        .meta({ description: 'adoption / foster only. As people write it: "2 años", "3 meses", "1,5 años", "6m". Stored as an estimated birth date at the activity date.', example: '2 años' }),
+    birthDate: z.iso.date().optional().meta({ description: 'adoption / foster only. Known or estimated birth date, YYYY-MM-DD (instead of age).', example: '2024-08-01' }),
+    sex: z.enum(['female', 'male']).optional().meta({ description: 'adoption / foster only.' }),
+    neutered: z.boolean().optional().meta({ description: 'adoption / foster only. Spayed / neutered.' }),
+    color: z.string().trim().max(60).optional().meta({ description: 'adoption / foster only.', example: 'atigrada' }),
+    microchip: z.string().trim().max(40).optional().meta({ description: 'adoption / foster only.', example: '985112345678901' }),
     date: z.iso.date().optional().meta({ description: 'YYYY-MM-DD (a real calendar date). Defaults to today.', example: '2026-10-09' }),
     rating: z.number().int().min(1).max(5).nullable().optional()
         .meta({ description: 'Optional, 1 (dangerous) to 5 (excellent): your judgement of the person. Omit when you have none: it is never inferred.' }),
@@ -84,6 +95,8 @@ export type ApiErrorCode =
     | 'full_name_required' | 'exact_requires_name_and_identifier' | 'invalid_phone'
     | 'invalid_document_id' | 'invalid_email' | 'fuzzy_requires_a_field'
     | 'activity_requires_exact' | 'activity_required' | 'form_content_requires_adoption_request'
+    | 'species_required' | 'animal_details_require_placement' | 'invalid_age'
+    | 'contract_not_allowed' | 'contract_exists' | 'unsupported_media_type'
     | 'idempotency_key_required' | 'dry_run_not_allowed' | 'idempotency_key_reused'
     | 'external_id_reused' | 'daily_cap_reached' | 'api_disabled' | 'payload_too_large' | 'record_changed' | 'server_error';
 
@@ -94,6 +107,8 @@ export const API_ERROR_CODES: PublicApiErrorCode[] = [
     'full_name_required', 'exact_requires_name_and_identifier', 'invalid_phone',
     'invalid_document_id', 'invalid_email', 'fuzzy_requires_a_field',
     'activity_requires_exact', 'activity_required', 'form_content_requires_adoption_request',
+    'species_required', 'animal_details_require_placement', 'invalid_age',
+    'contract_not_allowed', 'contract_exists', 'unsupported_media_type',
     'idempotency_key_required', 'idempotency_key_reused', 'external_id_reused', 'daily_cap_reached', 'api_disabled',
     'payload_too_large', 'record_changed', 'server_error',
 ];
@@ -108,8 +123,20 @@ export function checkSearchRules(req: SearchRequest): { code: ApiErrorCode; mess
     if (p.documentId && !isUsableDocumentId(p.documentId.value)) {
         return { code: 'invalid_document_id', message: 'person.documentId.value needs at least 5 characters including 4 digits' };
     }
-    if (req.activity?.formContent && req.activity.activityType !== RECORD_TYPES.REQUEST) {
+    const a = req.activity;
+    if (a?.formContent && a.activityType !== RECORD_TYPES.REQUEST) {
         return { code: 'form_content_requires_adoption_request', message: 'activity.formContent is only accepted with activityType adoption_request' };
+    }
+    if (a) {
+        const placement = PLACEMENT_TYPES.includes(a.activityType);
+        // An adoption / foster puts the animal in the rescue's list: it needs a species.
+        if (placement && !a.species) return { code: 'species_required', message: `activity.species is required for ${a.activityType}` };
+        const details = (['age', 'birthDate', 'sex', 'neutered', 'color', 'microchip'] as const).filter(k => a[k] !== undefined);
+        if (!placement && details.length) {
+            return { code: 'animal_details_require_placement', message: `activity.${details[0]} describes the animal and is only accepted with adoption or foster` };
+        }
+        if (a.age && !parseAgeText(a.age)) return { code: 'invalid_age', message: 'activity.age must read like "2 años", "3 meses" or "6m"' };
+        if (a.age && a.birthDate) return { code: 'invalid_age', message: 'send activity.age or activity.birthDate, not both' };
     }
     if (req.mode === 'exact') {
         if (!p.fullName || !(p.email || p.phone || p.documentId)) {
@@ -215,6 +242,18 @@ export const voidResponseSchema = z.object({
     alreadyVoided: z.boolean().optional().meta({ description: 'Voiding twice is not an error: the second call says so and changes nothing.' }),
 });
 export type VoidResponse = z.infer<typeof voidResponseSchema>;
+
+export const contractResponseSchema = z.object({
+    requestId: z.string(),
+    activityId: z.string(),
+    activityUrl: z.string().nullable().meta({ description: 'The profile page, scrolled to this activity (where "Ver contrato firmado" now shows).' }),
+    contract: z.object({
+        contentType: z.string(),
+        size: z.number().int(),
+        sha256: z.string().meta({ description: 'Fingerprint of the file as stored: proof it has not changed since.' }),
+    }),
+});
+export type ContractResponse = z.infer<typeof contractResponseSchema>;
 
 export const errorResponseSchema = z.object({
     requestId: z.string(),

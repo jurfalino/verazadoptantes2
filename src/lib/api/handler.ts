@@ -20,7 +20,7 @@ import type { ApiErrorCode, ApiScope } from './schemas';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Db = any;
 
-export type ApiEndpoint = 'search' | 'me' | 'void';
+export type ApiEndpoint = 'search' | 'me' | 'void' | 'contract';
 
 /**
  * Read-only test calls: `X-Dry-Run: 1` runs a search end to end — validation,
@@ -72,6 +72,8 @@ export interface ApiCallContext {
     origin: string;
     /** Raw request body (already read), for the log and idempotency. */
     bodyText: string;
+    /** A file upload's bytes (binary endpoints only); never logged. */
+    bodyBytes: ArrayBuffer | null;
     idempotencyKey: string | null;
     log: LogFields;
     /** Set when this call already owns a log row (idempotency claim). */
@@ -235,6 +237,7 @@ export async function handleApiCall(
     request: Request,
     endpoint: ApiEndpoint,
     run: (ctx: ApiCallContext) => Promise<ApiResult>,
+    opts: { binaryBodyMax?: number } = {},
 ): Promise<Response> {
     const requestId = crypto.randomUUID();
     const startedAt = Date.now();
@@ -256,11 +259,15 @@ export async function handleApiCall(
     }
 
     let bodyText = '';
-    let tooLarge = Number(request.headers.get('content-length') || 0) > MAX_REQUEST_BODY;
+    let bodyBytes: ArrayBuffer | null = null;
+    const maxBody = opts.binaryBodyMax ?? MAX_REQUEST_BODY;
+    let tooLarge = Number(request.headers.get('content-length') || 0) > maxBody;
     if (request.method !== 'GET' && !tooLarge) {
         try {
-            const read = await readBodyLimited(request, MAX_REQUEST_BODY);
-            if (read === null) tooLarge = true; else bodyText = read;
+            const read = await readBodyLimited(request, maxBody);
+            if (read === null) tooLarge = true;
+            else if (opts.binaryBodyMax) { bodyBytes = read.buffer as ArrayBuffer; bodyText = ''; }
+            else bodyText = new TextDecoder().decode(read);
         } catch (e) {
             logger.warn('api: request body unreadable', { requestId, keyId: key.id, error: e instanceof Error ? e.message : String(e) });
         }
@@ -269,6 +276,7 @@ export async function handleApiCall(
         db, key, scopes: scopesOf(key), requestId,
         origin: new URL(request.url).origin,
         bodyText,
+        bodyBytes,
         idempotencyKey: request.headers.get('idempotency-key')?.trim().slice(0, 200) || null,
         log: {},
         rowClaimed: false,
@@ -280,7 +288,7 @@ export async function handleApiCall(
     let headers: Record<string, string> = {};
     let errorId: string | null = null;
     try {
-        if (tooLarge) throw new ApiError(413, 'payload_too_large', `request bodies are limited to ${MAX_REQUEST_BODY} bytes`);
+        if (tooLarge) throw new ApiError(413, 'payload_too_large', `request bodies are limited to ${maxBody} bytes`);
         await enforceCallCeiling(db, key);
         if (wantsDryRun(request.headers.get(DRY_RUN_HEADER))) {
             if (endpoint === 'void') throw new ApiError(422, 'dry_run_not_allowed', 'a void cannot be a dry run');
@@ -316,9 +324,9 @@ export async function handleApiCall(
     return json(status, body, requestId, headers);
 }
 
-/** The body as text, or null as soon as it passes `max` bytes (a chunked upload has no length to check up front). */
-async function readBodyLimited(request: Request, max: number): Promise<string | null> {
-    if (!request.body) return '';
+/** The body's bytes, or null as soon as it passes `max` bytes (a chunked upload has no length to check up front). */
+async function readBodyLimited(request: Request, max: number): Promise<Uint8Array | null> {
+    if (!request.body) return new Uint8Array(0);
     const reader = request.body.getReader();
     const chunks: Uint8Array[] = [];
     let size = 0;
@@ -332,7 +340,7 @@ async function readBodyLimited(request: Request, max: number): Promise<string | 
     const all = new Uint8Array(size);
     let at = 0;
     for (const c of chunks) { all.set(c, at); at += c.byteLength; }
-    return new TextDecoder().decode(all);
+    return all;
 }
 
 /** Drop the person data (request and response bodies) from log rows older than the retention window. */

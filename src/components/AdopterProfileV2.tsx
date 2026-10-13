@@ -572,6 +572,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                             else if (parsed.record_added_via_api) { eventType = 'api_activity'; changes = parsed.record_added_via_api; }
                                             else if (parsed.contacts_added_via_api) { eventType = 'api_contacts'; changes = parsed.contacts_added_via_api; }
                                             else if (parsed.api_record_voided) { eventType = 'api_voided'; changes = parsed.api_record_voided; }
+                                            else if (parsed.contract_attached_via_api) { eventType = 'api_contract'; changes = parsed.contract_attached_via_api; }
                                             else { changes = parsed; }
                                         } catch { /* ignore */ }
 
@@ -596,6 +597,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                         {eventType === 'api_activity' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_activity')}</span>}
                                                         {eventType === 'api_contacts' && <span className="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_contacts')}</span>}
                                                         {eventType === 'api_voided' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_voided')}</span>}
+                                                        {eventType === 'api_contract' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_contract')}</span>}
                                                     </div>
                                                     <span className="text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
                                                         {t('audit.by')} {(h.changedBy ? actorLabel(h.changedBy, userNameMap?.[h.changedBy], t) : t('common.anonymous'))}

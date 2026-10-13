@@ -4,8 +4,8 @@ import { buildOpenApi } from './openapi';
 describe('buildOpenApi', () => {
     const doc = buildOpenApi('https://staging.buenadoptante.org') as any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-    it('documents the three v1 endpoints', () => {
-        expect(Object.keys(doc.paths)).toEqual(['/api/v1/search', '/api/v1/me', '/api/v1/activities/{id}/void']);
+    it('documents the v1 endpoints', () => {
+        expect(Object.keys(doc.paths)).toEqual(['/api/v1/search', '/api/v1/me', '/api/v1/activities/{id}/contract', '/api/v1/activities/{id}/void']);
     });
 
     it('the request schema is generated from the zod contract (every person field, every activity type)', () => {
@@ -15,7 +15,7 @@ describe('buildOpenApi', () => {
         const activity = req.properties.activity;
         expect(activity.properties.activityType.enum).toEqual(['adoption_request', 'adoption', 'foster', 'follow_up', 'returned_pet', 'observation']);
         expect(Object.keys(activity.properties).sort())
-            .toEqual(['activityType', 'animalName', 'date', 'externalId', 'formContent', 'notes', 'rating', 'species']);
+            .toEqual(['activityType', 'age', 'animalName', 'birthDate', 'color', 'date', 'externalId', 'formContent', 'microchip', 'neutered', 'notes', 'rating', 'sex', 'species']);
         expect(activity.required).toEqual(['activityType']);
         expect(req.required).toEqual(expect.arrayContaining(['mode', 'person']));
         expect(req.required).not.toContain('activity');

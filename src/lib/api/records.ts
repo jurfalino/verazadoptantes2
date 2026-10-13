@@ -18,6 +18,8 @@ import { runAfterResponse } from '@/lib/background';
 import { socialUrl, type SocialPlatform } from '@/lib/contactEntries';
 import { pickBestMatch, type ExactOutcome } from '@/domain/apiExactMatch';
 import { normalizeSpecies } from '@/domain/importRow';
+import { parseAgeText } from '@/domain/animalAge';
+import { computeBirthDate } from '@/lib/ageUtils';
 import { addApiContacts, newContactFields, parseAddedContacts, removeApiContacts } from './contacts';
 import { ApiError, type ApiCallContext } from './handler';
 import { profileUrl, recordUrl } from './profiles';
@@ -97,6 +99,10 @@ export async function saveApiActivity(
         ctx.log.profileIds = [profileId];
     }
 
+    const activityDate = save.date ? dayAtNoon(save.date) : new Date();
+    // Age as the app stores it: an estimated birth date, counted back from the activity date.
+    const age = parseAgeText(save.age);
+    const estimatedBirthDate = save.birthDate ? dayAtNoon(save.birthDate) : age ? computeBirthDate(age.value, age.unit, activityDate) : null;
     const { insertRecord } = await import('@/app/actions/_recordWrite');
     const recordId = await insertRecord(db, {
         adopterId: profileId,
@@ -106,8 +112,15 @@ export async function saveApiActivity(
         // Optional and never inferred (Jon, 2026-10-09): missing stays NULL.
         rating: save.rating ?? null,
         recordType: activityType,
-        date: save.date ? dayAtNoon(save.date) : new Date(),
+        date: activityDate,
         details: save.notes || null,
+        // The animal, for an adoption / foster (checkSearchRules refuses them on other types).
+        age: save.age ?? null,
+        estimatedBirthDate: estimatedBirthDate,
+        sex: save.sex === 'female' ? 'hembra' : save.sex === 'male' ? 'macho' : null,
+        neutered: save.neutered === undefined ? null : save.neutered ? 1 : 0,
+        color: save.color ?? null,
+        microchip: save.microchip ?? null,
         sourceUrl: null,
     }, key.ownerEmail);
     ctx.log.recordId = recordId;
@@ -286,4 +299,56 @@ export async function voidApiRecord(db: Db, recordId: string, opts: { keyId: str
 
     logger.info('api: record voided', { requestId: opts.requestId, originRequestId: origin.id, recordId, profileId: currentProfileId, profileVoided, actor: opts.actor });
     return { recordId, profileId: currentProfileId, profileVoided };
+}
+
+/**
+ * POST /api/v1/activities/{id}/contract: the signed adoption / foster contract
+ * for an activity THIS key saved. Stored in private storage (one file per
+ * contract, src/lib/contractStorage.ts), shown on the profile as "Ver contrato
+ * firmado" to the rescue and admins. Never replaced: a wrong contract means
+ * voiding the activity and registering it again.
+ */
+export async function attachApiContract(ctx: ApiCallContext, activityId: string, contentType: string): Promise<{ contentType: string; size: number; sha256: string; profileId: string | null }> {
+    const { db, key } = ctx;
+    const { CONTRACT_CONTENT_TYPES, storeContract, contractKeyOf } = await import('@/lib/contractStorage');
+    if (!CONTRACT_CONTENT_TYPES[contentType]) throw new ApiError(415, 'unsupported_media_type', 'send the contract as application/pdf, image/png or image/jpeg');
+    if (!ctx.bodyBytes || ctx.bodyBytes.byteLength === 0) throw new ApiError(422, 'invalid_request', 'the request body must be the contract file');
+
+    const origin = await db.select().from(apiRequests).where(and(
+        eq(apiRequests.recordId, activityId), eq(apiRequests.keyId, key.id), eq(apiRequests.endpoint, 'search'),
+        eq(apiRequests.httpStatus, 200), isNull(apiRequests.voidedAt),
+    )).get() as typeof apiRequests.$inferSelect | undefined;
+    if (!origin) throw new ApiError(404, 'not_found', 'no activity saved by this key with that id');
+    ctx.log.context = origin.context;
+    if (origin.context !== 'adoption' && origin.context !== 'foster') {
+        throw new ApiError(422, 'contract_not_allowed', 'a contract can only be attached to an adoption or foster activity');
+    }
+    const placementId = `${activityId}-plc`;
+    const placement = await db.select({ comments: placements.comments, adopterId: placements.adopterId }).from(placements).where(eq(placements.id, placementId)).get() as { comments: string | null; adopterId: string } | undefined;
+    if (!placement) throw new ApiError(404, 'not_found', 'no activity saved by this key with that id');
+    if (contractKeyOf(placement.comments)) throw new ApiError(409, 'contract_exists', 'this activity already has a contract; void the activity and register it again to replace it');
+
+    const stored = await storeContract(ctx.bodyBytes, contentType, { requestId: ctx.requestId, activityId });
+    let existing: Record<string, unknown> = {};
+    if (placement.comments) {
+        try { existing = JSON.parse(placement.comments); } catch {
+            existing = { note: placement.comments }; // keep a plain-text comment alongside the contract
+        }
+    }
+    await db.update(placements).set({ comments: JSON.stringify({ ...existing, contractKey: stored.key, contractSha256: stored.sha256, contractVia: 'api' }) })
+        .where(eq(placements.id, placementId));
+    try {
+        await db.insert(adopterHistory).values({
+            id: crypto.randomUUID(), adopterId: placement.adopterId, changedBy: `api:${key.name}`, kind: 'contribution',
+            changes: JSON.stringify({ contract_attached_via_api: { activityId, requestId: ctx.requestId, sha256: stored.sha256 } }),
+            changedAt: new Date(),
+        });
+    } catch (e) {
+        logger.error('api: history row for an attached contract failed', e, { requestId: ctx.requestId, activityId });
+    }
+    ctx.log.recordId = activityId;
+    ctx.log.profileIds = [placement.adopterId];
+    ctx.log.outcome = 'contract_attached';
+    logger.info('api: contract attached', { requestId: ctx.requestId, keyId: key.id, activityId, size: stored.size, contentType });
+    return { contentType, size: stored.size, sha256: stored.sha256, profileId: placement.adopterId };
 }

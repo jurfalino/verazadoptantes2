@@ -1174,6 +1174,7 @@ export const es = {
         event_api_activity: 'Actividad vía API',
         event_api_contacts: 'Contacto agregado vía API',
         event_api_voided: 'Anulado vía API',
+        event_api_contract: 'Contrato adjuntado vía API',
         desc_api_contacts: 'Datos agregados: {fields}',
         field_phone: 'teléfono',
         field_email: 'email',

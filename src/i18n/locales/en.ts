@@ -1169,6 +1169,7 @@ export const en = {
         event_api_activity: 'Activity via API',
         event_api_contacts: 'Contact added via API',
         event_api_voided: 'Voided via API',
+        event_api_contract: 'Contract attached via API',
         desc_api_contacts: 'Added: {fields}',
         field_phone: 'phone',
         field_email: 'email',

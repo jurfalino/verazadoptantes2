@@ -4,7 +4,7 @@
  */
 import { z } from 'zod';
 import {
-    errorResponseSchema, exactResponseSchema, fuzzyResponseSchema, meResponseSchema,
+    errorResponseSchema, contractResponseSchema, exactResponseSchema, fuzzyResponseSchema, meResponseSchema,
     searchRequestSchema, voidResponseSchema,
 } from './schemas';
 
@@ -48,11 +48,22 @@ Mandá \`activity\` con su tipo (\`activityType\`): \`adoption_request\`, \`adop
 - **\`not_found\`**: en un perfil nuevo.
 - **\`ambiguous\`**: si el nombre coincide con alguno de los perfiles, en el que mejor coincide; si no coincide con ninguno, en un perfil nuevo que un admin revisa como posible duplicado.
 
-Todo lo demás de \`activity\` es opcional: tu id (\`externalId\`), el animal (\`animalName\`, \`species\`), la fecha, notas y la calificación (si no la tenés, no la mandes). En un \`adoption_request\` podés mandar en \`formContent\` **todas las respuestas de tu formulario**, con la forma que tengan (cualquier objeto JSON, hasta 50 KB): se muestran en la actividad como pregunta → respuesta. Si la persona llena un formulario por cada animal, mandá una actividad por cada uno.
+Todo lo demás de \`activity\` es opcional: tu id (\`externalId\`), el animal (\`animalName\`, \`species\`), la fecha, notas y la calificación (si no la tenés, no la mandes).
+
+**Adopción o tránsito** (\`adoption\`, \`foster\`): el animal queda en tu lista de animales, así que \`species\` es **obligatorio**. Podés sumar sus datos: \`age\` (como lo escribirías: "2 años", "3 meses") o \`birthDate\`, \`sex\` (\`female\` / \`male\`), \`neutered\`, \`color\` y \`microchip\`. Esos datos del animal no se aceptan en otros tipos de actividad. En un \`adoption_request\` podés mandar en \`formContent\` **todas las respuestas de tu formulario**, con la forma que tengan (cualquier objeto JSON, hasta 50 KB): se muestran en la actividad como pregunta → respuesta. Si la persona llena un formulario por cada animal, mandá una actividad por cada uno.
 
 **Mandá siempre el header \`Idempotency-Key\`** (cualquier texto único, por ejemplo un UUID): si reintentás la misma llamada, devuelve la misma respuesta en vez de registrar dos veces.
 
 **Volver a consultar sin registrar**: una búsqueda exacta **sin** \`activity\` solo se responde si tu rescate ya registró a esa persona; si no, responde \`422 activity_required\`.
+
+## Adjuntar el contrato firmado: \`POST /api/v1/activities/{id}/contract\`
+Después de registrar una adopción o tránsito, mandá el contrato firmado: el cuerpo de la llamada **es el archivo** (PDF, PNG o JPG, hasta 5 MB) con su \`Content-Type\` (\`application/pdf\`, \`image/png\` o \`image/jpeg\`). Lo guardamos nosotros, de forma privada: en el perfil aparece "Ver contrato firmado" para tu rescate y los administradores. Un contrato no se reemplaza; si te equivocaste, anulá la actividad y registrala de nuevo.
+
+\`\`\`
+curl -X POST https://buenadoptante.org/api/v1/activities/{activityId}/contract \\
+  -H "Authorization: Bearer ba_live_…" -H "Content-Type: application/pdf" \\
+  --data-binary @contrato-firmado.pdf
+\`\`\`
 
 ## Anular una actividad: \`POST /api/v1/activities/{id}/void\`
 Solo actividades guardadas por tu propia clave. Se quitan también las respuestas del formulario y los datos de contacto que esa llamada agregó.
@@ -116,6 +127,19 @@ export function buildOpenApi(origin: string) {
                                             },
                                         },
                                     },
+                                    exact_adoption: {
+                                        summary: 'Exact: register an adoption (species required; then attach the contract)',
+                                        value: {
+                                            mode: 'exact',
+                                            person: { fullName: 'María José Pérez', phone: '+54 9 11 6462-2274', email: 'maria@example.com' },
+                                            activity: {
+                                                activityType: 'adoption', externalId: 'adopcion-2026-118',
+                                                animalName: 'Luna', species: 'cat', age: '2 años', sex: 'female', neutered: true,
+                                                color: 'atigrada', microchip: '985112345678901',
+                                                date: '2026-10-12', rating: 5, notes: 'Entrega en domicilio, todo en orden.',
+                                            },
+                                        },
+                                    },
                                     exact_lookup: {
                                         summary: 'Exact look-up of someone your rescue already registered (saves nothing)',
                                         value: { mode: 'exact', person: { fullName: 'María José Pérez', email: 'maria@example.com' } },
@@ -142,6 +166,30 @@ export function buildOpenApi(origin: string) {
                     summary: 'Probar la conexión: a quién pertenece la clave y su cupo',
                     operationId: 'me',
                     responses: { '200': { description: 'OK', content: { 'application/json': { schema: schema(meResponseSchema) } } }, '401': errors['401'] },
+                },
+            },
+            '/api/v1/activities/{id}/contract': {
+                post: {
+                    summary: 'Adjuntar el contrato firmado a una adopción o tránsito',
+                    operationId: 'attachContract',
+                    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: '`activity.activityId` of an adoption / foster this key saved' }],
+                    requestBody: {
+                        required: true,
+                        description: 'The file itself (≤5 MB).',
+                        content: {
+                            'application/pdf': { schema: { type: 'string', format: 'binary' } },
+                            'image/png': { schema: { type: 'string', format: 'binary' } },
+                            'image/jpeg': { schema: { type: 'string', format: 'binary' } },
+                        },
+                    },
+                    responses: {
+                        '201': { description: 'Stored', content: { 'application/json': { schema: schema(contractResponseSchema) } } },
+                        '401': errors['401'], '403': errors['403'], '404': errors['404'],
+                        '409': { ...error, description: 'This activity already has a contract' },
+                        '413': { ...error, description: 'Larger than 5 MB' },
+                        '415': { ...error, description: 'Not a PDF, PNG or JPEG' },
+                        '422': errors['422'],
+                    },
                 },
             },
             '/api/v1/activities/{id}/void': {

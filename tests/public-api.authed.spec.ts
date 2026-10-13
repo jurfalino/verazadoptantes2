@@ -393,6 +393,55 @@ test.describe('public API v1', () => {
         expect((await after.json()).result).toBe('not_found');
     });
 
+    test('adoption: species required, animal details stored; the signed contract attaches once and opens for the rescue', async ({ page }) => {
+        const ADOPTER = `Adopcionfixture ${TAG.charAt(0).toUpperCase()}${TAG.slice(1)}`;
+        const person = { fullName: ADOPTER, email: `adopcion-${STAMP}@example.com` };
+        const noSpecies = await search({ mode: 'exact', person, activity: { activityType: 'adoption', animalName: 'Luna' } }, { 'idempotency-key': `nosp-${STAMP}` });
+        expect((await noSpecies.json()).error.code).toBe('species_required');
+        const ageOnRequest = await search({ mode: 'exact', person, activity: { activityType: 'adoption_request', age: '2 años' } }, { 'idempotency-key': `agereq-${STAMP}` });
+        expect((await ageOnRequest.json()).error.code).toBe('animal_details_require_placement');
+        const badAge = await search({ mode: 'exact', person, activity: { activityType: 'adoption', species: 'cat', age: 'cachorro' } }, { 'idempotency-key': `badage-${STAMP}` });
+        expect((await badAge.json()).error.code).toBe('invalid_age');
+
+        const res = await search({
+            mode: 'exact', person,
+            activity: {
+                activityType: 'adoption', externalId: `adopcion-${STAMP}`, animalName: 'Luna', species: 'cat', age: '2 años', sex: 'female',
+                neutered: true, color: 'atigrada', microchip: '985112345678901', date: '2026-10-12', rating: 5, notes: 'Entrega en domicilio.',
+            },
+        }, { 'idempotency-key': `adopt-${STAMP}` });
+        expect(res.status()).toBe(200);
+        const a = (await res.json()).activity;
+        const animal = JSON.parse(execD1(`SELECT species, sex, neutered, color, microchip, age, estimated_birth_date AS b, added_by FROM animals WHERE id = '${a.activityId}'`))[0].results[0];
+        expect(animal).toMatchObject({ species: 'cat', sex: 'hembra', neutered: 1, color: 'atigrada', microchip: '985112345678901', age: '2 años', added_by: ADMIN_EMAIL });
+        expect(new Date(Number(animal.b) * 1000).getUTCFullYear()).toBe(2024);
+
+        // The contract: wrong type refused; a PDF stored once; a second one refused.
+        const pdf = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
+        const wrongType = await api.post(`/api/v1/activities/${a.activityId}/contract`, { headers: auth({ 'content-type': 'text/plain' }), data: Buffer.from('hola') });
+        expect(wrongType.status()).toBe(415);
+        const attached = await api.post(`/api/v1/activities/${a.activityId}/contract`, { headers: auth({ 'content-type': 'application/pdf' }), data: pdf });
+        expect(attached.status()).toBe(201);
+        const c = await attached.json();
+        expect(c.contract).toMatchObject({ contentType: 'application/pdf', size: pdf.byteLength });
+        expect(c.contract.sha256).toMatch(/^[0-9a-f]{64}$/);
+        expect((await api.post(`/api/v1/activities/${a.activityId}/contract`, { headers: auth({ 'content-type': 'application/pdf' }), data: pdf })).status()).toBe(409);
+        // Only on adoptions / fosters this key saved.
+        const req = (await (await search({ mode: 'exact', person, activity: { activityType: 'adoption_request' } }, { 'idempotency-key': `adreq-${STAMP}` })).json()).activity;
+        expect((await (await api.post(`/api/v1/activities/${req.activityId}/contract`, { headers: auth({ 'content-type': 'application/pdf' }), data: pdf })).json()).error.code).toBe('contract_not_allowed');
+        expect((await api.post('/api/v1/activities/test-adoption-5/contract', { headers: auth({ 'content-type': 'application/pdf' }), data: pdf })).status()).toBe(404);
+
+        // The rescue opens it from the profile; the file is the one sent.
+        const file = await page.request.get(`/api/files/contract/${a.activityId}`);
+        expect(file.status()).toBe(200);
+        expect(file.headers()['content-type']).toBe('application/pdf');
+        expect((await file.body()).equals(pdf)).toBe(true);
+        await page.goto(`/adopter/${a.profileId}`);
+        await expect(page.locator(`[id="adoption-${a.activityId}"] a[href="/api/files/contract/${a.activityId}"]`)).toBeVisible({ timeout: 30000 });
+
+        for (const id of [req.activityId, a.activityId]) await api.post(`/api/v1/activities/${id}/void`, { headers: auth() });
+    });
+
     test('daily cap → 429 with Retry-After', async ({ page }) => {
         const me = await (await api.get('/api/v1/me', { headers: auth() })).json();
         await page.request.patch(`/api/admin/api-keys/${keyId}`, { data: { dailyCapFuzzy: me.usedToday.fuzzy + 1 } });
