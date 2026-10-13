@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.174] - 2026-10-13
+
+### Tests — no more 3-second guess on the duplicate dialog
+
+Ships 2.56.173 (which never deployed: a create-adopter test waited only 3 s for
+the duplicate dialog on a slow CI runner). The four create-adopter tests now wait
+for the dialog or the new profile, whichever comes first.
+
 ## [2.56.173] - 2026-10-13
 
 ### Changed — only 1★ bans from adopting
