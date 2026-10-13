@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.176] - 2026-10-13
+
+### Added — origin tags on the profile (flag `ENABLE_ORIGIN_LABELS`, off)
+
+When on, the profile shows where it came from (📥 Importado, 📝 Formulario,
+✍️ Contrato, API · herramienta) and each activity shows API · herramienta,
+📝 Formulario or ✍️ Contrato. Mis Adoptantes already shows each profile's origin.
+
 ## [2.56.175] - 2026-10-13
 
 ### Added — Admin → API: activities and voids per key
