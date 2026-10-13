@@ -39,3 +39,13 @@ export function getRatingDisplayLevel(rating: number): 0 | RatingLevel {
     if (r < 1) return 0;
     return Math.min(5, r) as RatingLevel;
 }
+
+/**
+ * Does a profile's rating ban the person from adopting (the adopter sign-in
+ * gate)? Only a profile SHOWN as 1★ «peligroso» — the average rounds to 1.
+ * Unrated never bans (ratings are never inferred). Jon, 2026-10-13: it was any
+ * average below 4.
+ */
+export function ratingBansAdopting(avgRating: number | null | undefined): boolean {
+    return avgRating != null && getRatingDisplayLevel(avgRating) === 1;
+}

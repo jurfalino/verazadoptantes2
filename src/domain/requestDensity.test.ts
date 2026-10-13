@@ -70,6 +70,19 @@ describe('groupRescues', () => {
     });
 });
 
+describe('groupRescues: admins never link organizations', () => {
+    it('an admin in two organizations does not merge them, and is a rescue of its own', () => {
+        const orgs = new Map([['admin@x.com', ['o1', 'o2']], ['a@x.com', ['o1']], ['b@x.com', ['o2']]]);
+        const g = groupRescues(orgs, new Set(['admin@x.com']));
+        expect(g.get('a@x.com')).not.toBe(g.get('b@x.com'));
+        expect(g.get('admin@x.com')).not.toBe(g.get('a@x.com'));
+        expect(g.get('admin@x.com')).not.toBe(g.get('b@x.com'));
+        // Without the exclusion the admin chains them together.
+        const merged = groupRescues(orgs);
+        expect(merged.get('a@x.com')).toBe(merged.get('b@x.com'));
+    });
+});
+
 describe('knownRescuer', () => {
     it('only a real email is a known rescuer', () => {
         expect(knownRescuer(' A@X.com ')).toBe('a@x.com');

@@ -27,8 +27,8 @@ export default function SharedIdentifiersPanel({ groups }: { groups: SharedIdent
                     {groups.map(g => (
                         <div key={`${g.field}|${g.value}`} data-testid="shared-identifier" className="bg-white border border-stone-200 rounded-xl p-4">
                             <div className="flex gap-2 items-center flex-wrap mb-2">
-                                <span className="text-xs font-semibold text-stone-500">{FIELD_LABEL[g.field]}</span>
-                                <span className="text-sm font-semibold text-stone-900 break-all">{g.value}</span>
+                                <span className="text-xs font-semibold text-stone-500">{g.partial ? 'Teléfono que termina en' : FIELD_LABEL[g.field]}</span>
+                                <span className="text-sm font-semibold text-stone-900 break-all">{g.partial ? `…${g.value}` : g.value}</span>
                                 <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 border border-stone-200">{g.profiles.length} perfiles</span>
                                 {g.sameName
                                     ? <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--status-warning-bg)', color: 'var(--status-warning-text)' }}>Mismo nombre: posible duplicado</span>

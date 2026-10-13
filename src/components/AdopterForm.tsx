@@ -574,19 +574,20 @@ export function AdopterForm({ interviewEnabled = false, initialData, currentUser
                         fromForm: formPrefill ? 1 : 0,
                         continuesToAdoption: searchParams.get('continueToAdoption') === 'true' ? 1 : 0,
                     });
-                    if (formPrefill?.selfieUrl) {
-                        try {
-                            await saveImage(res.id, formPrefill.selfieUrl, t('formResults.selfie_alt') || 'Applicant selfie');
-                        } catch (imgErr) {
-                            console.warn('[AdopterForm] Save selfie from form prefill failed', imgErr);
-                        }
-                    }
                     const fromFormId = searchParams.get('fromForm');
                     if (fromFormId?.trim()) {
                         try {
                             await linkFormSubmissionToAdopter(fromFormId.trim(), res.id);
                         } catch (linkErr) {
                             console.warn('[AdopterForm] Link form submission to adopter failed', linkErr);
+                        }
+                    }
+                    // After the link: the selfie may only be copied onto the form's own profile.
+                    if (formPrefill?.selfieUrl) {
+                        try {
+                            await saveImage(res.id, formPrefill.selfieUrl, t('formResults.selfie_alt') || 'Applicant selfie');
+                        } catch (imgErr) {
+                            console.warn('[AdopterForm] Save selfie from form prefill failed', imgErr);
                         }
                     }
                     // Check if we should continue to adoption form

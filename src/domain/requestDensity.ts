@@ -22,9 +22,11 @@ export function knownRescuer(addedBy: string | null | undefined): string | null 
 /**
  * Rescue key per rescuer email. Rescuers who share any organization are one
  * rescue — also through a chain (A and B share org 1, B and C share org 2), so
- * someone in two organizations never splits a team in two.
+ * someone in two organizations never splits a team in two. Accounts in
+ * `standalone` (admins: they join organizations to help, Jon 2026-10-13) never
+ * link organizations together; each is a rescue of its own.
  */
-export function groupRescues(orgsByEmail: Map<string, string[]>): Map<string, string> {
+export function groupRescues(orgsByEmail: Map<string, string[]>, standalone: Set<string> = new Set()): Map<string, string> {
     const parent = new Map<string, string>();
     const find = (x: string): string => {
         let r = x;
@@ -40,6 +42,7 @@ export function groupRescues(orgsByEmail: Map<string, string[]>): Map<string, st
     for (const [rawEmail, orgs] of orgsByEmail) {
         const email = `user:${rawEmail.trim().toLowerCase()}`;
         if (!parent.has(email)) parent.set(email, email);
+        if (standalone.has(rawEmail.trim().toLowerCase())) continue;
         for (const org of orgs) {
             const node = `org:${org}`;
             if (!parent.has(node)) parent.set(node, node);

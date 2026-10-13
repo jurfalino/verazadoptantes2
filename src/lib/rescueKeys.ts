@@ -7,7 +7,9 @@
  * the grouping no longer depends on which rescuers a page happened to load —
  * the search card and the profile agree.
  */
-import { orgMembers } from '@/db/schema';
+import { orgMembers, userProfiles, users } from '@/db/schema';
+import { eq } from 'drizzle-orm';
+import { BOOTSTRAP_ADMIN_EMAILS } from '@/config/admins';
 import { logger } from '@/lib/logger';
 import { groupRescues, knownRescuer } from '@/domain/requestDensity';
 
@@ -30,9 +32,21 @@ export async function loadOrgMembership(db: Db, op: string): Promise<Map<string,
     return out;
 }
 
-/** Rescue key per known rescuer (organizations merged, also through chains). */
+/** Admin accounts (bootstrap + role admin): they never link organizations in the count. */
+export async function loadAdminEmails(db: Db, op: string): Promise<Set<string>> {
+    const rows = await (db.select({ email: users.email }).from(userProfiles).innerJoin(users, eq(users.id, userProfiles.userId))
+        .where(eq(userProfiles.role, 'admin')).all() as Promise<Array<{ email: string | null }>>)
+        .catch((e: unknown) => {
+            logger.warn(`${op}: admin list read failed, only bootstrap admins kept apart`, { error: e instanceof Error ? e.message : String(e) });
+            return [] as Array<{ email: string | null }>;
+        });
+    return new Set([...BOOTSTRAP_ADMIN_EMAILS, ...rows.map(r => r.email ?? '')].map(e => e.trim().toLowerCase()).filter(Boolean));
+}
+
+/** Rescue key per known rescuer (organizations merged, also through chains; admins kept apart). */
 export async function loadRescueKeys(db: Db, op: string): Promise<Map<string, string>> {
-    return groupRescues(await loadOrgMembership(db, op));
+    const [membership, admins] = await Promise.all([loadOrgMembership(db, op), loadAdminEmails(db, op)]);
+    return groupRescues(membership, admins);
 }
 
 export function rescueKeyOf(addedBy: string | null | undefined, keys: Map<string, string>): string | null {

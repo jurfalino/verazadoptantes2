@@ -8,7 +8,8 @@
 import { getRequestContext } from '@/lib/requestContext';
 import { logger } from '@/lib/logger';
 
-export const R2_PUBLIC_URL = 'https://pub-bb28dd8b1e674fc189252b0000a7b573.r2.dev';
+import { R2_PUBLIC_URL } from './r2PublicUrl';
+export { R2_PUBLIC_URL };
 
 const ALLOWED_DOMAINS = [
     '.fbcdn.net',

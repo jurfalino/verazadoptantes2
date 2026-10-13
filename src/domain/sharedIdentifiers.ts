@@ -14,6 +14,8 @@ export interface SharedIdentifierGroup {
     profiles: Array<{ id: string; name: string }>;
     /** At least two of the profiles carry names that fit each other: likely one person twice. */
     sameName: boolean;
+    /** Only the last 8 digits match (phone_suffix): maybe two different numbers. */
+    partial: boolean;
 }
 
 const FIELD: Record<string, SharedField | undefined> = { phone: 'phone', phone_suffix: 'phone', email: 'email', id_number: 'documentId' };
@@ -38,7 +40,7 @@ export function groupSharedIdentifiers(rows: SharedTokenRow[], names: Map<string
                 if (namesCompatible(profiles[i].name, profiles[j].name)) sameName = true;
             }
         }
-        groups.push({ field, value: row.tokenValue, profiles, sameName });
+        groups.push({ field, value: row.tokenValue, profiles, sameName, partial: row.tokenType === 'phone_suffix' });
     }
     // Likely duplicates first (they're the ones to merge), then the biggest groups.
     return groups.sort((a, b) => Number(b.sameName) - Number(a.sameName) || b.profiles.length - a.profiles.length || a.value.localeCompare(b.value));

@@ -342,8 +342,11 @@ async function copySelfieToProfilePhotos(db: NonNullable<Awaited<ReturnType<type
     const { canAccessFormSubmission } = await import('./_applicants');
     const { readSelfie } = await import('@/lib/contractStorage');
     const { uploadToR2 } = await import('@/lib/r2');
-    const row = await db.select({ selfieKey: formSubmissions.selfieKey }).from(formSubmissions).where(eq(formSubmissions.id, submissionId)).get();
+    const row = await db.select({ selfieKey: formSubmissions.selfieKey, linkedAdopterId: formSubmissions.linkedAdopterId, autoAdopterId: formSubmissions.autoAdopterId })
+        .from(formSubmissions).where(eq(formSubmissions.id, submissionId)).get();
     if (!row?.selfieKey || !(await canAccessFormSubmission(db, submissionId, actor))) throw new Error('Selfie not available');
+    // Only onto the applicant's own profile: never someone else's.
+    if (adopterId !== row.linkedAdopterId && adopterId !== row.autoAdopterId) throw new Error('Selfie not available');
     const file = await readSelfie(row.selfieKey, submissionId);
     if (!file) throw new Error('Selfie not available');
     const contentType = file.httpMetadata?.contentType ?? 'image/jpeg';

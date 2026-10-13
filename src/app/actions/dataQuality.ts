@@ -64,7 +64,13 @@ LIMIT 1000
 `.trim();
 
 async function loadSharedIdentifiers(email: string): Promise<SharedIdentifierGroup[]> {
-    const { rows } = await runReadonly(SHARED_SQL);
+    // Its own failure: the other tabs of the report must still load.
+    const res = await runReadonly(SHARED_SQL).catch((e: unknown) => {
+        logger.error('getDataQualityReport: shared identifiers failed', e, { user: email });
+        return null;
+    });
+    if (!res) return [];
+    const { rows } = res;
     const names = new Map<string, string>();
     const tokenRows = rows.map(r => {
         let profiles: Array<{ id: string; name: string | null }> = [];
