@@ -266,6 +266,13 @@ export async function voidApiRecord(db: Db, recordId: string, opts: { keyId: str
         const placement = await db.select({ adopterId: placements.adopterId }).from(placements)
             .where(eq(placements.id, ownPlacementId)).get();
         currentProfileId = placement?.adopterId ?? null;
+        // A voided adoption's signed contract goes too: it was registered by mistake.
+        const own = await db.select({ contractKey: placements.contractKey }).from(placements).where(eq(placements.id, ownPlacementId)).get() as { contractKey: string | null } | undefined;
+        if (own?.contractKey) {
+            const { deleteContract } = await import('@/lib/contractStorage');
+            await deleteContract(own.contractKey).catch(e => logger.error('api void: contract file not deleted', e, { requestId: opts.requestId, recordId }));
+            await db.update(placements).set({ contractKey: null, contractSha256: null }).where(eq(placements.id, ownPlacementId));
+        }
         const { softDeleteAnimal } = await import('@/app/actions/_recordWrite');
         await softDeleteAnimal(db, recordId, opts.actor);
     }
@@ -310,7 +317,9 @@ export async function voidApiRecord(db: Db, recordId: string, opts: { keyId: str
  */
 export async function attachApiContract(ctx: ApiCallContext, activityId: string, contentType: string): Promise<{ contentType: string; size: number; sha256: string; profileId: string | null }> {
     const { db, key } = ctx;
-    const { CONTRACT_CONTENT_TYPES, storeContract, contractKeyOf } = await import('@/lib/contractStorage');
+    const { CONTRACT_CONTENT_TYPES, storeContract, deleteContract } = await import('@/lib/contractStorage');
+    // A dry run must never store a file or link it (same as a void).
+    if (ctx.dryRun) throw new ApiError(422, 'dry_run_not_allowed', 'a contract upload cannot be a dry run');
     if (!CONTRACT_CONTENT_TYPES[contentType]) throw new ApiError(415, 'unsupported_media_type', 'send the contract as application/pdf, image/png or image/jpeg');
     if (!ctx.bodyBytes || ctx.bodyBytes.byteLength === 0) throw new ApiError(422, 'invalid_request', 'the request body must be the contract file');
 
@@ -324,19 +333,22 @@ export async function attachApiContract(ctx: ApiCallContext, activityId: string,
         throw new ApiError(422, 'contract_not_allowed', 'a contract can only be attached to an adoption or foster activity');
     }
     const placementId = `${activityId}-plc`;
-    const placement = await db.select({ comments: placements.comments, adopterId: placements.adopterId }).from(placements).where(eq(placements.id, placementId)).get() as { comments: string | null; adopterId: string } | undefined;
+    const placement = await db.select({ contractKey: placements.contractKey, contractSha256: placements.contractSha256, adopterId: placements.adopterId })
+        .from(placements).where(eq(placements.id, placementId)).get() as { contractKey: string | null; contractSha256: string | null; adopterId: string } | undefined;
     if (!placement) throw new ApiError(404, 'not_found', 'no activity saved by this key with that id');
-    if (contractKeyOf(placement.comments)) throw new ApiError(409, 'contract_exists', 'this activity already has a contract; void the activity and register it again to replace it');
+    const exists = (sha: string | null) => new ApiError(409, 'contract_exists', `this activity already has a contract (sha256 ${sha ?? 'unknown'}); void the activity and register it again to replace it`);
+    if (placement.contractKey) throw exists(placement.contractSha256);
 
-    const stored = await storeContract(ctx.bodyBytes, contentType, { requestId: ctx.requestId, activityId });
-    let existing: Record<string, unknown> = {};
-    if (placement.comments) {
-        try { existing = JSON.parse(placement.comments); } catch {
-            existing = { note: placement.comments }; // keep a plain-text comment alongside the contract
-        }
+    const stored = await storeContract(ctx.bodyBytes, contentType, { animalId: activityId, requestId: ctx.requestId });
+    // Claim the slot only if it is still empty: two concurrent uploads can't both win.
+    const won = await db.update(placements).set({ contractKey: stored.key, contractSha256: stored.sha256 })
+        .where(and(eq(placements.id, placementId), isNull(placements.contractKey)))
+        .returning({ id: placements.id });
+    if (!won.length) {
+        await deleteContract(stored.key).catch(e => logger.error('api: losing contract upload not deleted', e, { requestId: ctx.requestId, activityId }));
+        const now = await db.select({ contractSha256: placements.contractSha256 }).from(placements).where(eq(placements.id, placementId)).get() as { contractSha256: string | null } | undefined;
+        throw exists(now?.contractSha256 ?? null);
     }
-    await db.update(placements).set({ comments: JSON.stringify({ ...existing, contractKey: stored.key, contractSha256: stored.sha256, contractVia: 'api' }) })
-        .where(eq(placements.id, placementId));
     try {
         await db.insert(adopterHistory).values({
             id: crypto.randomUUID(), adopterId: placement.adopterId, changedBy: `api:${key.name}`, kind: 'contribution',

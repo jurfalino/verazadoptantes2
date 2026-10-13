@@ -23,7 +23,7 @@
 //     the homepage search, its heading and the guide. On staging the guided tour
 //     stayed dead until a manual refresh, the signature of a stale chunk, so
 //     production gets the eviction before users hit the same thing.
-const CACHE_VERSION = 'buenaadoptante-v8'; // v8 (2.56.67): evicts ?dpl= duplicates, see cacheKeyFor
+const CACHE_VERSION = 'buenaadoptante-v9'; // v9 (2.56.170): drops any cached /api/files/ (signed contracts); v8 evicted ?dpl= duplicates
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const SHARE_CACHE = 'share-target-media';
@@ -85,6 +85,10 @@ self.addEventListener('fetch', (event) => {
     // The third-party API and its docs are never cached: responses depend on
     // the caller's key, and the docs page carries its own CSP.
     if (url.pathname.startsWith('/api/v1/')) return;
+
+    // Signed contracts and other private files: never stored in Cache Storage
+    // (it outlives a logout on a shared device). The route also says no-store.
+    if (url.pathname.startsWith('/api/files/')) return;
 
     // Skip auth-related requests (never cache)
     if (url.pathname.startsWith('/api/auth')) return;

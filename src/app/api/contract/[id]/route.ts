@@ -70,7 +70,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             animalName: animal.animalName,
             species: animal.species,
             details: animal.details,
-            comments: animal.comments,
             age: animal.age,
             estimatedBirthDate: animal.estimatedBirthDate,
             neutered: animal.neutered,

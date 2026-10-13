@@ -215,6 +215,8 @@ export const adoptions = sqliteTable("adoptions", {
     /** v2.56.128: projected from `animals.listed`. NULL for adopter-event rows,
      *  which are not animals and are never in the catalogue. */
     listed: integer("listed"),
+    /** 0085: 1 when the active placement has a signed contract in private storage (the key itself is never projected). */
+    hasContract: integer("has_contract"),
 });
 
 // ============================================================================
@@ -278,6 +280,9 @@ export const placements = sqliteTable("placements", {
     identityVerified: integer("identity_verified"),
     onBehalfOf: text("on_behalf_of"),
     comments: text("comments"), // contract screenshot JSON etc.
+    // 0085: private-storage key of the signed contract (src/lib/contractStorage.ts). Server-written only — never from `comments`.
+    contractKey: text("contract_key"),
+    contractSha256: text("contract_sha256"),
     sourceUrl: text("source_url"),
     recordedBy: text("recorded_by").default("anonymous"),
     /** v2.56.126: the address of this adoption's shared health record. Random

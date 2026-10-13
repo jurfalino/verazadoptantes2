@@ -11,10 +11,19 @@ describe('parseAgeText', () => {
         expect(parseAgeText('2 anos')).toEqual({ value: 2, unit: 'years' });
         expect(parseAgeText('5 mês')).toEqual({ value: 5, unit: 'months' });
     });
-    it('half years become months', () => {
+    it('weeks, half years and combinations', () => {
+        expect(parseAgeText('6 semanas')).toEqual({ value: 1, unit: 'months' });
+        expect(parseAgeText('10 weeks')).toEqual({ value: 2, unit: 'months' });
         expect(parseAgeText('1,5 años')).toEqual({ value: 18, unit: 'months' });
+        expect(parseAgeText('1 año y 3 meses')).toEqual({ value: 15, unit: 'months' });
+        expect(parseAgeText('2 years and 6 months')).toEqual({ value: 30, unit: 'months' });
     });
-    it('anything else is refused, not guessed', () => {
-        for (const bad of ['', 'cachorro', 'dos años', '0 meses', '45 años', 'años 2', null]) expect(parseAgeText(bad)).toBeNull();
+    it('limits apply to the total, before rounding', () => {
+        expect(parseAgeText('99,5 años')).toBeNull();
+        expect(parseAgeText('31 años')).toBeNull();
+        expect(parseAgeText('0,4 meses')).toEqual({ value: 1, unit: 'months' });
+    });
+    it('anything else reads as no estimate, never a guess', () => {
+        for (const bad of ['', 'cachorro', 'dos años', '0 meses', 'años 2', null]) expect(parseAgeText(bad)).toBeNull();
     });
 });

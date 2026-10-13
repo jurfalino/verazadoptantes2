@@ -30,11 +30,16 @@ test.describe('signed contracts: private storage', () => {
         const signed = await res.json();
         expect(JSON.stringify(signed)).not.toContain('r2.dev');
 
-        const placement = rows(`SELECT comments FROM placements WHERE animal_id = '${animalId}' AND ended_at IS NULL`)[0];
-        const key = JSON.parse(String(placement.comments)).contractKey as string;
+        const placement = rows(`SELECT comments, contract_key, contract_sha256 FROM placements WHERE animal_id = '${animalId}' AND ended_at IS NULL`)[0];
+        const key = String(placement.contract_key);
         expect(key).toMatch(/^contracts\/[0-9a-f-]{36}\.png$/);
         expect(key).not.toContain(animalId);
-        expect(String(placement.comments)).not.toContain('contractScreenshot');
+        expect(String(placement.contract_sha256)).toMatch(/^[0-9a-f]{64}$/);
+        // Never in the free-text comments a rescuer can edit.
+        expect(String(placement.comments ?? '')).not.toContain('contracts/');
+        // The public contract page no longer returns comments at all.
+        const pub = await (await anon.get(`/api/contract/${animalId}`)).json().catch(() => ({}));
+        expect(pub.comments).toBeUndefined();
         expect(rows(`SELECT file_key FROM signed_contracts WHERE animal_id = '${animalId}'`)[0].file_key).toBe(key);
 
         // The animal's rescue (the admin owns it) opens it.
@@ -60,37 +65,53 @@ test.describe('signed contracts: private storage', () => {
         expect((await anon.post(`/api/contract/${animalId}/upload`, { data: { screenshot: TINY_PNG } })).ok()).toBe(false);
         await anon.dispose();
 
+        // A forged reference gets nothing: another rescuer types the key into
+        // comments of THEIR record, or a key is copied onto another animal's row.
+        const forged = `test-animal-contract-forged-${Date.now()}`;
+        execD1(`INSERT INTO animals (id, name, species, details, added_by, created_at, updated_at) VALUES ('${forged}', 'Falsofixture', 'cat', 'E2E fixture', 'testuser@example.com', strftime('%s','now'), strftime('%s','now'))`);
+        execD1(`INSERT INTO placements (id, animal_id, adopter_id, record_type, status, started_at, comments, recorded_by) VALUES ('${forged}-plc', '${forged}', 'test-adopter-1', 'adoption', 'active', strftime('%s','now'), '{"contractKey":"${key}"}', 'testuser@example.com')`);
+        const thief = await browser.newContext({ storageState: '.auth/user.json' });
+        expect((await thief.request.get(`/api/files/contract/${forged}`)).status()).toBe(404);
+        execD1(`UPDATE placements SET contract_key = '${key}' WHERE id = '${forged}-plc'`);
+        expect((await thief.request.get(`/api/files/contract/${forged}`)).status()).toBe(404); // the file was stored for another animal
+        await thief.close();
+
         // The adoption card links through the checked route.
         await page.goto(`/my-animals/${animalId}`);
         await expect(page.locator(`a[href^="/api/files/contract/${animalId}"]`).first()).toBeVisible({ timeout: 30000 });
     });
 
-    test('admin move: old public contracts are copied to private storage, records repointed, then the public copies deleted', async ({ page }) => {
+    test('admin move: an old public contract is copied to private storage, linked, then its public copy deleted', async ({ page }) => {
         const legacyAnimal = `test-animal-contract-legacy-${Date.now()}`;
+        const otherAnimal = `test-animal-contract-other-${Date.now()}`;
         const publicKey = `contracts/${legacyAnimal}/signed-contract.png`;
         const file = `${process.cwd()}/test-results/legacy-contract.png`;
         execSync(`mkdir -p test-results && printf 'PNGfake' > ${file}`);
         execSync(`npx wrangler r2 object put buenadoptante-images/${publicKey} --file ${file} --content-type image/png --local`, { stdio: 'ignore' });
-        execD1(`INSERT INTO animals (id, name, species, details, added_by, created_at, updated_at) VALUES ('${legacyAnimal}', 'Legadofixture', 'dog', 'E2E fixture', 'gatitosolivos@gmail.com', strftime('%s','now'), strftime('%s','now'))`);
-        execD1(`INSERT INTO placements (id, animal_id, adopter_id, record_type, status, started_at, comments, recorded_by) VALUES ('${legacyAnimal}-plc', '${legacyAnimal}', 'test-adopter-1', 'adoption', 'active', strftime('%s','now'), '{"contractScreenshot":"https://pub-bb28dd8b1e674fc189252b0000a7b573.r2.dev/${publicKey}"}', 'contract')`);
+        for (const id of [legacyAnimal, otherAnimal]) {
+            execD1(`INSERT INTO animals (id, name, species, details, added_by, created_at, updated_at) VALUES ('${id}', 'Legadofixture', 'dog', 'E2E fixture', 'gatitosolivos@gmail.com', strftime('%s','now'), strftime('%s','now'))`);
+        }
+        const url = `https://pub-bb28dd8b1e674fc189252b0000a7b573.r2.dev/${publicKey}`;
+        execD1(`INSERT INTO placements (id, animal_id, adopter_id, record_type, status, started_at, comments, recorded_by) VALUES ('${legacyAnimal}-plc', '${legacyAnimal}', 'test-adopter-1', 'adoption', 'active', strftime('%s','now'), '{"contractScreenshot":"${url}","note":"keep me"}', 'contract')`);
+        // A record pointing at ANOTHER animal's legacy file is never moved (comments are user-writable).
+        execD1(`INSERT INTO placements (id, animal_id, adopter_id, record_type, status, started_at, comments, recorded_by) VALUES ('${otherAnimal}-plc', '${otherAnimal}', 'test-adopter-1', 'adoption', 'active', strftime('%s','now'), '{"contractScreenshot":"${url}"}', 'contract')`);
 
         const plan = await (await page.request.get('/api/admin/contracts/migrate')).json();
-        expect(plan.toMove.some((m: { animalId: string }) => m.animalId === legacyAnimal)).toBe(true);
+        const planned = plan.toMove.map((m: { animalId: string }) => m.animalId);
+        expect(planned).toContain(legacyAnimal);
+        expect(planned).not.toContain(otherAnimal);
 
         const moved = await (await page.request.post('/api/admin/contracts/migrate')).json();
-        expect(moved.results.find((r: { animalId: string }) => r.animalId === legacyAnimal)?.status).toBe('moved');
-        const comments = JSON.parse(String(rows(`SELECT comments FROM placements WHERE id = '${legacyAnimal}-plc'`)[0].comments));
-        expect(comments.contractKey).toMatch(/^contracts\/[0-9a-f-]{36}\.png$/);
-        expect(comments.movedFrom).toBe(publicKey);
+        expect(moved.results.find((r: { animalId: string }) => r.animalId === legacyAnimal)).toMatchObject({ status: 'moved', publicDeleted: true });
+        const row = rows(`SELECT comments, contract_key FROM placements WHERE id = '${legacyAnimal}-plc'`)[0];
+        expect(String(row.contract_key)).toMatch(/^contracts\/[0-9a-f-]{36}\.png$/);
+        expect(JSON.parse(String(row.comments))).toEqual({ note: 'keep me' });
         expect((await page.request.get(`/api/files/contract/${legacyAnimal}`)).status()).toBe(200);
-
-        const del = await (await page.request.post('/api/admin/contracts/migrate?deletePublic=1')).json();
-        expect(del.deleted).toContain(publicKey);
         let stillThere = true;
         try { execSync(`npx wrangler r2 object get buenadoptante-images/${publicKey} --pipe --local`, { stdio: 'pipe' }); } catch { stillThere = false; }
         expect(stillThere).toBe(false);
-        // The private copy is still served after the public one is gone.
-        expect((await page.request.get(`/api/files/contract/${legacyAnimal}`)).status()).toBe(200);
+        // Running it again changes nothing.
+        expect((await (await page.request.post('/api/admin/contracts/migrate')).json()).results.some((r: { animalId: string }) => r.animalId === legacyAnimal)).toBe(false);
     });
 });
 

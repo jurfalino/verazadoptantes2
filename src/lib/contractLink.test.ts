@@ -3,15 +3,18 @@ import { contractHref } from './contractLink';
 
 describe('contractHref', () => {
     it('a privately stored contract opens through the checked route', () => {
-        expect(contractHref('a1', JSON.stringify({ contractKey: 'contracts/x.pdf' }))).toBe('/api/files/contract/a1');
-        expect(contractHref('a1', JSON.stringify({ contractKey: 'contracts/x.pdf' }), 'p9')).toBe('/api/files/contract/a1?placement=p9');
+        expect(contractHref('a1', 1, null)).toBe('/api/files/contract/a1');
+        expect(contractHref('a1', true, null, 'p9')).toBe('/api/files/contract/a1?placement=p9');
+    });
+    it('a contractKey typed into comments is NOT a contract (only the server column counts)', () => {
+        expect(contractHref('a1', 0, JSON.stringify({ contractKey: 'contracts/x.pdf' }))).toBeNull();
     });
     it('an older record keeps the link it was saved with', () => {
-        expect(contractHref('a1', JSON.stringify({ contractScreenshot: 'https://x.r2.dev/contracts/a1/signed-contract.pdf' }))).toBe('https://x.r2.dev/contracts/a1/signed-contract.pdf');
+        expect(contractHref('a1', 0, JSON.stringify({ contractScreenshot: 'https://x.r2.dev/contracts/a1/signed-contract.pdf' }))).toBe('https://x.r2.dev/contracts/a1/signed-contract.pdf');
     });
     it('no contract, or a plain note → no link', () => {
-        expect(contractHref('a1', null)).toBeNull();
-        expect(contractHref('a1', 'una nota')).toBeNull();
-        expect(contractHref('a1', '{}')).toBeNull();
+        expect(contractHref('a1', null, null)).toBeNull();
+        expect(contractHref('a1', 0, 'una nota')).toBeNull();
+        expect(contractHref('a1', 0, '{}')).toBeNull();
     });
 });

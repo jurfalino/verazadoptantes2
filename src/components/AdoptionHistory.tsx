@@ -29,6 +29,7 @@ interface Adoption {
     rating: number | null;
     details: string | null;
     comments: string | null;
+    hasContract?: number | null;
     date: Date | null;
     addedBy: string | null;
 
@@ -492,9 +493,9 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                     })()}
 
                                     {/* Contract screenshot link (for adoptions) */}
-                                    {adoption.comments && (() => {
+                                    {(adoption.hasContract || adoption.comments) && (() => {
                                         try {
-                                            const href = contractHref(adoption.id, adoption.comments);
+                                            const href = contractHref(adoption.id, adoption.hasContract, adoption.comments);
                                             if (href) {
                                                 return (
                                                     <a

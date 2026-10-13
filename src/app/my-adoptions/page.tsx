@@ -30,6 +30,7 @@ interface Adoption {
     rating: number | null;
     recordType: string | null;
     comments: string | null;
+    hasContract?: number | null;
     images: AdoptionImage[];
     addedBy?: string | null;
     /** Rescuer's display name for `addedBy` (email handle when they have none). */
@@ -186,7 +187,7 @@ export default function MyAdoptionsPage() {
                                 </thead>
                                 <tbody className="divide-y divide-stone-100">
                                     {adoptions.map((adoption) => {
-                                        const contractUrl = contractHref(adoption.id, adoption.comments);
+                                        const contractUrl = contractHref(adoption.id, adoption.hasContract, adoption.comments);
                                         return (
                                         <tr key={adoption.id} className="hover:bg-stone-50/50 transition-colors group">
                                             <td className="py-3 px-4">
@@ -278,7 +279,7 @@ export default function MyAdoptionsPage() {
                         {/* Mobile Cards - Hidden on desktop */}
                         <div className="md:hidden space-y-3">
                             {adoptions.map((adoption) => {
-                                const contractUrl = contractHref(adoption.id, adoption.comments);
+                                const contractUrl = contractHref(adoption.id, adoption.hasContract, adoption.comments);
                                 return (
                                 <div
                                     key={adoption.id}

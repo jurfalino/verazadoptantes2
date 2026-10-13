@@ -30,7 +30,7 @@ bucket_name = "buenadoptante-images"
 # /api/files/contract/[animalId]. See src/lib/contractStorage.ts.
 [[r2_buckets]]
 binding = "CONTRACTS_BUCKET"
-bucket_name = "buenadoptante-contracts"
+bucket_name = "buenadoptante-contracts-staging"
 
 
 
@@ -46,7 +46,8 @@ binding = "IMAGES_BUCKET"
 bucket_name = "buenadoptante-images"
 
 # Signed contracts: PRIVATE (no public URL / custom domain), read only through
-# /api/files/contract/[animalId]. See src/lib/contractStorage.ts.
+# /api/files/contract/[animalId]. See src/lib/contractStorage.ts. Production has
+# its own bucket; staging and local use buenadoptante-contracts-staging.
 [[env.production.r2_buckets]]
 binding = "CONTRACTS_BUCKET"
 bucket_name = "buenadoptante-contracts"
@@ -74,4 +75,4 @@ bucket_name = "buenadoptante-images"
 # /api/files/contract/[animalId]. See src/lib/contractStorage.ts.
 [[env.preview.r2_buckets]]
 binding = "CONTRACTS_BUCKET"
-bucket_name = "buenadoptante-contracts"
+bucket_name = "buenadoptante-contracts-staging"

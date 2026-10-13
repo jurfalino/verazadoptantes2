@@ -40,6 +40,7 @@ interface Animal {
     species: string | null;
     details: string | null;
     comments: string | null;
+    hasContract?: number | null;
     adopterId: string | null;
     adopterName: string | null;
     /** Distinguishes a foster placement ('foster') from a plain available
@@ -474,9 +475,9 @@ export default function MyAnimalsPage() {
                                     )}
 
                                     {/* Contract screenshot link */}
-                                    {animal.comments && (() => {
+                                    {(animal.hasContract || animal.comments) && (() => {
                                         try {
-                                            const href = contractHref(animal.id, animal.comments);
+                                            const href = contractHref(animal.id, animal.hasContract, animal.comments);
                                             if (href) {
                                                 return (
                                                     <a

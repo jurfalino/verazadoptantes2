@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { RECORD_TYPES } from '@/domain/constants';
 import { isFullName, isUsableDocumentId } from '@/domain/apiExactMatch';
 import { readPhones } from '@/domain/phoneNumber';
-import { parseAgeText } from '@/domain/animalAge';
+import { normalizeSpecies } from '@/domain/importRow';
 
 /** Activity types that place the animal with the person (they create it in the rescue's list). */
 export const PLACEMENT_TYPES: readonly string[] = [RECORD_TYPES.ADOPTION, RECORD_TYPES.FOSTER];
@@ -62,7 +62,7 @@ const activitySchema = z.object({
     species: z.string().trim().max(50).optional()
         .meta({ description: 'dog, cat, bird or other. Spanish words and one-letter codes are read too (perro / P, gato / G…). REQUIRED for adoption and foster.', example: 'dog' }),
     age: z.string().trim().max(40).optional()
-        .meta({ description: 'adoption / foster only. As people write it: "2 años", "3 meses", "1,5 años", "6m". Stored as an estimated birth date at the activity date.', example: '2 años' }),
+        .meta({ description: 'adoption / foster only. As people write it: "2 años", "3 meses", "6 semanas", "1 año y 3 meses". We estimate the birth date from it at the activity date; an age we can\'t read is kept as written, without an estimate.', example: '2 años' }),
     birthDate: z.iso.date().optional().meta({ description: 'adoption / foster only. Known or estimated birth date, YYYY-MM-DD (instead of age).', example: '2024-08-01' }),
     sex: z.enum(['female', 'male']).optional().meta({ description: 'adoption / foster only.' }),
     neutered: z.boolean().optional().meta({ description: 'adoption / foster only. Spayed / neutered.' }),
@@ -130,13 +130,16 @@ export function checkSearchRules(req: SearchRequest): { code: ApiErrorCode; mess
     if (a) {
         const placement = PLACEMENT_TYPES.includes(a.activityType);
         // An adoption / foster puts the animal in the rescue's list: it needs a species.
-        if (placement && !a.species) return { code: 'species_required', message: `activity.species is required for ${a.activityType}` };
+        if (placement && !normalizeSpecies(a.species)) return { code: 'species_required', message: `activity.species is required for ${a.activityType}` };
         const details = (['age', 'birthDate', 'sex', 'neutered', 'color', 'microchip'] as const).filter(k => a[k] !== undefined);
         if (!placement && details.length) {
             return { code: 'animal_details_require_placement', message: `activity.${details[0]} describes the animal and is only accepted with adoption or foster` };
         }
-        if (a.age && !parseAgeText(a.age)) return { code: 'invalid_age', message: 'activity.age must read like "2 años", "3 meses" or "6m"' };
+        // An age we can't read is kept as written, with no estimated birth date: it never blocks the adoption.
         if (a.age && a.birthDate) return { code: 'invalid_age', message: 'send activity.age or activity.birthDate, not both' };
+        if (a.birthDate && a.birthDate > (a.date ?? new Date().toISOString().slice(0, 10))) {
+            return { code: 'invalid_age', message: 'activity.birthDate cannot be after the activity date' };
+        }
     }
     if (req.mode === 'exact') {
         if (!p.fullName || !(p.email || p.phone || p.documentId)) {

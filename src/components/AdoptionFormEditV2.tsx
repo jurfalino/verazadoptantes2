@@ -693,9 +693,9 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                     {/* End of Block 1 — animal-specific fields hidden for observations */}
 
                     {/* Contract screenshot link */}
-                    {initialData?.comments && (() => {
+                    {(initialData?.hasContract || initialData?.comments) && (() => {
                         try {
-                            const href = contractHref(initialData.id, initialData.comments);
+                            const href = contractHref(initialData.id, initialData.hasContract, initialData.comments);
                             if (href) {
                                 return (
                                     <a

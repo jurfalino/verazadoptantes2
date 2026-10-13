@@ -53,6 +53,11 @@ describe('service worker: what it intercepts', () => {
         expect(intercepts(`${ORIGIN}/api/v1/openapi.json`)).toBe(false);
     });
 
+    it('never caches private files (signed contracts), even opened in a new tab', () => {
+        expect(intercepts(`${ORIGIN}/api/files/contract/a1`)).toBe(false);
+        expect(intercepts(`${ORIGIN}/api/files/contract/a1?placement=p1`, { mode: 'navigate' })).toBe(false);
+    });
+
     it("still handles the app's own pages, assets and API", () => {
         expect(intercepts(`${ORIGIN}/my-animals`, { mode: 'navigate' })).toBe(true);
         expect(intercepts(`${ORIGIN}/_next/static/chunks/main.js`)).toBe(true);

@@ -400,8 +400,10 @@ test.describe('public API v1', () => {
         expect((await noSpecies.json()).error.code).toBe('species_required');
         const ageOnRequest = await search({ mode: 'exact', person, activity: { activityType: 'adoption_request', age: '2 años' } }, { 'idempotency-key': `agereq-${STAMP}` });
         expect((await ageOnRequest.json()).error.code).toBe('animal_details_require_placement');
-        const badAge = await search({ mode: 'exact', person, activity: { activityType: 'adoption', species: 'cat', age: 'cachorro' } }, { 'idempotency-key': `badage-${STAMP}` });
-        expect((await badAge.json()).error.code).toBe('invalid_age');
+        const futureBirth = await search({ mode: 'exact', person, activity: { activityType: 'adoption', species: 'cat', birthDate: '2026-11-01', date: '2026-10-12' } }, { 'idempotency-key': `badage-${STAMP}` });
+        expect((await futureBirth.json()).error.code).toBe('invalid_age');
+        const junkSpecies = await search({ mode: 'exact', person, activity: { activityType: 'adoption', species: '...' } }, { 'idempotency-key': `junksp-${STAMP}` });
+        expect((await junkSpecies.json()).error.code).toBe('species_required');
 
         const res = await search({
             mode: 'exact', person,
@@ -425,7 +427,11 @@ test.describe('public API v1', () => {
         const c = await attached.json();
         expect(c.contract).toMatchObject({ contentType: 'application/pdf', size: pdf.byteLength });
         expect(c.contract.sha256).toMatch(/^[0-9a-f]{64}$/);
-        expect((await api.post(`/api/v1/activities/${a.activityId}/contract`, { headers: auth({ 'content-type': 'application/pdf' }), data: pdf })).status()).toBe(409);
+        const again = await api.post(`/api/v1/activities/${a.activityId}/contract`, { headers: auth({ 'content-type': 'application/pdf' }), data: pdf });
+        expect(again.status()).toBe(409);
+        expect((await again.json()).error.message).toContain(c.contract.sha256);
+        // A dry run never stores or links a file.
+        expect((await (await api.post(`/api/v1/activities/${a.activityId}/contract`, { headers: auth({ 'content-type': 'application/pdf', 'x-dry-run': '1' }), data: pdf })).json()).error.code).toBe('dry_run_not_allowed');
         // Only on adoptions / fosters this key saved.
         const req = (await (await search({ mode: 'exact', person, activity: { activityType: 'adoption_request' } }, { 'idempotency-key': `adreq-${STAMP}` })).json()).activity;
         expect((await (await api.post(`/api/v1/activities/${req.activityId}/contract`, { headers: auth({ 'content-type': 'application/pdf' }), data: pdf })).json()).error.code).toBe('contract_not_allowed');
@@ -439,7 +445,10 @@ test.describe('public API v1', () => {
         await page.goto(`/adopter/${a.profileId}`);
         await expect(page.locator(`[id="adoption-${a.activityId}"] a[href="/api/files/contract/${a.activityId}"]`)).toBeVisible({ timeout: 30000 });
 
+        // Void: the adoption and its contract are gone; the file no longer opens.
         for (const id of [req.activityId, a.activityId]) await api.post(`/api/v1/activities/${id}/void`, { headers: auth() });
+        expect((await page.request.get(`/api/files/contract/${a.activityId}`)).status()).toBe(404);
+        expect(JSON.parse(execD1(`SELECT count(*) AS n FROM placements WHERE id = '${a.activityId}-plc' AND contract_key IS NOT NULL`))[0].results[0].n).toBe(0);
     });
 
     test('daily cap → 429 with Retry-After', async ({ page }) => {

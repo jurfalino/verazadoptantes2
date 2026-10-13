@@ -161,8 +161,8 @@ export default function AnimalTimeline({ animalId, items, animalSex, userNameMap
 
     // Contract evidence (placement comments JSON) — replaces the old card link.
     const contractShotOf = (item: AnimalTimelineItem): string | null => {
-        if (item.kind !== 'placement_start' || !item.comments) return null;
-        return contractHref(animalId, item.comments, item.id);
+        if (item.kind !== 'placement_start') return null;
+        return contractHref(animalId, item.hasContract, item.comments, item.id);
     };
 
     return (
