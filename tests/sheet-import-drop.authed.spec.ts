@@ -50,4 +50,12 @@ test.describe('sheet import: drag and drop', () => {
         expect(prevented).toBe(true);
         await expect(page).toHaveURL(/\/import\/sheet/);
     });
+
+    test('an Excel file with more than one sheet is read (first sheet), not «e.map is not a function»', async ({ page }) => {
+        // read-excel-file v9 returns every sheet as [{ sheet, data }]; the parser used to treat that as rows.
+        await page.getByTestId('sheet-file-input').setInputFiles('tests/fixtures/two-sheets.xlsx');
+        await expect(page.getByTestId('sheet-dropzone')).toHaveCount(0, { timeout: 30000 });
+        await expect(page.getByText('Excela Fixtureperez').first()).toBeVisible({ timeout: 30000 });
+        await expect(page.getByText(/is not a function/)).toHaveCount(0);
+    });
 });

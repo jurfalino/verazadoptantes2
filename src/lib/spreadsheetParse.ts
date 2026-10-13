@@ -66,10 +66,26 @@ export function xlsxCellToString(cell: unknown): string {
     return (cell ?? '').toString();
 }
 
-/** Parse an .xlsx File (first sheet) into headers + aligned rows. */
+/**
+ * The rows of a workbook's first sheet that has any, from whatever
+ * read-excel-file returned. Since v9 the default export returns EVERY sheet as
+ * `[{ sheet, data }]` (data = rows of cells); older versions returned the first
+ * sheet's rows directly. Treating the v9 shape as rows was «e.map is not a
+ * function» on every .xlsx import (2026-10-12).
+ */
+export function firstSheetRows(result: unknown): unknown[][] {
+    if (!Array.isArray(result) || result.length === 0) return [];
+    if (Array.isArray(result[0])) return result as unknown[][];          // old shape: rows
+    for (const sheet of result as Array<{ data?: unknown }>) {
+        if (Array.isArray(sheet?.data) && sheet.data.length > 0) return sheet.data as unknown[][];
+    }
+    return [];
+}
+
+/** Parse an .xlsx File (first sheet with rows) into headers + aligned rows. */
 export async function parseXlsxFile(file: File): Promise<ParsedSheet> {
     const { default: readXlsxFile } = await import('read-excel-file/browser');
-    const data = (await readXlsxFile(file)) as unknown as unknown[][]; // rows of cells
+    const data = firstSheetRows(await readXlsxFile(file));
     if (!data.length) return { headers: [], rows: [], rowCount: 0 };
     const headers = normalizeHeaders(data[0]);
     const rows = data.slice(1).map((r) => headers.map((_, i) => xlsxCellToString(r[i])));

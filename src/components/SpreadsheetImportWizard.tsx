@@ -11,6 +11,7 @@ import { inferDateOrder } from '@/domain/importRow';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType, normalizeNeutered } from '@/domain/importRow';
 import { userFacingMessage } from '@/lib/errorMessage';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { zarazTrack } from '@/lib/zaraz';
 import {
     TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE,
@@ -284,7 +285,9 @@ export default function SpreadsheetImportWizard() {
             setMap(guessColumnMap(sheet.headers)); setMode('mapping'); setAdvancedOpen(true);
             setStep('confirm');
         } catch (e) {
-            setError(userFacingMessage(e, 'No se pudo leer el archivo.')); setStep('upload');
+            // Logged with an id the rescuer can quote — this failure used to be invisible in the logs.
+            const errorId = resolveErrorId(e, 'SpreadsheetImportWizard.handleFile');
+            setError(`${userFacingMessage(e, 'No se pudo leer el archivo.')} (ID: ${errorId})`); setStep('upload');
         } finally { setBusy(false); }
     };
 

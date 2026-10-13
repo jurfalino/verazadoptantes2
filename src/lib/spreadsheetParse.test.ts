@@ -1,5 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { xlsxCellToString } from './spreadsheetParse';
+import { xlsxCellToString, firstSheetRows } from './spreadsheetParse';
+
+describe('firstSheetRows (read-excel-file result → rows)', () => {
+    it('takes the first sheet from the v9 shape [{ sheet, data }]', () => {
+        const v9 = [{ sheet: 'Solicitudes', data: [['Nombre', 'Email'], ['Ana', 'a@x.com']] }, { sheet: 'Notas', data: [['nota']] }];
+        expect(firstSheetRows(v9)).toEqual([['Nombre', 'Email'], ['Ana', 'a@x.com']]);
+    });
+    it('skips empty sheets to the first one with rows', () => {
+        expect(firstSheetRows([{ sheet: 'Vacía', data: [] }, { sheet: 'Datos', data: [['A'], ['1']] }])).toEqual([['A'], ['1']]);
+    });
+    it('still accepts the older rows-of-cells shape', () => {
+        expect(firstSheetRows([['A', 'B'], ['1', '2']])).toEqual([['A', 'B'], ['1', '2']]);
+    });
+    it('anything else is an empty sheet, never a throw', () => {
+        expect(firstSheetRows([])).toEqual([]);
+        expect(firstSheetRows(undefined)).toEqual([]);
+        expect(firstSheetRows([{ sheet: 'x' }])).toEqual([]);
+    });
+});
 
 describe('xlsxCellToString', () => {
     it('formats a Date cell as YYYY-MM-DD (day preserved, no timezone drift)', () => {
