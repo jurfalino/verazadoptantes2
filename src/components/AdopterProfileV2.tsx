@@ -568,6 +568,10 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                             else if (parsed.flag_added) { eventType = 'flag_added'; changes = parsed.flag_added; }
                                             else if (parsed.flag_removed) { eventType = 'flag_removed'; changes = parsed.flag_removed; }
                                             else if (parsed.ownership_transferred) { eventType = 'ownership_transferred'; changes = parsed.ownership_transferred; }
+                                            // Entries the API writes (src/lib/api/records.ts, contacts.ts): labelled, never the generic "— ➜ —" diff.
+                                            else if (parsed.record_added_via_api) { eventType = 'api_activity'; changes = parsed.record_added_via_api; }
+                                            else if (parsed.contacts_added_via_api) { eventType = 'api_contacts'; changes = parsed.contacts_added_via_api; }
+                                            else if (parsed.api_record_voided) { eventType = 'api_voided'; changes = parsed.api_record_voided; }
                                             else { changes = parsed; }
                                         } catch { /* ignore */ }
 
@@ -589,6 +593,9 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                         {eventType === 'flag_added' && <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_flag_added')}</span>}
                                                         {eventType === 'flag_removed' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_flag_removed')}</span>}
                                                         {eventType === 'ownership_transferred' && <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_ownership_transferred')}</span>}
+                                                        {eventType === 'api_activity' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_activity')}</span>}
+                                                        {eventType === 'api_contacts' && <span className="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_contacts')}</span>}
+                                                        {eventType === 'api_voided' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_voided')}</span>}
                                                     </div>
                                                     <span className="text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
                                                         {t('audit.by')} {(h.changedBy ? actorLabel(h.changedBy, userNameMap?.[h.changedBy], t) : t('common.anonymous'))}
@@ -609,6 +616,11 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                                     </div>
                                                                 </div>
                                                             ))}
+                                                            {eventType === 'api_contacts' && Array.isArray(changes.fields) && (
+                                                                <div className="text-teal-800 font-medium break-words">
+                                                                    {t('audit.desc_api_contacts').replace('{fields}', (changes.fields as string[]).map(f => t(f === 'documentId' ? 'audit.field_document' : f === 'phone' ? 'audit.field_phone' : 'audit.field_email')).join(', '))}
+                                                                </div>
+                                                            )}
                                                             {eventType === 'adoption_added' && (
                                                                 <div className="text-teal-800 font-medium break-words">
                                                                     {t('audit.desc_adoption_added')} <span className="font-semibold break-all">{changes.animalName}</span> ({changes.species}) - {changes.status}

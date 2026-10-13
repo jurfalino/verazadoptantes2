@@ -379,12 +379,16 @@ export async function getAdoptions(adopterId: string) {
             return true;
         });
         // Requests count per rescue on the profile too (src/domain/requestDensity.ts).
-        const { loadRescueKeys, withRescueKeys } = await import('@/lib/rescueKeys');
-        const keys = await loadRescueKeys(db, deduped.filter((r: { recordType: string | null }) => r.recordType === 'adoption_request').map((r: { addedBy: string | null }) => r.addedBy), 'getAdoptions');
+        const { loadOrgMembership, withOpaqueRescueKeys } = await import('@/lib/rescueKeys');
+        const { groupRescues } = await import('@/domain/requestDensity');
+        const hasRequests = deduped.some((r: { recordType: string | null }) => r.recordType === 'adoption_request');
+        const membership = hasRequests ? await loadOrgMembership(db, 'getAdoptions') : new Map<string, string[]>();
+        const keys = groupRescues(membership);
         // Answers of an API-sent form: only for the rescue that registered it, and admins.
         const { attachActivityForms } = await import('@/lib/activityForms');
         const { isAdminAsync } = await import('@/config/admins');
-        const withForms = await attachActivityForms(db, withRescueKeys(deduped as Array<{ id: string; addedBy?: string | null; recordType?: string | null }>, keys), viewer, await isAdminAsync(viewer));
+        // Opaque labels for the browser: the grouping, never other rescuers' organizations.
+        const withForms = await attachActivityForms(db, withOpaqueRescueKeys(deduped as Array<{ id: string; addedBy?: string | null; recordType?: string | null }>, keys), viewer, await isAdminAsync(viewer), membership);
         return await attachAdoptionThumbnails(db, withForms);
     } catch (error) {
         logger.error('Get adoptions failed', error, { adopterId });

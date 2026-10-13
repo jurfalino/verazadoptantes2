@@ -213,7 +213,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         const ratingsMap = new Map<string, number | null>();
         const recordsByAdopter = new Map<string, typeof allAdoptionRecords>();
         // Requests count per rescue (an organization is one): see src/domain/requestDensity.ts.
-        const rescueKeys = await loadRescueKeys(db, allAdoptionRecords.filter(r => r.recordType === RECORD_TYPES.REQUEST).map(r => r.addedBy), 'getMyAdopters');
+        const rescueKeys = allAdoptionRecords.some(r => r.recordType === RECORD_TYPES.REQUEST) ? await loadRescueKeys(db, 'getMyAdopters') : new Map<string, string>();
         for (const rec of withRescueKeys(allAdoptionRecords, rescueKeys) as any[]) {
             if (!recordsByAdopter.has(rec.adopterId)) recordsByAdopter.set(rec.adopterId, []);
             recordsByAdopter.get(rec.adopterId)!.push(rec);

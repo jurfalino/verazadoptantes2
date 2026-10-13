@@ -128,8 +128,8 @@ export async function checkAdopterLoginGate(rawEmail: string): Promise<GateResul
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const adoptionsDensity = computeMaxDensityPeriod(adoptionRows as any, 'adoption', adoptionConfig.periodDays);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const requestRows = withRescueKeys(adoptionRows as Array<{ recordType: string | null; date: Date | null; addedBy: string | null }>,
-                await loadRescueKeys(db, (adoptionRows as Array<{ addedBy: string | null }>).map(r => r.addedBy), 'adopterLoginGate'));
+            const rows = adoptionRows as Array<{ recordType: string | null; date: Date | null; addedBy: string | null }>;
+            const requestRows = withRescueKeys(rows, rows.some(r => r.recordType === 'adoption_request') ? await loadRescueKeys(db, 'adopterLoginGate') : new Map<string, string>());
             const requestsDensity = computeRequestRescueDensity(requestRows, adoptionConfig.requestsPeriodDays);
             const tooManyAdoptions = adoptionsDensity.count >= adoptionConfig.threshold;
             const tooManyRequests = requestsDensity.count >= adoptionConfig.requestsThreshold;

@@ -74,11 +74,17 @@ export async function addApiContacts(
     if (added.length === 0) return [];
 
     // Kind 'contribution': an API caller is not an editor of the profile. Types only, never values.
-    await db.insert(adopterHistory).values({
-        id: crypto.randomUUID(), adopterId: profileId, changedBy: `api:${who.keyName}`, kind: 'contribution',
-        changes: JSON.stringify({ contacts_added_via_api: { fields: added.map(a => a.field), requestId: who.requestId, rescuer: who.ownerEmail } }),
-        changedAt: new Date(),
-    });
+    // The contacts are already saved: a failed history row must not hide them from void (the
+    // caller records them on the call's log row), so it is logged, not thrown.
+    try {
+        await db.insert(adopterHistory).values({
+            id: crypto.randomUUID(), adopterId: profileId, changedBy: `api:${who.keyName}`, kind: 'contribution',
+            changes: JSON.stringify({ contacts_added_via_api: { fields: added.map(a => a.field), requestId: who.requestId, rescuer: who.ownerEmail } }),
+            changedAt: new Date(),
+        });
+    } catch (e) {
+        logger.error('api: history row for added contacts failed', e, { requestId: who.requestId, profileId, fields: added.map(a => a.field) });
+    }
     // Awaited: the next search by the new email / phone must already find them.
     const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
     await tokenizeAdopter(profileId).catch(e => logger.error('api: tokenize after adding contacts failed', e, { requestId: who.requestId, profileId }));

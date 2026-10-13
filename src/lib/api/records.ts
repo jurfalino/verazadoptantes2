@@ -118,8 +118,11 @@ export async function saveApiActivity(
     }
 
     // New contact details: only for a certain match on the profile's own name.
+    // A field that matched ANOTHER profile is that person's (e.g. Juan's email
+    // sent along with Ana's phone): never copied onto this one.
+    const matchedElsewhere = [...matchedOn].filter(([id]) => id !== profileId).flatMap(([, fields]) => fields);
     const contactsAdded = outcome.result === 'found' && outcome.nameMatchedAs === 'profile'
-        ? await addApiContacts(db, profileId, req.person, newContactFields(req.person, matchedOn.get(profileId) ?? []),
+        ? await addApiContacts(db, profileId, req.person, newContactFields(req.person, [...(matchedOn.get(profileId) ?? []), ...matchedElsewhere]),
             { ownerEmail: key.ownerEmail, keyName: key.name, requestId: ctx.requestId })
         : [];
     ctx.log.contactsAdded = contactsAdded;

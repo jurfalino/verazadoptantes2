@@ -26,6 +26,12 @@ describe('computeRequestRescueDensity', () => {
         expect(r.count).toBe(3);
     });
 
+    it('a tie reports the tightest window', () => {
+        const r = computeRequestRescueDensity([req(0, 'a@x.com'), req(1, 'b@x.com'), req(2, 'c@x.com'), req(29, 'a@x.com')], 30);
+        expect(r.count).toBe(3);
+        expect(r.timeSpanDays).toBe(2);
+    });
+
     it('rescues outside the window do not add up', () => {
         const r = computeRequestRescueDensity([req(0, 'a@x.com'), req(40, 'b@x.com'), req(80, 'c@x.com')], 30);
         expect(r.count).toBe(1);

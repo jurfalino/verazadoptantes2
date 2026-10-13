@@ -153,22 +153,19 @@ export async function buildProfileSummaries(db: Db, ids: string[], origin: strin
 }
 
 /**
- * Has this key's rescue (its owner, or anyone in the owner's organization —
- * the same grouping as the per-rescue request count) put any activity on one
- * of these profiles? Gates the look-up without activity. A failed read refuses
- * (throws): it must never be mistaken for "yes".
+ * Which of these profiles this key's rescue has put an activity on — the key's
+ * owner, or someone in a DIRECTLY shared organization (same rule as who sees
+ * form answers). Gates the look-up without activity, and limits what it shows
+ * to those profiles. A failed read throws: it must never read as "yes".
  */
-export async function registeredByRescue(db: Db, ids: string[], ownerEmail: string, requestId: string): Promise<boolean> {
-    if (ids.length === 0) return false;
+export async function registeredByRescue(db: Db, ids: string[], ownerEmail: string, requestId: string): Promise<Set<string>> {
+    const mine = new Set<string>();
+    if (ids.length === 0) return mine;
     const perProfile = await Promise.all(ids.map(id =>
         db.select({ addedBy: adoptions.addedBy }).from(adoptions).where(eq(adoptions.adopterId, id)).all() as Promise<Array<{ addedBy: string | null }>>));
-    const addedBy = perProfile.flat().map(r => r.addedBy);
-    const { loadRescueKeys } = await import('@/lib/rescueKeys');
-    const { knownRescuer } = await import('@/domain/requestDensity');
-    const keys = await loadRescueKeys(db, [ownerEmail, ...addedBy], 'api.registeredByRescue');
-    const owner = knownRescuer(ownerEmail);
-    const mine = owner ? keys.get(owner) ?? `user:${owner}` : null;
-    const hit = !!mine && addedBy.some(a => { const e = knownRescuer(a); return !!e && (keys.get(e) ?? `user:${e}`) === mine; });
-    logger.info('api: look-up without activity', { requestId, profiles: ids.length, registeredByThisRescue: hit });
-    return hit;
+    const { loadOrgMembership, sameRescueDirect } = await import('@/lib/rescueKeys');
+    const membership = await loadOrgMembership(db, 'api.registeredByRescue');
+    ids.forEach((id, i) => { if (perProfile[i].some(r => sameRescueDirect(ownerEmail, r.addedBy, membership))) mine.add(id); });
+    logger.info('api: look-up without activity', { requestId, profiles: ids.length, registeredByThisRescue: mine.size });
+    return mine;
 }

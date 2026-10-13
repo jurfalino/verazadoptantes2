@@ -320,7 +320,7 @@ export default function AdminAdopterList({ adopters, countries: _countries, publ
                                         <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {flags.tooManyAdoptions.count} adoptions in {flags.tooManyAdoptions.actualSpanDays || flags.tooManyAdoptions.periodDays}d</span>
                                     )}
                                     {flags.tooManyRequests && (
-                                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">⚠ {flags.tooManyRequests.count} requests in {flags.tooManyRequests.actualSpanDays || flags.tooManyRequests.periodDays}d</span>
+                                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">⚠ {flags.tooManyRequests.count} rescues in {Math.max(1, Math.round(flags.tooManyRequests.actualSpanDays || flags.tooManyRequests.periodDays))}d</span>
                                     )}
                                 </div>
                             </div>

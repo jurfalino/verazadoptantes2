@@ -81,12 +81,26 @@ export async function runSearch(ctx: ApiCallContext): Promise<ApiResult> {
 async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiResult> {
     const country = req.person.phone ? await ownerCountry(ctx.db, ctx.key.ownerEmail, ctx.requestId) : null;
     const hits = await findIdentifierHits(ctx.db, req.person, ctx.requestId, country);
-    const outcome = decideExactOutcome(req.person.fullName!, hits.candidates);
+    let outcome = decideExactOutcome(req.person.fullName!, hits.candidates);
+    let ids = outcome.result === 'found' ? [outcome.profileId, ...outcome.otherProfileIds] : outcome.result === 'ambiguous' ? outcome.profileIds : [];
+
+    if (!req.activity) {
+        // A look-up leaves no activity, so it is only for people this rescue
+        // already registered (Jon, 2026-10-13), and it shows ONLY those
+        // profiles: never a stranger who shares the phone or email. Checked
+        // before anything else is read or logged; everyone else — including
+        // nobody — gets the same refusal, with nothing recorded about who matched.
+        const mine = await registeredByRescue(ctx.db, ids, ctx.key.ownerEmail, ctx.requestId);
+        const answerable = outcome.result === 'found' ? mine.has(outcome.profileId) : mine.size > 0;
+        if (!answerable) throw new ApiError(422, 'activity_required', 'send an activity: an exact call without one is only answered for people your rescue already registered');
+        ids = ids.filter(id => mine.has(id));
+        if (outcome.result === 'found') outcome = { ...outcome, otherProfileIds: outcome.otherProfileIds.filter(id => mine.has(id)) };
+        else if (outcome.result === 'ambiguous') outcome = { ...outcome, profileIds: outcome.profileIds.filter(id => mine.has(id)) };
+    }
     ctx.log.outcome = outcome.result;
 
     // Describe the person as they stood BEFORE this call: a rescue's own
     // just-saved request must not flag the person as "asking too often".
-    const ids = outcome.result === 'found' ? [outcome.profileId, ...outcome.otherProfileIds] : outcome.result === 'ambiguous' ? outcome.profileIds : [];
     const summaries = await buildProfileSummaries(ctx.db, ids, ctx.origin, ctx.requestId);
 
     const body: Omit<ExactResponse, 'requestId'> = { mode: 'exact', result: outcome.result, risk: riskOf([]) };
@@ -110,15 +124,7 @@ async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiRes
     body.risk = riskOf(ids.map(id => summaries.get(id)));
     ctx.log.profileIds = ids;
 
-    if (!req.activity) {
-        // A look-up leaves no activity, so it is only for someone this rescue
-        // already registered (Jon, 2026-10-13). Anyone else — including nobody —
-        // gets the same refusal, so a look-up can't confirm a stranger exists.
-        if (!(await registeredByRescue(ctx.db, ids, ctx.key.ownerEmail, ctx.requestId))) {
-            throw new ApiError(422, 'activity_required', 'send an activity: an exact call without one is only answered for people your rescue already registered');
-        }
-        return { status: 200, body };
-    }
+    if (!req.activity) return { status: 200, body };
     if (!ctx.dryRun) {
         body.activity = await saveApiActivity(ctx, req, outcome, hits.matchedOn, summaries);
         ctx.log.profileIds = [body.activity.profileId, ...ids.filter(id => id !== body.activity!.profileId)];

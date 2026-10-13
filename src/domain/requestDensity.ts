@@ -81,7 +81,7 @@ export function computeRequestRescueDensity(records: RecordLike[], periodDays: n
 
     const windowMs = periodDays === Infinity ? Infinity : periodDays * 86_400_000;
     const inWindow = new Map<string, number>();
-    let best = 0, bestL = 0, bestR = 0, left = 0;
+    let best = 0, bestL = 0, bestR = 0, bestSpan = Infinity, left = 0;
     for (let right = 0; right < points.length; right++) {
         inWindow.set(points[right].key, (inWindow.get(points[right].key) ?? 0) + 1);
         while (points[right].t - points[left].t > windowMs) {
@@ -90,7 +90,9 @@ export function computeRequestRescueDensity(records: RecordLike[], periodDays: n
             if (n === 0) inWindow.delete(k); else inWindow.set(k, n);
             left++;
         }
-        if (inWindow.size >= best) { best = inWindow.size; bestL = left; bestR = right; }
+        // The most rescues wins; on a tie, the tightest span says it best ("3 in 2 days", not "3 in 29").
+        const span = points[right].t - points[left].t;
+        if (inWindow.size > best || (inWindow.size === best && span < bestSpan)) { best = inWindow.size; bestL = left; bestR = right; bestSpan = span; }
     }
     const startMs = points[bestL].t, endMs = points[bestR].t;
     return { count: best, timeSpanDays: (endMs - startMs) / 86_400_000, startDate: new Date(startMs), endDate: new Date(endMs) };

@@ -179,8 +179,27 @@ test.describe('public API v1', () => {
         const nobody = await lookup({ fullName: 'Nadie Conocido', email: `nadie-${STAMP}@example.com` });
         for (const r of [other, nobody]) {
             expect(r.status()).toBe(422);
-            expect((await r.json()).error).toEqual({ code: 'activity_required', message: 'send an activity: an exact call without one is only answered for people your rescue already registered' });
+            const e = await r.json();
+            expect(e.error).toEqual({ code: 'activity_required', message: 'send an activity: an exact call without one is only answered for people your rescue already registered' });
+            // A refusal records nothing about who matched.
+            expect(countRows(`SELECT count(*) AS n FROM api_requests WHERE id = '${e.requestId}' AND profile_ids IS NULL AND outcome = 'error'`)).toBe(1);
         }
+
+        // Another rescue registers a stranger on the same phone. Our look-up of OUR
+        // person must not reveal them (no otherMatches, not counted in risk).
+        const strangerRes = await api.post('/api/v1/search', {
+            data: { mode: 'exact', person: { fullName: 'Extrañafixture Ajena', phone: LOCAL_PHONE }, activity: { activityType: 'observation' } },
+            headers: { authorization: `Bearer ${userKey.secret}`, 'idempotency-key': `stranger-${STAMP}` },
+        });
+        const stranger = await strangerRes.json();
+        expect(stranger.activity.profileCreated).toBe(true);
+        const ours = await (await lookup({ fullName: NAME, phone: LOCAL_PHONE })).json();
+        expect(ours.result).toBe('found');
+        expect(ours.otherMatches).toBeUndefined();
+        expect(ours.risk.profilesMatched).toBe(1);
+        expect(JSON.stringify(ours)).not.toContain(stranger.activity.profileId);
+        const v = await api.post(`/api/v1/activities/${stranger.activity.activityId}/void`, { headers: { authorization: `Bearer ${userKey.secret}` } });
+        expect((await v.json()).profileVoided).toBe(true);
         await page.request.patch(`/api/admin/api-keys/${userKey.id}`, { data: { revoke: true } });
     });
 
@@ -294,6 +313,13 @@ test.describe('public API v1', () => {
         expect(t1doc.activity.contactsAdded).toEqual(['documentId']);
         const t2 = await (await search({ mode: 'exact', person: { fullName: TWIN, email: `t2-${STAMP}@example.com` }, activity: { activityType: 'observation' } }, { 'idempotency-key': `t2-${STAMP}` })).json();
         expect(t2.activity.profileCreated).toBe(true);
+        // Someone else's email sent along with T1's phone: found T1, but that email is NOT copied onto T1.
+        const z = await (await search({ mode: 'exact', person: { fullName: 'Zetafixture Ajeno', email: `z-${STAMP}@example.com` }, activity: { activityType: 'observation' } }, { 'idempotency-key': `z-${STAMP}` })).json();
+        const mixed = await (await search({ mode: 'exact', person: { fullName: TWIN, phone: twinPhone, email: `z-${STAMP}@example.com` }, activity: { activityType: 'observation' } }, { 'idempotency-key': `mixed-${STAMP}` })).json();
+        expect(mixed.result).toBe('found');
+        expect(mixed.activity.profileId).toBe(t1.activity.profileId);
+        expect(mixed.activity.contactsAdded).toEqual([]);
+        for (const a of [mixed, z]) await api.post(`/api/v1/activities/${a.activity.activityId}/void`, { headers: auth() });
         // T1 matches on phone + document, T2 on email only → T1.
         const res = await (await search({ mode: 'exact', person: { fullName: TWIN, email: `t2-${STAMP}@example.com`, phone: twinPhone, documentId: { value: doc } }, activity: { activityType: 'adoption_request' } }, { 'idempotency-key': `twin-${STAMP}` })).json();
         expect(res.result).toBe('ambiguous');

@@ -119,7 +119,7 @@ async function _enrichAdoptersImpl(
         return m;
     };
     // Requests count per rescue (an organization is one): see src/domain/requestDensity.ts.
-    const rescueKeys = await loadRescueKeys(db, adoptionRows.filter(r => r.recordType === RECORD_TYPES.REQUEST).map(r => r.addedBy), 'enrichAdopters');
+    const rescueKeys = adoptionRows.some(r => r.recordType === RECORD_TYPES.REQUEST) ? await loadRescueKeys(db, 'enrichAdopters') : new Map<string, string>();
     const adoptionsByAdopter = groupBy(withRescueKeys(adoptionRows, rescueKeys));
     const flagsByAdopter = groupBy(flagRows);
     const statsByAdopter = groupBy(statRows);

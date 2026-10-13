@@ -49,9 +49,12 @@ export interface DataQualityReport {
 }
 
 // The identifier tokens the API's exact match looks up (src/lib/api/profiles.ts
-// findIdentifierHits), on live, non-demo profiles only.
+// findIdentifierHits), on live, non-demo profiles only. Names come in the same
+// query (one row per shared value, its profiles as a JSON array): one D1 query
+// however many groups there are.
 const SHARED_SQL = `
-SELECT dt.token_type AS tokenType, dt.token_value AS tokenValue, GROUP_CONCAT(DISTINCT dt.adopter_id) AS ids
+SELECT dt.token_type AS tokenType, dt.token_value AS tokenValue,
+  json_group_array(DISTINCT json_object('id', a.id, 'name', a.name)) AS profiles
 FROM duplicate_tokens dt
 JOIN adopters a ON a.id = dt.adopter_id AND a.deleted_at IS NULL AND a.is_demo = 0
 WHERE dt.token_type IN ('email', 'phone', 'phone_suffix', 'id_number')
@@ -62,20 +65,15 @@ LIMIT 1000
 
 async function loadSharedIdentifiers(email: string): Promise<SharedIdentifierGroup[]> {
     const { rows } = await runReadonly(SHARED_SQL);
-    const tokenRows = rows.map(r => ({ tokenType: String(r.tokenType), tokenValue: String(r.tokenValue), adopterIds: String(r.ids ?? '').split(',').filter(Boolean) }));
-    const ids = [...new Set(tokenRows.flatMap(r => r.adopterIds))];
-    const db = await getDb();
     const names = new Map<string, string>();
-    if (db) {
-        await Promise.all(ids.map(async id => {
-            const row = await db.select({ name: adopters.name }).from(adopters).where(and(eq(adopters.id, id), isNull(adopters.deletedAt))).get()
-                .catch((e: unknown) => {
-                    logger.warn('getDataQualityReport: shared-identifier name D1 fallback hit', { user: email, adopterId: id, error: e instanceof Error ? e.message : String(e) });
-                    return undefined;
-                });
-            if (row) names.set(id, row.name ?? '');
-        }));
-    }
+    const tokenRows = rows.map(r => {
+        let profiles: Array<{ id: string; name: string | null }> = [];
+        try { profiles = JSON.parse(String(r.profiles ?? '[]')).map((p: unknown) => (typeof p === 'string' ? JSON.parse(p) : p)); } catch (e) {
+            logger.warn('getDataQualityReport: unreadable shared-identifier row', { user: email, error: e instanceof Error ? e.message : String(e) });
+        }
+        for (const p of profiles) names.set(p.id, p.name ?? '');
+        return { tokenType: String(r.tokenType), tokenValue: String(r.tokenValue), adopterIds: profiles.map(p => p.id) };
+    });
     return groupSharedIdentifiers(tokenRows, names);
 }
 

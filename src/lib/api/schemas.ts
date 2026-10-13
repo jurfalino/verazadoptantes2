@@ -141,7 +141,7 @@ export const profileSummarySchema = ratingSchema.extend({
     matchedOn: z.array(z.enum(['email', 'phone', 'documentId'])).optional(),
     nameMatchedAs: z.enum(['profile', 'alias', 'household_member']).optional(),
     flags: z.array(z.string()).meta({ description: 'Active flags, e.g. inaccurate, duplicate, verified_identity.' }),
-    tooManyRequests: densitySchema.meta({ description: 'Set when the person asked to adopt unusually often in a short period.' }),
+    tooManyRequests: densitySchema.meta({ description: 'Set when the person asked to adopt at many DIFFERENT rescues in a short period (count = rescues; several requests to one rescue count once).' }),
     tooManyAdoptions: densitySchema,
     records: z.record(z.string(), z.number().int()).meta({ description: 'Number of records per type.' }),
     lastRecordAt: z.string().nullable(),
