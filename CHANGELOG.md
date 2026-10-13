@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.172] - 2026-10-13
+
+### Added — the adopter keeps a copy of the contract
+
+After signing, the confirmation offers «Descargar mi copia del contrato»: the
+PDF they just signed, built in their own browser (nothing is fetched or
+exposed). There is no adopter-facing place to see it later yet.
+
 ## [2.56.171] - 2026-10-13
 
 ### Security — form selfies move to private storage
