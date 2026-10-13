@@ -6,6 +6,8 @@
 export interface Adopter {
     id: string;
     name: string;
+    /** How the profile was created: manual | imported | form | contract | api (adopters.source). */
+    source?: string | null;
     contactInfo?: string | null;
     /** JSON-serialized ContactEntry[] — see src/lib/contactEntries.ts. */
     contactEntries?: string | null;

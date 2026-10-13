@@ -1,5 +1,7 @@
 'use client';
 
+import OriginTag from './OriginTag';
+import type { Origin } from '@/domain/recordOrigin';
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { useSetEditActions } from "@/context/EditActionsContext";
 import { InlineEditField } from "@/components/InlineEditField";
@@ -64,6 +66,8 @@ interface AdopterFormProps {
      *  row below the H1, alongside country / views / rating. Replaces the
      *  orphaned mid-page chip that lived in AdopterProfileV2. */
     attribution?: { creatorName: string; orgName: string | null; orgSlug: string | null } | null;
+    /** ENABLE_ORIGIN_LABELS: where this profile came from (null = by hand, or the flag is off). */
+    origin?: Origin | null;
     /** Whether the viewer shares an org with the creator — drives the chip
      *  accent color (teal "this is my teammate" vs neutral grey). */
     isOrgMateOfOwner?: boolean;
@@ -123,7 +127,7 @@ function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
     );
 }
 
-export function AdopterForm({ interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick }: AdopterFormProps) {
+export function AdopterForm({ origin = null, interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -1397,6 +1401,7 @@ export function AdopterForm({ interviewEnabled = false, initialData, currentUser
                                             )}
                                         </span>
                                     )}
+                                    <OriginTag origin={origin} />
                                     {initialData?.country && (() => {
                                         const c = getCountryByCode(initialData.country!);
                                         if (!c) return null;

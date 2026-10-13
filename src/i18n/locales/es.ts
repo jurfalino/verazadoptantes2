@@ -254,6 +254,8 @@ export const es = {
         flag_desc_custom_adoption_docs: 'Permite que cada rescatista y grupo elija qué preguntas hace el formulario y edite las secciones 2–4 del contrato.',
         flag_label_sheet_import: 'Importar planilla en Mis Adoptantes',
         flag_desc_sheet_import: 'Muestra el botón «Importar planilla» en Mis Adoptantes, que lleva a la carga de adoptantes desde una planilla.',
+        flag_label_origin_labels: 'Origen de perfiles y actividades',
+        flag_desc_origin_labels: 'Muestra en el perfil de dónde vino el perfil y cada actividad (importación, formulario, contrato, API · herramienta). Mis Adoptantes ya muestra el origen de cada perfil.',
         flag_label_interview_guide: 'Guía de entrevista telefónica',
         flag_desc_interview_guide: 'Muestra «Entrevista» en el menú y «Entrevistar» en los perfiles: una guía para entrevistar adoptantes por teléfono y guardar lo que se habló.',
         flag_label_public_api: 'API para herramientas externas',
@@ -716,6 +718,10 @@ export const es = {
         your_email: 'Tu email (opcional)',
         report_details: '¿Qué información es incorrecta? *',
         send_report: 'Enviar Reporte',
+    },
+    origin: {
+        title: 'Origen',
+        api_tool: 'API · {tool}',
     },
     adopter: {
         dup_chip_phone_suffix: 'termina en …',

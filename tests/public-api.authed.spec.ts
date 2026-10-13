@@ -281,9 +281,13 @@ test.describe('public API v1', () => {
     });
 
     test('the activity link opens the profile on it; the rescue sees its form answers', async ({ page }) => {
+        // With origin labels on, the activity says which tool sent it.
+        execD1(`INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES ('ENABLE_ORIGIN_LABELS', 'true', strftime('%s','now'), 'e2e')`);
         await page.goto(`/adopter/${profileId}?record=${recordId}`);
         const card = page.locator(`[id="adoption-${recordId}"]`);
         await expect(card).toBeVisible({ timeout: 30000 });
+        await expect(card.getByTestId('origin-tag')).toHaveText(`API · E2E ${TAG}`);
+        execD1(`DELETE FROM app_config WHERE key = 'ENABLE_ORIGIN_LABELS'`);
         const answers = card.getByTestId('activity-form-answers');
         await answers.getByRole('button').click();
         await expect(answers).toContainText('¿Tenés patio?');

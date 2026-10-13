@@ -1,5 +1,7 @@
 'use client';
 
+import OriginTag from './OriginTag';
+import { activityOrigin } from '@/domain/recordOrigin';
 import { contractHref } from '@/lib/contractLink';
 import FormAnswers from './FormAnswers';
 import { useState, useEffect, type ComponentType } from 'react';
@@ -48,6 +50,8 @@ interface Adoption {
     interview?: { id: string; canViewAnswers: boolean };
     /** Answers of the rescue's own form sent through the API (only for that rescue and admins). */
     formContent?: Record<string, unknown>;
+    /** ENABLE_ORIGIN_LABELS: the API tool that saved this activity (getAdoptions). */
+    apiTool?: string;
 }
 
 interface AdoptionImage {
@@ -98,7 +102,7 @@ function RecordTypeIcon({ type, className }: { type: string; className?: string 
     }
 }
 
-export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, isOrgMate = false, adopterAddress = '', userNameMap = {}, editFormComponent: EditComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, isOrgMate?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string; adopterAdoptions?: Adoption[] }> }) {
+export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, isOrgMate = false, adopterAddress = '', userNameMap = {}, originLabels = false, editFormComponent: EditComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, isOrgMate?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, originLabels?: boolean, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string; adopterAdoptions?: Adoption[] }> }) {
     const { formatShortDate } = useDateFormat();
     const formatRelativeTime = useRelativeTime();
     const { t, locale } = useLanguage();
@@ -391,7 +395,10 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                                         {t('adoption.foster_active') || 'En curso'}
                                                     </span>
                                                 )}
-                                                {adoption.interview && (
+                                                {originLabels && (
+                                                <OriginTag className="ml-2" origin={activityOrigin({ apiTool: adoption.apiTool, sourceUrl: adoption.sourceUrl, hasContract: adoption.hasContract })} />
+                                            )}
+                                            {adoption.interview && (
                                                     <span data-testid="interview-badge" className="ml-2 inline-flex items-center text-xs px-1.5 py-0.5 rounded font-medium bg-teal-50 text-teal-800 align-middle">
                                                         {t('interview.badge')}
                                                     </span>

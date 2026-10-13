@@ -1,5 +1,6 @@
 'use client';
 
+import { apiToolFromHistory, profileOrigin } from '@/domain/recordOrigin';
 import { useEffect, useMemo, useState } from 'react';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 import { computeRequestRescueDensity } from '@/domain/requestDensity';
@@ -73,11 +74,13 @@ interface AdopterProfileV2Props {
     showDeletionRequested?: boolean;
     /** ENABLE_PINNED_VISIT_INTENT — pin the visit-intent card to the bottom of the screen. */
     pinnedVisitIntent?: boolean;
+    /** ENABLE_ORIGIN_LABELS: tag where the profile and each activity came from. */
+    originLabels?: boolean;
     /** ENABLE_INTERVIEW_GUIDE — «Entrevistar» in the profile's ⋯ menu. */
     interviewEnabled?: boolean;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false }: AdopterProfileV2Props) {
     const { formatDateTime, formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const searchParams = useSearchParams();
@@ -430,6 +433,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
 
                 <AdopterForm
                     interviewEnabled={interviewEnabled}
+                    origin={originLabels ? profileOrigin(adopter?.source, apiToolFromHistory((history ?? []) as Array<{ changedBy?: string | null; changes?: string | null }>)) : null}
                     initialData={displayedAdopter}
                     currentUser={currentUser}
                     images={allImages}
@@ -500,6 +504,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             />
                             <AdoptionHistory
                                 adoptions={adoptions as any}
+                                originLabels={originLabels}
                                 adopterId={id}
                                 currentUser={currentUser}
                                 isAdmin={isAdmin}

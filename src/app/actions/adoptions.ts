@@ -396,7 +396,10 @@ export async function getAdoptions(adopterId: string) {
             r.hasContract === 1 && !viewerIsAdmin && !sameRescueDirect(viewer, r.addedBy, membership) ? { ...r, hasContract: 0 } : r);
         // Opaque labels for the browser: the grouping, never other rescuers' organizations.
         const withForms = await attachActivityForms(db, withOpaqueRescueKeys(visible as Array<{ id: string; addedBy?: string | null; recordType?: string | null }>, keys), viewer, viewerIsAdmin, membership);
-        return await attachAdoptionThumbnails(db, withForms);
+        // Which API tool saved each activity — only while the origin tags are on.
+        const { getFeatureFlag } = await import('@/config/features');
+        const withOrigin = await getFeatureFlag('ENABLE_ORIGIN_LABELS') ? await attachApiTools(db, withForms) : withForms;
+        return await attachAdoptionThumbnails(db, withOrigin);
     } catch (error) {
         logger.error('Get adoptions failed', error, { adopterId });
         return [];
@@ -602,4 +605,19 @@ async function updateRecordFields(
     // «otra persona estaba guardando…» for this marker (isSaveBusyError).
     const errorId = logger.error('saveAdoption: lost the race twice', new Error('busy'), { adoptionId: recordId, changedBy });
     throw new Error(`${SAVE_BUSY} (Error ID: ${errorId})`);
+}
+
+/** `apiTool` (the key's name) on activities an API call saved and that are still live. One indexed lookup per record. */
+async function attachApiTools<T extends { id: string }>(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, records: T[]): Promise<Array<T & { apiTool?: string }>> {
+    const { apiRequests, apiKeys } = await import('@/db/schema');
+    const { isNull } = await import('drizzle-orm');
+    const tools = await Promise.all(records.map(r =>
+        db.select({ name: apiKeys.name }).from(apiRequests).innerJoin(apiKeys, eq(apiKeys.id, apiRequests.keyId))
+            .where(and(eq(apiRequests.recordId, r.id), eq(apiRequests.endpoint, 'search'), eq(apiRequests.httpStatus, 200), isNull(apiRequests.voidedAt)))
+            .get()
+            .catch((e: unknown) => {
+                logger.warn('getAdoptions: api origin D1 fallback hit', { recordId: r.id, error: e instanceof Error ? e.message : String(e) });
+                return undefined;
+            }) as Promise<{ name: string } | undefined>));
+    return records.map((r, i) => tools[i]?.name ? { ...r, apiTool: tools[i]!.name } : r);
 }

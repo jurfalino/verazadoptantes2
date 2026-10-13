@@ -95,6 +95,7 @@ export async function GET() {
             ENABLE_FOLLOWUPS: config['ENABLE_FOLLOWUPS'] || 'true',
             ENABLE_CUSTOM_ADOPTION_DOCS: config['ENABLE_CUSTOM_ADOPTION_DOCS'] || 'false',
             ENABLE_SHEET_IMPORT: config['ENABLE_SHEET_IMPORT'] || 'false',
+            ENABLE_ORIGIN_LABELS: config['ENABLE_ORIGIN_LABELS'] || 'false',
             ENABLE_INTERVIEW_GUIDE: config['ENABLE_INTERVIEW_GUIDE'] || 'false',
             ENABLE_PUBLIC_API: config['ENABLE_PUBLIC_API'] || 'false',
             // Telegram support chat — chat_id is non-sensitive and returned

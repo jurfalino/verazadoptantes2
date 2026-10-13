@@ -254,6 +254,8 @@ export const en = {
         flag_desc_custom_adoption_docs: 'Lets each rescuer and group choose which form questions to ask and edit contract sections 2–4.',
         flag_label_sheet_import: 'Import spreadsheet in My Adopters',
         flag_desc_sheet_import: 'Shows the «Import spreadsheet» button in My Adopters, which opens the spreadsheet adopter import.',
+        flag_label_origin_labels: 'Origin of profiles and activities',
+        flag_desc_origin_labels: 'Shows on the profile where the profile and each activity came from (import, form, contract, API · tool). My Adopters already shows each profile\'s origin.',
         flag_label_interview_guide: 'Phone interview guide',
         flag_desc_interview_guide: 'Shows «Interview» in the menu and «Interview» on profiles: a guide for interviewing adopters by phone and saving what was said.',
         flag_label_public_api: 'API for external tools',
@@ -717,6 +719,10 @@ export const en = {
         your_email: 'Your email (optional)',
         report_details: 'What information is incorrect? *',
         send_report: 'Send Report',
+    },
+    origin: {
+        title: 'Origin',
+        api_tool: 'API · {tool}',
     },
     adopter: {
         dup_chip_phone_suffix: 'ends in …',

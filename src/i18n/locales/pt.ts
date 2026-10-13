@@ -254,6 +254,8 @@ export const pt = {
         flag_desc_custom_adoption_docs: 'Permite que cada resgatista e grupo escolha quais perguntas o formulário faz e edite as seções 2–4 do contrato.',
         flag_label_sheet_import: 'Importar planilha em Meus Adotantes',
         flag_desc_sheet_import: 'Mostra o botão «Importar planilha» em Meus Adotantes, que abre a importação de adotantes a partir de uma planilha.',
+        flag_label_origin_labels: 'Origem de perfis e atividades',
+        flag_desc_origin_labels: 'Mostra no perfil de onde vieram o perfil e cada atividade (importação, formulário, contrato, API · ferramenta). Meus Adotantes já mostra a origem de cada perfil.',
         flag_label_interview_guide: 'Guia de entrevista por telefone',
         flag_desc_interview_guide: 'Mostra «Entrevista» no menu e «Entrevistar» nos perfis: um guia para entrevistar adotantes por telefone e salvar o que foi dito.',
         flag_label_public_api: 'API para ferramentas externas',
@@ -716,6 +718,10 @@ export const pt = {
         your_email: 'Seu email (opcional)',
         report_details: 'Qual informação está incorreta? *',
         send_report: 'Enviar Relato',
+    },
+    origin: {
+        title: 'Origem',
+        api_tool: 'API · {tool}',
     },
     adopter: {
         dup_chip_phone_suffix: 'termina em …',

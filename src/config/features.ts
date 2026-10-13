@@ -123,6 +123,11 @@ export const FEATURE_FLAGS = {
     // entry point; the page itself stays reachable by URL. Client-visible →
     // also in PUBLIC_FLAG_KEYS. Default off.
     ENABLE_SHEET_IMPORT: false,
+    // Where a profile / activity came from (import, form, contract, API · tool)
+    // as a small tag on the profile (Mis Adoptantes already shows the profile's
+    // origin, unflagged). Read server-side; listed public for parity →
+    // also in PUBLIC_FLAG_KEYS. Default off.
+    ENABLE_ORIGIN_LABELS: false,
     // Phone-interview guide (/interview + «Entrevistar» on profiles): prepare,
     // learn the three-stage technique, run an adaptive question list, save to
     // the confirmed profile. Spec: .agents/plans/interview-guide.md.
@@ -228,6 +233,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_GUEST_NAME_MASK: false,
         ENABLE_CUSTOM_ADOPTION_DOCS: false,
         ENABLE_SHEET_IMPORT: false,
+        ENABLE_ORIGIN_LABELS: false,
         ENABLE_INTERVIEW_GUIDE: false,
         ENABLE_PUBLIC_API: false,
         ENABLE_SEARCH_CARD_METADATA: true,
