@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.165] - 2026-10-13
+
+### Fixed — /import/sheet: stopping and reloading a big import
+
+- «Cancelar» while duplicates are being analysed (and during the AI pass):
+  back to Revisar with every edit kept; nothing was imported.
+- «Cancelar» on the import screen now works while rows are still being
+  prepared (it used to wait for every row first, stuck at 0/N); progress
+  shows «Preparando filas X/N».
+- Reloading or closing the tab mid-step asks first. If it happens anyway,
+  the page says what stopped, at which step, and that nothing keeps running
+  in the background (the import runs from the open tab). A step running in
+  another tab is reported as such.
+- A run that never saved a row no longer reads «en curso» forever; the
+  run header is written only once rows are about to be sent.
+- If the browser cannot store the resume point, the import says up front
+  that a reload cannot resume it (and the failure is logged).
+
 ## [2.56.164] - 2026-10-13
 
 ### Added — Admin → API: easier keys

@@ -13,6 +13,7 @@ import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecord
 import { userFacingMessage } from '@/lib/errorMessage';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { zarazTrack } from '@/lib/zaraz';
+import { importRunState } from '@/domain/importRunState';
 import {
     TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE,
     applyColumnMap, emptyMappedRow, guessColumnMap,
@@ -69,6 +70,32 @@ interface ResumeSnapshot {
     rows: ImportBatchRow[]; names: Record<number, string>;
 }
 const RESUME_KEY = 'buenadoptante-import-resume-v1';
+
+/** Which long step a tab is in the middle of, so a reload can say what stopped.
+ *  The whole import runs from this tab: once it is reloaded or closed, nothing
+ *  carries on in the background (at most one batch already sent finishes). The
+ *  tab refreshes `at` while it works, so another open tab can tell "still going
+ *  over there" apart from "stopped". */
+type ActivityPhase = 'interpret' | 'detect' | 'build' | 'send';
+interface ActivityMarker { phase: ActivityPhase; fileName: string; total: number; at: number; runId?: string }
+const ACTIVITY_KEY = 'buenadoptante-import-activity-v1';
+const ACTIVITY_HEARTBEAT_MS = 5000;
+const ACTIVITY_PHASE_LABEL: Record<ActivityPhase, string> = {
+    interpret: 'interpretando con IA', detect: 'analizando duplicados',
+    build: 'preparando la importación', send: 'importando',
+};
+function readActivity(): ActivityMarker | null {
+    try {
+        const raw = localStorage.getItem(ACTIVITY_KEY);
+        if (!raw) return null;
+        const m = JSON.parse(raw) as ActivityMarker;
+        return m?.phase && typeof m.at === 'number' ? m : null;
+    } catch { return null; } // SSR-safe / blocked storage: no notice, nothing else breaks
+}
+function writeActivity(m: ActivityMarker | null) {
+    try { if (m) localStorage.setItem(ACTIVITY_KEY, JSON.stringify(m)); else localStorage.removeItem(ACTIVITY_KEY); }
+    catch { /* blocked storage: the reload notice just won't appear */ }
+}
 
 const FIELD_OPTIONS = [
     ...TARGET_IMPORT_FIELDS.map(f => ({ value: f.key, label: f.label })),
@@ -225,6 +252,50 @@ export default function SpreadsheetImportWizard() {
             if (snap?.runId && Array.isArray(snap.rows) && snap.rows.length > 0) setResumable(snap);
         } catch { /* ignore malformed/blocked storage */ }
     }, []);
+    // What a reload or a closed tab interrupted (read once on mount), or — when the
+    // marker is still being refreshed — a step running right now in another tab.
+    const [stopped, setStopped] = useState<(ActivityMarker & { elsewhere: boolean }) | null>(null);
+    useEffect(() => {
+        const m = readActivity();
+        if (m) setStopped({ ...m, elsewhere: Date.now() - m.at < ACTIVITY_HEARTBEAT_MS * 3 });
+    }, []);
+    const activityRef = useRef<ActivityMarker | null>(null);
+    const beginActivity = (phase: ActivityPhase, file: string, total: number, runId?: string) => {
+        const m: ActivityMarker = { phase, fileName: file, total, at: Date.now(), runId };
+        activityRef.current = m; writeActivity(m); setStopped(null);
+    };
+    const endActivity = () => { activityRef.current = null; writeActivity(null); };
+    const dismissStopped = () => { if (!stopped?.elsewhere) writeActivity(null); setStopped(null); };
+    // Rows being prepared before the first batch goes out (AI contact cleanup can
+    // take a while on a big sheet); null when not preparing.
+    const [preparing, setPreparing] = useState<{ done: number; total: number } | null>(null);
+    // The resume snapshot could not be stored (browser storage full or blocked):
+    // a reload during this import cannot pick it up again, so say so up front.
+    const [resumeUnsaved, setResumeUnsaved] = useState(false);
+    // While a long step runs: keep the marker fresh, and ask before the page is
+    // reloaded or closed — doing so stops the step (nothing runs server-side).
+    const working = busy || detecting || preparing != null || (step === 'import' && !importDone);
+    useEffect(() => {
+        if (!working) return;
+        const beat = setInterval(() => {
+            const m = activityRef.current;
+            if (m) { m.at = Date.now(); writeActivity(m); }
+        }, ACTIVITY_HEARTBEAT_MS);
+        const onBeforeUnload = (e: BeforeUnloadEvent) => {
+            e.preventDefault();
+            e.returnValue = ''; // required by Chrome/Safari to show the prompt
+        };
+        // This tab is going away, so the step stops here: age the marker at once so
+        // the reloaded page says "se detuvo" instead of "running in another tab".
+        const onPageHide = () => { const m = activityRef.current; if (m) writeActivity({ ...m, at: 0 }); };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        window.addEventListener('pagehide', onPageHide);
+        return () => {
+            clearInterval(beat);
+            window.removeEventListener('beforeunload', onBeforeUnload);
+            window.removeEventListener('pagehide', onPageHide);
+        };
+    }, [working]);
     // The user's (and their org's) previous imports, shown on the upload screen.
     const [myRuns, setMyRuns] = useState<EnrichedImportRun[]>([]);
     useEffect(() => { getMyImportRuns().then(setMyRuns).catch(() => setMyRuns([])); }, []);
@@ -294,15 +365,19 @@ export default function SpreadsheetImportWizard() {
     // Opt-in AI interpretation for messy sheets: send each row to the model
     // (chunked, with progress) so it extracts structured fields the deterministic
     // column-map can't. Slow (one request per ~20 rows), so it's never eager.
+    const interpretGenRef = useRef(0);
     const runAiInterpretation = async () => {
         if (!parsed) return;
+        const gen = ++interpretGenRef.current;
         setError(null); setBusy(true); setMode('ai'); setInterpreted([]);
+        beginActivity('interpret', fileName, parsed.rows.length);
         try {
             interpretStartRef.current = Date.now();
             setInterpretProgress({ done: 0, total: parsed.rows.length });
             const CHUNK = 20;
             const acc: MappedRow[] = [];
             for (let i = 0; i < parsed.rows.length; i += CHUNK) {
+                if (gen !== interpretGenRef.current) return; // cancelled
                 const chunk = parsed.rows.slice(i, i + CHUNK);
                 try {
                     acc.push(...await interpretRows(parsed.headers, chunk, 'es'));
@@ -313,13 +388,24 @@ export default function SpreadsheetImportWizard() {
                     if (acc.length === 0) throw chunkErr;
                     acc.push(...chunk.map(() => emptyMappedRow()));
                 }
+                if (gen !== interpretGenRef.current) return;
                 setInterpreted([...acc]);
                 setInterpretProgress({ done: Math.min(i + CHUNK, parsed.rows.length), total: parsed.rows.length });
             }
-        } catch {
+        } catch (e) {
+            if (gen !== interpretGenRef.current) return;
             // AI unavailable — stay on the deterministic column-map (already set).
-            setMode('mapping'); setError('No se pudo interpretar con IA. Usá el mapeo de columnas.');
-        } finally { setBusy(false); }
+            const errorId = resolveErrorId(e, 'SpreadsheetImportWizard.runAiInterpretation');
+            setMode('mapping'); setError(`No se pudo interpretar con IA. Usá el mapeo de columnas. (ID: ${errorId})`);
+        } finally {
+            if (gen === interpretGenRef.current) { setBusy(false); endActivity(); }
+        }
+    };
+    // Stop the AI pass and go back to the column mapping (the sheet stays loaded).
+    const cancelInterpretation = () => {
+        interpretGenRef.current++;
+        setBusy(false); setMode('mapping'); setInterpreted([]); setInterpretProgress({ done: 0, total: 0 });
+        endActivity();
     };
 
     // Manual escape hatch: switch to deterministic column-mapping (e.g. if the AI
@@ -354,13 +440,15 @@ export default function SpreadsheetImportWizard() {
         const rows = resumable.rows.filter(r => failedIdx.has(r.index));
         if (!rows.length) return;
         cancelRef.current = false; setCancelled(false); setCancelling(false);
+        beginActivity('send', resumable.fileName, resumable.total, resumable.runId);
         // Keep the full run in view: pass every current result as prior so the results
         // list/final counts don't collapse to just the retried rows. Progress/cancel below
         // track only this retry batch (see sendBatches).
         try { await sendBatches(resumable.runId, rows, [], resumable.names, results); }
         catch (e) {
-            setError(userFacingMessage(e, 'La importación se interrumpió.'));
-            setImportDone(true); setCancelling(false);
+            const errorId = resolveErrorId(e, 'SpreadsheetImportWizard.retryFailed');
+            setError(`${userFacingMessage(e, 'La importación se interrumpió.')} (ID: ${errorId})`);
+            setImportDone(true); setCancelling(false); endActivity();
         }
     };
     // The original spreadsheet row (header: value · …) for a given record index —
@@ -482,8 +570,12 @@ export default function SpreadsheetImportWizard() {
     // Opt-in (a button), like AI interpretation — 1 lightweight lookup per row,
     // bounded concurrency. Keys on name/phone/email/social (the engine's inputs);
     // address-only / DNI-only rows won't match here and default to "crear".
+    const detectGenRef = useRef(0);
     const runDetection = async () => {
         const targets = records.filter(r => r.selected);
+        const gen = ++detectGenRef.current;
+        const live = () => gen === detectGenRef.current; // false once cancelled or restarted
+        beginActivity('detect', fileName, targets.length);
         detectStartRef.current = Date.now();
         setDetecting(true); setDetectionDone(false); setDetectProgress({ done: 0, total: targets.length });
         setDetectionDegraded(false); setDetectFailedRows(new Set());
@@ -505,6 +597,7 @@ export default function SpreadsheetImportWizard() {
         let idMap: Record<string, { adopterId: string; adopterName: string | null }> = {};
         if (uniqueFps.length) {
             const res = await matchFingerprints(uniqueFps).catch(() => ({ ok: false as const, errorId: 'net' }));
+            if (!live()) return;
             if (res.ok) idMap = res.map;
             else setDetectionDegraded(true); // surfaced in the UI; do NOT treat as "no matches"
         }
@@ -512,6 +605,7 @@ export default function SpreadsheetImportWizard() {
         let done = 0, cursor = 0;
         const worker = async () => {
             for (let k = cursor++; k < targets.length; k = cursor++) {
+                if (!live()) return;
                 const { index, eff } = targets[k];
                 const idHit = idMap[fpByIndex[index]];
                 if (idHit) {
@@ -554,6 +648,7 @@ export default function SpreadsheetImportWizard() {
                         // fall through to the next attempt
                     }
                 }
+                if (!live()) return;
                 if (!compared) {
                     // Fail CLOSED: this row was never compared. Do NOT default to
                     // 'create' (that would import a possible duplicate unseen) — mark
@@ -568,12 +663,22 @@ export default function SpreadsheetImportWizard() {
         // Concurrency 3 (was 5): fewer simultaneous full-scan LIKE queries eases
         // the D1 burst that was making per-row lookups fail during large imports.
         await Promise.all(Array.from({ length: Math.min(3, targets.length) }, worker));
+        if (!live()) return;
+        endActivity();
         if (detectionHadError) setDetectionDegraded(true);
         setDetectFailedRows(new Set(failedIdx));
         setMatches(found);
         // Seed default actions, but never clobber a choice the user already made.
         setRowAction(prev => { const next = { ...actions }; for (const k of Object.keys(prev)) next[+k] = prev[+k]; return next; });
         setDetecting(false); setDetectionDone(true);
+    };
+
+    // Stop the duplicate analysis and go back to Revisar with every edit intact.
+    // Lookups already in flight finish and are ignored; nothing was written.
+    const cancelDetection = () => {
+        detectGenRef.current++;
+        setDetecting(false); setDetectionDone(false); setStep('confirm');
+        endActivity();
     };
 
     // Build ONE selected record into a server batch row (client-side: validate +
@@ -700,6 +805,7 @@ export default function SpreadsheetImportWizard() {
         // A cancel only "interrupted" the run if work was actually left unsent. If Cancel
         // arrived after the last batch already drained (done >= total), the run is complete —
         // finalize it normally instead of leaving it un-closed and mislabelled 'cancelled'.
+        endActivity();
         const trulyCancelled = cancelRef.current && done < total;
         if (trulyCancelled) {
             // Cancelled: keep the resume snapshot and leave the run open (interrupted)
@@ -734,7 +840,8 @@ export default function SpreadsheetImportWizard() {
         const targets = records.filter(r => r.selected);
         setProgress({ done: 0, total: targets.length });
         const runId = crypto.randomUUID();
-        startImportRun({ runId, source: fileName, total: targets.length }).catch(() => { /* best-effort */ });
+        const source = fileName;
+        beginActivity('build', source, targets.length);
         zarazTrack('list_import_started', { rows: targets.length });
         try {
             // Build all rows client-side (validate + AI cleanup). Invalid rows become
@@ -742,11 +849,22 @@ export default function SpreadsheetImportWizard() {
             const preResults: RowResult[] = [];
             const nameByIndex: Record<number, string> = {};
             const toSend: ImportBatchRow[] = [];
+            setPreparing({ done: 0, total: targets.length });
+            let prepared = 0;
             for (const t of targets) {
+                if (cancelRef.current) break; // Cancel works while preparing too
                 const { row, pre, name } = await buildBatchRow(t);
                 nameByIndex[t.index] = name;
                 if (pre) preResults.push(pre);
                 else if (row) toSend.push(row);
+                setPreparing({ done: ++prepared, total: targets.length });
+            }
+            setPreparing(null);
+            if (cancelRef.current) {
+                // Cancelled before anything was sent: nothing exists on the server,
+                // so go back to Duplicados exactly as it was.
+                setCancelling(false); endActivity(); setStep('dedup');
+                return;
             }
             // Intra-spreadsheet dedup (auto): fold rows that are the SAME person
             // (identical content fingerprint) into ONE adopter with several activities
@@ -772,15 +890,28 @@ export default function SpreadsheetImportWizard() {
             setFoldSummary(foldedCount > 0 ? { folded: foldedCount, people: withExtras.size } : null);
             // Persist a resume snapshot so a refresh or a cancel mid-import can pick up
             // where it left off (only the not-yet-created rows re-run — see sendBatches).
-            const snapshot: ResumeSnapshot = { runId, fileName, total: targets.length, rows: grouped, names: nameByIndex };
-            try { localStorage.setItem(RESUME_KEY, JSON.stringify(snapshot)); } catch { /* quota — resume just won't be available */ }
+            const snapshot: ResumeSnapshot = { runId, fileName: source, total: targets.length, rows: grouped, names: nameByIndex };
+            const snapshotJson = JSON.stringify(snapshot);
+            try { localStorage.setItem(RESUME_KEY, snapshotJson); setResumeUnsaved(false); }
+            catch (e) {
+                // Storage full or blocked: the import still runs, but a reload can't resume it.
+                setResumeUnsaved(true);
+                resolveErrorId(new Error(`import resume snapshot not saved (${snapshotJson.length} chars, ${grouped.length} rows): ${e instanceof Error ? e.message : String(e)}`), 'SpreadsheetImportWizard.saveResumeSnapshot');
+            }
             setResumable(snapshot);
+            // The run header is written only now, once something is about to be sent —
+            // a cancel or reload while preparing leaves no empty "en curso" run behind.
+            await startImportRun({ runId, source, total: targets.length }).catch(e => {
+                resolveErrorId(e, 'SpreadsheetImportWizard.startImportRun'); // audit header only; the import goes on
+            });
+            beginActivity('send', source, targets.length, runId);
             await sendBatches(runId, grouped, preResults, nameByIndex);
         } catch (e) {
             // Last-resort terminal state — never leave the screen stuck on "Importando…".
             // Row-level failures are already handled resiliently inside sendBatches.
-            setError(userFacingMessage(e, 'La importación se interrumpió.'));
-            setImportDone(true); setCancelling(false);
+            const errorId = resolveErrorId(e, 'SpreadsheetImportWizard.runImport');
+            setError(`${userFacingMessage(e, 'La importación se interrumpió.')} (ID: ${errorId})`);
+            setPreparing(null); setImportDone(true); setCancelling(false); endActivity();
         }
     };
 
@@ -795,17 +926,22 @@ export default function SpreadsheetImportWizard() {
         setResumable(snap); // keep it — a retry after resume re-reads these rows; cleared on a clean finish
         setFileName(snap.fileName); // so the running screen shows the file name on resume too
         cancelRef.current = false; setCancelled(false); setCancelling(false);
+        beginActivity('send', snap.fileName, snap.total, snap.runId);
         try {
             // On a cancel-resume the current `results` already hold what got created; keep them so
             // resume shows the whole run, not just the re-sent rows. On a refresh-resume `results`
             // is empty (fresh mount) — harmless.
             await sendBatches(snap.runId, snap.rows, [], snap.names, results);
         } catch (e) {
-            setError(userFacingMessage(e, 'La importación se interrumpió.'));
-            setImportDone(true); setCancelling(false);
+            const errorId = resolveErrorId(e, 'SpreadsheetImportWizard.resumeImport');
+            setError(`${userFacingMessage(e, 'La importación se interrumpió.')} (ID: ${errorId})`);
+            setImportDone(true); setCancelling(false); endActivity();
         }
     };
-    const discardResume = () => { try { localStorage.removeItem(RESUME_KEY); } catch { /* ignore */ } setResumable(null); };
+    const discardResume = () => {
+        try { localStorage.removeItem(RESUME_KEY); } catch { /* blocked storage: nothing to remove */ }
+        setResumable(null); dismissStopped();
+    };
 
     const downloadErrors = () => {
         const bad = results.filter(r => r.status === 'skipped' || r.status === 'failed');
@@ -897,16 +1033,41 @@ export default function SpreadsheetImportWizard() {
 
             {error && <div className="mb-4 p-3 rounded-lg bg-rose-50 text-rose-700 text-sm border border-rose-200">{error}</div>}
 
-            {step === 'upload' && resumable && (
-                <div className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-3">
+            {step === 'upload' && stopped?.elsewhere && (
+                <div data-testid="import-elsewhere" className="mb-4 p-4 rounded-xl border text-sm" style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)', borderColor: 'var(--status-sky-border)' }}>
+                    <div className="font-semibold">Hay una importación en curso en otra pestaña</div>
+                    <div className="break-words">«{stopped.fileName}» · {stopped.total} filas · {ACTIVITY_PHASE_LABEL[stopped.phase]}. Avanza solo mientras esa pestaña siga abierta: no la cierres hasta que termine.</div>
+                </div>
+            )}
+            {step === 'upload' && resumable && (() => {
+                // Rows of this run already saved on the server (from the run list).
+                const run = myRuns.find(r => r.id === resumable.runId);
+                const saved = run ? run.dCreated + run.dUpdated : null;
+                return (
+                    <div data-testid="import-resume" className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-3">
+                        <div className="text-sm text-amber-800 min-w-0">
+                            <div className="font-semibold">Importación sin terminar: se detuvo</div>
+                            <div className="text-amber-700 truncate" title={resumable.fileName}>{resumable.fileName} · {saved != null ? `${saved} de ${resumable.total} filas ya guardadas` : `${resumable.total} filas`}</div>
+                            <div className="text-amber-700">La importación avanza solo con la pestaña abierta; al recargar o cerrar se frenó y no sigue en segundo plano. Reanudar crea solo lo que falte (no duplica lo ya creado).</div>
+                        </div>
+                        <div className="flex-shrink-0 flex gap-2">
+                            <button onClick={() => resumeImport(resumable)} className="px-4 py-2 text-sm font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700">Reanudar</button>
+                            <button onClick={discardResume} className="px-3 py-2 text-sm text-amber-700 hover:bg-amber-100 rounded-lg">Descartar</button>
+                        </div>
+                    </div>
+                );
+            })()}
+            {step === 'upload' && stopped && !stopped.elsewhere && !(resumable && stopped.phase === 'send') && (
+                <div data-testid="import-stopped" className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-3">
                     <div className="text-sm text-amber-800 min-w-0">
-                        <div className="font-semibold">Importación sin terminar</div>
-                        <div className="text-amber-700 truncate" title={resumable.fileName}>{resumable.fileName} · {resumable.total} filas. Reanudar crea solo lo que falte (no duplica lo ya creado).</div>
+                        <div className="font-semibold break-words">«{stopped.fileName}» quedó a medias</div>
+                        <div className="text-amber-700">
+                            {stopped.phase === 'send'
+                                ? `Se detuvo al recargar o cerrar la página mientras se importaba (${stopped.total} filas). Nada sigue corriendo en segundo plano. Lo que alcanzó a guardarse figura abajo, en Importaciones anteriores; para completar el resto, subí la planilla de nuevo: lo ya importado aparece como idéntico y se actualiza en vez de duplicarse.`
+                                : `Se detuvo al recargar o cerrar la página mientras estaba ${ACTIVITY_PHASE_LABEL[stopped.phase]} (${stopped.total} filas). No se importó nada y nada sigue corriendo en segundo plano. Subí la planilla de nuevo para seguir.`}
+                        </div>
                     </div>
-                    <div className="flex-shrink-0 flex gap-2">
-                        <button onClick={() => resumeImport(resumable)} className="px-4 py-2 text-sm font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700">Reanudar</button>
-                        <button onClick={discardResume} className="px-3 py-2 text-sm text-amber-700 hover:bg-amber-100 rounded-lg">Descartar</button>
-                    </div>
+                    <button onClick={dismissStopped} className="flex-shrink-0 px-3 py-2 text-sm text-amber-700 hover:bg-amber-100 rounded-lg">Entendido</button>
                 </div>
             )}
             {step === 'upload' && (
@@ -931,7 +1092,11 @@ export default function SpreadsheetImportWizard() {
                     <div className="text-xs uppercase tracking-wider text-stone-400 mb-2">Importaciones anteriores</div>
                     <div className="border border-stone-200 rounded-xl overflow-hidden">
                         {myRuns.map(run => {
-                            const st = run.finishedAt ? 'completa' : (run.lastItemAt && Date.now() / 1000 - run.lastItemAt > 300 ? 'interrumpida' : 'en curso');
+                            const state = importRunState(run, Date.now() / 1000);
+                            // Our own unfinished run that no tab is driving any more (this one is
+                            // on the upload screen, and no other tab refreshes the marker): stopped.
+                            const ownStopped = state === 'running' && resumable?.runId === run.id && !(stopped?.elsewhere && stopped.runId === run.id);
+                            const st = state === 'completed' ? 'completa' : (state === 'interrupted' || ownStopped) ? 'interrumpida' : 'en curso';
                             const stStyle = st === 'completa' ? 'bg-stone-100 text-stone-500' : st === 'interrumpida' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700';
                             // Prefer the per-row audit counts; fall back to the stored header
                             // counters for old runs whose items were never written.
@@ -1028,6 +1193,13 @@ export default function SpreadsheetImportWizard() {
                                     <>Interpretando {interpretProgress.total} filas con IA… {interpretProgress.done}/{interpretProgress.total}
                                         {interpretEtaMs != null && <span className="text-stone-400"> · {fmtEta(interpretEtaMs)} restante</span>}</>
                                 ) : 'Preparando la lista de registros…'}
+                                {mode === 'ai' && interpretProgress.total > 0 && (
+                                    <button type="button" onClick={cancelInterpretation} data-testid="interpret-cancel"
+                                        className="ml-auto px-3 py-1 text-xs font-semibold text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200"
+                                        title="Frena la interpretación y volvés al mapeo de columnas. No se importó nada.">
+                                        Cancelar
+                                    </button>
+                                )}
                             </div>
                             {mode === 'ai' && interpretProgress.total > 0 && (
                                 <div className="h-2 rounded-full bg-stone-100 overflow-hidden mb-4"><div className="h-full bg-teal-500 transition-all" style={{ width: `${(interpretProgress.done / interpretProgress.total) * 100}%` }} /></div>
@@ -1156,8 +1328,13 @@ export default function SpreadsheetImportWizard() {
                         <div className="border border-stone-200 rounded-xl p-6">
                             <div className="text-sm text-teal-700 mb-3 flex items-center gap-2">
                                 <span className="inline-block w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" aria-hidden />
-                                Analizando {detectProgress.done}/{detectProgress.total} registros contra tu base…
-                                {detectEtaMs != null && <span className="text-stone-400"> · {fmtEta(detectEtaMs)} restante</span>}
+                                <span>Analizando {detectProgress.done}/{detectProgress.total} registros contra tu base…
+                                {detectEtaMs != null && <span className="text-stone-400"> · {fmtEta(detectEtaMs)} restante</span>}</span>
+                                <button type="button" onClick={cancelDetection} data-testid="detect-cancel"
+                                    className="ml-auto flex-shrink-0 px-3 py-1 text-xs font-semibold text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200"
+                                    title="Frena el análisis y volvés a Revisar con tus cambios. No se importó nada.">
+                                    Cancelar
+                                </button>
                             </div>
                             <div className="h-2 rounded-full bg-stone-100 overflow-hidden">
                                 <div className="h-full bg-teal-500 transition-all" style={{ width: `${detectProgress.total ? (detectProgress.done / detectProgress.total) * 100 : 0}%` }} />
@@ -1264,12 +1441,12 @@ export default function SpreadsheetImportWizard() {
                 <div>
                     <div className="mb-2 flex items-center justify-between gap-3 text-sm">
                         <span className="font-semibold text-stone-700">
-                            {importDone ? (cancelled ? 'Importación cancelada' : 'Importación completa') : (cancelling ? 'Cancelando…' : 'Importando…')}
+                            {importDone ? (cancelled ? 'Importación cancelada' : 'Importación completa') : (cancelling ? 'Cancelando…' : preparing ? 'Preparando filas…' : 'Importando…')}
                         </span>
                         <div className="flex items-center gap-3">
-                            <span className="text-stone-500">
-                                {progress.done} / {progress.total}
-                                {etaMs != null && <span className="text-stone-400"> · {fmtEta(etaMs)} restante</span>}
+                            <span className="text-stone-500" data-testid="import-progress-count">
+                                {preparing ? `${preparing.done} / ${preparing.total}` : `${progress.done} / ${progress.total}`}
+                                {!preparing && etaMs != null && <span className="text-stone-400"> · {fmtEta(etaMs)} restante</span>}
                             </span>
                             {!importDone && (
                                 <button onClick={cancelImport} disabled={cancelling}
@@ -1281,7 +1458,7 @@ export default function SpreadsheetImportWizard() {
                         </div>
                     </div>
                     {fileName && <div className="text-xs text-stone-400 mb-3 truncate" title={fileName}><span aria-hidden>📄</span> {fileName}</div>}
-                    <div className="h-3 rounded-full bg-stone-100 overflow-hidden mb-4"><div className="h-full bg-teal-500 transition-all" style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} /></div>
+                    <div className="h-3 rounded-full bg-stone-100 overflow-hidden mb-4"><div className="h-full bg-teal-500 transition-all" style={{ width: `${preparing ? (preparing.total ? (preparing.done / preparing.total) * 100 : 0) : (progress.total ? (progress.done / progress.total) * 100 : 0)}%` }} /></div>
                     <div className="flex flex-wrap gap-2 mb-4 text-sm">
                         <span className="px-3 py-1 rounded-lg font-medium" style={{ backgroundColor: 'var(--status-emerald-bg)', color: 'var(--status-emerald-text)' }}>✅ {tally.created} creados</span>
                         {tally.updated > 0 && <span className="px-3 py-1 rounded-lg bg-sky-50 text-sky-700 font-medium">↻ {tally.updated} actualizados</span>}
@@ -1294,7 +1471,8 @@ export default function SpreadsheetImportWizard() {
                             🔗 {foldSummary.folded} {foldSummary.folded === 1 ? 'fila idéntica se agrupó' : 'filas idénticas se agruparon'} en {foldSummary.people} {foldSummary.people === 1 ? 'persona ya presente en el lote' : 'personas ya presentes en el lote'}: en vez de crear duplicados, su actividad se sumó a la misma ficha. Sí se importaron — figuran como “agrupadas”, no como errores.
                         </div>
                     )}
-                    {!importDone && <p className="text-xs text-stone-400 mb-4">Puede tardar unos minutos (cada fila se verifica y tokeniza). No cierres la pestaña.</p>}
+                    {!importDone && <p className="text-xs text-stone-400 mb-4">Puede tardar unos minutos (cada fila se verifica y tokeniza). La importación avanza solo con esta pestaña abierta: si la cerrás o recargás, se frena{resumeUnsaved ? '' : ' y después podés reanudarla'}.</p>}
+                    {!importDone && resumeUnsaved && <p className="text-xs text-amber-700 mb-4">Tu navegador no dejó guardar el progreso, así que esta importación no se podrá reanudar si recargás la página.</p>}
                     {(tally.skipped + tally.failed) > 0 && (
                         <div className="border border-stone-200 rounded-xl overflow-hidden mb-4">
                             <div className="bg-stone-50 px-3 py-2 text-xs uppercase tracking-wider text-stone-500 flex items-center justify-between"><span>Filas no importadas</span>{importDone && <button onClick={downloadErrors} className="text-teal-600 hover:underline normal-case tracking-normal">Descargar CSV</button>}</div>
