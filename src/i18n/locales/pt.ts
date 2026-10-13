@@ -2804,6 +2804,15 @@ export const pt = {
         unknown_owner_body: 'A chave precisa pertencer a alguém que já usa o BuenAdoptante.',
         error_issue: 'Não foi possível criar a chave.',
         error_update: 'Não foi possível atualizar a chave.',
+        owner_search_placeholder: 'Busque por nome ou email',
+        owner_search_failed: 'A busca falhou; você pode digitar o email completo.',
+        key_name_hint: 'Para qual ferramenta é (ex. «Formulário do site»). Aparece nas chamadas e nas notificações do resgatista.',
+        regenerate: 'Regenerar',
+        regenerate_confirm: 'A chave atual deixa de funcionar na hora.',
+        regenerate_yes: 'Sim, regenerar',
+        regenerated_once: 'Chave nova: copie agora, ela não será mostrada de novo. A anterior não funciona mais.',
+        revoke_confirm: 'Revogar esta chave?',
+        error_regenerate: 'Não foi possível regenerar a chave.',
     },
 };
 

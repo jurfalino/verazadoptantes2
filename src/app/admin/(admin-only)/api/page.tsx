@@ -11,6 +11,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import ApiTransactionList, { failure } from '@/components/api/ApiTransactionList';
+import RescuerEmailPicker from '@/components/api/RescuerEmailPicker';
 
 interface KeyView {
     id: string; name: string; ownerEmail: string; prefix: string; environment: string; scopes: string[];
@@ -29,8 +30,9 @@ export default function AdminApiPage() {
     const [ownerEmail, setOwnerEmail] = useState('');
     const [name, setName] = useState('');
     const [issuing, setIssuing] = useState(false);
-    const [secret, setSecret] = useState<{ value: string; name: string } | null>(null);
-    const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
+    const [secret, setSecret] = useState<{ value: string; name: string; regenerated?: boolean } | null>(null);
+    // One pending inline confirmation at a time: revoke or regenerate a key.
+    const [confirm, setConfirm] = useState<{ id: string; action: 'revoke' | 'regenerate' } | null>(null);
 
     const loadKeys = useCallback(async () => {
         try {
@@ -64,6 +66,19 @@ export default function AdminApiPage() {
         }
     };
 
+    const regenerate = async (k: KeyView) => {
+        try {
+            const res = await fetch(`/api/admin/api-keys/${k.id}/regenerate`, { method: 'POST' });
+            if (!res.ok) throw await failure(res, 'regenerate');
+            const done = await res.json() as { secret: string };
+            setSecret({ value: done.secret, name: k.name, regenerated: true });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            await loadKeys();
+        } catch (err) {
+            toast.error(t('apiReview.error_title'), t('apiAdmin.error_regenerate'), resolveErrorId(err, 'AdminApiPage.regenerate'));
+        }
+    };
+
     const patchKey = async (id: string, patch: Record<string, unknown>) => {
         try {
             const res = await fetch(`/api/admin/api-keys/${id}`, {
@@ -86,31 +101,33 @@ export default function AdminApiPage() {
                 </p>
             </header>
 
+            {secret && (
+                <div className="rounded-xl p-4 border" style={{ background: 'var(--status-warning-bg)', borderColor: 'var(--status-warning-border)' }} data-testid="api-new-secret">
+                    <p className="text-sm font-semibold" style={{ color: 'var(--status-warning-text)' }}>{secret.regenerated ? t('apiAdmin.regenerated_once') : t('apiAdmin.secret_once')} ({secret.name})</p>
+                    <code className="block mt-2 text-sm break-all select-all">{secret.value}</code>
+                    <div className="mt-2 flex gap-3">
+                        <button type="button" className="text-sm underline underline-offset-2 py-1" onClick={() => { void navigator.clipboard?.writeText(secret.value); toast.success(t('apiAdmin.copied')); }}>{t('apiAdmin.copy')}</button>
+                        <button type="button" className="text-sm underline underline-offset-2 py-1" onClick={() => setSecret(null)}>{t('apiAdmin.done')}</button>
+                    </div>
+                </div>
+            )}
+
             <section className={card}>
                 <h2 className="text-lg font-semibold text-stone-800 dark:text-stone-200 mb-3">{t('apiAdmin.issue_title')}</h2>
-                <form onSubmit={issue} className="flex flex-wrap gap-2 items-end">
+                <form onSubmit={issue} className="flex flex-wrap gap-2 items-start">
                     <label className="flex flex-col gap-1 text-xs font-semibold text-stone-600">
                         {t('apiAdmin.owner_email')}
-                        <input className={input} type="email" required value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} placeholder="rescatista@example.com" />
+                        <RescuerEmailPicker value={ownerEmail} onChange={setOwnerEmail} inputClassName={input} />
                     </label>
-                    <label className="flex flex-col gap-1 text-xs font-semibold text-stone-600">
+                    <label className="flex flex-col gap-1 text-xs font-semibold text-stone-600 max-w-xs">
                         {t('apiAdmin.key_name')}
-                        <input className={input} required maxLength={80} value={name} onChange={e => setName(e.target.value)} placeholder={t('apiAdmin.key_name_placeholder')} />
+                        <input className={input} required maxLength={80} value={name} onChange={e => setName(e.target.value)} placeholder={t('apiAdmin.key_name_placeholder')} aria-describedby="api-key-name-hint" />
+                        <span id="api-key-name-hint" className="font-normal text-stone-500">{t('apiAdmin.key_name_hint')}</span>
                     </label>
-                    <button type="submit" disabled={issuing} className="text-sm font-bold rounded-xl px-4 py-2 disabled:opacity-40" style={primaryBtn}>
+                    <button type="submit" disabled={issuing} className="text-sm font-bold rounded-xl px-4 py-2 disabled:opacity-40 self-start mt-5" style={primaryBtn}>
                         {t('apiAdmin.issue')}
                     </button>
                 </form>
-                {secret && (
-                    <div className="mt-4 rounded-xl p-4 border" style={{ background: 'var(--status-warning-bg)', borderColor: 'var(--status-warning-border)' }} data-testid="api-new-secret">
-                        <p className="text-sm font-semibold" style={{ color: 'var(--status-warning-text)' }}>{t('apiAdmin.secret_once')} ({secret.name})</p>
-                        <code className="block mt-2 text-sm break-all select-all">{secret.value}</code>
-                        <div className="mt-2 flex gap-3">
-                            <button type="button" className="text-sm underline underline-offset-2 py-1" onClick={() => { void navigator.clipboard?.writeText(secret.value); toast.success(t('apiAdmin.copied')); }}>{t('apiAdmin.copy')}</button>
-                            <button type="button" className="text-sm underline underline-offset-2 py-1" onClick={() => setSecret(null)}>{t('apiAdmin.done')}</button>
-                        </div>
-                    </div>
-                )}
             </section>
 
             <section className={card}>
@@ -139,17 +156,21 @@ export default function AdminApiPage() {
                                         <input className={`${input} w-24`} type="number" min={0} defaultValue={k.dailyCapFuzzy}
                                             onBlur={e => Number(e.target.value) !== k.dailyCapFuzzy && patchKey(k.id, { dailyCapFuzzy: Number(e.target.value) })} />
                                     </label>
-                                    {confirmRevoke === k.id ? (
-                                        <span className="inline-flex items-center gap-2">
+                                    {confirm?.id === k.id ? (
+                                        <span className="inline-flex flex-wrap items-center gap-2">
+                                            <span className="text-xs text-stone-600">{confirm.action === 'revoke' ? t('apiAdmin.revoke_confirm') : t('apiAdmin.regenerate_confirm')}</span>
                                             <button type="button" className="text-xs font-bold rounded-xl px-3 py-1 border"
                                                 style={{ background: 'var(--status-error-bg)', color: 'var(--status-error-text)', borderColor: 'var(--status-error-border)' }}
-                                                onClick={() => { setConfirmRevoke(null); void patchKey(k.id, { revoke: true }); }}>
-                                                {t('apiAdmin.revoke_yes')}
+                                                onClick={() => { const c = confirm; setConfirm(null); if (c.action === 'revoke') void patchKey(k.id, { revoke: true }); else void regenerate(k); }}>
+                                                {confirm.action === 'revoke' ? t('apiAdmin.revoke_yes') : t('apiAdmin.regenerate_yes')}
                                             </button>
-                                            <button type="button" className="text-xs underline py-1" onClick={() => setConfirmRevoke(null)}>{t('apiReview.void_no')}</button>
+                                            <button type="button" className="text-xs underline py-1" onClick={() => setConfirm(null)}>{t('apiReview.void_no')}</button>
                                         </span>
                                     ) : (
-                                        <button type="button" className="text-xs text-red-700 underline underline-offset-2 py-1" onClick={() => setConfirmRevoke(k.id)}>{t('apiAdmin.revoke')}</button>
+                                        <>
+                                            <button type="button" className="text-xs text-teal-700 underline underline-offset-2 py-1" onClick={() => setConfirm({ id: k.id, action: 'regenerate' })}>{t('apiAdmin.regenerate')}</button>
+                                            <button type="button" className="text-xs text-red-700 underline underline-offset-2 py-1" onClick={() => setConfirm({ id: k.id, action: 'revoke' })}>{t('apiAdmin.revoke')}</button>
+                                        </>
                                     )}
                                 </div>
                             )}

@@ -134,3 +134,19 @@ export function clampCap(v: unknown, fallback: number): number {
     const n = Math.floor(Number(v));
     return Number.isFinite(n) && n >= 0 ? Math.min(n, 10_000) : fallback;
 }
+
+/**
+ * Admin: a new secret for an existing key (a rescue lost theirs). Same key
+ * row — name, owner, scopes, caps and its whole transaction history stay —
+ * but the old secret stops working at once (only the new hash matches).
+ * Secrets are never stored, so this is the only way to "see a key again".
+ */
+export async function regenerateKey(db: Db, id: string, host: string) {
+    const key = await db.select().from(apiKeys).where(eq(apiKeys.id, id)).get() as typeof apiKeys.$inferSelect | undefined;
+    if (!key) return { error: 'not_found' as const };
+    if (key.revokedAt) return { error: 'revoked' as const };
+    const environment = environmentForHost(host);
+    const secret = generateSecret(environment);
+    await db.update(apiKeys).set({ keyHash: await sha256Hex(secret), keyPrefix: keyPrefixOf(secret), environment }).where(eq(apiKeys.id, id));
+    return { id, secret, prefix: keyPrefixOf(secret), environment, ownerEmail: key.ownerEmail, name: key.name };
+}

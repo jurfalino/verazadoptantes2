@@ -2804,6 +2804,15 @@ export const es = {
         unknown_owner_body: 'La clave tiene que pertenecer a alguien que ya usa BuenAdoptante.',
         error_issue: 'No se pudo crear la clave.',
         error_update: 'No se pudo actualizar la clave.',
+        owner_search_placeholder: 'Buscá por nombre o email',
+        owner_search_failed: 'No se pudo buscar; podés escribir el email completo.',
+        key_name_hint: 'Para qué herramienta es (ej. «Formulario web»). Aparece en las llamadas y en las notificaciones del rescatista.',
+        regenerate: 'Regenerar',
+        regenerate_confirm: 'La clave actual deja de funcionar ya.',
+        regenerate_yes: 'Sí, regenerar',
+        regenerated_once: 'Clave nueva: copiala ahora, no se vuelve a mostrar. La anterior ya no funciona.',
+        revoke_confirm: '¿Revocar esta clave?',
+        error_regenerate: 'No se pudo regenerar la clave.',
     },
 };
 

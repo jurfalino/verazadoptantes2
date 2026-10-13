@@ -232,6 +232,40 @@ test.describe('public API v1', () => {
         expect(Number(capped.headers()['retry-after'])).toBeGreaterThan(0);
     });
 
+    test('admin: the rescuer email suggests matching users; picking one fills the field', async ({ page }) => {
+        await page.goto('/admin/api');
+        const email = page.getByTestId('api-owner-email');
+        await email.fill('gatitos');
+        const options = page.getByTestId('api-owner-options');
+        await expect(options).toContainText(ADMIN_EMAIL, { timeout: 30000 });
+        await options.getByRole('button').filter({ hasText: ADMIN_EMAIL }).first().click();
+        await expect(email).toHaveValue(ADMIN_EMAIL);
+        // The key name says what it is for.
+        await expect(page.locator('#api-key-name-hint')).toBeVisible();
+    });
+
+    test('admin: «Regenerar» shows a new secret once; the old one stops working, the key keeps its history', async ({ page }) => {
+        const oldSecret = secret;
+        expect((await api.get('/api/v1/me', { headers: auth() })).status()).toBe(200);
+        await page.goto('/admin/api');
+        const row = page.getByTestId('api-keys').locator('li').filter({ hasText: `E2E ${TAG}` });
+        await row.getByRole('button', { name: /^(Regenerar|Regenerate)$/ }).click();
+        await row.getByRole('button', { name: /Sí, regenerar|Yes, regenerate|Sim, regenerar/ }).click();
+        const box = page.getByTestId('api-new-secret');
+        await expect(box).toContainText(/Clave nueva|New key|Chave nova/, { timeout: 30000 });
+        const fresh = (await box.locator('code').textContent())?.trim() ?? '';
+        expect(fresh).toMatch(/^ba_test_[A-Za-z0-9]{43}$/);
+        expect(fresh).not.toBe(oldSecret);
+
+        expect((await api.get('/api/v1/me', { headers: { authorization: `Bearer ${oldSecret}` } })).status()).toBe(401);
+        secret = fresh;
+        const me = await api.get('/api/v1/me', { headers: auth() });
+        expect(me.status()).toBe(200);
+        // Same key row: its transactions are still listed under it.
+        const tx = await page.request.get(`/api/admin/api-requests?keyId=${keyId}`);
+        expect(((await tx.json()).rows as unknown[]).length).toBeGreaterThan(5);
+    });
+
     test('docs and spec are served; a revoked key stops working', async ({ page }) => {
         const spec = await api.get('/api/v1/openapi.json');
         expect((await spec.json()).paths['/api/v1/search']).toBeTruthy();
