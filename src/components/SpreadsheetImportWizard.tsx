@@ -136,6 +136,8 @@ export default function SpreadsheetImportWizard() {
     const [map, setMap] = useState<ColumnMap | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // A file is being dragged over the upload box (highlights it).
+    const [dragOver, setDragOver] = useState(false);
     // Interpretation: 'ai' = AI ingested the rows directly; 'mapping' = deterministic
     // column-mapping fallback. AI is the default.
     const [mode, setMode] = useState<'ai' | 'mapping'>('mapping');
@@ -241,6 +243,30 @@ export default function SpreadsheetImportWizard() {
             finally { setLoadingItems(null); }
         }
     };
+
+    /** Only what the picker offers: CSV or Excel (.xlsx). Checked by name, since a
+     *  dropped file's MIME type is often empty (Windows CSVs, some browsers). */
+    const isSheetFile = (file: File) => /\.(csv|xlsx)$/i.test(file.name);
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setDragOver(false);
+        if (busy) return;
+        const file = e.dataTransfer.files?.[0];
+        if (!file) return;
+        if (!isSheetFile(file)) { setError('Ese archivo no es una planilla: soltá un CSV o un Excel (.xlsx).'); return; }
+        void handleFile(file);
+    };
+
+    // On the upload step, a file dropped OUTSIDE the box must not make the
+    // browser open it (that navigates away and loses the import).
+    useEffect(() => {
+        if (step !== 'upload') return;
+        const stop = (e: DragEvent) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); };
+        window.addEventListener('dragover', stop);
+        window.addEventListener('drop', stop);
+        return () => { window.removeEventListener('dragover', stop); window.removeEventListener('drop', stop); };
+    }, [step]);
 
     const handleFile = async (file: File) => {
         setError(null); setBusy(true);
@@ -881,10 +907,18 @@ export default function SpreadsheetImportWizard() {
                 </div>
             )}
             {step === 'upload' && (
-                <label className="block border-2 border-dashed border-stone-300 rounded-2xl p-12 text-center cursor-pointer hover:border-teal-400 transition-colors">
-                    <input type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+                <label
+                    data-testid="sheet-dropzone"
+                    data-dragover={dragOver ? 'true' : undefined}
+                    onDragEnter={e => { e.preventDefault(); if (!busy) setDragOver(true); }}
+                    onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = busy ? 'none' : 'copy'; if (!busy) setDragOver(true); }}
+                    onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false); }}
+                    onDrop={handleDrop}
+                    className={`block border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-colors ${dragOver ? 'border-teal-500 bg-teal-50' : 'border-stone-300 hover:border-teal-400'}`}
+                >
+                    <input type="file" data-testid="sheet-file-input" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
                     <div className="text-4xl mb-2" aria-hidden>📄</div>
-                    <div className="font-semibold text-stone-700">{busy ? 'Leyendo…' : 'Elegí un archivo'}</div>
+                    <div className="font-semibold text-stone-700">{busy ? 'Leyendo…' : dragOver ? 'Soltá el archivo acá' : 'Arrastrá un archivo acá o hacé clic para elegirlo'}</div>
                     <div className="text-xs text-stone-400 mt-1">CSV o Excel (.xlsx)</div>
                 </label>
             )}
