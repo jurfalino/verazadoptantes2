@@ -1655,7 +1655,11 @@ function ActivityBlock({ r, editingField, onEditCell, onChange, fieldsExpanded, 
 }) {
     const { eff, built } = r;
     const speciesVal = speciesOptionValue(eff.species);
-    const speciesLabel = speciesVal ? (SPECIES_OPTIONS.find(o => o.v === speciesVal)?.l ?? '—') : '—';
+    // A word we keep as written (e.g. «conejo») shows as «Otro: conejo» — the
+    // screen says exactly what will be saved.
+    const speciesSaved = normalizeSpecies(eff.species);
+    const speciesKept = speciesVal === 'other' && speciesSaved && speciesSaved !== 'other' ? speciesSaved : null;
+    const speciesLabel = speciesVal ? (speciesKept ? `Otro: ${speciesKept}` : SPECIES_OPTIONS.find(o => o.v === speciesVal)?.l ?? '—') : '—';
     const typeVal = normalizeRecordType(eff.recordType);
     const typeLabel = RECORD_TYPE_LABELS[typeVal] ?? typeVal;
     const ratingNorm = normalizeRating(eff.rating);

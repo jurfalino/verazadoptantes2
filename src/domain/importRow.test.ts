@@ -69,7 +69,8 @@ describe('normalizeSpecies / recordType / neutered', () => {
     it('maps common es/en values', () => {
         expect(normalizeSpecies('Perro')).toBe('dog');
         expect(normalizeSpecies('gata')).toBe('cat');
-        expect(normalizeSpecies('conejo')).toBe('conejo'); // unknown passthrough
+        expect(normalizeSpecies('conejo')).toBe('conejo'); // unknown real word passthrough
+        expect(normalizeSpecies(' Hurón ')).toBe('Hurón');
         expect(normalizeRecordType('Tránsito')).toBe('foster');
         expect(normalizeRecordType('adopción')).toBe('adoption');
         expect(normalizeRecordType(undefined)).toBe('adoption'); // default
@@ -77,6 +78,31 @@ describe('normalizeSpecies / recordType / neutered', () => {
         expect(normalizeNeutered('Sí')).toBe(1);
         expect(normalizeNeutered('no')).toBe(0);
         expect(normalizeNeutered('quizás')).toBeNull();
+    });
+});
+
+describe('normalizeSpecies: codes and variants', () => {
+    it('one-letter codes from other apps (P = perro, G = gato)', () => {
+        expect(normalizeSpecies('P')).toBe('dog');
+        expect(normalizeSpecies('g')).toBe('cat');
+        expect(normalizeSpecies('P.')).toBe('dog');
+    });
+    it('plurals, accents and other words for the same animal', () => {
+        expect(normalizeSpecies('Gatos')).toBe('cat');
+        expect(normalizeSpecies('FELINO')).toBe('cat');
+        expect(normalizeSpecies('canina')).toBe('dog');
+        expect(normalizeSpecies('Pájaro')).toBe('bird');
+        expect(normalizeSpecies('Otro')).toBe('other');
+    });
+    it('an unknown code never reaches the profile as a bare letter', () => {
+        expect(normalizeSpecies('X')).toBe('other');
+        expect(normalizeSpecies('AP')).toBe('other');
+        expect(normalizeSpecies('3')).toBe('other');
+    });
+    it('empty stays empty', () => {
+        expect(normalizeSpecies('')).toBeNull();
+        expect(normalizeSpecies('   ')).toBeNull();
+        expect(normalizeSpecies(undefined)).toBeNull();
     });
 });
 

@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.166] - 2026-10-13
+
+### Fixed — /import/sheet: species codes and variants
+
+- A species column with one-letter codes (catpuccino exports P = perro,
+  G = gato) now imports as Perro / Gato. Before, the review screen showed
+  «Otro» but the bare letter was saved on the animal.
+- Plurals, accents and synonyms map too (gatos, felino, canina, pájaro…).
+  Any other short code is saved as «Otro»; a real word we don't list
+  («conejo») is kept and shows as «Otro: conejo», so the screen matches
+  what is saved.
+
 ## [2.56.165] - 2026-10-13
 
 ### Fixed — /import/sheet: stopping and reloading a big import

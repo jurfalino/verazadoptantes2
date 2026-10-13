@@ -58,4 +58,14 @@ test.describe('sheet import: drag and drop', () => {
         await expect(page.getByText('Excela Fixtureperez').first()).toBeVisible({ timeout: 30000 });
         await expect(page.getByText(/is not a function/)).toHaveCount(0);
     });
+
+    test('one-letter species codes (G / P, as catpuccino exports them) read as Gato / Perro, not «Otro»', async ({ page }) => {
+        const csv = 'Nombre,Telefono,Especie\nSol Speciesfixture,1155550155,G\nLuz Speciesfixture,1155550156,P\n';
+        await page.getByTestId('sheet-file-input').setInputFiles({ name: 'especies.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+        await expect(page.getByText('Sol Speciesfixture').first()).toBeVisible({ timeout: 30000 });
+        // The species sits on each record's animal line, in sheet order.
+        const species = page.getByLabel('Editar especie');
+        await expect(species).toHaveText(['Gato', 'Perro']);
+    });
 });
+
