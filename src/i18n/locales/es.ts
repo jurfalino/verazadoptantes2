@@ -2826,6 +2826,8 @@ export const es = {
         regenerate_confirm: 'La clave actual deja de funcionar ya.',
         regenerate_yes: 'Sí, regenerar',
         regenerated_once: 'Clave nueva: copiala ahora, no se vuelve a mostrar. La anterior ya no funciona.',
+        stats_30d: 'Últimos 30 días: {activities} actividades registradas · {voided} anuladas',
+        many_voids: 'Muchas anulaciones',
         revoke_confirm: '¿Revocar esta clave?',
         error_regenerate: 'No se pudo regenerar la clave.',
     },

@@ -2826,6 +2826,8 @@ export const pt = {
         regenerate_confirm: 'A chave atual deixa de funcionar na hora.',
         regenerate_yes: 'Sim, regenerar',
         regenerated_once: 'Chave nova: copie agora, ela não será mostrada de novo. A anterior não funciona mais.',
+        stats_30d: 'Últimos 30 dias: {activities} atividades registradas · {voided} anuladas',
+        many_voids: 'Muitas anulações',
         revoke_confirm: 'Revogar esta chave?',
         error_regenerate: 'Não foi possível regenerar a chave.',
     },

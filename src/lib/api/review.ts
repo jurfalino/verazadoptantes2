@@ -3,7 +3,7 @@
  * key and transaction; a rescuer sees only their own. Server-only. The access
  * scoping lives HERE (an `ownerEmail` filter), so the two routes can't drift.
  */
-import { and, desc, eq, gte, lt } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, lt, sql } from 'drizzle-orm';
 import { apiKeys, apiRequests, users } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { searchesToday } from './handler';
@@ -17,7 +17,24 @@ export interface KeyView {
     id: string; name: string; ownerEmail: string; prefix: string; environment: string;
     scopes: string[]; dailyCapExact: number; dailyCapFuzzy: number;
     usedToday: { exact: number; fuzzy: number };
+    /** Last 30 days: activities this key saved, and how many of them it voided (Jon, 2026-10-13: make search-then-void visible). */
+    last30: { activities: number; voided: number };
     createdAt: string | null; lastUsedAt: string | null; revokedAt: string | null;
+}
+
+export const STATS_DAYS = 30;
+
+/** Activities a key saved in the window (real saves, not dry runs) and how many were voided since. */
+export async function keyActivityStats(db: Db, keyId: string, now = new Date()): Promise<{ activities: number; voided: number }> {
+    const since = new Date(now.getTime() - STATS_DAYS * 86_400_000);
+    const row = await db.select({
+        activities: sql<number>`count(*)`,
+        voided: sql<number>`sum(case when ${apiRequests.voidedAt} is not null then 1 else 0 end)`,
+    }).from(apiRequests).where(and(
+        eq(apiRequests.keyId, keyId), eq(apiRequests.endpoint, 'search'), eq(apiRequests.httpStatus, 200),
+        isNotNull(apiRequests.recordId), eq(apiRequests.dryRun, 0), gte(apiRequests.createdAt, since),
+    )).get() as { activities: number | null; voided: number | null } | undefined;
+    return { activities: Number(row?.activities ?? 0), voided: Number(row?.voided ?? 0) };
 }
 
 const iso = (d: Date | null | undefined) => (d ? new Date(d).toISOString() : null);
@@ -33,6 +50,7 @@ export async function listKeys(db: Db, ownerEmail: string | null): Promise<KeyVi
             exact: await searchesToday(db, k.id, 'exact'),
             fuzzy: await searchesToday(db, k.id, 'fuzzy'),
         },
+        last30: await keyActivityStats(db, k.id),
         createdAt: iso(k.createdAt), lastUsedAt: iso(k.lastUsedAt), revokedAt: iso(k.revokedAt),
     })));
 }

@@ -16,12 +16,18 @@ import RescuerEmailPicker from '@/components/api/RescuerEmailPicker';
 interface KeyView {
     id: string; name: string; ownerEmail: string; prefix: string; environment: string; scopes: string[];
     dailyCapExact: number; dailyCapFuzzy: number; usedToday: { exact: number; fuzzy: number };
+    last30?: { activities: number; voided: number };
     createdAt: string | null; lastUsedAt: string | null; revokedAt: string | null;
 }
 
 const card = 'bg-white dark:bg-stone-800 rounded-2xl border border-stone-200 dark:border-stone-700 p-6';
 const input = 'text-sm rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-2';
 const primaryBtn = { background: 'var(--btn-primary-bg)', color: 'white' };
+
+/** Search-then-void: a key that voids a lot of what it saves is looking people up without leaving a trace. */
+function isManyVoids(s: { activities: number; voided: number }): boolean {
+    return s.voided >= 3 && s.voided / Math.max(1, s.activities) >= 0.2;
+}
 
 export default function AdminApiPage() {
     const { t } = useLanguage();
@@ -143,6 +149,16 @@ export default function AdminApiPage() {
                                     {t('apiReview.used_today')}: {k.usedToday.exact}/{k.dailyCapExact} exact · {k.usedToday.fuzzy}/{k.dailyCapFuzzy} fuzzy
                                     {k.lastUsedAt ? ` · ${t('apiReview.last_used')} ${new Date(k.lastUsedAt).toLocaleString()}` : ''}
                                 </p>
+                                {k.last30 && (
+                                    <p className="text-xs text-stone-500" data-testid="api-key-stats">
+                                        {t('apiAdmin.stats_30d').replace('{activities}', String(k.last30.activities)).replace('{voided}', String(k.last30.voided))}
+                                        {isManyVoids(k.last30) && (
+                                            <span className="ml-2 px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: 'var(--status-warning-bg)', color: 'var(--status-warning-text)' }}>
+                                                {t('apiAdmin.many_voids')}
+                                            </span>
+                                        )}
+                                    </p>
+                                )}
                             </div>
                             {k.revokedAt ? (
                                 <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-semibold">{t('apiAdmin.revoked')}</span>

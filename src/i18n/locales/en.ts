@@ -2821,6 +2821,8 @@ export const en = {
         regenerate_confirm: 'The current key stops working right away.',
         regenerate_yes: 'Yes, regenerate',
         regenerated_once: 'New key: copy it now, it won\'t be shown again. The old one no longer works.',
+        stats_30d: 'Last 30 days: {activities} activities saved · {voided} voided',
+        many_voids: 'Many voids',
         revoke_confirm: 'Revoke this key?',
         error_regenerate: 'Couldn\'t regenerate the key.',
     },
