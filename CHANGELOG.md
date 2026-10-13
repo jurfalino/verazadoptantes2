@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.162] - 2026-10-12
+
+### Fixed — Excel imports work again
+
+Importing any .xlsx in /import/sheet failed with «e.map is not a function»:
+the spreadsheet library returns every sheet as `[{ sheet, data }]` since its
+v9 (in since the importer shipped), and the parser read that as rows. It now
+takes the first sheet with rows (`firstSheetRows`, unit-tested), and a read
+failure is logged with an error ID instead of only shown.
+
+### Fixed — drop a file on the import box
+
+The dotted upload box in /import/sheet now takes a dropped CSV or Excel file
+(highlighted while dragging; other file types get a message). Dropping a file
+used to make the browser open it, losing the import.
+
 ## [2.56.161] - 2026-10-12
 
 ### Fixed — the service worker no longer intercepts other sites
