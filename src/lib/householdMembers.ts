@@ -9,7 +9,7 @@
  * logic is shared. See .agents/plans/2026-08-26-household-members-redesign.md.
  */
 
-import { deserializeContactEntries, type ContactEntry } from './contactEntries';
+import { deserializeContactEntries, normalizeEntryValue, type ContactEntry } from './contactEntries';
 
 export type Relationship =
     | 'partner' | 'child' | 'parent' | 'sibling' | 'other_relative' | 'housemate' | 'unknown';
@@ -177,15 +177,65 @@ const memberKey = (m: HouseholdMember) =>
  * collapsed — "a son, phone X" twice may be two people.
  */
 export function mergeHouseholdMembers(survivor: HouseholdMember[], absorbed: HouseholdMember[]): HouseholdMember[] {
-    const seen = new Set(survivor.filter(m => m.name.trim()).map(memberKey));
+    return mergeHouseholdMembersTracked(survivor, absorbed).members;
+}
+
+/** What a merge put on the survivor's household — exactly what its undo takes back. */
+export type HouseholdMergeAdditions = {
+    /** Absorbed members appended as new people. */
+    memberIds: string[];
+    /** The survivor's own members that gained what only the absorbed copy had. */
+    enriched: Array<{ memberId: string; contactIds: string[]; giftRecipient: boolean }>;
+};
+
+const contactKey = (c: ContactEntry) => `${c.type}|${normalizeEntryValue(c.type, c.value)}`;
+
+/**
+ * mergeHouseholdMembers, keeping what a repeat knows that the survivor's copy
+ * doesn't: the gift-recipient mark and contacts it lacks (#4, 2026-10-13 —
+ * before, the absorbed copy was dropped whole). Returns what was added, for undo.
+ */
+export function mergeHouseholdMembersTracked(survivor: HouseholdMember[], absorbed: HouseholdMember[]): { members: HouseholdMember[]; added: HouseholdMergeAdditions } {
+    const byKey = new Map<string, number>();
+    survivor.forEach((m, i) => { if (m.name.trim() && !byKey.has(memberKey(m))) byKey.set(memberKey(m), i); });
     const out = [...survivor];
+    const appended: string[] = [];
+    const enriched: HouseholdMergeAdditions['enriched'] = [];
     for (const m of absorbed) {
-        if (m.name.trim()) {
-            const k = memberKey(m);
-            if (seen.has(k)) continue;
-            seen.add(k);
+        const k = m.name.trim() ? memberKey(m) : null;
+        const at = k === null ? undefined : byKey.get(k);
+        if (at === undefined) {
+            if (k !== null) byKey.set(k, out.length);
+            out.push(m);
+            appended.push(m.id);
+            continue;
         }
-        out.push(m);
+        const own = out[at];
+        const known = new Set(own.contactEntries.map(contactKey));
+        const newContacts = m.contactEntries.filter(c => !known.has(contactKey(c)));
+        const markGift = m.giftRecipient === true && own.giftRecipient !== true;
+        if (!newContacts.length && !markGift) continue;
+        out[at] = { ...own, contactEntries: [...own.contactEntries, ...newContacts], ...(markGift ? { giftRecipient: true } : {}) };
+        enriched.push({ memberId: own.id, contactIds: newContacts.flatMap(c => (c.id ? [c.id] : [])), giftRecipient: markGift });
     }
-    return out.slice(0, MAX_MEMBERS);
+    const members = out.slice(0, MAX_MEMBERS);
+    const kept = new Set(members.map(m => m.id));
+    return { members, added: { memberIds: appended.filter(id => kept.has(id)), enriched } };
+}
+
+/** Takes back exactly what a merge added; anyone's later edits stay. */
+export function undoHouseholdMerge(members: HouseholdMember[], added: HouseholdMergeAdditions): HouseholdMember[] {
+    const remove = new Set(added.memberIds);
+    const byMember = new Map(added.enriched.map(e => [e.memberId, e]));
+    return members.filter(m => !remove.has(m.id)).map(m => {
+        const e = byMember.get(m.id);
+        if (!e) return m;
+        const drop = new Set(e.contactIds);
+        const { giftRecipient, ...rest } = m;
+        return {
+            ...rest,
+            ...(giftRecipient && !e.giftRecipient ? { giftRecipient } : {}),
+            contactEntries: m.contactEntries.filter(c => !(c.id && drop.has(c.id))),
+        };
+    });
 }

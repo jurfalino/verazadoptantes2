@@ -97,8 +97,9 @@ export function giftRecipientRow(answers: Record<string, unknown>, t: (path: str
         <div key="giftRecipient" className="flex items-baseline gap-2 text-xs" data-testid="gift-recipient">
             <span className="font-semibold text-stone-600 min-w-[140px]">{t('formResults.gift_for')}:</span>
             <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">
+                <span className="text-stone-500">{t(`adopter.hh_rel_${r.relationship}`)} · </span>
                 {recipientFullName(r) ?? r.firstName}
-                <span className="text-stone-500"> · {t(`adopter.hh_rel_${r.relationship}`)}{r.phone && <> · {r.phone}</>}</span>
+                {r.phone && <span className="text-stone-500"> · {r.phone}</span>}
             </span>
         </div>
     );

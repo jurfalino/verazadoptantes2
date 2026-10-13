@@ -278,6 +278,8 @@ test.describe('form-results: linking to an existing profile', () => {
         if ((await answers.getAttribute('aria-expanded')) === 'false') await answers.click();
         const forWhom = page.getByTestId('gift-recipient');
         await expect(forWhom).toContainText('Laura Pérez');
+        // Relationship first, then the name (spec §10: "Hija · Laura Pérez · Tel").
+        await expect(forWhom).toContainText(/(Child|Hijo\/a|Filho\/a) · Laura Pérez/);
         await expect(forWhom).toContainText('11 5555 1234');
         await expect(page.getByText(/(People in|Personas en el hogar de|Pessoas na casa de) Laura/)).toBeVisible();
         // Every reworded question keeps its gift wording as the label (spec §10).

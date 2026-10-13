@@ -17,7 +17,7 @@ import { getDb } from '@/lib/db';
 import { reassignAdopterRecords } from '@/app/actions/_recordWrite';
 import { normalizeText } from '@/lib/tokenizer';
 import { deserializeContactEntries, mergeContactEntries } from '@/lib/contactEntries';
-import { deserializeHouseholdMembers, serializeHouseholdMembers, mergeHouseholdMembers } from '@/lib/householdMembers';
+import { deserializeHouseholdMembers, serializeHouseholdMembers, mergeHouseholdMembers, mergeHouseholdMembersTracked, undoHouseholdMerge } from '@/lib/householdMembers';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { casAdopterLists } from '@/lib/adopterListCas';
 import { MERGED_FLAG_DETAILS_PREFIX } from '@/domain/dedupPair';
@@ -102,8 +102,10 @@ export async function mergeAdopters(
         // The absorbed profile's household members, re-id'd ONCE (outside the
         // CAS retry loop) so the ids this merge adds are known and can never
         // collide with the survivor's — undo removes exactly these.
+        // Their contacts too: one may be carried onto a survivor's same-named
+        // member, and undo removes it by id.
         const absorbedMembers = deserializeHouseholdMembers(secondary.householdMembers)
-            .map(m => ({ ...m, id: crypto.randomUUID() }));
+            .map(m => ({ ...m, id: crypto.randomUUID(), contactEntries: m.contactEntries.map(c => ({ ...c, id: crypto.randomUUID() })) }));
         const mergedFields = (p: typeof primary) => {
             const updates: Partial<typeof adopters.$inferInsert> = {};
 
@@ -187,10 +189,11 @@ export async function mergeAdopters(
         };
         if (absorbedMembers.length) {
             // Same computation the write used, on the same row: the absorbed
-            // members that actually landed (repeats of the survivor's skipped).
-            const absorbedIds = new Set(absorbedMembers.map(m => m.id));
-            undo.addedHouseholdMemberIds = mergeHouseholdMembers(deserializeHouseholdMembers(written.row.householdMembers), absorbedMembers)
-                .map(m => m.id).filter(id => absorbedIds.has(id));
+            // members that actually landed, and what a repeat added to the
+            // survivor's own copy (gift mark, contacts it lacked).
+            const { added } = mergeHouseholdMembersTracked(deserializeHouseholdMembers(written.row.householdMembers), absorbedMembers);
+            undo.addedHouseholdMemberIds = added.memberIds;
+            if (added.enriched.length) undo.enrichedHouseholdMembers = added.enriched;
         }
 
         // 1. Re-point adoptions (placements + adopter_events → normalized tables)
@@ -426,6 +429,11 @@ interface MergeUndoPayload {
      * restoring a whole-list snapshot would erase it. Absent before 2026-10-04.
      */
     addedHouseholdMemberIds?: string[];
+    /**
+     * The survivor's own members a merge added to (a same-named repeat's gift
+     * mark or contacts) — undo takes back exactly those. Absent before 2026-10-13.
+     */
+    enrichedHouseholdMembers?: Array<{ memberId: string; contactIds: string[]; giftRecipient: boolean }>;
     placementIds: string[];
     adopterEventIds: string[];
     imageIds: string[];
@@ -564,14 +572,12 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
 
         // 3b. Take back only the household members the merge added — never the
         //     survivor's own list, which may have been edited since.
-        const addedMemberIds = new Set(undo.addedHouseholdMemberIds ?? []);
-        if (addedMemberIds.size) {
+        const householdAdded = { memberIds: undo.addedHouseholdMemberIds ?? [], enriched: undo.enrichedHouseholdMembers ?? [] };
+        if (householdAdded.memberIds.length || householdAdded.enriched.length) {
             const out = await casAdopterLists(db, primaryId, (row) => {
-                const members = deserializeHouseholdMembers(row.householdMembers);
-                const kept = members.filter(m => !addedMemberIds.has(m.id));
-                return kept.length === members.length
-                    ? { result: null }
-                    : { write: { householdMembers: serializeHouseholdMembers(kept) }, result: null };
+                const before = serializeHouseholdMembers(deserializeHouseholdMembers(row.householdMembers));
+                const after = serializeHouseholdMembers(undoHouseholdMerge(deserializeHouseholdMembers(row.householdMembers), householdAdded));
+                return after === before ? { result: null } : { write: { householdMembers: after }, result: null };
             }, { op: 'unmergeAdopters.household', auditId });
             if (out.status === 'busy') throw new Error(`Undo collided with concurrent household edits (Error ID: ${out.errorId})`);
         }
