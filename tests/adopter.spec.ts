@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { TEST_ADOPTERS, TEST_NAMES, dismissCountryBanner } from './helpers';
+import { TEST_ADOPTERS, TEST_NAMES, dismissCountryBanner, createAnywayIfAsked } from './helpers';
 
 /**
  * Execute a single SQL statement against the local D1 dev DB via wrangler.
@@ -66,15 +66,7 @@ test.describe('Adopter Profile', () => {
         // role+name match is strict-mode-violating.
         await page.getByTestId('adopter-form-submit').click();
 
-        // Handle duplicate detection modal if it appears
-        // Wait up to 3s for it to appear; if it doesn't, assume no duplicates were found.
-        const createAnywayBtn = page.getByRole('button', { name: /Create new profile anyway|Crear perfil nuevo/i });
-        try {
-            await createAnywayBtn.waitFor({ state: 'visible', timeout: 3000 });
-            await createAnywayBtn.click();
-        } catch {
-            // Modal did not appear, which is fine
-        }
+        await createAnywayIfAsked(page);
 
         // Should redirect to the new profile — name visible as h2 in view mode
         await expect(page.getByRole('heading', { name: uniqueName })).toBeVisible({ timeout: 30000 });
@@ -122,13 +114,7 @@ test.describe('Adopter Profile', () => {
         // (`ce-composer-submit`) with the same accessible name, so the
         // role+name match is strict-mode-violating.
         await page.getByTestId('adopter-form-submit').click();
-        const createAnywayBtn = page.getByRole('button', { name: /Create new profile anyway|Crear perfil nuevo/i });
-        try {
-            await createAnywayBtn.waitFor({ state: 'visible', timeout: 3000 });
-            await createAnywayBtn.click();
-        } catch {
-            // No duplicates — fine.
-        }
+        await createAnywayIfAsked(page);
 
         // The saved profile shows the entered contact value.
         await expect(page.getByRole('heading', { name: uniqueName })).toBeVisible({ timeout: 30000 });
@@ -199,16 +185,15 @@ test.describe('Adopter Profile', () => {
         // (`ce-composer-submit`) with the same accessible name, so the
         // role+name match is strict-mode-violating.
         await page.getByTestId('adopter-form-submit').click();
-        const createAnywayBtn = page.getByRole('button', { name: /Create new profile anyway|Crear perfil nuevo/i });
-        try {
-            await createAnywayBtn.waitFor({ state: 'visible', timeout: 3000 });
-            await createAnywayBtn.click();
-        } catch {
-            // No duplicates — fine.
-        }
+        // The phone matches a seed profile, so the duplicate dialog usually
+        // appears — but on a slow CI server it can take well over 3 s. Wait for
+        // whichever comes first (the dialog or the saved profile) instead of a
+        // fixed 3 s window that silently skipped the click.
+        await createAnywayIfAsked(page);
+        const savedHeading = page.getByRole('heading', { name: uniqueName });
 
         // The saved profile has the phone but NOT the throwaway address.
-        await expect(page.getByRole('heading', { name: uniqueName })).toBeVisible({ timeout: 30000 });
+        await expect(savedHeading).toBeVisible({ timeout: 30000 });
         await expect(page.getByText('11 5555-1234')).toBeVisible({ timeout: 30000 });
         await expect(page.getByText('THROWAWAY ADDRESS')).toHaveCount(0);
     });
