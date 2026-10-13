@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
+import { computeRequestRescueDensity } from '@/domain/requestDensity';
 import { useRouter, useSearchParams } from 'next/navigation';
 import TransferOwnershipModal from '@/components/TransferOwnershipModal';
 import { AdopterForm } from '@/components/AdopterForm';
@@ -191,7 +192,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     }, [adoptions, adoptionsThreshold, adoptionsPeriodDays]);
     const tooManyRequests = useMemo(() => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const d = computeMaxDensityPeriod(adoptions as any, 'adoption_request', requestsPeriodDays);
+        const d = computeRequestRescueDensity(adoptions as any, requestsPeriodDays);
         if (d.count < requestsThreshold) return null;
         return { count: d.count, actualSpanDays: d.timeSpanDays, periodDays: requestsPeriodDays };
     }, [adoptions, requestsThreshold, requestsPeriodDays]);

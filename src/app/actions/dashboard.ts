@@ -15,6 +15,8 @@ import { buildFlags } from '@/domain/flags';
 import { RECORD_TYPES } from '@/domain/constants';
 import { formLinkKind, summarizeAdopterForms, type AdopterFormRow } from '@/domain/formLink';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
+import { computeRequestRescueDensity } from '@/domain/requestDensity';
+import { loadRescueKeys, withRescueKeys } from '@/lib/rescueKeys';
 import { animalPrimaryFirst } from '@/lib/showcase';
 
 export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
@@ -83,7 +85,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         type FlagRow = { adopterId: string; reason: string };
         type CountRow = { adopterId: string; recordType: string | null; count: number };
         type StatRow = { adopterId: string; eventType: string; count: number };
-        type RecordRow = { adopterId: string; recordType: string | null; date: number | null; rating: number | null };
+        type RecordRow = { adopterId: string; recordType: string | null; date: number | null; rating: number | null; addedBy: string | null; rescueKey?: string | null };
         type FormRow = { id: string; userId: string; linkedAdopterId: string; autoAdopterId: string | null; createdAt: Date | number | null; selectedAnimalId: string | null };
         type ContractCountRow = { adopterId: string; count: number };
         type EditRow = { adopterId: string; changedBy: string | null; changedAt: number | Date | null };
@@ -138,7 +140,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 // sees r.rating === undefined, passes the `!== null` filter, then
                 // sums to NaN → JSON-serializes to null → every /my-adopters row
                 // rendered "—" regardless of actual rated activity.
-                db.select({ adopterId: adoptions.adopterId, recordType: adoptions.recordType, date: adoptions.date, rating: adoptions.rating })
+                db.select({ adopterId: adoptions.adopterId, recordType: adoptions.recordType, date: adoptions.date, rating: adoptions.rating, addedBy: adoptions.addedBy })
                     .from(adoptions)
                     .where(sql`${adoptions.adopterId} IN (${inList})`)
                     .all(),
@@ -210,7 +212,9 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         // Ratings: compute from allAdoptionRecords using domain function (replaces separate AVG SQL query)
         const ratingsMap = new Map<string, number | null>();
         const recordsByAdopter = new Map<string, typeof allAdoptionRecords>();
-        for (const rec of allAdoptionRecords as any[]) {
+        // Requests count per rescue (an organization is one): see src/domain/requestDensity.ts.
+        const rescueKeys = await loadRescueKeys(db, allAdoptionRecords.filter(r => r.recordType === RECORD_TYPES.REQUEST).map(r => r.addedBy), 'getMyAdopters');
+        for (const rec of withRescueKeys(allAdoptionRecords, rescueKeys) as any[]) {
             if (!recordsByAdopter.has(rec.adopterId)) recordsByAdopter.set(rec.adopterId, []);
             recordsByAdopter.get(rec.adopterId)!.push(rec);
         }
@@ -339,7 +343,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
 
             const adopterRecords = recordsByAdopter.get(adopter.id) || [];
             const adoptionsDensity = computeMaxDensityPeriod(adopterRecords as any, RECORD_TYPES.ADOPTION, adoptionConfig.periodDays);
-            const requestsDensity = computeMaxDensityPeriod(adopterRecords as any, RECORD_TYPES.REQUEST, adoptionConfig.requestsPeriodDays);
+            const requestsDensity = computeRequestRescueDensity(adopterRecords, adoptionConfig.requestsPeriodDays);
 
             const flagObj: AdopterFlags = buildFlags(flags, 0);
             

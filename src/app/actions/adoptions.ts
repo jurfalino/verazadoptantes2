@@ -377,7 +377,10 @@ export async function getAdoptions(adopterId: string) {
             seen.add(r.id);
             return true;
         });
-        return await attachAdoptionThumbnails(db, deduped);
+        // Requests count per rescue on the profile too (src/domain/requestDensity.ts).
+        const { loadRescueKeys, withRescueKeys } = await import('@/lib/rescueKeys');
+        const keys = await loadRescueKeys(db, deduped.filter((r: { recordType: string | null }) => r.recordType === 'adoption_request').map((r: { addedBy: string | null }) => r.addedBy), 'getAdoptions');
+        return await attachAdoptionThumbnails(db, withRescueKeys(deduped as Array<{ id: string; addedBy?: string | null }>, keys));
     } catch (error) {
         logger.error('Get adoptions failed', error, { adopterId });
         return [];

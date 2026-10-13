@@ -8,6 +8,7 @@ import type { DiscoveryMatch } from '@/app/actions';
 import { appendCreatePrefill } from '@/lib/createPrefill';
 import AdoptionFormWizard from '@/components/AdoptionFormWizard';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
+import { computeRequestRescueDensity } from '@/domain/requestDensity';
 import { reportClientError } from '@/lib/clientErrorReporter';
 
 interface PickAdopterForAnimalModalProps {
@@ -115,8 +116,9 @@ export default function PickAdopterForAnimalModal({
 
     const density = (type: 'adoption' | 'adoption_request', periodDays: number, threshold: number) => {
         if (!ctx) return null;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const d = computeMaxDensityPeriod(ctx.adoptions as any, type, periodDays);
+        const d = type === 'adoption_request'
+            ? computeRequestRescueDensity(ctx.adoptions as Parameters<typeof computeRequestRescueDensity>[0], periodDays) // per rescue (src/domain/requestDensity.ts)
+            : computeMaxDensityPeriod(ctx.adoptions as Parameters<typeof computeMaxDensityPeriod>[0], type, periodDays);
         return d.count < threshold ? null : { count: d.count, actualSpanDays: d.timeSpanDays, periodDays };
     };
 

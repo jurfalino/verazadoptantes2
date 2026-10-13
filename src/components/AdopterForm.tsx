@@ -31,6 +31,7 @@ import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
 import { getSourceIcon } from '@/lib/sourceIcons';
 import { getCountryByCode } from '@/config/countries';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
+import { computeRequestRescueDensity } from '@/domain/requestDensity';
 import { renderTextWithLinks } from '@/lib/textUtils';
 import { AdopterFlagging } from '@/components/AdopterFlagging';
 import type { AdopterFlaggingHandle } from '@/components/AdopterFlagging';
@@ -167,7 +168,7 @@ export function AdopterForm({ interviewEnabled = false, initialData, currentUser
     }, [adoptions, periodDays]);
 
     const requestsDensity = useMemo(() => {
-        return computeMaxDensityPeriod(adoptions, 'adoption_request', requestsPeriodDays);
+        return computeRequestRescueDensity(adoptions, requestsPeriodDays);
     }, [adoptions, requestsPeriodDays]);
 
     const [isEditing, setIsEditing] = useState(isNew);

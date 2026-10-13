@@ -829,11 +829,11 @@ export default function AdminConfigPage() {
                         Adoption Requests Threshold
                     </h4>
                     <p className="text-sm text-stone-500 mb-4">
-                        Configure the threshold for flagging adopters with too many adoption requests.
+                        Flags a person who asked to adopt at this many DIFFERENT rescues within the period. Several requests to the same rescue (an organization counts as one) count once.
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-semibold text-stone-700 mb-1">Max Requests</label>
+                            <label className="block text-sm font-semibold text-stone-700 mb-1">Different rescues</label>
                             <input
                                 type="number"
                                 value={config.too_many_requests_threshold}
@@ -841,7 +841,7 @@ export default function AdminConfigPage() {
                                 className="w-full px-4 py-2 border border-stone-200 rounded-lg focus:border-teal-400 focus:ring-2 focus:ring-teal-100 outline-none"
                                 min="1"
                             />
-                            <span className="text-xs text-stone-500">requests</span>
+                            <span className="text-xs text-stone-500">rescues</span>
                         </div>
                         <div>
                             <label className="block text-sm font-semibold text-stone-700 mb-1">Time Period</label>

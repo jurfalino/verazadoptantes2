@@ -32,6 +32,8 @@ import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { computeAvgRating } from '@/domain/ratings';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
+import { computeRequestRescueDensity } from '@/domain/requestDensity';
+import { loadRescueKeys, withRescueKeys } from '@/lib/rescueKeys';
 import { getAdoptionConfig } from '@/app/actions/config';
 
 export interface BlockMatch {
@@ -118,6 +120,7 @@ export async function checkAdopterLoginGate(rawEmail: string): Promise<GateResul
                 rating: adoptions.rating,
                 recordType: adoptions.recordType,
                 date: adoptions.date,
+                addedBy: adoptions.addedBy,
             }).from(adoptions).where(eq(adoptions.adopterId, adopterId));
 
             const avgRating = computeAvgRating(adoptionRows as { rating: number | null }[]);
@@ -125,7 +128,9 @@ export async function checkAdopterLoginGate(rawEmail: string): Promise<GateResul
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const adoptionsDensity = computeMaxDensityPeriod(adoptionRows as any, 'adoption', adoptionConfig.periodDays);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const requestsDensity = computeMaxDensityPeriod(adoptionRows as any, 'adoption_request', adoptionConfig.requestsPeriodDays);
+            const requestRows = withRescueKeys(adoptionRows as Array<{ recordType: string | null; date: Date | null; addedBy: string | null }>,
+                await loadRescueKeys(db, (adoptionRows as Array<{ addedBy: string | null }>).map(r => r.addedBy), 'adopterLoginGate'));
+            const requestsDensity = computeRequestRescueDensity(requestRows, adoptionConfig.requestsPeriodDays);
             const tooManyAdoptions = adoptionsDensity.count >= adoptionConfig.threshold;
             const tooManyRequests = requestsDensity.count >= adoptionConfig.requestsThreshold;
 
