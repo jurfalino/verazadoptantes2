@@ -58,7 +58,7 @@ export interface TransactionRow {
     id: string; keyId: string; keyName: string | null; ownerEmail: string; endpoint: string;
     mode: string | null; context: string | null; outcome: string | null; httpStatus: number;
     errorId: string | null; profileIds: string[]; recordId: string | null; profileCreated: boolean;
-    externalId: string | null; voidedAt: string | null; voidedBy: string | null;
+    externalId: string | null; voidedAt: string | null; voidedBy: string | null; dryRun: boolean;
     durationMs: number | null; createdAt: string;
 }
 
@@ -67,7 +67,7 @@ function rowView(r: typeof apiRequests.$inferSelect, keyNames: Map<string, strin
     return {
         id: r.id, keyId: r.keyId, keyName: keyNames.get(r.keyId) ?? null, ownerEmail: r.ownerEmail, endpoint: r.endpoint,
         mode: r.mode, context: r.context, outcome: r.outcome, httpStatus: r.httpStatus, errorId: r.errorId,
-        profileIds, recordId: r.recordId, profileCreated: r.profileCreated === 1, externalId: r.externalId,
+        profileIds, recordId: r.recordId, profileCreated: r.profileCreated === 1, externalId: r.externalId, dryRun: r.dryRun === 1,
         voidedAt: iso(r.voidedAt), voidedBy: r.voidedBy, durationMs: r.durationMs, createdAt: iso(r.createdAt)!,
     };
 }

@@ -38,7 +38,7 @@ function dayAtNoon(day: string): Date {
 }
 
 export async function saveApiRecord(ctx: ApiCallContext, req: SearchRequest, outcome: ExactOutcome): Promise<SavedRecord> {
-    const save = req.save!;
+    const save = req.record ?? {};
     const { db, key } = ctx;
 
     if (save.externalId) {

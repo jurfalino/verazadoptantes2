@@ -40,7 +40,7 @@ const personSchema = z.object({
         .meta({ description: 'Used by fuzzy search. Accepted but not used to decide an exact match.' }),
 }).strict();
 
-const saveSchema = z.object({
+const recordSchema = z.object({
     externalId: z.string().trim().min(1).max(100).optional()
         .meta({ description: 'Your own id for this record. Must be unique per key; a repeat is refused.', example: 'jotform-5512' }),
     animalName: z.string().trim().max(100).optional().meta({ example: 'Luna' }),
@@ -53,12 +53,12 @@ const saveSchema = z.object({
 
 export const searchRequestSchema = z.object({
     mode: z.enum(['exact', 'fuzzy']).meta({
-        description: 'exact: full name + email, phone or document id; answers found / not_found / ambiguous and may save a record. fuzzy: the same ranked search as the BuenAdoptante homepage.',
+        description: 'exact: full name + email, phone or document id; answers found / not_found / ambiguous and ALWAYS saves a record of `context` on that person (send an Idempotency-Key). fuzzy: the same ranked search as the BuenAdoptante homepage; saves nothing.',
     }),
-    context: z.enum(API_CONTEXTS).meta({ description: 'What the person is doing. Also the type of the record saved with `save`.' }),
+    context: z.enum(API_CONTEXTS).meta({ description: 'What the person is doing. Also the type of the record every exact search saves.' }),
     person: personSchema,
-    save: saveSchema.optional().meta({
-        description: 'Exact mode only. Saves a record in the same call. Requires the Idempotency-Key header.',
+    record: recordSchema.optional().meta({
+        description: 'Exact mode only. Optional details of the record the call saves (it is saved with or without them).',
     }),
 }).strict();
 export type SearchRequest = z.infer<typeof searchRequestSchema>;
@@ -67,7 +67,7 @@ export type ApiErrorCode =
     | 'invalid_json' | 'invalid_request' | 'unauthorized' | 'forbidden' | 'not_found'
     | 'full_name_required' | 'exact_requires_name_and_identifier' | 'invalid_phone'
     | 'invalid_document_id' | 'invalid_email' | 'fuzzy_requires_a_field'
-    | 'save_requires_exact' | 'idempotency_key_required' | 'idempotency_key_reused'
+    | 'record_requires_exact' | 'idempotency_key_required' | 'dry_run_not_allowed' | 'idempotency_key_reused'
     | 'external_id_reused' | 'daily_cap_reached' | 'api_disabled' | 'payload_too_large' | 'record_changed' | 'server_error';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -86,7 +86,7 @@ export function checkSearchRules(req: SearchRequest): { code: ApiErrorCode; mess
         }
         if (!isFullName(p.fullName)) return { code: 'full_name_required', message: 'person.fullName must include first name and surname' };
     } else {
-        if (req.save) return { code: 'save_requires_exact', message: 'save is only allowed in exact mode' };
+        if (req.record) return { code: 'record_requires_exact', message: 'record is only allowed in exact mode (fuzzy searches save nothing)' };
         if (!(p.fullName || p.email || p.phone || p.documentId || p.address || p.socials?.length)) {
             return { code: 'fuzzy_requires_a_field', message: 'fuzzy mode needs at least one person field' };
         }

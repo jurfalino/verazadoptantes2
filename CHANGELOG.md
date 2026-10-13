@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.167] - 2026-10-13
+
+### Changed — API: every exact search is recorded
+
+- An exact `POST /api/v1/search` always saves a record of its `context` on
+  the person (found → their profile; not found or ambiguous → a new one).
+  The optional `save` object is now `record` and only carries details;
+  `Idempotency-Key` is required on every exact call. Fuzzy saves nothing.
+- Admins can make read-only test calls (not in the public docs). Any other
+  key asking for one is refused, never silently saved. Test calls show as
+  «Prueba (sin guardar)» in Admin → API and Settings → API.
+- Migration 0083: `api_requests.dry_run`.
+
 ## [2.56.166] - 2026-10-13
 
 ### Fixed — /import/sheet: species codes and variants

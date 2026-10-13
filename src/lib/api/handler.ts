@@ -13,6 +13,7 @@ import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
 import { getFeatureFlag } from '@/config/features';
+import { isAdminAsyncStrict } from '@/config/admins';
 import { bearerSecret, findActiveKey, scopesOf, type ApiKeyRow } from './keys';
 import type { ApiErrorCode, ApiScope } from './schemas';
 
@@ -20,6 +21,19 @@ import type { ApiErrorCode, ApiScope } from './schemas';
 type Db = any;
 
 export type ApiEndpoint = 'search' | 'me' | 'void';
+
+/**
+ * Read-only test calls: `X-Dry-Run: 1` runs a search end to end — validation,
+ * scopes, Idempotency-Key, caps, the found / not_found / ambiguous decision —
+ * but writes no record, profile or notification. Deliberately left out of the
+ * docs, and honoured only for keys owned by an admin: every rescue's exact
+ * search must leave a record. Any other key sending it is refused (403), never
+ * silently saved, since its developer believes nothing is being written.
+ */
+export const DRY_RUN_HEADER = 'x-dry-run';
+export function wantsDryRun(value: string | null): boolean {
+    return value != null && /^(1|true|yes)$/i.test(value.trim());
+}
 
 /** Person data the client sent is kept this long, then dropped from the log. */
 export const REQUEST_BODY_RETENTION_DAYS = 90;
@@ -59,6 +73,8 @@ export interface ApiCallContext {
     log: LogFields;
     /** Set when this call already owns a log row (idempotency claim). */
     rowClaimed: boolean;
+    /** An admin's read-only test call: nothing is written but its log row. */
+    dryRun: boolean;
 }
 
 export interface ApiResult { status: number; body: Record<string, unknown> }
@@ -195,6 +211,7 @@ async function writeLog(ctx: ApiCallContext, endpoint: ApiEndpoint, status: numb
         recordId: ctx.log.recordId ?? null,
         profileCreated: ctx.log.profileCreated ? 1 : 0,
         externalId: ctx.log.externalId ?? null,
+        dryRun: ctx.dryRun ? 1 : 0,
         durationMs: Date.now() - startedAt,
     };
     try {
@@ -251,6 +268,7 @@ export async function handleApiCall(
         idempotencyKey: request.headers.get('idempotency-key')?.trim().slice(0, 200) || null,
         log: {},
         rowClaimed: false,
+        dryRun: false,
     };
 
     let status: number;
@@ -260,6 +278,12 @@ export async function handleApiCall(
     try {
         if (tooLarge) throw new ApiError(413, 'payload_too_large', `request bodies are limited to ${MAX_REQUEST_BODY} bytes`);
         await enforceCallCeiling(db, key);
+        if (wantsDryRun(request.headers.get(DRY_RUN_HEADER))) {
+            if (endpoint === 'void') throw new ApiError(422, 'dry_run_not_allowed', 'a void cannot be a dry run');
+            if (!(await isAdminAsyncStrict(key.ownerEmail))) throw new ApiError(403, 'dry_run_not_allowed', 'this key cannot make dry runs');
+            ctx.dryRun = true;
+            headers = { 'x-dry-run': '1' };
+        }
         const result = await run(ctx);
         status = result.status;
         body = { requestId, ...result.body };
@@ -267,7 +291,7 @@ export async function handleApiCall(
         if (e instanceof ApiError) {
             status = e.status;
             body = errorBody(requestId, e.code, e.message);
-            headers = e.headers;
+            headers = { ...headers, ...e.headers };
         } else {
             errorId = logger.error('api: request failed', e, { requestId, keyId: key.id, owner: key.ownerEmail, endpoint, mode: ctx.log.mode, context: ctx.log.context });
             status = 500;

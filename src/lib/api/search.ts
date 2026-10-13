@@ -34,24 +34,30 @@ export async function runSearch(ctx: ApiCallContext): Promise<ApiResult> {
     const req = parseRequest(ctx);
     ctx.log.mode = req.mode;
     ctx.log.context = req.context;
-    ctx.log.externalId = req.save?.externalId ?? null;
+    ctx.log.externalId = req.record?.externalId ?? null;
 
     const broken = checkSearchRules(req);
     if (broken) throw new ApiError(422, broken.code, broken.message);
 
     requireScope(ctx, req.mode === 'exact' ? 'search' : 'search:fuzzy');
-    if (req.save) {
+    // Every exact search saves a record (Jon, 2026-10-13). A dry run (admin-owned
+    // keys only, see handler) checks all the same things but writes nothing,
+    // so it neither replays nor claims the Idempotency-Key.
+    const saves = req.mode === 'exact';
+    if (saves) {
         requireScope(ctx, 'record:write');
-        if (!ctx.idempotencyKey) throw new ApiError(422, 'idempotency_key_required', 'saving a record needs an Idempotency-Key header');
-        const replay = await replayIdempotent(ctx);
-        if (replay) {
-            ctx.log.outcome = 'replayed';
-            return replay;
+        if (!ctx.idempotencyKey) throw new ApiError(422, 'idempotency_key_required', 'exact searches save a record and need an Idempotency-Key header');
+        if (!ctx.dryRun) {
+            const replay = await replayIdempotent(ctx);
+            if (replay) {
+                ctx.log.outcome = 'replayed';
+                return replay;
+            }
         }
     }
     // Cap before claiming: a refused call must never become the stored answer.
     await enforceDailyCap(ctx, req.mode);
-    if (req.save) await claimIdempotencyKey(ctx);
+    if (saves && !ctx.dryRun) await claimIdempotencyKey(ctx);
 
     return req.mode === 'exact' ? runExact(ctx, req) : runFuzzy(ctx, req);
 }
@@ -87,7 +93,7 @@ async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiRes
     }
     ctx.log.profileIds = ids;
 
-    if (req.save) {
+    if (!ctx.dryRun) {
         body.saved = await saveApiRecord(ctx, req, outcome);
         ctx.log.profileIds = [body.saved.profileId, ...ids.filter(id => id !== body.saved!.profileId)];
     }

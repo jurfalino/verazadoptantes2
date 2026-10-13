@@ -11,7 +11,7 @@ A rescue's own tools (its adoption form, spreadsheet automation, management app)
 
 without anyone re-typing it into BuenAdoptante.
 
-## Product decisions (Jon, 2026-10-09)
+## Product decisions (Jon, 2026-10-09; 7b revised 2026-10-13)
 
 | # | Decision |
 |---|---|
@@ -22,6 +22,7 @@ without anyone re-typing it into BuenAdoptante.
 | 5 | Search has two modes. **Fuzzy** is the same engine as the homepage. **Exact** requires `fullName` + one of `email` / `phone` / `documentId`. |
 | 6 | Exact search has **three outcomes**: `found`, `not_found`, `ambiguous`. `ambiguous` carries the worst rating among the candidates, so a client can still block automatically. |
 | 7 | `context` (the record type) is required. An exact search can **save the record in the same call** (option "c"). |
+| 7b | **Revised 2026-10-13:** *every* exact search saves a record of `context`. The optional `save` object became `record` (details only), and `Idempotency-Key` is required on every exact call. Read-only test calls use the undocumented `X-Dry-Run: 1` header, honoured only for **admin-owned keys** (any other key gets 403 `dry_run_not_allowed`, so nothing is saved). They are logged with `api_requests.dry_run = 1` and shown as «Prueba (sin guardar)». Fuzzy saves nothing. |
 | 9 | `rating` is optional on every record type and is **never inferred**. Missing means `NULL`. |
 | 10 | Each saved record notifies the rescuer like a form submission. The rescue guide documents all search fields. |
 | 11 | A rescue can **void its own API records** (`POST /api/v1/records/{id}/void`). |
@@ -95,6 +96,7 @@ Add a new table, `api_keys`, through a hand-written migration (drizzle-kit hangs
 - **`mode`** is `exact` or `fuzzy`.
 - **`context`** is required. It takes the `RECORD_TYPES` values except `available`, which describes an animal: `adoption_request`, `adoption`, `foster`, `follow_up`, `returned_pet`, `observation`.
 - **`socials[].platform`** takes the tokenizer's set: `facebook`, `instagram`, `tiktok`, `x`, `threads`.
+- **Superseded by decision 7b:** every exact call saves; `save` is now `record`, details only. The text below keeps the original names.
 - **`save`** is optional and **only allowed with `mode: "exact"`**, because a fuzzy result has no confirmed subject.
 - **`Idempotency-Key`** (header) is required whenever `save` is present. A replay returns the stored response and writes nothing.
 - **`save.externalId`**, the client's own id, must be unique per key. It is the second line of defence against duplicate records.

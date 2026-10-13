@@ -5,6 +5,8 @@ import { execSync } from 'child_process';
  * Third-party API v1 (.agents/plans/2026-10-09-third-party-api.md), end to end:
  * the admin issues a key, a "partner" (no cookies, Bearer key) searches,
  * saves, retries and voids, and both review surfaces show the calls.
+ * Every exact search saves a record; the look-ups that must not write use the
+ * admin-only read-only mode (X-Dry-Run), which this admin-owned key may use.
  *
  * ENABLE_PUBLIC_API is off in the seed; this file turns it on for itself and
  * is the ONLY spec that touches it (serial). Every person it creates is unique
@@ -46,6 +48,10 @@ test.describe('public API v1', () => {
     const auth = (extra: Record<string, string> = {}) => ({ authorization: `Bearer ${secret}`, ...extra });
     const search = (data: unknown, headers: Record<string, string> = {}) =>
         api.post('/api/v1/search', { data, headers: auth(headers) });
+    // A read-only exact look-up: same answer as a real call, nothing written.
+    let dryN = 0;
+    const check = (data: unknown) => search(data, { 'x-dry-run': '1', 'idempotency-key': `dry-${++dryN}-${STAMP}` });
+    const countRows = (sql: string) => JSON.parse(execD1(sql))[0].results[0].n as number;
 
     test('admin issues a key; the secret is shown once and works for /me', async ({ page }) => {
         const res = await page.request.post('/api/admin/api-keys', { data: { ownerEmail: ADMIN_EMAIL, name: `E2E ${TAG}` } });
@@ -65,7 +71,7 @@ test.describe('public API v1', () => {
         expect(me.headers()['x-request-id']).toBe(body.requestId);
     });
 
-    test('validation: full name + identifier, a real full name, no save in fuzzy', async () => {
+    test('validation: full name + identifier, a real full name, no record in fuzzy, a key on every exact call', async () => {
         const noId = await search({ mode: 'exact', context: 'adoption_request', person: { fullName: NAME } });
         expect(noId.status()).toBe(422);
         expect((await noId.json()).error.code).toBe('exact_requires_name_and_identifier');
@@ -73,22 +79,49 @@ test.describe('public API v1', () => {
         const oneWord = await search({ mode: 'exact', context: 'adoption_request', person: { fullName: 'María', phone: LOCAL_PHONE } });
         expect((await oneWord.json()).error.code).toBe('full_name_required');
 
-        const fuzzySave = await search({ mode: 'fuzzy', context: 'adoption_request', person: { fullName: NAME }, save: {} });
-        expect((await fuzzySave.json()).error.code).toBe('save_requires_exact');
+        const fuzzyRecord = await search({ mode: 'fuzzy', context: 'adoption_request', person: { fullName: NAME }, record: {} });
+        expect((await fuzzyRecord.json()).error.code).toBe('record_requires_exact');
 
-        const badRating = await search({ mode: 'exact', context: 'observation', person: { fullName: NAME, phone: LOCAL_PHONE }, save: { rating: 7 } }, { 'idempotency-key': `bad-${STAMP}` });
+        const badRating = await search({ mode: 'exact', context: 'observation', person: { fullName: NAME, phone: LOCAL_PHONE }, record: { rating: 7 } }, { 'idempotency-key': `bad-${STAMP}` });
         expect(badRating.status()).toBe(422);
 
-        const noKey = await search({ mode: 'exact', context: 'adoption_request', person: { fullName: NAME, phone: LOCAL_PHONE }, save: {} });
+        // Every exact search saves, so every one needs an Idempotency-Key — with or without details.
+        const noKey = await search({ mode: 'exact', context: 'adoption_request', person: { fullName: NAME, phone: LOCAL_PHONE } });
         expect((await noKey.json()).error.code).toBe('idempotency_key_required');
+        expect(countRows(`SELECT count(*) AS n FROM adopters WHERE name = '${NAME}'`)).toBe(0);
     });
 
-    test('unknown person → not_found; saving creates the profile and the record, unrated', async () => {
-        const check = await search({ mode: 'exact', context: 'adoption_request', person: { fullName: NAME, phone: LOCAL_PHONE } });
-        expect(check.status()).toBe(200);
-        expect((await check.json()).result).toBe('not_found');
+    test('admin dry run: the same answer, nothing written, logged as a test', async () => {
+        const dry = await check({ mode: 'exact', context: 'adoption_request', person: { fullName: NAME, phone: LOCAL_PHONE } });
+        expect(dry.status()).toBe(200);
+        expect(dry.headers()['x-dry-run']).toBe('1');
+        const d = await dry.json();
+        expect(d.result).toBe('not_found');
+        expect(d.saved).toBeUndefined();
+        expect(countRows(`SELECT count(*) AS n FROM adopters WHERE name = '${NAME}'`)).toBe(0);
+        expect(countRows(`SELECT count(*) AS n FROM api_requests WHERE id = '${d.requestId}' AND dry_run = 1 AND record_id IS NULL AND outcome = 'not_found'`)).toBe(1);
+        // A void can't be a dry run.
+        const v = await api.post('/api/v1/records/whatever/void', { headers: auth({ 'x-dry-run': '1' }) });
+        expect((await v.json()).error.code).toBe('dry_run_not_allowed');
+    });
 
-        const body = { mode: 'exact', context: 'adoption_request', person: { fullName: NAME, phone: LOCAL_PHONE, email: EMAIL }, save: { externalId: `ext-${STAMP}`, animalName: 'Luna', species: 'dog' } };
+    test('a rescue\'s own key cannot dry-run: refused, never silently saved', async ({ page }) => {
+        const res = await page.request.post('/api/admin/api-keys', { data: { ownerEmail: 'testuser@example.com', name: `E2E user ${TAG}` } });
+        expect(res.status()).toBe(201);
+        const userKey = await res.json();
+        const stranger = `Dryrunfixture ${TAG.charAt(0).toUpperCase()}${TAG.slice(1)}`;
+        const r = await api.post('/api/v1/search', {
+            data: { mode: 'exact', context: 'adoption_request', person: { fullName: stranger, email: `dry-${STAMP}@example.com` } },
+            headers: { authorization: `Bearer ${userKey.secret}`, 'x-dry-run': '1', 'idempotency-key': `user-dry-${STAMP}` },
+        });
+        expect(r.status()).toBe(403);
+        expect((await r.json()).error.code).toBe('dry_run_not_allowed');
+        expect(countRows(`SELECT count(*) AS n FROM adopters WHERE name = '${stranger}'`)).toBe(0);
+        await page.request.patch(`/api/admin/api-keys/${userKey.id}`, { data: { revoke: true } });
+    });
+
+    test('unknown person → not_found; the search creates the profile and the record, unrated', async () => {
+        const body = { mode: 'exact', context: 'adoption_request', person: { fullName: NAME, phone: LOCAL_PHONE, email: EMAIL }, record: { externalId: `ext-${STAMP}`, animalName: 'Luna', species: 'dog' } };
         const saved = await search(body, { 'idempotency-key': `save-${STAMP}` });
         expect(saved.status()).toBe(200);
         const s = await saved.json();
@@ -112,7 +145,7 @@ test.describe('public API v1', () => {
     });
 
     test('the same person in another phone format → found, with one request and no rating', async () => {
-        const res = await search({ mode: 'exact', context: 'adoption_request', person: { fullName: `${NAME.split(' ')[1]}, ${NAME.split(' ')[0]}`, phone: INTL_PHONE } });
+        const res = await check({ mode: 'exact', context: 'adoption_request', person: { fullName: `${NAME.split(' ')[1]}, ${NAME.split(' ')[0]}`, phone: INTL_PHONE } });
         const b = await res.json();
         expect(b.result).toBe('found');
         expect(b.profile.profileId).toBe(profileId);
@@ -122,14 +155,14 @@ test.describe('public API v1', () => {
         expect(b.profile.ratingLabel).toBe('not_rated');
         expect(b.profile.url).toContain(`/adopter/${profileId}`);
 
-        const byEmail = await search({ mode: 'exact', context: 'adoption_request', person: { fullName: NAME, email: EMAIL.toUpperCase() } });
+        const byEmail = await check({ mode: 'exact', context: 'adoption_request', person: { fullName: NAME, email: EMAIL.toUpperCase() } });
         expect((await byEmail.json()).profile.matchedOn).toEqual(['email']);
     });
 
     let secondRecordId = '';
-    test('a known person + save → the record goes on THAT profile; the answer is the person before the call', async () => {
+    test('a known person → the record goes on THAT profile; the answer is the person before the call', async () => {
         const res = await search(
-            { mode: 'exact', context: 'observation', person: { fullName: NAME, email: EMAIL }, save: { rating: 1, notes: 'No respondió más' } },
+            { mode: 'exact', context: 'observation', person: { fullName: NAME, email: EMAIL }, record: { rating: 1, notes: 'No respondió más' } },
             { 'idempotency-key': `obs-${STAMP}` },
         );
         const b = await res.json();
@@ -140,13 +173,26 @@ test.describe('public API v1', () => {
         expect(b.profile.ratingLabel).toBe('not_rated');
         secondRecordId = b.saved.recordId;
 
-        const after = await (await search({ mode: 'exact', context: 'observation', person: { fullName: NAME, email: EMAIL } })).json();
+        const after = await (await check({ mode: 'exact', context: 'observation', person: { fullName: NAME, email: EMAIL } })).json();
         expect(after.profile.records).toEqual({ adoption_request: 1, observation: 1 });
         expect(after.profile.ratingLabel).toBe('dangerous');
     });
 
+    test('an exact search with no record details still saves a record of its context', async () => {
+        const res = await search({ mode: 'exact', context: 'follow_up', person: { fullName: NAME, email: EMAIL } }, { 'idempotency-key': `plain-${STAMP}` });
+        const b = await res.json();
+        expect(b.result).toBe('found');
+        expect(b.saved.profileId).toBe(profileId);
+        expect(b.saved.profileCreated).toBe(false);
+        const after = await (await check({ mode: 'exact', context: 'follow_up', person: { fullName: NAME, email: EMAIL } })).json();
+        expect(after.profile.records.follow_up).toBe(1);
+        // Put the person back as the next tests expect.
+        const v = await api.post(`/api/v1/records/${b.saved.recordId}/void`, { headers: auth() });
+        expect((await v.json()).profileVoided).toBe(false);
+    });
+
     test('same phone, unrelated name → ambiguous name_mismatch, never a guess', async () => {
-        const res = await search({ mode: 'exact', context: 'adoption_request', person: { fullName: 'Otra Persona Distinta', phone: LOCAL_PHONE } });
+        const res = await check({ mode: 'exact', context: 'adoption_request', person: { fullName: 'Otra Persona Distinta', phone: LOCAL_PHONE } });
         const b = await res.json();
         expect(b.result).toBe('ambiguous');
         expect(b.reason).toBe('name_mismatch');
@@ -170,21 +216,26 @@ test.describe('public API v1', () => {
 
     test('both review surfaces list the calls', async ({ page }) => {
         const admin = await page.request.get(`/api/admin/api-requests?keyId=${keyId}`);
-        const rows = (await admin.json()).rows as Array<{ recordId: string | null; outcome: string }>;
+        const rows = (await admin.json()).rows as Array<{ recordId: string | null; outcome: string; dryRun: boolean }>;
         expect(rows.some(r => r.recordId === recordId)).toBe(true);
         expect(rows.some(r => r.outcome === 'ambiguous')).toBe(true);
+        expect(rows.some(r => r.dryRun && r.recordId === null)).toBe(true);
 
         await page.goto('/admin/api');
         await expect(page.getByTestId('api-keys')).toContainText(`E2E ${TAG}`, { timeout: 30000 });
         await expect(page.getByTestId('api-transaction').first()).toBeVisible();
+        // Test calls are marked as such: nothing was saved, so nothing to void.
+        const dryRow = page.getByTestId('api-transaction').filter({ has: page.getByTestId('api-dry-run-badge') }).first();
+        await expect(dryRow).toBeVisible();
+        await expect(dryRow.getByRole('button', { name: /^(Anular|Void)$/ })).toHaveCount(0);
 
         await page.goto('/settings');
         await expect(page.getByTestId('settings-api')).toContainText(`E2E ${TAG}`, { timeout: 30000 });
     });
 
-    test('ambiguous + save → a NEW profile, registered as a possible duplicate', async () => {
+    test('ambiguous → a NEW profile, registered as a possible duplicate', async () => {
         const res = await search(
-            { mode: 'exact', context: 'adoption_request', person: { fullName: 'Otra Persona Distinta', phone: LOCAL_PHONE }, save: {} },
+            { mode: 'exact', context: 'adoption_request', person: { fullName: 'Otra Persona Distinta', phone: LOCAL_PHONE } },
             { 'idempotency-key': `amb-${STAMP}` },
         );
         const b = await res.json();
@@ -195,7 +246,7 @@ test.describe('public API v1', () => {
         expect(pair[0].results[0].n).toBe(1);
         // Now the phone belongs to two people: the original is still found by
         // name, and the answer says another profile shares the identifier.
-        const found = await (await search({ mode: 'exact', context: 'adoption_request', person: { fullName: NAME, phone: LOCAL_PHONE } })).json();
+        const found = await (await check({ mode: 'exact', context: 'adoption_request', person: { fullName: NAME, phone: LOCAL_PHONE } })).json();
         expect(found.result).toBe('found');
         expect(found.profile.profileId).toBe(profileId);
         expect(found.otherMatches.count).toBe(1);
@@ -219,7 +270,7 @@ test.describe('public API v1', () => {
         // Not this key's record → 404 too.
         expect((await api.post('/api/v1/records/test-adoption-5/void', { headers: auth() })).status()).toBe(404);
 
-        const after = await search({ mode: 'exact', context: 'adoption_request', person: { fullName: NAME, phone: LOCAL_PHONE } });
+        const after = await check({ mode: 'exact', context: 'adoption_request', person: { fullName: NAME, phone: LOCAL_PHONE } });
         expect((await after.json()).result).toBe('not_found');
     });
 

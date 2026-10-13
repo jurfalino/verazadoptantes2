@@ -16,6 +16,8 @@ export interface TransactionRow {
     mode: string | null; context: string | null; outcome: string | null; httpStatus: number;
     errorId: string | null; profileIds: string[]; recordId: string | null; profileCreated: boolean;
     externalId: string | null; voidedAt: string | null; voidedBy: string | null; createdAt: string;
+    /** An admin's read-only test call (X-Dry-Run): nothing was saved. */
+    dryRun?: boolean;
 }
 
 const OUTCOMES = ['found', 'not_found', 'ambiguous', 'results', 'voided', 'replayed', 'error'] as const;
@@ -137,6 +139,7 @@ export default function ApiTransactionList({ listUrl, detailUrl, voidUrl, showOw
                                 </span>
                                 {r.httpStatus >= 400 && <span className="text-xs text-red-700">HTTP {r.httpStatus}{r.errorId ? ` · ${r.errorId}` : ''}</span>}
                                 {r.voidedAt && <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-semibold">{t('apiReview.voided_badge')}</span>}
+                                {r.dryRun && <span data-testid="api-dry-run-badge" title={t('apiReview.dry_run_hint')} className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-semibold">{t('apiReview.dry_run_badge')}</span>}
                             </div>
                             <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
                                 {profileId && (

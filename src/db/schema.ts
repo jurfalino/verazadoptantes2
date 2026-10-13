@@ -927,6 +927,7 @@ export const apiRequests = sqliteTable("api_requests", {
     profileCreated: integer("profile_created").notNull().default(0),
     idempotencyKey: text("idempotency_key"),
     externalId: text("external_id"),
+    dryRun: integer("dry_run").notNull().default(0), // 1 = admin read-only test call: nothing was saved
     voidedAt: integer("voided_at", { mode: "timestamp" }),
     voidedBy: text("voided_by"),
     durationMs: integer("duration_ms"),

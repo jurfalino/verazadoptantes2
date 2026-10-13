@@ -33,17 +33,21 @@ Podés enviar cualquiera de estos datos de la persona:
 | \`address\` | Av. Siempreviva 742, CABA |
 | \`socials\` | [{ "platform": "instagram", "handle": "@mariajose" }] |
 
-**\`mode: "exact"\`**: nombre y apellido **más** email, teléfono o documento. Responde:
+**\`mode: "exact"\`**: nombre y apellido **más** email, teléfono o documento. **Cada búsqueda exacta queda registrada** (ver abajo). Responde:
 - \`found\`: es una persona conocida; incluye su calificación, alertas y un link a su perfil.
 - \`not_found\`: no hay registros de esa persona.
 - \`ambiguous\`: el dato coincide con más de un perfil, o con alguien de otro nombre (por ejemplo un teléfono familiar). Incluye la **peor calificación** entre los candidatos, para que puedas frenar igual.
 
-**\`mode: "fuzzy"\`**: la misma búsqueda de la página de inicio, con cualquier combinación de campos. Devuelve una lista ordenada por relevancia.
+**\`mode: "fuzzy"\`**: la misma búsqueda de la página de inicio, con cualquier combinación de campos. Devuelve una lista ordenada por relevancia. No registra nada.
 
 **\`context\`** (obligatorio): qué está haciendo la persona: \`adoption_request\`, \`adoption\`, \`foster\`, \`follow_up\`, \`returned_pet\` u \`observation\`.
 
-## Registrar en la misma llamada
-En modo exacto, agregá \`save\` para guardar el registro (con el header \`Idempotency-Key\`, así un reintento no lo duplica). Si la persona era conocida, se agrega a su perfil; si no, se crea un perfil nuevo. La calificación es opcional: si no la tenés, no la mandes.
+## Toda búsqueda exacta queda registrada
+Cada búsqueda exacta guarda un registro del tipo \`context\` sobre esa persona: si era conocida, en su perfil; si no, en un perfil nuevo; si es \`ambiguous\`, en un perfil nuevo que un admin revisa como posible duplicado. La respuesta lo devuelve en \`saved\`.
+
+**Mandá siempre el header \`Idempotency-Key\`** (cualquier texto único, por ejemplo un UUID): si reintentás la misma llamada, devuelve la misma respuesta en vez de registrar dos veces.
+
+\`record\` (opcional) agrega detalles al registro: tu id (\`externalId\`), el animal, la fecha, notas y la calificación. La calificación es opcional: si no la tenés, no la mandes.
 
 ## Anular un registro: \`POST /api/v1/records/{id}/void\`
 Solo registros guardados por tu propia clave.
@@ -78,11 +82,11 @@ export function buildOpenApi(origin: string) {
         paths: {
             '/api/v1/search': {
                 post: {
-                    summary: 'Buscar a una persona (y opcionalmente registrar)',
+                    summary: 'Buscar a una persona (la búsqueda exacta queda registrada)',
                     operationId: 'search',
                     parameters: [{
                         name: 'Idempotency-Key', in: 'header', required: false,
-                        description: 'Required when `save` is present. Any unique string, e.g. a UUID.',
+                        description: 'Required in exact mode (every exact search saves a record). Any unique string, e.g. a UUID; a retry with the same key gets the same answer instead of a second record.',
                         schema: { type: 'string', maxLength: 200 },
                     }],
                     requestBody: {
@@ -91,16 +95,16 @@ export function buildOpenApi(origin: string) {
                             'application/json': {
                                 schema: schema(searchRequestSchema, 'input'),
                                 examples: {
-                                    exact_check: {
-                                        summary: 'Exact: check only',
+                                    exact: {
+                                        summary: 'Exact: check and record the request',
                                         value: { mode: 'exact', context: 'adoption_request', person: { fullName: 'María José Pérez', phone: '+54 9 11 6462-2274' } },
                                     },
-                                    exact_save: {
-                                        summary: 'Exact: check and save the request',
+                                    exact_with_details: {
+                                        summary: 'Exact, with the record\'s details',
                                         value: {
                                             mode: 'exact', context: 'adoption_request',
                                             person: { fullName: 'María José Pérez', email: 'maria@example.com' },
-                                            save: { externalId: 'jotform-5512', animalName: 'Luna', species: 'dog', notes: 'Aplicó por el formulario de la web' },
+                                            record: { externalId: 'jotform-5512', animalName: 'Luna', species: 'dog', notes: 'Aplicó por el formulario de la web' },
                                         },
                                     },
                                     fuzzy: {
