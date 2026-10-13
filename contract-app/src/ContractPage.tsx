@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
+import { contractCopyFileName, downloadDataUrl } from './lib/contractCopy'
 import { generateContractPdf, blobToBase64 } from './contractPdf'
 import { useT } from './i18n/LocaleContext'
 import { contractErrorKey } from './lib/contractErrors'
@@ -70,7 +71,6 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
     const [submitting, setSubmitting] = useState(false)
     const [contractSaved, setContractSaved] = useState<boolean | null>(null)
     const [contractPdfData, setContractPdfData] = useState<string | null>(null)
-    const [retrying, setRetrying] = useState(false)
     const [copied, setCopied] = useState(false)
     const [customContract, setCustomContract] = useState<CustomContract | null>(null)
 
@@ -194,32 +194,6 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
         }
     }
 
-    const retryContractUpload = async () => {
-        if (!contractPdfData) return
-        setRetrying(true)
-        try {
-            const targetAnimalId = resolvedAnimalId || animalId
-            const res = await fetch(`${API_URL}/api/contract/${targetAnimalId}/upload`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ screenshot: contractPdfData }),
-            })
-            if (res.ok) {
-                setContractSaved(true)
-                setError(null)
-                setSubmitted(true)
-                console.log('[CONTRACT] Retry upload succeeded')
-            } else {
-                const data = await res.json().catch(() => ({ error: 'Unknown error' })) as { error?: string }
-                console.error('[CONTRACT] Retry failed:', data.error)
-            }
-        } catch (err) {
-            console.error('[CONTRACT] Retry network error:', err)
-        } finally {
-            setRetrying(false)
-        }
-    }
-
     const blank = (
         name: keyof typeof form,
         placeholder: string,
@@ -302,25 +276,21 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
                     <p className="text-stone-500 mb-4">
                         {t('contract.success_body', { name: animal?.animalName || '' })}
                     </p>
+                    {contractPdfData && (
+                        <button
+                            type="button"
+                            data-testid="download-contract-copy"
+                            onClick={() => { void downloadDataUrl(contractPdfData, contractCopyFileName(animal?.animalName)) }}
+                            className="w-full mb-4 px-4 py-3 bg-teal-600 text-white rounded-xl font-semibold hover:bg-teal-700 transition-colors"
+                        >
+                            📥 {t('contract.download_copy')}
+                        </button>
+                    )}
                     <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 text-sm text-emerald-800">
                         <p className="font-bold mb-1">{t('contract.next_steps')}</p>
                         <ul className="text-left space-y-1">
                             <li>✅ {t('contract.step_data')}</li>
                             {contractSaved === true && <li>📄 {t('contract.step_saved')}</li>}
-                            {contractSaved === false && (
-                                <li className="text-amber-700">
-                                    ⚠️ {t('contract.step_failed')}
-                                    {contractPdfData && (
-                                        <button
-                                            onClick={retryContractUpload}
-                                            disabled={retrying}
-                                            className="ml-2 px-3 py-1 bg-amber-600 text-white rounded-lg text-xs font-bold hover:bg-amber-700 disabled:opacity-50 transition-colors"
-                                        >
-                                            {retrying ? `⏳ ${t('contract.step_retrying')}` : `🔄 ${t('contract.step_retry')}`}
-                                        </button>
-                                    )}
-                                </li>
-                            )}
                             <li>📞 {t('contract.step_contact')}</li>
                             <li>🏠 {t('contract.step_visit')}</li>
                         </ul>
