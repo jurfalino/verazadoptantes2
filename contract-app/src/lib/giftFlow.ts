@@ -3,7 +3,9 @@
  * home questions talk about the recipient ("¿Dónde vive Laura?") and offer
  * "No sé" where the giver may not know. Pure — the form applies it per step.
  */
-export const GIFT_UNKNOWN_STEPS = ['children', 'hasOutdoor', 'isSafe', 'petExperience', 'willingToSterilize', 'movingPlans', 'vacationPlan'] as const
+// Not vacationPlan: it already offers "No lo sé aún" (Jon, 2026-10-13).
+export const GIFT_UNKNOWN_STEPS = ['children', 'hasOutdoor', 'isSafe', 'petExperience', 'willingToSterilize', 'movingPlans'] as const
+const UNKNOWN_STEPS = new Set<string>(GIFT_UNKNOWN_STEPS)
 
 const TITLE: Record<string, string> = {
     children: 'form.q_children_title_gift',
@@ -46,12 +48,36 @@ export function adaptStepForGift<S extends { id: string; title: string; options?
     }
 }
 
+/** A "No sé" — only on the questions that offer it; "unknown" typed in a text field is an answer. */
+const isUnknownAnswer = (k: string, v: unknown) => v === 'unknown' && UNKNOWN_STEPS.has(k)
+
 /** A "Para mí" form never carries the recipient or a "No sé" left over from a gift draft. */
 export function stripGiftAnswers(answers: Record<string, unknown>): Record<string, unknown> {
     if (answers.intent === 'gift') return answers
     const out: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(answers)) {
-        if (k === 'giftRecipient' || v === 'unknown') continue
+        if (k === 'giftRecipient' || isUnknownAnswer(k, v)) continue
+        out[k] = v
+    }
+    return out
+}
+
+/**
+ * The answers as the form should hold them right now. Not a gift → every
+ * "No sé" goes at once, so those questions read as unanswered and get asked
+ * again (the recipient stays, in case they switch back). "Intención" not asked
+ * (the rescuer hid it after a gift draft was saved) → not a gift at all.
+ * Returns the same object when nothing changes.
+ */
+export function settleGiftAnswers(answers: Record<string, unknown>, intentAsked: boolean): Record<string, unknown> {
+    const dropIntent = !intentAsked && ('intent' in answers || 'giftRecipient' in answers)
+    if (!dropIntent && answers.intent === 'gift') return answers
+    const stale = Object.entries(answers).some(([k, v]) => isUnknownAnswer(k, v))
+    if (!dropIntent && !stale) return answers
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(answers)) {
+        if (isUnknownAnswer(k, v)) continue
+        if (dropIntent && (k === 'intent' || k === 'giftRecipient')) continue
         out[k] = v
     }
     return out

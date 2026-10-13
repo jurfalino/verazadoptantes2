@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { adaptStepForGift, giftTitleKey, isGift, stripGiftAnswers, GIFT_UNKNOWN_STEPS, giftRecipientProblem } from './giftFlow'
+import { adaptStepForGift, giftTitleKey, isGift, stripGiftAnswers, GIFT_UNKNOWN_STEPS, giftRecipientProblem, settleGiftAnswers } from './giftFlow'
+import { form } from '../i18n/catalogs/form'
 
 const t = (k: string) => ({ 'form.q_outdoor_title_gift': '¿{n} tiene patio o jardín?', 'form.opt_unknown': 'No sé' } as Record<string, string>)[k] ?? k
 const gift = { intent: 'gift', giftRecipient: { relationship: 'child', firstName: 'Laura' } }
@@ -39,5 +40,34 @@ describe('giftRecipientProblem', () => {
         expect(giftRecipientProblem({ relationship: 'child', firstName: 'Laura', phone: '123456' })).toBe('phone')
         expect(giftRecipientProblem({ relationship: 'child', firstName: 'Laura', phone: '+54 (11) 5555-1234' })).toBeNull()
         expect(giftRecipientProblem({ relationship: 'child', firstName: 'Laura', phone: '  ' })).toBeNull()
+    })
+})
+
+describe('the issues found after release (2026-10-13)', () => {
+    it('#1 a typed "unknown" in a text field is an answer, not a leftover "No sé"', () => {
+        expect(stripGiftAnswers({ intent: 'self', name: 'unknown', speciesOther: 'unknown', hasOutdoor: 'unknown' }))
+            .toEqual({ intent: 'self', name: 'unknown', speciesOther: 'unknown' })
+    })
+    it('#2 switching to "Para mí" clears every "No sé" at once, so those questions read as unanswered', () => {
+        const before = { intent: 'self', giftRecipient: { relationship: 'child', firstName: 'Laura' }, children: 'unknown', hasOutdoor: 'unknown', isSafe: 'yes', name: 'unknown' }
+        expect(settleGiftAnswers(before, true)).toEqual({ intent: 'self', giftRecipient: { relationship: 'child', firstName: 'Laura' }, isSafe: 'yes', name: 'unknown' })
+    })
+    it('#2 a gift keeps its "No sé" answers — same object, so nothing re-renders', () => {
+        const a = { intent: 'gift', children: 'unknown' }
+        expect(settleGiftAnswers(a, true)).toBe(a)
+    })
+    it('#3 when the rescuer no longer asks "Intención", an old gift draft stops being a gift', () => {
+        const draft = { intent: 'gift', giftRecipient: { relationship: 'child', firstName: 'Laura' }, children: 'unknown', isSafe: 'yes' }
+        expect(settleGiftAnswers(draft, false)).toEqual({ isSafe: 'yes' })
+    })
+    it('#6 the vacation question has its own "No lo sé aún" — no second "No sé"', () => {
+        expect(GIFT_UNKNOWN_STEPS).not.toContain('vacationPlan')
+    })
+    it('#8 nothing the gift flow says about the recipient guesses a gender with "/a"', () => {
+        for (const lang of ['es', 'pt'] as const) {
+            const giftCopy = Object.entries(form[lang]).filter(([k]) => k.endsWith('_gift'))
+            expect(giftCopy.length).toBeGreaterThan(5)
+            for (const [k, v] of giftCopy) expect(`${lang} ${k}: ${v}`).not.toMatch(/\/a\b|\/o\b/)
+        }
     })
 })

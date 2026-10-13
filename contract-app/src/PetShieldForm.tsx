@@ -5,7 +5,7 @@ import {
     FORM_STEP_IDS, formStepsToAsk, withPhoneRequirement, stepsForAnswers, stepAfter, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody, childrenAnswer,
 } from './lib/adoptionDocs'
 import GiftRecipient, { type Recipient } from './components/GiftRecipient'
-import { adaptStepForGift, isGift, recipientFirstName, giftRecipientProblem } from './lib/giftFlow'
+import { adaptStepForGift, isGift, recipientFirstName, giftRecipientProblem, settleGiftAnswers } from './lib/giftFlow'
 import HouseholdPeople, { type Person } from './components/HouseholdPeople'
 import { canLeaveHouseholdStep, householdStepTitleKey, type DraftPerson } from './lib/householdPeopleForm'
 
@@ -568,6 +568,13 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     const [answers, setAnswers] = useState<Record<string, any>>({})
     // Answer-dependent steps ("¿Para quién es?" only after "Es un regalo").
     const schema = stepsForAnswers(configSchema, answers)
+    // "Para mí" after a gift → its "No sé" answers go, so those questions are
+    // asked again; "Intención" no longer asked → an old gift draft isn't a gift.
+    const intentAsked = configSchema.some(s => s.id === 'intent')
+    useEffect(() => {
+        const settled = settleGiftAnswers(answers, intentAsked)
+        if (settled !== answers) setAnswers(settled)
+    }, [answers, intentAsked])
     const totalSteps = schema.length
     const [errors, setErrors] = useState<Record<string, string>>({})
     const [toast, setToast] = useState<{ message: string; id?: string } | null>(null)
@@ -614,8 +621,9 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             draftStepIdRef.current = resolved.draft.stepId
             // Index against the steps the DRAFT's answers produce: "¿Para quién
             // es?" exists only once intent='gift' is restored, and the current
-            // `schema` still reflects the empty pre-hydration answers.
-            setStep(restoreStepIndex(stepsForAnswers(configSchema, resolved.draft.answers ?? {}), resolved.draft, FORM_STEP_IDS))
+            // `schema` still reflects the empty pre-hydration answers. Settled
+            // first, as the answers will be once the effect above runs.
+            setStep(restoreStepIndex(stepsForAnswers(configSchema, settleGiftAnswers(resolved.draft.answers ?? {}, intentAsked)), resolved.draft, FORM_STEP_IDS))
         } catch (e) {
             console.warn('[PetShield] draft restore failed', e)
         }
@@ -672,7 +680,8 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         const stepId = draftStepIdRef.current ?? currentStepIdRef.current
         draftStepIdRef.current = undefined
         if (step > 0 || stepId) {
-            setStep(restoreStepIndex(schema, { answers, stepId }, FORM_STEP_IDS))
+            // Settled: hiding "Intención" removes "¿Para quién es?" ahead of them.
+            setStep(restoreStepIndex(stepsForAnswers(configSchema, settleGiftAnswers(answers, intentAsked)), { answers, stepId }, FORM_STEP_IDS))
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [hiddenSteps])
