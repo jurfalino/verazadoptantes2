@@ -74,6 +74,8 @@ export interface AdoptionRecord {
     color?: string | null;
     microchip?: string | null;
     interview?: { id: string; canViewAnswers: boolean };
+    /** Answers of the rescue's own form, sent with an API adoption request (src/lib/activityForms.ts). Only for that rescue and admins. */
+    formContent?: Record<string, unknown>;
 }
 
 export interface HistoryEntry {

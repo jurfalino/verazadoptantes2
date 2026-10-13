@@ -359,7 +359,8 @@ export async function getAdoptions(adopterId: string) {
     // Every page that shows an adopter's history requires sign-in; the records
     // carry verified home addresses, notes and rescuer emails. Anonymous
     // callers get nothing.
-    try { await getUser(); } catch {
+    let viewer = '';
+    try { viewer = await getUser(); } catch {
         logger.warn('getAdoptions: refused — no session', { adopterId });
         return [];
     }
@@ -380,7 +381,11 @@ export async function getAdoptions(adopterId: string) {
         // Requests count per rescue on the profile too (src/domain/requestDensity.ts).
         const { loadRescueKeys, withRescueKeys } = await import('@/lib/rescueKeys');
         const keys = await loadRescueKeys(db, deduped.filter((r: { recordType: string | null }) => r.recordType === 'adoption_request').map((r: { addedBy: string | null }) => r.addedBy), 'getAdoptions');
-        return await attachAdoptionThumbnails(db, withRescueKeys(deduped as Array<{ id: string; addedBy?: string | null }>, keys));
+        // Answers of an API-sent form: only for the rescue that registered it, and admins.
+        const { attachActivityForms } = await import('@/lib/activityForms');
+        const { isAdminAsync } = await import('@/config/admins');
+        const withForms = await attachActivityForms(db, withRescueKeys(deduped as Array<{ id: string; addedBy?: string | null; recordType?: string | null }>, keys), viewer, await isAdminAsync(viewer));
+        return await attachAdoptionThumbnails(db, withForms);
     } catch (error) {
         logger.error('Get adoptions failed', error, { adopterId });
         return [];

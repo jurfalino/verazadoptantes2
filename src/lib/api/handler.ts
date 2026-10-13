@@ -37,9 +37,10 @@ export function wantsDryRun(value: string | null): boolean {
 
 /** Person data the client sent is kept this long, then dropped from the log. */
 export const REQUEST_BODY_RETENTION_DAYS = 90;
-const MAX_LOGGED_BODY = 20_000;
-/** A search request is a few hundred bytes; anything near this is not one. */
-const MAX_REQUEST_BODY = 16_000;
+/** Whole request kept for review (an adoption form's answers included), then purged as above. */
+const MAX_LOGGED_BODY = 64_000;
+/** A call is a few hundred bytes, plus up to 50 KB of form answers (FORM_CONTENT_MAX_BYTES). */
+const MAX_REQUEST_BODY = 64_000;
 /** A save takes seconds; a claim still open after this was abandoned by a dead worker. */
 const ABANDONED_CLAIM_MS = 120_000;
 
@@ -58,6 +59,8 @@ export interface LogFields {
     recordId?: string | null;
     profileCreated?: boolean;
     externalId?: string | null;
+    /** Contacts this call added to a known profile (void takes them back). */
+    contactsAdded?: Array<{ entryId: string; field: string }>;
 }
 
 export interface ApiCallContext {
@@ -212,6 +215,7 @@ async function writeLog(ctx: ApiCallContext, endpoint: ApiEndpoint, status: numb
         profileCreated: ctx.log.profileCreated ? 1 : 0,
         externalId: ctx.log.externalId ?? null,
         dryRun: ctx.dryRun ? 1 : 0,
+        contactsAdded: ctx.log.contactsAdded?.length ? JSON.stringify(ctx.log.contactsAdded) : null,
         durationMs: Date.now() - startedAt,
     };
     try {

@@ -1,23 +1,27 @@
 /**
- * Write side of the API: save a record from an exact search (decision 7) and
- * void one (decision 11). Server-only.
+ * Write side of the API: save the activity of an exact call (decisions 7, 7b)
+ * and void one (decision 11). Server-only.
  *
- *   found     → the record goes on that profile (the exact-match rules are the
- *               confirmation of who the person is).
- *   not_found → a new profile + the record, through the same path the adoption
- *               form uses (tokenized, duplicate candidates written).
- *   ambiguous → a NEW profile + the record, with its duplicate candidates
- *               registered for an admin to merge. Never attached to a guess.
+ *   found     → the activity goes on that profile (the exact-match rules are
+ *               the confirmation of who the person is). Contact details it did
+ *               not have yet are added, with a trail (./contacts.ts).
+ *   not_found → a new profile + the activity, through the same path the
+ *               adoption form uses (tokenized, duplicate candidates written).
+ *   ambiguous → several names fit: on the BEST match (pickBestMatch, Jon
+ *               2026-10-13). No name fits (the identifier is someone else's):
+ *               a NEW profile, with its duplicate candidates for an admin.
  */
 import { and, count, eq, isNotNull, isNull, ne, notLike, or } from 'drizzle-orm';
-import { adopterEvents, adopterHistory, adopterImages, adopters, adoptions, apiRequests, formSubmissions, placements } from '@/db/schema';
+import { activityForms, adopterEvents, adopterHistory, adopterImages, adopters, adoptions, apiRequests, formSubmissions, placements } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
 import { socialUrl, type SocialPlatform } from '@/lib/contactEntries';
-import type { ExactOutcome } from '@/domain/apiExactMatch';
+import { pickBestMatch, type ExactOutcome } from '@/domain/apiExactMatch';
+import { normalizeSpecies } from '@/domain/importRow';
+import { addApiContacts, newContactFields, parseAddedContacts, removeApiContacts } from './contacts';
 import { ApiError, type ApiCallContext } from './handler';
 import { profileUrl, recordUrl } from './profiles';
-import type { SavedRecord, SearchRequest } from './schemas';
+import type { ProfileSummary, SavedActivity, SearchRequest } from './schemas';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Db = any;
@@ -37,8 +41,13 @@ function dayAtNoon(day: string): Date {
     return new Date(y, m - 1, d, 12, 0, 0);
 }
 
-export async function saveApiRecord(ctx: ApiCallContext, req: SearchRequest, outcome: ExactOutcome): Promise<SavedRecord> {
-    const save = req.record ?? {};
+export async function saveApiActivity(
+    ctx: ApiCallContext, req: SearchRequest, outcome: ExactOutcome,
+    matchedOn: Map<string, string[]>, summaries: Map<string, ProfileSummary>,
+): Promise<SavedActivity> {
+    const save = req.activity!;
+    const activityType = save.activityType;
+    const species = normalizeSpecies(save.species) ?? null;
     const { db, key } = ctx;
 
     if (save.externalId) {
@@ -57,14 +66,19 @@ export async function saveApiRecord(ctx: ApiCallContext, req: SearchRequest, out
 
     let profileId: string;
     let profileCreated = false;
+    const best = outcome.result === 'ambiguous'
+        ? pickBestMatch(outcome.compatible, matchedOn, new Map([...summaries].map(([id, s]) => [id, s.lastRecordAt])))
+        : null;
     if (outcome.result === 'found') {
         profileId = outcome.profileId;
+    } else if (best) {
+        profileId = best;
     } else {
         const p = req.person;
         const { createAdopterFromSubmission } = await import('@/app/actions/_adopterFactory');
         const created = await createAdopterFromSubmission({
             source: 'api',
-            api: { keyName: key.name, requestId: ctx.requestId, context: req.context },
+            api: { keyName: key.name, requestId: ctx.requestId, context: activityType },
             name: p.fullName!,
             addedBy: key.ownerEmail,
             email: p.email ?? null,
@@ -73,7 +87,7 @@ export async function saveApiRecord(ctx: ApiCallContext, req: SearchRequest, out
             documentId: p.documentId?.value ?? null,
             socials: (p.socials ?? []).map(s => socialUrl(s.handle, s.platform as SocialPlatform) ?? s.handle),
             animalName: save.animalName ?? null,
-            animalSpecies: save.species ?? null,
+            animalSpecies: species,
         });
         profileId = created.adopterId;
         profileCreated = true;
@@ -87,16 +101,28 @@ export async function saveApiRecord(ctx: ApiCallContext, req: SearchRequest, out
     const recordId = await insertRecord(db, {
         adopterId: profileId,
         animalName: save.animalName || null,
-        species: save.species || null,
+        species,
         status: 'completed',
         // Optional and never inferred (Jon, 2026-10-09): missing stays NULL.
         rating: save.rating ?? null,
-        recordType: req.context,
+        recordType: activityType,
         date: save.date ? dayAtNoon(save.date) : new Date(),
         details: save.notes || null,
         sourceUrl: null,
     }, key.ownerEmail);
     ctx.log.recordId = recordId;
+
+    if (save.formContent) {
+        // Stored exactly as sent; never logged (it is the applicant's answers).
+        await db.insert(activityForms).values({ activityId: recordId, formContent: JSON.stringify(save.formContent), source: 'api', addedBy: key.ownerEmail });
+    }
+
+    // New contact details: only for a certain match on the profile's own name.
+    const contactsAdded = outcome.result === 'found' && outcome.nameMatchedAs === 'profile'
+        ? await addApiContacts(db, profileId, req.person, newContactFields(req.person, matchedOn.get(profileId) ?? []),
+            { ownerEmail: key.ownerEmail, keyName: key.name, requestId: ctx.requestId })
+        : [];
+    ctx.log.contactsAdded = contactsAdded;
 
     if (!profileCreated) {
         // A new profile gets its own "created via API" history row from the
@@ -106,30 +132,34 @@ export async function saveApiRecord(ctx: ApiCallContext, req: SearchRequest, out
                 id: crypto.randomUUID(),
                 adopterId: profileId,
                 changedBy: `api:${key.name}`,
-                changes: JSON.stringify({ record_added_via_api: { requestId: ctx.requestId, recordId, recordType: req.context } }),
+                changes: JSON.stringify({ record_added_via_api: { requestId: ctx.requestId, recordId, recordType: activityType, ...(best ? { attachedAsBestMatch: true } : {}) } }),
                 changedAt: new Date(),
             });
         } catch (e) {
             logger.warn('api: history row for a saved record failed', { requestId: ctx.requestId, profileId, recordId, error: e instanceof Error ? e.message : String(e) });
         }
     }
-    logger.info('api: record saved', { requestId: ctx.requestId, keyId: key.id, owner: key.ownerEmail, profileId, recordId, profileCreated, outcome: outcome.result, context: req.context });
+    logger.info('api: activity saved', { requestId: ctx.requestId, keyId: key.id, owner: key.ownerEmail, profileId, recordId, profileCreated, outcome: outcome.result, activityType, attachedAsBestMatch: !!best, contactsAdded: contactsAdded.map(c => c.field), hasForm: !!save.formContent });
 
     // One notification per saved record (decision 10), like a form submission.
     const name = req.person.fullName!;
-    const what = CONTEXT_LABEL_ES[req.context] ?? req.context;
+    const what = CONTEXT_LABEL_ES[activityType] ?? activityType;
+    const FIELD_ES: Record<string, string> = { email: 'email', phone: 'teléfono', documentId: 'documento' };
+    const added = contactsAdded.length ? ` También se agregó a su perfil: ${contactsAdded.map(c => FIELD_ES[c.field]).join(', ')}.` : '';
     const body = outcome.result === 'found'
-        ? 'Se agregó a un perfil existente.'
-        : outcome.result === 'ambiguous'
-            ? 'Coincide con más de un perfil: se creó uno nuevo para que revises si es la misma persona.'
-            : 'No había registros previos: se creó un perfil nuevo.';
+        ? `Se agregó a un perfil existente.${added}`
+        : best
+            ? 'Coincide con más de un perfil: se agregó al que mejor coincide. Revisá si es la misma persona.'
+            : outcome.result === 'ambiguous'
+                ? 'Coincide con más de un perfil: se creó uno nuevo para que revises si es la misma persona.'
+                : 'No había registros previos: se creó un perfil nuevo.';
     const notification = {
         type: 'api_record',
         title: `${name}: ${what} (vía ${key.name})`,
         body,
         url: `/adopter/${profileId}?record=${encodeURIComponent(recordId)}`,
         icon: outcome.result === 'ambiguous' ? '⚠️' : '🔌',
-        metadata: { requestId: ctx.requestId, keyName: key.name, profileId, recordId, outcome: outcome.result, context: req.context },
+        metadata: { requestId: ctx.requestId, keyName: key.name, profileId, recordId, outcome: outcome.result, context: activityType, contactsAdded: contactsAdded.map(c => c.field) },
     };
     await runAfterResponse('api.notifyRecord', async () => {
         const { createNotification, notifyOrgMembers } = await import('@/app/actions/notifications');
@@ -138,11 +168,12 @@ export async function saveApiRecord(ctx: ApiCallContext, req: SearchRequest, out
     }, { requestId: ctx.requestId, profileId, recordId });
 
     return {
-        recordId,
-        recordUrl: recordUrl(ctx.origin, profileId, recordId),
+        activityId: recordId,
+        activityUrl: recordUrl(ctx.origin, profileId, recordId),
         profileId,
         profileUrl: profileUrl(ctx.origin, profileId),
         profileCreated,
+        contactsAdded: contactsAdded.map(c => c.field),
     };
 }
 
@@ -223,6 +254,13 @@ export async function voidApiRecord(db: Db, recordId: string, opts: { keyId: str
         await softDeleteAnimal(db, recordId, opts.actor);
     }
 
+    // The form answers go with the activity; contacts the call added come back off.
+    await db.delete(activityForms).where(eq(activityForms.activityId, recordId));
+    const addedContacts = parseAddedContacts(origin.contactsAdded, opts.requestId);
+    const contactsRemoved = currentProfileId && addedContacts.length
+        ? await removeApiContacts(db, currentProfileId, addedContacts, { actor: opts.actor, requestId: opts.requestId })
+        : 0;
+
     let profileVoided = false;
     if (currentProfileId) {
         // Decide BEFORE writing this void's own history row (an admin's would read as a human edit).
@@ -232,7 +270,7 @@ export async function voidApiRecord(db: Db, recordId: string, opts: { keyId: str
             id: crypto.randomUUID(),
             adopterId: currentProfileId,
             changedBy: opts.actor,
-            changes: JSON.stringify({ api_record_voided: { recordId, originRequestId: origin.id, voidRequestId: opts.requestId, ...(event ? { removedEvent: event } : {}) } }),
+            changes: JSON.stringify({ api_record_voided: { recordId, originRequestId: origin.id, voidRequestId: opts.requestId, ...(contactsRemoved ? { contactsRemoved } : {}), ...(event ? { removedEvent: event } : {}) } }),
             changedAt: now,
         });
         if (dropProfile) {

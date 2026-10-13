@@ -33,24 +33,29 @@ Podés enviar cualquiera de estos datos de la persona:
 | \`address\` | Av. Siempreviva 742, CABA |
 | \`socials\` | [{ "platform": "instagram", "handle": "@mariajose" }] |
 
-**\`mode: "exact"\`**: nombre y apellido **más** email, teléfono o documento. **Cada búsqueda exacta queda registrada** (ver abajo). Responde:
+**\`mode: "exact"\`**: nombre y apellido **más** email, teléfono o documento. Responde:
 - \`found\`: es una persona conocida; incluye su calificación, alertas y un link a su perfil.
 - \`not_found\`: no hay registros de esa persona.
-- \`ambiguous\`: el dato coincide con más de un perfil, o con alguien de otro nombre (por ejemplo un teléfono familiar). Incluye la **peor calificación** entre los candidatos, para que puedas frenar igual.
+- \`ambiguous\`: el dato coincide con más de un perfil, o con alguien de otro nombre (por ejemplo un teléfono familiar).
+
+**Mirá siempre \`risk\`** antes de entregar un animal: la peor calificación y todas las alertas de **cada** perfil que coincidió con el email, teléfono o documento, sea cual sea el resultado.
 
 **\`mode: "fuzzy"\`**: la misma búsqueda de la página de inicio, con cualquier combinación de campos. Devuelve una lista ordenada por relevancia. No registra nada.
 
-**\`context\`** (obligatorio): qué está haciendo la persona: \`adoption_request\`, \`adoption\`, \`foster\`, \`follow_up\`, \`returned_pet\` u \`observation\`.
+## Cada búsqueda exacta registra una actividad
+Mandá \`activity\` con su tipo (\`activityType\`): \`adoption_request\`, \`adoption\`, \`foster\`, \`follow_up\`, \`returned_pet\` u \`observation\`. Se guarda sobre la persona:
+- **\`found\`**: en su perfil. Si mandaste un email, teléfono o documento que su perfil no tenía, se agrega (queda en el historial del perfil y te lo decimos en \`activity.contactsAdded\`).
+- **\`not_found\`**: en un perfil nuevo.
+- **\`ambiguous\`**: si el nombre coincide con alguno de los perfiles, en el que mejor coincide; si no coincide con ninguno, en un perfil nuevo que un admin revisa como posible duplicado.
 
-## Toda búsqueda exacta queda registrada
-Cada búsqueda exacta guarda un registro del tipo \`context\` sobre esa persona: si era conocida, en su perfil; si no, en un perfil nuevo; si es \`ambiguous\`, en un perfil nuevo que un admin revisa como posible duplicado. La respuesta lo devuelve en \`saved\`.
+Todo lo demás de \`activity\` es opcional: tu id (\`externalId\`), el animal (\`animalName\`, \`species\`), la fecha, notas y la calificación (si no la tenés, no la mandes). En un \`adoption_request\` podés mandar en \`formContent\` **todas las respuestas de tu formulario**, con la forma que tengan (cualquier objeto JSON, hasta 50 KB): se muestran en la actividad como pregunta → respuesta. Si la persona llena un formulario por cada animal, mandá una actividad por cada uno.
 
 **Mandá siempre el header \`Idempotency-Key\`** (cualquier texto único, por ejemplo un UUID): si reintentás la misma llamada, devuelve la misma respuesta en vez de registrar dos veces.
 
-\`record\` (opcional) agrega detalles al registro: tu id (\`externalId\`), el animal, la fecha, notas y la calificación. La calificación es opcional: si no la tenés, no la mandes.
+**Volver a consultar sin registrar**: una búsqueda exacta **sin** \`activity\` solo se responde si tu rescate ya registró a esa persona; si no, responde \`422 activity_required\`.
 
-## Anular un registro: \`POST /api/v1/records/{id}/void\`
-Solo registros guardados por tu propia clave.
+## Anular una actividad: \`POST /api/v1/activities/{id}/void\`
+Solo actividades guardadas por tu propia clave. Se quitan también las respuestas del formulario y los datos de contacto que esa llamada agregó.
 
 ## Probar la conexión: \`GET /api/v1/me\`
 Muestra a qué rescatista pertenece la clave y cuánto del cupo diario se usó.
@@ -67,6 +72,7 @@ export function buildOpenApi(origin: string) {
         '403': { ...error, description: 'The key lacks a scope' },
         '404': { ...error, description: 'Not found, or the API is disabled' },
         '409': { ...error, description: 'Idempotency-Key or externalId already used' },
+        // error.code is one of the enum in the error schema; clients should also tolerate codes added later.
         '422': { ...error, description: 'Validation failed (see error.code)' },
         '429': { ...error, description: 'Daily cap reached (see Retry-After)' },
         '500': { ...error, description: 'Server error (quote error.errorId)' },
@@ -82,11 +88,11 @@ export function buildOpenApi(origin: string) {
         paths: {
             '/api/v1/search': {
                 post: {
-                    summary: 'Buscar a una persona (la búsqueda exacta queda registrada)',
+                    summary: 'Buscar a una persona y registrar su actividad',
                     operationId: 'search',
                     parameters: [{
                         name: 'Idempotency-Key', in: 'header', required: false,
-                        description: 'Required in exact mode (every exact search saves a record). Any unique string, e.g. a UUID; a retry with the same key gets the same answer instead of a second record.',
+                        description: 'Required whenever `activity` is sent. Any unique string, e.g. a UUID; a retry with the same key gets the same answer instead of a second activity.',
                         schema: { type: 'string', maxLength: 200 },
                     }],
                     requestBody: {
@@ -96,20 +102,27 @@ export function buildOpenApi(origin: string) {
                                 schema: schema(searchRequestSchema, 'input'),
                                 examples: {
                                     exact: {
-                                        summary: 'Exact: check and record the request',
-                                        value: { mode: 'exact', context: 'adoption_request', person: { fullName: 'María José Pérez', phone: '+54 9 11 6462-2274' } },
+                                        summary: 'Exact: check and register an adoption request',
+                                        value: { mode: 'exact', person: { fullName: 'María José Pérez', phone: '+54 9 11 6462-2274' }, activity: { activityType: 'adoption_request' } },
                                     },
-                                    exact_with_details: {
-                                        summary: 'Exact, with the record\'s details',
+                                    exact_with_form: {
+                                        summary: 'Exact, with the animal and your form\'s answers',
                                         value: {
-                                            mode: 'exact', context: 'adoption_request',
+                                            mode: 'exact',
                                             person: { fullName: 'María José Pérez', email: 'maria@example.com' },
-                                            record: { externalId: 'jotform-5512', animalName: 'Luna', species: 'dog', notes: 'Aplicó por el formulario de la web' },
+                                            activity: {
+                                                activityType: 'adoption_request', externalId: 'jotform-5512', animalName: 'Luna', species: 'dog',
+                                                formContent: { '¿Tenés patio?': 'Sí', '¿Quiénes viven en la casa?': ['2 adultos', '1 niño'], mascotas: [{ tipo: 'gato', edad: 3 }] },
+                                            },
                                         },
+                                    },
+                                    exact_lookup: {
+                                        summary: 'Exact look-up of someone your rescue already registered (saves nothing)',
+                                        value: { mode: 'exact', person: { fullName: 'María José Pérez', email: 'maria@example.com' } },
                                     },
                                     fuzzy: {
                                         summary: 'Fuzzy: like the homepage',
-                                        value: { mode: 'fuzzy', context: 'adoption_request', person: { fullName: 'María Pérez', socials: [{ platform: 'instagram', handle: '@mariajose' }] } },
+                                        value: { mode: 'fuzzy', person: { fullName: 'María Pérez', socials: [{ platform: 'instagram', handle: '@mariajose' }] } },
                                     },
                                 },
                             },
@@ -131,11 +144,11 @@ export function buildOpenApi(origin: string) {
                     responses: { '200': { description: 'OK', content: { 'application/json': { schema: schema(meResponseSchema) } } }, '401': errors['401'] },
                 },
             },
-            '/api/v1/records/{id}/void': {
+            '/api/v1/activities/{id}/void': {
                 post: {
-                    summary: 'Anular un registro guardado por esta clave',
-                    operationId: 'voidRecord',
-                    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: '`saved.recordId` from the search response' }],
+                    summary: 'Anular una actividad guardada por esta clave',
+                    operationId: 'voidActivity',
+                    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: '`activity.activityId` from the search response' }],
                     responses: {
                         '200': { description: 'Voided', content: { 'application/json': { schema: schema(voidResponseSchema) } } },
                         '401': errors['401'], '403': errors['403'], '404': errors['404'],

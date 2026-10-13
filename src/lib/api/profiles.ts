@@ -151,3 +151,24 @@ export async function buildProfileSummaries(db: Db, ids: string[], origin: strin
     });
     return out;
 }
+
+/**
+ * Has this key's rescue (its owner, or anyone in the owner's organization —
+ * the same grouping as the per-rescue request count) put any activity on one
+ * of these profiles? Gates the look-up without activity. A failed read refuses
+ * (throws): it must never be mistaken for "yes".
+ */
+export async function registeredByRescue(db: Db, ids: string[], ownerEmail: string, requestId: string): Promise<boolean> {
+    if (ids.length === 0) return false;
+    const perProfile = await Promise.all(ids.map(id =>
+        db.select({ addedBy: adoptions.addedBy }).from(adoptions).where(eq(adoptions.adopterId, id)).all() as Promise<Array<{ addedBy: string | null }>>));
+    const addedBy = perProfile.flat().map(r => r.addedBy);
+    const { loadRescueKeys } = await import('@/lib/rescueKeys');
+    const { knownRescuer } = await import('@/domain/requestDensity');
+    const keys = await loadRescueKeys(db, [ownerEmail, ...addedBy], 'api.registeredByRescue');
+    const owner = knownRescuer(ownerEmail);
+    const mine = owner ? keys.get(owner) ?? `user:${owner}` : null;
+    const hit = !!mine && addedBy.some(a => { const e = knownRescuer(a); return !!e && (keys.get(e) ?? `user:${e}`) === mine; });
+    logger.info('api: look-up without activity', { requestId, profiles: ids.length, registeredByThisRescue: hit });
+    return hit;
+}

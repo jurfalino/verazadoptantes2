@@ -909,6 +909,16 @@ export const apiKeys = sqliteTable("api_keys", {
     ownerIdx: index("idx_api_keys_owner").on(table.ownerEmail),
 }));
 
+// Form answers sent with an API adoption request (activity.formContent), as sent.
+// Keyed by the activity (adopter_events.id) so a profile merge never strands it.
+export const activityForms = sqliteTable("activity_forms", {
+    activityId: text("activity_id").primaryKey(),
+    formContent: text("form_content").notNull(),
+    source: text("source").notNull().default("api"),
+    addedBy: text("added_by"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+});
+
 // Every API call. request_body (PII the client sent) is purged after 90 days.
 export const apiRequests = sqliteTable("api_requests", {
     id: text("id").primaryKey(),                 // = requestId returned to the client
@@ -928,6 +938,7 @@ export const apiRequests = sqliteTable("api_requests", {
     idempotencyKey: text("idempotency_key"),
     externalId: text("external_id"),
     dryRun: integer("dry_run").notNull().default(0), // 1 = admin read-only test call: nothing was saved
+    contactsAdded: text("contacts_added"), // JSON [{ entryId, field }]: contacts this call added to a known profile (void takes them back)
     voidedAt: integer("voided_at", { mode: "timestamp" }),
     voidedBy: text("voided_by"),
     durationMs: integer("duration_ms"),

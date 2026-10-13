@@ -15,7 +15,8 @@ export type ExactOutcome =
     /** `otherProfileIds`: profiles the identifier ALSO hit under an unrelated name (shown, never chosen). */
     | { result: 'found'; profileId: string; nameMatchedAs: NameMatchedAs; otherProfileIds: string[] }
     | { result: 'not_found' }
-    | { result: 'ambiguous'; reason: 'multiple_profiles' | 'name_mismatch'; profileIds: string[] };
+    /** `compatible`: the candidates whose name fits (2+, or none). The activity goes on the best of them (pickBestMatch); none → a new profile. */
+    | { result: 'ambiguous'; reason: 'multiple_profiles' | 'name_mismatch'; profileIds: string[]; compatible: Array<{ profileId: string; as: NameMatchedAs }> };
 
 /** Accent- and case-folded words of a name; punctuation splits words. */
 export function nameWords(name: string | null | undefined): string[] {
@@ -100,8 +101,36 @@ export function decideExactOutcome(inputName: string, candidates: CandidateNames
         const chosen = compatible[0].profileId;
         return { result: 'found', profileId: chosen, nameMatchedAs: compatible[0].as, otherProfileIds: allIds.filter(id => id !== chosen) };
     }
-    if (candidates.length === 1) return { result: 'ambiguous', reason: 'name_mismatch', profileIds: allIds };
-    return { result: 'ambiguous', reason: 'multiple_profiles', profileIds: allIds };
+    if (candidates.length === 1) return { result: 'ambiguous', reason: 'name_mismatch', profileIds: allIds, compatible: [] };
+    return { result: 'ambiguous', reason: 'multiple_profiles', profileIds: allIds, compatible };
+}
+
+const NAME_RANK: Record<NameMatchedAs, number> = { profile: 3, alias: 2, household_member: 1 };
+
+/**
+ * Ambiguous, but more than one name fits (Jon, 2026-10-13): the activity goes on
+ * the profile that matches the request best — most identifiers matched (email,
+ * phone, document), then the closest name (the profile's own over an alias over
+ * a household member), then the most recent activity. Null when no name fits:
+ * the identifier belongs to someone else, so the caller creates a new profile.
+ */
+export function pickBestMatch(
+    compatible: Array<{ profileId: string; as: NameMatchedAs }>,
+    matchedOn: Map<string, string[]>,
+    lastActivityAt: Map<string, string | number | null | undefined>,
+): string | null {
+    if (compatible.length === 0) return null;
+    const when = (id: string) => {
+        const v = lastActivityAt.get(id);
+        const t = v == null ? NaN : typeof v === 'number' ? v : Date.parse(v);
+        return Number.isNaN(t) ? -Infinity : t;
+    };
+    const ranked = [...compatible].sort((a, b) =>
+        (matchedOn.get(b.profileId)?.length ?? 0) - (matchedOn.get(a.profileId)?.length ?? 0)
+        || NAME_RANK[b.as] - NAME_RANK[a.as]
+        || when(b.profileId) - when(a.profileId)
+        || a.profileId.localeCompare(b.profileId));
+    return ranked[0].profileId;
 }
 
 /** Document id as the tokenizer stores it (`id_number`): lowercase [a-z0-9] only. */

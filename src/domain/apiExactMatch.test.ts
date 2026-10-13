@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-    isFullName, namesCompatible, decideExactOutcome,
+    isFullName, namesCompatible, decideExactOutcome, pickBestMatch,
     normalizeDocumentId, isUsableDocumentId, type CandidateNames,
 } from './apiExactMatch';
 
@@ -52,7 +52,7 @@ describe('decideExactOutcome', () => {
     });
     it('one profile, unrelated name (shared family phone) → ambiguous name_mismatch', () => {
         expect(decideExactOutcome('Laura Gómez', [cand('a', 'María Pérez')]))
-            .toEqual({ result: 'ambiguous', reason: 'name_mismatch', profileIds: ['a'] });
+            .toEqual({ result: 'ambiguous', reason: 'name_mismatch', profileIds: ['a'], compatible: [] });
     });
     it('several profiles, exactly one consistent → found that one', () => {
         // ...and still reports the other hit, so a flagged profile under another name can't hide.
@@ -61,9 +61,32 @@ describe('decideExactOutcome', () => {
     });
     it('several profiles, none or several consistent → ambiguous multiple_profiles', () => {
         expect(decideExactOutcome('María Pérez', [cand('a', 'María Pérez'), cand('b', 'María Pérez López')]))
-            .toEqual({ result: 'ambiguous', reason: 'multiple_profiles', profileIds: ['a', 'b'] });
+            .toEqual({ result: 'ambiguous', reason: 'multiple_profiles', profileIds: ['a', 'b'], compatible: [{ profileId: 'a', as: 'profile' }, { profileId: 'b', as: 'profile' }] });
         expect(decideExactOutcome('Ana Ruiz', [cand('a', 'María Pérez'), cand('b', 'Laura Gómez')]))
-            .toMatchObject({ result: 'ambiguous', reason: 'multiple_profiles' });
+            .toMatchObject({ result: 'ambiguous', reason: 'multiple_profiles', compatible: [] });
+    });
+});
+
+describe('pickBestMatch (ambiguous, several names fit)', () => {
+    const fit = (profileId: string, as: 'profile' | 'alias' | 'household_member' = 'profile') => ({ profileId, as });
+    it('no name fits → null (a new profile is created instead)', () => {
+        expect(pickBestMatch([], new Map(), new Map())).toBeNull();
+    });
+    it('most identifiers matched wins', () => {
+        expect(pickBestMatch([fit('a'), fit('b')], new Map([['a', ['phone']], ['b', ['phone', 'email']]]), new Map())).toBe('b');
+    });
+    it('then the closest name: the profile\'s own over an alias over a household member', () => {
+        const on = new Map([['a', ['phone']], ['b', ['phone']], ['c', ['phone']]]);
+        expect(pickBestMatch([fit('a', 'household_member'), fit('b', 'alias'), fit('c')], on, new Map())).toBe('c');
+        expect(pickBestMatch([fit('a', 'household_member'), fit('b', 'alias')], on, new Map())).toBe('b');
+    });
+    it('then the most recent activity; undated loses', () => {
+        const on = new Map([['a', ['phone']], ['b', ['phone']]]);
+        expect(pickBestMatch([fit('a'), fit('b')], on, new Map([['a', '2025-01-01T00:00:00Z'], ['b', '2026-01-01T00:00:00Z']]))).toBe('b');
+        expect(pickBestMatch([fit('a'), fit('b')], on, new Map([['a', '2025-01-01T00:00:00Z'], ['b', null]]))).toBe('a');
+    });
+    it('a full tie is still deterministic', () => {
+        expect(pickBestMatch([fit('b'), fit('a')], new Map(), new Map())).toBe('a');
     });
 });
 

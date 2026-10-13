@@ -7,14 +7,29 @@ import { SEARCH_RESULT_LIMIT } from '@/config/constants';
 import { logger } from '@/lib/logger';
 import type { DiscoveryMatch } from '@/app/actions/types';
 import { ApiError, claimIdempotencyKey, enforceDailyCap, replayIdempotent, requireScope, type ApiCallContext, type ApiResult } from './handler';
-import { buildProfileSummaries, findIdentifierHits, ownerCountry, profileUrl, ratingFields } from './profiles';
-import { saveApiRecord } from './records';
-import { checkSearchRules, searchRequestSchema, type ExactResponse, type FuzzyResponse, type SearchRequest } from './schemas';
+import { buildProfileSummaries, findIdentifierHits, ownerCountry, profileUrl, ratingFields, registeredByRescue } from './profiles';
+import { saveApiActivity } from './records';
+import { checkSearchRules, searchRequestSchema, type ApiRisk, type ExactResponse, type FuzzyResponse, type ProfileSummary, type SearchRequest } from './schemas';
 
 /** The lowest rating among rated profiles; "not rated" only if none is. */
 function worstOf(ratings: Array<number | null | undefined>) {
     const rated = ratings.filter((r): r is number => typeof r === 'number');
     return ratingFields(rated.length ? Math.min(...rated) : null);
+}
+
+/** Negative signals only: verified_* flags are reassurance, not risk. */
+const NOT_RISK = new Set(['verified_identity', 'verified_address']);
+
+/** The worst signal across every profile the identifiers matched (never just the chosen one). */
+export function riskOf(summaries: Array<ProfileSummary | undefined>): ApiRisk {
+    const present = summaries.filter((s): s is ProfileSummary => !!s);
+    const flags = new Set<string>();
+    for (const s of present) {
+        for (const f of s.flags) if (!NOT_RISK.has(f)) flags.add(f);
+        if (s.tooManyRequests) flags.add('too_many_requests');
+        if (s.tooManyAdoptions) flags.add('too_many_adoptions');
+    }
+    return { worstRating: worstOf(present.map(s => s.rating)), flags: [...flags].sort(), profilesMatched: present.length };
 }
 
 function parseRequest(ctx: ApiCallContext): SearchRequest {
@@ -33,20 +48,21 @@ function parseRequest(ctx: ApiCallContext): SearchRequest {
 export async function runSearch(ctx: ApiCallContext): Promise<ApiResult> {
     const req = parseRequest(ctx);
     ctx.log.mode = req.mode;
-    ctx.log.context = req.context;
-    ctx.log.externalId = req.record?.externalId ?? null;
+    ctx.log.context = req.activity?.activityType ?? null;
+    ctx.log.externalId = req.activity?.externalId ?? null;
 
     const broken = checkSearchRules(req);
     if (broken) throw new ApiError(422, broken.code, broken.message);
 
     requireScope(ctx, req.mode === 'exact' ? 'search' : 'search:fuzzy');
-    // Every exact search saves a record (Jon, 2026-10-13). A dry run (admin-owned
-    // keys only, see handler) checks all the same things but writes nothing,
-    // so it neither replays nor claims the Idempotency-Key.
-    const saves = req.mode === 'exact';
+    // An exact call saves its activity (Jon, 2026-10-13); without one it is a
+    // look-up, answered only for people this rescue already registered (runExact).
+    // A dry run (admin-owned keys only, see handler) checks all the same things
+    // but writes nothing, so it neither replays nor claims the Idempotency-Key.
+    const saves = req.mode === 'exact' && !!req.activity;
     if (saves) {
         requireScope(ctx, 'record:write');
-        if (!ctx.idempotencyKey) throw new ApiError(422, 'idempotency_key_required', 'exact searches save a record and need an Idempotency-Key header');
+        if (!ctx.idempotencyKey) throw new ApiError(422, 'idempotency_key_required', 'an exact call that saves an activity needs an Idempotency-Key header');
         if (!ctx.dryRun) {
             const replay = await replayIdempotent(ctx);
             if (replay) {
@@ -73,7 +89,7 @@ async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiRes
     const ids = outcome.result === 'found' ? [outcome.profileId, ...outcome.otherProfileIds] : outcome.result === 'ambiguous' ? outcome.profileIds : [];
     const summaries = await buildProfileSummaries(ctx.db, ids, ctx.origin, ctx.requestId);
 
-    const body: Omit<ExactResponse, 'requestId'> = { mode: 'exact', result: outcome.result };
+    const body: Omit<ExactResponse, 'requestId'> = { mode: 'exact', result: outcome.result, risk: riskOf([]) };
     if (outcome.result === 'found') {
         const summary = summaries.get(outcome.profileId);
         if (!summary) throw new Error(`profile summary missing for ${outcome.profileId}`);
@@ -91,11 +107,21 @@ async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiRes
         body.candidateUrls = outcome.profileIds.map(id => profileUrl(ctx.origin, id));
         body.worstRating = worstOf(outcome.profileIds.map(id => summaries.get(id)?.rating));
     }
+    body.risk = riskOf(ids.map(id => summaries.get(id)));
     ctx.log.profileIds = ids;
 
+    if (!req.activity) {
+        // A look-up leaves no activity, so it is only for someone this rescue
+        // already registered (Jon, 2026-10-13). Anyone else — including nobody —
+        // gets the same refusal, so a look-up can't confirm a stranger exists.
+        if (!(await registeredByRescue(ctx.db, ids, ctx.key.ownerEmail, ctx.requestId))) {
+            throw new ApiError(422, 'activity_required', 'send an activity: an exact call without one is only answered for people your rescue already registered');
+        }
+        return { status: 200, body };
+    }
     if (!ctx.dryRun) {
-        body.saved = await saveApiRecord(ctx, req, outcome);
-        ctx.log.profileIds = [body.saved.profileId, ...ids.filter(id => id !== body.saved!.profileId)];
+        body.activity = await saveApiActivity(ctx, req, outcome, hits.matchedOn, summaries);
+        ctx.log.profileIds = [body.activity.profileId, ...ids.filter(id => id !== body.activity!.profileId)];
     }
     return { status: 200, body };
 }

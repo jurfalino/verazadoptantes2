@@ -40,25 +40,41 @@ const personSchema = z.object({
         .meta({ description: 'Used by fuzzy search. Accepted but not used to decide an exact match.' }),
 }).strict();
 
-const recordSchema = z.object({
+/** formContent: any JSON object, as the rescue's own form produced it. */
+export const FORM_CONTENT_MAX_BYTES = 50_000;
+export const FORM_CONTENT_MAX_DEPTH = 6;
+function jsonDepth(v: unknown, d = 0): number {
+    if (d > FORM_CONTENT_MAX_DEPTH) return d;
+    if (Array.isArray(v)) return v.reduce<number>((m, x) => Math.max(m, jsonDepth(x, d + 1)), d + 1);
+    if (v && typeof v === 'object') return Object.values(v).reduce<number>((m, x) => Math.max(m, jsonDepth(x, d + 1)), d + 1);
+    return d;
+}
+
+const activitySchema = z.object({
+    activityType: z.enum(API_CONTEXTS).meta({ description: 'What the person is doing. The activity saved on their profile has this type.' }),
     externalId: z.string().trim().min(1).max(100).optional()
-        .meta({ description: 'Your own id for this record. Must be unique per key; a repeat is refused.', example: 'jotform-5512' }),
+        .meta({ description: 'Your own id for this activity (e.g. your form submission id). Must be unique per key; a repeat is refused.', example: 'jotform-5512' }),
     animalName: z.string().trim().max(100).optional().meta({ example: 'Luna' }),
-    species: z.string().trim().max(50).optional().meta({ example: 'dog' }),
+    species: z.string().trim().max(50).optional()
+        .meta({ description: 'dog, cat, bird or other. Spanish words and one-letter codes are read too (perro / P, gato / G…).', example: 'dog' }),
     date: z.iso.date().optional().meta({ description: 'YYYY-MM-DD (a real calendar date). Defaults to today.', example: '2026-10-09' }),
     rating: z.number().int().min(1).max(5).nullable().optional()
-        .meta({ description: 'Optional, 1 (dangerous) to 5 (excellent). Omit when you have no judgement: it is never inferred.' }),
+        .meta({ description: 'Optional, 1 (dangerous) to 5 (excellent): your judgement of the person. Omit when you have none: it is never inferred.' }),
     notes: z.string().trim().max(2000).optional(),
+    formContent: z.record(z.string(), z.unknown()).optional()
+        .refine(v => v === undefined || jsonDepth(v) <= FORM_CONTENT_MAX_DEPTH, { message: `nested more than ${FORM_CONTENT_MAX_DEPTH} levels` })
+        .refine(v => v === undefined || new TextEncoder().encode(JSON.stringify(v)).length <= FORM_CONTENT_MAX_BYTES, { message: `larger than ${FORM_CONTENT_MAX_BYTES} bytes` })
+        .meta({ description: 'adoption_request only. Every answer of your own adoption form, as any JSON object; shown on the activity as question → answer.', example: { '¿Tenés patio?': 'Sí', mascotas: [{ tipo: 'gato', edad: 3 }] } }),
 }).strict();
+export type ApiActivity = z.infer<typeof activitySchema>;
 
 export const searchRequestSchema = z.object({
     mode: z.enum(['exact', 'fuzzy']).meta({
-        description: 'exact: full name + email, phone or document id; answers found / not_found / ambiguous and ALWAYS saves a record of `context` on that person (send an Idempotency-Key). fuzzy: the same ranked search as the BuenAdoptante homepage; saves nothing.',
+        description: 'exact: full name + email, phone or document id; answers found / not_found / ambiguous and saves `activity` on that person. fuzzy: the same ranked search as the BuenAdoptante homepage; saves nothing.',
     }),
-    context: z.enum(API_CONTEXTS).meta({ description: 'What the person is doing. Also the type of the record every exact search saves.' }),
     person: personSchema,
-    record: recordSchema.optional().meta({
-        description: 'Exact mode only. Optional details of the record the call saves (it is saved with or without them).',
+    activity: activitySchema.optional().meta({
+        description: 'Exact mode. The activity to save on the person (send an Idempotency-Key). Leave it out only to look up again someone YOUR rescue already registered.',
     }),
 }).strict();
 export type SearchRequest = z.infer<typeof searchRequestSchema>;
@@ -67,8 +83,20 @@ export type ApiErrorCode =
     | 'invalid_json' | 'invalid_request' | 'unauthorized' | 'forbidden' | 'not_found'
     | 'full_name_required' | 'exact_requires_name_and_identifier' | 'invalid_phone'
     | 'invalid_document_id' | 'invalid_email' | 'fuzzy_requires_a_field'
-    | 'record_requires_exact' | 'idempotency_key_required' | 'dry_run_not_allowed' | 'idempotency_key_reused'
+    | 'activity_requires_exact' | 'activity_required' | 'form_content_requires_adoption_request'
+    | 'idempotency_key_required' | 'dry_run_not_allowed' | 'idempotency_key_reused'
     | 'external_id_reused' | 'daily_cap_reached' | 'api_disabled' | 'payload_too_large' | 'record_changed' | 'server_error';
+
+/** Every error code a partner can get, published in the docs so clients can switch on them (the admin-only dry-run refusal stays out). */
+export type PublicApiErrorCode = Exclude<ApiErrorCode, 'dry_run_not_allowed'>;
+export const API_ERROR_CODES: PublicApiErrorCode[] = [
+    'invalid_json', 'invalid_request', 'unauthorized', 'forbidden', 'not_found',
+    'full_name_required', 'exact_requires_name_and_identifier', 'invalid_phone',
+    'invalid_document_id', 'invalid_email', 'fuzzy_requires_a_field',
+    'activity_requires_exact', 'activity_required', 'form_content_requires_adoption_request',
+    'idempotency_key_required', 'idempotency_key_reused', 'external_id_reused', 'daily_cap_reached', 'api_disabled',
+    'payload_too_large', 'record_changed', 'server_error',
+];
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -80,13 +108,16 @@ export function checkSearchRules(req: SearchRequest): { code: ApiErrorCode; mess
     if (p.documentId && !isUsableDocumentId(p.documentId.value)) {
         return { code: 'invalid_document_id', message: 'person.documentId.value needs at least 5 characters including 4 digits' };
     }
+    if (req.activity?.formContent && req.activity.activityType !== RECORD_TYPES.REQUEST) {
+        return { code: 'form_content_requires_adoption_request', message: 'activity.formContent is only accepted with activityType adoption_request' };
+    }
     if (req.mode === 'exact') {
         if (!p.fullName || !(p.email || p.phone || p.documentId)) {
             return { code: 'exact_requires_name_and_identifier', message: 'exact mode needs person.fullName plus person.email, person.phone or person.documentId' };
         }
         if (!isFullName(p.fullName)) return { code: 'full_name_required', message: 'person.fullName must include first name and surname' };
     } else {
-        if (req.record) return { code: 'record_requires_exact', message: 'record is only allowed in exact mode (fuzzy searches save nothing)' };
+        if (req.activity) return { code: 'activity_requires_exact', message: 'activity is only allowed in exact mode (fuzzy searches save nothing)' };
         if (!(p.fullName || p.email || p.phone || p.documentId || p.address || p.socials?.length)) {
             return { code: 'fuzzy_requires_a_field', message: 'fuzzy mode needs at least one person field' };
         }
@@ -117,14 +148,23 @@ export const profileSummarySchema = ratingSchema.extend({
 });
 export type ProfileSummary = z.infer<typeof profileSummarySchema>;
 
-const savedSchema = z.object({
-    recordId: z.string(),
-    recordUrl: z.string().meta({ description: 'The profile page, scrolled to this record.' }),
+export const CONTACT_FIELDS = ['email', 'phone', 'documentId'] as const;
+const savedActivitySchema = z.object({
+    activityId: z.string(),
+    activityUrl: z.string().meta({ description: 'The profile page, scrolled to this activity.' }),
     profileId: z.string(),
     profileUrl: z.string(),
     profileCreated: z.boolean(),
+    contactsAdded: z.array(z.enum(CONTACT_FIELDS)).meta({ description: 'Contact details you sent that the known person did not have yet, now added to their profile (logged in its history).' }),
 });
-export type SavedRecord = z.infer<typeof savedSchema>;
+export type SavedActivity = z.infer<typeof savedActivitySchema>;
+
+const riskSchema = z.object({
+    worstRating: ratingSchema,
+    flags: z.array(z.string()).meta({ description: 'Every active flag on any matched profile, e.g. inaccurate, too_many_requests.' }),
+    profilesMatched: z.number().int(),
+}).meta({ description: 'Always present: the worst signal across EVERY profile your email / phone / document matched, whatever the result. Check this before handing over an animal.' });
+export type ApiRisk = z.infer<typeof riskSchema>;
 
 export const exactResponseSchema = z.object({
     requestId: z.string(),
@@ -140,7 +180,9 @@ export const exactResponseSchema = z.object({
     candidates: z.number().int().optional(),
     candidateUrls: z.array(z.string()).optional(),
     worstRating: ratingSchema.optional().meta({ description: 'result = ambiguous: the lowest rating among the candidates, so you can still block.' }),
-    saved: savedSchema.optional(),
+    risk: riskSchema,
+    activity: savedActivitySchema.optional().meta({ description: 'The activity this call saved (absent on a look-up without activity).' }),
+    replayed: z.boolean().optional().meta({ description: 'true when this is the stored answer to an earlier call with the same Idempotency-Key.' }),
 });
 export type ExactResponse = z.infer<typeof exactResponseSchema>;
 
@@ -167,7 +209,7 @@ export type MeResponse = z.infer<typeof meResponseSchema>;
 
 export const voidResponseSchema = z.object({
     requestId: z.string(),
-    recordId: z.string(),
+    activityId: z.string(),
     voided: z.literal(true),
     profileVoided: z.boolean().meta({ description: 'True when the API had also created the profile and nothing else used it.' }),
     alreadyVoided: z.boolean().optional().meta({ description: 'Voiding twice is not an error: the second call says so and changes nothing.' }),
@@ -176,5 +218,5 @@ export type VoidResponse = z.infer<typeof voidResponseSchema>;
 
 export const errorResponseSchema = z.object({
     requestId: z.string(),
-    error: z.object({ code: z.string(), message: z.string(), errorId: z.string().optional() }),
+    error: z.object({ code: z.enum(API_ERROR_CODES as [PublicApiErrorCode, ...PublicApiErrorCode[]]), message: z.string(), errorId: z.string().optional() }),
 });

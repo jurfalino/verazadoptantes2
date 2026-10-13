@@ -1,5 +1,6 @@
 'use client';
 
+import FormAnswers from './FormAnswers';
 import { useState, useEffect, type ComponentType } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
@@ -43,6 +44,8 @@ interface Adoption {
     deliveredToHome?: boolean | number | null;
     species?: string | null;
     interview?: { id: string; canViewAnswers: boolean };
+    /** Answers of the rescue's own form sent through the API (only for that rescue and admins). */
+    formContent?: Record<string, unknown>;
 }
 
 interface AdoptionImage {
@@ -525,6 +528,11 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                             </a>
                                         );
                                     })()}
+
+                                    {/* Answers of the rescue's own form, sent through the API */}
+                                    {recordType === 'adoption_request' && adoption.formContent && (
+                                        <FormAnswers formContent={adoption.formContent} />
+                                    )}
 
                                     {/* Image Thumbnails */}
                                     {images.length > 0 && (
