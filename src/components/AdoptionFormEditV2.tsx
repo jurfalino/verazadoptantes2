@@ -1,5 +1,6 @@
 'use client';
 
+import { contractHref } from '@/lib/contractLink';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { saveAdoption, getAdoptionImages, deleteImage } from '@/app/actions';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -694,11 +695,11 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                     {/* Contract screenshot link */}
                     {initialData?.comments && (() => {
                         try {
-                            const parsed = JSON.parse(initialData.comments);
-                            if (parsed.contractScreenshot) {
+                            const href = contractHref(initialData.id, initialData.comments);
+                            if (href) {
                                 return (
                                     <a
-                                        href={parsed.contractScreenshot}
+                                        href={href}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="flex items-center gap-2 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors"

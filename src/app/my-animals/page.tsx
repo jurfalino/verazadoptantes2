@@ -1,5 +1,6 @@
 'use client';
 
+import { contractHref } from '@/lib/contractLink';
 import { useLanguage } from '@/context/LanguageContext';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import Link from 'next/link';
@@ -475,11 +476,11 @@ export default function MyAnimalsPage() {
                                     {/* Contract screenshot link */}
                                     {animal.comments && (() => {
                                         try {
-                                            const parsed = JSON.parse(animal.comments);
-                                            if (parsed.contractScreenshot) {
+                                            const href = contractHref(animal.id, animal.comments);
+                                            if (href) {
                                                 return (
                                                     <a
-                                                        href={parsed.contractScreenshot}
+                                                        href={href}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                         className="flex items-center gap-2 mb-3 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors"

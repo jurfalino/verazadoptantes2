@@ -119,8 +119,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             return withCors(NextResponse.json({ error: 'This animal has already been adopted', code: 'already_placed' }, { status: 409 }), origin);
         }
 
-        // 2. Upload contract document to R2 FIRST — adoption only proceeds if this succeeds
-        let contractUrl: string | null = null;
+        // 2. Store the contract document FIRST — adoption only proceeds if this succeeds.
+        // Private bucket, a random key per signing (src/lib/contractStorage.ts): never a
+        // public address, and signing the animal again never overwrites this one.
         // Custom adoption docs (2026-09, additive): the R2 key, so it can be
         // passed to recordSignature below (fileKey) once the adoption is recorded.
         let contractKey: string | null = null;
@@ -132,19 +133,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
             const contentType = match[1];
             const base64Data = match[2].replace(/\s/g, '');
-            const ext = contentType.includes('pdf') ? 'pdf' : contentType.includes('png') ? 'png' : 'jpg';
             const sizeKB = Math.round((base64Data.length * 3) / 4 / 1024);
             logger.info('Contract document received', { animalId, contentType, sizeKB });
 
-            const { uploadToR2 } = await import('@/lib/r2');
+            const { storeContract, CONTRACT_CONTENT_TYPES } = await import('@/lib/contractStorage');
+            if (!CONTRACT_CONTENT_TYPES[contentType]) {
+                return withCors(NextResponse.json({ error: 'Invalid contract document format' }, { status: 400 }), origin);
+            }
             // Convert base64 to a native ArrayBuffer via Blob (miniflare-compatible)
             const blobFromBase64 = await fetch(`data:${contentType};base64,${base64Data}`).then(r => r.arrayBuffer());
-            const key = `contracts/${animalId}/signed-contract.${ext}`;
-            contractKey = key;
             // This will throw on failure — intentionally NOT caught here.
             // If the upload fails, the entire submission fails and nothing is persisted.
-            contractUrl = await uploadToR2(key, blobFromBase64, contentType);
-            logger.info('Contract document uploaded to R2', { animalId, key, sizeKB });
+            contractKey = (await storeContract(blobFromBase64, contentType, { animalId })).key;
         } else {
             return withCors(NextResponse.json({ error: 'Contract document is required' }, { status: 400 }), origin);
         }
@@ -205,7 +205,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 status: 'active',
                 // Signing is not a judgement of the adopter: no rating (Jon, 2026-10-09).
                 rating: null,
-                comments: JSON.stringify({ contractScreenshot: contractUrl }),
+                comments: contractKey ? JSON.stringify({ contractKey }) : null,
             }, animal, 'contract');
         } catch (e) {
             // Someone adopted or fostered the animal between the check above
@@ -280,7 +280,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             logger.info('Contract signed via invitation', { animalId, adopterId, token: tokenRef(token) });
         }
 
-        logger.info('Contract adoption submitted', { animalId, adopterId, adopterName: fullName, contractUrl });
+        logger.info('Contract adoption submitted', { animalId, adopterId, adopterName: fullName, hasContract: !!contractKey });
 
         // Record exactly which contract text was signed (spec §1.4). Never fails
         // the signature: the adopter has signed and the PDF is stored. NOT
@@ -381,7 +381,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         return withCors(NextResponse.json({
             success: true,
             adopterId,
-            contractUrl,
             message: 'Adoption contract submitted successfully',
         }), origin);
     } catch (error) {

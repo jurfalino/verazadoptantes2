@@ -381,14 +381,25 @@ export async function getAdoptions(adopterId: string) {
         // Requests count per rescue on the profile too (src/domain/requestDensity.ts).
         const { loadOrgMembership, withOpaqueRescueKeys } = await import('@/lib/rescueKeys');
         const { groupRescues } = await import('@/domain/requestDensity');
+        const { contractKeyOf } = await import('@/lib/contractStorage');
         const hasRequests = deduped.some((r: { recordType: string | null }) => r.recordType === 'adoption_request');
-        const membership = hasRequests ? await loadOrgMembership(db, 'getAdoptions') : new Map<string, string[]>();
+        const hasContracts = deduped.some((r: { comments?: string | null }) => !!contractKeyOf(r.comments));
+        const membership = hasRequests || hasContracts ? await loadOrgMembership(db, 'getAdoptions') : new Map<string, string[]>();
         const keys = groupRescues(membership);
         // Answers of an API-sent form: only for the rescue that registered it, and admins.
         const { attachActivityForms } = await import('@/lib/activityForms');
         const { isAdminAsync } = await import('@/config/admins');
+        const { sameRescueDirect } = await import('@/lib/rescueKeys');
+        const viewerIsAdmin = await isAdminAsync(viewer);
+        // A signed contract opens only for the animal's rescue and admins
+        // (/api/files/contract): nobody else gets a link that would just 404.
+        const visible = (deduped as Array<{ comments?: string | null; addedBy?: string | null }>).map(r => {
+            if (!contractKeyOf(r.comments) || viewerIsAdmin || sameRescueDirect(viewer, r.addedBy, membership)) return r;
+            const { contractKey: _hidden, movedFrom: _from, ...rest } = JSON.parse(r.comments!) as Record<string, unknown>;
+            return { ...r, comments: Object.keys(rest).length ? JSON.stringify(rest) : null };
+        });
         // Opaque labels for the browser: the grouping, never other rescuers' organizations.
-        const withForms = await attachActivityForms(db, withOpaqueRescueKeys(deduped as Array<{ id: string; addedBy?: string | null; recordType?: string | null }>, keys), viewer, await isAdminAsync(viewer), membership);
+        const withForms = await attachActivityForms(db, withOpaqueRescueKeys(visible as Array<{ id: string; addedBy?: string | null; recordType?: string | null }>, keys), viewer, viewerIsAdmin, membership);
         return await attachAdoptionThumbnails(db, withForms);
     } catch (error) {
         logger.error('Get adoptions failed', error, { adopterId });

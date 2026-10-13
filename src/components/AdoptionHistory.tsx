@@ -1,5 +1,6 @@
 'use client';
 
+import { contractHref } from '@/lib/contractLink';
 import FormAnswers from './FormAnswers';
 import { useState, useEffect, type ComponentType } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -493,11 +494,11 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                     {/* Contract screenshot link (for adoptions) */}
                                     {adoption.comments && (() => {
                                         try {
-                                            const parsed = JSON.parse(adoption.comments);
-                                            if (parsed.contractScreenshot) {
+                                            const href = contractHref(adoption.id, adoption.comments);
+                                            if (href) {
                                                 return (
                                                     <a
-                                                        href={parsed.contractScreenshot}
+                                                        href={href}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                         className="flex items-center gap-2 mt-2.5 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors"

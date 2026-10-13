@@ -1,6 +1,7 @@
 'use client';
 export const runtime = 'edge';
 
+import { contractHref } from '@/lib/contractLink';
 import { useLanguage } from '@/context/LanguageContext';
 import { actorLabel } from '@/lib/userDisplay';
 import { AdopterName } from '@/components/AdopterName';
@@ -35,15 +36,7 @@ interface Adoption {
     addedByName?: string | null;
 }
 
-function getContractUrl(comments: string | null | undefined): string | null {
-    if (!comments) return null;
-    try {
-        const parsed = JSON.parse(comments) as { contractScreenshot?: string };
-        return parsed?.contractScreenshot && typeof parsed.contractScreenshot === 'string' ? parsed.contractScreenshot : null;
-    } catch {
-        return null;
-    }
-}
+
 
 const RECORD_TYPES = ['all', 'adoption', 'adoption_request', 'foster', 'observation', 'follow_up', 'returned_pet'] as const;
 type RecordTypeFilter = typeof RECORD_TYPES[number];
@@ -193,7 +186,7 @@ export default function MyAdoptionsPage() {
                                 </thead>
                                 <tbody className="divide-y divide-stone-100">
                                     {adoptions.map((adoption) => {
-                                        const contractUrl = getContractUrl(adoption.comments);
+                                        const contractUrl = contractHref(adoption.id, adoption.comments);
                                         return (
                                         <tr key={adoption.id} className="hover:bg-stone-50/50 transition-colors group">
                                             <td className="py-3 px-4">
@@ -285,7 +278,7 @@ export default function MyAdoptionsPage() {
                         {/* Mobile Cards - Hidden on desktop */}
                         <div className="md:hidden space-y-3">
                             {adoptions.map((adoption) => {
-                                const contractUrl = getContractUrl(adoption.comments);
+                                const contractUrl = contractHref(adoption.id, adoption.comments);
                                 return (
                                 <div
                                     key={adoption.id}

@@ -11,6 +11,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { contractHref } from '@/lib/contractLink';
 import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import { useLanguage } from '@/context/LanguageContext';
 import { useDateFormat } from '@/context/TimezoneContext';
@@ -86,7 +87,9 @@ export type TimelineProjected = {
 };
 export type TimelineMissed = { key: string; label: string; dueDate: number; onRegister: () => void };
 
-export default function AnimalTimeline({ items, animalSex, userNameMap = {}, orgName = null, projected = [], missed = [], onAddEvent, reminder }: {
+export default function AnimalTimeline({ animalId, items, animalSex, userNameMap = {}, orgName = null, projected = [], missed = [], onAddEvent, reminder }: {
+    /** For contract links (src/lib/contractLink.ts). */
+    animalId: string;
     items: AnimalTimelineItem[];
     animalSex: string | null;
     /** v2.55.18: resolved display names for every recordedBy email. */
@@ -159,10 +162,7 @@ export default function AnimalTimeline({ items, animalSex, userNameMap = {}, org
     // Contract evidence (placement comments JSON) — replaces the old card link.
     const contractShotOf = (item: AnimalTimelineItem): string | null => {
         if (item.kind !== 'placement_start' || !item.comments) return null;
-        try {
-            const parsed = JSON.parse(item.comments);
-            return typeof parsed?.contractScreenshot === 'string' ? parsed.contractScreenshot : null;
-        } catch { return null; }
+        return contractHref(animalId, item.comments, item.id);
     };
 
     return (
