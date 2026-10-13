@@ -2,6 +2,34 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.170] - 2026-10-13
+
+### Security — signed contracts move to private storage
+
+Signed contracts were saved to the PUBLIC photo storage at an address built
+from the animal id (which public showcase links carry), and signing an animal
+again overwrote the earlier contract. Production had 0 signed contracts, so
+nothing real was exposed; staging had 4 test ones.
+
+- New private buckets (`buenadoptante-contracts`, `-staging`), a random file per
+  signing, the key in a server-only column (`placements.contract_key`,
+  migration 0085) — never in the editable comments.
+- "Ver contrato firmado" opens through `/api/files/contract/{animalId}`, only for
+  the animal's rescue (owner or a directly shared organization) and admins; the
+  link is hidden from everyone else. Never cached by the browser (SW v9).
+- Removed `POST /api/contract/{id}/upload` (unauthenticated, could replace any
+  adopted animal's contract link; the contract page never reached it).
+- Admin one-time move `/api/admin/contracts/migrate` for the old public files.
+
+### Added — API (flag off): adoptions and their contract
+
+- `species` required for adoption / foster; new animal fields `age` ("2 años",
+  "1 año y 3 meses"…; unreadable kept as text), `birthDate`, `sex`, `neutered`,
+  `color`, `microchip`.
+- `POST /api/v1/activities/{id}/contract`: the signed contract (PDF/PNG/JPEG,
+  ≤5 MB) for an adoption / foster; private, never replaced; void deletes it.
+- Docs: the adoption example and the contract step.
+
 ## [2.56.169] - 2026-10-13
 
 ### Fixed — independent review of 2.56.168
