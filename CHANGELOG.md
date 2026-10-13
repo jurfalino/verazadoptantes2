@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.163] - 2026-10-13
+
+### Changed — CI: the `authed` e2e project runs in 6 legs
+
+2.56.162 never deployed: its authed-4 leg (30 tests, incl. the new import
+upload specs) reached Next dev's memory ceiling twice and the restart
+refused connections mid-test. Six legs cap the largest at 30 tests. Ships
+2.56.162's fixes (Excel imports, drop a file on the import box).
+
 ## [2.56.162] - 2026-10-12
 
 ### Fixed — Excel imports work again
