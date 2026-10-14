@@ -71,3 +71,14 @@ describe('the issues found after release (2026-10-13)', () => {
         }
     })
 })
+
+describe('new home questions in a gift (spec 2026-10-14 §4.3)', () => {
+    it('talk about the recipient', () => {
+        for (const id of ['rental', 'sleepPlace', 'catOutdoor', 'dogWalks', 'dogTied', 'allergy', 'lastAnimal', 'gaveAway', 'movingIfNoPets', 'sterilizeHow'])
+            expect(giftTitleKey(id), id).toBe(`form.q_${id}_title_gift`)
+    })
+    it('offer "No sé" where the giver may not know — not where it already exists', () => {
+        for (const id of ['rental', 'sleepPlace', 'catOutdoor', 'dogWalks', 'dogTied', 'lastAnimal', 'gaveAway']) expect(GIFT_UNKNOWN_STEPS).toContain(id)
+        for (const id of ['allergy', 'movingIfNoPets', 'visitConsent', 'returnReasons', 'adaptPlan', 'carer']) expect(GIFT_UNKNOWN_STEPS).not.toContain(id)
+    })
+})

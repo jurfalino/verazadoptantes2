@@ -4,7 +4,10 @@
  * "No sé" where the giver may not know. Pure — the form applies it per step.
  */
 // Not vacationPlan: it already offers "No lo sé aún" (Jon, 2026-10-13).
-export const GIFT_UNKNOWN_STEPS = ['children', 'hasOutdoor', 'isSafe', 'petExperience', 'willingToSterilize', 'movingPlans'] as const
+// The 2026-10-14 home questions about the recipient's home and past animals too (spec §4.3);
+// allergy and moving-if-no-pets already offer their own "No sé".
+export const GIFT_UNKNOWN_STEPS = ['children', 'hasOutdoor', 'isSafe', 'petExperience', 'willingToSterilize', 'movingPlans',
+    'rental', 'sleepPlace', 'catOutdoor', 'dogWalks', 'dogTied', 'lastAnimal', 'gaveAway'] as const
 const UNKNOWN_STEPS = new Set<string>(GIFT_UNKNOWN_STEPS)
 
 const TITLE: Record<string, string> = {
@@ -16,6 +19,16 @@ const TITLE: Record<string, string> = {
     willingToSterilize: 'form.q_sterilize_title_gift',
     movingPlans: 'form.q_moving_title_gift',
     vacationPlan: 'form.q_vacation_title_gift',
+    rental: 'form.q_rental_title_gift',
+    sleepPlace: 'form.q_sleepPlace_title_gift',
+    catOutdoor: 'form.q_catOutdoor_title_gift',
+    dogWalks: 'form.q_dogWalks_title_gift',
+    dogTied: 'form.q_dogTied_title_gift',
+    allergy: 'form.q_allergy_title_gift',
+    lastAnimal: 'form.q_lastAnimal_title_gift',
+    gaveAway: 'form.q_gaveAway_title_gift',
+    movingIfNoPets: 'form.q_movingIfNoPets_title_gift',
+    sterilizeHow: 'form.q_sterilizeHow_title_gift',
 }
 
 /** The gift title key for a step, or null when its wording doesn't change (the household step words itself). */
