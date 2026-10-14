@@ -33,6 +33,23 @@ Decisions are anchored to the user, not personal preference. We have **two named
 
 When you're considering a change, name which persona it serves. If a change makes the Verifier's job easier at the Recorder's expense (or vice versa), surface the trade-off explicitly.
 
+### 1.1a The public adoption form
+
+The two personas above are rescuers. The public adoption form (contract-app, `PetShieldForm`) serves a third:
+
+- **The Applicant** — someone who wants to adopt, filling the form on a phone, often from an Instagram link, once. *Their question: "How do I show I'm a good home without this taking forever?"* They are not our user afterwards; every screen they abandon is an applicant the rescuer never sees.
+
+Rules for the public form (spec `docs/superpowers/specs/2026-10-14-form-new-topics-design.md` §3):
+
+1. **One question per screen.** A follow-up that only applies after a specific answer appears **on the same screen**, under the answer that triggers it (e.g. "¿Cómo lo castrarías?" under "Sí"). It never adds a screen, and the screen stops auto-advancing while it shows.
+2. **Answer styles:** big icon cards for 2–4 short options that move on when tapped; a row of short options for counts and ranges; a **list of full-width options** (`choice-list`) for closed answers longer than a word or two; a switch for a single commitment; text fields only for identity, names and open questions.
+3. **Options: aim for 5 or fewer.** Six is acceptable only when every option means something different to the rescuer ("¿Qué pasó con tu último animal?"). Never two options that mean the same thing.
+4. **Closed by default.** Options are faster on a phone and the semáforo can read them; an open answer has no dot.
+5. **Ask what they would do, not whether they promise.** A promise gets the expected answer from everyone (Catpuccino: 99.9% "sí"); a situation gets an honest one.
+6. **Photos are optional unless the rescuer requires them**, at most 3 per question, compressed on the phone before upload, and stored privately like the selfie.
+7. **Length:** a rescuer's default form stays at or under ~30 screens. A new on-by-default question must be cheap to answer (one tap) or replace one.
+8. **Wording:** voseo; about 8 words per question; never guess the gender of someone other than the applicant ("Laura acepta…", not "Laura está dispuesto/a…"); "No sé" only where the person answering may genuinely not know (the gift flow).
+
 ### 1.2 Clarity & Simplicity
 
 Prefer the obvious word over the clever one. The product is used in stressful moments — clever copy reads as obstacle. Principles:
@@ -223,7 +240,7 @@ Productivity increases when interaction completes in <400ms. Implications:
 Limiting options prevents overwhelm. Implications:
 
 - **Action cards on the homepage are limited to 3** (Adoption / Report / optional Import). Adding a fourth needs justification.
-- **Wizard steps cap at 3** for `AdoptionFormWizard`. More steps → split into a follow-up flow.
+- **Wizard steps cap at 3** for `AdoptionFormWizard` (the rescuer's record wizard) — **not** the public adoption form, which follows §1.1a. More steps → split into a follow-up flow.
 - **Search filters are tabs (5-6 max), not a multiselect dropdown** with 20 options.
 - When you have many options, use **progressive disclosure** — primary options visible, "Más" expander for secondary.
 
