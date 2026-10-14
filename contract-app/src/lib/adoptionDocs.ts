@@ -9,12 +9,19 @@
 import { CONTRACT_CONTENT } from '../i18n/contractContent'
 
 import { stripGiftAnswers } from './giftFlow'
+import { NEW_FORM_STEPS, DEFAULT_OFF_FORM_STEPS, isOwnScreen, followUpHost, followUpVisible, stripUnaskedNewAnswers, type FormCtx } from './formQuestions'
+
+const NEW = new Set<string>(NEW_FORM_STEPS)
+const OFF = new Set<string>(DEFAULT_OFF_FORM_STEPS)
+const VARIANT_OF: Record<string, string> = { lastAnimal: 'petExperience', movingIfNoPets: 'movingPlans' }
 
 export const FORM_STEP_IDS = [
-    'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'giftRecipient', 'children', 'existingPets',
-    'housingType', 'household', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience', 'willingToSterilize',
-    'vetCommitment', 'movingPlans', 'vacationPlan', 'identity-name', 'identity-email',
-    'identity-phone', 'identity-address', 'ageRange', 'geo', 'selfie',
+    'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'carer', 'giftRecipient', 'children', 'allergy',
+    'existingPets', 'petsCare', 'housingType', 'rental', 'household', 'hasOutdoor', 'isSafe', 'catOutdoor',
+    'sleepPlace', 'hoursAlone', 'dogWalks', 'dogTied', 'petExperience', 'lastAnimal', 'gaveAway',
+    'willingToSterilize', 'sterilizeHow', 'vetCommitment', 'movingPlans', 'movingIfNoPets', 'vacationPlan',
+    'returnReasons', 'adaptPlan', 'visitConsent', 'identity-name', 'identity-email', 'identity-phone',
+    'identity-address', 'social', 'ageRange', 'vetReference', 'motivation', 'geo', 'selfie',
 ] as const
 
 /** Terms consent + identity feed the adopter record and dedup — never hideable. */
@@ -31,24 +38,32 @@ export function applyHiddenSteps<T extends { id: string }>(schema: T[], hiddenSt
 
 /**
  * Steps the public form asks under the stored list — the app's isStepAsked,
- * applied to the schema. "¿Hay niños?" vs the people list: the 'household'
- * token means people; 'children' hides the household question either way.
- * Default (no config) asks "¿Hay niños?" and never the people list.
+ * applied to the schema. `stored` null = custom forms off (or the config
+ * didn't load) → today's form: none of the 2026-10 questions, "¿Hay niños?",
+ * the old "mascotas previas" / "mudanza" wordings.
  */
 export function formStepsToAsk<T extends { id: string }>(schema: T[], stored: readonly string[] | null | undefined): T[] {
-    const hidden = new Set(stored ?? [])
+    if (stored == null) return schema.filter(s => !NEW.has(s.id) && s.id !== 'household')
+    const hidden = new Set(stored)
     const people = hidden.has('household')
     const rowHidden = hidden.has('children')
     return schema.filter(s => {
         if (LOCKED.has(s.id) || DERIVED.has(s.id)) return true
         if (s.id === 'children') return !rowHidden && !people
         if (s.id === 'household') return !rowHidden && people
+        if (s.id in VARIANT_OF) { const row = VARIANT_OF[s.id]; return !hidden.has(row) && !hidden.has(`way:${row}:old`) }
+        if (s.id === 'petExperience' || s.id === 'movingPlans') return !hidden.has(s.id) && hidden.has(`way:${s.id}:old`)
+        if (OFF.has(s.id)) return hidden.has(`on:${s.id}`)
         return !hidden.has(s.id)
     })
 }
 
 /** Per-form options in the same stored list (mirror of the app's FORM_OPTION_TOKENS). */
-export const FORM_OPTION_TOKENS = ['phone-optional'] as const
+export const FORM_OPTION_TOKENS = [
+    'phone-optional',
+    'on:catOutdoor', 'on:dogWalks', 'on:dogTied', 'on:social', 'on:vetReference', 'on:motivation',
+    'way:petExperience:old', 'way:movingPlans:old',
+] as const
 
 /** The phone is required unless the rescuer turned it off — also when the config couldn't load (null). */
 export function isPhoneRequired(stored: readonly string[] | null | undefined): boolean {
@@ -69,9 +84,14 @@ export function withPhoneRequirement<T extends { id: string; fields?: Array<{ na
 export const DERIVED_FORM_STEPS = ['giftRecipient'] as const
 const DERIVED = new Set<string>(DERIVED_FORM_STEPS)
 
-/** Drops answer-dependent steps whose answer isn't there: "¿Para quién es?" only after "Es un regalo". */
-export function stepsForAnswers<T extends { id: string }>(schema: T[], answers: Record<string, unknown>): T[] {
-    return schema.filter(s => s.id !== 'giftRecipient' || answers.intent === 'gift')
+/**
+ * The screens for these answers: "¿Para quién es?" only after "Es un regalo";
+ * species-only questions only for that species; follow-ups render inside their
+ * host's screen (FollowUps) and are screens only when no host is asked.
+ */
+export function stepsForAnswers<T extends { id: string }>(schema: T[], answers: Record<string, unknown>, ctx: FormCtx = {}): T[] {
+    const present = new Set(schema.map(s => s.id))
+    return schema.filter(s => (s.id === 'giftRecipient' ? answers.intent === 'gift' : isOwnScreen(s.id, present, answers, ctx)))
 }
 
 /**
@@ -79,8 +99,8 @@ export function stepsForAnswers<T extends { id: string }>(schema: T[], answers: 
  * schema on screen before the tap may not have the step the tap adds
  * ("Es un regalo" → "¿Para quién es?") or may still have the one it removes.
  */
-export function stepAfter<T extends { id: string }>(configSchema: T[], step: number, nextAnswers: Record<string, unknown>): { id: string } | 'submit' {
-    const next = stepsForAnswers(configSchema, nextAnswers)[step + 1]
+export function stepAfter<T extends { id: string }>(configSchema: T[], step: number, nextAnswers: Record<string, unknown>, ctx: FormCtx = {}): { id: string } | 'submit' {
+    const next = stepsForAnswers(configSchema, nextAnswers, ctx)[step + 1]
     return next ? { id: next.id } : 'submit'
 }
 
@@ -184,18 +204,30 @@ export function stripHiddenAnswers(answers: Record<string, unknown>, hiddenSteps
  * present (unchanged shape on the no-customization path — no `animalId: null`
  * ever sent), and always lists the step ids the adopter actually saw.
  */
+/** The questions the applicant saw: their screens, plus the follow-ups shown under a host. */
+function shownStepIds(configSchema: { id: string }[], answers: Record<string, unknown>, ctx: FormCtx): string[] {
+    const present = new Set(configSchema.map(s => s.id))
+    const screens = new Set(stepsForAnswers(configSchema, answers, ctx).map(s => s.id))
+    return configSchema.map(s => s.id).filter(id => screens.has(id) || (!!followUpHost(id, present) && followUpVisible(id, answers)))
+}
+
 export function buildSubmitBody(
     finalAnswers: Record<string, unknown>,
     hiddenSteps: readonly string[] | null,
     animalId: string | null | undefined,
-    schema: readonly { id: string }[],
+    configSchema: readonly { id: string }[],
+    ctx: FormCtx = {},
 ): Record<string, unknown> {
-    // A "Para mí" form never carries a recipient or a "No sé" from a gift draft.
-    const cleaned = stripGiftAnswers(stripHiddenAnswers(finalAnswers, hiddenSteps ?? []))
+    // A "Para mí" form never carries a recipient or a "No sé" from a gift draft;
+    // a new question carries an answer only if it was really asked (spec 2026-10-14).
+    const cleaned = stripUnaskedNewAnswers(
+        stripGiftAnswers(stripHiddenAnswers(finalAnswers, hiddenSteps ?? [])),
+        [...configSchema], ctx,
+    )
     return {
         ...cleaned,
         ...(animalId ? { animalId } : {}),
-        shownSteps: schema.map(s => s.id),
+        shownSteps: shownStepIds([...configSchema], cleaned, ctx),
     }
 }
 

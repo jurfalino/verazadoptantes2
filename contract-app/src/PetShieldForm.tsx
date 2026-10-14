@@ -809,7 +809,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             // the rescuer's notification can name the specific animal.
             // Hidden-step answers are stripped in case a stale draft carried
             // them, and shownSteps records what the adopter actually saw.
-            const submitBody = buildSubmitBody(finalAnswers, hiddenSteps, animalId, schema)
+            const submitBody = buildSubmitBody(finalAnswers, hiddenSteps, animalId, configSchema)
             const res = await fetch(`${API_URL}/api/form/${encodeURIComponent(userId)}/submit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
