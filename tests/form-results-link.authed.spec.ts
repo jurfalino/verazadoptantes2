@@ -307,6 +307,27 @@ test.describe('form-results: linking to an existing profile', () => {
         expect(one(`SELECT auto_adopter_id FROM form_submissions WHERE id = '${submissionId}'`).auto_adopter_id).toBeTruthy();
     });
 
+    test('the form config names the animal\'s species; new free text is clamped; Instagram reaches the profile', async ({ request }) => {
+        const cfg = await (await request.get(`/api/form/${ADMIN_USER_ID}?animalId=test-animal-fixture-owned-2`)).json();
+        expect(cfg.animalSpecies).toBe('dog');
+        const plain = await (await request.get(`/api/form/${ADMIN_USER_ID}`)).json();
+        expect(plain.animalSpecies).toBeNull();
+
+        const stamp = Date.now();
+        const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+            name: `E2E Nuevas ${stamp}`, email: `e2e-nuevas-${stamp}@example.com`, phone: `31${String(stamp).slice(-8)}`, address: '1 New St',
+            intent: 'self', gaveAway: 'yes', gaveAwayWhy: 'x'.repeat(500), instagram: `@e2e.nuevas.${stamp}`, facebook: 'no tengo',
+        } });
+        expect(res.ok(), await res.text()).toBeTruthy();
+        const { submissionId } = await res.json();
+        const row = one(`SELECT auto_adopter_id, answers_json FROM form_submissions WHERE id = '${submissionId}'`);
+        const answers = JSON.parse(String(row.answers_json));
+        expect(answers.gaveAwayWhy).toHaveLength(300);
+        const contacts = String(one(`SELECT contact_entries FROM adopters WHERE id = '${row.auto_adopter_id}'`).contact_entries);
+        expect(contacts).toContain(`@e2e.nuevas.${stamp}`);
+        expect(contacts).not.toContain('no tengo');
+    });
+
     test('gift with a first-name-only recipient: nothing on the profile', async ({ request }) => {
         const stamp = Date.now();
         const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {

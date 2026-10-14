@@ -33,6 +33,7 @@
 
 import { logger } from '@/lib/logger';
 import { serializeHouseholdMembers, type HouseholdMember } from '@/lib/householdMembers';
+import type { SocialPlatform } from '@/lib/contactEntries';
 
 export type AdopterSource = 'manual' | 'form' | 'contract' | 'imported' | 'api';
 
@@ -49,8 +50,8 @@ export interface CreateAdopterInput {
     email?: string | null;
     phone?: string | null;
     address?: string | null;
-    /** Social profiles (handles or URLs), one contact entry each. */
-    socials?: string | string[] | null;
+    /** Social profiles (handles or URLs), one contact entry each — with the network when known. */
+    socials?: string | Array<string | { value: string; platform?: SocialPlatform }> | null;
     /** Document ID (DNI/Documento) — joined into contactInfo for the contract path. */
     documentId?: string | null;
     /** Optional history context: form submission id (for `source: 'form'`). */

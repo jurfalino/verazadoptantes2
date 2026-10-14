@@ -6,6 +6,7 @@ import { deriveSpecialNeeds, sanitizeShownSteps, isPhoneRequired } from '@/domai
 import { isValidFormEmail } from '@/domain/formEmail';
 import { parseHouseholdPeople, childrenAnswer, fullName } from '@/domain/householdPeople';
 import { parseGiftRecipient, recipientFullName } from '@/domain/giftRecipient';
+import { clampFreeText, socialHandle } from '@/domain/formFreeText';
 import type { HouseholdMember } from '@/lib/householdMembers';
 
 export const runtime = 'edge';
@@ -56,6 +57,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             // The form checks the same rule, so only an old tab or a hand-made POST gets here.
             logger.warn('form submit: gift recipient phone dropped (bad format)', { userId });
         }
+        // New free-text answers (spec 2026-10-14): clamped here, never trusted.
+        for (const [key, max] of [['gaveAwayWhy', 300], ['vetReference', 300], ['motivation', 300], ['howHeard', 300], ['instagram', 100], ['facebook', 100]] as const) {
+            const v = clampFreeText(body[key], max);
+            if (v === undefined) delete answers[key]; else answers[key] = v;
+        }
+        // Instagram / Facebook become profile contacts only when they look like one.
+        const socials = [socialHandle(body.instagram, 'instagram'), socialHandle(body.facebook, 'facebook')]
+            .filter((s): s is NonNullable<typeof s> => s !== null);
         if (Array.isArray(body.householdPeople) || body.livesAlone === true) {
             answers.householdPeople = householdPeople;
             answers.livesAlone = body.livesAlone === true && householdPeople.length === 0;
@@ -196,6 +205,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                 submissionId,
                 animalId: selectedAnimalId,
                 animalName: selectedAnimalName,
+                socials,
                 householdMembers: [
                     // Only fully named people become profile household members —
                     // and in a gift, the people list is the RECIPIENT's home, not
