@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.180] - 2026-10-14
+
+### Changed — /import/sheet: the column map follows the app language
+
+The column-mapping select's fields are now translated (es / en / pt) with the
+language switch, instead of fixed Spanish (2.56.179) or English (before).
+
 ## [2.56.179] - 2026-10-14
 
 ### Changed — /import/sheet: Spanish column map, one toggle for every row

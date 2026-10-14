@@ -41,9 +41,7 @@ test.describe('sheet import: a form export', () => {
         await expect(page.getByTestId('import-unknown-types')).toContainText('3 filas');
     });
 
-    test('one toggle ticks or unticks every row shown, and the column map is in Spanish', async ({ page }) => {
-        await expect(page.locator('option', { hasText: 'Nombre del adoptante' }).first()).toBeAttached();
-        await expect(page.locator('option', { hasText: 'Adopter name' })).toHaveCount(0);
+    test('one toggle ticks or unticks every row shown', async ({ page }) => {
         const all = page.getByTestId('select-all-rows');
         const rows = page.getByRole('checkbox', { name: 'Seleccionar persona' });
         await expect(all).toBeChecked();
@@ -91,4 +89,17 @@ test.describe('sheet import: the same person on several rows', () => {
         await expect(page.getByText('Toby').first()).toBeVisible();
         await expect(page.getByText('Mora').first()).toBeVisible();
     });
+});
+
+test.describe('sheet import: the column map follows the app language', () => {
+    for (const [locale, label] of [['es', 'Nombre del adoptante'], ['en', 'Adopter name'], ['pt', 'Nome do adotante']] as const) {
+        test(`${locale}: «${label}»`, async ({ page }) => {
+            await page.addInitScript(l => { try { localStorage.setItem('app-locale', l); } catch { /* storage blocked */ } }, locale);
+            await page.goto('/import/sheet');
+            await dismissCountryBanner(page);
+            await page.getByTestId('sheet-file-input').setInputFiles({ name: 'idioma.csv', mimeType: 'text/csv', buffer: Buffer.from('Nombre,Email\nIda Localefixture,ida.locale@example.com\n') });
+            await expect(page.locator('option[value="name"]').first()).toHaveText(label, { timeout: 30000 });
+            await expect(page.locator('option', { hasText: 'import.sheet_field' })).toHaveCount(0);
+        });
+    }
 });

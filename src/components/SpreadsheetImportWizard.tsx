@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLanguage } from '@/context/LanguageContext';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
 import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, getMatchContext, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun, type MatchContext } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
@@ -123,20 +124,9 @@ function writeActivity(m: ActivityMarker | null) {
     catch { /* blocked storage: the reload notice just won't appear */ }
 }
 
-// What the column-mapping select shows. TARGET_IMPORT_FIELDS' English labels
-// stay as they are: they also feed the AI prompt.
-const FIELD_LABELS_ES: Record<string, string> = {
-    name: 'Nombre del adoptante', phone: 'Teléfono', email: 'Email', social: 'Red social',
-    address: 'Dirección', dni: 'DNI / documento', animalName: 'Nombre del animal', species: 'Especie',
-    sex: 'Sexo', neutered: 'Castrado/a', color: 'Color', microchip: 'Microchip', age: 'Edad del animal',
-    rating: 'Rating', date: 'Fecha', recordType: 'Tipo de actividad', details: 'Notas / motivo',
-    onBehalfOf: 'A nombre de',
-};
-const FIELD_OPTIONS = [
-    ...TARGET_IMPORT_FIELDS.map(f => ({ value: f.key, label: FIELD_LABELS_ES[f.key] ?? f.label })),
-    { value: COMBINED_CONTACT, label: 'Contacto combinado (separar luego)' },
-    { value: IGNORE, label: '— Ignorar —' },
-];
+// The column-mapping select's options, labelled in the app language
+// (import.sheet_field.*). TARGET_IMPORT_FIELDS' English labels feed the AI prompt.
+const FIELD_KEYS = [...TARGET_IMPORT_FIELDS.map(f => f.key), COMBINED_CONTACT, IGNORE];
 const CONFIDENCE_DOT: Record<string, string> = { high: 'bg-emerald-500', medium: 'bg-amber-400', low: 'bg-stone-300' };
 const RECORD_TYPES = ['adoption', 'foster', 'observation', 'adoption_request', 'follow_up', 'returned_pet'];
 const RECORD_TYPE_LABELS: Record<string, string> = {
@@ -192,6 +182,7 @@ type Step = 'upload' | 'confirm' | 'dedup' | 'import';
 type Filter = 'all' | 'valid' | 'invalid' | 'warnings';
 
 export default function SpreadsheetImportWizard() {
+    const { t } = useLanguage();
     const { formatDateTimeFull } = useDateFormat();
     const [step, setStep] = useState<Step>('upload');
     const [fileName, setFileName] = useState('');
@@ -1319,7 +1310,7 @@ export default function SpreadsheetImportWizard() {
                                             <span className={`w-2 h-2 rounded-full flex-shrink-0 ${CONFIDENCE_DOT[c.confidence]}`} aria-hidden />
                                             <span className="font-medium text-stone-700 w-28 truncate" title={c.column}>{c.column}</span>
                                             <select value={c.field} onChange={e => setAssignment(c.column, e.target.value)} className="flex-1 text-sm border border-stone-200 rounded-lg px-2 py-1 bg-white">
-                                                {FIELD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                                {FIELD_KEYS.map(k => <option key={k} value={k}>{t(`import.sheet_field.${k}`)}</option>)}
                                             </select>
                                         </div>
                                     ))}
