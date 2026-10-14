@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.179] - 2026-10-14
+
+### Changed — /import/sheet: Spanish column map, one toggle for every row
+
+- The column-mapping select shows its fields in Spanish («Nombre del adoptante»,
+  «Teléfono», «Edad del animal»…), like the rest of the page.
+- «Todos (N/M)» above the table ticks or unticks every row shown (the current
+  filter); mixed selection shows as indeterminate.
+
 ## [2.56.178] - 2026-10-14
 
 ### Fixed — /import/sheet: review findings on 2.56.177

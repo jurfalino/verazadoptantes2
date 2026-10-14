@@ -123,8 +123,17 @@ function writeActivity(m: ActivityMarker | null) {
     catch { /* blocked storage: the reload notice just won't appear */ }
 }
 
+// What the column-mapping select shows. TARGET_IMPORT_FIELDS' English labels
+// stay as they are: they also feed the AI prompt.
+const FIELD_LABELS_ES: Record<string, string> = {
+    name: 'Nombre del adoptante', phone: 'Teléfono', email: 'Email', social: 'Red social',
+    address: 'Dirección', dni: 'DNI / documento', animalName: 'Nombre del animal', species: 'Especie',
+    sex: 'Sexo', neutered: 'Castrado/a', color: 'Color', microchip: 'Microchip', age: 'Edad del animal',
+    rating: 'Rating', date: 'Fecha', recordType: 'Tipo de actividad', details: 'Notas / motivo',
+    onBehalfOf: 'A nombre de',
+};
 const FIELD_OPTIONS = [
-    ...TARGET_IMPORT_FIELDS.map(f => ({ value: f.key, label: f.label })),
+    ...TARGET_IMPORT_FIELDS.map(f => ({ value: f.key, label: FIELD_LABELS_ES[f.key] ?? f.label })),
     { value: COMBINED_CONTACT, label: 'Contacto combinado (separar luego)' },
     { value: IGNORE, label: '— Ignorar —' },
 ];
@@ -2157,6 +2166,7 @@ function RecordGrid({
             {/* Bulk "a todos" bar — always visible (desktop + mobile), since the table
                 header that used to hold these is hidden on mobile. */}
             <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-stone-200 bg-stone-50 text-[11px] text-stone-500">
+                <SelectAllToggle rows={rows} onSetSelected={onSetSelected} />
                 <span className="uppercase tracking-wider">Aplicar a todos:</span>
                 <select value="" onChange={e => { if (e.target.value) onVisibilityAll(e.target.value === 'public'); }}
                     className="normal-case font-normal border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-600" title="Asignar visibilidad a todos los registros">
@@ -2219,6 +2229,25 @@ function RecordGrid({
                 </table>
             </div>
         </div>
+    );
+}
+
+/** One checkbox for every row shown (the current filter): ticks them all, or —
+ *  when they all are — unticks them all. Mixed shows as indeterminate. */
+function SelectAllToggle({ rows, onSetSelected }: {
+    rows: Array<{ index: number; selected: boolean }>;
+    onSetSelected: (indices: number[], selected: boolean) => void;
+}) {
+    const ref = useRef<HTMLInputElement>(null);
+    const selected = rows.filter(r => r.selected).length;
+    const all = rows.length > 0 && selected === rows.length;
+    useEffect(() => { if (ref.current) ref.current.indeterminate = selected > 0 && !all; }, [selected, all]);
+    return (
+        <label className="inline-flex items-center gap-1.5 mr-2 normal-case text-stone-600 cursor-pointer">
+            <input ref={ref} type="checkbox" checked={all} disabled={rows.length === 0} data-testid="select-all-rows"
+                onChange={() => onSetSelected(rows.map(r => r.index), !all)} aria-label="Seleccionar todos los registros mostrados" />
+            Todos ({selected.toLocaleString('es-AR')}/{rows.length.toLocaleString('es-AR')})
+        </label>
     );
 }
 

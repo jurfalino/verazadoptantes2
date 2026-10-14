@@ -41,6 +41,22 @@ test.describe('sheet import: a form export', () => {
         await expect(page.getByTestId('import-unknown-types')).toContainText('3 filas');
     });
 
+    test('one toggle ticks or unticks every row shown, and the column map is in Spanish', async ({ page }) => {
+        await expect(page.locator('option', { hasText: 'Nombre del adoptante' }).first()).toBeAttached();
+        await expect(page.locator('option', { hasText: 'Adopter name' })).toHaveCount(0);
+        const all = page.getByTestId('select-all-rows');
+        const rows = page.getByRole('checkbox', { name: 'Seleccionar persona' });
+        await expect(all).toBeChecked();
+        await all.click();
+        await expect(all).not.toBeChecked();
+        for (const box of await rows.all()) await expect(box).not.toBeChecked();
+        await expect(page.getByRole('button', { name: /Continuar a duplicados/ })).toBeDisabled();
+        await rows.first().click(); // one ticked → mixed
+        await expect.poll(() => all.evaluate(el => (el as HTMLInputElement).indeterminate)).toBe(true);
+        await all.click();
+        for (const box of await rows.all()) await expect(box).toBeChecked();
+    });
+
     test('the same person on two rows is one record, with every contact, until split', async ({ page }) => {
         await expect(page.getByText(/2 actividades · mismo email/)).toBeVisible();
         await expect(page.getByText('@zoe.formexport').first()).toBeVisible();
