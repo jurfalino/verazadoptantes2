@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import Link from 'next/link';
 import { useTimezone } from '@/context/TimezoneContext';
 import { useLanguage } from '@/context/LanguageContext';
-import FormAnswersPanel, { renderFormAnswerValue, AnswerValue, householdPeopleRow, giftRecipientRow, fieldLabel } from '@/components/FormAnswersPanel';
+import FormAnswersPanel, { renderFormAnswerValue, AnswerValue, householdPeopleRow, giftRecipientRow, fieldLabel, ADOPTER_INFO_FIELDS, OTHER_PETS_FIELDS } from '@/components/FormAnswersPanel';
 import FormResultMatchCard from '@/components/FormResultMatchCard';
 import LocationMap from '@/components/LocationMap';
 import { buttonClasses } from '@/components/ui/Button';
@@ -285,7 +285,7 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                         <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{submitted.address}</span>
                                     </div>
                                 )}
-                                {['ageRange', 'children', 'housingType', 'hasOutdoor', 'isSafe', 'hoursAlone'].map((field) => {
+                                {ADOPTER_INFO_FIELDS.map((field) => {
                                     if (field === 'children') {
                                         const people = householdPeopleRow(fullAnswers, fieldLabel('household', fullAnswers, t));
                                         if (people) return people;
@@ -320,11 +320,11 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                         </div>
 
                         {/* Other pets – same box and row styles as FormAnswersPanel */}
-                        {(fullAnswers.petExperience !== undefined || (typeof fullAnswers.existingPets === 'object' && fullAnswers.existingPets && Object.values(fullAnswers.existingPets).some((v) => typeof v === 'number' && v > 0))) && (
+                        {(OTHER_PETS_FIELDS.some(f => f !== 'existingPets' && fullAnswers[f] !== undefined && fullAnswers[f] !== '') || (typeof fullAnswers.existingPets === 'object' && fullAnswers.existingPets && Object.values(fullAnswers.existingPets).some((v) => typeof v === 'number' && v > 0))) && (
                             <div className="bg-white rounded-xl border border-stone-200 p-4 mb-4 shadow-sm">
                                 <h2 className="text-sm font-semibold text-stone-700 mb-3">{L('section_other_pets')}</h2>
                                 <div className="space-y-1">
-                                    {['petExperience', 'existingPets'].map((field) => {
+                                    {OTHER_PETS_FIELDS.map((field) => {
                                         const raw = fullAnswers[field];
                                         const display = renderFormAnswerValue(field, raw, t);
                                         if (!display) return null;
@@ -333,7 +333,7 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                                 <span className="font-semibold text-stone-600 min-w-[140px]">
                                                     {fieldLabel(field, fullAnswers, t)}:
                                                 </span>
-                                                <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{display}</span>
+                                                <AnswerValue field={field} raw={raw} display={display} />
                                             </div>
                                         );
                                     })}

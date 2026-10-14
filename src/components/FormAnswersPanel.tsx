@@ -130,6 +130,11 @@ export function AnswerValue({ field, raw, display }: { field: string; raw: unkno
     );
 }
 
+/** "Datos del adoptante" on the form screen, after name/email/phone/address. */
+export const ADOPTER_INFO_FIELDS = ['ageRange', 'carer', 'children', 'allergy', 'housingType', 'rental', 'hasOutdoor', 'isSafe', 'catOutdoor', 'sleepPlace', 'hoursAlone', 'dogWalks', 'dogTied', 'instagram', 'facebook', 'vetReference', 'motivation', 'howHeard'];
+/** "Otras mascotas" on the form screen. */
+export const OTHER_PETS_FIELDS = ['lastAnimal', 'petExperience', 'gaveAway', 'gaveAwayWhy', 'existingPets', 'petsCare'];
+
 /** Shared form-answer display logic (used by FormResultsContent for adopter info + other pets). */
 export function renderFormAnswerValue(key: string, raw: any, t: (path: string) => string): string | null {
     if (raw === undefined || raw === null || raw === '') return null;
@@ -144,7 +149,23 @@ export function renderFormAnswerValue(key: string, raw: any, t: (path: string) =
         case 'housingType':
         case 'hasOutdoor':
         case 'isSafe':
-        case 'children': {
+        case 'children':
+        // New questions (spec 2026-10-14) — closed answers.
+        case 'carer':
+        case 'allergy':
+        case 'petsCare':
+        case 'rental':
+        case 'catOutdoor':
+        case 'sleepPlace':
+        case 'dogWalks':
+        case 'dogTied':
+        case 'lastAnimal':
+        case 'gaveAway':
+        case 'sterilizeHow':
+        case 'movingIfNoPets':
+        case 'returnReasons':
+        case 'adaptPlan':
+        case 'visitConsent': {
             const val = String(raw);
             return t(`petshield.options.${key}.${val}`);
         }
@@ -196,10 +217,10 @@ export default function FormAnswersPanel({ fullAnswers, excludeSections = [] }: 
     const get = (key: string): any => fullAnswers[key];
 
     const sections: Array<{ id: string; titleKey: string; fields: string[] }> = [
-        { id: 'identity', titleKey: 'petshield.sections.identity', fields: ['ageRange', 'petExperience'] },
-        { id: 'household', titleKey: 'petshield.sections.household', fields: ['children', 'existingPets', 'housingType', 'hasOutdoor', 'isSafe', 'hoursAlone'] },
+        { id: 'identity', titleKey: 'petshield.sections.identity', fields: ['ageRange', 'carer', 'lastAnimal', 'petExperience', 'gaveAway', 'gaveAwayWhy', 'instagram', 'facebook', 'vetReference', 'motivation', 'howHeard'] },
+        { id: 'household', titleKey: 'petshield.sections.household', fields: ['children', 'allergy', 'existingPets', 'petsCare', 'housingType', 'rental', 'hasOutdoor', 'isSafe', 'catOutdoor', 'sleepPlace', 'hoursAlone', 'dogWalks', 'dogTied'] },
         { id: 'preferences', titleKey: 'petshield.sections.preferences', fields: ['species', 'speciesOther', 'lifeStage', 'intent'] },
-        { id: 'commitments', titleKey: 'petshield.sections.commitments', fields: ['specialNeeds', 'willingToSterilize', 'vetCommitment', 'movingPlans', 'vacationPlan'] },
+        { id: 'commitments', titleKey: 'petshield.sections.commitments', fields: ['specialNeeds', 'willingToSterilize', 'sterilizeHow', 'vetCommitment', 'movingIfNoPets', 'movingPlans', 'vacationPlan', 'returnReasons', 'adaptPlan', 'visitConsent'] },
         { id: 'context', titleKey: 'petshield.sections.context', fields: ['geo', 'legal'] },
     ].filter((s) => !excludeSections.includes(s.id));
 
