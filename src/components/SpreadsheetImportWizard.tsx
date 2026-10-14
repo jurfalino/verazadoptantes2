@@ -5,11 +5,12 @@ import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
 import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, getMatchContext, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun, type MatchContext } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
 import { computeContentFingerprint } from '@/domain/contentFingerprint';
+import { groupSamePerson, unionValues, phoneDigitsKey, type GroupReason } from '@/domain/importGrouping';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { buildImportBody } from '@/lib/importRow';
 import { inferDateOrder } from '@/domain/importRow';
 import { deserializeContactEntries } from '@/lib/contactEntries';
-import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType, normalizeNeutered } from '@/domain/importRow';
+import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType, normalizeNeutered, recognizedRecordType } from '@/domain/importRow';
 import { userFacingMessage } from '@/lib/errorMessage';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { zarazTrack } from '@/lib/zaraz';
@@ -36,6 +37,28 @@ function splitGroupedContacts(eff: MappedRow): { phones: string[]; emails: strin
     }
     return g;
 }
+
+/** Which rows are the same person (domain/importGrouping), minus the groups the
+ *  reviewer split ("Separar", keyed by the group's first row). Shared by the
+ *  Revisar view and the import fold, so what is shown is what is written. */
+function personGroups(rows: Array<{ index: number; eff: MappedRow }>, split: Set<number>): Array<{ indices: number[]; reason: GroupReason | null }> {
+    const groups = groupSamePerson(rows.map(r => ({ index: r.index, name: r.eff.name, ...splitGroupedContacts(r.eff) })));
+    return groups.flatMap(g => (g.indices.length > 1 && split.has(g.indices[0]) ? g.indices.map(i => ({ indices: [i], reason: null })) : [g]));
+}
+
+/** Every contact of a group's rows, so the one profile loses none of them. */
+function mergedGroupContacts(effs: MappedRow[]): Pick<MappedRow, 'phones' | 'emails' | 'socials' | 'addresses' | 'dnis' | 'combinedContacts'> {
+    return {
+        phones: unionValues(effs.map(e => e.phones), phoneDigitsKey),
+        emails: unionValues(effs.map(e => e.emails)),
+        socials: unionValues(effs.map(e => e.socials)),
+        addresses: unionValues(effs.map(e => e.addresses)),
+        dnis: unionValues(effs.map(e => e.dnis), phoneDigitsKey),
+        combinedContacts: unionValues(effs.map(e => e.combinedContacts)),
+    };
+}
+
+const GROUP_REASON_LABEL: Record<GroupReason, string> = { identical: 'mismos datos', email: 'mismo email', phone: 'mismo teléfono' };
 
 // 'grouped' = an intra-batch twin whose activity was folded into another row's
 // adopter (same person on multiple rows). It IS imported — just not as its own
@@ -191,6 +214,8 @@ export default function SpreadsheetImportWizard() {
     const [results, setResults] = useState<RowResult[]>([]);
     // Intra-spreadsheet dedup summary: how many rows were folded into how many people.
     const [foldSummary, setFoldSummary] = useState<{ folded: number; people: number } | null>(null);
+    // Same-person groups the reviewer split apart ("Separar"), by the group's first row.
+    const [splitGroups, setSplitGroups] = useState<Set<number>>(new Set());
     const [importDone, setImportDone] = useState(false);
     // Cancel: a ref the send-loop checks between batches (state would be stale in
     // the running closure). Already-sent rows persist (idempotent), so a cancel
@@ -345,7 +370,7 @@ export default function SpreadsheetImportWizard() {
         try {
             const sheet = await parseSpreadsheetFile(file);
             if (sheet.headers.length === 0) { setError('El archivo está vacío o no tiene encabezados.'); setBusy(false); return; }
-            setFileName(file.name); setParsed(sheet); setOverrides({}); setDeselected(new Set());
+            setFileName(file.name); setParsed(sheet); setOverrides({}); setDeselected(new Set()); setSplitGroups(new Set());
             // Default: deterministic column-mapping, ready INSTANTLY. `guessColumnMap`
             // matches header names offline (no AI, no per-row wait) — the grid renders
             // immediately via applyColumnMap. The user tweaks any wrong field in the
@@ -472,6 +497,16 @@ export default function SpreadsheetImportWizard() {
             return n;
         });
     };
+    // Bulk-set the record type on every row (empty = clear the override, back to
+    // the sheet's value).
+    const setRecordTypeAll = (recordType: string) => {
+        if (!parsed) return;
+        setOverrides(o => {
+            const n = { ...o };
+            parsed.rows.forEach((_, i) => { n[i] = { ...n[i], recordType: recordType || undefined }; });
+            return n;
+        });
+    };
     // Bulk-set visibility (público/protegido) on every row.
     const setVisibilityAll = (isPublic: boolean) => {
         if (!parsed) return;
@@ -531,6 +566,28 @@ export default function SpreadsheetImportWizard() {
     }), [records, filter, typeFilter, ratingFilter, search]);
 
     const importable = records.filter(r => r.selected && r.built.errors.length === 0);
+
+    // Same-person groups over the whole file (Revisar shows them; the import folds them).
+    const reviewGroups = useMemo(() => {
+        const byIndex = new Map<number, { key: number; reason: GroupReason | null }>();
+        for (const g of personGroups(records, splitGroups)) for (const i of g.indices) byIndex.set(i, { key: g.indices[0], reason: g.reason });
+        return byIndex;
+    }, [records, splitGroups]);
+
+    // What the reviewer must know before importing: values the import doesn't
+    // recognise as a type (they become "Adopción"), and contact cells dropped as
+    // placeholders ("no", "si", "-").
+    const reviewNotices = useMemo(() => {
+        const unknownTypes = new Map<string, number>();
+        let dropped = 0;
+        for (const r of records) {
+            const t = r.eff.recordType?.trim();
+            if (t && recognizedRecordType(t) === null) unknownTypes.set(t, (unknownTypes.get(t) ?? 0) + 1);
+            dropped += r.eff.droppedPlaceholders ?? 0;
+        }
+        const unknownCount = [...unknownTypes.values()].reduce((a, b) => a + b, 0);
+        return { unknownTypes: [...unknownTypes.keys()].slice(0, 5), unknownCount, dropped };
+    }, [records]);
     const selectedInvalid = records.filter(r => r.selected && r.built.errors.length > 0).length;
     const selectedWarnings = records.filter(r => r.selected && r.built.errors.length === 0 && r.built.warnings.length > 0).length;
 
@@ -850,10 +907,21 @@ export default function SpreadsheetImportWizard() {
             const nameByIndex: Record<number, string> = {};
             const toSend: ImportBatchRow[] = [];
             setPreparing({ done: 0, total: targets.length });
+            // Same-person groups among the rows that will be created (the reviewer's
+            // splits apply). A group's first row is saved with all the group's contacts.
+            const groupKeyOf = new Map<number, number>();
+            const mergedEff = new Map<number, MappedRow>();
+            const effOf = new Map(targets.map(t => [t.index, t.eff]));
+            for (const g of personGroups(targets.filter(t => (rowAction[t.index] ?? 'create') === 'create'), splitGroups)) {
+                if (g.indices.length < 2) continue;
+                for (const i of g.indices) groupKeyOf.set(i, g.indices[0]);
+                const primaryEff = effOf.get(g.indices[0])!;
+                mergedEff.set(g.indices[0], { ...primaryEff, ...mergedGroupContacts(g.indices.map(i => effOf.get(i)!)) });
+            }
             let prepared = 0;
             for (const t of targets) {
                 if (cancelRef.current) break; // Cancel works while preparing too
-                const { row, pre, name } = await buildBatchRow(t);
+                const { row, pre, name } = await buildBatchRow({ index: t.index, eff: mergedEff.get(t.index) ?? t.eff });
                 nameByIndex[t.index] = name;
                 if (pre) preResults.push(pre);
                 else if (row) toSend.push(row);
@@ -866,22 +934,20 @@ export default function SpreadsheetImportWizard() {
                 setCancelling(false); endActivity(); setStep('dedup');
                 return;
             }
-            // Intra-spreadsheet dedup (auto): fold rows that are the SAME person
-            // (identical content fingerprint) into ONE adopter with several activities
-            // — so someone appearing on multiple rows becomes one profile, not N
-            // duplicates. Only exact 'create' rows fold; name-only rows have an empty
-            // fingerprint and never fold; 'upsert'/'skip' rows are left untouched. The
-            // primary (first/lowest index) keeps its 'create'; each later twin's activity
-            // moves into the primary's extraAdoptions and its row is marked grouped.
-            const fpByIdx: Record<number, string> = {};
-            for (const t of targets) { const g = splitGroupedContacts(t.eff); fpByIdx[t.index] = computeContentFingerprint({ name: t.eff.name, ...g }); }
-            const primaryByFp = new Map<string, ImportBatchRow>();
-            const withExtras = new Set<number>();
+            // Intra-spreadsheet dedup (auto): rows that are the SAME person (same
+            // content, or a shared email/phone with a name in common — see
+            // domain/importGrouping) become ONE adopter with several activities.
+            // Only 'create' rows fold; 'upsert'/'skip' rows are left untouched. The
+            // primary (first/lowest index) keeps its 'create' and carries every
+            // contact of the group; each later row's activity moves into the
+            // primary's extraAdoptions and the row is marked grouped.
             const grouped: ImportBatchRow[] = [];
+            const withExtras = new Set<number>();
+            const primaryByKey = new Map<number, ImportBatchRow>();
             for (const row of toSend) {
-                const key = row.action === 'create' ? (fpByIdx[row.index] || '') : '';
-                const primary = key ? primaryByFp.get(key) : undefined;
-                if (!key || !primary) { if (key) primaryByFp.set(key, row); grouped.push(row); continue; }
+                const key = row.action === 'create' ? groupKeyOf.get(row.index) : undefined;
+                const primary = key !== undefined ? primaryByKey.get(key) : undefined;
+                if (key === undefined || !primary) { if (key !== undefined) primaryByKey.set(key, row); grouped.push(row); continue; }
                 (primary.extraAdoptions ??= []).push(row.adoption);
                 withExtras.add(primary.index);
                 preResults.push({ index: row.index, name: nameByIndex[row.index] || `Fila ${row.index + 1}`, status: 'grouped', message: `Agrupado con #${primary.index + 1} — misma persona (su actividad se sumó a esa ficha)` });
@@ -955,7 +1021,7 @@ export default function SpreadsheetImportWizard() {
     const etaMs = (importDone || cancelling) ? null : etaMsFrom(progress.done, progress.total, importStartRef.current, importStartDoneRef.current);
     const interpretEtaMs = etaMsFrom(interpretProgress.done, interpretProgress.total, interpretStartRef.current);
     const detectEtaMs = etaMsFrom(detectProgress.done, detectProgress.total, detectStartRef.current);
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); setDetectFailedRows(new Set()); setFoldSummary(null); };
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); setDetectFailedRows(new Set()); setFoldSummary(null); setSplitGroups(new Set()); };
 
     // Duplicados step (Step 3): the focused triage is ONLY the selected rows that
     // actually matched something — everything else auto-creates, so it never
@@ -1267,6 +1333,21 @@ export default function SpreadsheetImportWizard() {
                         </div>
                     )}
 
+                    {/* Before importing: types the import doesn't know (they'd become
+                        Adopción) and contact cells dropped as placeholders. */}
+                    {reviewNotices.unknownCount > 0 && (
+                        <div data-testid="import-unknown-types" className="mb-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+                            {reviewNotices.unknownCount.toLocaleString('es-AR')} {reviewNotices.unknownCount === 1 ? 'fila tiene' : 'filas tienen'} un tipo que no reconocemos
+                            ({reviewNotices.unknownTypes.map(t => `«${t}»`).join(', ')}) y se {reviewNotices.unknownCount === 1 ? 'importará' : 'importarán'} como <b>Adopción</b>.
+                            {' '}Cambialo con <b>Aplicar a todos → Tipo</b>.
+                        </div>
+                    )}
+                    {reviewNotices.dropped > 0 && (
+                        <p data-testid="import-dropped-placeholders" className="mb-2 text-xs text-stone-500">
+                            Se descartaron {reviewNotices.dropped.toLocaleString('es-AR')} {reviewNotices.dropped === 1 ? 'valor vacío' : 'valores vacíos'} en columnas de contacto («no», «si», «-»…): no son un contacto.
+                        </p>
+                    )}
+
                     {/* Toolbar: type-ahead search (all fields) + filters (validez/tipo/rating) + bulk-rating + counts */}
                     <div className="space-y-2 mb-3">
                         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar en todos los campos (nombre, contacto, animal, motivo…)" className="w-full h-9 px-3 rounded-lg border border-stone-200 text-sm outline-none focus:border-teal-400" />
@@ -1303,13 +1384,13 @@ export default function SpreadsheetImportWizard() {
                     </div>
 
                     {/* TODO(wave1c-mobile): reflow to card-per-record ≤sm (single-DOM CSS reflow) */}
-                    <RecordGrid rows={filtered} group
+                    <RecordGrid rows={filtered} groupOf={reviewGroups} onSplitGroup={key => setSplitGroups(s => new Set(s).add(key))}
                         editingCell={editingCell} onEditCell={(index, field) => setEditingCell(field ? { index, field } : null)}
                         matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
                         failureByIndex={failureByIndex} onSetSelected={setGroupSelected} onChange={setOverride}
                         expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
                         expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
-                        onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} />
+                        onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} onRecordTypeAll={setRecordTypeAll} />
 
                     <div className="flex flex-wrap gap-2 justify-between mt-4">
                         <button onClick={reset} className="px-4 py-2 text-sm text-stone-500 hover:text-stone-700">← Empezar de nuevo</button>
@@ -1417,7 +1498,7 @@ export default function SpreadsheetImportWizard() {
                                         failureByIndex={failureByIndex} onSetSelected={setGroupSelected} onChange={setOverride}
                                         expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
                                         expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
-                                        onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} />
+                                        onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} onRecordTypeAll={setRecordTypeAll} />
                                 </>
                             ) : null}
 
@@ -1468,7 +1549,7 @@ export default function SpreadsheetImportWizard() {
                     </div>
                     {foldSummary && (
                         <div className="mb-4 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)', border: '1px solid var(--status-sky-border)' }}>
-                            🔗 {foldSummary.folded} {foldSummary.folded === 1 ? 'fila idéntica se agrupó' : 'filas idénticas se agruparon'} en {foldSummary.people} {foldSummary.people === 1 ? 'persona ya presente en el lote' : 'personas ya presentes en el lote'}: en vez de crear duplicados, su actividad se sumó a la misma ficha. Sí se importaron — figuran como “agrupadas”, no como errores.
+                            🔗 {foldSummary.folded} {foldSummary.folded === 1 ? 'fila de la misma persona se agrupó' : 'filas de la misma persona se agruparon'} en {foldSummary.people} {foldSummary.people === 1 ? 'persona ya presente en el lote' : 'personas ya presentes en el lote'}: en vez de crear duplicados, su actividad se sumó a la misma ficha. Sí se importaron — figuran como “agrupadas”, no como errores.
                         </div>
                     )}
                     {!importDone && <p className="text-xs text-stone-400 mb-4">Puede tardar unos minutos (cada fila se verifica y tokeniza). La importación avanza solo con esta pestaña abierta: si la cerrás o recargás, se frena{resumeUnsaved ? '' : ' y después podés reanudarla'}.</p>}
@@ -1802,8 +1883,10 @@ function ActivityBlock({ r, editingField, onEditCell, onChange, fieldsExpanded, 
     );
 }
 
-function RowView({ members, editingCell, onEditCell, onChange, match, action, onAction, failureByIndex, onToggleGroup, expanded, onToggleWhy, matchContext, expandedFieldsRow, onToggleFields }: {
+function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onChange, match, action, onAction, failureByIndex, onToggleGroup, expanded, onToggleWhy, matchContext, expandedFieldsRow, onToggleFields }: {
     members: Array<{ index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean }>;
+    // Why these rows are one person, and how to undo it (Revisar only).
+    groupReason?: GroupReason | null; onSplit?: () => void;
     editingCell: { index: number; field: string } | null; onEditCell: (index: number, field: string | null) => void;
     onChange: (index: number, p: Partial<MappedRow>) => void;
     match?: DuplicateMatch | null; action: RowAction; onAction: (a: RowAction) => void;
@@ -1815,7 +1898,9 @@ function RowView({ members, editingCell, onEditCell, onChange, match, action, on
 }) {
     const primary = members[0];
     const grouped = members.length > 1;
-    const { eff, built, selected } = primary;
+    const { built, selected } = primary;
+    // A group's profile carries every member's contacts — show what will be saved.
+    const eff = grouped ? { ...primary.eff, ...mergedGroupContacts(members.map(m => m.eff)) } : primary.eff;
     const isExact = match ? isExactIdentifierMatch(match.matchTypes) : false;
     const contactChips: Array<{ t: string; v: string }> = [
         ...eff.phones.map(v => ({ t: 'Tel', v })),
@@ -1894,8 +1979,14 @@ function RowView({ members, editingCell, onEditCell, onChange, match, action, on
                     {grouped && (
                         <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded"
                             style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }}>
-                            🔗 {members.length} actividades
+                            🔗 {members.length} actividades{groupReason ? ` · ${GROUP_REASON_LABEL[groupReason]}` : ''}
                         </span>
+                    )}
+                    {grouped && onSplit && (
+                        <button type="button" onClick={onSplit} data-testid="split-group"
+                            className="ml-2 text-[10px] text-stone-500 underline hover:text-stone-700" title="No es la misma persona: importar cada fila como su propia ficha">
+                            Separar
+                        </button>
                     )}
                 </td>
             </tr>
@@ -2010,7 +2101,7 @@ function RecordGrid({
     rows, editingCell, onEditCell, matches, rowAction, onAction,
     failureByIndex, onSetSelected, onChange, expandedMatchRow, matchContexts, onToggleWhy,
     expandedFieldsRow, onToggleFields,
-    onRatingAll, onVisibilityAll, group,
+    onRatingAll, onVisibilityAll, onRecordTypeAll, groupOf, onSplitGroup,
 }: {
     rows: Array<{ index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean }>;
     editingCell: { index: number; field: string } | null;
@@ -2032,22 +2123,22 @@ function RecordGrid({
     // row, not just `rows`) in both steps, matching the pre-existing behavior.
     onRatingAll: (rating: string) => void;
     onVisibilityAll: (isPublic: boolean) => void;
-    // When true (Revisar step), identical rows (same content fingerprint) collapse
-    // into ONE record showing N stacked activities — matching the import-time fold.
-    group?: boolean;
+    onRecordTypeAll: (recordType: string) => void;
+    // Revisar step: rows of the same person (see personGroups) collapse into ONE
+    // record showing N stacked activities — matching the import-time fold.
+    groupOf?: Map<number, { key: number; reason: GroupReason | null }>;
+    onSplitGroup?: (key: number) => void;
 }) {
-    // Group identical rows (same content fingerprint) into one record with N
-    // activities; ungrouped ⇒ each row is its own singleton group.
-    const groups: Array<typeof rows> = group ? (() => {
-        const byFp = new Map<string, typeof rows>();
+    // Group the same person's rows into one record with N activities; ungrouped ⇒
+    // each row is its own singleton group.
+    const groups: Array<typeof rows> = groupOf ? (() => {
+        const byKey = new Map<number, typeof rows>();
         const order: Array<typeof rows> = [];
         for (const r of rows) {
-            const g = splitGroupedContacts(r.eff);
-            const fp = computeContentFingerprint({ name: r.eff.name, ...g });
-            if (!fp) { order.push([r]); continue; }
-            const existing = byFp.get(fp);
+            const key = groupOf.get(r.index)?.key ?? r.index;
+            const existing = byKey.get(key);
             if (existing) { existing.push(r); }
-            else { const grp = [r]; byFp.set(fp, grp); order.push(grp); }
+            else { const grp = [r]; byKey.set(key, grp); order.push(grp); }
         }
         return order;
     })() : rows.map(r => [r]);
@@ -2068,6 +2159,12 @@ function RecordGrid({
                     <option value="">Rating…</option>
                     {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
                     <option value="clear">Limpiar rating</option>
+                </select>
+                <select value="" onChange={e => { if (e.target.value) onRecordTypeAll(e.target.value === 'clear' ? '' : e.target.value); }}
+                    className="normal-case font-normal border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-600" title="Asignar un tipo a todos los registros" data-testid="bulk-record-type">
+                    <option value="">Tipo…</option>
+                    {RECORD_TYPES.map(t => <option key={t} value={t}>{RECORD_TYPE_LABELS[t] ?? t} a todos</option>)}
+                    <option value="clear">Volver al tipo de la planilla</option>
                 </select>
             </div>
             <div className="import-grid-scroll max-h-[420px] overflow-y-auto overflow-x-auto">
@@ -2090,6 +2187,8 @@ function RecordGrid({
                             const match = primary.index in matches ? matches[primary.index] : undefined;
                             return (
                                 <RowView key={primary.index} members={members}
+                                    groupReason={groupOf?.get(primary.index)?.reason ?? null}
+                                    onSplit={onSplitGroup && members.length > 1 ? () => onSplitGroup(groupOf?.get(primary.index)?.key ?? primary.index) : undefined}
                                     editingCell={editingCell}
                                     onEditCell={onEditCell}
                                     onChange={onChange}

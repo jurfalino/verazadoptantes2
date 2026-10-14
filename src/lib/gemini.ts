@@ -295,6 +295,10 @@ RULES:
   ENTIRELY empty yields an empty object.
 - Extract ONLY what is present. NEVER invent, guess, or construct data.
 - Keep phone/email/ID values EXACTLY as written — do not reformat or "fix" digits.
+- One address per place: street, locality and partido/city from separate columns
+  go TOGETHER in one address string ("Calle 123, Localidad, Partido").
+- "no", "si", "-", "no tengo" in a contact column are NOT contacts — omit them.
+- "age" is the ANIMAL's age; never put the adopter's age there.
 - Omit unknown fields. Any notes/free text in ${lang}.
 
 Headers: ${JSON.stringify(headers)}

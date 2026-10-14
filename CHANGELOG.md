@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.177] - 2026-10-14
+
+### Changed — /import/sheet reads a rescue's form export correctly
+
+Found by trying catpuccino's 2022–2024 export (1,856 requests) without importing it.
+
+- **Aplicar a todos → Tipo**: set the record type on every row at once. A type the
+  import doesn't recognise (e.g. «A», «AP») is announced in Revisar instead of
+  silently becoming «Adopción».
+- Form questions («12. ¿Qué harías…?»), id and status columns are never guessed as a
+  field; `animal_tipo` is the species; a single-value field takes one column only.
+- «no», «si», «-», «no tengo»… in contact columns are dropped (and counted), never
+  saved as a contact that would match strangers.
+- Dirección + Localidad + Partido become one address.
+- The same person on several rows (same email or phone and a name in common) is one
+  profile with all their contacts and every activity; Revisar shows why
+  («mismo email») and «Separar» undoes it.
+- The import's age field is labelled «Animal age».
+
 ## [2.56.176] - 2026-10-13
 
 ### Added — origin tags on the profile (flag `ENABLE_ORIGIN_LABELS`, off)

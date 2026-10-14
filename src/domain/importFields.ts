@@ -32,7 +32,7 @@ export const TARGET_IMPORT_FIELDS: ImportField[] = [
     { key: 'neutered', label: 'Neutered', kind: 'animal', hint: 'Whether the animal is neutered/spayed (yes/no).' },
     { key: 'color', label: 'Color', kind: 'animal', hint: 'Animal color/markings.' },
     { key: 'microchip', label: 'Microchip', kind: 'animal', hint: 'Microchip number.' },
-    { key: 'age', label: 'Age', kind: 'animal', hint: 'Animal age (free text like "2 años").' },
+    { key: 'age', label: 'Animal age', kind: 'animal', hint: 'The ANIMAL\'s age (free text like "2 años") — never the adopter\'s age.' },
     { key: 'rating', label: 'Rating', kind: 'adoption', hint: 'A 1–5 rating/score for the adopter/adoption.' },
     { key: 'date', label: 'Date', kind: 'adoption', hint: 'The adoption/record date.' },
     { key: 'recordType', label: 'Record type', kind: 'adoption', hint: 'adoption / adoption_request / foster / observation / follow_up / returned_pet.' },
@@ -116,28 +116,53 @@ const GUESS_RULES: { field: string; test: RegExp }[] = [
     { field: 'email', test: /(e-?mail|correo)/ },
     { field: 'social', test: /(facebook|instagram|\bfb\b|\big\b|social|perfil)/ },
     { field: 'dni', test: /(dni|documento|cedula|pasaporte)/ },
-    { field: 'address', test: /(direcc|domicilio|address|localidad|barrio|ciudad|provincia)/ },
-    { field: 'onBehalfOf', test: /(aportante|a nombre|reportad|on behalf)/ },
+    { field: 'address', test: /(direcc|domicilio|address|localidad|barrio|ciudad|provincia|partido|municipio|comuna)/ },
+    // "a nombre de" as words: after accent stripping, "mencioná nombre" contains "a nombre".
+    { field: 'onBehalfOf', test: /(aportante|\ba nombre de\b|reportad|on behalf)/ },
     { field: 'rating', test: /(rating|puntaje|score|calificaci)/ },
     { field: 'date', test: /(fecha|date)/ },
+    // The animal's type is its species ("animal_tipo", "tipo de animal"), not a record type.
+    { field: 'species', test: /(especie|species|(animal|mascota)[\s_]*(tipo|type)|(tipo|type)[\s_]*(de[\s_]*)?(animal|mascota))/ },
     { field: 'recordType', test: /(tipo|type|record)/ },
-    { field: 'species', test: /(especie|species)/ },
     { field: 'animalName', test: /(animal|mascota)/ },
     { field: 'details', test: /(motivo|detalle|nota|observaci|coment|descripci|details)/ },
     { field: 'name', test: /(nombre|name|adoptante)/ },
 ];
+
+/** A form QUESTION, not a field label ("12. ¿Qué harías con el gato…?"): numbered,
+ *  asks something, or too long to be a label. Keywords inside a question say
+ *  nothing about the column ("tipo de vivienda" is not a record type). */
+function isQuestionHeader(norm: string): boolean {
+    return /^\d+(\.\d+)*\s*[.)-]/.test(norm) || /[¿?]/.test(norm) || norm.split(/\s+/).length > 8;
+}
+
+/** An identifier or status code column ("animal_id", "animal_estado", "entry_id"). */
+function isCodeHeader(norm: string): boolean {
+    return /(^|[\s_-])(id|estado|status|codigo)($|[\s_-])/.test(norm);
+}
+
+/** Fields that take ONE value per row (first non-empty wins in applyColumnMap). */
+function isSingleValueField(field: string): boolean {
+    return field !== IGNORE && field !== COMBINED_CONTACT && !(field in MULTI_CONTACT);
+}
 
 /**
  * Deterministic, OFFLINE column-map guess from header names (no AI). Used as the
  * instant default when a sheet is opened, so a well-structured sheet is ready to
  * import immediately without waiting for AI. The user can correct any field in
  * the UI, or opt into AI interpretation for genuinely messy sheets. Unmatched
- * headers → `ignore`.
+ * headers → `ignore`, and so are form questions and id/status columns. A
+ * single-value field goes to the FIRST column that matches only, so the mapping
+ * screen shows exactly which column is used.
  */
 export function guessColumnMap(headers: string[]): ColumnMap {
+    const taken = new Set<string>();
     const columns: ColumnAssignment[] = headers.map(h => {
-        const rule = GUESS_RULES.find(r => r.test.test(normHeader(h)));
-        return { column: h, field: rule ? rule.field : IGNORE, confidence: (rule ? 'medium' : 'low') as ColumnAssignment['confidence'] };
+        const norm = normHeader(h);
+        const rule = isQuestionHeader(norm) || isCodeHeader(norm) ? undefined : GUESS_RULES.find(r => r.test.test(norm));
+        if (!rule || (isSingleValueField(rule.field) && taken.has(rule.field))) return { column: h, field: IGNORE, confidence: 'low' as const };
+        taken.add(rule.field);
+        return { column: h, field: rule.field, confidence: 'medium' as const };
     });
     return { columns };
 }
@@ -167,6 +192,8 @@ export interface MappedRow {
     recordType?: string;
     details?: string;
     onBehalfOf?: string;
+    /** Contact cells dropped as placeholders ("no", "si", "-"), counted for the review notice. */
+    droppedPlaceholders?: number;
 }
 
 const MULTI_CONTACT: Record<string, keyof Pick<MappedRow, 'phones' | 'emails' | 'socials' | 'addresses' | 'dnis'>> = {
@@ -183,6 +210,33 @@ export function emptyMappedRow(): MappedRow {
  *  Piso 2, Ciudad"). "a@x.com; b@y.com" → ['a@x.com', 'b@y.com']. */
 export function splitMultiValue(v: string): string[] {
     return v.split(/[;\n]+/).map(s => s.trim()).filter(Boolean);
+}
+
+/** Words people type in a contact field to mean "none" (or a form's yes/no answer
+ *  mapped by mistake). Compared after folding accents, case, punctuation and
+ *  repeated letters, so "Sí.", "sii", "NOO", "n/a" all count. */
+const PLACEHOLDER_CONTACTS = new Set([
+    'si', 'no', 'x', 'na', 'n/a', 'ninguno', 'ninguna', 'nada', 'sin', 'no tengo', 'no tiene', 'no uso', 'no posee', '0', 'nn',
+]);
+
+/** True for a contact value that carries no contact ("no", "si", "-", "no tengo"). Pure. */
+export function isPlaceholderContact(value: string): boolean {
+    const v = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    if (!v || /^[\s\-_.,;:!?¡¿*/\\]+$/.test(v)) return true; // only punctuation ("-", "--", ".")
+    const bare = v.replace(/[.,;:!¡?¿*()"']/g, '').replace(/\s+/g, ' ').trim();
+    return PLACEHOLDER_CONTACTS.has(bare) || PLACEHOLDER_CONTACTS.has(bare.replace(/([a-z])\1+/g, '$1')); // "sii", "noo"
+}
+
+/** Join one row's address-column values into ONE address ("Calle 123, Localidad,
+ *  Partido"), in column order, skipping a part an earlier part already contains. */
+export function joinAddressParts(parts: string[]): string {
+    const fold = (x: string) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const kept: string[] = [];
+    for (const p of parts.map(x => x.trim()).filter(Boolean)) {
+        if (kept.some(k => fold(k).includes(fold(p)))) continue;
+        kept.push(p);
+    }
+    return kept.join(', ');
 }
 
 function strArray(v: unknown): string[] {
@@ -210,15 +264,18 @@ export function parseAiRows(raw: unknown, count: number): MappedRow[] {
         const e = arr[i];
         if (!e || typeof e !== 'object') { out.push(emptyMappedRow()); continue; }
         const r = e as Record<string, unknown>;
+        let dropped = 0;
+        const contacts = (v: unknown) => strArray(v).filter(x => { const p = isPlaceholderContact(x); if (p) dropped++; return !p; });
         out.push({
             name: strOrUndef(r.name) ?? '',
-            phones: strArray(r.phones), emails: strArray(r.emails), socials: strArray(r.socials),
-            addresses: strArray(r.addresses), dnis: strArray(r.dnis), combinedContacts: [],
+            phones: contacts(r.phones), emails: contacts(r.emails), socials: contacts(r.socials),
+            addresses: contacts(r.addresses), dnis: contacts(r.dnis), combinedContacts: [],
             animalName: strOrUndef(r.animalName), species: strOrUndef(r.species),
             sex: strOrUndef(r.sex), neutered: strOrUndef(r.neutered), color: strOrUndef(r.color),
             microchip: strOrUndef(r.microchip), age: strOrUndef(r.age), rating: strOrUndef(r.rating),
             date: strOrUndef(r.date), recordType: strOrUndef(r.recordType), details: strOrUndef(r.details),
             onBehalfOf: strOrUndef(r.onBehalfOf),
+            ...(dropped ? { droppedPlaceholders: dropped } : {}),
         });
     }
     return out;
@@ -232,6 +289,10 @@ export function parseAiRows(raw: unknown, count: number): MappedRow[] {
 export function applyColumnMap(map: ColumnMap, headers: string[], row: string[]): MappedRow {
     const out: MappedRow = { name: '', phones: [], emails: [], socials: [], addresses: [], dnis: [], combinedContacts: [] };
     const indexOf = new Map(headers.map((h, i) => [h, i]));
+    // Each address column's values for this row: several columns that each hold one
+    // value are PARTS of one address (Dirección + Localidad + Partido).
+    const addressCells: string[][] = [];
+    let dropped = 0;
 
     for (const assign of map.columns) {
         if (assign.field === IGNORE) continue;
@@ -244,11 +305,22 @@ export function applyColumnMap(map: ColumnMap, headers: string[], row: string[])
         const multi = MULTI_CONTACT[assign.field];
         // A single cell may pack several values ("a@x.com; b@y.com") — split so
         // each becomes its own contact entry (own chip in review, stored separately).
-        if (multi) { for (const p of splitMultiValue(value)) out[multi].push(p); continue; }
+        // "no" / "si" / "-" are not contacts: dropped and counted.
+        if (multi) {
+            const values = splitMultiValue(value).filter(p => { const ph = isPlaceholderContact(p); if (ph) dropped++; return !ph; });
+            if (multi === 'addresses') { if (values.length) addressCells.push(values); }
+            else out[multi].push(...values);
+            continue;
+        }
         // Single-value field: first non-empty wins.
         if (assign.field === 'name') { if (!out.name) out.name = value; continue; }
         const key = assign.field as keyof MappedRow;
         if (out[key] === undefined) (out as unknown as Record<string, unknown>)[key] = value;
     }
+    // One value per address column → one joined address. A cell that itself holds
+    // several addresses ("a; b") keeps them separate, as before.
+    if (addressCells.length > 1 && addressCells.every(c => c.length === 1)) out.addresses.push(joinAddressParts(addressCells.map(c => c[0])));
+    else out.addresses.push(...addressCells.flat());
+    if (dropped) out.droppedPlaceholders = dropped;
     return out;
 }

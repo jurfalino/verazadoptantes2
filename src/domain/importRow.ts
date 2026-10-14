@@ -169,6 +169,12 @@ const RECORD_TYPE_MAP: Record<string, string> = {
     follow_up: 'follow_up', followup: 'follow_up', seguimiento: 'follow_up',
     returned_pet: 'returned_pet', returned: 'returned_pet', devuelto: 'returned_pet', 'devolución': 'returned_pet', devolucion: 'returned_pet',
 };
+/** The canonical record type a cell names, or null when the import doesn't know the value. */
+export function recognizedRecordType(raw: string | undefined): string | null {
+    if (!raw) return null;
+    return RECORD_TYPE_MAP[raw.trim().toLowerCase()] ?? null;
+}
+
 /** Canonicalize a record-type cell; defaults to 'adoption' (imports are adoptions). */
 export function normalizeRecordType(raw: string | undefined): string {
     if (!raw) return 'adoption';
@@ -213,6 +219,9 @@ export function rowWarnings(row: MappedRow): string[] {
     }
     if (row.date && normalizeImportDate(row.date) === null) {
         warnings.push(`Fecha no reconocida: "${row.date}" — se importa sin fecha.`);
+    }
+    if (row.recordType?.trim() && recognizedRecordType(row.recordType) === null) {
+        warnings.push(`Tipo no reconocido: "${row.recordType.trim()}" — se importa como Adopción.`);
     }
     return warnings;
 }

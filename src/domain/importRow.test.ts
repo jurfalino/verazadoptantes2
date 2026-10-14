@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeRating, normalizeImportDate, inferDateOrder, normalizeSpecies, normalizeRecordType, normalizeNeutered, validateMappedRow, rowWarnings } from './importRow';
+import { normalizeRating, normalizeImportDate, inferDateOrder, normalizeSpecies, normalizeRecordType, normalizeNeutered, validateMappedRow, rowWarnings, recognizedRecordType } from './importRow';
 import type { MappedRow } from './importFields';
 
 function row(o: Partial<MappedRow>): MappedRow {
@@ -176,5 +176,20 @@ describe('inferDateOrder (audit E16)', () => {
     });
     it('takes the majority under conflicting evidence', () => {
         expect(inferDateOrder(['14/03/2009', '15/03/2009', '03/14/2009'])).toBe('dmy'); // 2 dmy vs 1 mdy
+    });
+});
+
+describe('record type the import does not know', () => {
+    it('recognizedRecordType: known values and codes', () => {
+        expect(recognizedRecordType('Solicitud')).toBe('adoption_request');
+        expect(recognizedRecordType('adoption_request')).toBe('adoption_request');
+        expect(recognizedRecordType('AP')).toBeNull();
+        expect(recognizedRecordType('')).toBeNull();
+    });
+    it('rowWarnings says an unknown type is imported as an adoption', () => {
+        const base = { name: 'Ana', phones: [], emails: [], socials: [], addresses: [], dnis: [], combinedContacts: [] };
+        expect(rowWarnings({ ...base, recordType: 'AP' }).join(' ')).toMatch(/Tipo no reconocido: "AP".*Adopción/);
+        expect(rowWarnings({ ...base, recordType: 'solicitud' })).toEqual([]);
+        expect(rowWarnings(base)).toEqual([]);
     });
 });
