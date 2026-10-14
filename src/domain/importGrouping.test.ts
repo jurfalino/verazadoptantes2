@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { groupSamePerson, unionValues, phoneDigitsKey, type GroupableRow } from './importGrouping';
+import { groupSamePerson, groupName, namesAgree, unionValues, phoneDigitsKey, type GroupableRow } from './importGrouping';
 
 const row = (index: number, o: Partial<GroupableRow>): GroupableRow =>
     ({ index, name: '', phones: [], emails: [], socials: [], ids: [], addresses: [], ...o });
@@ -58,5 +58,41 @@ describe('unionValues', () => {
         expect(unionValues([['11-5555-1234', 'a@x.com'], ['1155551234'], ['11 4444 0000']], phoneDigitsKey))
             .toEqual(['11-5555-1234', 'a@x.com', '11 4444 0000']);
         expect(unionValues([['Ana@X.com'], ['ana@x.com', 'b@x.com']])).toEqual(['Ana@X.com', 'b@x.com']);
+    });
+});
+
+describe('different people are never one person (review 2026-10-14)', () => {
+    it('a shared surname is not a shared identity', () => {
+        expect(multi([
+            row(0, { name: 'María Pérez', phones: ['11 6585 1333'] }),
+            row(1, { name: 'Juan Pérez', phones: ['11 6585 1333'] }),
+        ])).toEqual([]);
+        expect(multi([
+            row(0, { name: 'María de los Ángeles Ruiz', emails: ['casa@x.com'] }),
+            row(1, { name: 'Juan de los Santos', emails: ['casa@x.com'] }),
+        ])).toEqual([]);
+    });
+    it('the same first name with different surnames stays apart', () => {
+        expect(namesAgree('María Gómez', 'María Ruiz')).toBe(false);
+        expect(namesAgree('Juan', 'Juan Gómez')).toBe(true);
+        expect(namesAgree('Ana Pérez', 'ana perez gomez')).toBe(true);
+        expect(namesAgree('María de los Ángeles', 'Juan de los Santos')).toBe(false);
+    });
+    it('no chain through a junk email shared by many names', () => {
+        expect(multi([
+            row(0, { name: 'María Gómez', emails: ['no@gmail.com'] }),
+            row(1, { name: 'María Ruiz', emails: ['no@gmail.com'] }),
+            row(2, { name: 'Lucía Ruiz', emails: ['no@gmail.com'] }),
+            row(3, { name: 'Lucía Ruiz', emails: ['no@gmail.com'] }),
+            row(4, { name: 'Pedro Sosa', emails: ['no@gmail.com'] }),
+            row(5, { name: 'Ana Díaz', emails: ['no@gmail.com'] }),
+        ]).map(g => g.indices)).toEqual([[2, 3]]); // only the two IDENTICAL rows (same name and email)
+    });
+    it('a value that is not an email links nobody', () => {
+        expect(multi([row(0, { name: 'Ana Ruiz', emails: ['@'] }), row(1, { name: 'Ana Ruiz', emails: ['@'], phones: ['1'] })])).toEqual([]);
+    });
+    it('groupName keeps the most complete name', () => {
+        expect(groupName(['Juan', 'juan gomez', 'Juan Gómez'])).toBe('Juan Gómez');
+        expect(groupName(['', 'Ana'])).toBe('Ana');
     });
 });

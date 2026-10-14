@@ -5,7 +5,7 @@ import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
 import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, getMatchContext, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun, type MatchContext } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
 import { computeContentFingerprint } from '@/domain/contentFingerprint';
-import { groupSamePerson, unionValues, phoneDigitsKey, type GroupReason } from '@/domain/importGrouping';
+import { groupSamePerson, groupName, unionValues, phoneDigitsKey, type GroupReason } from '@/domain/importGrouping';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { buildImportBody } from '@/lib/importRow';
 import { inferDateOrder } from '@/domain/importRow';
@@ -38,22 +38,25 @@ function splitGroupedContacts(eff: MappedRow): { phones: string[]; emails: strin
     return g;
 }
 
-/** Which rows are the same person (domain/importGrouping), minus the groups the
- *  reviewer split ("Separar", keyed by the group's first row). Shared by the
- *  Revisar view and the import fold, so what is shown is what is written. */
+/** Which rows are the same person (domain/importGrouping). Rows the reviewer
+ *  split apart ("Separar" — every row of that group is remembered) are never
+ *  grouped again. Computed once over the whole file: Revisar shows these groups
+ *  and the import folds exactly these, so what is shown is what is written. */
 function personGroups(rows: Array<{ index: number; eff: MappedRow }>, split: Set<number>): Array<{ indices: number[]; reason: GroupReason | null }> {
-    const groups = groupSamePerson(rows.map(r => ({ index: r.index, name: r.eff.name, ...splitGroupedContacts(r.eff) })));
-    return groups.flatMap(g => (g.indices.length > 1 && split.has(g.indices[0]) ? g.indices.map(i => ({ indices: [i], reason: null })) : [g]));
+    const groups = groupSamePerson(rows.filter(r => !split.has(r.index)).map(r => ({ index: r.index, name: r.eff.name, ...splitGroupedContacts(r.eff) })));
+    const singles = rows.filter(r => split.has(r.index)).map(r => ({ indices: [r.index], reason: null }));
+    return [...groups, ...singles].sort((a, b) => a.indices[0] - b.indices[0]);
 }
 
-/** Every contact of a group's rows, so the one profile loses none of them. */
-function mergedGroupContacts(effs: MappedRow[]): Pick<MappedRow, 'phones' | 'emails' | 'socials' | 'addresses' | 'dnis' | 'combinedContacts'> {
+/** The group's one profile: the most complete name and every contact of its rows. */
+function mergedGroupContacts(effs: MappedRow[]): Pick<MappedRow, 'name' | 'phones' | 'emails' | 'socials' | 'addresses' | 'dnis' | 'combinedContacts'> {
     return {
+        name: groupName(effs.map(e => e.name)),
         phones: unionValues(effs.map(e => e.phones), phoneDigitsKey),
         emails: unionValues(effs.map(e => e.emails)),
         socials: unionValues(effs.map(e => e.socials)),
         addresses: unionValues(effs.map(e => e.addresses)),
-        dnis: unionValues(effs.map(e => e.dnis), phoneDigitsKey),
+        dnis: unionValues(effs.map(e => e.dnis)),
         combinedContacts: unionValues(effs.map(e => e.combinedContacts)),
     };
 }
@@ -214,7 +217,7 @@ export default function SpreadsheetImportWizard() {
     const [results, setResults] = useState<RowResult[]>([]);
     // Intra-spreadsheet dedup summary: how many rows were folded into how many people.
     const [foldSummary, setFoldSummary] = useState<{ folded: number; people: number } | null>(null);
-    // Same-person groups the reviewer split apart ("Separar"), by the group's first row.
+    // Rows the reviewer split apart ("Separar"): every row of that group.
     const [splitGroups, setSplitGroups] = useState<Set<number>>(new Set());
     const [importDone, setImportDone] = useState(false);
     // Cancel: a ref the send-loop checks between batches (state would be stale in
@@ -493,7 +496,8 @@ export default function SpreadsheetImportWizard() {
         if (!parsed) return;
         setOverrides(o => {
             const n = { ...o };
-            parsed.rows.forEach((_, i) => { n[i] = { ...n[i], rating: rating || undefined }; });
+            // Clearing deletes the override: `undefined` would still win over the sheet's value.
+            parsed.rows.forEach((_, i) => { const { rating: _r, ...rest } = n[i] ?? {}; n[i] = rating ? { ...rest, rating } : rest; });
             return n;
         });
     };
@@ -503,7 +507,7 @@ export default function SpreadsheetImportWizard() {
         if (!parsed) return;
         setOverrides(o => {
             const n = { ...o };
-            parsed.rows.forEach((_, i) => { n[i] = { ...n[i], recordType: recordType || undefined }; });
+            parsed.rows.forEach((_, i) => { const { recordType: _t, ...rest } = n[i] ?? {}; n[i] = recordType ? { ...rest, recordType } : rest; });
             return n;
         });
     };
@@ -569,8 +573,8 @@ export default function SpreadsheetImportWizard() {
 
     // Same-person groups over the whole file (Revisar shows them; the import folds them).
     const reviewGroups = useMemo(() => {
-        const byIndex = new Map<number, { key: number; reason: GroupReason | null }>();
-        for (const g of personGroups(records, splitGroups)) for (const i of g.indices) byIndex.set(i, { key: g.indices[0], reason: g.reason });
+        const byIndex = new Map<number, { key: number; reason: GroupReason | null; members: number[] }>();
+        for (const g of personGroups(records, splitGroups)) for (const i of g.indices) byIndex.set(i, { key: g.indices[0], reason: g.reason, members: g.indices });
         return byIndex;
     }, [records, splitGroups]);
 
@@ -907,16 +911,22 @@ export default function SpreadsheetImportWizard() {
             const nameByIndex: Record<number, string> = {};
             const toSend: ImportBatchRow[] = [];
             setPreparing({ done: 0, total: targets.length });
-            // Same-person groups among the rows that will be created (the reviewer's
-            // splits apply). A group's first row is saved with all the group's contacts.
+            // The same-person groups Revisar showed, limited to the rows that will be
+            // created (selected, action 'create'). The first of them is saved with
+            // the group's name and every contact; the others fold into it.
             const groupKeyOf = new Map<number, number>();
             const mergedEff = new Map<number, MappedRow>();
             const effOf = new Map(targets.map(t => [t.index, t.eff]));
-            for (const g of personGroups(targets.filter(t => (rowAction[t.index] ?? 'create') === 'create'), splitGroups)) {
-                if (g.indices.length < 2) continue;
-                for (const i of g.indices) groupKeyOf.set(i, g.indices[0]);
-                const primaryEff = effOf.get(g.indices[0])!;
-                mergedEff.set(g.indices[0], { ...primaryEff, ...mergedGroupContacts(g.indices.map(i => effOf.get(i)!)) });
+            const willCreate = (i: number) => effOf.has(i) && (rowAction[i] ?? 'create') === 'create';
+            const seenGroups = new Set<number>();
+            for (const t of targets) {
+                const g = reviewGroups.get(t.index);
+                if (!g || seenGroups.has(g.key)) continue;
+                seenGroups.add(g.key);
+                const members = g.members.filter(willCreate);
+                if (members.length < 2) continue;
+                for (const i of members) groupKeyOf.set(i, members[0]);
+                mergedEff.set(members[0], { ...effOf.get(members[0])!, ...mergedGroupContacts(members.map(i => effOf.get(i)!)) });
             }
             let prepared = 0;
             for (const t of targets) {
@@ -1384,7 +1394,7 @@ export default function SpreadsheetImportWizard() {
                     </div>
 
                     {/* TODO(wave1c-mobile): reflow to card-per-record ≤sm (single-DOM CSS reflow) */}
-                    <RecordGrid rows={filtered} groupOf={reviewGroups} onSplitGroup={key => setSplitGroups(s => new Set(s).add(key))}
+                    <RecordGrid rows={filtered} groupOf={reviewGroups} onSplitGroup={key => setSplitGroups(s => { const n = new Set(s); for (const i of reviewGroups.get(key)?.members ?? [key]) n.add(i); return n; })}
                         editingCell={editingCell} onEditCell={(index, field) => setEditingCell(field ? { index, field } : null)}
                         matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
                         failureByIndex={failureByIndex} onSetSelected={setGroupSelected} onChange={setOverride}
@@ -1929,7 +1939,7 @@ function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onCha
                 <td className="px-2 py-2 text-right text-stone-400 text-xs tabular-nums whitespace-nowrap align-top">{primary.index + 1}</td>
                 <td className="px-3 py-2 font-medium text-stone-800">
                     <InlineCell {...cellProps('name')} kind="text" ariaLabel="Editar nombre"
-                        value={eff.name} onCommit={v => onChange(primary.index, { name: v })}
+                        value={eff.name} onCommit={v => { for (const m of members) onChange(m.index, { name: v }); }}
                         display={
                             /* Empty name is allowed (min-identifier: name OR contact). A
                                nameless-but-valid row shows the muted "Sin nombre" fallback
@@ -2126,7 +2136,7 @@ function RecordGrid({
     onRecordTypeAll: (recordType: string) => void;
     // Revisar step: rows of the same person (see personGroups) collapse into ONE
     // record showing N stacked activities — matching the import-time fold.
-    groupOf?: Map<number, { key: number; reason: GroupReason | null }>;
+    groupOf?: Map<number, { key: number; reason: GroupReason | null; members: number[] }>;
     onSplitGroup?: (key: number) => void;
 }) {
     // Group the same person's rows into one record with N activities; ungrouped ⇒

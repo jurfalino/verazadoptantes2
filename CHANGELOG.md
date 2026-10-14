@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.178] - 2026-10-14
+
+### Fixed — /import/sheet: review findings on 2.56.177
+
+- Two different people are no longer one profile because they share a surname
+  and a phone or email: the same first name is required, plus another word when
+  both names have one; «de», «los», «san»… don't count. An email or phone written
+  by more than 3 different names (a junk «no@gmail.com») links nobody.
+- «Separar» remembers every row of the group, and the import writes exactly the
+  groups Revisar showed.
+- «Volver al tipo de la planilla» and «Limpiar rating» really go back to the sheet's
+  values.
+- Only Localidad / Partido / Ciudad… columns join onto the street; «Dirección» and
+  «Dirección laboral» stay two addresses.
+- «1. Nombre y apellido», «¿Tu teléfono?», «DNI / ID», «ID Instagram» and
+  «Estado / Calificación» map again; «Tipo» wins over «Tipo de vivienda».
+- A grouped profile takes the most complete name («Juan Gómez» over «Juan»).
+
 ## [2.56.177] - 2026-10-14
 
 ### Changed — /import/sheet reads a rescue's form export correctly

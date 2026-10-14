@@ -260,3 +260,34 @@ describe('applyColumnMap — placeholders and address parts', () => {
         expect(joinAddressParts([' Calle 9 ', '', 'CABA'])).toBe('Calle 9, CABA');
     });
 });
+
+describe('guessColumnMap — labels that must still map (review 2026-10-14)', () => {
+    const f = (headers: string[]) => guessColumnMap(headers).columns.map(c => c.field);
+    it('numbered labels, a short question and a long phone label', () => {
+        expect(f(['1. Nombre y apellido', '2. Teléfono', '3. Email'])).toEqual(['name', 'phone', 'email']);
+        expect(f(['¿Tu teléfono?'])).toEqual(['phone']);
+        expect(f(['Teléfono celular de contacto con código de área sin 15'])).toEqual(['phone']);
+    });
+    it('id/status words do not hide their own keyword', () => {
+        expect(f(['DNI / ID', 'ID Instagram', 'Estado / Calificación'])).toEqual(['dni', 'social', 'rating']);
+    });
+    it('the shortest label wins a single-value field', () => {
+        expect(f(['Tipo de vivienda', 'Tipo'])).toEqual([IGNORE, 'recordType']);
+    });
+});
+
+describe('applyColumnMap — which address columns join (review 2026-10-14)', () => {
+    const cols = (hs: string[]) => ({ columns: hs.map(h => ({ column: h, field: 'address', confidence: 'high' as const })) });
+    it('two addresses of their own stay two', () => {
+        const hs = ['Dirección', 'Dirección laboral'];
+        expect(applyColumnMap(cols(hs), hs, ['Calle 1 123', 'Av. Siempre Viva 742']).addresses).toEqual(['Calle 1 123', 'Av. Siempre Viva 742']);
+    });
+    it('a locality column before the street still joins it', () => {
+        const hs = ['Localidad', 'Domicilio'];
+        expect(applyColumnMap(cols(hs), hs, ['Morón', 'Calle 1 123']).addresses).toEqual(['Calle 1 123, Morón']);
+    });
+    it('a partido named like the street is kept', () => {
+        const hs = ['Dirección', 'Partido'];
+        expect(applyColumnMap(cols(hs), hs, ['Calle San Martín 100', 'San Martín']).addresses).toEqual(['Calle San Martín 100, San Martín']);
+    });
+});

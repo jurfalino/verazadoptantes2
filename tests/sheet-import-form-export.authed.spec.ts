@@ -28,6 +28,9 @@ test.describe('sheet import: a form export', () => {
         await expect(notice).toContainText('«AP»');
         await page.getByTestId('bulk-record-type').selectOption('adoption_request');
         await expect(notice).toHaveCount(0);
+        // Undo: back to the sheet's own values (and the warning about them).
+        await page.getByTestId('bulk-record-type').selectOption('clear');
+        await expect(notice).toContainText('3 filas');
     });
 
     test('"no"/"si" are not contacts, and one row\'s address columns are one address', async ({ page }) => {
