@@ -55,8 +55,16 @@ Rules for the public form:
 3. **Options: aim for 5 or fewer.** Six is acceptable only when every option
    means something different to the rescuer (§4: "¿Qué pasó con tu último
    animal?"). Never two options that mean the same thing.
-4. **Closed by default.** Options are faster on a phone and the semáforo can
-   read them. An open question has no semáforo dot.
+4. **Closed by default, open when the rescuer prefers.** Options are faster on
+   a phone and the semáforo can read them; an open answer has no dot. Wherever
+   the applicant could describe their situation in their own words, the rescuer
+   may switch that question to open text (Jon, 2026-10-14). It stays closed when:
+   - the form **branches on the answer** (species → cat/dog questions; intent →
+     gift flow; housing type → household wording; pet count → its follow-up);
+   - it is a **yes/no fact** ("¿Tenés patio?", allergies);
+   - it is a **consent** (visits and follow-up need an unambiguous answer);
+   - it is **identity or a count** (name, email, age range, how many pets);
+   - it is a **single-promise switch** (vet, special needs).
 5. **Ask what they would do, not whether they promise.** A promise gets the
    expected answer from everyone; a situation gets an honest one.
 6. **Photos are optional unless the rescuer requires them**, at most 3 per
@@ -82,9 +90,9 @@ Default = what a rescuer who hasn't changed anything gets (with custom forms on)
 | Previous animal | ¿Qué pasó con tu último animal? | Sigue conmigo / Murió de viejo o enfermo / Se perdió o escapó / Murió en la calle (atropellado, envenenado) / Lo di o lo regalé / Es mi primera vez | **this** · old "¿Tuviste mascotas antes?" · open | on |
 | Gave one away | ¿Alguna vez diste o regalaste un animal? | No / Sí → "¿Por qué?" (text, same screen) | closed · open | on |
 | Return reasons | ¿Hay algo por lo que lo devolverías? | No / Alergia / Un bebé / Problemas de conducta / Otro | closed · open | on |
-| Rental | ¿La casa es tuya o alquilás? | Es propia / Alquilo y permiten animales / Alquilo y no permiten / Alquilo, no sé | closed | on |
+| Rental | ¿La casa es tuya o alquilás? | Es propia / Alquilo y permiten animales / Alquilo y no permiten / Alquilo, no sé | closed · open | on |
 | Where it sleeps | ¿Dónde va a dormir? | Adentro / Afuera (+ optional photo, if photos are on) | closed · open | on |
-| Current pets' care | ¿Están castrados y vacunados? *(follow-up under a non-zero pet count)* | Sí / Algunos / No | closed | on |
+| Current pets' care | ¿Están castrados y vacunados? *(follow-up under a non-zero pet count)* | Sí / Algunos / No | closed · open | on |
 | Castration — how | ¿Cómo lo castrarías? *(follow-up under "Sí" to the castration promise)* | Ya está castrado / Con mi veterinario / En una campaña gratuita | closed · open | on |
 | Protection photos | Sacá fotos de las protecciones (balcón, ventanas, rejas) *(under "¿El espacio está protegido?")* | up to 3 photos; rescuer chooses optional or required | — | **off** |
 | Cats: street | ¿Saldría a la calle o a los techos? *(cats only)* | No / A veces / Sí | closed · open | **off** |
@@ -98,7 +106,7 @@ Default = what a rescuer who hasn't changed anything gets (with custom forms on)
 | Visits & follow-up | ¿Aceptás una visita o videollamada para conocer dónde va a vivir, y que te contactemos después para saber cómo está? | Sí / Solo videollamada / No | closed | on |
 | When it doesn't adapt | Si rompe cosas, se hace encima o no se lleva con tu otra mascota… | Le tengo paciencia o busco un educador / Pido ayuda al refugio / Lo devuelvo | closed · open | on |
 | Allergies | ¿Alguien en la casa tiene alergia a los animales? | No / Sí / No sé | closed | on |
-| Day-to-day carer | ¿Quién lo va a cuidar día a día? | Yo / Otro adulto de la casa / Un menor | closed | on |
+| Day-to-day carer | ¿Quién lo va a cuidar día a día? | Yo / Otro adulto de la casa / Un menor | closed · open | on |
 | Vet reference | ¿Tenés veterinario? Nombre o teléfono | text (optional) | — | **off** |
 | Dogs: tied / alone outside | ¿Va a estar atado, o solo en un patio o terraza? *(dogs only)* | No / A veces / Sí | closed · open | **off** |
 | Motivation | ¿Por qué querés adoptar? · ¿Cómo nos conociste? | two text fields | — | **off** |
@@ -158,6 +166,24 @@ Each topic is a row in its group, like today's questions:
 The counter ("El adoptante responde N de M preguntas") counts topics, not ways
 to ask, and never counts follow-ups.
 
+### 6.0 Which questions offer "Cómo preguntar" (open vs closed)
+
+Applying §3 rule 4 to every question — existing and new:
+
+| Offers open text | Stays closed (reason) |
+|---|---|
+| **Existing:** ¿El espacio está protegido? · ¿Cuántas horas al día estaría solo? · ¿Tuviste mascotas antes? (old way) · ¿Estás dispuesto/a a castrar? · ¿Tenés pensado mudarte? (old way) · ¿Qué harías en vacaciones? | **Branches the form:** ¿Qué animal buscás? · ¿Es para vos o un regalo? · ¿Dónde vivís? (casa/depto) · ¿Tenés mascotas? (count) · ¿Hay niños? / Personas del hogar |
+| **New:** Moving · Previous animal · Gave one away · Return reasons · Rental · Where it sleeps · Current pets' care · Castration how · Cats: street · Dogs: walks · When it doesn't adapt · Day-to-day carer · Dogs: tied | **Yes/no fact:** ¿Tenés patio? · Allergies |
+| | **Consent:** Visits & follow-up · Términos |
+| | **Identity / count / preference:** name, email, phone, address, age range, ¿Qué edad preferís?, location, selfie |
+| | **Single-promise switch:** veterinario · necesidades especiales |
+| | **Already free text:** Vet reference · Motivation · Instagram/Facebook · "¿Para quién es?" |
+
+An open answer is stored as text under the same answer key, shown as text on
+the form screen with no dot, and stripped of its options on the public form
+(the applicant sees a text box with the same question). Switching a question
+between ways never rewrites past submissions — each keeps what it asked.
+
 ### 6.1 Storage
 
 All of it stays in `adoption_doc_settings.hidden_steps`, compare-and-swap per
@@ -165,7 +191,7 @@ key as today, so teammates' edits keep merging question by question:
 
 - a step id → that question is **not** asked (today's meaning);
 - `on:<id>` → an **off-by-default** question **is** asked;
-- `way:<topic>:<way>` → this topic is asked that way (`open`, `old`); absent →
+- `way:<id>:<way>` → this question is asked that way (`open`, or `old` for moving and previous animal); absent →
   default (closed, new question);
 - `photos-required` → protection photos required (only meaningful with `on:protectionPhotos`).
 
