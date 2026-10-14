@@ -6,6 +6,14 @@
  *   isSafe    no   → risk (red)       yes  → ok   "na" (no outdoor space) → none
  *   children  any  → caution (amber)  none → ok
  *
+ * Spec 2026-10-14 §5 adds the new questions — red / amber only, no green:
+ *   movingIfNoPets return → red, family → amber · gaveAway yes → red ·
+ *   lastAnimal lost / street / gave → red · returnReasons any reason → amber ·
+ *   willingToSterilize no → red · catOutdoor & dogTied yes → red, sometimes → amber ·
+ *   sleepPlace outside → amber · rental rentNotAllowed / rentUnsure → amber ·
+ *   visitConsent no → red · adaptPlan return → red · carer minor → amber ·
+ *   allergy yes → amber.
+ *
  * Red marks a likely dealbreaker, amber something to talk through with the
  * applicant. Every other question, and any unanswered or unknown value,
  * gets no signal — a dot must only ever mean one of these readings.
@@ -23,6 +31,19 @@ export function answerSignal(field: string, raw: unknown): AnswerSignal | null {
             return v === 'no' ? 'risk' : v === 'yes' ? 'ok' : null;
         case 'children':
             return v === 'none' ? 'ok' : ['1', '2', '3+'].includes(v) ? 'caution' : null;
+        case 'movingIfNoPets': return v === 'return' ? 'risk' : v === 'family' ? 'caution' : null;
+        case 'gaveAway': return v === 'yes' ? 'risk' : null;
+        case 'lastAnimal': return ['lost', 'street', 'gave'].includes(v) ? 'risk' : null;
+        case 'returnReasons': return ['allergy', 'baby', 'behaviour', 'other'].includes(v) ? 'caution' : null;
+        case 'willingToSterilize': return v === 'no' ? 'risk' : null;
+        case 'catOutdoor':
+        case 'dogTied': return v === 'yes' ? 'risk' : v === 'sometimes' ? 'caution' : null;
+        case 'sleepPlace': return v === 'outside' ? 'caution' : null;
+        case 'rental': return v === 'rentNotAllowed' || v === 'rentUnsure' ? 'caution' : null;
+        case 'visitConsent': return v === 'no' ? 'risk' : null;
+        case 'adaptPlan': return v === 'return' ? 'risk' : null;
+        case 'carer': return v === 'minor' ? 'caution' : null;
+        case 'allergy': return v === 'yes' ? 'caution' : null;
         default:
             return null;
     }

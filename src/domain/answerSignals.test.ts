@@ -45,3 +45,25 @@ describe('"No sé" never gets a dot', () => {
         for (const f of ['children', 'isSafe', 'intent']) expect(answerSignal(f, 'unknown')).toBeNull();
     });
 });
+
+describe('new questions (spec 2026-10-14 §5)', () => {
+    const cases: Array<[string, string, ReturnType<typeof answerSignal>]> = [
+        ['movingIfNoPets', 'return', 'risk'], ['movingIfNoPets', 'family', 'caution'], ['movingIfNoPets', 'find', null],
+        ['gaveAway', 'yes', 'risk'], ['gaveAway', 'no', null],
+        ['lastAnimal', 'lost', 'risk'], ['lastAnimal', 'street', 'risk'], ['lastAnimal', 'gave', 'risk'], ['lastAnimal', 'oldAge', null],
+        ['returnReasons', 'baby', 'caution'], ['returnReasons', 'behaviour', 'caution'], ['returnReasons', 'no', null],
+        ['willingToSterilize', 'no', 'risk'], ['willingToSterilize', 'yes', null],
+        ['catOutdoor', 'yes', 'risk'], ['catOutdoor', 'sometimes', 'caution'], ['catOutdoor', 'no', null],
+        ['sleepPlace', 'outside', 'caution'], ['sleepPlace', 'inside', null],
+        ['rental', 'rentNotAllowed', 'caution'], ['rental', 'rentUnsure', 'caution'], ['rental', 'own', null],
+        ['visitConsent', 'no', 'risk'], ['visitConsent', 'videoOnly', null],
+        ['adaptPlan', 'return', 'risk'], ['adaptPlan', 'patience', null],
+        ['dogTied', 'yes', 'risk'], ['dogTied', 'sometimes', 'caution'],
+        ['carer', 'minor', 'caution'], ['carer', 'me', null],
+        ['allergy', 'yes', 'caution'], ['allergy', 'unknown', null],
+        ['catOutdoor', 'unknown', null],
+    ];
+    it.each(cases)('%s = %s → %s', (field, value, expected) => {
+        expect(answerSignal(field, value)).toBe(expected);
+    });
+});
