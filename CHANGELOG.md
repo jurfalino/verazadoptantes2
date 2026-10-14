@@ -2,6 +2,41 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.182] - 2026-10-14
+
+### Added — new adoption-form questions (custom forms)
+
+Only with custom forms switched on; production forms don't change while it's off.
+
+- **"What would you do if…" questions, asked by default:** "Si te mudás y no
+  aceptan animales…", "¿Qué pasó con tu último animal?", "¿Alguna vez diste o
+  regalaste un animal?" (with "¿Por qué?"), "¿Hay algo por lo que lo
+  devolverías?", "Si rompe cosas o no se adapta…", visits and follow-up, rental,
+  where it will sleep.
+- **Follow-ups on the same screen:** who looks after it day to day (under "Para
+  mí"), allergies (under "¿Hay niños?"), whether current pets are neutered and
+  vaccinated, how they'd neuter it (under "Sí").
+- **Switches a rescuer turns on:** cats going out to the street or roofs, dog
+  walks, dogs tied or alone outside (each only for that species, also on forms
+  for a specific animal), Instagram/Facebook (they go onto the applicant's
+  profile), their vet, why they adopt.
+- **Two ways to ask** "mascotas previas" and "mudanza": the new question (default)
+  or the old one, chosen in Ajustes.
+- **Semáforo** for the new answers (red: giving it back, gave one away, lost or
+  died outside, no visit, cat out on the street; amber: leaving it with a relative,
+  any reason to return it, a minor as carer, allergies, sleeping outside, a rental
+  that doesn't allow animals). "No" to castration is now red on every form.
+- **UX guidelines:** a section for the public adoption form.
+
+### Fixed — gift form follow-ups
+
+- "No sé" only clears on the questions that offer it; switching from gift to
+  "Para mí" asks those questions again; an old gift draft no longer runs the
+  gift questions once "Intención" is hidden; no second "No sé" on vacations; no
+  "dispuesto/a" about the recipient.
+- Combining profiles keeps a same-named household member's gift mark and phone
+  (undo takes them back); "Para quién es" reads "Hija · Laura Pérez".
+
 ## [2.56.181] - 2026-10-14
 
 ### Changed — CI: authed e2e in 7 legs
