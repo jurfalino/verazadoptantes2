@@ -7,10 +7,12 @@
 import { z } from 'zod';
 
 export const FORM_STEP_IDS = [
-    'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'giftRecipient', 'children', 'existingPets',
-    'housingType', 'household', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience', 'willingToSterilize',
-    'vetCommitment', 'movingPlans', 'vacationPlan', 'identity-name', 'identity-email',
-    'identity-phone', 'identity-address', 'ageRange', 'geo', 'selfie',
+    'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'carer', 'giftRecipient', 'children', 'allergy',
+    'existingPets', 'petsCare', 'housingType', 'rental', 'household', 'hasOutdoor', 'isSafe', 'catOutdoor',
+    'sleepPlace', 'hoursAlone', 'dogWalks', 'dogTied', 'petExperience', 'lastAnimal', 'gaveAway',
+    'willingToSterilize', 'sterilizeHow', 'vetCommitment', 'movingPlans', 'movingIfNoPets', 'vacationPlan',
+    'returnReasons', 'adaptPlan', 'visitConsent', 'identity-name', 'identity-email', 'identity-phone',
+    'identity-address', 'social', 'ageRange', 'vetReference', 'motivation', 'geo', 'selfie',
 ] as const;
 
 /** Terms consent + identity feed the adopter record and dedup — never hideable. */
@@ -23,6 +25,32 @@ export const LOCKED_FORM_STEPS = ['legal', 'identity-name', 'identity-email', 'i
  */
 export const DERIVED_FORM_STEPS = ['giftRecipient'] as const;
 
+/** Release 1 of spec 2026-10-14: asked only when the rescuer's config arrives (custom forms on). */
+export const NEW_FORM_STEPS = [
+    'carer', 'allergy', 'petsCare', 'rental', 'catOutdoor', 'sleepPlace', 'dogWalks', 'dogTied', 'lastAnimal',
+    'gaveAway', 'sterilizeHow', 'movingIfNoPets', 'returnReasons', 'adaptPlan', 'visitConsent', 'social',
+    'vetReference', 'motivation',
+] as const;
+
+/** Off until the rescuer turns them on (`on:<id>`): species-only, social, vet reference, motivation. */
+export const DEFAULT_OFF_FORM_STEPS = ['catOutdoor', 'dogWalks', 'dogTied', 'social', 'vetReference', 'motivation'] as const;
+
+/** The new wording of a topic whose row is the old question ('petExperience', 'movingPlans'). Not rows. */
+export const VARIANT_FORM_STEPS = ['lastAnimal', 'movingIfNoPets'] as const;
+
+/** Questions shown under another screen (spec §4.2 length check); the first host that is asked wins. */
+export const FOLLOW_UP_HOSTS = {
+    carer: ['intent'],
+    allergy: ['children', 'household'],
+    petsCare: ['existingPets'],
+    sterilizeHow: ['willingToSterilize'],
+} as const;
+
+/** Asked only when the animal is this species. */
+export const SPECIES_ONLY_STEPS = { catOutdoor: 'cat', dogWalks: 'dog', dogTied: 'dog' } as const;
+
+const VARIANT_OF: Record<string, string> = { lastAnimal: 'petExperience', movingIfNoPets: 'movingPlans' };
+
 /**
  * Per-form options stored in the same hidden_steps list (spec Part 3):
  * 'phone-optional' lets an applicant leave the phone blank — absent (every
@@ -30,14 +58,22 @@ export const DERIVED_FORM_STEPS = ['giftRecipient'] as const;
  * or shown, and they sort after the steps. Toggleable, so a teammate's change
  * is a per-key conflict like any question.
  */
-export const FORM_OPTION_TOKENS = ['phone-optional'] as const;
+export const FORM_OPTION_TOKENS = [
+    'phone-optional',
+    'on:catOutdoor', 'on:dogWalks', 'on:dogTied', 'on:social', 'on:vetReference', 'on:motivation',
+    'way:petExperience:old', 'way:movingPlans:old',
+] as const;
 
 const LOCKED = new Set<string>(LOCKED_FORM_STEPS);
 const DERIVED = new Set<string>(DERIVED_FORM_STEPS);
-const KNOWN = new Set<string>(FORM_STEP_IDS.filter(id => !DERIVED.has(id)));
+const VARIANT = new Set<string>(VARIANT_FORM_STEPS);
+const DEFAULT_OFF = new Set<string>(DEFAULT_OFF_FORM_STEPS);
+const KNOWN = new Set<string>(FORM_STEP_IDS.filter(id => !DERIVED.has(id) && !VARIANT.has(id)));
+/** Every step the public form can report as shown (variants included). */
+const SHOWN_KNOWN = new Set<string>(FORM_STEP_IDS);
 const OPTIONS = new Set<string>(FORM_OPTION_TOKENS);
 
-export const TOGGLEABLE_FORM_STEPS: readonly string[] = [...FORM_STEP_IDS.filter(id => !LOCKED.has(id) && !DERIVED.has(id)), ...FORM_OPTION_TOKENS];
+export const TOGGLEABLE_FORM_STEPS: readonly string[] = [...FORM_STEP_IDS.filter(id => !LOCKED.has(id) && !DERIVED.has(id) && !VARIANT.has(id)), ...FORM_OPTION_TOKENS];
 
 /** Whether the applicant must give a phone — the default; 'phone-optional' turns it off. */
 export function isPhoneRequired(hidden: readonly string[]): boolean {
@@ -45,10 +81,10 @@ export function isPhoneRequired(hidden: readonly string[]): boolean {
 }
 
 export const FORM_STEP_GROUPS = [
-    { key: 'what', steps: ['species', 'lifeStage', 'specialNeeds', 'intent'] },
-    { key: 'home', steps: ['children', 'household', 'existingPets', 'housingType', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience'] },
-    { key: 'commitments', steps: ['willingToSterilize', 'vetCommitment', 'movingPlans', 'vacationPlan'] },
-    { key: 'person', steps: ['identity-name', 'identity-email', 'identity-phone', 'identity-address', 'ageRange', 'geo', 'selfie'] },
+    { key: 'what', steps: ['species', 'lifeStage', 'specialNeeds', 'intent', 'carer'] },
+    { key: 'home', steps: ['children', 'household', 'allergy', 'existingPets', 'petsCare', 'housingType', 'rental', 'hasOutdoor', 'isSafe', 'catOutdoor', 'sleepPlace', 'hoursAlone', 'dogWalks', 'dogTied', 'petExperience', 'gaveAway'] },
+    { key: 'commitments', steps: ['willingToSterilize', 'sterilizeHow', 'vetCommitment', 'movingPlans', 'vacationPlan', 'returnReasons', 'adaptPlan', 'visitConsent'] },
+    { key: 'person', steps: ['identity-name', 'identity-email', 'identity-phone', 'identity-address', 'social', 'ageRange', 'vetReference', 'motivation', 'geo', 'selfie'] },
 ] as const;
 
 /** Steps in form order, then option tokens. */
@@ -66,7 +102,7 @@ export function sanitizeHiddenSteps(input: unknown): string[] {
 export function sanitizeShownSteps(input: unknown): string[] | null {
     if (!Array.isArray(input)) return null;
     const keep = new Set<string>();
-    for (const v of input) if (typeof v === 'string' && KNOWN.has(v)) keep.add(v);
+    for (const v of input) if (typeof v === 'string' && SHOWN_KNOWN.has(v)) keep.add(v);
     return inFormOrder(keep);
 }
 
@@ -87,7 +123,44 @@ export function isStepAsked(id: string, hidden: readonly string[]): boolean {
     const rowHidden = hidden.includes('children');
     if (id === 'children') return !rowHidden && householdQuestion(hidden) === 'children';
     if (id === 'household') return !rowHidden && householdQuestion(hidden) === 'people';
+    if (VARIANT.has(id)) {
+        const row = VARIANT_OF[id];
+        return !hidden.includes(row) && !hidden.includes(`way:${row}:old`);
+    }
+    if (id === 'petExperience' || id === 'movingPlans') {
+        return !hidden.includes(id) && hidden.includes(`way:${id}:old`);
+    }
+    if (DEFAULT_OFF.has(id)) return hidden.includes(`on:${id}`);
     return !hidden.includes(id);
+}
+
+/** Whether a settings row's question is on — default-off rows need their `on:` token. */
+export function isQuestionOn(rowId: string, hidden: readonly string[]): boolean {
+    return DEFAULT_OFF.has(rowId) ? hidden.includes(`on:${rowId}`) : !hidden.includes(rowId);
+}
+
+/** The stored list after flipping a row's switch, in form order. */
+export function toggleQuestion(rowId: string, hidden: readonly string[]): string[] {
+    const key = DEFAULT_OFF.has(rowId) ? `on:${rowId}` : rowId;
+    const next = new Set(hidden);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return inFormOrder(next);
+}
+
+export function questionWay(rowId: 'petExperience' | 'movingPlans', hidden: readonly string[]): 'new' | 'old' {
+    return hidden.includes(`way:${rowId}:old`) ? 'old' : 'new';
+}
+
+export function setQuestionWay(rowId: 'petExperience' | 'movingPlans', way: 'new' | 'old', hidden: readonly string[]): string[] {
+    const next = new Set(hidden);
+    if (way === 'old') next.add(`way:${rowId}:old`); else next.delete(`way:${rowId}:old`);
+    return inFormOrder(next);
+}
+
+/** The question a stored settings key belongs to (labels for conflicts and toasts). */
+export function settingKeyQuestion(key: string): string {
+    const m = /^(?:on|way):([A-Za-z]+)/.exec(key);
+    return m ? m[1] : key;
 }
 
 /**

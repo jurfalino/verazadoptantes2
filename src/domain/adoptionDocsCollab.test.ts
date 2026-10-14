@@ -85,3 +85,14 @@ describe('the phone option rides the per-question saves', () => {
         expect(stepStates([])['phone-optional']).toBe('shown');
     });
 });
+
+describe('new question tokens ride the per-question saves', () => {
+    it('mergeHidden keeps on:/way: tokens when another question changes', () => {
+        expect(mergeHidden(['on:catOutdoor', 'way:movingPlans:old'], [{ key: 'gaveAway', hidden: true }]))
+            .toEqual(['gaveAway', 'on:catOutdoor', 'way:movingPlans:old']);
+    });
+    it('each token has a state of its own', () => {
+        expect(stepStates(['on:social'])['on:social']).toBe('hidden');
+        expect(stepStates([])['way:petExperience:old']).toBe('shown');
+    });
+});
