@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.181] - 2026-10-14
+
+### Changed — CI: authed e2e in 7 legs
+
+2.56.180 never deployed: authed-6 reached the dev server's memory ceiling, restarted
+three times, and view-as failed on refused connections twice in a row. Seven legs
+(was six), as the sharding plan prescribes. Ships 2.56.180's change unchanged.
+
 ## [2.56.180] - 2026-10-14
 
 ### Changed — /import/sheet: the column map follows the app language
