@@ -347,13 +347,13 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium webkit
 
-      # One automatic re-run of ONLY the failed tests, on a fresh server, and
-      # only when the log shows a `next dev` memory restart (2026-10-15): the
-      # restart kills whichever test is in flight, and Playwright's own retries
-      # land on the same dying server. A real failure fails again; a failure
-      # without the restart is never retried. Logic + tests: scripts/ci-e2e.sh,
-      # src/lib/ciE2eRetry.test.ts. Root fix (e2e on the Cloudflare build) is
-      # planned separately — see .agents/plans/e2e-shard-the-suite.md.
+      # One automatic re-run of the WHOLE shard, on a fresh server, and only
+      # when the log shows a `next dev` memory restart AND a dropped connection
+      # (2026-10-15): the restart kills whichever test is in flight, and
+      # Playwright's own retries land on the same dying server. Never
+      # --last-failed: it skips tests that never ran and can go green without
+      # them. Logic + tests: scripts/ci-e2e.sh, src/lib/ciE2eRetry.test.ts.
+      # Root fix (e2e on the Cloudflare build): .agents/plans/e2e-shard-the-suite.md.
       - name: Run Playwright tests
         run: bash scripts/ci-e2e.sh ${{ matrix.projects }}
         env:
@@ -372,6 +372,7 @@ jobs:
           # The first attempt's log too: a re-run must never hide what failed.
           path: |
             playwright-report/
+            playwright-report-attempt-1/
             e2e-attempt-1.log
           retention-days: 14
 

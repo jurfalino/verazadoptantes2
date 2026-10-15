@@ -497,6 +497,8 @@ test.describe('Animal detail page', () => {
         await save.click();
         await page.waitForTimeout(4000);
     
+        // Polled, not sampled once after a fixed wait (same flake class as the URL check below).
+        await expect.poll(() => q<{ n: number }>('SELECT COUNT(*) n FROM placements WHERE animal_id = ?', ANIMAL)?.n ?? -1, { timeout: 15000 }).toBe(before + 1);
         const after = q<{ n: number }>('SELECT COUNT(*) n FROM placements WHERE animal_id = ?', ANIMAL)?.n ?? -1;
         const row = q<{ adopter_id: string; record_type: string }>(
             'SELECT adopter_id, record_type FROM placements WHERE animal_id = ? ORDER BY rowid DESC LIMIT 1', ANIMAL);

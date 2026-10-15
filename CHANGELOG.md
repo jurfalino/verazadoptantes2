@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.185] - 2026-10-15
+
+### Fixed — CI's automatic re-run could pass without running every test
+
+Independent review of 2.56.183 (reproduced with Playwright 1.58): re-running only
+the failed tests (`--last-failed`) skips tests that never ran — in specs that run
+in sequence, or after a failed setup — so a real bug in one of them could go green.
+Now the retry:
+- runs the **whole** test group again, in order;
+- happens only when the log shows **both** the memory restart and a dropped
+  connection (most groups log a restart even when green, so the restart alone
+  let real failures qualify);
+- keeps the first attempt's report (screenshots, traces) next to the second's.
+
+Remaining risk, the same as a manual re-run: a real bug that only fails sometimes
+can pass on the second attempt. Also: the adoption e2e test now polls the saved
+record instead of reading it once after a fixed wait.
+
 ## [2.56.184] - 2026-10-15
 
 ### Fixed — a flaky e2e test that blocked 2.56.183

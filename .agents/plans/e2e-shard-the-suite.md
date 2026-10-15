@@ -9,10 +9,14 @@
 > **2026-10-15 — splitting is no longer the strategy.** 6→7 `authed` legs held
 > one day. 12 of 40 staging pipelines (10 days) needed a manual re-run or failed.
 > Plan:
-> - **Phase 0 (v2.56.183, shipped):** `scripts/ci-e2e.sh` — when a shard fails AND
->   its log shows the memory restart, re-run ONLY the failed tests
->   (`--last-failed`) once, on a fresh server. Real failures fail again; no
->   restart → no retry. First attempt's log uploaded with the report.
+> - **Phase 0 (v2.56.185):** `scripts/ci-e2e.sh` — when a shard fails AND its log
+>   shows BOTH the memory restart and a dropped connection, re-run the WHOLE
+>   shard once on a fresh server; attempt 1's log and report are kept.
+>   v2.56.183 used `--last-failed` — the review reproduced it going green with
+>   tests that never ran (serial specs, failed beforeAll/setup): never use it
+>   here. The restart alone is no gate: 7 of 11 shards log one even when green.
+>   Residual risk, same as a manual re-run: a real bug that only fails
+>   sometimes can pass on the second attempt.
 > - **Phase 1 (2–3 days):** make the full suite pass on the **Cloudflare build**
 >   (`npx @cloudflare/next-on-pages` + `wrangler pages dev --persist-to
 >   <repo>/.wrangler/state`). Spike (branch `spike/e2e-prod-build`, local):
