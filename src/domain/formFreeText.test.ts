@@ -25,3 +25,18 @@ describe('social handles that may reach a profile', () => {
         expect(socialHandle(7, 'instagram')).toBeNull();
     });
 });
+
+describe('review fixes (2026-10-14)', () => {
+    it('a "no tengo"-style answer is not a handle — it would pair unrelated applicants', () => {
+        for (const v of ['no', 'No', 'ninguno', 'Ninguna', 'nada', 'none', 'n/a', '-', 'no tengo', 'notengo', 'sin', '@no']) {
+            expect(socialHandle(v, 'instagram'), v).toBeNull();
+        }
+        expect(socialHandle('ab', 'instagram')).toBeNull();
+        expect(socialHandle('ana', 'instagram')).toEqual({ value: '@ana', platform: 'instagram' });
+    });
+    it('share links of a real profile are profiles: the query is dropped', () => {
+        expect(socialHandle('https://www.instagram.com/laura.p?igsh=MXd2a3Y=', 'instagram')).toEqual({ value: 'https://www.instagram.com/laura.p', platform: 'instagram' });
+        expect(socialHandle('https://www.facebook.com/profile.php?id=100012345678', 'facebook')).toEqual({ value: 'https://www.facebook.com/profile.php?id=100012345678', platform: 'facebook' });
+        expect(socialHandle('https://facebook.com/laura.p?mibextid=ZbWKwL', 'facebook')).toEqual({ value: 'https://facebook.com/laura.p', platform: 'facebook' });
+    });
+});

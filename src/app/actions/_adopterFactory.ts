@@ -244,7 +244,8 @@ export async function createAdopterFromSubmission(
                 // the id index — a returning applicant's DNI found nobody.
                 ids: input.documentId?.trim() ? [input.documentId.trim()] : [],
                 emails: input.email ? extractEmails(input.email) : [],
-                socials: socialList.length ? extractSocials(socialList.join('\n')) : [],
+                // Entries may carry their network ({ value, platform }) — match on the value.
+                socials: socialList.length ? extractSocials(socialList.map(x => (typeof x === 'string' ? x : x.value)).join('\n')) : [],
                 excludeAdopterId: adopterId,
             },
             { mode: 'duplicate', minRelevance: 0, limit: 5 },

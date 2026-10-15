@@ -352,6 +352,26 @@ test.describe('form-results: linking to an existing profile', () => {
         await expect(page.getByText('@e2e.mostrar')).toBeVisible();
     });
 
+    test('the same Instagram on two applicants pairs them as possible duplicates; "ninguno" is not a handle', async ({ request }) => {
+        const stamp = Date.now();
+        const handle = `@e2edup${stamp}`;
+        // Nothing in common but the handle: names, emails, phones and addresses share no word.
+        const post = (name: string, n: number, extra: Record<string, unknown>) => request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+            name, email: `e2e-dupsoc${n}-${stamp}@example.com`, phone: `3${n}${String(stamp).slice(-8)}`,
+            address: ['Calle Uno', 'Avenida Dos', 'Pasaje Tres'][n], intent: 'self', ...extra,
+        } });
+        const a = await (await post('Zulema Quiroga', 0, { instagram: handle })).json();
+        const b = await (await post('Bautista Ferreyra', 1, { instagram: handle })).json();
+        const autoA = one(`SELECT auto_adopter_id FROM form_submissions WHERE id = '${a.submissionId}'`).auto_adopter_id;
+        const autoB = one(`SELECT auto_adopter_id FROM form_submissions WHERE id = '${b.submissionId}'`).auto_adopter_id;
+        const pairs = rows(`SELECT id FROM duplicate_candidates WHERE (adopter1_id = '${autoA}' AND adopter2_id = '${autoB}') OR (adopter1_id = '${autoB}' AND adopter2_id = '${autoA}')`);
+        expect(pairs.length, 'a shared Instagram handle is a duplicate signal').toBe(1);
+
+        const c = await (await post('Clotilde Arregui', 2, { instagram: 'ninguno', facebook: 'no' })).json();
+        const autoC = one(`SELECT auto_adopter_id FROM form_submissions WHERE id = '${c.submissionId}'`).auto_adopter_id;
+        expect(String(one(`SELECT contact_entries FROM adopters WHERE id = '${autoC}'`).contact_entries)).not.toMatch(/@ninguno|@no\b/);
+    });
+
     test('gift with a first-name-only recipient: nothing on the profile', async ({ request }) => {
         const stamp = Date.now();
         const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
