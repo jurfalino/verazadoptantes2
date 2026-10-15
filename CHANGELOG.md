@@ -19,7 +19,8 @@ Only with custom forms switched on; production forms don't change while it's off
 - **Switches a rescuer turns on:** cats going out to the street or roofs, dog
   walks, dogs tied or alone outside (each only for that species, also on forms
   for a specific animal), Instagram/Facebook (they go onto the applicant's
-  profile), their vet, why they adopt.
+  profile and count in the repeat-applicant check; share links are accepted,
+  "ninguno"-style answers are not handles), their vet, why they adopt.
 - **Two ways to ask** "mascotas previas" and "mudanza": the new question (default)
   or the old one, chosen in Ajustes.
 - **Semáforo** for the new answers (red: giving it back, gave one away, lost or

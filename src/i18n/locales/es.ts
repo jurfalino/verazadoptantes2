@@ -2633,6 +2633,8 @@ export const es = {
         way_movingPlans_old: '¿Tenés pensado mudarte pronto? (simple)',
         only_cat: 'solo gatos',
         only_dog: 'solo perros',
+        way_state_old: 'ahora usa la pregunta simple',
+        way_state_new: 'ahora usa la pregunta recomendada',
         phone_required: 'Obligatorio',
         phone_required_question: 'Teléfono obligatorio',
         phone_state_optional: 'ahora es opcional',

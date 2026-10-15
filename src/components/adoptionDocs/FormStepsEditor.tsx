@@ -9,7 +9,7 @@
 import { useLanguage } from '@/context/LanguageContext';
 import {
     FORM_STEP_GROUPS, FORM_STEP_IDS, LOCKED_FORM_STEPS, DERIVED_FORM_STEPS, VARIANT_FORM_STEPS, DEFAULT_OFF_FORM_STEPS, SPECIES_ONLY_STEPS,
-    householdQuestion, isStepAsked, isPhoneRequired, inFormOrder, isQuestionOn, toggleQuestion, questionWay, setQuestionWay, settingKeyQuestion,
+    householdQuestion, isStepAsked, isPhoneRequired, inFormOrder, isQuestionOn, toggleQuestion, questionWay, setQuestionWay, settingKeyQuestion, settingChange, type SettingChange,
 } from '@/domain/adoptionDocs';
 
 const LOCKED = new Set<string>(LOCKED_FORM_STEPS);
@@ -44,6 +44,17 @@ function SwitchTrack({ on }: { on: boolean }) {
         </span>
     );
 }
+
+/** "…: {state}" for each kind of change a teammate can make (settingChange). */
+const CHANGE_KEY: Record<SettingChange, string> = {
+    asked: 'adoptionDocs.step_state_shown',
+    notAsked: 'adoptionDocs.step_state_hidden',
+    // The phone is always asked; this option only says whether it must be answered.
+    phoneOptional: 'adoptionDocs.phone_state_optional',
+    phoneRequired: 'adoptionDocs.phone_state_required',
+    oldWording: 'adoptionDocs.way_state_old',
+    newWording: 'adoptionDocs.way_state_new',
+};
 
 /** «otra persona del grupo» can open a sentence. */
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -103,10 +114,7 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
             <p className="text-xs text-amber-900">
                 {capitalize(t('adoptionDocs.step_conflict')
                     .replace('{name}', name(conflict.by))
-                    .replace('{state}', t(key === 'phone-optional'
-                        // The phone is always asked; this option only says whether it must be answered.
-                        ? (conflict.theirs === 'hidden' ? 'adoptionDocs.phone_state_optional' : 'adoptionDocs.phone_state_required')
-                        : (conflict.theirs === 'hidden' ? 'adoptionDocs.step_state_hidden' : 'adoptionDocs.step_state_shown'))))}
+                    .replace('{state}', t(CHANGE_KEY[settingChange(key, conflict.theirs === 'hidden')])))}
                 {key === 'household' && <> ({label('household')})</>}
                 {key.startsWith('way:') && <> ({label(key)})</>}
                 {key === 'phone-optional' && <> ({t('adoptionDocs.phone_required_question')})</>}

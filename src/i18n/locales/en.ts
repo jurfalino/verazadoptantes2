@@ -2628,6 +2628,8 @@ export const en = {
         way_movingPlans_old: 'Planning to move soon? (simple)',
         only_cat: 'cats only',
         only_dog: 'dogs only',
+        way_state_old: 'now uses the simple question',
+        way_state_new: 'now uses the recommended question',
         phone_required: 'Required',
         phone_required_question: 'Phone required',
         phone_state_optional: 'now optional',

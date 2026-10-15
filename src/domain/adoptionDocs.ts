@@ -157,6 +157,20 @@ export function setQuestionWay(rowId: 'petExperience' | 'movingPlans', way: 'new
     return inFormOrder(next);
 }
 
+export type SettingChange = 'asked' | 'notAsked' | 'oldWording' | 'newWording' | 'phoneOptional' | 'phoneRequired';
+
+/**
+ * What a stored settings key being present / absent means for the applicant —
+ * for "Ana cambió esta pregunta: …". `present` is the per-key collab state
+ * ('hidden' = the key is in the list), which reads backwards for `on:` tokens.
+ */
+export function settingChange(key: string, present: boolean): SettingChange {
+    if (key === 'phone-optional') return present ? 'phoneOptional' : 'phoneRequired';
+    if (key.startsWith('way:')) return present ? 'oldWording' : 'newWording';
+    if (key.startsWith('on:')) return present ? 'asked' : 'notAsked';
+    return present ? 'notAsked' : 'asked';
+}
+
 /** The question a stored settings key belongs to (labels for conflicts and toasts). */
 export function settingKeyQuestion(key: string): string {
     const m = /^(?:on|way):([A-Za-z]+)/.exec(key);

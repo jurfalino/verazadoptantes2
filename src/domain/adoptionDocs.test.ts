@@ -5,7 +5,7 @@ import {
     resolveDocsOwner, normalizeRichDoc, normalizeSections, isStandardSections,
     canonicalSectionsJson, planContractSave, deriveSpecialNeeds, richDocSchema,
     contractSectionsSchema, isContractVersionOwnedBy, parseStoredHiddenSteps, isPhoneRequired, FORM_OPTION_TOKENS,
-    isQuestionOn, toggleQuestion, questionWay, setQuestionWay, settingKeyQuestion, DEFAULT_OFF_FORM_STEPS, type RichDoc,
+    isQuestionOn, toggleQuestion, questionWay, setQuestionWay, settingKeyQuestion, settingChange, DEFAULT_OFF_FORM_STEPS, type RichDoc,
 } from './adoptionDocs';
 
 const doc = (...texts: string[]): RichDoc => ({ type: 'doc', content: texts.map(t => ({ type: 'paragraph', content: [{ text: t }] })) });
@@ -252,5 +252,25 @@ describe('release 1 — new questions (spec 2026-10-14)', () => {
         expect(settingKeyQuestion('on:catOutdoor')).toBe('catOutdoor');
         expect(settingKeyQuestion('way:petExperience:old')).toBe('petExperience');
         expect(settingKeyQuestion('gaveAway')).toBe('gaveAway');
+    });
+});
+
+describe('what a teammate\'s change to a setting means (review fix 2026-10-14)', () => {
+    // `present` = the stored key exists ('hidden' in stepStates terms).
+    it('a plain question id present means it is no longer asked', () => {
+        expect(settingChange('gaveAway', true)).toBe('notAsked');
+        expect(settingChange('gaveAway', false)).toBe('asked');
+    });
+    it('an on: token present means the question IS asked', () => {
+        expect(settingChange('on:catOutdoor', true)).toBe('asked');
+        expect(settingChange('on:catOutdoor', false)).toBe('notAsked');
+    });
+    it('a way: token only changes the wording', () => {
+        expect(settingChange('way:petExperience:old', true)).toBe('oldWording');
+        expect(settingChange('way:petExperience:old', false)).toBe('newWording');
+    });
+    it('the phone option only changes whether it must be answered', () => {
+        expect(settingChange('phone-optional', true)).toBe('phoneOptional');
+        expect(settingChange('phone-optional', false)).toBe('phoneRequired');
     });
 });
