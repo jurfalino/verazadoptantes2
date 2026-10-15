@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.184] - 2026-10-15
+
+### Fixed — a flaky e2e test that blocked 2.56.183
+
+`animal-profile` "registering an adoption never leaves the animal" checked the
+address once, 4 s after saving; on a slow runner the app hadn't cleared
+`?newAdoption` yet. It now waits for it, and resets the animal to available at
+the start too, so a retry no longer fails on the adoption the first attempt left.
+2.56.183 never deployed; this ships it.
+
 ## [2.56.183] - 2026-10-15
 
 ### Changed — CI: one automatic re-run after a dev-server memory restart
