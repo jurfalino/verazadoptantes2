@@ -27,7 +27,6 @@ interface AnimalPayload {
     animalName: string | null;
     species: string | null;
     details: string | null;
-    comments: string | null;
     age: string | null;
     estimatedBirthDate: number | null;
     neutered: number | null;
@@ -126,7 +125,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
             animalName: animal.animalName,
             species: animal.species,
             details: animal.details,
-            comments: animal.comments,
             age: animal.age,
             estimatedBirthDate: animal.estimatedBirthDate ? Math.floor(animal.estimatedBirthDate.getTime() / 1000) : null,
             neutered: animal.neutered,

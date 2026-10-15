@@ -278,6 +278,8 @@ test.describe('form-results: linking to an existing profile', () => {
         if ((await answers.getAttribute('aria-expanded')) === 'false') await answers.click();
         const forWhom = page.getByTestId('gift-recipient');
         await expect(forWhom).toContainText('Laura Pérez');
+        // Relationship first, then the name (spec §10: "Hija · Laura Pérez · Tel").
+        await expect(forWhom).toContainText(/(Child|Hijo\/a|Filho\/a) · Laura Pérez/);
         await expect(forWhom).toContainText('11 5555 1234');
         await expect(page.getByText(/(People in|Personas en el hogar de|Pessoas na casa de) Laura/)).toBeVisible();
         // Every reworded question keeps its gift wording as the label (spec §10).
@@ -303,6 +305,71 @@ test.describe('form-results: linking to an existing profile', () => {
         expect(res.ok(), await res.text()).toBeTruthy();
         const { submissionId } = await res.json();
         expect(one(`SELECT auto_adopter_id FROM form_submissions WHERE id = '${submissionId}'`).auto_adopter_id).toBeTruthy();
+    });
+
+    test('the form config names the animal\'s species; new free text is clamped; Instagram reaches the profile', async ({ request }) => {
+        const cfg = await (await request.get(`/api/form/${ADMIN_USER_ID}?animalId=test-animal-fixture-owned-2`)).json();
+        expect(cfg.animalSpecies).toBe('dog');
+        const plain = await (await request.get(`/api/form/${ADMIN_USER_ID}`)).json();
+        expect(plain.animalSpecies).toBeNull();
+
+        const stamp = Date.now();
+        const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+            name: `E2E Nuevas ${stamp}`, email: `e2e-nuevas-${stamp}@example.com`, phone: `31${String(stamp).slice(-8)}`, address: '1 New St',
+            intent: 'self', gaveAway: 'yes', gaveAwayWhy: 'x'.repeat(500), instagram: `@e2e.nuevas.${stamp}`, facebook: 'no tengo',
+        } });
+        expect(res.ok(), await res.text()).toBeTruthy();
+        const { submissionId } = await res.json();
+        const row = one(`SELECT auto_adopter_id, answers_json FROM form_submissions WHERE id = '${submissionId}'`);
+        const answers = JSON.parse(String(row.answers_json));
+        expect(answers.gaveAwayWhy).toHaveLength(300);
+        const contacts = String(one(`SELECT contact_entries FROM adopters WHERE id = '${row.auto_adopter_id}'`).contact_entries);
+        expect(contacts).toContain(`@e2e.nuevas.${stamp}`);
+        expect(contacts).not.toContain('no tengo');
+    });
+
+    test('the new answers show on the form screen with their dots; open text has none', async ({ page, request }) => {
+        const stamp = Date.now();
+        const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+            name: `E2E Mostrar ${stamp}`, email: `e2e-mostrar-${stamp}@example.com`, phone: `32${String(stamp).slice(-8)}`, address: '1 Show St',
+            intent: 'self', carer: 'minor', rental: 'rentNotAllowed', movingIfNoPets: 'return', gaveAway: 'yes', gaveAwayWhy: 'Me mudé',
+            lastAnimal: 'street', visitConsent: 'no', instagram: '@e2e.mostrar', motivation: 'Siempre quise un gato',
+        } });
+        expect(res.ok(), await res.text()).toBeTruthy();
+        const { submissionId } = await res.json();
+        await page.goto(`/form-results/${submissionId}`);
+        await dismissCountryBanner(page);
+        const answers = page.getByRole('button', { name: /Complete answers|Respuestas completas|Respostas completas/ });
+        if ((await answers.getAttribute('aria-expanded')) === 'false') await answers.click();
+        const row = (label: RegExp) => page.locator('div.flex.items-baseline', { hasText: label });
+        await expect(row(/Moving, no animals|Mudanza sin animales|Mudança sem animais/).locator('[data-signal="risk"]')).toBeVisible();
+        await expect(row(/Gave an animal away|Regaló un animal|Deu um animal/).locator('[data-signal="risk"]')).toBeVisible();
+        await expect(page.getByText('Me mudé')).toBeVisible();
+        await expect(row(/Day-to-day carer|Quién lo cuida|Quem cuida/).locator('[data-signal="caution"]')).toBeVisible();
+        await expect(row(/Visit and follow-up|Visita y seguimiento|Visita e acompanhamento/).locator('[data-signal="risk"]')).toBeVisible();
+        await expect(row(/Their last animal|Su último animal|Seu último animal/).locator('[data-signal="risk"]')).toBeVisible();
+        await expect(row(/Why adopt|Por qué adopta|Por que adota/).locator('[data-signal]')).toHaveCount(0);
+        await expect(page.getByText('@e2e.mostrar')).toBeVisible();
+    });
+
+    test('the same Instagram on two applicants pairs them as possible duplicates; "ninguno" is not a handle', async ({ request }) => {
+        const stamp = Date.now();
+        const handle = `@e2edup${stamp}`;
+        // Nothing in common but the handle: names, emails, phones and addresses share no word.
+        const post = (name: string, n: number, extra: Record<string, unknown>) => request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+            name, email: `e2e-dupsoc${n}-${stamp}@example.com`, phone: `3${n}${String(stamp).slice(-8)}`,
+            address: ['Calle Uno', 'Avenida Dos', 'Pasaje Tres'][n], intent: 'self', ...extra,
+        } });
+        const a = await (await post('Zulema Quiroga', 0, { instagram: handle })).json();
+        const b = await (await post('Bautista Ferreyra', 1, { instagram: handle })).json();
+        const autoA = one(`SELECT auto_adopter_id FROM form_submissions WHERE id = '${a.submissionId}'`).auto_adopter_id;
+        const autoB = one(`SELECT auto_adopter_id FROM form_submissions WHERE id = '${b.submissionId}'`).auto_adopter_id;
+        const pairs = rows(`SELECT id FROM duplicate_candidates WHERE (adopter1_id = '${autoA}' AND adopter2_id = '${autoB}') OR (adopter1_id = '${autoB}' AND adopter2_id = '${autoA}')`);
+        expect(pairs.length, 'a shared Instagram handle is a duplicate signal').toBe(1);
+
+        const c = await (await post('Clotilde Arregui', 2, { instagram: 'ninguno', facebook: 'no' })).json();
+        const autoC = one(`SELECT auto_adopter_id FROM form_submissions WHERE id = '${c.submissionId}'`).auto_adopter_id;
+        expect(String(one(`SELECT contact_entries FROM adopters WHERE id = '${autoC}'`).contact_entries)).not.toMatch(/@ninguno|@no\b/);
     });
 
     test('gift with a first-name-only recipient: nothing on the profile', async ({ request }) => {

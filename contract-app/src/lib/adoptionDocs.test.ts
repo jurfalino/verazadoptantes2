@@ -21,7 +21,8 @@ describe('applyHiddenSteps', () => {
 describe('restoreStepIndex', () => {
     const shortSchema = schema.filter(s => !['children', 'existingPets'].includes(s.id))
     it('restores by id', () => expect(restoreStepIndex(shortSchema, { answers: {}, stepId: 'hoursAlone' }, FORM_STEP_IDS)).toBe(shortSchema.findIndex(s => s.id === 'hoursAlone')))
-    it('hidden stepId → next visible step', () => expect(restoreStepIndex(shortSchema, { answers: {}, stepId: 'children' }, FORM_STEP_IDS)).toBe(shortSchema.findIndex(s => s.id === 'housingType')))
+    // The next asked step after "¿Hay niños?" in form order is the allergy question (spec 2026-10-14).
+    it('hidden stepId → next visible step', () => expect(restoreStepIndex(shortSchema, { answers: {}, stepId: 'children' }, FORM_STEP_IDS)).toBe(shortSchema.findIndex(s => s.id === 'allergy')))
     it('legacy numeric draft → start', () => expect(restoreStepIndex(shortSchema, { answers: { legal: true }, step: 14 }, FORM_STEP_IDS)).toBe(0))
     it('stepId past the end clamps', () => expect(restoreStepIndex([{ id: 'legal' }], { answers: {}, stepId: 'selfie' }, FORM_STEP_IDS)).toBe(0))
 })
@@ -65,11 +66,14 @@ describe('resolveDraft', () => {
 
 describe('buildSubmitBody', () => {
     const shortSchema = schema.filter(s => !['children', 'existingPets'].includes(s.id))
+    // Not seen with these answers: no gift, no species, no "Para mí", no pets, no castration "Sí".
+    const unseen = ['giftRecipient', 'carer', 'petsCare', 'sterilizeHow', 'catOutdoor', 'dogWalks', 'dogTied']
+    const seen = (s: { id: string }[]) => s.map(x => x.id).filter(id => !unseen.includes(id))
     it('no customization → answers pass through unchanged, plus shownSteps', () => {
         const answers = { name: 'A', email: 'a@a.com' }
         expect(buildSubmitBody(answers, null, null, schema)).toEqual({
             ...answers,
-            shownSteps: schema.map(s => s.id),
+            shownSteps: seen(schema),
         })
     })
     it('omits animalId when absent, includes it when present', () => {
@@ -80,7 +84,7 @@ describe('buildSubmitBody', () => {
     it('strips hidden-step answers and lists only the shown steps', () => {
         const answers = { children: '2', name: 'A' }
         const out = buildSubmitBody(answers, ['children'], null, shortSchema)
-        expect(out).toEqual({ name: 'A', shownSteps: shortSchema.map(s => s.id) })
+        expect(out).toEqual({ name: 'A', shownSteps: seen(shortSchema) })
     })
     it('null hiddenSteps behaves like an empty array', () => {
         const answers = { name: 'A' }

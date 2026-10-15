@@ -1,7 +1,9 @@
 'use client';
 
+import { apiToolFromHistory, profileOrigin } from '@/domain/recordOrigin';
 import { useEffect, useMemo, useState } from 'react';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
+import { computeRequestRescueDensity } from '@/domain/requestDensity';
 import { useRouter, useSearchParams } from 'next/navigation';
 import TransferOwnershipModal from '@/components/TransferOwnershipModal';
 import { AdopterForm } from '@/components/AdopterForm';
@@ -24,7 +26,7 @@ import { DisclaimerToast } from '@/components/DisclaimerToast';
 import { RatingBadge } from '@/components/RatingBadge';
 import { useShowToast } from '@/components/ui/Toast';
 import { useDateFormat } from '@/context/TimezoneContext';
-import { emailHandle } from '@/lib/userDisplay';
+import { actorLabel } from '@/lib/userDisplay';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdopterStats, AdoptionConfig, DuplicateCandidateInfo } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 import type { AdopterPiiContext } from '@/lib/piiAccess';
@@ -72,11 +74,13 @@ interface AdopterProfileV2Props {
     showDeletionRequested?: boolean;
     /** ENABLE_PINNED_VISIT_INTENT — pin the visit-intent card to the bottom of the screen. */
     pinnedVisitIntent?: boolean;
+    /** ENABLE_ORIGIN_LABELS: tag where the profile and each activity came from. */
+    originLabels?: boolean;
     /** ENABLE_INTERVIEW_GUIDE — «Entrevistar» in the profile's ⋯ menu. */
     interviewEnabled?: boolean;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false }: AdopterProfileV2Props) {
     const { formatDateTime, formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const searchParams = useSearchParams();
@@ -191,7 +195,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     }, [adoptions, adoptionsThreshold, adoptionsPeriodDays]);
     const tooManyRequests = useMemo(() => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const d = computeMaxDensityPeriod(adoptions as any, 'adoption_request', requestsPeriodDays);
+        const d = computeRequestRescueDensity(adoptions as any, requestsPeriodDays);
         if (d.count < requestsThreshold) return null;
         return { count: d.count, actualSpanDays: d.timeSpanDays, periodDays: requestsPeriodDays };
     }, [adoptions, requestsThreshold, requestsPeriodDays]);
@@ -234,6 +238,14 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
         }
     };
 
+    // `?record=<id>`: the link the third-party API returns for a saved record
+    // (and the API log's «Ver registro») lands on that record's card.
+    const recordParam = searchParams.get('record');
+    useEffect(() => {
+        if (!recordParam || !adoptions?.some(a => a.id === recordParam)) return;
+        return flashActivityCard(recordParam);
+    }, [recordParam, adoptions]);
+
     // v2.19.37: when the profile is opened from a search result with a `?q=`
     // term, scroll the matched activity into view + flash it briefly so the
     // user lands on the part of the record their query actually matched.
@@ -260,29 +272,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             return haystack.includes(needle);
         });
         if (!matched) return;
-
-        // Defer a tick so the CollapsibleSection has rendered its open state
-        // and getElementById can find the activity card. The 300ms delay is
-        // generous — image lazy-loading inside the card might still be in
-        // flight, but the outer container's geometry is settled.
-        const t = setTimeout(() => {
-            const el = document.getElementById(`adoption-${matched.id}`);
-            if (!el) return;
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            // Brief accent-ring flash so the eye lands on the matched card
-            // even after scroll. Uses --accent so both themes get a tinted
-            // ring, not a raw colour. Cleared 2s in so the card returns to
-            // its normal resting state.
-            el.style.transition = 'box-shadow 0.3s ease-out';
-            el.style.boxShadow = '0 0 0 3px var(--accent)';
-            const fade = setTimeout(() => {
-                el.style.boxShadow = '';
-                const clear = setTimeout(() => { el.style.transition = ''; }, 400);
-                return () => clearTimeout(clear);
-            }, 1800);
-            return () => clearTimeout(fade);
-        }, 300);
-        return () => clearTimeout(t);
+        return flashActivityCard(matched.id);
     }, [q, adoptions, adopter?.name]);
 
     const ref = searchParams.get('ref');
@@ -443,6 +433,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
 
                 <AdopterForm
                     interviewEnabled={interviewEnabled}
+                    origin={originLabels ? profileOrigin(adopter?.source, apiToolFromHistory((history ?? []) as Array<{ changedBy?: string | null; changes?: string | null }>)) : null}
                     initialData={displayedAdopter}
                     currentUser={currentUser}
                     images={allImages}
@@ -513,6 +504,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             />
                             <AdoptionHistory
                                 adoptions={adoptions as any}
+                                originLabels={originLabels}
                                 adopterId={id}
                                 currentUser={currentUser}
                                 isAdmin={isAdmin}
@@ -581,6 +573,11 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                             else if (parsed.flag_added) { eventType = 'flag_added'; changes = parsed.flag_added; }
                                             else if (parsed.flag_removed) { eventType = 'flag_removed'; changes = parsed.flag_removed; }
                                             else if (parsed.ownership_transferred) { eventType = 'ownership_transferred'; changes = parsed.ownership_transferred; }
+                                            // Entries the API writes (src/lib/api/records.ts, contacts.ts): labelled, never the generic "— ➜ —" diff.
+                                            else if (parsed.record_added_via_api) { eventType = 'api_activity'; changes = parsed.record_added_via_api; }
+                                            else if (parsed.contacts_added_via_api) { eventType = 'api_contacts'; changes = parsed.contacts_added_via_api; }
+                                            else if (parsed.api_record_voided) { eventType = 'api_voided'; changes = parsed.api_record_voided; }
+                                            else if (parsed.contract_attached_via_api) { eventType = 'api_contract'; changes = parsed.contract_attached_via_api; }
                                             else { changes = parsed; }
                                         } catch { /* ignore */ }
 
@@ -602,9 +599,13 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                         {eventType === 'flag_added' && <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_flag_added')}</span>}
                                                         {eventType === 'flag_removed' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_flag_removed')}</span>}
                                                         {eventType === 'ownership_transferred' && <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_ownership_transferred')}</span>}
+                                                        {eventType === 'api_activity' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_activity')}</span>}
+                                                        {eventType === 'api_contacts' && <span className="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_contacts')}</span>}
+                                                        {eventType === 'api_voided' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_voided')}</span>}
+                                                        {eventType === 'api_contract' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_contract')}</span>}
                                                     </div>
                                                     <span className="text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
-                                                        {t('audit.by')} {(h.changedBy && userNameMap?.[h.changedBy]) || (h.changedBy ? emailHandle(h.changedBy) : t('common.anonymous'))}
+                                                        {t('audit.by')} {(h.changedBy ? actorLabel(h.changedBy, userNameMap?.[h.changedBy], t) : t('common.anonymous'))}
                                                     </span>
                                                 </div>
                                                 <div className="space-y-1.5">
@@ -622,6 +623,11 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                                     </div>
                                                                 </div>
                                                             ))}
+                                                            {eventType === 'api_contacts' && Array.isArray(changes.fields) && (
+                                                                <div className="text-teal-800 font-medium break-words">
+                                                                    {t('audit.desc_api_contacts').replace('{fields}', (changes.fields as string[]).map(f => t(f === 'documentId' ? 'audit.field_document' : f === 'phone' ? 'audit.field_phone' : 'audit.field_email')).join(', '))}
+                                                                </div>
+                                                            )}
                                                             {eventType === 'adoption_added' && (
                                                                 <div className="text-teal-800 font-medium break-words">
                                                                     {t('audit.desc_adoption_added')} <span className="font-semibold break-all">{changes.animalName}</span> ({changes.species}) - {changes.status}
@@ -878,4 +884,26 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             </div>
         </main>
     );
+}
+
+/**
+ * Scroll an activity card into view and flash it, so the eye lands on it.
+ * Deferred a tick so the CollapsibleSection has rendered its open state; the
+ * ring uses --accent so both themes get a tinted ring. Returns the cleanup.
+ */
+function flashActivityCard(recordId: string): () => void {
+    let fade: ReturnType<typeof setTimeout> | undefined;
+    let clear: ReturnType<typeof setTimeout> | undefined;
+    const start = setTimeout(() => {
+        const el = document.getElementById(`adoption-${recordId}`);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.style.transition = 'box-shadow 0.3s ease-out';
+        el.style.boxShadow = '0 0 0 3px var(--accent)';
+        fade = setTimeout(() => {
+            el.style.boxShadow = '';
+            clear = setTimeout(() => { el.style.transition = ''; }, 400);
+        }, 1800);
+    }, 300);
+    return () => { clearTimeout(start); clearTimeout(fade); clearTimeout(clear); };
 }

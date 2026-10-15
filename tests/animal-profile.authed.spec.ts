@@ -453,6 +453,11 @@ test.describe('Animal detail page', () => {
 
     test('registering an adoption never leaves the animal, and custody really changes', async ({ page }) => {
         const ANIMAL = 'test-animal-fixture-2';   // available, owned by the teammate
+        // Start AVAILABLE even if an earlier attempt failed before its undo below —
+        // otherwise every retry fails on the adoption the first attempt left behind.
+        for (const f of DBS) {
+            try { const db = new Database(f); db.prepare('DELETE FROM placements WHERE animal_id = ?').run(ANIMAL); db.close(); } catch { /* not this file */ }
+        }
         await page.goto(`/my-animals/${ANIMAL}`);
         await expect(page.getByTestId('animal-name')).toBeVisible({ timeout: 30000 });
     
@@ -492,6 +497,8 @@ test.describe('Animal detail page', () => {
         await save.click();
         await page.waitForTimeout(4000);
     
+        // Polled, not sampled once after a fixed wait (same flake class as the URL check below).
+        await expect.poll(() => q<{ n: number }>('SELECT COUNT(*) n FROM placements WHERE animal_id = ?', ANIMAL)?.n ?? -1, { timeout: 15000 }).toBe(before + 1);
         const after = q<{ n: number }>('SELECT COUNT(*) n FROM placements WHERE animal_id = ?', ANIMAL)?.n ?? -1;
         const row = q<{ adopter_id: string; record_type: string }>(
             'SELECT adopter_id, record_type FROM placements WHERE animal_id = ? ORDER BY rowid DESC LIMIT 1', ANIMAL);
@@ -499,7 +506,9 @@ test.describe('Animal detail page', () => {
         console.log('::URL-AFTER:: ' + page.url().replace(/^https?:\/\/[^/]+/, ''));
         expect(after).toBe(before + 1);
         expect(page.url()).toContain(`/my-animals/${ANIMAL}`);
-        expect(page.url()).not.toContain('newAdoption');
+        // The app drops ?newAdoption once the dialog closes; on a slow CI runner that
+        // can take longer than the fixed wait above — wait for it, don't sample it.
+        await expect(page).not.toHaveURL(/newAdoption/, { timeout: 15000 });
     
         // Undo it: three sibling tests need this animal AVAILABLE.
         for (const f of DBS) {

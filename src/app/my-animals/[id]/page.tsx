@@ -52,8 +52,10 @@ export default async function AnimalPage({ params }: { params: Promise<{ id: str
         );
     }
 
-    // Applicants only matter while the animal still needs a home; the action is
-    // already strictly owner-scoped and fail-closed (returns []).
+    // Applicants only matter while the animal still needs a home. The action
+    // gates like getAnimalProfile (owner / org-mate / admin) and lists every
+    // applicant from a form link of the OWNER's team — the same scope as the
+    // /my-animals «N interesadas» chip. Fail-closed: returns [].
     const applicants = profile.activePlacement?.recordType === 'adoption'
         ? []
         : await getApplicantsForAnimal(id).catch((e) => {

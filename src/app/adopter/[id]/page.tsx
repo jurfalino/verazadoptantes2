@@ -185,6 +185,7 @@ export default async function AdopterPage({
     // server HTML — no jump from in-page to pinned after hydration.
     const pinnedVisitIntent = !isNew && await getFeatureFlag('ENABLE_PINNED_VISIT_INTENT');
     const interviewEnabled = !isNew && await getFeatureFlag('ENABLE_INTERVIEW_GUIDE');
+    const originLabels = !isNew && await getFeatureFlag('ENABLE_ORIGIN_LABELS');
 
     // Timeline «Entrevista» badge: needs isOrgMateOfOwner, so it runs after the wave above.
     if (interviewEnabled && adopter && adoptions.length) {
@@ -230,6 +231,7 @@ export default async function AdopterPage({
             piiContext={piiContext}
             showDeletionRequested={showDeletionRequested}
             pinnedVisitIntent={pinnedVisitIntent}
+            originLabels={originLabels}
             interviewEnabled={interviewEnabled}
         />
     );

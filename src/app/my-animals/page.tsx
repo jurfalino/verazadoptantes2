@@ -1,5 +1,6 @@
 'use client';
 
+import { contractHref } from '@/lib/contractLink';
 import { useLanguage } from '@/context/LanguageContext';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import Link from 'next/link';
@@ -7,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useDateFormat, useRelativeTime } from '@/context/TimezoneContext';
-import { emailHandle } from '@/lib/userDisplay';
+import { actorLabel } from '@/lib/userDisplay';
 import { interpolate } from '@/lib/interpolate';
 import { dueWhenText } from '@/lib/dueWhenText';
 import { formatAge } from '@/lib/ageUtils';
@@ -32,7 +33,6 @@ interface AnimalImage {
     scope?: string | null;
 }
 
-import type { ApplicantSummary as Applicant } from '@/app/actions/applicants';
 
 interface Animal {
     id: string;
@@ -40,6 +40,7 @@ interface Animal {
     species: string | null;
     details: string | null;
     comments: string | null;
+    hasContract?: number | null;
     adopterId: string | null;
     adopterName: string | null;
     /** Distinguishes a foster placement ('foster') from a plain available
@@ -52,8 +53,9 @@ interface Animal {
     sex: string | null;
     color: string | null;
     images: AnimalImage[];
-    /** v2.14.10-21: form-submission applicants targeted at this animal. */
-    applicants?: Applicant[];
+    /** Applicants of this animal (owner's-team scope) — ids only; the card
+     *  shows the count and deep-links to the animal page for the list. */
+    applicants?: Array<{ submissionId: string }>;
     /** v2.55.16: due follow-ups (ENABLE_FOLLOWUPS; 0 when off/none). */
     dueFollowups?: number;
     /** v2.56.128: the rescuer's public-catalogue switch. NULL = listed. */
@@ -473,13 +475,13 @@ export default function MyAnimalsPage() {
                                     )}
 
                                     {/* Contract screenshot link */}
-                                    {animal.comments && (() => {
+                                    {(animal.hasContract || animal.comments) && (() => {
                                         try {
-                                            const parsed = JSON.parse(animal.comments);
-                                            if (parsed.contractScreenshot) {
+                                            const href = contractHref(animal.id, animal.hasContract, animal.comments);
+                                            if (href) {
                                                 return (
                                                     <a
-                                                        href={parsed.contractScreenshot}
+                                                        href={href}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                         className="flex items-center gap-2 mb-3 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors"
@@ -561,7 +563,7 @@ export default function MyAnimalsPage() {
                                                             : (t('common.added_by') || 'Agregado por')}
                                                         {' '}
                                                         <span className="font-medium text-stone-600">
-                                                            {animal.lastUpdate.name || emailHandle(animal.lastUpdate.by)}
+                                                            {actorLabel(animal.lastUpdate.by, animal.lastUpdate.name, t)}
                                                         </span>
                                                         {/* Relative time is client-only (it reads the wall clock, which
                                                             SSR and hydration disagree on), so it is null on first paint.

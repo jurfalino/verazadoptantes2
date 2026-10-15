@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeRating, normalizeImportDate, inferDateOrder, normalizeSpecies, normalizeRecordType, normalizeNeutered, validateMappedRow, rowWarnings } from './importRow';
+import { normalizeRating, normalizeImportDate, inferDateOrder, normalizeSpecies, normalizeRecordType, normalizeNeutered, validateMappedRow, rowWarnings, recognizedRecordType } from './importRow';
 import type { MappedRow } from './importFields';
 
 function row(o: Partial<MappedRow>): MappedRow {
@@ -69,7 +69,8 @@ describe('normalizeSpecies / recordType / neutered', () => {
     it('maps common es/en values', () => {
         expect(normalizeSpecies('Perro')).toBe('dog');
         expect(normalizeSpecies('gata')).toBe('cat');
-        expect(normalizeSpecies('conejo')).toBe('conejo'); // unknown passthrough
+        expect(normalizeSpecies('conejo')).toBe('conejo'); // unknown real word passthrough
+        expect(normalizeSpecies(' Hurón ')).toBe('Hurón');
         expect(normalizeRecordType('Tránsito')).toBe('foster');
         expect(normalizeRecordType('adopción')).toBe('adoption');
         expect(normalizeRecordType(undefined)).toBe('adoption'); // default
@@ -77,6 +78,31 @@ describe('normalizeSpecies / recordType / neutered', () => {
         expect(normalizeNeutered('Sí')).toBe(1);
         expect(normalizeNeutered('no')).toBe(0);
         expect(normalizeNeutered('quizás')).toBeNull();
+    });
+});
+
+describe('normalizeSpecies: codes and variants', () => {
+    it('one-letter codes from other apps (P = perro, G = gato)', () => {
+        expect(normalizeSpecies('P')).toBe('dog');
+        expect(normalizeSpecies('g')).toBe('cat');
+        expect(normalizeSpecies('P.')).toBe('dog');
+    });
+    it('plurals, accents and other words for the same animal', () => {
+        expect(normalizeSpecies('Gatos')).toBe('cat');
+        expect(normalizeSpecies('FELINO')).toBe('cat');
+        expect(normalizeSpecies('canina')).toBe('dog');
+        expect(normalizeSpecies('Pájaro')).toBe('bird');
+        expect(normalizeSpecies('Otro')).toBe('other');
+    });
+    it('an unknown code never reaches the profile as a bare letter', () => {
+        expect(normalizeSpecies('X')).toBe('other');
+        expect(normalizeSpecies('AP')).toBe('other');
+        expect(normalizeSpecies('3')).toBe('other');
+    });
+    it('empty stays empty', () => {
+        expect(normalizeSpecies('')).toBeNull();
+        expect(normalizeSpecies('   ')).toBeNull();
+        expect(normalizeSpecies(undefined)).toBeNull();
     });
 });
 
@@ -150,5 +176,20 @@ describe('inferDateOrder (audit E16)', () => {
     });
     it('takes the majority under conflicting evidence', () => {
         expect(inferDateOrder(['14/03/2009', '15/03/2009', '03/14/2009'])).toBe('dmy'); // 2 dmy vs 1 mdy
+    });
+});
+
+describe('record type the import does not know', () => {
+    it('recognizedRecordType: known values and codes', () => {
+        expect(recognizedRecordType('Solicitud')).toBe('adoption_request');
+        expect(recognizedRecordType('adoption_request')).toBe('adoption_request');
+        expect(recognizedRecordType('AP')).toBeNull();
+        expect(recognizedRecordType('')).toBeNull();
+    });
+    it('rowWarnings says an unknown type is imported as an adoption', () => {
+        const base = { name: 'Ana', phones: [], emails: [], socials: [], addresses: [], dnis: [], combinedContacts: [] };
+        expect(rowWarnings({ ...base, recordType: 'AP' }).join(' ')).toMatch(/Tipo no reconocido: "AP".*Adopción/);
+        expect(rowWarnings({ ...base, recordType: 'solicitud' })).toEqual([]);
+        expect(rowWarnings(base)).toEqual([]);
     });
 });

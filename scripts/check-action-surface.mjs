@@ -204,7 +204,10 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // Calificaciones vs. notas report. Moderators + admins; fingerprint taken server-side
 // from the persisted rating + note (never client-supplied); writes only
 // ratings_audit_reviews; audited. 156 = 155 + 1.
-const EXPECTED_ACTIONS = 156;
+// v2.56.171: getLinkedFormSubmissions(adopterId) REMOVED — an unauthenticated action
+// that returned every linked form's answers (PII) for any profile id; nothing on
+// screen used it, but Next still published it with the adopters module. 155 = 156 − 1.
+const EXPECTED_ACTIONS = 155;
 
 let manifest;
 try {

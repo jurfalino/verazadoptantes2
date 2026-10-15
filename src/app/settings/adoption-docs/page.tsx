@@ -21,7 +21,7 @@ import {
     getAdoptionDocs, saveFormSteps, saveContractSections,
     type OwnerRef, type ItemRevisions, type SectionConflict, type StepConflict,
 } from '@/app/actions/adoptionDocs';
-import { SECTION_KEYS, TOGGLEABLE_FORM_STEPS, type ContractSections, type SectionKey } from '@/domain/adoptionDocs';
+import { SECTION_KEYS, TOGGLEABLE_FORM_STEPS, settingKeyQuestion, type ContractSections, type SectionKey } from '@/domain/adoptionDocs';
 import { isDocsDraftDirty } from '@/domain/standardContractText';
 import { sectionRevisionText, storedSection, stepStates } from '@/domain/adoptionDocsCollab';
 import FormStepsEditor from '@/components/adoptionDocs/FormStepsEditor';
@@ -330,8 +330,12 @@ function AdoptionDocsEditor() {
                 for (const x of d.updatedByOthers) next[x.key] = x.by;
                 return next;
             });
-            const question = (id: string) => t(id === 'phone-optional' ? 'adoptionDocs.phone_required_question'
-                : id.startsWith('identity-') || id === 'selfie' ? `adoptionDocs.step_${id.replace('-', '_')}` : `petshield.fields.${id}`);
+            const question = (key: string) => {
+                // `on:` / `way:` keys name the question they belong to (spec 2026-10-14 §6.1).
+                const id = settingKeyQuestion(key);
+                return t(key === 'phone-optional' ? 'adoptionDocs.phone_required_question'
+                    : id.startsWith('identity-') || id === 'selfie' ? `adoptionDocs.step_${id.replace('-', '_')}` : `petshield.fields.${id}`);
+            };
             for (const x of d.updatedByOthers) {
                 toast.info(capitalize(t('adoptionDocs.toast_step_updated_by_other').replace('{name}', x.by || t('adoptionDocs.someone')).replace('{question}', question(x.key))));
             }

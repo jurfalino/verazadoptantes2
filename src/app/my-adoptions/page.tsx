@@ -1,8 +1,9 @@
 'use client';
 export const runtime = 'edge';
 
+import { contractHref } from '@/lib/contractLink';
 import { useLanguage } from '@/context/LanguageContext';
-import { emailHandle } from '@/lib/userDisplay';
+import { actorLabel } from '@/lib/userDisplay';
 import { AdopterName } from '@/components/AdopterName';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
@@ -29,21 +30,14 @@ interface Adoption {
     rating: number | null;
     recordType: string | null;
     comments: string | null;
+    hasContract?: number | null;
     images: AdoptionImage[];
     addedBy?: string | null;
     /** Rescuer's display name for `addedBy` (email handle when they have none). */
     addedByName?: string | null;
 }
 
-function getContractUrl(comments: string | null | undefined): string | null {
-    if (!comments) return null;
-    try {
-        const parsed = JSON.parse(comments) as { contractScreenshot?: string };
-        return parsed?.contractScreenshot && typeof parsed.contractScreenshot === 'string' ? parsed.contractScreenshot : null;
-    } catch {
-        return null;
-    }
-}
+
 
 const RECORD_TYPES = ['all', 'adoption', 'adoption_request', 'foster', 'observation', 'follow_up', 'returned_pet'] as const;
 type RecordTypeFilter = typeof RECORD_TYPES[number];
@@ -193,7 +187,7 @@ export default function MyAdoptionsPage() {
                                 </thead>
                                 <tbody className="divide-y divide-stone-100">
                                     {adoptions.map((adoption) => {
-                                        const contractUrl = getContractUrl(adoption.comments);
+                                        const contractUrl = contractHref(adoption.id, adoption.hasContract, adoption.comments);
                                         return (
                                         <tr key={adoption.id} className="hover:bg-stone-50/50 transition-colors group">
                                             <td className="py-3 px-4">
@@ -230,7 +224,7 @@ export default function MyAdoptionsPage() {
                                                         )}
                                                         <div className="text-xs text-stone-500 capitalize">{adoption.species || t('dashboard.unknown_species')}</div>
                                                         {adoption.addedBy && adoption.addedBy !== currentEmail && (
-                                                            <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adoption.addedByName || emailHandle(adoption.addedBy))}</div>
+                                                            <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', actorLabel(adoption.addedBy, adoption.addedByName, t))}</div>
                                                         )}
                                                     </div>
                                                 </div>
@@ -285,7 +279,7 @@ export default function MyAdoptionsPage() {
                         {/* Mobile Cards - Hidden on desktop */}
                         <div className="md:hidden space-y-3">
                             {adoptions.map((adoption) => {
-                                const contractUrl = getContractUrl(adoption.comments);
+                                const contractUrl = contractHref(adoption.id, adoption.hasContract, adoption.comments);
                                 return (
                                 <div
                                     key={adoption.id}
@@ -320,7 +314,7 @@ export default function MyAdoptionsPage() {
                                             )}
                                             <div className="text-xs text-stone-500 capitalize">{adoption.species || t('dashboard.unknown_species')}</div>
                                             {adoption.addedBy && adoption.addedBy !== currentEmail && (
-                                                <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', adoption.addedByName || emailHandle(adoption.addedBy))}</div>
+                                                <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', actorLabel(adoption.addedBy, adoption.addedByName, t))}</div>
                                             )}
                                             {/* Type Badge */}
                                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold mt-1 ${getTypeBadgeStyle(adoption.recordType)}`}>

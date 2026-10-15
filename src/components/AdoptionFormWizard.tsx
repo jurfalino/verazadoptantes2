@@ -305,7 +305,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
             animalName: (matchedInventory || matchedPrevious)?.animalName || prefillAnimalName,
             details: prefillDetails,
             status: 'completed',
-            rating: prefillRating ? Number(prefillRating) : 5,
+            rating: prefillRating ? Number(prefillRating) : 0,
             comments: '',
             species: (matchedInventory || matchedPrevious)?.species || prefillSpecies,
             adopterId: adopterId,
@@ -342,7 +342,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     }, [isOpen, step, shouldOpenFromWizard, autoOpen]);
 
     const resetForm = () => {
-        setFormData({ animalId: '', animalName: '', details: '', status: 'completed', rating: 5, comments: '', species: 'cat', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], adoptionDate: '', deliveredToHome: false, verifiedAddress: '', verifiedStreetAndNumber: '', verifiedLocality: '', identityVerified: false });
+        setFormData({ animalId: '', animalName: '', details: '', status: 'completed', rating: 0, comments: '', species: 'cat', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], adoptionDate: '', deliveredToHome: false, verifiedAddress: '', verifiedStreetAndNumber: '', verifiedLocality: '', identityVerified: false });
         setPendingImages([]);
         setCustomSpecies(false);
         setMode('existing');
@@ -520,7 +520,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                     species: formData.species,
                     details: '',
                     status: 'completed',
-                    rating: Number(formData.rating),
+                    rating: Number(formData.rating) || null, // 0 = not rated → NULL
                     adopterId,
                     recordType: 'adoption',
                     date: adoptionLocalDate,
@@ -551,7 +551,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 animalId: linkedAnimalId,
                 followupKey: (isFollowUpOrReturn && prefillFollowupKey) ? prefillFollowupKey : undefined,
                 followupSubtype: (isFollowUpOrReturn && prefillFollowupSubtype) ? prefillFollowupSubtype : undefined,
-                rating: Number(formData.rating),
+                rating: Number(formData.rating) || null, // 0 = not rated → NULL
                 date: localDate,
                 // Adoption requests don't reference a specific animal — drop the
                 // name even if some leftover state held one. Species stays.

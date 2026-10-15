@@ -13,13 +13,14 @@
  * form-summary fields (intent / species / lifeStage), full submission payload
  * for the panel's form section, and adopter-context for the profile section.
  * D1-safe per-applicant fan-out via Promise.all (no inArray).
+ *
+ * The query and enrichment live in `_applicants.ts` (not a server-action
+ * module), so the only browser-callable export here stays this gated action.
  */
 
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
 import { auth } from '@/auth';
-import { computeAvgRating } from '@/domain/ratings';
-import { buildFlags } from '@/domain/flags';
 import type { AdopterFlags } from '@/types/adopter';
 
 export interface ApplicantSubmissionPayload {
@@ -67,206 +68,44 @@ export interface ApplicantSummary {
 }
 
 /**
- * Returns the form submissions targeted at `animalId`, scoped to the
- * current user (must own the animal or share its org).
+ * Returns the form submissions targeted at `animalId` — every applicant who
+ * came through a form link of the animal OWNER's team (owner + org-mates),
+ * whichever member shared it (2026-09-30 product decision; before, each
+ * viewer saw only their own link's applicants).
  *
- * D1-safe: per-row enrichment uses Promise.all with one `eq(id)` each
- * (per CLAUDE.md, no `inArray`).
+ * Gate: the viewer must be the owner, an org-mate of the owner, or an admin
+ * (same rule as `getAnimalProfile`). The scope is the OWNER's team, not the
+ * viewer's, so every viewer of the animal sees the same list — and the
+ * /my-animals card count uses the same scope (src/lib/applicantScope.ts).
  */
 export async function getApplicantsForAnimal(animalId: string): Promise<ApplicantSummary[]> {
+    let userEmail: string | null | undefined;
     try {
         const session = await auth();
-        const userEmail = session?.user?.email;
+        userEmail = session?.user?.email;
         if (!userEmail) return [];
 
         const db = await getDb();
         if (!db) return [];
 
-        const { formSubmissions, adopters, adoptions, contractInvitations, adopterFlags } = await import('@/db/schema');
-        const { eq, and, isNull } = await import('drizzle-orm');
+        const { adoptions } = await import('@/db/schema');
+        const { eq } = await import('drizzle-orm');
 
-        // Authorize: the rescuer who added the animal or any org-mate
-        // (v2.55.18 — the long-promised org-wide visibility, full parity).
         const animal = await db.select({ addedBy: adoptions.addedBy, adopterId: adoptions.adopterId })
             .from(adoptions)
             .where(eq(adoptions.id, animalId))
             .get();
         if (!animal) return [];
-        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
-        if (!(await isOwnerOrOrgMate(userEmail, animal.addedBy))) return [];
 
-        const rows = await db.select({
-            id: formSubmissions.id,
-            name: formSubmissions.name,
-            email: formSubmissions.email,
-            phone: formSubmissions.phone,
-            address: formSubmissions.address,
-            selfieUrl: formSubmissions.selfieUrl,
-            latitude: formSubmissions.latitude,
-            longitude: formSubmissions.longitude,
-            intent: formSubmissions.intent,
-            species: formSubmissions.species,
-            lifeStage: formSubmissions.lifeStage,
-            household: formSubmissions.household,
-            answersJson: formSubmissions.answersJson,
-            linkedAdopterId: formSubmissions.linkedAdopterId,
-            createdAt: formSubmissions.createdAt,
-        })
-            .from(formSubmissions)
-            .where(and(
-                eq(formSubmissions.selectedAnimalId, animalId),
-                eq(formSubmissions.userId, userEmail),
-            ))
-            .all() as Array<{
-                id: string; name: string;
-                email: string | null; phone: string | null; address: string | null;
-                selfieUrl: string | null; latitude: string | null; longitude: string | null;
-                intent: string | null; species: string | null; lifeStage: string | null;
-                household: string | null; answersJson: string | null;
-                linkedAdopterId: string | null; createdAt: Date | null;
-            }>;
+        const { isOwnerOrgMateOrAdmin, loadApplicantsForAnimal } = await import('./_applicants');
+        if (!(await isOwnerOrgMateOrAdmin(userEmail, animal.addedBy))) return [];
 
-        if (rows.length === 0) return [];
-
-        const parseHousehold = (raw: string | null): string[] | null => {
-            if (!raw) return null;
-            try {
-                const parsed = JSON.parse(raw);
-                if (Array.isArray(parsed)) return parsed.filter((s): s is string => typeof s === 'string');
-                return null;
-            } catch {
-                return null;
-            }
-        };
-
-        // Per-applicant enrichment. D1-safe — no inArray. Each linked adopter
-        // gets parallel lookups for name+context, activity records (for both
-        // rating + counts), flag rows, and contract-invite state. Orphan
-        // submissions (linkedAdopterId=null) get a zeroed shape.
-        const enriched = await Promise.all(rows.map(async (row) => {
-            let adopterName = row.name;
-            let adopterRating: number | null = null;
-            let adoptionCount = 0;
-            let requestCount = 0;
-            let flags: AdopterFlags | null = null;
-            let adopterContext: ApplicantAdopterContext | null = null;
-
-            if (row.linkedAdopterId) {
-                const [adopter, records, flagRows] = await Promise.all([
-                    db.select({
-                        name: adopters.name,
-                        addedBy: adopters.addedBy,
-                        source: adopters.source,
-                        country: adopters.country,
-                    })
-                        .from(adopters)
-                        .where(eq(adopters.id, row.linkedAdopterId))
-                        .get() as Promise<{ name: string; addedBy: string | null; source: string | null; country: string | null } | undefined>,
-                    db.select({ rating: adoptions.rating, recordType: adoptions.recordType })
-                        .from(adoptions)
-                        .where(eq(adoptions.adopterId, row.linkedAdopterId))
-                        .all() as Promise<Array<{ rating: number | null; recordType: string | null }>>,
-                    db.select({ reason: adopterFlags.reason })
-                        .from(adopterFlags)
-                        .where(eq(adopterFlags.adopterId, row.linkedAdopterId))
-                        .all() as Promise<Array<{ reason: string | null }>>,
-                ]);
-                if (adopter) {
-                    adopterName = adopter.name;
-                    adopterContext = {
-                        addedBy: adopter.addedBy,
-                        addedByName: null, // filled below in one batched lookup
-                        source: adopter.source,
-                        country: adopter.country,
-                    };
-                }
-                adopterRating = computeAvgRating(records);
-                for (const r of records) {
-                    if (r.recordType === 'adoption') adoptionCount++;
-                    else if (r.recordType === 'adoption_request') requestCount++;
-                }
-                const reasons = flagRows.map(f => f.reason).filter((r): r is string => !!r);
-                // systemDuplicateCount=0 here — looking up duplicate_candidates per
-                // applicant would add another N queries with no UI consumer (panel
-                // surfaces flag pills, not the system-duplicate badge). If we ever
-                // surface it, add a third parallel query above.
-                flags = buildFlags(reasons, 0);
-            }
-
-            // Already signed? — the animal is adopted by this specific adopter.
-            const isSigned = !!(animal.adopterId && row.linkedAdopterId && animal.adopterId === row.linkedAdopterId);
-
-            // Outstanding invitation? — exists in contract_invitations for this animal+adopter
-            // and has not been used yet.
-            let hasInvite = false;
-            if (row.linkedAdopterId && !isSigned) {
-                const inv = await db.select({ token: contractInvitations.token })
-                    .from(contractInvitations)
-                    .where(and(
-                        eq(contractInvitations.animalId, animalId),
-                        eq(contractInvitations.adopterId, row.linkedAdopterId),
-                        isNull(contractInvitations.usedAt),
-                    ))
-                    .get();
-                hasInvite = !!inv;
-            }
-
-            return {
-                submissionId: row.id,
-                adopterId: row.linkedAdopterId,
-                adopterName,
-                adopterRating,
-                appliedAt: row.createdAt ? Math.floor(row.createdAt.getTime() / 1000) : null,
-                hasInvite,
-                isSigned,
-                flags,
-                adoptionCount,
-                requestCount,
-                intent: row.intent,
-                species: row.species,
-                lifeStage: row.lifeStage,
-                submission: {
-                    email: row.email,
-                    phone: row.phone,
-                    address: row.address,
-                    selfieUrl: row.selfieUrl,
-                    latitude: row.latitude,
-                    longitude: row.longitude,
-                    household: parseHousehold(row.household),
-                    answersJson: row.answersJson,
-                },
-                adopterContext,
-            } satisfies ApplicantSummary;
-        }));
-
-        // "Agregado por": the rescuer's name, not their email handle. One
-        // batched, D1-safe lookup for every distinct addedBy on this animal.
-        const addedByEmails = enriched
-            .map(a => a.adopterContext?.addedBy)
-            .filter((e): e is string => !!e);
-        if (addedByEmails.length > 0) {
-            try {
-                const { resolveDisplayNames } = await import('./notifications');
-                const names = await resolveDisplayNames(addedByEmails);
-                for (const a of enriched) {
-                    const ctx = a.adopterContext;
-                    if (ctx?.addedBy) ctx.addedByName = names.get(ctx.addedBy.toLowerCase()) ?? null;
-                }
-            } catch (e) {
-                // Names degrade to the email handle at render; never lose the list.
-                logger.warn('getApplicantsForAnimal: addedBy name lookup fallback', {
-                    animalId, count: addedByEmails.length,
-                    error: e instanceof Error ? e.message : String(e),
-                });
-            }
-        }
-
-        // Newest first.
-        enriched.sort((a, b) => (b.appliedAt ?? 0) - (a.appliedAt ?? 0));
-        return enriched;
+        const { getTeamEmails } = await import('@/lib/orgMembership');
+        const teamEmails = await getTeamEmails(animal.addedBy);
+        return await loadApplicantsForAnimal(db, { id: animalId, adopterId: animal.adopterId ?? null }, teamEmails);
     } catch (e) {
         logger.warn('getApplicantsForAnimal failed', {
-            animalId,
+            animalId, userEmail,
             error: e instanceof Error ? e.message : String(e),
         });
         return [];

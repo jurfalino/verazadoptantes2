@@ -1,5 +1,6 @@
 'use client';
 
+import { contractHref } from '@/lib/contractLink';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { saveAdoption, getAdoptionImages, deleteImage } from '@/app/actions';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -105,7 +106,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
         animalName: initialData?.animalName || prefillAnimalName,
         details: initialData?.details || prefillDetails,
         status: initialData?.status || 'completed',
-        rating: initialData?.rating || (prefillRating ? Number(prefillRating) : 5),
+        rating: initialData?.rating || (prefillRating ? Number(prefillRating) : 0),
         comments: initialData?.comments || '',
         species: initialData?.species || prefillSpecies,
         adopterId: initialData?.adopterId || adopterId,
@@ -129,7 +130,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
         identityVerified: d.identityVerified ? 1 : 0,
     });
     // `values`: what is stored (compared on the server). `shown`: the form as
-    // it was filled from them (display defaults like rating 5 included) — only
+    // it was filled from them (display defaults like an unrated 0 included) — only
     // fields that differ from `shown` are this editor's changes, and only those
     // are sent.
     type Baseline = { id: string; values: Record<string, unknown>; shown: typeof formData };
@@ -151,7 +152,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
     const asFormValue = (field: string, v: unknown): unknown => {
         if (field === 'date') return dayOf(v);
         if (field === 'deliveredToHome' || field === 'identityVerified') return v === 1 || v === true;
-        if (field === 'rating') return v === null || v === undefined ? 5 : Number(v);
+        if (field === 'rating') return v === null || v === undefined ? 0 : Number(v);
         return (v as string | null) ?? '';
     };
 
@@ -169,7 +170,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
             animalName: initialData.animalName || '',
             details: initialData.details || '',
             status: initialData.status || 'completed',
-            rating: initialData.rating || 5,
+            rating: initialData.rating || 0,
             comments: initialData.comments || '',
             species: initialData.species || '',
             adopterId: initialData.adopterId || adopterId,
@@ -238,7 +239,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                 species: animal.species,
                 details: isFollowUpOrReturn ? formData.details : (animal.details || ''),
                 status: isFollowUpOrReturn ? formData.status : 'completed',
-                rating: isFollowUpOrReturn ? formData.rating : 5,
+                rating: isFollowUpOrReturn ? formData.rating : 0,
                 adopterId: adopterId
             });
         }
@@ -363,7 +364,8 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                 adopterId: adopterId,
                 // v2.19.52: blank animalName saves as NULL (was kept as '').
                 animalName: formData.animalName.trim() || null,
-                rating: Number(formData.rating),
+                // 0 = not rated: saved as NULL, never a made-up value.
+                rating: Number(formData.rating) || null,
                 date: localDate,
                 onBehalfOf: null,
                 deliveredToHome: formData.deliveredToHome ? 1 : 0,
@@ -456,7 +458,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
             if (onSuccess) onSuccess();
             else {
                 setIsOpen(false);
-                setFormData({ id: undefined, animalName: '', details: '', status: 'completed', rating: 5, comments: '', species: '', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], deliveredToHome: false, verifiedAddress: '', identityVerified: false });
+                setFormData({ id: undefined, animalName: '', details: '', status: 'completed', rating: 0, comments: '', species: '', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], deliveredToHome: false, verifiedAddress: '', identityVerified: false });
                 setPendingImages([]);
                 await new Promise(resolve => setTimeout(resolve, 100));
                 router.refresh();
@@ -530,7 +532,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                 {showModeSwitcher && (
                     <div className="flex gap-2 mb-4 p-1 bg-teal-50 rounded-lg">
                         <button type="button" onClick={() => setMode('existing')} className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-all ${effectiveMode === 'existing' ? 'bg-white text-teal-700 shadow-sm' : 'text-teal-700 hover:text-teal-800'}`}>{t('adoption.select_existing') || 'Select Existing'} ({effectiveAnimalsList.length})</button>
-                        <button type="button" onClick={() => { setMode('new'); setFormData(prev => ({ ...prev, id: undefined, animalName: '', species: '', details: '', status: 'completed', rating: 5, recordType: 'adoption' })); }} className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-all ${effectiveMode === 'new' ? 'bg-white text-teal-700 shadow-sm' : 'text-teal-700 hover:text-teal-800'}`}>{t('adoption.create_new') || 'Create New'}</button>
+                        <button type="button" onClick={() => { setMode('new'); setFormData(prev => ({ ...prev, id: undefined, animalName: '', species: '', details: '', status: 'completed', rating: 0, recordType: 'adoption' })); }} className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-all ${effectiveMode === 'new' ? 'bg-white text-teal-700 shadow-sm' : 'text-teal-700 hover:text-teal-800'}`}>{t('adoption.create_new') || 'Create New'}</button>
                     </div>
                 )}
 
@@ -691,13 +693,13 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                     {/* End of Block 1 — animal-specific fields hidden for observations */}
 
                     {/* Contract screenshot link */}
-                    {initialData?.comments && (() => {
+                    {(initialData?.hasContract || initialData?.comments) && (() => {
                         try {
-                            const parsed = JSON.parse(initialData.comments);
-                            if (parsed.contractScreenshot) {
+                            const href = contractHref(initialData.id, initialData.hasContract, initialData.comments);
+                            if (href) {
                                 return (
                                     <a
-                                        href={parsed.contractScreenshot}
+                                        href={href}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="flex items-center gap-2 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors"

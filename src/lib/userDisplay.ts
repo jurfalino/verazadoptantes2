@@ -14,3 +14,44 @@ export function emailHandle(email: string | null | undefined): string {
     const at = email.indexOf('@');
     return at > 0 ? email.slice(0, at) : email;
 }
+
+/**
+ * Non-email actor codes that system write paths stamp into `recorded_by` /
+ * `updated_by` / `changed_by`, mapped to the i18n key that names them for users.
+ * All three come from the public contract app (`/api/contract/[id]/submit` and
+ * `_adopterFactory` with source='contract'). Resolving them at display time
+ * means rows already written with these codes need no backfill.
+ *
+ * Deliberately a subset of `SENTINEL_ACTORS` in `piiAccess.ts` (not imported:
+ * that module is server-side and this one ships to client components). Only
+ * actors with approved copy belong here; 'anonymous' keeps its own handling at
+ * each call site.
+ */
+// A Map, not an object literal: `obj[actor]` would resolve inherited keys
+// ('constructor', 'toString', …) through the prototype and hand t() a function.
+const SYSTEM_ACTOR_LABEL_KEYS: ReadonlyMap<string, string> = new Map([
+    ['contract', 'common.actor_contract'],
+    ['contract-signed-via-invitation', 'common.actor_contract'],
+    ['contract-submission', 'common.actor_contract'],
+    ['form-submission', 'common.actor_form_submission'],
+]);
+
+/**
+ * How an actor (the person or system that recorded/changed something) is shown:
+ * a known system actor → its localized label; otherwise the resolved display
+ * name, else the email handle (unchanged from the `name || emailHandle(x)`
+ * pattern it replaces). Use it on every "Agregado por / Actualizado por / por"
+ * line so a system code never reaches the screen.
+ *
+ * `resolvedName` is whatever the caller already looked up for this actor
+ * (`userNameMap?.[actor]`, `addedByName`, `lastUpdate.name`).
+ */
+export function actorLabel(
+    actor: string | null | undefined,
+    resolvedName: string | null | undefined,
+    t: (path: string) => string,
+): string {
+    const systemKey = actor ? SYSTEM_ACTOR_LABEL_KEYS.get(actor) : undefined;
+    if (systemKey) return t(systemKey);
+    return resolvedName || emailHandle(actor);
+}

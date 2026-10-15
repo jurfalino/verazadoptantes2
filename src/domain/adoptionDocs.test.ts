@@ -4,23 +4,16 @@ import {
     sanitizeHiddenSteps, sanitizeShownSteps, parseDocsSource, serializeDocsSource,
     resolveDocsOwner, normalizeRichDoc, normalizeSections, isStandardSections,
     canonicalSectionsJson, planContractSave, deriveSpecialNeeds, richDocSchema,
-    contractSectionsSchema, isContractVersionOwnedBy, parseStoredHiddenSteps, isPhoneRequired, FORM_OPTION_TOKENS, type RichDoc,
+    contractSectionsSchema, isContractVersionOwnedBy, parseStoredHiddenSteps, isPhoneRequired, FORM_OPTION_TOKENS,
+    isQuestionOn, toggleQuestion, questionWay, setQuestionWay, settingKeyQuestion, settingChange, DEFAULT_OFF_FORM_STEPS, type RichDoc,
 } from './adoptionDocs';
 
 const doc = (...texts: string[]): RichDoc => ({ type: 'doc', content: texts.map(t => ({ type: 'paragraph', content: [{ text: t }] })) });
 
 describe('form steps', () => {
-    it('lists the 25 PetShield steps in form order', () => {
-        expect(FORM_STEP_IDS).toEqual([
-            'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'giftRecipient', 'children', 'existingPets',
-            'housingType', 'household', 'hasOutdoor', 'isSafe', 'hoursAlone', 'petExperience', 'willingToSterilize',
-            'vetCommitment', 'movingPlans', 'vacationPlan', 'identity-name', 'identity-email',
-            'identity-phone', 'identity-address', 'ageRange', 'geo', 'selfie',
-        ]);
-    });
     it('locks terms + identity', () => {
         expect(LOCKED_FORM_STEPS).toEqual(['legal', 'identity-name', 'identity-email', 'identity-phone', 'identity-address']);
-        expect(TOGGLEABLE_FORM_STEPS).toHaveLength(20); // 19 questions + the phone option
+        expect(TOGGLEABLE_FORM_STEPS.length).toBe(44); // 35 rows + 9 tokens
     });
     it('groups cover every toggleable step exactly once', () => {
         const all = (FORM_STEP_GROUPS.flatMap(g => g.steps) as string[]).filter(s => !(LOCKED_FORM_STEPS as readonly string[]).includes(s));
@@ -201,5 +194,83 @@ describe('derived gift step', () => {
         expect(TOGGLEABLE_FORM_STEPS).not.toContain('giftRecipient');
         expect(FORM_STEP_GROUPS.flatMap(g => g.steps as readonly string[])).not.toContain('giftRecipient');
         expect(sanitizeHiddenSteps(['giftRecipient', 'intent'])).toEqual(['intent']);
+    });
+});
+
+describe('release 1 — new questions (spec 2026-10-14)', () => {
+    it('lists the questions in form order', () => {
+        expect(FORM_STEP_IDS).toEqual([
+            'legal', 'species', 'lifeStage', 'specialNeeds', 'intent', 'carer', 'giftRecipient', 'children', 'allergy',
+            'existingPets', 'petsCare', 'housingType', 'rental', 'household', 'hasOutdoor', 'isSafe', 'catOutdoor',
+            'sleepPlace', 'hoursAlone', 'dogWalks', 'dogTied', 'petExperience', 'lastAnimal', 'gaveAway',
+            'willingToSterilize', 'sterilizeHow', 'vetCommitment', 'movingPlans', 'movingIfNoPets', 'vacationPlan',
+            'returnReasons', 'adaptPlan', 'visitConsent', 'identity-name', 'identity-email', 'identity-phone',
+            'identity-address', 'social', 'ageRange', 'vetReference', 'motivation', 'geo', 'selfie',
+        ]);
+    });
+    it('on by default unless listed as default-off', () => {
+        expect(isQuestionOn('gaveAway', [])).toBe(true);
+        expect(isQuestionOn('catOutdoor', [])).toBe(false);
+        expect(isQuestionOn('catOutdoor', ['on:catOutdoor'])).toBe(true);
+        expect(isQuestionOn('gaveAway', ['gaveAway'])).toBe(false);
+    });
+    it('toggling writes the right key and keeps order', () => {
+        expect(toggleQuestion('catOutdoor', ['selfie'])).toEqual(['selfie', 'on:catOutdoor']);
+        expect(toggleQuestion('catOutdoor', ['on:catOutdoor'])).toEqual([]);
+        expect(toggleQuestion('gaveAway', [])).toEqual(['gaveAway']);
+    });
+    it('previous animal and moving: new wording by default, old on request, one switch hides both', () => {
+        expect(isStepAsked('lastAnimal', [])).toBe(true);
+        expect(isStepAsked('petExperience', [])).toBe(false);
+        const old = setQuestionWay('petExperience', 'old', []);
+        expect(old).toEqual(['way:petExperience:old']);
+        expect(questionWay('petExperience', old)).toBe('old');
+        expect(isStepAsked('petExperience', old)).toBe(true);
+        expect(isStepAsked('lastAnimal', old)).toBe(false);
+        // A row hidden before this release hides the topic in both wordings.
+        expect(isStepAsked('lastAnimal', ['petExperience'])).toBe(false);
+        expect(isStepAsked('petExperience', ['petExperience', 'way:petExperience:old'])).toBe(false);
+        expect(isStepAsked('movingIfNoPets', [])).toBe(true);
+        expect(isStepAsked('movingPlans', ['way:movingPlans:old'])).toBe(true);
+    });
+    it('a row saved before this release still gets the new on-by-default questions', () => {
+        for (const id of ['carer', 'allergy', 'petsCare', 'rental', 'sleepPlace', 'gaveAway', 'sterilizeHow', 'returnReasons', 'adaptPlan', 'visitConsent']) {
+            expect(isStepAsked(id, ['selfie']), id).toBe(true);
+        }
+        for (const id of DEFAULT_OFF_FORM_STEPS) expect(isStepAsked(id, ['selfie']), id).toBe(false);
+    });
+    it('the sanitiser keeps the new tokens and drops unknown ones', () => {
+        expect(sanitizeHiddenSteps(['on:catOutdoor', 'on:nope', 'way:movingPlans:old', 'way:x:old', 'gaveAway']))
+            .toEqual(['gaveAway', 'on:catOutdoor', 'way:movingPlans:old']);
+    });
+    it('variants are not rows of their own', () => {
+        expect(TOGGLEABLE_FORM_STEPS).not.toContain('lastAnimal');
+        expect(TOGGLEABLE_FORM_STEPS).not.toContain('movingIfNoPets');
+        expect(TOGGLEABLE_FORM_STEPS).toContain('on:social');
+    });
+    it('a setting key names the question it belongs to', () => {
+        expect(settingKeyQuestion('on:catOutdoor')).toBe('catOutdoor');
+        expect(settingKeyQuestion('way:petExperience:old')).toBe('petExperience');
+        expect(settingKeyQuestion('gaveAway')).toBe('gaveAway');
+    });
+});
+
+describe('what a teammate\'s change to a setting means (review fix 2026-10-14)', () => {
+    // `present` = the stored key exists ('hidden' in stepStates terms).
+    it('a plain question id present means it is no longer asked', () => {
+        expect(settingChange('gaveAway', true)).toBe('notAsked');
+        expect(settingChange('gaveAway', false)).toBe('asked');
+    });
+    it('an on: token present means the question IS asked', () => {
+        expect(settingChange('on:catOutdoor', true)).toBe('asked');
+        expect(settingChange('on:catOutdoor', false)).toBe('notAsked');
+    });
+    it('a way: token only changes the wording', () => {
+        expect(settingChange('way:petExperience:old', true)).toBe('oldWording');
+        expect(settingChange('way:petExperience:old', false)).toBe('newWording');
+    });
+    it('the phone option only changes whether it must be answered', () => {
+        expect(settingChange('phone-optional', true)).toBe('phoneOptional');
+        expect(settingChange('phone-optional', false)).toBe('phoneRequired');
     });
 });

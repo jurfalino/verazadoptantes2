@@ -284,18 +284,15 @@ export async function GET(request: Request) {
  * A Worker has a hard subrequest ceiling (~1000), and a tokenizer-version bump
  * makes EVERY record stale at once — 1,146 in production as of v2.49.
  *
- * Cost per record is now FIXED at 3 D1 calls (delete + one multi-row token
- * insert + hash update). That fixed-ness is the point: it used to be
- * `2 + tokenCount`, and with a real-world max of 26 tokens on one record, a
- * batch sized off the 6.1 average could quietly cost 3x its estimate. v2.49.3
- * shipped a batch of 100 on that average and was hard-killed on the first click
- * against production-scale data — no catch block runs on a subrequest kill, so
- * it also left the scan lock wedged at `running` (see lockWaitMs).
- *
- * 50 × 3 = 150, plus a handful of surrounding queries. Deliberately ~6x under
- * the ceiling rather than shaving it: the loop is automatic, so more batches
- * costs a few seconds, while one over-large batch costs a failed run. Callers
- * that want fewer round trips can pass `?limit=` up to SCAN_BATCH_MAX.
+ * Writes go out as one atomic D1 batch per SCAN_WRITE_GROUP records (a batch
+ * is one subrequest), so a batch of 25 costs ~3 write subrequests plus a
+ * handful of surrounding queries. History: per-record writes used to cost
+ * `2 + tokenCount`, and v2.49.3's batch of 100 was hard-killed on production
+ * data with the scan lock wedged at `running` (see lockWaitMs); then 3
+ * sequential calls per record (~30 s per batch of 50), where one dropped call
+ * left a record half-written (2026-10-10). The loop is automatic, so the batch
+ * stays modest: a smaller batch loses less to a failure. Callers that want
+ * fewer round trips can pass `?limit=` up to SCAN_BATCH_MAX.
  */
 // 25 since 2.56.159: a batch of 50 took ~30 s, and a dropped browser
 // connection cancels the batch in flight — a shorter one loses less and lets
@@ -319,6 +316,26 @@ const SCAN_BATCH_MAX = 200;
  * measured maximum of 26.
  */
 const TOKEN_INSERT_CHUNK = 20;
+
+/** Records whose token writes go out as one atomic D1 batch (one round trip, one subrequest). */
+const SCAN_WRITE_GROUP = 10;
+
+function chunkList<T>(list: T[], size: number): T[][] {
+    const out: T[][] = [];
+    for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+    return out;
+}
+
+/** Run `op`; on failure wait a moment and run it once more. Only for atomic / idempotent work. */
+async function withOneRetry<T>(what: string, op: () => Promise<T>, context: Record<string, unknown>): Promise<T> {
+    try {
+        return await op();
+    } catch (e) {
+        logger.warn(`${what} failed, retrying once`, { ...context, error: e instanceof Error ? e.message : String(e) });
+        await new Promise(r => setTimeout(r, 750));
+        return op();
+    }
+}
 
 /**
  * Rows per multi-row candidate insert. `duplicate_candidates` binds 8 columns,
@@ -439,7 +456,17 @@ export async function POST(request: Request) {
                 }
             }
 
-            // Step 2: Tokenize stale records (this batch only)
+            // Step 2: Tokenize stale records (this batch only).
+            //
+            // Each record is delete-tokens + insert-tokens + update-hash. Sent
+            // one by one that is ~3 sequential D1 round trips per record, and a
+            // dropped call failed the batch after a record's tokens were already
+            // replaced but before its hash was (2026-10-10, errorId 60d0dc35).
+            // SCAN_WRITE_GROUP records go out as ONE D1 batch instead: one round
+            // trip, atomic (a failed group writes nothing, so it is simply
+            // retried once, then the page's own retry takes over).
+            type Planned = { id: string; hash: string; tokens: ReturnType<typeof extractTokens> };
+            const planned: Planned[] = [];
             for (const adopter of staleAdopters) {
                 if (!batchIds.has(adopter.id)) continue;
                 const newHash = computeTokenHash(adopter);
@@ -451,26 +478,44 @@ export async function POST(request: Request) {
                 // Typed entries only (titular + each household member) — the same
                 // inputs save-time tokenizing uses (tokenInputsFor).
                 const { entries, household } = tokenInputsFor(adopter);
-                const tokens = extractTokens(adopter, adopterAdoptions, entries, household);
+                planned.push({ id: adopter.id, hash: newHash, tokens: extractTokens(adopter, adopterAdoptions, entries, household) });
+            }
 
-                // Replace tokens. ONE multi-row insert, not one per token: at ~6
-                // tokens per record that is the difference between ~8 and ~3 D1
-                // calls per record, and the subrequest ceiling is what kills this
-                // endpoint at scale.
-                await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopter.id));
-                for (let i = 0; i < tokens.length; i += TOKEN_INSERT_CHUNK) {
-                    await db.insert(duplicateTokens).values(
-                        tokens.slice(i, i + TOKEN_INSERT_CHUNK).map(token => ({
-                            id: crypto.randomUUID(),
-                            adopterId: adopter.id,
-                            tokenType: token.type,
-                            tokenValue: token.value,
-                        })),
-                    );
+            let rawD1: D1Database | undefined;
+            try {
+                rawD1 = (getRequestContext().env as { DB?: D1Database })?.DB;
+            } catch (e) {
+                logger.warn('Duplicate scan: no request context, writing records one by one (local dev)', {
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            }
+
+            for (let g = 0; g < planned.length; g += SCAN_WRITE_GROUP) {
+                const group = planned.slice(g, g + SCAN_WRITE_GROUP);
+                if (rawD1?.batch) {
+                    const D1 = rawD1;
+                    const statements = group.flatMap(rec => [
+                        D1.prepare('DELETE FROM duplicate_tokens WHERE adopter_id = ?').bind(rec.id),
+                        ...chunkList(rec.tokens, TOKEN_INSERT_CHUNK).map(part => D1.prepare(
+                            `INSERT INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES ${part.map(() => '(?, ?, ?, ?)').join(', ')}`,
+                        ).bind(...part.flatMap(tk => [crypto.randomUUID(), rec.id, tk.type, tk.value]))),
+                        D1.prepare('UPDATE adopters SET token_hash = ? WHERE id = ?').bind(rec.hash, rec.id),
+                    ]);
+                    await withOneRetry('Duplicate scan: write group', () => D1.batch(statements), {
+                        group: g / SCAN_WRITE_GROUP, records: group.length, firstId: group[0]?.id,
+                    });
+                } else {
+                    for (const rec of group) {
+                        await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, rec.id));
+                        for (const part of chunkList(rec.tokens, TOKEN_INSERT_CHUNK)) {
+                            await db.insert(duplicateTokens).values(part.map(token => ({
+                                id: crypto.randomUUID(), adopterId: rec.id, tokenType: token.type, tokenValue: token.value,
+                            })));
+                        }
+                        await db.update(adopters).set({ tokenHash: rec.hash }).where(eq(adopters.id, rec.id));
+                    }
                 }
-
-                await db.update(adopters).set({ tokenHash: newHash }).where(eq(adopters.id, adopter.id));
-                tokenized++;
+                tokenized += group.length;
             }
 
             // More stale records left — stop here and let the caller call again.

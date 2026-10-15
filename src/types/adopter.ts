@@ -6,6 +6,8 @@
 export interface Adopter {
     id: string;
     name: string;
+    /** How the profile was created: manual | imported | form | contract | api (adopters.source). */
+    source?: string | null;
     contactInfo?: string | null;
     /** JSON-serialized ContactEntry[] — see src/lib/contactEntries.ts. */
     contactEntries?: string | null;
@@ -74,6 +76,8 @@ export interface AdoptionRecord {
     color?: string | null;
     microchip?: string | null;
     interview?: { id: string; canViewAnswers: boolean };
+    /** Answers of the rescue's own form, sent with an API adoption request (src/lib/activityForms.ts). Only for that rescue and admins. */
+    formContent?: Record<string, unknown>;
 }
 
 export interface HistoryEntry {

@@ -56,7 +56,9 @@ interface ConfigData {
         ENABLE_FOLLOWUPS?: string;
         ENABLE_CUSTOM_ADOPTION_DOCS?: string;
         ENABLE_SHEET_IMPORT?: string;
+        ENABLE_ORIGIN_LABELS?: string;
         ENABLE_INTERVIEW_GUIDE?: string;
+        ENABLE_PUBLIC_API?: string;
         TELEGRAM_ADMIN_CHAT_ID?: string;
         TELEGRAM_BOT_TOKEN_SET?: string;
         TELEGRAM_WEBHOOK_SECRET_SET?: string;
@@ -101,7 +103,9 @@ const FEATURE_FLAGS = [
     { key: 'ENABLE_FOLLOWUPS', labelKey: 'flag_label_followups', descKey: 'flag_desc_followups' },
     { key: 'ENABLE_CUSTOM_ADOPTION_DOCS', labelKey: 'flag_label_custom_adoption_docs', descKey: 'flag_desc_custom_adoption_docs' },
     { key: 'ENABLE_SHEET_IMPORT', labelKey: 'flag_label_sheet_import', descKey: 'flag_desc_sheet_import' },
+    { key: 'ENABLE_ORIGIN_LABELS', labelKey: 'flag_label_origin_labels', descKey: 'flag_desc_origin_labels' },
     { key: 'ENABLE_INTERVIEW_GUIDE', labelKey: 'flag_label_interview_guide', descKey: 'flag_desc_interview_guide' },
+    { key: 'ENABLE_PUBLIC_API', labelKey: 'flag_label_public_api', descKey: 'flag_desc_public_api' },
 ];
 
 export default function AdminConfigPage() {
@@ -142,7 +146,9 @@ export default function AdminConfigPage() {
         ENABLE_FOLLOWUPS: true,
         ENABLE_CUSTOM_ADOPTION_DOCS: false,
         ENABLE_SHEET_IMPORT: false,
+        ENABLE_ORIGIN_LABELS: false,
         ENABLE_INTERVIEW_GUIDE: false,
+        ENABLE_PUBLIC_API: false,
     });
     const [instagramUrl, setInstagramUrl] = useState('');
     const [savingInstagram, setSavingInstagram] = useState(false);
@@ -214,7 +220,9 @@ export default function AdminConfigPage() {
                         ENABLE_FOLLOWUPS: data.config?.ENABLE_FOLLOWUPS !== 'false',
                         ENABLE_CUSTOM_ADOPTION_DOCS: data.config?.ENABLE_CUSTOM_ADOPTION_DOCS === 'true',
                         ENABLE_SHEET_IMPORT: data.config?.ENABLE_SHEET_IMPORT === 'true',
+                        ENABLE_ORIGIN_LABELS: data.config?.ENABLE_ORIGIN_LABELS === 'true',
                         ENABLE_INTERVIEW_GUIDE: data.config?.ENABLE_INTERVIEW_GUIDE === 'true',
+                        ENABLE_PUBLIC_API: data.config?.ENABLE_PUBLIC_API === 'true',
                     });
                     setInstagramUrl(data.config?.INSTAGRAM_URL || '');
                     setGeminiDefaultModel(data.config?.GEMINI_DEFAULT_MODEL || '');
@@ -825,11 +833,11 @@ export default function AdminConfigPage() {
                         Adoption Requests Threshold
                     </h4>
                     <p className="text-sm text-stone-500 mb-4">
-                        Configure the threshold for flagging adopters with too many adoption requests.
+                        Flags a person who asked to adopt at this many DIFFERENT rescues within the period. Several requests to the same rescue (an organization counts as one) count once.
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-semibold text-stone-700 mb-1">Max Requests</label>
+                            <label className="block text-sm font-semibold text-stone-700 mb-1">Different rescues</label>
                             <input
                                 type="number"
                                 value={config.too_many_requests_threshold}
@@ -837,7 +845,7 @@ export default function AdminConfigPage() {
                                 className="w-full px-4 py-2 border border-stone-200 rounded-lg focus:border-teal-400 focus:ring-2 focus:ring-teal-100 outline-none"
                                 min="1"
                             />
-                            <span className="text-xs text-stone-500">requests</span>
+                            <span className="text-xs text-stone-500">rescues</span>
                         </div>
                         <div>
                             <label className="block text-sm font-semibold text-stone-700 mb-1">Time Period</label>

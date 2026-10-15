@@ -119,11 +119,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             return withCors(NextResponse.json({ error: 'This animal has already been adopted', code: 'already_placed' }, { status: 409 }), origin);
         }
 
-        // 2. Upload contract document to R2 FIRST — adoption only proceeds if this succeeds
-        let contractUrl: string | null = null;
+        // 2. Store the contract document FIRST — adoption only proceeds if this succeeds.
+        // Private bucket, a random key per signing (src/lib/contractStorage.ts): never a
+        // public address, and signing the animal again never overwrites this one.
         // Custom adoption docs (2026-09, additive): the R2 key, so it can be
         // passed to recordSignature below (fileKey) once the adoption is recorded.
         let contractKey: string | null = null;
+        let contractSha256: string | null = null;
         if (screenshot && screenshot.startsWith('data:')) {
             const match = screenshot.match(/^data:([^;]+);base64,([\s\S]+)$/);
             if (!match) {
@@ -132,19 +134,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
             const contentType = match[1];
             const base64Data = match[2].replace(/\s/g, '');
-            const ext = contentType.includes('pdf') ? 'pdf' : contentType.includes('png') ? 'png' : 'jpg';
             const sizeKB = Math.round((base64Data.length * 3) / 4 / 1024);
             logger.info('Contract document received', { animalId, contentType, sizeKB });
 
-            const { uploadToR2 } = await import('@/lib/r2');
+            const { storeContract, CONTRACT_CONTENT_TYPES, CONTRACT_MAX_BYTES } = await import('@/lib/contractStorage');
+            if (!CONTRACT_CONTENT_TYPES[contentType]) {
+                return withCors(NextResponse.json({ error: 'Invalid contract document format' }, { status: 400 }), origin);
+            }
+            if ((base64Data.length * 3) / 4 > CONTRACT_MAX_BYTES + 3) {
+                return withCors(NextResponse.json({ error: 'The contract file is too large (max 5 MB)', code: 'too_large' }, { status: 413 }), origin);
+            }
             // Convert base64 to a native ArrayBuffer via Blob (miniflare-compatible)
             const blobFromBase64 = await fetch(`data:${contentType};base64,${base64Data}`).then(r => r.arrayBuffer());
-            const key = `contracts/${animalId}/signed-contract.${ext}`;
-            contractKey = key;
             // This will throw on failure — intentionally NOT caught here.
             // If the upload fails, the entire submission fails and nothing is persisted.
-            contractUrl = await uploadToR2(key, blobFromBase64, contentType);
-            logger.info('Contract document uploaded to R2', { animalId, key, sizeKB });
+            const stored = await storeContract(blobFromBase64, contentType, { animalId });
+            contractKey = stored.key;
+            contractSha256 = stored.sha256;
         } else {
             return withCors(NextResponse.json({ error: 'Contract document is required' }, { status: 400 }), origin);
         }
@@ -203,8 +209,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 recordType: 'adoption',
                 date: new Date(),
                 status: 'active',
-                rating: 5,
-                comments: JSON.stringify({ contractScreenshot: contractUrl }),
+                // Signing is not a judgement of the adopter: no rating (Jon, 2026-10-09).
+                rating: null,
+                // The contract key is NOT a comment: it goes to placements.contract_key below,
+                // a column no rescuer can write (src/lib/contractStorage.ts).
+                comments: null,
             }, animal, 'contract');
         } catch (e) {
             // Someone adopted or fostered the animal between the check above
@@ -212,7 +221,26 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             // animal, drizzle/0078). Same answer as the check gives.
             if (!isActivePlacementConflict(e)) throw e;
             const errorId = logger.error('Contract submit: animal placed concurrently', e, { animalId, adopterId });
+            // The file stored above belongs to no adoption now.
+            if (contractKey) {
+                const { deleteContract } = await import('@/lib/contractStorage');
+                await deleteContract(contractKey).catch(err => logger.error('Contract submit: orphan contract not deleted', err, { animalId, errorId }));
+            }
             return withCors(NextResponse.json({ error: 'This animal has already been adopted', code: 'already_placed', errorId }, { status: 409 }), origin);
+        }
+
+        // Link the stored contract to the placement just opened (server-only column).
+        if (contractKey) {
+            try {
+                const { placements } = await import('@/db/schema');
+                const { and: andOp, eq: eqOp, isNull: isNullOp } = await import('drizzle-orm');
+                await db.update(placements).set({ contractKey, contractSha256 })
+                    .where(andOp(eqOp(placements.animalId, animalId), isNullOp(placements.endedAt)));
+            } catch (e) {
+                // The adoption is recorded and the file is stored (signed_contracts.file_key
+                // below still points at it); an admin can relink. Loud, not fatal.
+                logger.error('Contract submit: contract not linked to the placement', e, { animalId, adopterId });
+            }
         }
 
         if (invitation) {
@@ -279,7 +307,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             logger.info('Contract signed via invitation', { animalId, adopterId, token: tokenRef(token) });
         }
 
-        logger.info('Contract adoption submitted', { animalId, adopterId, adopterName: fullName, contractUrl });
+        logger.info('Contract adoption submitted', { animalId, adopterId, hasContract: !!contractKey });
 
         // Record exactly which contract text was signed (spec §1.4). Never fails
         // the signature: the adopter has signed and the PDF is stored. NOT
@@ -380,12 +408,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         return withCors(NextResponse.json({
             success: true,
             adopterId,
-            contractUrl,
             message: 'Adoption contract submitted successfully',
         }), origin);
     } catch (error) {
         const errorId = logger.error('Contract submission failed', error);
-        const errMsg = error instanceof Error ? error.message : 'Unknown error';
+        // Only messages written for the public are shown; anything else stays in the log.
+        const { ContractStorageError } = await import('@/lib/contractStorage');
+        const errMsg = error instanceof ContractStorageError ? error.message : 'Unexpected error';
         return withCors(NextResponse.json({
             error: `Contract submission failed: ${errMsg} (Error ID: ${errorId})`,
         }, { status: 500 }), origin);

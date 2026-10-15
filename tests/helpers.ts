@@ -1,4 +1,4 @@
-import { Page } from '@playwright/test';
+import { Page, expect } from '@playwright/test';
 
 /** Known test adopter IDs from seed.sql */
 export const TEST_ADOPTERS = {
@@ -59,4 +59,17 @@ export async function dismissCountryBanner(page: Page) {
             await page.waitForTimeout(500);
         }
     }
+}
+
+/**
+ * After saving a new adopter: the "Possible duplicate profiles" dialog may
+ * appear (and on a slow CI server it can take well over 3 s), or the app may go
+ * straight to the new profile. Wait for whichever happens first, and confirm the
+ * dialog if it is the one. A fixed 3 s window used to skip the click silently
+ * and the test then waited for a profile that was never created.
+ */
+export async function createAnywayIfAsked(page: Page, timeout = 30000) {
+    const createAnywayBtn = page.getByRole('button', { name: /Create new profile anyway|Crear perfil nuevo/i });
+    await expect.poll(async () => (await createAnywayBtn.isVisible()) || !/\/adopter\/create/.test(page.url()), { timeout }).toBe(true);
+    if (await createAnywayBtn.isVisible()) await createAnywayBtn.click();
 }

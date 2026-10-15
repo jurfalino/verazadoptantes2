@@ -302,9 +302,9 @@ export default async function BusinessLogicPage() {
                         en cada sign-in. Rechaza el login si el email coincide con un perfil que cumple cualquiera de:
                     </p>
                     <ul className="space-y-1 list-disc pl-5">
-                        <li><code className="text-xs bg-stone-100 px-1 rounded">avgRating &lt; 4</code></li>
+                        <li>calificación mostrada 1★ «peligroso» (promedio que redondea a 1); 2★–5★ entran normalmente</li>
                         <li><code className="text-xs bg-stone-100 px-1 rounded">tooManyAdoptions</code> (config en <code className="text-xs bg-stone-100 px-1 rounded">app_config</code>)</li>
-                        <li><code className="text-xs bg-stone-100 px-1 rounded">tooManyRequests</code></li>
+                        <li><code className="text-xs bg-stone-100 px-1 rounded">tooManyRequests</code>: pidió adoptar en N rescates <em>distintos</em> dentro del período (una organización cuenta como un rescate; varios pedidos al mismo rescate cuentan una vez; <code className="text-xs bg-stone-100 px-1 rounded">src/domain/requestDensity.ts</code>)</li>
                     </ul>
                     <p>
                         Admins se saltean el gate (<code className="text-xs bg-stone-100 px-1 rounded">isAdminAsync</code>). Si el match es contra

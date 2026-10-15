@@ -238,9 +238,9 @@ own identity steps (name, email, phone, address, age, selfie) are unchanged.
 | isSafe | ¿El espacio está protegido? | (unchanged) | yes |
 | hoursAlone | (neutral, unchanged) | (unchanged) | — |
 | petExperience | ¿Tuviste mascotas antes? | ¿{n} tuvo mascotas antes? | yes |
-| willingToSterilize | ¿Estás dispuesto/a a castrar o esterilizar? | ¿{n} está dispuesto/a a castrar o esterilizar? | yes |
+| willingToSterilize | ¿Estás dispuesto/a a castrar o esterilizar? | ¿{n} acepta castrar o esterilizar al animal? (no "/a": the recipient's gender is unknown — 2026-10-13) | yes |
 | movingPlans | ¿Tenés pensado mudarte pronto? | ¿{n} tiene pensado mudarse pronto? | yes |
-| vacationPlan | ¿Qué harías con el animal en vacaciones? | ¿Qué haría {n} con el animal en vacaciones? | yes |
+| vacationPlan | ¿Qué harías con el animal en vacaciones? | ¿Qué haría {n} con el animal en vacaciones? | no — it already offers "No lo sé aún" (Jon, 2026-10-13) |
 
 - **"No sé"** is an extra option, value `'unknown'`, shown only in the gift
   flow. It is stored as `'unknown'` and displayed as "No sabe".

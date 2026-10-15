@@ -1,5 +1,7 @@
 'use client';
 
+import OriginTag from './OriginTag';
+import type { Origin } from '@/domain/recordOrigin';
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { useSetEditActions } from "@/context/EditActionsContext";
 import { InlineEditField } from "@/components/InlineEditField";
@@ -31,6 +33,7 @@ import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
 import { getSourceIcon } from '@/lib/sourceIcons';
 import { getCountryByCode } from '@/config/countries';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
+import { computeRequestRescueDensity } from '@/domain/requestDensity';
 import { renderTextWithLinks } from '@/lib/textUtils';
 import { AdopterFlagging } from '@/components/AdopterFlagging';
 import type { AdopterFlaggingHandle } from '@/components/AdopterFlagging';
@@ -63,6 +66,8 @@ interface AdopterFormProps {
      *  row below the H1, alongside country / views / rating. Replaces the
      *  orphaned mid-page chip that lived in AdopterProfileV2. */
     attribution?: { creatorName: string; orgName: string | null; orgSlug: string | null } | null;
+    /** ENABLE_ORIGIN_LABELS: where this profile came from (null = by hand, or the flag is off). */
+    origin?: Origin | null;
     /** Whether the viewer shares an org with the creator — drives the chip
      *  accent color (teal "this is my teammate" vs neutral grey). */
     isOrgMateOfOwner?: boolean;
@@ -122,7 +127,7 @@ function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
     );
 }
 
-export function AdopterForm({ interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick }: AdopterFormProps) {
+export function AdopterForm({ origin = null, interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -167,7 +172,7 @@ export function AdopterForm({ interviewEnabled = false, initialData, currentUser
     }, [adoptions, periodDays]);
 
     const requestsDensity = useMemo(() => {
-        return computeMaxDensityPeriod(adoptions, 'adoption_request', requestsPeriodDays);
+        return computeRequestRescueDensity(adoptions, requestsPeriodDays);
     }, [adoptions, requestsPeriodDays]);
 
     const [isEditing, setIsEditing] = useState(isNew);
@@ -573,19 +578,20 @@ export function AdopterForm({ interviewEnabled = false, initialData, currentUser
                         fromForm: formPrefill ? 1 : 0,
                         continuesToAdoption: searchParams.get('continueToAdoption') === 'true' ? 1 : 0,
                     });
-                    if (formPrefill?.selfieUrl) {
-                        try {
-                            await saveImage(res.id, formPrefill.selfieUrl, t('formResults.selfie_alt') || 'Applicant selfie');
-                        } catch (imgErr) {
-                            console.warn('[AdopterForm] Save selfie from form prefill failed', imgErr);
-                        }
-                    }
                     const fromFormId = searchParams.get('fromForm');
                     if (fromFormId?.trim()) {
                         try {
                             await linkFormSubmissionToAdopter(fromFormId.trim(), res.id);
                         } catch (linkErr) {
                             console.warn('[AdopterForm] Link form submission to adopter failed', linkErr);
+                        }
+                    }
+                    // After the link: the selfie may only be copied onto the form's own profile.
+                    if (formPrefill?.selfieUrl) {
+                        try {
+                            await saveImage(res.id, formPrefill.selfieUrl, t('formResults.selfie_alt') || 'Applicant selfie');
+                        } catch (imgErr) {
+                            console.warn('[AdopterForm] Save selfie from form prefill failed', imgErr);
                         }
                     }
                     // Check if we should continue to adoption form
@@ -1395,6 +1401,7 @@ export function AdopterForm({ interviewEnabled = false, initialData, currentUser
                                             )}
                                         </span>
                                     )}
+                                    <OriginTag origin={origin} />
                                     {initialData?.country && (() => {
                                         const c = getCountryByCode(initialData.country!);
                                         if (!c) return null;

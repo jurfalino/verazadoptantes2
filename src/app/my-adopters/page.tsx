@@ -149,6 +149,11 @@ function SourcePill({ source, t }: { source?: string; t: (key: string) => string
             📥 {t('myAdopters.source_imported') || 'Imported'}
         </span>
     );
+    if (source === 'api') return (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-stone-100 text-stone-600" title={t('myAdopters.source_api_full')}>
+            {t('myAdopters.source_api')}
+        </span>
+    );
     return null;
 }
 
@@ -300,7 +305,7 @@ function FlagBadges({ flags, t }: { flags: AdopterFlags; t: (key: string) => str
     if (flags.tooManyRequests) {
         badges.push(
             <span key="too_many_requests" className="text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap bg-purple-100 text-purple-700">
-                ⚠ {flags.tooManyRequests.count} {t('stats.requests') || 'requests'} in {flags.tooManyRequests.actualSpanDays || flags.tooManyRequests.periodDays}d
+                ⚠ {t('flags.too_many_requests').replace('{count}', String(flags.tooManyRequests.count)).replace('{days}', String(Math.max(1, Math.round(flags.tooManyRequests.actualSpanDays || flags.tooManyRequests.periodDays))))}
             </span>
         );
     }

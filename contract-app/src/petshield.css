@@ -1490,3 +1490,76 @@ body {
 .ps-people__editor .ps-input { font-size: 16px; }
 /* "¿Para quién es?" reuses the editor card's inputs without the card frame. */
 .ps-people__editor--plain { background: transparent; border: none; padding: 0; }
+
+/* ── Choice list: closed answers too long for cards (spec 2026-10-14) ── */
+.ps-choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ps-2);
+}
+
+.ps-choice {
+  width: 100%;
+  min-height: 48px;
+  padding: var(--ps-3) var(--ps-4);
+  text-align: left;
+  font: inherit;
+  font-size: 16px; /* ≥16px: no iOS zoom */
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ps-text);
+  background: var(--ps-card);
+  border: 1px solid var(--ps-border);
+  border-radius: var(--ps-2);
+  cursor: pointer;
+  transition: all 200ms ease-in-out;
+}
+
+.ps-choice--selected {
+  background: var(--ps-card-selected);
+  border-color: var(--ps-border-active);
+  box-shadow: var(--ps-glow-strong);
+}
+
+@media (hover: hover) {
+  .ps-choice:hover:not(.ps-choice--selected) {
+    background: var(--ps-card-hover);
+    border-color: var(--ps-border-active);
+  }
+}
+
+.ps-choice:focus-visible {
+  outline: 2px solid var(--ps-accent);
+  outline-offset: 2px;
+}
+
+.ps-choice-list--compact .ps-choice {
+  min-height: 44px;
+  padding: var(--ps-2) var(--ps-3);
+}
+
+/* Follow-up questions under their host's screen */
+.ps-followups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ps-4);
+  width: 100%;
+  align-self: stretch;
+  margin-top: var(--ps-5);
+}
+
+.ps-followup {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.ps-followup__title {
+  padding: 0;
+  margin-bottom: var(--ps-2);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ps-text);
+}

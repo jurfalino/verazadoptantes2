@@ -136,13 +136,24 @@ test.describe('Custom adoption form + contract — API-level', () => {
         expect(isD1Null(rows[0].shown_steps), 'an old client sends no shownSteps at all').toBe(true);
     });
 
-    test('GET /api/form/{userId} returns formConfig: null for a user with no adoption_doc_settings row', async ({ request }) => {
+    test('GET /api/form/{userId} returns the default config (no hidden steps) for a user with no settings row', async ({ request }) => {
         const res = await request.get(`/api/form/${NO_SETTINGS_USER_ID}`);
         const body = await res.text();
         expect(res.ok(), `GET failed: ${body}`).toBeTruthy();
         const json = JSON.parse(body);
         expect(json.valid).toBe(true);
-        expect(json.formConfig).toBeNull();
+        // Custom forms is on in the test seed: nothing customised → the defaults (spec 2026-10-14 §6.2).
+        expect(json.formConfig).toEqual({ hiddenSteps: [] });
+    });
+
+    test('custom forms off → formConfig null (production: today\'s form)', async ({ request }) => {
+        execD1(`UPDATE app_config SET value = 'false' WHERE key = 'ENABLE_CUSTOM_ADOPTION_DOCS'`);
+        try {
+            const json = await (await request.get(`/api/form/${NO_SETTINGS_USER_ID}`)).json();
+            expect(json.formConfig).toBeNull();
+        } finally {
+            execD1(`UPDATE app_config SET value = 'true' WHERE key = 'ENABLE_CUSTOM_ADOPTION_DOCS'`);
+        }
     });
 
     test('contract signing records the signed version (standardVersion + via=open)', async ({ request }) => {
@@ -323,6 +334,6 @@ test.describe('Custom adoption form + contract — API-level', () => {
         const afterForm = await request.get(`/api/form/${userId}`);
         const afterFormBody = await afterForm.text();
         expect(afterForm.ok(), `GET form after leaving failed: ${afterFormBody}`).toBeTruthy();
-        expect(JSON.parse(afterFormBody).formConfig).toBeNull();
+        expect(JSON.parse(afterFormBody).formConfig).toEqual({ hiddenSteps: [] });
     });
 });

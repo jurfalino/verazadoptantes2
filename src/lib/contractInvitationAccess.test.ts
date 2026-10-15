@@ -4,8 +4,8 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { getDbMock, orgMateMock, ownerOrMateMock, adminMock, flags } = vi.hoisted(() => ({
-    getDbMock: vi.fn(), orgMateMock: vi.fn(), ownerOrMateMock: vi.fn(), adminMock: vi.fn(),
+const { getDbMock, orgMateMock, ownerOrMateMock, adminMock, teamMock, flags } = vi.hoisted(() => ({
+    getDbMock: vi.fn(), orgMateMock: vi.fn(), ownerOrMateMock: vi.fn(), adminMock: vi.fn(), teamMock: vi.fn(),
     flags: {} as Record<string, boolean>,
 }));
 
@@ -17,16 +17,22 @@ vi.mock('@/config/features', () => ({ getFeatureFlag: vi.fn(async (flag: string)
 vi.mock('@/lib/db', () => ({ getDb: getDbMock }));
 vi.mock('@/lib/logger', () => ({ logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('@/config/admins', () => ({ isAdminAsync: adminMock, isModeratorOrAdminAsync: adminMock }));
-vi.mock('@/lib/orgMembership', () => ({ isOrgMate: orgMateMock, isOwnerOrOrgMate: ownerOrMateMock, getOrgMemberEmailsFor: vi.fn(async () => []) }));
+vi.mock('@/lib/orgMembership', () => ({ isOrgMate: orgMateMock, isOwnerOrOrgMate: ownerOrMateMock, getOrgMemberEmailsFor: vi.fn(async () => []), getTeamEmails: teamMock }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 
 import { resolveInvitationAccess } from './contractInvitationAccess';
-import { appConfig, formSubmissions, piiAccessGrants } from '@/db/schema';
+import { animals, appConfig, formSubmissions, piiAccessGrants } from '@/db/schema';
 
 type Grant = { scope: string; entryRef: string | null; revokedAt: null };
 
 /** Gating + public-profiles flags read `flag`; form_submissions → `submissions`; pii_access_grants → `grants`. */
-function fakeDb(flag: string, submissions: Array<{ email: string | null; phone: string | null }>, grants: Grant[] = []) {
+function fakeDb(
+    flag: string,
+    submissions: Array<{ email: string | null; phone: string | null }>,
+    grants: Grant[] = [],
+    /** null = no such animal. */
+    animal: { addedBy: string; deletedAt: Date | null } | null = { addedBy: 'rescuer-b@example.com', deletedAt: null },
+) {
     return {
         flag,
         select: () => ({
@@ -34,7 +40,7 @@ function fakeDb(flag: string, submissions: Array<{ email: string | null; phone: 
                 where: () => {
                     const rows = table === piiAccessGrants ? grants : [];
                     return {
-                        get: async () => (table === appConfig ? { value: flag } : undefined),
+                        get: async () => (table === appConfig ? { value: flag } : table === animals ? (animal ?? undefined) : undefined),
                         all: async () => (table === formSubmissions ? submissions : []),
                         limit: async () => [],
                         then: (res: (v: unknown[]) => unknown) => Promise.resolve(rows).then(res),
@@ -63,6 +69,18 @@ describe('resolveInvitationAccess', () => {
         orgMateMock.mockReset().mockResolvedValue(false);
         ownerOrMateMock.mockReset().mockResolvedValue(false);
         adminMock.mockReset().mockResolvedValue(false);
+        // The animal owner's team: the applicant scope (src/lib/applicantScope.ts).
+        teamMock.mockReset().mockResolvedValue([B, 'teammate@example.com']);
+    });
+
+    it('applicant scope is the ANIMAL OWNER\'s team: an empty team or a deleted animal is no applicant (fail closed)', async () => {
+        teamMock.mockResolvedValue([]);
+        expect((await run(fakeDb('true', applied))).allowed).toBe(false);
+        teamMock.mockResolvedValue([B]);
+        expect((await run(fakeDb('true', applied, [], { addedBy: B, deletedAt: new Date() }))).allowed).toBe(false);
+        expect((await run(fakeDb('true', applied, [], null))).allowed).toBe(false);
+        // Sanity: the same applicant with a live animal in the team IS allowed.
+        expect((await run(fakeDb('true', applied))).allowed).toBe(true);
     });
 
     it('foreign adopter who never applied for this animal: refused', async () => {

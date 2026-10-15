@@ -2,6 +2,430 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.185] - 2026-10-15
+
+### Fixed — CI's automatic re-run could pass without running every test
+
+Independent review of 2.56.183 (reproduced with Playwright 1.58): re-running only
+the failed tests (`--last-failed`) skips tests that never ran — in specs that run
+in sequence, or after a failed setup — so a real bug in one of them could go green.
+Now the retry:
+- runs the **whole** test group again, in order;
+- happens only when the log shows **both** the memory restart and a dropped
+  connection (most groups log a restart even when green, so the restart alone
+  let real failures qualify);
+- keeps the first attempt's report (screenshots, traces) next to the second's.
+
+Remaining risk, the same as a manual re-run: a real bug that only fails sometimes
+can pass on the second attempt. Also: the adoption e2e test now polls the saved
+record instead of reading it once after a fixed wait.
+
+## [2.56.184] - 2026-10-15
+
+### Fixed — a flaky e2e test that blocked 2.56.183
+
+`animal-profile` "registering an adoption never leaves the animal" checked the
+address once, 4 s after saving; on a slow runner the app hadn't cleared
+`?newAdoption` yet. It now waits for it, and resets the animal to available at
+the start too, so a retry no longer fails on the adoption the first attempt left.
+2.56.183 never deployed; this ships it.
+
+## [2.56.183] - 2026-10-15
+
+### Changed — CI: one automatic re-run after a dev-server memory restart
+
+The e2e server (`next dev`) restarts itself when it nears its memory limit, and
+whichever test is running dies with a refused connection — 12 of the last 40
+staging pipelines needed a manual re-run. Now, when a test group fails AND its
+log shows that restart, CI re-runs only the failed tests once, on a fresh server.
+A real failure fails again; a failure without the restart is never retried; the
+first attempt's log is kept with the test report. The root fix (running the
+suite on the Cloudflare build) is planned in `.agents/plans/e2e-shard-the-suite.md`.
+
+## [2.56.182] - 2026-10-14
+
+### Added — new adoption-form questions (custom forms)
+
+Only with custom forms switched on; production forms don't change while it's off.
+
+- **"What would you do if…" questions, asked by default:** "Si te mudás y no
+  aceptan animales…", "¿Qué pasó con tu último animal?", "¿Alguna vez diste o
+  regalaste un animal?" (with "¿Por qué?"), "¿Hay algo por lo que lo
+  devolverías?", "Si rompe cosas o no se adapta…", visits and follow-up, rental,
+  where it will sleep.
+- **Follow-ups on the same screen:** who looks after it day to day (under "Para
+  mí"), allergies (under "¿Hay niños?"), whether current pets are neutered and
+  vaccinated, how they'd neuter it (under "Sí").
+- **Switches a rescuer turns on:** cats going out to the street or roofs, dog
+  walks, dogs tied or alone outside (each only for that species, also on forms
+  for a specific animal), Instagram/Facebook (they go onto the applicant's
+  profile and count in the repeat-applicant check; share links are accepted,
+  "ninguno"-style answers are not handles), their vet, why they adopt.
+- **Two ways to ask** "mascotas previas" and "mudanza": the new question (default)
+  or the old one, chosen in Ajustes.
+- **Semáforo** for the new answers (red: giving it back, gave one away, lost or
+  died outside, no visit, cat out on the street; amber: leaving it with a relative,
+  any reason to return it, a minor as carer, allergies, sleeping outside, a rental
+  that doesn't allow animals). "No" to castration is now red on every form.
+- **UX guidelines:** a section for the public adoption form.
+
+### Fixed — gift form follow-ups
+
+- "No sé" only clears on the questions that offer it; switching from gift to
+  "Para mí" asks those questions again; an old gift draft no longer runs the
+  gift questions once "Intención" is hidden; no second "No sé" on vacations; no
+  "dispuesto/a" about the recipient.
+- Combining profiles keeps a same-named household member's gift mark and phone
+  (undo takes them back); "Para quién es" reads "Hija · Laura Pérez".
+
+## [2.56.181] - 2026-10-14
+
+### Changed — CI: authed e2e in 7 legs
+
+2.56.180 never deployed: authed-6 reached the dev server's memory ceiling, restarted
+three times, and view-as failed on refused connections twice in a row. Seven legs
+(was six), as the sharding plan prescribes. Ships 2.56.180's change unchanged.
+
+## [2.56.180] - 2026-10-14
+
+### Changed — /import/sheet: the column map follows the app language
+
+The column-mapping select's fields are now translated (es / en / pt) with the
+language switch, instead of fixed Spanish (2.56.179) or English (before).
+
+## [2.56.179] - 2026-10-14
+
+### Changed — /import/sheet: Spanish column map, one toggle for every row
+
+- The column-mapping select shows its fields in Spanish («Nombre del adoptante»,
+  «Teléfono», «Edad del animal»…), like the rest of the page.
+- «Todos (N/M)» above the table ticks or unticks every row shown (the current
+  filter); mixed selection shows as indeterminate.
+
+## [2.56.178] - 2026-10-14
+
+### Fixed — /import/sheet: review findings on 2.56.177
+
+- Two different people are no longer one profile because they share a surname
+  and a phone or email: the same first name is required, plus another word when
+  both names have one; «de», «los», «san»… don't count. An email or phone written
+  by more than 3 different names (a junk «no@gmail.com») links nobody.
+- «Separar» remembers every row of the group, and the import writes exactly the
+  groups Revisar showed.
+- «Volver al tipo de la planilla» and «Limpiar rating» really go back to the sheet's
+  values.
+- Only Localidad / Partido / Ciudad… columns join onto the street; «Dirección» and
+  «Dirección laboral» stay two addresses.
+- «1. Nombre y apellido», «¿Tu teléfono?», «DNI / ID», «ID Instagram» and
+  «Estado / Calificación» map again; «Tipo» wins over «Tipo de vivienda».
+- A grouped profile takes the most complete name («Juan Gómez» over «Juan»).
+
+## [2.56.177] - 2026-10-14
+
+### Changed — /import/sheet reads a rescue's form export correctly
+
+Found by trying catpuccino's 2022–2024 export (1,856 requests) without importing it.
+
+- **Aplicar a todos → Tipo**: set the record type on every row at once. A type the
+  import doesn't recognise (e.g. «A», «AP») is announced in Revisar instead of
+  silently becoming «Adopción».
+- Form questions («12. ¿Qué harías…?»), id and status columns are never guessed as a
+  field; `animal_tipo` is the species; a single-value field takes one column only.
+- «no», «si», «-», «no tengo»… in contact columns are dropped (and counted), never
+  saved as a contact that would match strangers.
+- Dirección + Localidad + Partido become one address.
+- The same person on several rows (same email or phone and a name in common) is one
+  profile with all their contacts and every activity; Revisar shows why
+  («mismo email») and «Separar» undoes it.
+- The import's age field is labelled «Animal age».
+
+## [2.56.176] - 2026-10-13
+
+### Added — origin tags on the profile (flag `ENABLE_ORIGIN_LABELS`, off)
+
+When on, the profile shows where it came from (📥 Importado, 📝 Formulario,
+✍️ Contrato, API · herramienta) and each activity shows API · herramienta,
+📝 Formulario or ✍️ Contrato. Mis Adoptantes already shows each profile's origin.
+
+## [2.56.175] - 2026-10-13
+
+### Added — Admin → API: activities and voids per key
+
+Each key shows what it saved and voided in the last 30 days, with a «Muchas
+anulaciones» badge when a key voids much of what it registers (a way to look
+people up without leaving a trace). Flag-off in production.
+
+## [2.56.174] - 2026-10-13
+
+### Tests — no more 3-second guess on the duplicate dialog
+
+Ships 2.56.173 (which never deployed: a create-adopter test waited only 3 s for
+the duplicate dialog on a slow CI runner). The four create-adopter tests now wait
+for the dialog or the new profile, whichever comes first.
+
+## [2.56.173] - 2026-10-13
+
+### Changed — only 1★ bans from adopting
+
+The adopter sign-in check blocked anyone whose profile averaged below 4★. Now
+only a profile shown as 1★ «peligroso» is blocked; 2★–5★ and unrated sign in
+normally (the «demasiado seguido» flags still block). Not flag-gated. For an
+imported blacklist, set «1 ★ a todos» in the import's Rating column.
+
+### Changed — admins don't merge organizations in «pide adoptar demasiado seguido»
+
+An admin who belongs to several organizations no longer makes them count as one
+rescue.
+
+### Fixed — pre-release audit
+
+- Old-style «Ver contrato firmado» links only for a genuine old contract file.
+- A form selfie is copied only onto that form's own profile.
+- «Datos compartidos»: its own error handling; partial phone matches labelled.
+- Search card no longer says «… en 0 días».
+
+## [2.56.172] - 2026-10-13
+
+### Added — the adopter keeps a copy of the contract
+
+After signing, the confirmation offers «Descargar mi copia del contrato»: the
+PDF they just signed, built in their own browser (nothing is fetched or
+exposed). There is no adopter-facing place to see it later yet.
+
+## [2.56.171] - 2026-10-13
+
+### Security — form selfies move to private storage
+
+The adoption form's selfie was saved to PUBLIC photo storage (an unguessable
+address, but open to anyone with the link, which also carried the rescuer's
+email). Production had 0 form submissions.
+
+- Stored privately, opened through `/api/files/selfie/{id}` only by whoever may
+  see that form's results; no selfie address in stored answers or notifications.
+- The form shrinks the photo to JPEG before sending and tells the applicant if
+  it couldn't be saved. Files must match their type (contracts too).
+- "Create profile from form" copies the selfie into the profile's photos.
+- Removed an unused, unauthenticated action that returned linked forms' answers.
+- The admin one-time move also handles old selfies and can be re-run safely.
+
+## [2.56.170] - 2026-10-13
+
+### Security — signed contracts move to private storage
+
+Signed contracts were saved to the PUBLIC photo storage at an address built
+from the animal id (which public showcase links carry), and signing an animal
+again overwrote the earlier contract. Production had 0 signed contracts, so
+nothing real was exposed; staging had 4 test ones.
+
+- New private buckets (`buenadoptante-contracts`, `-staging`), a random file per
+  signing, the key in a server-only column (`placements.contract_key`,
+  migration 0085) — never in the editable comments.
+- "Ver contrato firmado" opens through `/api/files/contract/{animalId}`, only for
+  the animal's rescue (owner or a directly shared organization) and admins; the
+  link is hidden from everyone else. Never cached by the browser (SW v9).
+- Removed `POST /api/contract/{id}/upload` (unauthenticated, could replace any
+  adopted animal's contract link; the contract page never reached it).
+- Admin one-time move `/api/admin/contracts/migrate` for the old public files.
+
+### Added — API (flag off): adoptions and their contract
+
+- `species` required for adoption / foster; new animal fields `age` ("2 años",
+  "1 año y 3 meses"…; unreadable kept as text), `birthDate`, `sex`, `neutered`,
+  `color`, `microchip`.
+- `POST /api/v1/activities/{id}/contract`: the signed contract (PDF/PNG/JPEG,
+  ≤5 MB) for an adoption / foster; private, never replaced; void deletes it.
+- Docs: the adoption example and the contract step.
+
+## [2.56.169] - 2026-10-13
+
+### Fixed — independent review of 2.56.168
+
+- API look-ups (flag off) show only profiles the calling rescue registered;
+  refusals record nothing about who matched. New contacts are never copied
+  from another person's matched profile.
+- «Rescates distintos» wording everywhere the flag shows; one organization
+  read per page instead of one per rescuer; ties report the tightest window.
+- «Datos compartidos» loads in one query. API entries in a profile's history
+  are labelled instead of showing "— ➜ —".
+
+## [2.56.168] - 2026-10-13
+
+### Changed — «Pide adoptar demasiado seguido» counts different rescues
+
+Not behind a flag: reaches production with the next release. The flag now
+means "asked to adopt at N DIFFERENT rescues within the period" (N and the
+period are the existing settings). Several requests to the same rescue — one
+form per animal — count once; an organization counts as one rescue; records
+with an unknown rescuer each count on their own. Same rule on search cards,
+profile, adopter form, pick-adopter, dashboard and the login gate. Wording
+updated (es/en/pt) and the admin setting re-labelled.
+
+### Changed — API (flag off): the activity contract
+
+- Request: `person` + `activity { activityType, externalId?, animalName?,
+  species?, date?, rating?, notes?, formContent? }`. `formContent` (any JSON,
+  ≤50 KB, adoption requests only) is stored as sent and shown on the activity
+  as question → answer to the registering rescue and admins.
+- An exact call without `activity` is a look-up, answered only for people the
+  caller's rescue already registered (`422 activity_required` otherwise).
+- Every exact answer carries `risk`: worst rating + flags across every
+  profile the email/phone/document matched.
+- Ambiguous with names that fit: the activity goes on the best match; no name
+  fits: a new profile as before.
+- Found on the profile's own name: a new email/phone/document is added to the
+  profile, logged in its history and in `activity.contactsAdded`; voiding the
+  call takes it back. Void moved to `/api/v1/activities/{id}/void`.
+- Migration 0084 (`activity_forms`, `api_requests.contacts_added`).
+
+### Added — Admin → Calidad de datos → «Datos compartidos»
+
+Phones, emails and documents on 2+ live profiles (who an exact API call can
+answer "ambiguous" for), likely duplicates first.
+
+## [2.56.167] - 2026-10-13
+
+### Changed — API: every exact search is recorded
+
+- An exact `POST /api/v1/search` always saves a record of its `context` on
+  the person (found → their profile; not found or ambiguous → a new one).
+  The optional `save` object is now `record` and only carries details;
+  `Idempotency-Key` is required on every exact call. Fuzzy saves nothing.
+- Admins can make read-only test calls (not in the public docs). Any other
+  key asking for one is refused, never silently saved. Test calls show as
+  «Prueba (sin guardar)» in Admin → API and Settings → API.
+- Migration 0083: `api_requests.dry_run`.
+
+## [2.56.166] - 2026-10-13
+
+### Fixed — /import/sheet: species codes and variants
+
+- A species column with one-letter codes (catpuccino exports P = perro,
+  G = gato) now imports as Perro / Gato. Before, the review screen showed
+  «Otro» but the bare letter was saved on the animal.
+- Plurals, accents and synonyms map too (gatos, felino, canina, pájaro…).
+  Any other short code is saved as «Otro»; a real word we don't list
+  («conejo») is kept and shows as «Otro: conejo», so the screen matches
+  what is saved.
+
+## [2.56.165] - 2026-10-13
+
+### Fixed — /import/sheet: stopping and reloading a big import
+
+- «Cancelar» while duplicates are being analysed (and during the AI pass):
+  back to Revisar with every edit kept; nothing was imported.
+- «Cancelar» on the import screen now works while rows are still being
+  prepared (it used to wait for every row first, stuck at 0/N); progress
+  shows «Preparando filas X/N».
+- Reloading or closing the tab mid-step asks first. If it happens anyway,
+  the page says what stopped, at which step, and that nothing keeps running
+  in the background (the import runs from the open tab). A step running in
+  another tab is reported as such.
+- A run that never saved a row no longer reads «en curso» forever; the
+  run header is written only once rows are about to be sent.
+- If the browser cannot store the resume point, the import says up front
+  that a reload cannot resume it (and the failure is logged).
+
+## [2.56.164] - 2026-10-13
+
+### Added — Admin → API: easier keys
+
+- The rescuer's email suggests users as you type (by name or email).
+- The key name says what it is for: it shows in the calls and in the
+  rescuer's notifications.
+- «Regenerar»: a new secret for an existing key when a rescue loses theirs;
+  the old secret stops working at once and the key keeps its history. Keys
+  are still never shown again (only a fingerprint is stored).
+
+## [2.56.163] - 2026-10-13
+
+### Changed — CI: the `authed` e2e project runs in 6 legs
+
+2.56.162 never deployed: its authed-4 leg (30 tests, incl. the new import
+upload specs) reached Next dev's memory ceiling twice and the restart
+refused connections mid-test. Six legs cap the largest at 30 tests. Ships
+2.56.162's fixes (Excel imports, drop a file on the import box).
+
+## [2.56.162] - 2026-10-12
+
+### Fixed — Excel imports work again
+
+Importing any .xlsx in /import/sheet failed with «e.map is not a function»:
+the spreadsheet library returns every sheet as `[{ sheet, data }]` since its
+v9 (in since the importer shipped), and the parser read that as rows. It now
+takes the first sheet with rows (`firstSheetRows`, unit-tested), and a read
+failure is logged with an error ID instead of only shown.
+
+### Fixed — drop a file on the import box
+
+The dotted upload box in /import/sheet now takes a dropped CSV or Excel file
+(highlighted while dragging; other file types get a message). Dropping a file
+used to make the browser open it, losing the import.
+
+## [2.56.161] - 2026-10-12
+
+### Fixed — the service worker no longer intercepts other sites
+
+The app's service worker re-fetched every request, including scripts and
+beacons from other sites. Its own fetches are bound by sw.js's security
+policy, which allows neither jsDelivr nor Cloudflare's analytics host, so they
+came back «Offline» 503. For any returning visitor that blanked the new API
+explorer (/api/v1/docs) and broke the Cloudflare Web Analytics beacon on every
+page. It now leaves other sites to the browser and never caches /api/v1/.
+Test: src/lib/swFetchRouting.test.ts.
+
+## [2.56.160] - 2026-10-12
+
+One release bringing in four branches that were waiting, each rebuilt on
+current staging (the merge and cherry-pick commits of this version).
+
+### Added — the team sees its applicants (Jon, 2026-09-30)
+
+An animal's applicants are visible to everyone in the animal OWNER's group,
+whichever member's form link the person used — before, each rescuer saw only
+applicants from their own link, and a teammate's notification opened on «No
+tenés permiso».
+- One scope rule (`src/lib/applicantScope.ts`) for the animal page and the
+  /my-animals count; one access rule (`src/lib/formSubmissionAccess.ts`) for
+  /form-results, the «Crear adoptante» prefill, «Vincular» and «Es la misma
+  persona». Staging's linking checks are unchanged; only WHO may act widened.
+- A forged `/form?u=<stranger>&animal=<ours>` row never shows, counts, or names
+  the animal in teammates' notifications; strangers still get the 404.
+- Contract invitations treat applicants by the same team scope, and admins may
+  send them from the applicants list.
+- Teammates' form notification names the animal, like the owner's.
+- Index `form_submissions(selected_animal_id)` (drizzle/0081).
+- Records added by a contract or a form say so: «Agregado por contrato
+  digital» / «formulario de adopción».
+
+### Added — third-party API v1, behind ENABLE_PUBLIC_API (off)
+
+Rescues' own tools search and record adopters with a per-rescuer key:
+`POST /api/v1/search` (exact: full name + email/phone/document → found /
+not_found / ambiguous, optionally saving the record; fuzzy: the homepage
+search), `GET /api/v1/me`, `POST /api/v1/records/{id}/void`, an OpenAPI spec
+and a locked-down explorer at `/api/v1/docs`. Every call is logged
+(`api_requests`, drizzle/0082) for Admin → API and each rescuer's Settings →
+API. Phones are read like the index (tokenizer v7). Plan and decisions:
+`.agents/plans/2026-10-09-third-party-api.md`.
+
+### Fixed — ratings are optional and never inferred (Jon, 2026-10-09)
+
+A record saved without a rating stays unrated. Removed the fallbacks that
+invented one (2★ on imports and the add-record APIs, 5★ preselected in the
+record forms and on contract signing). The star input has a «Sin calificar»
+state and a «Quitar» control. Existing 2★ ratings are untouched.
+
+### Changed — the duplicate Scan writes each group of records atomically
+
+Ten records' token writes go out as one D1 batch (one round trip, all or
+nothing, retried once), so a dropped call can no longer leave a record
+half-written. New e2e `tests/duplicate-scan.authed.spec.ts`.
+
+### Changed — product events
+
+`form_shared` (was mislabelled `contract_shared`), `contract_issued`,
+`list_import_started`; `scripts/analytics/retention-baseline.py`.
+
 ## [2.56.159] - 2026-10-11
 
 ### Fixed — the duplicate Scan carries on when the connection drops

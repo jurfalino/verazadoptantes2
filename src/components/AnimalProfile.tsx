@@ -415,6 +415,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
             <h2 className="text-base font-bold text-stone-900 mt-8 mb-4">{t('animalProfile.timeline_title') || 'Línea de vida'}</h2>
 
             <AnimalTimeline
+                animalId={animal.id}
                 items={items}
                 animalSex={animal.sex}
                 userNameMap={userNameMap}

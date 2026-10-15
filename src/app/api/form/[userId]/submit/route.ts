@@ -6,6 +6,7 @@ import { deriveSpecialNeeds, sanitizeShownSteps, isPhoneRequired } from '@/domai
 import { isValidFormEmail } from '@/domain/formEmail';
 import { parseHouseholdPeople, childrenAnswer, fullName } from '@/domain/householdPeople';
 import { parseGiftRecipient, recipientFullName } from '@/domain/giftRecipient';
+import { clampFreeText, socialHandle } from '@/domain/formFreeText';
 import type { HouseholdMember } from '@/lib/householdMembers';
 
 export const runtime = 'edge';
@@ -56,6 +57,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             // The form checks the same rule, so only an old tab or a hand-made POST gets here.
             logger.warn('form submit: gift recipient phone dropped (bad format)', { userId });
         }
+        // New free-text answers (spec 2026-10-14): clamped here, never trusted.
+        for (const [key, max] of [['gaveAwayWhy', 300], ['vetReference', 300], ['motivation', 300], ['howHeard', 300], ['instagram', 100], ['facebook', 100]] as const) {
+            const v = clampFreeText(body[key], max);
+            if (v === undefined) delete answers[key]; else answers[key] = v;
+        }
+        // Instagram / Facebook become profile contacts only when they look like one.
+        const socials = [socialHandle(body.instagram, 'instagram'), socialHandle(body.facebook, 'facebook')]
+            .filter((s): s is NonNullable<typeof s> => s !== null);
         if (Array.isArray(body.householdPeople) || body.livesAlone === true) {
             answers.householdPeople = householdPeople;
             answers.livesAlone = body.livesAlone === true && householdPeople.length === 0;
@@ -107,27 +116,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             if (isPhoneRequired(resolved?.hiddenSteps ?? [])) logger.warn('form submit: phone missing on a phone-required form', { userId });
         }
 
-        // Upload selfie to R2 (if provided)
-        let selfieUrl: string | null = null;
+        const submissionId = crypto.randomUUID();
+
+        // The applicant's selfie (if any) goes to PRIVATE storage, tagged with
+        // this submission; it opens only through /api/files/selfie/{id} for whoever
+        // may see this form's results (src/lib/contractStorage.ts storeSelfie).
+        let selfieKey: string | null = null;
         if (selfieData && selfieData.startsWith('data:')) {
             try {
                 const match = selfieData.match(/^data:([^;]+);base64,([\s\S]+)$/);
                 if (match) {
                     const contentType = match[1];
                     const base64Data = match[2].replace(/\s/g, '');
-                    const ext = contentType.includes('png') ? 'png' : 'jpg';
-                    const { uploadToR2 } = await import('@/lib/r2');
+                    const { storeSelfie } = await import('@/lib/contractStorage');
                     const blobFromBase64 = await fetch(`data:${contentType};base64,${base64Data}`).then(r => r.arrayBuffer());
-                    const key = `forms/${rescuerEmail}/${crypto.randomUUID()}.${ext}`;
-                    selfieUrl = await uploadToR2(key, blobFromBase64, contentType);
-                    logger.info('Form selfie uploaded to R2', { key });
+                    selfieKey = (await storeSelfie(blobFromBase64, contentType, submissionId)).key;
                 }
             } catch (uploadErr) {
-                logger.warn('Form selfie upload failed (non-blocking)', { error: (uploadErr as Error).message });
+                logger.warn('Form selfie upload failed (non-blocking)', { submissionId, error: (uploadErr as Error).message });
             }
         }
 
-        const submissionId = crypto.randomUUID();
         const notificationId = crypto.randomUUID();
 
         // Store in form_submissions
@@ -140,13 +149,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             address,
             latitude,
             longitude,
-            selfieUrl,
+            selfieKey,
             species,
             lifeStage,
             specialNeeds,
             intent,
             household,
-            answersJson: JSON.stringify({ ...answers, selfie: selfieUrl || '[removed]' }),
+            answersJson: JSON.stringify({ ...answers, selfie: selfieKey ? '[private]' : '[removed]' }),
             notificationId,
             selectedAnimalId,
             createdAt: new Date(),
@@ -158,15 +167,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         // instead of "Juana completó el formulario". Best-effort: if the
         // lookup fails we fall back to the generic copy.
         let selectedAnimalName: string | null = null;
+        // Its owner — the teammate fan-out names the animal only when that
+        // owner is in the form-link owner's team (forged ?animal= rows).
+        let selectedAnimalOwner: string | null = null;
         if (selectedAnimalId) {
             try {
                 const { adoptions } = await import('@/db/schema');
-                const animal = await db.select({ animalName: adoptions.animalName })
+                const animal = await db.select({ animalName: adoptions.animalName, addedBy: adoptions.addedBy })
                     .from(adoptions)
                     .where(eq(adoptions.id, selectedAnimalId))
                     .get();
                 if (animal?.animalName) selectedAnimalName = animal.animalName;
-            } catch { /* fall through */ }
+                selectedAnimalOwner = animal?.addedBy ?? null;
+            } catch (e) {
+                logger.warn('Form submit: animal lookup failed — generic notification copy', {
+                    submissionId, selectedAnimalId, error: e instanceof Error ? e.message : String(e),
+                });
+            }
         }
 
         // v2.14.10-18: auto-create an adopter row + run duplicate detection
@@ -188,6 +205,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                 submissionId,
                 animalId: selectedAnimalId,
                 animalName: selectedAnimalName,
+                socials,
                 householdMembers: [
                     // Only fully named people become profile household members —
                     // and in a gift, the people list is the RECIPIENT's home, not
@@ -246,23 +264,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             const { createNotification } = await import('@/app/actions/notifications');
             const matchCount = matches.length;
 
-            // When the submission targets a specific animal, prepend the
-            // animal-application framing to the title so the notification reads
-            // "Juana aplicó para Luna" with the match-count appended.
-            const animalPrefix = selectedAnimalName ? `${name} aplicó para ${selectedAnimalName}` : `${name} completó el formulario`;
+            // When the submission targets a specific animal the title reads
+            // "Juana aplicó para Luna", with the match count appended
+            // (src/domain/formNotification.ts — shared with the teammate copy).
+            const { formSubmissionOwnerTitle, formSubmissionTeammateTitle } = await import('@/domain/formNotification');
+            const titleInput = { submitterName: name, animalName: selectedAnimalName, matchCount };
+            const ownerTitle = formSubmissionOwnerTitle(titleInput);
             if (matchCount > 0) {
                 await createNotification({
                     id: notificationId,
                     userId: rescuerEmail,
                     type: 'form_submission',
-                    title: `${animalPrefix} — ${matchCount} coincidencia${matchCount > 1 ? 's' : ''}`,
+                    title: ownerTitle,
                     body: `Se encontraron posibles registros previos. Tocá para revisar las respuestas y vincular.`,
                     url: `/form-results/${submissionId}`,
                     icon: '⚠️',
                     metadata: {
                         submissionId,
                         matchCount,
-                        submittedData: { ...answers, selfie: selfieUrl || '[removed]' },
+                        submittedData: { ...answers, selfie: selfieKey ? '[private]' : '[removed]' },
                         matchedAdopters: matches.map(m => ({
                             id: m.adopterId,
                             name: m.adopterName,
@@ -277,14 +297,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     id: notificationId,
                     userId: rescuerEmail,
                     type: 'form_submission',
-                    title: animalPrefix,
+                    title: ownerTitle,
                     body: `No se encontraron registros previos. Revisá las respuestas para continuar.`,
                     url: `/form-results/${submissionId}`,
                     icon: '📋',
                     metadata: {
                         submissionId,
                         matchCount: 0,
-                        submittedData: { ...answers, selfie: selfieUrl || '[removed]' },
+                        submittedData: { ...answers, selfie: selfieKey ? '[private]' : '[removed]' },
                         selectedAnimalId,
                         selectedAnimalName,
                     },
@@ -293,19 +313,37 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
 
             logger.info('Form fuzzy search completed', { submissionId, matchCount });
 
-            // Fan-out to org members (after the response, kept alive — see src/lib/background.ts)
+            // Fan-out to org members (after the response, kept alive — see src/lib/background.ts).
+            // With an animal of THIS team, teammates get the owner's title
+            // («Juana aplicó para Luna …») and the animal in metadata, like the
+            // owner's copy. A forged ?animal= row (another team's animal) gets
+            // the generic title and no animal: never name another team's
+            // animal to these teammates.
             await runAfterResponse('formSubmit.notifyOrgMembers', async () => {
-                const { notifyOrgMembers } = await import('@/app/actions/notifications');
+                const [{ notifyOrgMembers }, { getTeamEmails }, { teammateVisibleAnimal }] = await Promise.all([
+                    import('@/app/actions/notifications'),
+                    import('@/lib/orgMembership'),
+                    import('@/lib/applicantScope'),
+                ]);
+                const animal = selectedAnimalId
+                    ? teammateVisibleAnimal(
+                        { id: selectedAnimalId, name: selectedAnimalName, owner: selectedAnimalOwner },
+                        await getTeamEmails(rescuerEmail),
+                    )
+                    : null;
                 await notifyOrgMembers({
                     actorEmail: rescuerEmail,
                     type: 'form_submission',
-                    title: `Nueva respuesta al formulario`,
+                    title: formSubmissionTeammateTitle({ ...titleInput, animalName: animal?.name ?? null }),
                     body: `${name} completó el formulario de adopción compartido por ${rescuerEmail}.`,
                     url: `/form-results/${submissionId}`,
                     icon: '📋',
-                    metadata: { submissionId, submitterName: name },
+                    metadata: {
+                        submissionId, submitterName: name,
+                        selectedAnimalId: animal?.id ?? null, selectedAnimalName: animal?.name ?? null,
+                    },
                 });
-            }, { submissionId, rescuerEmail });
+            }, { submissionId, rescuerEmail, selectedAnimalId });
         } catch (searchErr) {
             logger.warn('Form fuzzy search/notification failed (non-blocking)', { error: (searchErr as Error).message, submissionId });
         }
@@ -313,6 +351,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         return withCors(NextResponse.json({
             success: true,
             submissionId,
+            // false: a selfie was sent but couldn't be stored (the form is saved anyway).
+            selfieSaved: selfieData && selfieData.startsWith('data:') ? !!selfieKey : null,
         }), origin);
     } catch (error) {
         const errorId = logger.error('Form submission failed', error);

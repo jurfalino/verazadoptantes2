@@ -87,4 +87,26 @@ test.describe('household question choice', () => {
         await page.getByTestId('adoption-docs-save-form').click();
         await expect.poll(stored, { timeout: 15_000 }).toEqual([]);
     });
+
+    test('new questions: a default-off switch turns on, previous animal can use the old wording, the public config carries both', async ({ page, request }) => {
+        execD1(`UPDATE adoption_doc_settings SET hidden_steps = NULL WHERE ${OWNER}`);
+        await page.goto('/settings/adoption-docs');
+        await dismissCountryBanner(page);
+        const cat = page.getByTestId('form-step-catOutdoor');
+        await expect(cat).toHaveAttribute('aria-checked', 'false', { timeout: 30_000 });
+        await dismissCountryBanner(page);
+        await expect(page.getByTestId('form-step-gaveAway')).toHaveAttribute('aria-checked', 'true');
+
+        await cat.click();
+        await page.getByTestId('way-petExperience-old').click();
+        await page.getByTestId('adoption-docs-save-form').click();
+        await expect.poll(stored, { timeout: 15_000 }).toEqual(['on:catOutdoor', 'way:petExperience:old']);
+        const cfg = await (await request.get('/api/form/test-admin-id')).json();
+        expect(cfg.formConfig.hiddenSteps).toEqual(['on:catOutdoor', 'way:petExperience:old']);
+
+        await page.getByTestId('way-petExperience-new').click();
+        await cat.click();
+        await page.getByTestId('adoption-docs-save-form').click();
+        await expect.poll(stored, { timeout: 15_000 }).toEqual([]);
+    });
 });

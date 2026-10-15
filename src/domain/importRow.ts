@@ -133,14 +133,32 @@ function monthYear(s: string): string | null {
 }
 
 const SPECIES_MAP: Record<string, string> = {
-    perro: 'dog', perra: 'dog', dog: 'dog', can: 'dog',
-    gato: 'cat', gata: 'cat', cat: 'cat', michi: 'cat',
-    ave: 'bird', pajaro: 'bird', bird: 'bird',
+    perro: 'dog', perra: 'dog', perros: 'dog', perras: 'dog', can: 'dog', canino: 'dog', canina: 'dog',
+    cachorro: 'dog', cachorra: 'dog', dog: 'dog', dogs: 'dog', p: 'dog',
+    gato: 'cat', gata: 'cat', gatos: 'cat', gatas: 'cat', gatito: 'cat', gatita: 'cat', felino: 'cat', felina: 'cat',
+    michi: 'cat', michis: 'cat', cat: 'cat', cats: 'cat', g: 'cat',
+    ave: 'bird', aves: 'bird', pajaro: 'bird', pajaros: 'bird', bird: 'bird', birds: 'bird',
+    otro: 'other', otra: 'other', otros: 'other', other: 'other',
 };
+/** Lower-case, accents off, trailing dots/spaces off: «Pájaro» → pajaro, «P.» → p. */
+function foldSpecies(raw: string): string {
+    return raw.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[.\s]+$/, '');
+}
+/**
+ * Canonical species for a sheet cell: dog / cat / bird / other, or null when
+ * empty. Sheets exported from other apps often use one-letter codes
+ * (catpuccino: P = perro, G = gato), so those map too. Any other short code
+ * means nothing outside the sheet that used it, so it becomes 'other' — never
+ * the bare letter on the animal's profile. A real word we don't list
+ * («conejo», «hurón») is kept as written.
+ */
 export function normalizeSpecies(raw: string | undefined): string | null {
     if (!raw) return null;
-    const k = raw.trim().toLowerCase();
-    return SPECIES_MAP[k] || raw.trim() || null;
+    const k = foldSpecies(raw);
+    if (!k) return null;
+    if (SPECIES_MAP[k]) return SPECIES_MAP[k];
+    if (k.length <= 2 || !/[a-z]/.test(k)) return 'other';
+    return raw.trim();
 }
 
 const RECORD_TYPE_MAP: Record<string, string> = {
@@ -151,6 +169,12 @@ const RECORD_TYPE_MAP: Record<string, string> = {
     follow_up: 'follow_up', followup: 'follow_up', seguimiento: 'follow_up',
     returned_pet: 'returned_pet', returned: 'returned_pet', devuelto: 'returned_pet', 'devolución': 'returned_pet', devolucion: 'returned_pet',
 };
+/** The canonical record type a cell names, or null when the import doesn't know the value. */
+export function recognizedRecordType(raw: string | undefined): string | null {
+    if (!raw) return null;
+    return RECORD_TYPE_MAP[raw.trim().toLowerCase()] ?? null;
+}
+
 /** Canonicalize a record-type cell; defaults to 'adoption' (imports are adoptions). */
 export function normalizeRecordType(raw: string | undefined): string {
     if (!raw) return 'adoption';
@@ -195,6 +219,9 @@ export function rowWarnings(row: MappedRow): string[] {
     }
     if (row.date && normalizeImportDate(row.date) === null) {
         warnings.push(`Fecha no reconocida: "${row.date}" — se importa sin fecha.`);
+    }
+    if (row.recordType?.trim() && recognizedRecordType(row.recordType) === null) {
+        warnings.push(`Tipo no reconocido: "${row.recordType.trim()}" — se importa como Adopción.`);
     }
     return warnings;
 }

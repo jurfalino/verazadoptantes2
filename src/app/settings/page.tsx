@@ -11,6 +11,7 @@ import { DEFAULT_TIMEZONE } from '@/lib/dates';
 import { useShowToast } from '@/components/ui/Toast';
 import FollowupSettingsSection from '@/components/FollowupSettingsSection';
 import AdoptionDocsSettingsSection from '@/components/AdoptionDocsSettingsSection';
+import ApiSettingsSection from '@/components/api/ApiSettingsSection';
 
 export default function SettingsPage() {
     const { data: session, status } = useSession();
@@ -248,6 +249,9 @@ export default function SettingsPage() {
                 {/* Custom adoption form + contract (renders only when the public
                     ENABLE_CUSTOM_ADOPTION_DOCS flag is on). */}
                 <AdoptionDocsSettingsSection />
+                {/* «API»: own keys + transaction log (renders only when
+                    ENABLE_PUBLIC_API is on and the rescuer has a key). */}
+                <ApiSettingsSection />
             </div>
         </main>
     );

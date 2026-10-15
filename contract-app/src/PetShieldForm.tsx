@@ -5,9 +5,11 @@ import {
     FORM_STEP_IDS, formStepsToAsk, withPhoneRequirement, stepsForAnswers, stepAfter, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody, childrenAnswer,
 } from './lib/adoptionDocs'
 import GiftRecipient, { type Recipient } from './components/GiftRecipient'
-import { adaptStepForGift, isGift, recipientFirstName, giftRecipientProblem } from './lib/giftFlow'
+import { adaptStepForGift, isGift, recipientFirstName, giftRecipientProblem, settleGiftAnswers } from './lib/giftFlow'
 import HouseholdPeople, { type Person } from './components/HouseholdPeople'
 import { canLeaveHouseholdStep, householdStepTitleKey, type DraftPerson } from './lib/householdPeopleForm'
+import { followUpsUnder, FOLLOW_UP_HOSTS } from './lib/formQuestions'
+import FollowUps, { type ChoiceQuestion } from './components/FollowUps'
 
 // ══════════════════════════════════════════════
 // TYPES — JSON Schema
@@ -18,7 +20,7 @@ interface ConsentStep {
     legalRef?: string; linkUrl?: string; linkLabel?: string;
 }
 interface TextFieldsStep {
-    id: string; type: 'text-fields'; title: string;
+    id: string; type: 'text-fields'; title: string; subtitle?: string;
     fields: Array<{ name: string; label: string; placeholder?: string; required?: boolean; validation?: 'email' | 'phone-ar' }>;
 }
 interface GeolocationStep {
@@ -50,6 +52,12 @@ interface PetCounterStep {
     petTypes: Array<{ value: string; label: string; icon: string }>;
 }
 
+/** A closed question whose answers are too long for cards: one full-width button per option (spec 2026-10-14). */
+interface ChoiceListStep {
+    id: string; type: 'choice-list'; title: string;
+    options: Array<{ value: string; label: string; withText?: { key: string; label: string } }>;
+}
+
 /** "¿Para quién es?" — asked only after "Es un regalo" (spec Part 2 §7). */
 interface GiftRecipientStep {
     id: string; type: 'gift-recipient'; title: string; subtitle?: string;
@@ -61,7 +69,7 @@ interface HouseholdPeopleStep {
 }
 
 type FormStep = ConsentStep | TextFieldsStep | GeolocationStep | CameraUploadStep
-    | IconCardsStep | SegmentedCardsStep | ToggleStep | ChecklistStep | PetCounterStep | HouseholdPeopleStep | GiftRecipientStep;
+    | IconCardsStep | SegmentedCardsStep | ToggleStep | ChecklistStep | PetCounterStep | HouseholdPeopleStep | GiftRecipientStep | ChoiceListStep;
 
 // ══════════════════════════════════════════════
 // SVG ICONS
@@ -382,6 +390,14 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             ],
         },
         {
+            id: 'carer', type: 'choice-list', title: t('form.q_carer_title'),
+            options: [
+                { value: 'me', label: t('form.opt_carer_me') },
+                { value: 'otherAdult', label: t('form.opt_carer_otherAdult') },
+                { value: 'minor', label: t('form.opt_carer_minor') },
+            ],
+        },
+        {
             id: 'giftRecipient', type: 'gift-recipient', title: t('form.q_gift_recipient_title'), subtitle: t('form.q_gift_recipient_subtitle'),
         },
         {
@@ -391,6 +407,14 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                 { value: '1', label: '1' },
                 { value: '2', label: '2' },
                 { value: '3+', label: '3+' },
+            ],
+        },
+        {
+            id: 'allergy', type: 'choice-list', title: t('form.q_allergy_title'),
+            options: [
+                { value: 'no', label: t('form.opt_no') },
+                { value: 'yes', label: t('form.opt_yes') },
+                { value: 'unknown', label: t('form.opt_unknown') },
             ],
         },
         {
@@ -404,10 +428,27 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             ],
         },
         {
+            id: 'petsCare', type: 'choice-list', title: t('form.q_petsCare_title'),
+            options: [
+                { value: 'yes', label: t('form.opt_yes') },
+                { value: 'some', label: t('form.opt_some') },
+                { value: 'no', label: t('form.opt_no') },
+            ],
+        },
+        {
             id: 'housingType', type: 'icon-cards', title: t('form.q_housing_title'),
             options: [
                 { value: 'house', label: t('form.opt_house'), icon: 'outdoor' },
                 { value: 'apartment', label: t('form.opt_apartment'), icon: 'apartment' },
+            ],
+        },
+        {
+            id: 'rental', type: 'choice-list', title: t('form.q_rental_title'),
+            options: [
+                { value: 'own', label: t('form.opt_rental_own') },
+                { value: 'rentAllowed', label: t('form.opt_rental_rentAllowed') },
+                { value: 'rentNotAllowed', label: t('form.opt_rental_rentNotAllowed') },
+                { value: 'rentUnsure', label: t('form.opt_rental_rentUnsure') },
             ],
         },
         {
@@ -430,12 +471,44 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             ],
         },
         {
+            id: 'catOutdoor', type: 'choice-list', title: t('form.q_catOutdoor_title'),
+            options: [
+                { value: 'no', label: t('form.opt_no') },
+                { value: 'sometimes', label: t('form.opt_sometimes') },
+                { value: 'yes', label: t('form.opt_yes') },
+            ],
+        },
+        {
+            id: 'sleepPlace', type: 'choice-list', title: t('form.q_sleepPlace_title'),
+            options: [
+                { value: 'inside', label: t('form.opt_sleep_inside') },
+                { value: 'outside', label: t('form.opt_sleep_outside') },
+            ],
+        },
+        {
             id: 'hoursAlone', type: 'segmented-cards', title: t('form.q_hours_alone_title'),
             options: [
                 { value: '0-2', label: '0–2' },
                 { value: '3-5', label: '3–5' },
                 { value: '6-8', label: '6–8' },
                 { value: '8+', label: '8+' },
+            ],
+        },
+        {
+            id: 'dogWalks', type: 'choice-list', title: t('form.q_dogWalks_title'),
+            options: [
+                { value: 'twicePlus', label: t('form.opt_walks_twicePlus') },
+                { value: 'once', label: t('form.opt_walks_once') },
+                { value: 'walker', label: t('form.opt_walks_walker') },
+                { value: 'none', label: t('form.opt_walks_none') },
+            ],
+        },
+        {
+            id: 'dogTied', type: 'choice-list', title: t('form.q_dogTied_title'),
+            options: [
+                { value: 'no', label: t('form.opt_no') },
+                { value: 'sometimes', label: t('form.opt_sometimes') },
+                { value: 'yes', label: t('form.opt_yes') },
             ],
         },
         {
@@ -448,10 +521,36 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             ],
         },
         {
+            id: 'lastAnimal', type: 'choice-list', title: t('form.q_lastAnimal_title'),
+            options: [
+                { value: 'withMe', label: t('form.opt_last_withMe') },
+                { value: 'oldAge', label: t('form.opt_last_oldAge') },
+                { value: 'lost', label: t('form.opt_last_lost') },
+                { value: 'street', label: t('form.opt_last_street') },
+                { value: 'gave', label: t('form.opt_last_gave') },
+                { value: 'first', label: t('form.opt_last_first') },
+            ],
+        },
+        {
+            id: 'gaveAway', type: 'choice-list', title: t('form.q_gaveAway_title'),
+            options: [
+                { value: 'no', label: t('form.opt_no') },
+                { value: 'yes', label: t('form.opt_yes'), withText: { key: 'gaveAwayWhy', label: t('form.gaveAway_why') } },
+            ],
+        },
+        {
             id: 'willingToSterilize', type: 'icon-cards', title: t('form.q_sterilize_title'),
             options: [
                 { value: 'yes', label: t('form.opt_yes'), icon: 'self' },
                 { value: 'no', label: t('form.opt_no'), icon: 'sadDog' },
+            ],
+        },
+        {
+            id: 'sterilizeHow', type: 'choice-list', title: t('form.q_sterilizeHow_title'),
+            options: [
+                { value: 'done', label: t('form.opt_sterilize_done') },
+                { value: 'vet', label: t('form.opt_sterilize_vet') },
+                { value: 'campaign', label: t('form.opt_sterilize_campaign') },
             ],
         },
         {
@@ -468,12 +567,47 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             ],
         },
         {
+            id: 'movingIfNoPets', type: 'choice-list', title: t('form.q_movingIfNoPets_title'),
+            options: [
+                { value: 'find', label: t('form.opt_moving_find') },
+                { value: 'family', label: t('form.opt_moving_family') },
+                { value: 'return', label: t('form.opt_moving_return') },
+                { value: 'unsure', label: t('form.opt_unknown') },
+            ],
+        },
+        {
             id: 'vacationPlan', type: 'icon-cards', title: t('form.q_vacation_title'),
             options: [
                 { value: 'take', label: t('form.opt_vac_take'), icon: 'self' },
                 { value: 'family', label: t('form.opt_vac_family'), icon: 'children' },
                 { value: 'sitter', label: t('form.opt_vac_sitter'), icon: 'sitter' },
                 { value: 'unsure', label: t('form.opt_vac_unsure'), icon: 'other' },
+            ],
+        },
+        {
+            id: 'returnReasons', type: 'choice-list', title: t('form.q_returnReasons_title'),
+            options: [
+                { value: 'no', label: t('form.opt_return_no') },
+                { value: 'allergy', label: t('form.opt_return_allergy') },
+                { value: 'baby', label: t('form.opt_return_baby') },
+                { value: 'behaviour', label: t('form.opt_return_behaviour') },
+                { value: 'other', label: t('form.opt_return_other') },
+            ],
+        },
+        {
+            id: 'adaptPlan', type: 'choice-list', title: t('form.q_adaptPlan_title'),
+            options: [
+                { value: 'patience', label: t('form.opt_adapt_patience') },
+                { value: 'askRescue', label: t('form.opt_adapt_askRescue') },
+                { value: 'return', label: t('form.opt_adapt_return') },
+            ],
+        },
+        {
+            id: 'visitConsent', type: 'choice-list', title: t('form.q_visitConsent_title'),
+            options: [
+                { value: 'yes', label: t('form.opt_yes') },
+                { value: 'videoOnly', label: t('form.opt_visit_videoOnly') },
+                { value: 'no', label: t('form.opt_no') },
             ],
         },
         // Identity & verification last
@@ -502,6 +636,13 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             ],
         },
         {
+            id: 'social', type: 'text-fields', title: t('form.q_social_title'), subtitle: t('form.q_social_subtitle'),
+            fields: [
+                { name: 'instagram', label: t('form.field_instagram'), placeholder: t('form.field_social_placeholder') },
+                { name: 'facebook', label: t('form.field_facebook'), placeholder: t('form.field_social_placeholder') },
+            ],
+        },
+        {
             id: 'ageRange', type: 'segmented-cards', title: t('form.q_age_title'),
             options: [
                 { value: '18-25', label: '18–25' },
@@ -509,6 +650,19 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                 { value: '36-45', label: '36–45' },
                 { value: '46-55', label: '46–55' },
                 { value: '56+', label: '56+' },
+            ],
+        },
+        {
+            id: 'vetReference', type: 'text-fields', title: t('form.q_vetReference_title'),
+            fields: [
+                { name: 'vetReference', label: t('form.field_vetReference') },
+            ],
+        },
+        {
+            id: 'motivation', type: 'text-fields', title: t('form.q_motivation_title'),
+            fields: [
+                { name: 'motivation', label: t('form.field_motivation') },
+                { name: 'howHeard', label: t('form.field_howHeard') },
             ],
         },
         {
@@ -527,21 +681,26 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     // Fetched async so it can never block the adopter: while it's in flight
     // (or on failure/timeout) the standard schema applies — the safe default.
     const [hiddenSteps, setHiddenSteps] = useState<string[] | null>(null)
+    // The animal's species when the form is for one (its species question is
+    // skipped): cat-only / dog-only questions follow it (spec 2026-10-14).
+    const [animalSpecies, setAnimalSpecies] = useState<string | null>(null)
     useEffect(() => {
         if (!userId) return
         const ctrl = new AbortController()
         const timer = setTimeout(() => ctrl.abort(), 3000)
-        fetch(`${API_URL}/api/form/${encodeURIComponent(userId)}`, { signal: ctrl.signal })
+        const query = animalId ? `?animalId=${encodeURIComponent(animalId)}` : ''
+        fetch(`${API_URL}/api/form/${encodeURIComponent(userId)}${query}`, { signal: ctrl.signal })
             .then(r => (r.ok ? r.json() : null))
-            .then((data: { formConfig?: { hiddenSteps?: unknown } | null } | null) => {
+            .then((data: { formConfig?: { hiddenSteps?: unknown } | null; animalSpecies?: unknown } | null) => {
                 const hs = data?.formConfig?.hiddenSteps
                 if (Array.isArray(hs)) setHiddenSteps(hs.filter((x): x is string => typeof x === 'string'))
+                setAnimalSpecies(typeof data?.animalSpecies === 'string' ? data.animalSpecies : null)
             })
             // Standard form is the safe fallback — never block the adopter.
             .catch(err => console.warn('[PetShield] form config unavailable, using standard form', err))
             .finally(() => clearTimeout(timer))
         return () => { clearTimeout(timer); ctrl.abort() }
-    }, [userId])
+    }, [userId, animalId])
 
     // When the form was launched from the public showcase (animalId present),
     // skip the three steps that ask about the desired animal — the choice is
@@ -567,7 +726,15 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     const [householdEditing, setHouseholdEditing] = useState<DraftPerson | null>(null)
     const [answers, setAnswers] = useState<Record<string, any>>({})
     // Answer-dependent steps ("¿Para quién es?" only after "Es un regalo").
-    const schema = stepsForAnswers(configSchema, answers)
+    const formCtx = { animalSpecies }
+    const schema = stepsForAnswers(configSchema, answers, formCtx)
+    // "Para mí" after a gift → its "No sé" answers go, so those questions are
+    // asked again; "Intención" no longer asked → an old gift draft isn't a gift.
+    const intentAsked = configSchema.some(s => s.id === 'intent')
+    useEffect(() => {
+        const settled = settleGiftAnswers(answers, intentAsked)
+        if (settled !== answers) setAnswers(settled)
+    }, [answers, intentAsked])
     const totalSteps = schema.length
     const [errors, setErrors] = useState<Record<string, string>>({})
     const [toast, setToast] = useState<{ message: string; id?: string } | null>(null)
@@ -614,8 +781,9 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             draftStepIdRef.current = resolved.draft.stepId
             // Index against the steps the DRAFT's answers produce: "¿Para quién
             // es?" exists only once intent='gift' is restored, and the current
-            // `schema` still reflects the empty pre-hydration answers.
-            setStep(restoreStepIndex(stepsForAnswers(configSchema, resolved.draft.answers ?? {}), resolved.draft, FORM_STEP_IDS))
+            // `schema` still reflects the empty pre-hydration answers. Settled
+            // first, as the answers will be once the effect above runs.
+            setStep(restoreStepIndex(stepsForAnswers(configSchema, settleGiftAnswers(resolved.draft.answers ?? {}, intentAsked), formCtx), resolved.draft, FORM_STEP_IDS))
         } catch (e) {
             console.warn('[PetShield] draft restore failed', e)
         }
@@ -647,6 +815,13 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         ? adaptStepForGift(rawStep as FormStep & { title: string }, answers, t)
         : rawStep) as FormStep | undefined
     const giftName = recipientFirstName(answers)
+    // Follow-up questions shown under this screen (spec 2026-10-14 §4.2), worded for a gift.
+    const followUpQuestions: Record<string, ChoiceQuestion> = Object.fromEntries(
+        DEFAULT_SCHEMA
+            .filter((s): s is ChoiceListStep => s.type === 'choice-list' && s.id in FOLLOW_UP_HOSTS)
+            .map(s => { const g = adaptStepForGift(s, answers, t); return [s.id, { title: g.title, options: g.options }] }),
+    )
+    const underThis = currentStep ? followUpsUnder(currentStep.id, configSchema, answers) : []
     const isLastStep = step === totalSteps - 1
     const progress = ((step + 1) / totalSteps) * 100
 
@@ -672,10 +847,11 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         const stepId = draftStepIdRef.current ?? currentStepIdRef.current
         draftStepIdRef.current = undefined
         if (step > 0 || stepId) {
-            setStep(restoreStepIndex(schema, { answers, stepId }, FORM_STEP_IDS))
+            // Settled: hiding "Intención" removes "¿Para quién es?" ahead of them.
+            setStep(restoreStepIndex(stepsForAnswers(configSchema, settleGiftAnswers(answers, intentAsked), formCtx), { answers, stepId }, FORM_STEP_IDS))
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [hiddenSteps])
+    }, [hiddenSteps, animalSpecies])
 
     // ── Answer helpers ──
     function setAnswer(key: string, value: any) {
@@ -706,10 +882,14 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             }
         }
 
-        if (currentStep.type === 'icon-cards') {
+        if (currentStep.type === 'icon-cards' || currentStep.type === 'choice-list') {
             if (!answersToCheck[currentStep.id]) {
                 newErrors[currentStep.id] = t('form.err_select_option')
             }
+        }
+
+        for (const id of followUpsUnder(currentStep.id, configSchema, answersToCheck)) {
+            if (!answersToCheck[id]) newErrors[id] = t('form.err_select_option')
         }
 
         if (currentStep.type === 'gift-recipient') {
@@ -734,11 +914,13 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     // ── Can advance ──
     function canAdvance(): boolean {
         if (!currentStep) return false
+        if (underThis.some(id => !answers[id])) return false
         switch (currentStep.type) {
             case 'consent': return !!answers[currentStep.id]
             case 'text-fields':
                 return currentStep.fields.filter(f => f.required).every(f => (answers[f.name] || '').trim())
             case 'icon-cards': return !!answers[currentStep.id]
+            case 'choice-list': return !!answers[currentStep.id]
             case 'geolocation': return answers[currentStep.id] !== undefined
             case 'camera-upload': return true // optional
             case 'segmented-cards': return true // optional, has default
@@ -770,13 +952,19 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         setAnimationKey(k => k + 1)
         if (safeOverrides) setAnswers(prev => ({ ...prev, ...safeOverrides }))
 
-        const target = stepAfter(configSchema, step, nextAnswers)
+        const target = stepAfter(configSchema, step, nextAnswers, formCtx)
         if (target === 'submit') {
             handleSubmit(nextAnswers)
         } else {
             setStep(nextStep)
             persist(target.id, nextAnswers)
         }
+    }
+
+    /** Tap-to-advance, unless the tap reveals follow-up questions under this screen. */
+    function advanceUnlessFollowUps(overrides: Record<string, any>) {
+        if (currentStep && followUpsUnder(currentStep.id, configSchema, { ...answers, ...overrides }).length) return
+        goNext(overrides)
     }
 
     function goBack() {
@@ -800,7 +988,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             // the rescuer's notification can name the specific animal.
             // Hidden-step answers are stripped in case a stale draft carried
             // them, and shownSteps records what the adopter actually saw.
-            const submitBody = buildSubmitBody(finalAnswers, hiddenSteps, animalId, schema)
+            const submitBody = buildSubmitBody(finalAnswers, hiddenSteps, animalId, configSchema, formCtx)
             const res = await fetch(`${API_URL}/api/form/${encodeURIComponent(userId)}/submit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -812,7 +1000,10 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                 setToast({ message: data.error || t('form.err_submit'), id: errIdMatch?.[1] })
                 return
             }
-            // Success
+            // Success. The form is saved even if its photo wasn't: say so, so the
+            // applicant can send it another way.
+            const ok = await res.json().catch(() => ({})) as { selfieSaved?: boolean }
+            if (ok.selfieSaved === false) setToast({ message: t('form.err_selfie_not_saved'), id: 'ERR-FILE-303' })
             localStorage.removeItem(DRAFT_KEY)
             setSubmitted(true)
         } catch (err) {
@@ -861,8 +1052,27 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             setToast({ message: t('form.err_images_only'), id: 'ERR-FILE-301' })
             return
         }
+        // Shrunk and re-encoded as JPEG here: the server only keeps PNG / JPEG /
+        // WebP up to 5 MB, and phones hand over 10 MB photos and HEIC files.
         const reader = new FileReader()
-        reader.onload = () => setAnswer('selfie', reader.result as string)
+        reader.onload = () => {
+            const img = new Image()
+            img.onload = () => {
+                const max = 1600
+                let w = img.width, h = img.height
+                if (w > max || h > max) { const k = max / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k) }
+                const canvas = document.createElement('canvas')
+                canvas.width = w; canvas.height = h
+                const ctx = canvas.getContext('2d')
+                if (!ctx) { setToast({ message: t('form.err_selfie_read'), id: 'ERR-FILE-302' }); return }
+                ctx.drawImage(img, 0, 0, w, h)
+                setAnswer('selfie', canvas.toDataURL('image/jpeg', 0.8))
+            }
+            // A format this browser can't decode (e.g. HEIC outside Safari).
+            img.onerror = () => setToast({ message: t('form.err_selfie_read'), id: 'ERR-FILE-302' })
+            img.src = reader.result as string
+        }
+        reader.onerror = () => setToast({ message: t('form.err_selfie_read'), id: 'ERR-FILE-302' })
         reader.readAsDataURL(file)
     }
 
@@ -951,6 +1161,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             case 'text-fields': return (
                 <div className="ps-step" key={key}>
                     <h1 className="ps-title">{currentStep.title}</h1>
+                    {currentStep.subtitle && <p className="ps-subtitle">{currentStep.subtitle}</p>}
                     <div className="ps-input-group">
                         {currentStep.fields.map((field, i) => (
                             <div className="ps-field" key={field.name}>
@@ -1082,7 +1293,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                                     if (!isSpeciesOther) {
                                         // No tap-to-submit: on the last step, tapping only selects — "Enviar" submits.
                                         if (isLastStep) setAnswer(currentStep.id, opt.value)
-                                        else goNext({ [currentStep.id]: opt.value })
+                                        else advanceUnlessFollowUps({ [currentStep.id]: opt.value })
                                     }
                                 }}
                                 tabIndex={0}
@@ -1131,7 +1342,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                                     setAnswer(currentStep.id, opt.value)
                                     // No tap-to-submit: on the last step, tapping only selects — "Enviar" submits.
                                     if (isLastStep) setAnswer(currentStep.id, opt.value)
-                                    else goNext({ [currentStep.id]: opt.value })
+                                    else advanceUnlessFollowUps({ [currentStep.id]: opt.value })
                                 }}
                                 tabIndex={0}
                             >
@@ -1143,6 +1354,45 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                 </div>
             )
 
+            case 'choice-list': {
+                const chosen = currentStep.options.find(o => o.value === answers[currentStep.id])
+                return (
+                    <div className="ps-step" key={key}>
+                        <h1 className="ps-title">{currentStep.title}</h1>
+                        <div className="ps-choice-list" role="radiogroup" aria-label={currentStep.title}>
+                            {currentStep.options.map(opt => (
+                                <button
+                                    key={opt.value}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={answers[currentStep.id] === opt.value}
+                                    className={`ps-choice ${answers[currentStep.id] === opt.value ? 'ps-choice--selected' : ''}`}
+                                    onClick={() => {
+                                        setAnswer(currentStep.id, opt.value)
+                                        // An option with its own text box waits for it; the last step waits for "Enviar".
+                                        if (!opt.withText && !isLastStep) advanceUnlessFollowUps({ [currentStep.id]: opt.value })
+                                    }}
+                                >
+                                    {opt.label}
+                                </button>
+                            ))}
+                        </div>
+                        {chosen?.withText && (
+                            <div className="ps-field" style={{ marginTop: 'var(--ps-3)' }}>
+                                <label className="ps-field__label" htmlFor={`ps-${chosen.withText.key}`}>{chosen.withText.label}</label>
+                                <input
+                                    id={`ps-${chosen.withText.key}`}
+                                    className="ps-input"
+                                    value={answers[chosen.withText.key] || ''}
+                                    onChange={e => setAnswer(chosen.withText!.key, e.target.value)}
+                                    autoFocus
+                                />
+                            </div>
+                        )}
+                        {errors[currentStep.id] && <div className="ps-field__error">{errors[currentStep.id]}</div>}
+                    </div>
+                )
+            }
             case 'gift-recipient': return (
                 <div className="ps-step" key={key}>
                     <h1 className="ps-title">{currentStep.title}</h1>
@@ -1175,7 +1425,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                                 setAnswer('householdPeople', o.householdPeople)
                                 setAnswer('livesAlone', true)
                                 setAnswer('children', 'none')
-                                if (!isLastStep) goNext(o)
+                                if (!isLastStep) advanceUnlessFollowUps(o)
                             }}
                             onEditingChange={setHouseholdEditing}
                         />
@@ -1360,6 +1610,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                     {t('form.step_of', { n: step + 1, total: totalSteps })}
                 </div>
                 {renderStep()}
+                <FollowUps ids={underThis} answers={answers} onAnswer={setAnswer} questions={followUpQuestions} />
             </div>
 
             {/* Navigation */}

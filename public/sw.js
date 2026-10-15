@@ -23,7 +23,7 @@
 //     the homepage search, its heading and the guide. On staging the guided tour
 //     stayed dead until a manual refresh, the signature of a stale chunk, so
 //     production gets the eviction before users hit the same thing.
-const CACHE_VERSION = 'buenaadoptante-v8'; // v8 (2.56.67): evicts ?dpl= duplicates, see cacheKeyFor
+const CACHE_VERSION = 'buenaadoptante-v9'; // v9 (2.56.170): drops any cached /api/files/ (signed contracts); v8 evicted ?dpl= duplicates
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const SHARE_CACHE = 'share-target-media';
@@ -73,9 +73,22 @@ self.addEventListener('fetch', (event) => {
     // Skip non-GET requests
     if (request.method !== 'GET') return;
 
-    // Skip cross-origin R2/storage requests — let the browser handle them natively
-    // (SW fetch violates CSP connect-src when intercepting cross-origin requests)
-    if (url.hostname.includes('r2.dev') || url.hostname.includes('cloudflarestorage.com')) return;
+    // Never intercept another origin. This worker's own fetch() is bound by
+    // sw.js's CSP (connect-src), not the page's, so re-fetching a cross-origin
+    // script, beacon or image here is blocked and answered «Offline» 503 — it
+    // blanked /api/v1/docs (Scalar from jsDelivr) and broke the Cloudflare Web
+    // Analytics beacon for every visitor this worker controls (2026-10-12).
+    // Left alone, the browser loads them natively under the page's own CSP.
+    // (Supersedes the earlier r2.dev / cloudflarestorage.com exception.)
+    if (url.origin !== self.location.origin) return;
+
+    // The third-party API and its docs are never cached: responses depend on
+    // the caller's key, and the docs page carries its own CSP.
+    if (url.pathname.startsWith('/api/v1/')) return;
+
+    // Signed contracts and other private files: never stored in Cache Storage
+    // (it outlives a logout on a shared device). The route also says no-store.
+    if (url.pathname.startsWith('/api/files/')) return;
 
     // Skip auth-related requests (never cache)
     if (url.pathname.startsWith('/api/auth')) return;

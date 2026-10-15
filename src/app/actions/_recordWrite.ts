@@ -6,7 +6,7 @@
  * come through here. See .agents/plans/animals-placements-normalization.md.
  */
 
-import { animals, placements, adopterEvents, adopterImages, animalEvents, contractInvitations } from '@/db/schema';
+import { animals, placements, adopterEvents, adopterImages, animalEvents, contractInvitations, activityForms } from '@/db/schema';
 import { eq, and, isNull, desc, ne, sql } from 'drizzle-orm';
 import { deriveEndedPlacement } from '@/domain/placements';
 import { NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
@@ -456,6 +456,8 @@ export async function deleteRecordById(db: Db, id: string): Promise<void> {
     await db.delete(adopterImages).where(eq(adopterImages.adoptionId, id));
     await db.delete(animals).where(eq(animals.id, id));
     await db.delete(adopterEvents).where(eq(adopterEvents.id, id));
+    // An API adoption request's form answers go with it.
+    await db.delete(activityForms).where(eq(activityForms.activityId, id));
 }
 
 /**

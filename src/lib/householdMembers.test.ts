@@ -110,7 +110,7 @@ describe('isMeaningfulMember', () => {
     });
 });
 
-import { currentAge, mergeHouseholdMembers } from './householdMembers';
+import { currentAge, mergeHouseholdMembers, mergeHouseholdMembersTracked, undoHouseholdMerge } from './householdMembers';
 
 describe('member age', () => {
     it('round-trips age + ageAsOf and drops invalid ones', () => {
@@ -136,5 +136,37 @@ describe('mergeHouseholdMembers', () => {
     it('appends the absorbed members, skipping same name + relationship', () => {
         const out = mergeHouseholdMembers([m('1', 'Tomás López', 'child')], [m('2', ' tomás  lópez ', 'child'), m('3', 'Ana Ruiz', 'partner')]);
         expect(out.map(x => x.id)).toEqual(['1', '3']);
+    });
+});
+
+describe('combining profiles keeps what only the absorbed copy knows (#4, 2026-10-13)', () => {
+    const phone = (id: string, value: string) => ({ id, type: 'phone' as const, value });
+    const survivorLaura = { id: 's1', name: 'Laura Pérez', relationship: 'child' as const, contactEntries: [phone('c1', '11 4444 0000')] };
+    const absorbedLaura = { id: 'a1', name: 'laura  pérez', relationship: 'child' as const, giftRecipient: true, contactEntries: [phone('c2', '11 5555 1234'), phone('c3', '1144440000')] };
+
+    it("the survivor's Laura gains the gift mark and the phone she lacked — not a phone she already has", () => {
+        const { members, added } = mergeHouseholdMembersTracked([survivorLaura], [absorbedLaura]);
+        expect(members).toHaveLength(1);
+        expect(members[0].giftRecipient).toBe(true);
+        expect(members[0].contactEntries.map(c => c.value)).toEqual(['11 4444 0000', '11 5555 1234']);
+        expect(added).toEqual({ memberIds: [], enriched: [{ memberId: 's1', contactIds: ['c2'], giftRecipient: true }] });
+    });
+    it('undo takes back exactly that — and keeps a phone a teammate added since', () => {
+        const { members, added } = mergeHouseholdMembersTracked([survivorLaura], [absorbedLaura]);
+        const later = [{ ...members[0], contactEntries: [...members[0].contactEntries, phone('c9', '11 7777 7777')] }];
+        const undone = undoHouseholdMerge(later, added);
+        expect(undone[0].giftRecipient).toBeUndefined();
+        expect(undone[0].contactEntries.map(c => c.id)).toEqual(['c1', 'c9']);
+    });
+    it('a survivor already marked keeps the mark through undo', () => {
+        const { members, added } = mergeHouseholdMembersTracked([{ ...survivorLaura, giftRecipient: true }], [absorbedLaura]);
+        expect(undoHouseholdMerge(members, added)[0].giftRecipient).toBe(true);
+    });
+    it('new people are still appended and removed by undo, as before', () => {
+        const ana = { id: 'a2', name: 'Ana Ruiz', relationship: 'partner' as const, contactEntries: [] };
+        const { members, added } = mergeHouseholdMembersTracked([survivorLaura], [ana]);
+        expect(members.map(m => m.id)).toEqual(['s1', 'a2']);
+        expect(added.memberIds).toEqual(['a2']);
+        expect(undoHouseholdMerge(members, added).map(m => m.id)).toEqual(['s1']);
     });
 });

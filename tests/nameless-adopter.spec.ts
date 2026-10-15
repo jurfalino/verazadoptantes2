@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { dismissCountryBanner } from './helpers';
+import { dismissCountryBanner, createAnywayIfAsked } from './helpers';
 
 /**
  * E2E coverage for the nameless-adopter create flow (design:
@@ -90,15 +90,7 @@ test.describe('nameless adopter create flow', () => {
         await expect(page.getByText(/este registro será público/i)).toBeVisible({ timeout: 10000 });
         await page.getByTestId('adopter-form-submit').click();
 
-        // Duplicate-detection confirmation modal may or may not appear
-        // (mirrors the handling in tests/adopter.spec.ts).
-        const createAnywayBtn = page.getByRole('button', { name: /Create new profile anyway|Crear perfil nuevo/i });
-        try {
-            await createAnywayBtn.waitFor({ state: 'visible', timeout: 3000 });
-            await createAnywayBtn.click();
-        } catch {
-            // Modal did not appear — no duplicates found, which is fine.
-        }
+        await createAnywayIfAsked(page);
 
         // Redirected to the new profile; URL leaves /create.
         await expect(page).not.toHaveURL(/\/create/, { timeout: 30000 });

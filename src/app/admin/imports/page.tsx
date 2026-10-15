@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { getImportRuns, getImportRunItems } from '@/app/actions';
 import { useDateFormat } from '@/context/TimezoneContext';
+import { importRunState, type ImportRunState } from '@/domain/importRunState';
 
 interface ImportRun {
     id: string; actorEmail: string | null; source: string | null; total: number | null;
@@ -11,13 +12,10 @@ interface ImportRun {
     itemCount: number; dCreated: number; dUpdated: number; dSkipped: number; dFailed: number; lastItemAt: number | null;
 }
 
-/** A run is 'completed' once finished; otherwise 'interrupted' if there's been no
- *  item activity for a while (a real import completes in minutes), else 'running'. */
-function runState(run: ImportRun): 'completed' | 'interrupted' | 'running' {
-    if (run.finishedAt) return 'completed';
-    const nowSecs = Date.now() / 1000;
-    if (run.lastItemAt && nowSecs - run.lastItemAt > 300) return 'interrupted';
-    return 'running';
+/** A run is 'completed' once finished; otherwise 'interrupted' after a while with
+ *  no activity (the import is driven by the rescuer's tab), else 'running'. */
+function runState(run: ImportRun): ImportRunState {
+    return importRunState(run, Date.now() / 1000);
 }
 interface ImportRunItem {
     id: string; runId: string; rowIndex: number | null; adopterId: string | null; adopterName: string | null;

@@ -10,14 +10,15 @@
  * notification + an audit row in `blocked_logins`.
  *
  * Block conditions (any of these triggers a block on the matched adopter):
- *   - avgRating < 4   (rated, but not high enough)
+ *   - the profile's shown rating is 1★ «peligroso» (Jon, 2026-10-13: only a 1 bans
+ *     from adopting; it was any average below 4 — now 2★–3★ sign in normally)
  *   - tooManyAdoptions flag set
  *   - tooManyRequests flag set
  *
  * Explicitly NOT blocked:
  *   - email doesn't match any adopter
  *   - email matches, avgRating is null (never rated) AND no density flags
- *   - email matches, avgRating >= 4 AND no density flags
+ *   - email matches, shown rating 2★ or higher AND no density flags
  *
  * Match strategy: primarily via `duplicate_tokens` (normalized email tokens —
  * the existing duplicate-detection pipeline already maintains this for every
@@ -26,12 +27,15 @@
  * inside a free-text blob and didn't get tokenized cleanly.
  */
 
+import { ratingBansAdopting } from '@/domain/ratings';
 import { adopters, adoptions, duplicateTokens, adopterHistory } from '@/db/schema';
 import { eq, and, like, isNull, desc } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { computeAvgRating } from '@/domain/ratings';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
+import { computeRequestRescueDensity } from '@/domain/requestDensity';
+import { loadRescueKeys, withRescueKeys } from '@/lib/rescueKeys';
 import { getAdoptionConfig } from '@/app/actions/config';
 
 export interface BlockMatch {
@@ -118,6 +122,7 @@ export async function checkAdopterLoginGate(rawEmail: string): Promise<GateResul
                 rating: adoptions.rating,
                 recordType: adoptions.recordType,
                 date: adoptions.date,
+                addedBy: adoptions.addedBy,
             }).from(adoptions).where(eq(adoptions.adopterId, adopterId));
 
             const avgRating = computeAvgRating(adoptionRows as { rating: number | null }[]);
@@ -125,7 +130,9 @@ export async function checkAdopterLoginGate(rawEmail: string): Promise<GateResul
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const adoptionsDensity = computeMaxDensityPeriod(adoptionRows as any, 'adoption', adoptionConfig.periodDays);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const requestsDensity = computeMaxDensityPeriod(adoptionRows as any, 'adoption_request', adoptionConfig.requestsPeriodDays);
+            const rows = adoptionRows as Array<{ recordType: string | null; date: Date | null; addedBy: string | null }>;
+            const requestRows = withRescueKeys(rows, rows.some(r => r.recordType === 'adoption_request') ? await loadRescueKeys(db, 'adopterLoginGate') : new Map<string, string>());
+            const requestsDensity = computeRequestRescueDensity(requestRows, adoptionConfig.requestsPeriodDays);
             const tooManyAdoptions = adoptionsDensity.count >= adoptionConfig.threshold;
             const tooManyRequests = requestsDensity.count >= adoptionConfig.requestsThreshold;
 
@@ -146,7 +153,8 @@ export async function checkAdopterLoginGate(rawEmail: string): Promise<GateResul
                 && adopterRow.addedBy.toLowerCase().trim() === email;
             const triggers: string[] = [];
             if (!isSelfAdded) {
-                if (avgRating !== null && avgRating < 4) triggers.push('low_rating');
+                // Only a profile SHOWN as 1★ (average rounds to 1, getRatingDisplayLevel) bans.
+                if (ratingBansAdopting(avgRating)) triggers.push('low_rating');
                 if (tooManyAdoptions) triggers.push('too_many_adoptions');
                 if (tooManyRequests) triggers.push('too_many_requests');
             }

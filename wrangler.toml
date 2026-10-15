@@ -26,6 +26,12 @@ R2_PUBLIC_URL = "https://pub-bb28dd8b1e674fc189252b0000a7b573.r2.dev"
 binding = "IMAGES_BUCKET"
 bucket_name = "buenadoptante-images"
 
+# Signed contracts: PRIVATE (no public URL / custom domain), read only through
+# /api/files/contract/[animalId]. See src/lib/contractStorage.ts.
+[[r2_buckets]]
+binding = "CONTRACTS_BUCKET"
+bucket_name = "buenadoptante-contracts-staging"
+
 
 
 # Production environment - uses production database
@@ -38,6 +44,13 @@ database_id = "62ec01e7-deae-4536-be62-7c0a0064b45c"
 [[env.production.r2_buckets]]
 binding = "IMAGES_BUCKET"
 bucket_name = "buenadoptante-images"
+
+# Signed contracts: PRIVATE (no public URL / custom domain), read only through
+# /api/files/contract/[animalId]. See src/lib/contractStorage.ts. Production has
+# its own bucket; staging and local use buenadoptante-contracts-staging.
+[[env.production.r2_buckets]]
+binding = "CONTRACTS_BUCKET"
+bucket_name = "buenadoptante-contracts"
 
 # Preview environment - uses staging database
 [env.preview]
@@ -57,3 +70,9 @@ database_id = "1b3b21c3-38ef-45ee-af86-d1f08adfb834"
 [[env.preview.r2_buckets]]
 binding = "IMAGES_BUCKET"
 bucket_name = "buenadoptante-images"
+
+# Signed contracts: PRIVATE (no public URL / custom domain), read only through
+# /api/files/contract/[animalId]. See src/lib/contractStorage.ts.
+[[env.preview.r2_buckets]]
+binding = "CONTRACTS_BUCKET"
+bucket_name = "buenadoptante-contracts-staging"

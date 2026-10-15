@@ -32,7 +32,7 @@ export const TARGET_IMPORT_FIELDS: ImportField[] = [
     { key: 'neutered', label: 'Neutered', kind: 'animal', hint: 'Whether the animal is neutered/spayed (yes/no).' },
     { key: 'color', label: 'Color', kind: 'animal', hint: 'Animal color/markings.' },
     { key: 'microchip', label: 'Microchip', kind: 'animal', hint: 'Microchip number.' },
-    { key: 'age', label: 'Age', kind: 'animal', hint: 'Animal age (free text like "2 años").' },
+    { key: 'age', label: 'Animal age', kind: 'animal', hint: 'The ANIMAL\'s age (free text like "2 años") — never the adopter\'s age.' },
     { key: 'rating', label: 'Rating', kind: 'adoption', hint: 'A 1–5 rating/score for the adopter/adoption.' },
     { key: 'date', label: 'Date', kind: 'adoption', hint: 'The adoption/record date.' },
     { key: 'recordType', label: 'Record type', kind: 'adoption', hint: 'adoption / adoption_request / foster / observation / follow_up / returned_pet.' },
@@ -116,28 +116,74 @@ const GUESS_RULES: { field: string; test: RegExp }[] = [
     { field: 'email', test: /(e-?mail|correo)/ },
     { field: 'social', test: /(facebook|instagram|\bfb\b|\big\b|social|perfil)/ },
     { field: 'dni', test: /(dni|documento|cedula|pasaporte)/ },
-    { field: 'address', test: /(direcc|domicilio|address|localidad|barrio|ciudad|provincia)/ },
-    { field: 'onBehalfOf', test: /(aportante|a nombre|reportad|on behalf)/ },
+    { field: 'address', test: /(direcc|domicilio|address|localidad|barrio|ciudad|provincia|partido|municipio|comuna)/ },
+    // "a nombre de" as words: after accent stripping, "mencioná nombre" contains "a nombre".
+    { field: 'onBehalfOf', test: /(aportante|\ba nombre de\b|reportad|on behalf)/ },
     { field: 'rating', test: /(rating|puntaje|score|calificaci)/ },
     { field: 'date', test: /(fecha|date)/ },
+    // The animal's type is its species ("animal_tipo", "tipo de animal"), not a record type.
+    { field: 'species', test: /(especie|species|(animal|mascota)[\s_]*(tipo|type)|(tipo|type)[\s_]*(de[\s_]*)?(animal|mascota))/ },
     { field: 'recordType', test: /(tipo|type|record)/ },
-    { field: 'species', test: /(especie|species)/ },
     { field: 'animalName', test: /(animal|mascota)/ },
     { field: 'details', test: /(motivo|detalle|nota|observaci|coment|descripci|details)/ },
     { field: 'name', test: /(nombre|name|adoptante)/ },
 ];
+
+/** A form QUESTION, not a field label ("¿Qué harías con el gato…?"): it asks
+ *  something, or is too long to be a label. Keywords inside a question say little
+ *  about the column ("tipo de vivienda" is not a record type), so a question only
+ *  maps to a field whose keyword is unambiguous (phone, email, ID). */
+function isQuestionHeader(norm: string): boolean {
+    return /[¿?]/.test(norm) || norm.split(/\s+/).length > 8;
+}
+const QUESTION_SAFE_FIELDS = new Set(['phone', 'email', 'dni']);
+
+/** An identifier or status code column ("animal_id", "animal_estado", "entry_id").
+ *  Only blocks the loose fields: "DNI / ID", "ID Instagram" and "Estado /
+ *  Calificación" still map by their own keyword. */
+function isCodeHeader(norm: string): boolean {
+    return /(^|[\s_-])(id|estado|status|codigo)($|[\s_-])/.test(norm);
+}
+const CODE_SAFE_FIELDS = new Set(['phone', 'email', 'social', 'dni', 'rating']);
+
+/** Fields that take ONE value per row (first non-empty wins in applyColumnMap). */
+function isSingleValueField(field: string): boolean {
+    return field !== IGNORE && field !== COMBINED_CONTACT && !(field in MULTI_CONTACT);
+}
+
+/** The field a header suggests, or undefined. Leading numbering ("1. Nombre") is not part of the label. */
+function guessField(header: string): string | undefined {
+    const norm = normHeader(header).replace(/^\d+(\.\d+)*\s*[.)-]\s*/, '');
+    const field = GUESS_RULES.find(r => r.test.test(norm))?.field;
+    if (!field) return undefined;
+    if (isQuestionHeader(norm) && !QUESTION_SAFE_FIELDS.has(field)) return undefined;
+    if (isCodeHeader(norm) && !CODE_SAFE_FIELDS.has(field)) return undefined;
+    return field;
+}
 
 /**
  * Deterministic, OFFLINE column-map guess from header names (no AI). Used as the
  * instant default when a sheet is opened, so a well-structured sheet is ready to
  * import immediately without waiting for AI. The user can correct any field in
  * the UI, or opt into AI interpretation for genuinely messy sheets. Unmatched
- * headers → `ignore`.
+ * headers → `ignore`, and so are form questions and id/status columns (for the
+ * loose fields). A single-value field goes to ONE column — the shortest label
+ * that matches ("Tipo" over "Tipo de vivienda"; ties → the first) — so the
+ * mapping screen shows exactly which column is used.
  */
 export function guessColumnMap(headers: string[]): ColumnMap {
-    const columns: ColumnAssignment[] = headers.map(h => {
-        const rule = GUESS_RULES.find(r => r.test.test(normHeader(h)));
-        return { column: h, field: rule ? rule.field : IGNORE, confidence: (rule ? 'medium' : 'low') as ColumnAssignment['confidence'] };
+    const fields = headers.map(guessField);
+    const words = (h: string) => normHeader(h).split(/\s+/).length;
+    const chosen = new Map<string, number>(); // single-value field → the column index that gets it
+    fields.forEach((f, i) => {
+        if (!f || !isSingleValueField(f)) return;
+        const prev = chosen.get(f);
+        if (prev === undefined || words(headers[i]) < words(headers[prev])) chosen.set(f, i);
+    });
+    const columns: ColumnAssignment[] = headers.map((h, i) => {
+        const f = fields[i];
+        if (!f || (isSingleValueField(f) && chosen.get(f) !== i)) return { column: h, field: IGNORE, confidence: 'low' as const };
+        return { column: h, field: f, confidence: 'medium' as const };
     });
     return { columns };
 }
@@ -167,6 +213,8 @@ export interface MappedRow {
     recordType?: string;
     details?: string;
     onBehalfOf?: string;
+    /** Contact cells dropped as placeholders ("no", "si", "-"), counted for the review notice. */
+    droppedPlaceholders?: number;
 }
 
 const MULTI_CONTACT: Record<string, keyof Pick<MappedRow, 'phones' | 'emails' | 'socials' | 'addresses' | 'dnis'>> = {
@@ -183,6 +231,43 @@ export function emptyMappedRow(): MappedRow {
  *  Piso 2, Ciudad"). "a@x.com; b@y.com" → ['a@x.com', 'b@y.com']. */
 export function splitMultiValue(v: string): string[] {
     return v.split(/[;\n]+/).map(s => s.trim()).filter(Boolean);
+}
+
+/** Words people type in a contact field to mean "none" (or a form's yes/no answer
+ *  mapped by mistake). Compared after folding accents, case, punctuation and
+ *  repeated letters, so "Sí.", "sii", "NOO", "n/a" all count. */
+const PLACEHOLDER_CONTACTS = new Set([
+    'si', 'no', 'x', 'na', 'n/a', 'ninguno', 'ninguna', 'nada', 'sin', 'no tengo', 'no tiene', 'no uso', 'no posee', '0', 'nn',
+]);
+
+/** True for a contact value that carries no contact ("no", "si", "-", "no tengo"). Pure. */
+export function isPlaceholderContact(value: string): boolean {
+    const v = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    if (!v || /^[\s\-_.,;:!?¡¿*/\\]+$/.test(v)) return true; // only punctuation ("-", "--", ".")
+    const bare = v.replace(/[.,;:!¡?¿*()"']/g, '').replace(/\s+/g, ' ').trim();
+    return PLACEHOLDER_CONTACTS.has(bare) || PLACEHOLDER_CONTACTS.has(bare.replace(/([a-z])\1+/g, '$1')); // "sii", "noo"
+}
+
+/** Join one row's address parts into ONE address ("Calle 123, Localidad,
+ *  Partido"), in column order, skipping a part that is already one of the
+ *  earlier parts' comma-separated pieces ("Calle 1, Morón" + "Morón"). A part
+ *  merely CONTAINED in a street stays ("Calle San Martín 100" + "San Martín"). */
+export function joinAddressParts(parts: string[]): string {
+    const fold = (x: string) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const kept: string[] = [];
+    const pieces = new Set<string>();
+    for (const p of parts.map(x => x.trim()).filter(Boolean)) {
+        if (pieces.has(fold(p))) continue;
+        kept.push(p);
+        for (const piece of p.split(',')) pieces.add(fold(piece));
+    }
+    return kept.join(', ');
+}
+
+/** An address column that holds PART of an address (the locality, partido, city,
+ *  province, postal code) rather than an address of its own. */
+function isLocalityHeader(header: string): boolean {
+    return /(localidad|barrio|ciudad|provincia|partido|municipio|comuna|codigo postal|\bcp\b|\bc\.p\.?)/.test(normHeader(header));
 }
 
 function strArray(v: unknown): string[] {
@@ -210,15 +295,18 @@ export function parseAiRows(raw: unknown, count: number): MappedRow[] {
         const e = arr[i];
         if (!e || typeof e !== 'object') { out.push(emptyMappedRow()); continue; }
         const r = e as Record<string, unknown>;
+        let dropped = 0;
+        const contacts = (v: unknown) => strArray(v).filter(x => { const p = isPlaceholderContact(x); if (p) dropped++; return !p; });
         out.push({
             name: strOrUndef(r.name) ?? '',
-            phones: strArray(r.phones), emails: strArray(r.emails), socials: strArray(r.socials),
-            addresses: strArray(r.addresses), dnis: strArray(r.dnis), combinedContacts: [],
+            phones: contacts(r.phones), emails: contacts(r.emails), socials: contacts(r.socials),
+            addresses: contacts(r.addresses), dnis: contacts(r.dnis), combinedContacts: [],
             animalName: strOrUndef(r.animalName), species: strOrUndef(r.species),
             sex: strOrUndef(r.sex), neutered: strOrUndef(r.neutered), color: strOrUndef(r.color),
             microchip: strOrUndef(r.microchip), age: strOrUndef(r.age), rating: strOrUndef(r.rating),
             date: strOrUndef(r.date), recordType: strOrUndef(r.recordType), details: strOrUndef(r.details),
             onBehalfOf: strOrUndef(r.onBehalfOf),
+            ...(dropped ? { droppedPlaceholders: dropped } : {}),
         });
     }
     return out;
@@ -232,6 +320,10 @@ export function parseAiRows(raw: unknown, count: number): MappedRow[] {
 export function applyColumnMap(map: ColumnMap, headers: string[], row: string[]): MappedRow {
     const out: MappedRow = { name: '', phones: [], emails: [], socials: [], addresses: [], dnis: [], combinedContacts: [] };
     const indexOf = new Map(headers.map((h, i) => [h, i]));
+    // This row's address cells, in column order. A locality-type column
+    // (Localidad, Partido, Ciudad…) is PART of the street address before it.
+    const addressCells: Array<{ values: string[]; locality: boolean }> = [];
+    let dropped = 0;
 
     for (const assign of map.columns) {
         if (assign.field === IGNORE) continue;
@@ -244,11 +336,39 @@ export function applyColumnMap(map: ColumnMap, headers: string[], row: string[])
         const multi = MULTI_CONTACT[assign.field];
         // A single cell may pack several values ("a@x.com; b@y.com") — split so
         // each becomes its own contact entry (own chip in review, stored separately).
-        if (multi) { for (const p of splitMultiValue(value)) out[multi].push(p); continue; }
+        // "no" / "si" / "-" are not contacts: dropped and counted.
+        if (multi) {
+            const values = splitMultiValue(value).filter(p => { const ph = isPlaceholderContact(p); if (ph) dropped++; return !ph; });
+            if (multi === 'addresses') { if (values.length) addressCells.push({ values, locality: isLocalityHeader(assign.column) }); }
+            else out[multi].push(...values);
+            continue;
+        }
         // Single-value field: first non-empty wins.
         if (assign.field === 'name') { if (!out.name) out.name = value; continue; }
         const key = assign.field as keyof MappedRow;
         if (out[key] === undefined) (out as unknown as Record<string, unknown>)[key] = value;
     }
+    // Street + its locality parts → one address. Two address columns of their own
+    // ("Dirección", "Dirección laboral") stay two addresses, and a cell holding
+    // several addresses ("a; b") keeps them separate, as before.
+    const streets = addressCells.filter(c => !c.locality);
+    if (addressCells.length > 1 && streets.length <= 1 && addressCells.every(c => c.values.length === 1)) {
+        // The common case: one street (wherever its column is) and its locality parts.
+        out.addresses.push(joinAddressParts([...streets, ...addressCells.filter(c => c.locality)].map(c => c.values[0])));
+        addressCells.length = 0;
+    }
+    let current: string[] | null = null;
+    const flush = () => { if (current) out.addresses.push(joinAddressParts(current)); current = null; };
+    for (const cell of addressCells) {
+        if (cell.locality && cell.values.length === 1) {
+            if (current) current.push(cell.values[0]); else current = [cell.values[0]];
+            continue;
+        }
+        flush();
+        if (cell.values.length === 1) current = [cell.values[0]];
+        else out.addresses.push(...cell.values);
+    }
+    flush();
+    if (dropped) out.droppedPlaceholders = dropped;
     return out;
 }

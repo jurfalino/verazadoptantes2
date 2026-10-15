@@ -42,8 +42,10 @@ export type AnimalTimelineItem = {
     placementId: string | null;
     rating: number | null;
     details: string | null;
-    /** placement comments JSON (contract screenshot evidence). */
+    /** placement comments JSON (legacy contract screenshot evidence). */
     comments: string | null;
+    /** A signed contract in private storage for this placement (placements.contract_key; the key itself never leaves the server). */
+    hasContract?: boolean;
     recordedBy: string | null;
     /** Ended spans: length in days (placement_end items). */
     spanDays: number | null;
@@ -241,7 +243,7 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
         items.push({
             id: p.id, kind: 'placement_start', type: p.recordType, date: toMs(p.startedAt),
             adopterId: p.adopterId, adopterName: nameMap.get(p.adopterId) ?? null, placementId: p.id,
-            rating: p.rating ?? null, details: null, comments: p.comments ?? null,
+            rating: p.rating ?? null, details: null, comments: p.comments ?? null, hasContract: !!p.contractKey,
             recordedBy: p.recordedBy ?? null, spanDays: null, images: [],
         });
         // Synthetic "span ended" item — suppressed when a returned_pet event

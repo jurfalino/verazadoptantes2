@@ -20,7 +20,7 @@ export { findWeakNameMatches } from './findWeakNameMatches';
 export type { FindAdoptersInput, FindAdoptersOptions, FindAdoptersResponse, DuplicateMatch, DiscoveryMatch, AdopterMatch, SearchMode } from './types';
 
 // Adopters
-export { getAdopter, saveAdopter, appendToExistingAdopter, getAdopterStats, logProfileView, getAverageRating, getHistory, getLinkedFormSubmissions, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion, hasPendingDeletionRequest } from './adopters';
+export { getAdopter, saveAdopter, appendToExistingAdopter, getAdopterStats, logProfileView, getAverageRating, getHistory, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion, hasPendingDeletionRequest } from './adopters';
 export { addContactEntry } from './addContactEntry';
 export { updateContactEntry } from './updateContactEntry';
 export { removeContactEntry } from './removeContactEntry';

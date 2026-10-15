@@ -246,13 +246,22 @@ jobs:
           # (five legs, 15.6 min): authed-2 took 11.8 min while `rest` took
           # 3.0, because `authed` holds ~78% of the suite's test time
           # (view-as 2.8, pending-searches 2.4, landing-pages 1.7 CI-minutes).
-          # One leg at 11.8 set the whole pipeline's length. Hence 4 legs for
-          # `authed`, 3 for `user`, 1 for the rest.
+          # One leg at 11.8 set the whole pipeline's length. Hence 6 legs for
+          # `authed` (4 until 2026-10-12), 3 for `user`, 1 for the rest.
           #
           # `user` went from 2 legs to 3 on 2026-10-11: user-1 (36 tests,
           # ~9 min) kept reaching Next dev's memory ceiling, and the restart
           # landed on the same test every run (adopter.spec.ts composer flow),
           # failing four pipelines in a row on code that passed locally.
+          #
+          # `authed` went from 4 legs to 6 on 2026-10-12 for the same reason:
+          # authed-4 (public-api + the /import/sheet upload specs + view-as,
+          # 30 tests) hit the memory ceiling and the restart refused
+          # connections to view-as / record-edit-collab, twice in a row. 5 legs
+          # left one at 37 tests (--shard splits by file); 6 caps it at 30.
+          # 6 → 7 on 2026-10-14: the sheet-import form-export spec (v2.56.177–180)
+          # tipped authed-6 over; it restarted three times and view-as died on
+          # ERR_CONNECTION_REFUSED twice in a row.
           #
           # `--shard` rather than naming files per leg: a new spec joins a
           # shard automatically. Listing files by hand means a spec someone
@@ -265,13 +274,19 @@ jobs:
           - group: user-3
             projects: --project=user --shard=3/3
           - group: authed-1
-            projects: --project=authed --shard=1/4
+            projects: --project=authed --shard=1/7
           - group: authed-2
-            projects: --project=authed --shard=2/4
+            projects: --project=authed --shard=2/7
           - group: authed-3
-            projects: --project=authed --shard=3/4
+            projects: --project=authed --shard=3/7
           - group: authed-4
-            projects: --project=authed --shard=4/4
+            projects: --project=authed --shard=4/7
+          - group: authed-5
+            projects: --project=authed --shard=5/7
+          - group: authed-6
+            projects: --project=authed --shard=6/7
+          - group: authed-7
+            projects: --project=authed --shard=7/7
           - group: rest
             projects: --project=unauthed --project=mobile
     # Each group is now ~5-12 minutes, but the headroom stays: a timeout
@@ -332,8 +347,15 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium webkit
 
+      # One automatic re-run of the WHOLE shard, on a fresh server, and only
+      # when the log shows a `next dev` memory restart AND a dropped connection
+      # (2026-10-15): the restart kills whichever test is in flight, and
+      # Playwright's own retries land on the same dying server. Never
+      # --last-failed: it skips tests that never ran and can go green without
+      # them. Logic + tests: scripts/ci-e2e.sh, src/lib/ciE2eRetry.test.ts.
+      # Root fix (e2e on the Cloudflare build): .agents/plans/e2e-shard-the-suite.md.
       - name: Run Playwright tests
-        run: npx playwright test ${{ matrix.projects }}
+        run: bash scripts/ci-e2e.sh ${{ matrix.projects }}
         env:
           CI: true
           SKIP_ENV_VALIDATION: 'true'
@@ -347,7 +369,11 @@ jobs:
           # Unique per group — a matrix uploading the same artifact name twice
           # fails the upload.
           name: playwright-report-${{ matrix.group }}
-          path: playwright-report/
+          # The first attempt's log too: a re-run must never hide what failed.
+          path: |
+            playwright-report/
+            playwright-report-attempt-1/
+            e2e-attempt-1.log
           retention-days: 14
 
   deploy-staging:

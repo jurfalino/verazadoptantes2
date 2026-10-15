@@ -11,11 +11,12 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { contractHref } from '@/lib/contractLink';
 import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import { useLanguage } from '@/context/LanguageContext';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { interpolate } from '@/lib/interpolate';
-import { emailHandle } from '@/lib/userDisplay';
+import { actorLabel } from '@/lib/userDisplay';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import type { AnimalTimelineItem } from '@/app/actions/animalTimeline';
 
@@ -86,7 +87,9 @@ export type TimelineProjected = {
 };
 export type TimelineMissed = { key: string; label: string; dueDate: number; onRegister: () => void };
 
-export default function AnimalTimeline({ items, animalSex, userNameMap = {}, orgName = null, projected = [], missed = [], onAddEvent, reminder }: {
+export default function AnimalTimeline({ animalId, items, animalSex, userNameMap = {}, orgName = null, projected = [], missed = [], onAddEvent, reminder }: {
+    /** For contract links (src/lib/contractLink.ts). */
+    animalId: string;
     items: AnimalTimelineItem[];
     animalSex: string | null;
     /** v2.55.18: resolved display names for every recordedBy email. */
@@ -158,11 +161,8 @@ export default function AnimalTimeline({ items, animalSex, userNameMap = {}, org
 
     // Contract evidence (placement comments JSON) — replaces the old card link.
     const contractShotOf = (item: AnimalTimelineItem): string | null => {
-        if (item.kind !== 'placement_start' || !item.comments) return null;
-        try {
-            const parsed = JSON.parse(item.comments);
-            return typeof parsed?.contractScreenshot === 'string' ? parsed.contractScreenshot : null;
-        } catch { return null; }
+        if (item.kind !== 'placement_start') return null;
+        return contractHref(animalId, item.hasContract, item.comments, item.id);
     };
 
     return (
@@ -392,7 +392,7 @@ export default function AnimalTimeline({ items, animalSex, userNameMap = {}, org
                                     own records — team parity makes authorship the ledger). */}
                                 {item.recordedBy && item.recordedBy !== 'anonymous' && (
                                     <div className="mt-2 text-[11px] text-stone-500">
-                                        {t('common.added_by') || 'Agregado por'} {userNameMap[item.recordedBy] || emailHandle(item.recordedBy)}
+                                        {t('common.added_by') || 'Agregado por'} {actorLabel(item.recordedBy, userNameMap[item.recordedBy], t)}
                                     </div>
                                 )}
                             </div>

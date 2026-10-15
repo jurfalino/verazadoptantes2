@@ -215,6 +215,8 @@ export const adoptions = sqliteTable("adoptions", {
     /** v2.56.128: projected from `animals.listed`. NULL for adopter-event rows,
      *  which are not animals and are never in the catalogue. */
     listed: integer("listed"),
+    /** 0085: 1 when the active placement has a signed contract in private storage (the key itself is never projected). */
+    hasContract: integer("has_contract"),
 });
 
 // ============================================================================
@@ -278,6 +280,9 @@ export const placements = sqliteTable("placements", {
     identityVerified: integer("identity_verified"),
     onBehalfOf: text("on_behalf_of"),
     comments: text("comments"), // contract screenshot JSON etc.
+    // 0085: private-storage key of the signed contract (src/lib/contractStorage.ts). Server-written only — never from `comments`.
+    contractKey: text("contract_key"),
+    contractSha256: text("contract_sha256"),
     sourceUrl: text("source_url"),
     recordedBy: text("recorded_by").default("anonymous"),
     /** v2.56.126: the address of this adoption's shared health record. Random
@@ -715,6 +720,7 @@ export const formSubmissions = sqliteTable("form_submissions", {
     longitude: text("longitude"),
     // Step 4: Selfie
     selfieUrl: text("selfie_url"),              // R2 URL after upload
+    selfieKey: text("selfie_key"),              // 0086: private-storage key (src/lib/contractStorage.ts); server-written only
     // Step 5: Species & Life Stage
     species: text("species"),                    // dog, cat, both, other
     lifeStage: text("life_stage"),               // puppy, young, senior, none
@@ -748,6 +754,8 @@ export const formSubmissions = sqliteTable("form_submissions", {
 }, (table) => ({
     userIdx: index("idx_form_user").on(table.userId),
     statusIdx: index("idx_form_status").on(table.status),
+    // 0081: the per-animal applicant scope (src/lib/applicantScope.ts).
+    selectedAnimalIdx: index("idx_form_selected_animal").on(table.selectedAnimalId),
 }));
 
 // ── Contract Invitations ─────────────────────────────────────────
@@ -881,4 +889,72 @@ export const chatMessages = sqliteTable("chat_messages", {
 }, (table) => ({
     convIdx: index("idx_chat_msgs_conv").on(table.conversationId),
     convCreatedIdx: index("idx_chat_msgs_conv_created").on(table.conversationId, table.createdAt),
+}));
+
+// ── Third-party API v1 (drizzle/0082, .agents/plans/2026-10-09-third-party-api.md) ──
+// A key belongs to one rescuer (owner_email = addedBy of everything it writes).
+// Only the SHA-256 of the secret is stored.
+export const apiKeys = sqliteTable("api_keys", {
+    id: text("id").primaryKey(),
+    ownerEmail: text("owner_email").notNull(),
+    orgId: text("org_id"),
+    name: text("name").notNull(),
+    keyHash: text("key_hash").notNull(),
+    keyPrefix: text("key_prefix").notNull(),
+    environment: text("environment").notNull().default("live"), // 'live' | 'test'
+    scopes: text("scopes").notNull(),                            // JSON: ApiScope[]
+    dailyCapExact: integer("daily_cap_exact").notNull().default(500),
+    dailyCapFuzzy: integer("daily_cap_fuzzy").notNull().default(50),
+    createdBy: text("created_by").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
+    revokedAt: integer("revoked_at", { mode: "timestamp" }),
+    revokedBy: text("revoked_by"),
+}, (table) => ({
+    hashIdx: uniqueIndex("idx_api_keys_hash").on(table.keyHash),
+    ownerIdx: index("idx_api_keys_owner").on(table.ownerEmail),
+}));
+
+// Form answers sent with an API adoption request (activity.formContent), as sent.
+// Keyed by the activity (adopter_events.id) so a profile merge never strands it.
+export const activityForms = sqliteTable("activity_forms", {
+    activityId: text("activity_id").primaryKey(),
+    formContent: text("form_content").notNull(),
+    source: text("source").notNull().default("api"),
+    addedBy: text("added_by"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+});
+
+// Every API call. request_body (PII the client sent) is purged after 90 days.
+export const apiRequests = sqliteTable("api_requests", {
+    id: text("id").primaryKey(),                 // = requestId returned to the client
+    keyId: text("key_id").notNull(),
+    ownerEmail: text("owner_email").notNull(),
+    endpoint: text("endpoint").notNull(),        // 'search' | 'me' | 'void'
+    mode: text("mode"),                          // 'exact' | 'fuzzy'
+    context: text("context"),                    // record type
+    outcome: text("outcome"),                    // found | not_found | ambiguous | results | voided | error
+    httpStatus: integer("http_status").notNull(),
+    errorId: text("error_id"),
+    requestBody: text("request_body"),
+    responseBody: text("response_body"),
+    profileIds: text("profile_ids"),             // JSON string[]
+    recordId: text("record_id"),
+    profileCreated: integer("profile_created").notNull().default(0),
+    idempotencyKey: text("idempotency_key"),
+    externalId: text("external_id"),
+    dryRun: integer("dry_run").notNull().default(0), // 1 = admin read-only test call: nothing was saved
+    contactsAdded: text("contacts_added"), // JSON [{ entryId, field }]: contacts this call added to a known profile (void takes them back)
+    voidedAt: integer("voided_at", { mode: "timestamp" }),
+    voidedBy: text("voided_by"),
+    durationMs: integer("duration_ms"),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+}, (table) => ({
+    keyTimeIdx: index("idx_api_requests_key_time").on(table.keyId, table.createdAt),
+    ownerTimeIdx: index("idx_api_requests_owner_time").on(table.ownerEmail, table.createdAt),
+    timeIdx: index("idx_api_requests_time").on(table.createdAt),
+    recordIdx: index("idx_api_requests_record").on(table.recordId),
+    externalIdx: index("idx_api_requests_external").on(table.keyId, table.externalId),
+    // Idempotent saves depend on this (src/lib/api/handler.ts claimIdempotencyKey).
+    idempotencyIdx: uniqueIndex("idx_api_requests_idempotency").on(table.keyId, table.idempotencyKey).where(sql`idempotency_key IS NOT NULL`),
 }));

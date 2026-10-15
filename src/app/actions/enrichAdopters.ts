@@ -14,6 +14,8 @@ import { computeStats } from '@/domain/stats';
 import { buildFlags } from '@/domain/flags';
 import { RECORD_TYPES } from '@/domain/constants';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
+import { computeRequestRescueDensity } from '@/domain/requestDensity';
+import { loadRescueKeys, withRescueKeys } from '@/lib/rescueKeys';
 import { logger, withTrace } from '@/lib/logger';
 
 // v2.20.0: batch-query fallback (per chunk, not per adopter). Returns [] so the
@@ -59,7 +61,7 @@ async function _enrichAdoptersImpl(
     // stay under D1's per-query bound-parameter limit (the dup query uses the IN
     // list twice, so chunk*2 must stay within budget).
     const CHUNK = 40;
-    type AdoptionRow = { adopterId: string; rating: number | null; recordType: string | null; date: number | null };
+    type AdoptionRow = { adopterId: string; rating: number | null; recordType: string | null; date: number | null; addedBy: string | null };
     type FlagRow = { adopterId: string; reason: string };
     type StatRow = { adopterId: string; eventType: string };
     type ImageRow = { adopterId: string; url: string; isProfilePicture: number | null };
@@ -75,7 +77,7 @@ async function _enrichAdoptersImpl(
         const chunk = adopterIds.slice(i, i + CHUNK);
         const inList = sql.join(chunk.map((id) => sql`${id}`), sql`, `);
         const [a, f, s, im, d] = await Promise.all([
-            db.select({ adopterId: adoptions.adopterId, rating: adoptions.rating, recordType: adoptions.recordType, date: adoptions.date })
+            db.select({ adopterId: adoptions.adopterId, rating: adoptions.rating, recordType: adoptions.recordType, date: adoptions.date, addedBy: adoptions.addedBy })
                 .from(adoptions).where(sql`${adoptions.adopterId} IN (${inList})`).catch(logBatchFallback('adoptions', chunk.length)),
             db.select({ adopterId: adopterFlags.adopterId, reason: adopterFlags.reason })
                 .from(adopterFlags).where(sql`${adopterFlags.adopterId} IN (${inList})`).catch(logBatchFallback('flags', chunk.length)),
@@ -116,7 +118,9 @@ async function _enrichAdoptersImpl(
         }
         return m;
     };
-    const adoptionsByAdopter = groupBy(adoptionRows);
+    // Requests count per rescue (an organization is one): see src/domain/requestDensity.ts.
+    const rescueKeys = adoptionRows.some(r => r.recordType === RECORD_TYPES.REQUEST) ? await loadRescueKeys(db, 'enrichAdopters') : new Map<string, string>();
+    const adoptionsByAdopter = groupBy(withRescueKeys(adoptionRows, rescueKeys));
     const flagsByAdopter = groupBy(flagRows);
     const statsByAdopter = groupBy(statRows);
     // Images come pre-ordered; first seen per adopter is the chosen thumbnail.
@@ -150,7 +154,7 @@ async function _enrichAdoptersImpl(
                 actualSpanDays: adoptionsDensity.timeSpanDays, startDate: adoptionsDensity.startDate, endDate: adoptionsDensity.endDate,
             };
         }
-        const requestsDensity = computeMaxDensityPeriod(adopterAdoptions as any, RECORD_TYPES.REQUEST, adoptionConfig.requestsPeriodDays);
+        const requestsDensity = computeRequestRescueDensity(adopterAdoptions, adoptionConfig.requestsPeriodDays);
         if (requestsDensity.count >= adoptionConfig.requestsThreshold) {
             flags.tooManyRequests = {
                 count: requestsDensity.count, threshold: adoptionConfig.requestsThreshold, periodDays: adoptionConfig.requestsPeriodDays,

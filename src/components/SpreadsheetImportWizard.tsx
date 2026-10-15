@@ -1,16 +1,21 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLanguage } from '@/context/LanguageContext';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
 import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, getMatchContext, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun, type MatchContext } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
 import { computeContentFingerprint } from '@/domain/contentFingerprint';
+import { groupSamePerson, groupName, unionValues, phoneDigitsKey, type GroupReason } from '@/domain/importGrouping';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { buildImportBody } from '@/lib/importRow';
 import { inferDateOrder } from '@/domain/importRow';
 import { deserializeContactEntries } from '@/lib/contactEntries';
-import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType, normalizeNeutered } from '@/domain/importRow';
+import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType, normalizeNeutered, recognizedRecordType } from '@/domain/importRow';
 import { userFacingMessage } from '@/lib/errorMessage';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { zarazTrack } from '@/lib/zaraz';
+import { importRunState } from '@/domain/importRunState';
 import {
     TARGET_IMPORT_FIELDS, COMBINED_CONTACT, IGNORE,
     applyColumnMap, emptyMappedRow, guessColumnMap,
@@ -33,6 +38,31 @@ function splitGroupedContacts(eff: MappedRow): { phones: string[]; emails: strin
     }
     return g;
 }
+
+/** Which rows are the same person (domain/importGrouping). Rows the reviewer
+ *  split apart ("Separar" — every row of that group is remembered) are never
+ *  grouped again. Computed once over the whole file: Revisar shows these groups
+ *  and the import folds exactly these, so what is shown is what is written. */
+function personGroups(rows: Array<{ index: number; eff: MappedRow }>, split: Set<number>): Array<{ indices: number[]; reason: GroupReason | null }> {
+    const groups = groupSamePerson(rows.filter(r => !split.has(r.index)).map(r => ({ index: r.index, name: r.eff.name, ...splitGroupedContacts(r.eff) })));
+    const singles = rows.filter(r => split.has(r.index)).map(r => ({ indices: [r.index], reason: null }));
+    return [...groups, ...singles].sort((a, b) => a.indices[0] - b.indices[0]);
+}
+
+/** The group's one profile: the most complete name and every contact of its rows. */
+function mergedGroupContacts(effs: MappedRow[]): Pick<MappedRow, 'name' | 'phones' | 'emails' | 'socials' | 'addresses' | 'dnis' | 'combinedContacts'> {
+    return {
+        name: groupName(effs.map(e => e.name)),
+        phones: unionValues(effs.map(e => e.phones), phoneDigitsKey),
+        emails: unionValues(effs.map(e => e.emails)),
+        socials: unionValues(effs.map(e => e.socials)),
+        addresses: unionValues(effs.map(e => e.addresses)),
+        dnis: unionValues(effs.map(e => e.dnis)),
+        combinedContacts: unionValues(effs.map(e => e.combinedContacts)),
+    };
+}
+
+const GROUP_REASON_LABEL: Record<GroupReason, string> = { identical: 'mismos datos', email: 'mismo email', phone: 'mismo teléfono' };
 
 // 'grouped' = an intra-batch twin whose activity was folded into another row's
 // adopter (same person on multiple rows). It IS imported — just not as its own
@@ -68,11 +98,35 @@ interface ResumeSnapshot {
 }
 const RESUME_KEY = 'buenadoptante-import-resume-v1';
 
-const FIELD_OPTIONS = [
-    ...TARGET_IMPORT_FIELDS.map(f => ({ value: f.key, label: f.label })),
-    { value: COMBINED_CONTACT, label: 'Contacto combinado (separar luego)' },
-    { value: IGNORE, label: '— Ignorar —' },
-];
+/** Which long step a tab is in the middle of, so a reload can say what stopped.
+ *  The whole import runs from this tab: once it is reloaded or closed, nothing
+ *  carries on in the background (at most one batch already sent finishes). The
+ *  tab refreshes `at` while it works, so another open tab can tell "still going
+ *  over there" apart from "stopped". */
+type ActivityPhase = 'interpret' | 'detect' | 'build' | 'send';
+interface ActivityMarker { phase: ActivityPhase; fileName: string; total: number; at: number; runId?: string }
+const ACTIVITY_KEY = 'buenadoptante-import-activity-v1';
+const ACTIVITY_HEARTBEAT_MS = 5000;
+const ACTIVITY_PHASE_LABEL: Record<ActivityPhase, string> = {
+    interpret: 'interpretando con IA', detect: 'analizando duplicados',
+    build: 'preparando la importación', send: 'importando',
+};
+function readActivity(): ActivityMarker | null {
+    try {
+        const raw = localStorage.getItem(ACTIVITY_KEY);
+        if (!raw) return null;
+        const m = JSON.parse(raw) as ActivityMarker;
+        return m?.phase && typeof m.at === 'number' ? m : null;
+    } catch { return null; } // SSR-safe / blocked storage: no notice, nothing else breaks
+}
+function writeActivity(m: ActivityMarker | null) {
+    try { if (m) localStorage.setItem(ACTIVITY_KEY, JSON.stringify(m)); else localStorage.removeItem(ACTIVITY_KEY); }
+    catch { /* blocked storage: the reload notice just won't appear */ }
+}
+
+// The column-mapping select's options, labelled in the app language
+// (import.sheet_field.*). TARGET_IMPORT_FIELDS' English labels feed the AI prompt.
+const FIELD_KEYS = [...TARGET_IMPORT_FIELDS.map(f => f.key), COMBINED_CONTACT, IGNORE];
 const CONFIDENCE_DOT: Record<string, string> = { high: 'bg-emerald-500', medium: 'bg-amber-400', low: 'bg-stone-300' };
 const RECORD_TYPES = ['adoption', 'foster', 'observation', 'adoption_request', 'follow_up', 'returned_pet'];
 const RECORD_TYPE_LABELS: Record<string, string> = {
@@ -128,6 +182,7 @@ type Step = 'upload' | 'confirm' | 'dedup' | 'import';
 type Filter = 'all' | 'valid' | 'invalid' | 'warnings';
 
 export default function SpreadsheetImportWizard() {
+    const { t } = useLanguage();
     const { formatDateTimeFull } = useDateFormat();
     const [step, setStep] = useState<Step>('upload');
     const [fileName, setFileName] = useState('');
@@ -135,6 +190,8 @@ export default function SpreadsheetImportWizard() {
     const [map, setMap] = useState<ColumnMap | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // A file is being dragged over the upload box (highlights it).
+    const [dragOver, setDragOver] = useState(false);
     // Interpretation: 'ai' = AI ingested the rows directly; 'mapping' = deterministic
     // column-mapping fallback. AI is the default.
     const [mode, setMode] = useState<'ai' | 'mapping'>('mapping');
@@ -160,6 +217,8 @@ export default function SpreadsheetImportWizard() {
     const [results, setResults] = useState<RowResult[]>([]);
     // Intra-spreadsheet dedup summary: how many rows were folded into how many people.
     const [foldSummary, setFoldSummary] = useState<{ folded: number; people: number } | null>(null);
+    // Rows the reviewer split apart ("Separar"): every row of that group.
+    const [splitGroups, setSplitGroups] = useState<Set<number>>(new Set());
     const [importDone, setImportDone] = useState(false);
     // Cancel: a ref the send-loop checks between batches (state would be stale in
     // the running closure). Already-sent rows persist (idempotent), so a cancel
@@ -221,6 +280,50 @@ export default function SpreadsheetImportWizard() {
             if (snap?.runId && Array.isArray(snap.rows) && snap.rows.length > 0) setResumable(snap);
         } catch { /* ignore malformed/blocked storage */ }
     }, []);
+    // What a reload or a closed tab interrupted (read once on mount), or — when the
+    // marker is still being refreshed — a step running right now in another tab.
+    const [stopped, setStopped] = useState<(ActivityMarker & { elsewhere: boolean }) | null>(null);
+    useEffect(() => {
+        const m = readActivity();
+        if (m) setStopped({ ...m, elsewhere: Date.now() - m.at < ACTIVITY_HEARTBEAT_MS * 3 });
+    }, []);
+    const activityRef = useRef<ActivityMarker | null>(null);
+    const beginActivity = (phase: ActivityPhase, file: string, total: number, runId?: string) => {
+        const m: ActivityMarker = { phase, fileName: file, total, at: Date.now(), runId };
+        activityRef.current = m; writeActivity(m); setStopped(null);
+    };
+    const endActivity = () => { activityRef.current = null; writeActivity(null); };
+    const dismissStopped = () => { if (!stopped?.elsewhere) writeActivity(null); setStopped(null); };
+    // Rows being prepared before the first batch goes out (AI contact cleanup can
+    // take a while on a big sheet); null when not preparing.
+    const [preparing, setPreparing] = useState<{ done: number; total: number } | null>(null);
+    // The resume snapshot could not be stored (browser storage full or blocked):
+    // a reload during this import cannot pick it up again, so say so up front.
+    const [resumeUnsaved, setResumeUnsaved] = useState(false);
+    // While a long step runs: keep the marker fresh, and ask before the page is
+    // reloaded or closed — doing so stops the step (nothing runs server-side).
+    const working = busy || detecting || preparing != null || (step === 'import' && !importDone);
+    useEffect(() => {
+        if (!working) return;
+        const beat = setInterval(() => {
+            const m = activityRef.current;
+            if (m) { m.at = Date.now(); writeActivity(m); }
+        }, ACTIVITY_HEARTBEAT_MS);
+        const onBeforeUnload = (e: BeforeUnloadEvent) => {
+            e.preventDefault();
+            e.returnValue = ''; // required by Chrome/Safari to show the prompt
+        };
+        // This tab is going away, so the step stops here: age the marker at once so
+        // the reloaded page says "se detuvo" instead of "running in another tab".
+        const onPageHide = () => { const m = activityRef.current; if (m) writeActivity({ ...m, at: 0 }); };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        window.addEventListener('pagehide', onPageHide);
+        return () => {
+            clearInterval(beat);
+            window.removeEventListener('beforeunload', onBeforeUnload);
+            window.removeEventListener('pagehide', onPageHide);
+        };
+    }, [working]);
     // The user's (and their org's) previous imports, shown on the upload screen.
     const [myRuns, setMyRuns] = useState<EnrichedImportRun[]>([]);
     useEffect(() => { getMyImportRuns().then(setMyRuns).catch(() => setMyRuns([])); }, []);
@@ -241,12 +344,36 @@ export default function SpreadsheetImportWizard() {
         }
     };
 
+    /** Only what the picker offers: CSV or Excel (.xlsx). Checked by name, since a
+     *  dropped file's MIME type is often empty (Windows CSVs, some browsers). */
+    const isSheetFile = (file: File) => /\.(csv|xlsx)$/i.test(file.name);
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setDragOver(false);
+        if (busy) return;
+        const file = e.dataTransfer.files?.[0];
+        if (!file) return;
+        if (!isSheetFile(file)) { setError('Ese archivo no es una planilla: soltá un CSV o un Excel (.xlsx).'); return; }
+        void handleFile(file);
+    };
+
+    // On the upload step, a file dropped OUTSIDE the box must not make the
+    // browser open it (that navigates away and loses the import).
+    useEffect(() => {
+        if (step !== 'upload') return;
+        const stop = (e: DragEvent) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); };
+        window.addEventListener('dragover', stop);
+        window.addEventListener('drop', stop);
+        return () => { window.removeEventListener('dragover', stop); window.removeEventListener('drop', stop); };
+    }, [step]);
+
     const handleFile = async (file: File) => {
         setError(null); setBusy(true);
         try {
             const sheet = await parseSpreadsheetFile(file);
             if (sheet.headers.length === 0) { setError('El archivo está vacío o no tiene encabezados.'); setBusy(false); return; }
-            setFileName(file.name); setParsed(sheet); setOverrides({}); setDeselected(new Set());
+            setFileName(file.name); setParsed(sheet); setOverrides({}); setDeselected(new Set()); setSplitGroups(new Set());
             // Default: deterministic column-mapping, ready INSTANTLY. `guessColumnMap`
             // matches header names offline (no AI, no per-row wait) — the grid renders
             // immediately via applyColumnMap. The user tweaks any wrong field in the
@@ -257,22 +384,28 @@ export default function SpreadsheetImportWizard() {
             setMap(guessColumnMap(sheet.headers)); setMode('mapping'); setAdvancedOpen(true);
             setStep('confirm');
         } catch (e) {
-            setError(userFacingMessage(e, 'No se pudo leer el archivo.')); setStep('upload');
+            // Logged with an id the rescuer can quote — this failure used to be invisible in the logs.
+            const errorId = resolveErrorId(e, 'SpreadsheetImportWizard.handleFile');
+            setError(`${userFacingMessage(e, 'No se pudo leer el archivo.')} (ID: ${errorId})`); setStep('upload');
         } finally { setBusy(false); }
     };
 
     // Opt-in AI interpretation for messy sheets: send each row to the model
     // (chunked, with progress) so it extracts structured fields the deterministic
     // column-map can't. Slow (one request per ~20 rows), so it's never eager.
+    const interpretGenRef = useRef(0);
     const runAiInterpretation = async () => {
         if (!parsed) return;
+        const gen = ++interpretGenRef.current;
         setError(null); setBusy(true); setMode('ai'); setInterpreted([]);
+        beginActivity('interpret', fileName, parsed.rows.length);
         try {
             interpretStartRef.current = Date.now();
             setInterpretProgress({ done: 0, total: parsed.rows.length });
             const CHUNK = 20;
             const acc: MappedRow[] = [];
             for (let i = 0; i < parsed.rows.length; i += CHUNK) {
+                if (gen !== interpretGenRef.current) return; // cancelled
                 const chunk = parsed.rows.slice(i, i + CHUNK);
                 try {
                     acc.push(...await interpretRows(parsed.headers, chunk, 'es'));
@@ -283,13 +416,24 @@ export default function SpreadsheetImportWizard() {
                     if (acc.length === 0) throw chunkErr;
                     acc.push(...chunk.map(() => emptyMappedRow()));
                 }
+                if (gen !== interpretGenRef.current) return;
                 setInterpreted([...acc]);
                 setInterpretProgress({ done: Math.min(i + CHUNK, parsed.rows.length), total: parsed.rows.length });
             }
-        } catch {
+        } catch (e) {
+            if (gen !== interpretGenRef.current) return;
             // AI unavailable — stay on the deterministic column-map (already set).
-            setMode('mapping'); setError('No se pudo interpretar con IA. Usá el mapeo de columnas.');
-        } finally { setBusy(false); }
+            const errorId = resolveErrorId(e, 'SpreadsheetImportWizard.runAiInterpretation');
+            setMode('mapping'); setError(`No se pudo interpretar con IA. Usá el mapeo de columnas. (ID: ${errorId})`);
+        } finally {
+            if (gen === interpretGenRef.current) { setBusy(false); endActivity(); }
+        }
+    };
+    // Stop the AI pass and go back to the column mapping (the sheet stays loaded).
+    const cancelInterpretation = () => {
+        interpretGenRef.current++;
+        setBusy(false); setMode('mapping'); setInterpreted([]); setInterpretProgress({ done: 0, total: 0 });
+        endActivity();
     };
 
     // Manual escape hatch: switch to deterministic column-mapping (e.g. if the AI
@@ -324,13 +468,15 @@ export default function SpreadsheetImportWizard() {
         const rows = resumable.rows.filter(r => failedIdx.has(r.index));
         if (!rows.length) return;
         cancelRef.current = false; setCancelled(false); setCancelling(false);
+        beginActivity('send', resumable.fileName, resumable.total, resumable.runId);
         // Keep the full run in view: pass every current result as prior so the results
         // list/final counts don't collapse to just the retried rows. Progress/cancel below
         // track only this retry batch (see sendBatches).
         try { await sendBatches(resumable.runId, rows, [], resumable.names, results); }
         catch (e) {
-            setError(userFacingMessage(e, 'La importación se interrumpió.'));
-            setImportDone(true); setCancelling(false);
+            const errorId = resolveErrorId(e, 'SpreadsheetImportWizard.retryFailed');
+            setError(`${userFacingMessage(e, 'La importación se interrumpió.')} (ID: ${errorId})`);
+            setImportDone(true); setCancelling(false); endActivity();
         }
     };
     // The original spreadsheet row (header: value · …) for a given record index —
@@ -350,7 +496,18 @@ export default function SpreadsheetImportWizard() {
         if (!parsed) return;
         setOverrides(o => {
             const n = { ...o };
-            parsed.rows.forEach((_, i) => { n[i] = { ...n[i], rating: rating || undefined }; });
+            // Clearing deletes the override: `undefined` would still win over the sheet's value.
+            parsed.rows.forEach((_, i) => { const { rating: _r, ...rest } = n[i] ?? {}; n[i] = rating ? { ...rest, rating } : rest; });
+            return n;
+        });
+    };
+    // Bulk-set the record type on every row (empty = clear the override, back to
+    // the sheet's value).
+    const setRecordTypeAll = (recordType: string) => {
+        if (!parsed) return;
+        setOverrides(o => {
+            const n = { ...o };
+            parsed.rows.forEach((_, i) => { const { recordType: _t, ...rest } = n[i] ?? {}; n[i] = recordType ? { ...rest, recordType } : rest; });
             return n;
         });
     };
@@ -413,6 +570,28 @@ export default function SpreadsheetImportWizard() {
     }), [records, filter, typeFilter, ratingFilter, search]);
 
     const importable = records.filter(r => r.selected && r.built.errors.length === 0);
+
+    // Same-person groups over the whole file (Revisar shows them; the import folds them).
+    const reviewGroups = useMemo(() => {
+        const byIndex = new Map<number, { key: number; reason: GroupReason | null; members: number[] }>();
+        for (const g of personGroups(records, splitGroups)) for (const i of g.indices) byIndex.set(i, { key: g.indices[0], reason: g.reason, members: g.indices });
+        return byIndex;
+    }, [records, splitGroups]);
+
+    // What the reviewer must know before importing: values the import doesn't
+    // recognise as a type (they become "Adopción"), and contact cells dropped as
+    // placeholders ("no", "si", "-").
+    const reviewNotices = useMemo(() => {
+        const unknownTypes = new Map<string, number>();
+        let dropped = 0;
+        for (const r of records) {
+            const t = r.eff.recordType?.trim();
+            if (t && recognizedRecordType(t) === null) unknownTypes.set(t, (unknownTypes.get(t) ?? 0) + 1);
+            dropped += r.eff.droppedPlaceholders ?? 0;
+        }
+        const unknownCount = [...unknownTypes.values()].reduce((a, b) => a + b, 0);
+        return { unknownTypes: [...unknownTypes.keys()].slice(0, 5), unknownCount, dropped };
+    }, [records]);
     const selectedInvalid = records.filter(r => r.selected && r.built.errors.length > 0).length;
     const selectedWarnings = records.filter(r => r.selected && r.built.errors.length === 0 && r.built.warnings.length > 0).length;
 
@@ -452,8 +631,12 @@ export default function SpreadsheetImportWizard() {
     // Opt-in (a button), like AI interpretation — 1 lightweight lookup per row,
     // bounded concurrency. Keys on name/phone/email/social (the engine's inputs);
     // address-only / DNI-only rows won't match here and default to "crear".
+    const detectGenRef = useRef(0);
     const runDetection = async () => {
         const targets = records.filter(r => r.selected);
+        const gen = ++detectGenRef.current;
+        const live = () => gen === detectGenRef.current; // false once cancelled or restarted
+        beginActivity('detect', fileName, targets.length);
         detectStartRef.current = Date.now();
         setDetecting(true); setDetectionDone(false); setDetectProgress({ done: 0, total: targets.length });
         setDetectionDegraded(false); setDetectFailedRows(new Set());
@@ -475,6 +658,7 @@ export default function SpreadsheetImportWizard() {
         let idMap: Record<string, { adopterId: string; adopterName: string | null }> = {};
         if (uniqueFps.length) {
             const res = await matchFingerprints(uniqueFps).catch(() => ({ ok: false as const, errorId: 'net' }));
+            if (!live()) return;
             if (res.ok) idMap = res.map;
             else setDetectionDegraded(true); // surfaced in the UI; do NOT treat as "no matches"
         }
@@ -482,6 +666,7 @@ export default function SpreadsheetImportWizard() {
         let done = 0, cursor = 0;
         const worker = async () => {
             for (let k = cursor++; k < targets.length; k = cursor++) {
+                if (!live()) return;
                 const { index, eff } = targets[k];
                 const idHit = idMap[fpByIndex[index]];
                 if (idHit) {
@@ -524,6 +709,7 @@ export default function SpreadsheetImportWizard() {
                         // fall through to the next attempt
                     }
                 }
+                if (!live()) return;
                 if (!compared) {
                     // Fail CLOSED: this row was never compared. Do NOT default to
                     // 'create' (that would import a possible duplicate unseen) — mark
@@ -538,12 +724,22 @@ export default function SpreadsheetImportWizard() {
         // Concurrency 3 (was 5): fewer simultaneous full-scan LIKE queries eases
         // the D1 burst that was making per-row lookups fail during large imports.
         await Promise.all(Array.from({ length: Math.min(3, targets.length) }, worker));
+        if (!live()) return;
+        endActivity();
         if (detectionHadError) setDetectionDegraded(true);
         setDetectFailedRows(new Set(failedIdx));
         setMatches(found);
         // Seed default actions, but never clobber a choice the user already made.
         setRowAction(prev => { const next = { ...actions }; for (const k of Object.keys(prev)) next[+k] = prev[+k]; return next; });
         setDetecting(false); setDetectionDone(true);
+    };
+
+    // Stop the duplicate analysis and go back to Revisar with every edit intact.
+    // Lookups already in flight finish and are ignored; nothing was written.
+    const cancelDetection = () => {
+        detectGenRef.current++;
+        setDetecting(false); setDetectionDone(false); setStep('confirm');
+        endActivity();
     };
 
     // Build ONE selected record into a server batch row (client-side: validate +
@@ -670,6 +866,7 @@ export default function SpreadsheetImportWizard() {
         // A cancel only "interrupted" the run if work was actually left unsent. If Cancel
         // arrived after the last batch already drained (done >= total), the run is complete —
         // finalize it normally instead of leaving it un-closed and mislabelled 'cancelled'.
+        endActivity();
         const trulyCancelled = cancelRef.current && done < total;
         if (trulyCancelled) {
             // Cancelled: keep the resume snapshot and leave the run open (interrupted)
@@ -704,35 +901,63 @@ export default function SpreadsheetImportWizard() {
         const targets = records.filter(r => r.selected);
         setProgress({ done: 0, total: targets.length });
         const runId = crypto.randomUUID();
-        startImportRun({ runId, source: fileName, total: targets.length }).catch(() => { /* best-effort */ });
+        const source = fileName;
+        beginActivity('build', source, targets.length);
+        zarazTrack('list_import_started', { rows: targets.length });
         try {
             // Build all rows client-side (validate + AI cleanup). Invalid rows become
             // immediate 'skipped' results and are never sent to the server.
             const preResults: RowResult[] = [];
             const nameByIndex: Record<number, string> = {};
             const toSend: ImportBatchRow[] = [];
+            setPreparing({ done: 0, total: targets.length });
+            // The same-person groups Revisar showed, limited to the rows that will be
+            // created (selected, action 'create'). The first of them is saved with
+            // the group's name and every contact; the others fold into it.
+            const groupKeyOf = new Map<number, number>();
+            const mergedEff = new Map<number, MappedRow>();
+            const effOf = new Map(targets.map(t => [t.index, t.eff]));
+            const willCreate = (i: number) => effOf.has(i) && (rowAction[i] ?? 'create') === 'create';
+            const seenGroups = new Set<number>();
             for (const t of targets) {
-                const { row, pre, name } = await buildBatchRow(t);
+                const g = reviewGroups.get(t.index);
+                if (!g || seenGroups.has(g.key)) continue;
+                seenGroups.add(g.key);
+                const members = g.members.filter(willCreate);
+                if (members.length < 2) continue;
+                for (const i of members) groupKeyOf.set(i, members[0]);
+                mergedEff.set(members[0], { ...effOf.get(members[0])!, ...mergedGroupContacts(members.map(i => effOf.get(i)!)) });
+            }
+            let prepared = 0;
+            for (const t of targets) {
+                if (cancelRef.current) break; // Cancel works while preparing too
+                const { row, pre, name } = await buildBatchRow({ index: t.index, eff: mergedEff.get(t.index) ?? t.eff });
                 nameByIndex[t.index] = name;
                 if (pre) preResults.push(pre);
                 else if (row) toSend.push(row);
+                setPreparing({ done: ++prepared, total: targets.length });
             }
-            // Intra-spreadsheet dedup (auto): fold rows that are the SAME person
-            // (identical content fingerprint) into ONE adopter with several activities
-            // — so someone appearing on multiple rows becomes one profile, not N
-            // duplicates. Only exact 'create' rows fold; name-only rows have an empty
-            // fingerprint and never fold; 'upsert'/'skip' rows are left untouched. The
-            // primary (first/lowest index) keeps its 'create'; each later twin's activity
-            // moves into the primary's extraAdoptions and its row is marked grouped.
-            const fpByIdx: Record<number, string> = {};
-            for (const t of targets) { const g = splitGroupedContacts(t.eff); fpByIdx[t.index] = computeContentFingerprint({ name: t.eff.name, ...g }); }
-            const primaryByFp = new Map<string, ImportBatchRow>();
-            const withExtras = new Set<number>();
+            setPreparing(null);
+            if (cancelRef.current) {
+                // Cancelled before anything was sent: nothing exists on the server,
+                // so go back to Duplicados exactly as it was.
+                setCancelling(false); endActivity(); setStep('dedup');
+                return;
+            }
+            // Intra-spreadsheet dedup (auto): rows that are the SAME person (same
+            // content, or a shared email/phone with a name in common — see
+            // domain/importGrouping) become ONE adopter with several activities.
+            // Only 'create' rows fold; 'upsert'/'skip' rows are left untouched. The
+            // primary (first/lowest index) keeps its 'create' and carries every
+            // contact of the group; each later row's activity moves into the
+            // primary's extraAdoptions and the row is marked grouped.
             const grouped: ImportBatchRow[] = [];
+            const withExtras = new Set<number>();
+            const primaryByKey = new Map<number, ImportBatchRow>();
             for (const row of toSend) {
-                const key = row.action === 'create' ? (fpByIdx[row.index] || '') : '';
-                const primary = key ? primaryByFp.get(key) : undefined;
-                if (!key || !primary) { if (key) primaryByFp.set(key, row); grouped.push(row); continue; }
+                const key = row.action === 'create' ? groupKeyOf.get(row.index) : undefined;
+                const primary = key !== undefined ? primaryByKey.get(key) : undefined;
+                if (key === undefined || !primary) { if (key !== undefined) primaryByKey.set(key, row); grouped.push(row); continue; }
                 (primary.extraAdoptions ??= []).push(row.adoption);
                 withExtras.add(primary.index);
                 preResults.push({ index: row.index, name: nameByIndex[row.index] || `Fila ${row.index + 1}`, status: 'grouped', message: `Agrupado con #${primary.index + 1} — misma persona (su actividad se sumó a esa ficha)` });
@@ -741,15 +966,28 @@ export default function SpreadsheetImportWizard() {
             setFoldSummary(foldedCount > 0 ? { folded: foldedCount, people: withExtras.size } : null);
             // Persist a resume snapshot so a refresh or a cancel mid-import can pick up
             // where it left off (only the not-yet-created rows re-run — see sendBatches).
-            const snapshot: ResumeSnapshot = { runId, fileName, total: targets.length, rows: grouped, names: nameByIndex };
-            try { localStorage.setItem(RESUME_KEY, JSON.stringify(snapshot)); } catch { /* quota — resume just won't be available */ }
+            const snapshot: ResumeSnapshot = { runId, fileName: source, total: targets.length, rows: grouped, names: nameByIndex };
+            const snapshotJson = JSON.stringify(snapshot);
+            try { localStorage.setItem(RESUME_KEY, snapshotJson); setResumeUnsaved(false); }
+            catch (e) {
+                // Storage full or blocked: the import still runs, but a reload can't resume it.
+                setResumeUnsaved(true);
+                resolveErrorId(new Error(`import resume snapshot not saved (${snapshotJson.length} chars, ${grouped.length} rows): ${e instanceof Error ? e.message : String(e)}`), 'SpreadsheetImportWizard.saveResumeSnapshot');
+            }
             setResumable(snapshot);
+            // The run header is written only now, once something is about to be sent —
+            // a cancel or reload while preparing leaves no empty "en curso" run behind.
+            await startImportRun({ runId, source, total: targets.length }).catch(e => {
+                resolveErrorId(e, 'SpreadsheetImportWizard.startImportRun'); // audit header only; the import goes on
+            });
+            beginActivity('send', source, targets.length, runId);
             await sendBatches(runId, grouped, preResults, nameByIndex);
         } catch (e) {
             // Last-resort terminal state — never leave the screen stuck on "Importando…".
             // Row-level failures are already handled resiliently inside sendBatches.
-            setError(userFacingMessage(e, 'La importación se interrumpió.'));
-            setImportDone(true); setCancelling(false);
+            const errorId = resolveErrorId(e, 'SpreadsheetImportWizard.runImport');
+            setError(`${userFacingMessage(e, 'La importación se interrumpió.')} (ID: ${errorId})`);
+            setPreparing(null); setImportDone(true); setCancelling(false); endActivity();
         }
     };
 
@@ -764,17 +1002,22 @@ export default function SpreadsheetImportWizard() {
         setResumable(snap); // keep it — a retry after resume re-reads these rows; cleared on a clean finish
         setFileName(snap.fileName); // so the running screen shows the file name on resume too
         cancelRef.current = false; setCancelled(false); setCancelling(false);
+        beginActivity('send', snap.fileName, snap.total, snap.runId);
         try {
             // On a cancel-resume the current `results` already hold what got created; keep them so
             // resume shows the whole run, not just the re-sent rows. On a refresh-resume `results`
             // is empty (fresh mount) — harmless.
             await sendBatches(snap.runId, snap.rows, [], snap.names, results);
         } catch (e) {
-            setError(userFacingMessage(e, 'La importación se interrumpió.'));
-            setImportDone(true); setCancelling(false);
+            const errorId = resolveErrorId(e, 'SpreadsheetImportWizard.resumeImport');
+            setError(`${userFacingMessage(e, 'La importación se interrumpió.')} (ID: ${errorId})`);
+            setImportDone(true); setCancelling(false); endActivity();
         }
     };
-    const discardResume = () => { try { localStorage.removeItem(RESUME_KEY); } catch { /* ignore */ } setResumable(null); };
+    const discardResume = () => {
+        try { localStorage.removeItem(RESUME_KEY); } catch { /* blocked storage: nothing to remove */ }
+        setResumable(null); dismissStopped();
+    };
 
     const downloadErrors = () => {
         const bad = results.filter(r => r.status === 'skipped' || r.status === 'failed');
@@ -788,7 +1031,7 @@ export default function SpreadsheetImportWizard() {
     const etaMs = (importDone || cancelling) ? null : etaMsFrom(progress.done, progress.total, importStartRef.current, importStartDoneRef.current);
     const interpretEtaMs = etaMsFrom(interpretProgress.done, interpretProgress.total, interpretStartRef.current);
     const detectEtaMs = etaMsFrom(detectProgress.done, detectProgress.total, detectStartRef.current);
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); setDetectFailedRows(new Set()); setFoldSummary(null); };
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); setDetectFailedRows(new Set()); setFoldSummary(null); setSplitGroups(new Set()); };
 
     // Duplicados step (Step 3): the focused triage is ONLY the selected rows that
     // actually matched something — everything else auto-creates, so it never
@@ -866,23 +1109,56 @@ export default function SpreadsheetImportWizard() {
 
             {error && <div className="mb-4 p-3 rounded-lg bg-rose-50 text-rose-700 text-sm border border-rose-200">{error}</div>}
 
-            {step === 'upload' && resumable && (
-                <div className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-3">
+            {step === 'upload' && stopped?.elsewhere && (
+                <div data-testid="import-elsewhere" className="mb-4 p-4 rounded-xl border text-sm" style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)', borderColor: 'var(--status-sky-border)' }}>
+                    <div className="font-semibold">Hay una importación en curso en otra pestaña</div>
+                    <div className="break-words">«{stopped.fileName}» · {stopped.total} filas · {ACTIVITY_PHASE_LABEL[stopped.phase]}. Avanza solo mientras esa pestaña siga abierta: no la cierres hasta que termine.</div>
+                </div>
+            )}
+            {step === 'upload' && resumable && (() => {
+                // Rows of this run already saved on the server (from the run list).
+                const run = myRuns.find(r => r.id === resumable.runId);
+                const saved = run ? run.dCreated + run.dUpdated : null;
+                return (
+                    <div data-testid="import-resume" className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-3">
+                        <div className="text-sm text-amber-800 min-w-0">
+                            <div className="font-semibold">Importación sin terminar: se detuvo</div>
+                            <div className="text-amber-700 truncate" title={resumable.fileName}>{resumable.fileName} · {saved != null ? `${saved} de ${resumable.total} filas ya guardadas` : `${resumable.total} filas`}</div>
+                            <div className="text-amber-700">La importación avanza solo con la pestaña abierta; al recargar o cerrar se frenó y no sigue en segundo plano. Reanudar crea solo lo que falte (no duplica lo ya creado).</div>
+                        </div>
+                        <div className="flex-shrink-0 flex gap-2">
+                            <button onClick={() => resumeImport(resumable)} className="px-4 py-2 text-sm font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700">Reanudar</button>
+                            <button onClick={discardResume} className="px-3 py-2 text-sm text-amber-700 hover:bg-amber-100 rounded-lg">Descartar</button>
+                        </div>
+                    </div>
+                );
+            })()}
+            {step === 'upload' && stopped && !stopped.elsewhere && !(resumable && stopped.phase === 'send') && (
+                <div data-testid="import-stopped" className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-3">
                     <div className="text-sm text-amber-800 min-w-0">
-                        <div className="font-semibold">Importación sin terminar</div>
-                        <div className="text-amber-700 truncate" title={resumable.fileName}>{resumable.fileName} · {resumable.total} filas. Reanudar crea solo lo que falte (no duplica lo ya creado).</div>
+                        <div className="font-semibold break-words">«{stopped.fileName}» quedó a medias</div>
+                        <div className="text-amber-700">
+                            {stopped.phase === 'send'
+                                ? `Se detuvo al recargar o cerrar la página mientras se importaba (${stopped.total} filas). Nada sigue corriendo en segundo plano. Lo que alcanzó a guardarse figura abajo, en Importaciones anteriores; para completar el resto, subí la planilla de nuevo: lo ya importado aparece como idéntico y se actualiza en vez de duplicarse.`
+                                : `Se detuvo al recargar o cerrar la página mientras estaba ${ACTIVITY_PHASE_LABEL[stopped.phase]} (${stopped.total} filas). No se importó nada y nada sigue corriendo en segundo plano. Subí la planilla de nuevo para seguir.`}
+                        </div>
                     </div>
-                    <div className="flex-shrink-0 flex gap-2">
-                        <button onClick={() => resumeImport(resumable)} className="px-4 py-2 text-sm font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700">Reanudar</button>
-                        <button onClick={discardResume} className="px-3 py-2 text-sm text-amber-700 hover:bg-amber-100 rounded-lg">Descartar</button>
-                    </div>
+                    <button onClick={dismissStopped} className="flex-shrink-0 px-3 py-2 text-sm text-amber-700 hover:bg-amber-100 rounded-lg">Entendido</button>
                 </div>
             )}
             {step === 'upload' && (
-                <label className="block border-2 border-dashed border-stone-300 rounded-2xl p-12 text-center cursor-pointer hover:border-teal-400 transition-colors">
-                    <input type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+                <label
+                    data-testid="sheet-dropzone"
+                    data-dragover={dragOver ? 'true' : undefined}
+                    onDragEnter={e => { e.preventDefault(); if (!busy) setDragOver(true); }}
+                    onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = busy ? 'none' : 'copy'; if (!busy) setDragOver(true); }}
+                    onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false); }}
+                    onDrop={handleDrop}
+                    className={`block border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-colors ${dragOver ? 'border-teal-500 bg-teal-50' : 'border-stone-300 hover:border-teal-400'}`}
+                >
+                    <input type="file" data-testid="sheet-file-input" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
                     <div className="text-4xl mb-2" aria-hidden>📄</div>
-                    <div className="font-semibold text-stone-700">{busy ? 'Leyendo…' : 'Elegí un archivo'}</div>
+                    <div className="font-semibold text-stone-700">{busy ? 'Leyendo…' : dragOver ? 'Soltá el archivo acá' : 'Arrastrá un archivo acá o hacé clic para elegirlo'}</div>
                     <div className="text-xs text-stone-400 mt-1">CSV o Excel (.xlsx)</div>
                 </label>
             )}
@@ -892,7 +1168,11 @@ export default function SpreadsheetImportWizard() {
                     <div className="text-xs uppercase tracking-wider text-stone-400 mb-2">Importaciones anteriores</div>
                     <div className="border border-stone-200 rounded-xl overflow-hidden">
                         {myRuns.map(run => {
-                            const st = run.finishedAt ? 'completa' : (run.lastItemAt && Date.now() / 1000 - run.lastItemAt > 300 ? 'interrumpida' : 'en curso');
+                            const state = importRunState(run, Date.now() / 1000);
+                            // Our own unfinished run that no tab is driving any more (this one is
+                            // on the upload screen, and no other tab refreshes the marker): stopped.
+                            const ownStopped = state === 'running' && resumable?.runId === run.id && !(stopped?.elsewhere && stopped.runId === run.id);
+                            const st = state === 'completed' ? 'completa' : (state === 'interrupted' || ownStopped) ? 'interrumpida' : 'en curso';
                             const stStyle = st === 'completa' ? 'bg-stone-100 text-stone-500' : st === 'interrumpida' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700';
                             // Prefer the per-row audit counts; fall back to the stored header
                             // counters for old runs whose items were never written.
@@ -989,6 +1269,13 @@ export default function SpreadsheetImportWizard() {
                                     <>Interpretando {interpretProgress.total} filas con IA… {interpretProgress.done}/{interpretProgress.total}
                                         {interpretEtaMs != null && <span className="text-stone-400"> · {fmtEta(interpretEtaMs)} restante</span>}</>
                                 ) : 'Preparando la lista de registros…'}
+                                {mode === 'ai' && interpretProgress.total > 0 && (
+                                    <button type="button" onClick={cancelInterpretation} data-testid="interpret-cancel"
+                                        className="ml-auto px-3 py-1 text-xs font-semibold text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200"
+                                        title="Frena la interpretación y volvés al mapeo de columnas. No se importó nada.">
+                                        Cancelar
+                                    </button>
+                                )}
                             </div>
                             {mode === 'ai' && interpretProgress.total > 0 && (
                                 <div className="h-2 rounded-full bg-stone-100 overflow-hidden mb-4"><div className="h-full bg-teal-500 transition-all" style={{ width: `${(interpretProgress.done / interpretProgress.total) * 100}%` }} /></div>
@@ -1023,7 +1310,7 @@ export default function SpreadsheetImportWizard() {
                                             <span className={`w-2 h-2 rounded-full flex-shrink-0 ${CONFIDENCE_DOT[c.confidence]}`} aria-hidden />
                                             <span className="font-medium text-stone-700 w-28 truncate" title={c.column}>{c.column}</span>
                                             <select value={c.field} onChange={e => setAssignment(c.column, e.target.value)} className="flex-1 text-sm border border-stone-200 rounded-lg px-2 py-1 bg-white">
-                                                {FIELD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                                {FIELD_KEYS.map(k => <option key={k} value={k}>{t(`import.sheet_field.${k}`)}</option>)}
                                             </select>
                                         </div>
                                     ))}
@@ -1054,6 +1341,21 @@ export default function SpreadsheetImportWizard() {
                                 <button type="button" onClick={() => setDateOrderOverride(null)} className="text-stone-400 hover:text-stone-600 underline">volver a auto</button>
                             )}
                         </div>
+                    )}
+
+                    {/* Before importing: types the import doesn't know (they'd become
+                        Adopción) and contact cells dropped as placeholders. */}
+                    {reviewNotices.unknownCount > 0 && (
+                        <div data-testid="import-unknown-types" className="mb-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+                            {reviewNotices.unknownCount.toLocaleString('es-AR')} {reviewNotices.unknownCount === 1 ? 'fila tiene' : 'filas tienen'} un tipo que no reconocemos
+                            ({reviewNotices.unknownTypes.map(t => `«${t}»`).join(', ')}) y se {reviewNotices.unknownCount === 1 ? 'importará' : 'importarán'} como <b>Adopción</b>.
+                            {' '}Cambialo con <b>Aplicar a todos → Tipo</b>.
+                        </div>
+                    )}
+                    {reviewNotices.dropped > 0 && (
+                        <p data-testid="import-dropped-placeholders" className="mb-2 text-xs text-stone-500">
+                            Se descartaron {reviewNotices.dropped.toLocaleString('es-AR')} {reviewNotices.dropped === 1 ? 'valor vacío' : 'valores vacíos'} en columnas de contacto («no», «si», «-»…): no son un contacto.
+                        </p>
                     )}
 
                     {/* Toolbar: type-ahead search (all fields) + filters (validez/tipo/rating) + bulk-rating + counts */}
@@ -1092,13 +1394,13 @@ export default function SpreadsheetImportWizard() {
                     </div>
 
                     {/* TODO(wave1c-mobile): reflow to card-per-record ≤sm (single-DOM CSS reflow) */}
-                    <RecordGrid rows={filtered} group
+                    <RecordGrid rows={filtered} groupOf={reviewGroups} onSplitGroup={key => setSplitGroups(s => { const n = new Set(s); for (const i of reviewGroups.get(key)?.members ?? [key]) n.add(i); return n; })}
                         editingCell={editingCell} onEditCell={(index, field) => setEditingCell(field ? { index, field } : null)}
                         matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
                         failureByIndex={failureByIndex} onSetSelected={setGroupSelected} onChange={setOverride}
                         expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
                         expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
-                        onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} />
+                        onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} onRecordTypeAll={setRecordTypeAll} />
 
                     <div className="flex flex-wrap gap-2 justify-between mt-4">
                         <button onClick={reset} className="px-4 py-2 text-sm text-stone-500 hover:text-stone-700">← Empezar de nuevo</button>
@@ -1117,8 +1419,13 @@ export default function SpreadsheetImportWizard() {
                         <div className="border border-stone-200 rounded-xl p-6">
                             <div className="text-sm text-teal-700 mb-3 flex items-center gap-2">
                                 <span className="inline-block w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" aria-hidden />
-                                Analizando {detectProgress.done}/{detectProgress.total} registros contra tu base…
-                                {detectEtaMs != null && <span className="text-stone-400"> · {fmtEta(detectEtaMs)} restante</span>}
+                                <span>Analizando {detectProgress.done}/{detectProgress.total} registros contra tu base…
+                                {detectEtaMs != null && <span className="text-stone-400"> · {fmtEta(detectEtaMs)} restante</span>}</span>
+                                <button type="button" onClick={cancelDetection} data-testid="detect-cancel"
+                                    className="ml-auto flex-shrink-0 px-3 py-1 text-xs font-semibold text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200"
+                                    title="Frena el análisis y volvés a Revisar con tus cambios. No se importó nada.">
+                                    Cancelar
+                                </button>
                             </div>
                             <div className="h-2 rounded-full bg-stone-100 overflow-hidden">
                                 <div className="h-full bg-teal-500 transition-all" style={{ width: `${detectProgress.total ? (detectProgress.done / detectProgress.total) * 100 : 0}%` }} />
@@ -1201,7 +1508,7 @@ export default function SpreadsheetImportWizard() {
                                         failureByIndex={failureByIndex} onSetSelected={setGroupSelected} onChange={setOverride}
                                         expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
                                         expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
-                                        onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} />
+                                        onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} onRecordTypeAll={setRecordTypeAll} />
                                 </>
                             ) : null}
 
@@ -1225,12 +1532,12 @@ export default function SpreadsheetImportWizard() {
                 <div>
                     <div className="mb-2 flex items-center justify-between gap-3 text-sm">
                         <span className="font-semibold text-stone-700">
-                            {importDone ? (cancelled ? 'Importación cancelada' : 'Importación completa') : (cancelling ? 'Cancelando…' : 'Importando…')}
+                            {importDone ? (cancelled ? 'Importación cancelada' : 'Importación completa') : (cancelling ? 'Cancelando…' : preparing ? 'Preparando filas…' : 'Importando…')}
                         </span>
                         <div className="flex items-center gap-3">
-                            <span className="text-stone-500">
-                                {progress.done} / {progress.total}
-                                {etaMs != null && <span className="text-stone-400"> · {fmtEta(etaMs)} restante</span>}
+                            <span className="text-stone-500" data-testid="import-progress-count">
+                                {preparing ? `${preparing.done} / ${preparing.total}` : `${progress.done} / ${progress.total}`}
+                                {!preparing && etaMs != null && <span className="text-stone-400"> · {fmtEta(etaMs)} restante</span>}
                             </span>
                             {!importDone && (
                                 <button onClick={cancelImport} disabled={cancelling}
@@ -1242,7 +1549,7 @@ export default function SpreadsheetImportWizard() {
                         </div>
                     </div>
                     {fileName && <div className="text-xs text-stone-400 mb-3 truncate" title={fileName}><span aria-hidden>📄</span> {fileName}</div>}
-                    <div className="h-3 rounded-full bg-stone-100 overflow-hidden mb-4"><div className="h-full bg-teal-500 transition-all" style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} /></div>
+                    <div className="h-3 rounded-full bg-stone-100 overflow-hidden mb-4"><div className="h-full bg-teal-500 transition-all" style={{ width: `${preparing ? (preparing.total ? (preparing.done / preparing.total) * 100 : 0) : (progress.total ? (progress.done / progress.total) * 100 : 0)}%` }} /></div>
                     <div className="flex flex-wrap gap-2 mb-4 text-sm">
                         <span className="px-3 py-1 rounded-lg font-medium" style={{ backgroundColor: 'var(--status-emerald-bg)', color: 'var(--status-emerald-text)' }}>✅ {tally.created} creados</span>
                         {tally.updated > 0 && <span className="px-3 py-1 rounded-lg bg-sky-50 text-sky-700 font-medium">↻ {tally.updated} actualizados</span>}
@@ -1252,10 +1559,11 @@ export default function SpreadsheetImportWizard() {
                     </div>
                     {foldSummary && (
                         <div className="mb-4 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)', border: '1px solid var(--status-sky-border)' }}>
-                            🔗 {foldSummary.folded} {foldSummary.folded === 1 ? 'fila idéntica se agrupó' : 'filas idénticas se agruparon'} en {foldSummary.people} {foldSummary.people === 1 ? 'persona ya presente en el lote' : 'personas ya presentes en el lote'}: en vez de crear duplicados, su actividad se sumó a la misma ficha. Sí se importaron — figuran como “agrupadas”, no como errores.
+                            🔗 {foldSummary.folded} {foldSummary.folded === 1 ? 'fila de la misma persona se agrupó' : 'filas de la misma persona se agruparon'} en {foldSummary.people} {foldSummary.people === 1 ? 'persona ya presente en el lote' : 'personas ya presentes en el lote'}: en vez de crear duplicados, su actividad se sumó a la misma ficha. Sí se importaron — figuran como “agrupadas”, no como errores.
                         </div>
                     )}
-                    {!importDone && <p className="text-xs text-stone-400 mb-4">Puede tardar unos minutos (cada fila se verifica y tokeniza). No cierres la pestaña.</p>}
+                    {!importDone && <p className="text-xs text-stone-400 mb-4">Puede tardar unos minutos (cada fila se verifica y tokeniza). La importación avanza solo con esta pestaña abierta: si la cerrás o recargás, se frena{resumeUnsaved ? '' : ' y después podés reanudarla'}.</p>}
+                    {!importDone && resumeUnsaved && <p className="text-xs text-amber-700 mb-4">Tu navegador no dejó guardar el progreso, así que esta importación no se podrá reanudar si recargás la página.</p>}
                     {(tally.skipped + tally.failed) > 0 && (
                         <div className="border border-stone-200 rounded-xl overflow-hidden mb-4">
                             <div className="bg-stone-50 px-3 py-2 text-xs uppercase tracking-wider text-stone-500 flex items-center justify-between"><span>Filas no importadas</span>{importDone && <button onClick={downloadErrors} className="text-teal-600 hover:underline normal-case tracking-normal">Descargar CSV</button>}</div>
@@ -1438,7 +1746,11 @@ function ActivityBlock({ r, editingField, onEditCell, onChange, fieldsExpanded, 
 }) {
     const { eff, built } = r;
     const speciesVal = speciesOptionValue(eff.species);
-    const speciesLabel = speciesVal ? (SPECIES_OPTIONS.find(o => o.v === speciesVal)?.l ?? '—') : '—';
+    // A word we keep as written (e.g. «conejo») shows as «Otro: conejo» — the
+    // screen says exactly what will be saved.
+    const speciesSaved = normalizeSpecies(eff.species);
+    const speciesKept = speciesVal === 'other' && speciesSaved && speciesSaved !== 'other' ? speciesSaved : null;
+    const speciesLabel = speciesVal ? (speciesKept ? `Otro: ${speciesKept}` : SPECIES_OPTIONS.find(o => o.v === speciesVal)?.l ?? '—') : '—';
     const typeVal = normalizeRecordType(eff.recordType);
     const typeLabel = RECORD_TYPE_LABELS[typeVal] ?? typeVal;
     const ratingNorm = normalizeRating(eff.rating);
@@ -1581,8 +1893,10 @@ function ActivityBlock({ r, editingField, onEditCell, onChange, fieldsExpanded, 
     );
 }
 
-function RowView({ members, editingCell, onEditCell, onChange, match, action, onAction, failureByIndex, onToggleGroup, expanded, onToggleWhy, matchContext, expandedFieldsRow, onToggleFields }: {
+function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onChange, match, action, onAction, failureByIndex, onToggleGroup, expanded, onToggleWhy, matchContext, expandedFieldsRow, onToggleFields }: {
     members: Array<{ index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean }>;
+    // Why these rows are one person, and how to undo it (Revisar only).
+    groupReason?: GroupReason | null; onSplit?: () => void;
     editingCell: { index: number; field: string } | null; onEditCell: (index: number, field: string | null) => void;
     onChange: (index: number, p: Partial<MappedRow>) => void;
     match?: DuplicateMatch | null; action: RowAction; onAction: (a: RowAction) => void;
@@ -1594,7 +1908,9 @@ function RowView({ members, editingCell, onEditCell, onChange, match, action, on
 }) {
     const primary = members[0];
     const grouped = members.length > 1;
-    const { eff, built, selected } = primary;
+    const { built, selected } = primary;
+    // A group's profile carries every member's contacts — show what will be saved.
+    const eff = grouped ? { ...primary.eff, ...mergedGroupContacts(members.map(m => m.eff)) } : primary.eff;
     const isExact = match ? isExactIdentifierMatch(match.matchTypes) : false;
     const contactChips: Array<{ t: string; v: string }> = [
         ...eff.phones.map(v => ({ t: 'Tel', v })),
@@ -1623,7 +1939,7 @@ function RowView({ members, editingCell, onEditCell, onChange, match, action, on
                 <td className="px-2 py-2 text-right text-stone-400 text-xs tabular-nums whitespace-nowrap align-top">{primary.index + 1}</td>
                 <td className="px-3 py-2 font-medium text-stone-800">
                     <InlineCell {...cellProps('name')} kind="text" ariaLabel="Editar nombre"
-                        value={eff.name} onCommit={v => onChange(primary.index, { name: v })}
+                        value={eff.name} onCommit={v => { for (const m of members) onChange(m.index, { name: v }); }}
                         display={
                             /* Empty name is allowed (min-identifier: name OR contact). A
                                nameless-but-valid row shows the muted "Sin nombre" fallback
@@ -1673,8 +1989,14 @@ function RowView({ members, editingCell, onEditCell, onChange, match, action, on
                     {grouped && (
                         <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded"
                             style={{ backgroundColor: 'var(--status-sky-bg)', color: 'var(--status-sky-text)' }}>
-                            🔗 {members.length} actividades
+                            🔗 {members.length} actividades{groupReason ? ` · ${GROUP_REASON_LABEL[groupReason]}` : ''}
                         </span>
+                    )}
+                    {grouped && onSplit && (
+                        <button type="button" onClick={onSplit} data-testid="split-group"
+                            className="ml-2 text-[10px] text-stone-500 underline hover:text-stone-700" title="No es la misma persona: importar cada fila como su propia ficha">
+                            Separar
+                        </button>
                     )}
                 </td>
             </tr>
@@ -1789,7 +2111,7 @@ function RecordGrid({
     rows, editingCell, onEditCell, matches, rowAction, onAction,
     failureByIndex, onSetSelected, onChange, expandedMatchRow, matchContexts, onToggleWhy,
     expandedFieldsRow, onToggleFields,
-    onRatingAll, onVisibilityAll, group,
+    onRatingAll, onVisibilityAll, onRecordTypeAll, groupOf, onSplitGroup,
 }: {
     rows: Array<{ index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean }>;
     editingCell: { index: number; field: string } | null;
@@ -1811,22 +2133,22 @@ function RecordGrid({
     // row, not just `rows`) in both steps, matching the pre-existing behavior.
     onRatingAll: (rating: string) => void;
     onVisibilityAll: (isPublic: boolean) => void;
-    // When true (Revisar step), identical rows (same content fingerprint) collapse
-    // into ONE record showing N stacked activities — matching the import-time fold.
-    group?: boolean;
+    onRecordTypeAll: (recordType: string) => void;
+    // Revisar step: rows of the same person (see personGroups) collapse into ONE
+    // record showing N stacked activities — matching the import-time fold.
+    groupOf?: Map<number, { key: number; reason: GroupReason | null; members: number[] }>;
+    onSplitGroup?: (key: number) => void;
 }) {
-    // Group identical rows (same content fingerprint) into one record with N
-    // activities; ungrouped ⇒ each row is its own singleton group.
-    const groups: Array<typeof rows> = group ? (() => {
-        const byFp = new Map<string, typeof rows>();
+    // Group the same person's rows into one record with N activities; ungrouped ⇒
+    // each row is its own singleton group.
+    const groups: Array<typeof rows> = groupOf ? (() => {
+        const byKey = new Map<number, typeof rows>();
         const order: Array<typeof rows> = [];
         for (const r of rows) {
-            const g = splitGroupedContacts(r.eff);
-            const fp = computeContentFingerprint({ name: r.eff.name, ...g });
-            if (!fp) { order.push([r]); continue; }
-            const existing = byFp.get(fp);
+            const key = groupOf.get(r.index)?.key ?? r.index;
+            const existing = byKey.get(key);
             if (existing) { existing.push(r); }
-            else { const grp = [r]; byFp.set(fp, grp); order.push(grp); }
+            else { const grp = [r]; byKey.set(key, grp); order.push(grp); }
         }
         return order;
     })() : rows.map(r => [r]);
@@ -1835,6 +2157,7 @@ function RecordGrid({
             {/* Bulk "a todos" bar — always visible (desktop + mobile), since the table
                 header that used to hold these is hidden on mobile. */}
             <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-stone-200 bg-stone-50 text-[11px] text-stone-500">
+                <SelectAllToggle rows={rows} onSetSelected={onSetSelected} />
                 <span className="uppercase tracking-wider">Aplicar a todos:</span>
                 <select value="" onChange={e => { if (e.target.value) onVisibilityAll(e.target.value === 'public'); }}
                     className="normal-case font-normal border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-600" title="Asignar visibilidad a todos los registros">
@@ -1847,6 +2170,12 @@ function RecordGrid({
                     <option value="">Rating…</option>
                     {['1', '2', '3', '4', '5'].map(n => <option key={n} value={n}>{n} ★ a todos</option>)}
                     <option value="clear">Limpiar rating</option>
+                </select>
+                <select value="" onChange={e => { if (e.target.value) onRecordTypeAll(e.target.value === 'clear' ? '' : e.target.value); }}
+                    className="normal-case font-normal border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-600" title="Asignar un tipo a todos los registros" data-testid="bulk-record-type">
+                    <option value="">Tipo…</option>
+                    {RECORD_TYPES.map(t => <option key={t} value={t}>{RECORD_TYPE_LABELS[t] ?? t} a todos</option>)}
+                    <option value="clear">Volver al tipo de la planilla</option>
                 </select>
             </div>
             <div className="import-grid-scroll max-h-[420px] overflow-y-auto overflow-x-auto">
@@ -1869,6 +2198,8 @@ function RecordGrid({
                             const match = primary.index in matches ? matches[primary.index] : undefined;
                             return (
                                 <RowView key={primary.index} members={members}
+                                    groupReason={groupOf?.get(primary.index)?.reason ?? null}
+                                    onSplit={onSplitGroup && members.length > 1 ? () => onSplitGroup(groupOf?.get(primary.index)?.key ?? primary.index) : undefined}
                                     editingCell={editingCell}
                                     onEditCell={onEditCell}
                                     onChange={onChange}
@@ -1889,6 +2220,25 @@ function RecordGrid({
                 </table>
             </div>
         </div>
+    );
+}
+
+/** One checkbox for every row shown (the current filter): ticks them all, or —
+ *  when they all are — unticks them all. Mixed shows as indeterminate. */
+function SelectAllToggle({ rows, onSetSelected }: {
+    rows: Array<{ index: number; selected: boolean }>;
+    onSetSelected: (indices: number[], selected: boolean) => void;
+}) {
+    const ref = useRef<HTMLInputElement>(null);
+    const selected = rows.filter(r => r.selected).length;
+    const all = rows.length > 0 && selected === rows.length;
+    useEffect(() => { if (ref.current) ref.current.indeterminate = selected > 0 && !all; }, [selected, all]);
+    return (
+        <label className="inline-flex items-center gap-1.5 mr-2 normal-case text-stone-600 cursor-pointer">
+            <input ref={ref} type="checkbox" checked={all} disabled={rows.length === 0} data-testid="select-all-rows"
+                onChange={() => onSetSelected(rows.map(r => r.index), !all)} aria-label="Seleccionar todos los registros mostrados" />
+            Todos ({selected.toLocaleString('es-AR')}/{rows.length.toLocaleString('es-AR')})
+        </label>
     );
 }
 

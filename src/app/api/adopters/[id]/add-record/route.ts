@@ -85,7 +85,7 @@ export async function POST(
             animalName: adoption.animalName?.trim() || null,
             species: adoption.species || 'other',
             status: 'completed',
-            rating: adoption.rating || 2,
+            rating: adoption.rating || null,
             recordType: adoption.recordType || 'observation',
             animalId: adoption.animalId || null,
             date: adoption.date ? new Date(adoption.date) : new Date(),

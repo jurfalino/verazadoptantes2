@@ -50,6 +50,8 @@ next-env.d.ts
 node_modules/
 /test-results/
 /playwright-report/
+/e2e-attempt-1.log
+/playwright-report-attempt-1/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/

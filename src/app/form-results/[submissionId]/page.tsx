@@ -1,5 +1,6 @@
 export const runtime = 'edge';
 
+import { selfieUrlColumn } from '@/lib/selfieLink';
 import { redirect, notFound } from 'next/navigation';
 import { getDb } from '@/lib/db';
 import { notifications, adopters, formSubmissions, adopterImages, adoptions } from '@/db/schema';
@@ -8,10 +9,9 @@ import { sql } from 'drizzle-orm';
 import { getUser } from '@/app/actions/_db';
 import { markNotificationRead } from '@/app/actions/notifications';
 import FormResultsContent from '@/components/FormResultsContent';
-import Link from 'next/link';
+import { canAccessFormSubmission } from '@/app/actions/_applicants';
 import { logger } from '@/lib/logger';
-import { isOrgMate } from '@/lib/orgMembership';
-import { isAdminAsync } from '@/config/admins';
+import Link from 'next/link';
 import { formLinkKind } from '@/domain/formLink';
 import { computeAvgRating } from '@/domain/ratings';
 import { maskMatchCardsForViewer } from '@/lib/piiAccessServer';
@@ -54,29 +54,34 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
     const db = await getDb();
     if (!db) return <ErrorState message="Database unavailable" />;
 
-    // The ownership check, the match-metadata notification, and the full
-    // submission are mutually independent — fetch them in one parallel wave
-    // instead of three sequential D1 round-trips. (The extra two reads for a
-    // non-owner are harmless: we still gate on ownerCheck before rendering.)
-    const [ownerCheck, notif, submission] = await Promise.all([
-        db.select({ userId: formSubmissions.userId })
-            .from(formSubmissions)
-            .where(eq(formSubmissions.id, submissionId))
-            .get(),
+    // The access check, the viewer's own notification (to mark it read), and
+    // the full submission are mutually independent — fetch them in one
+    // parallel wave instead of three sequential D1 round-trips. (The extra
+    // reads for a stranger are harmless: we still gate before rendering.)
+    const notifFor = (recipient: string, role: 'viewer' | 'formOwner') =>
         db.select({ id: notifications.id, metadata: notifications.metadata })
             .from(notifications)
             .where(and(
-                eq(notifications.userId, currentUser),
+                eq(notifications.userId, recipient),
                 sql`json_extract(${notifications.metadata}, '$.submissionId') = ${submissionId}`,
             ))
             .get()
             .catch((e: unknown) => {
-                logger.warn('form-results: notification lookup fallback', { submissionId, userEmail: currentUser, error: e instanceof Error ? e.message : String(e) });
+                logger.warn('form-results: notification read fallback', {
+                    submissionId, currentUser, role,
+                    error: e instanceof Error ? e.message : String(e),
+                });
                 return null;
-            }),
+            });
+    const [ownerCheck, notif, submission] = await Promise.all([
+        db.select({ userId: formSubmissions.userId, selectedAnimalId: formSubmissions.selectedAnimalId })
+            .from(formSubmissions)
+            .where(eq(formSubmissions.id, submissionId))
+            .get(),
+        notifFor(currentUser, 'viewer'),
         db.select({
             id: formSubmissions.id,
-            selfieUrl: formSubmissions.selfieUrl,
+            selfieUrl: selfieUrlColumn, // private selfies → their checked route (src/lib/selfieLink.ts)
             species: formSubmissions.species,
             lifeStage: formSubmissions.lifeStage,
             specialNeeds: formSubmissions.specialNeeds,
@@ -95,32 +100,61 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
             .get(),
     ]);
 
-    // Auth: verify the current user owns this submission (is the rescuer)
-    // Missing → 404. Not yours → teammates/admins (who get notification links
-    // here) keep the "no permission" screen; strangers get the 404 so we don't
-    // confirm the submission exists (applicant PII). `userId` holds the owner's email.
+    // Auth: ONE rule shared with the prefill and link actions, agreeing with
+    // the animal page (src/lib/formSubmissionAccess.ts): the form-link owner's
+    // team, an admin, or the animal owner's team when the form link is inside
+    // it (2026-09-30 — the team sees its applicants). Missing or a stranger →
+    // 404, so we never confirm a submission exists (applicant PII).
     if (!ownerCheck) notFound();
-    if (ownerCheck.userId !== currentUser) {
-        const teammateOrAdmin = (await isOrgMate(currentUser, ownerCheck.userId)) || (await isAdminAsync(currentUser));
-        logger.info('form-results: denied', { submissionId, userEmail: currentUser, teammateOrAdmin });
-        if (!teammateOrAdmin) notFound();
-        return <ErrorState message="No tenés permiso para ver este formulario" />;
+    const isFormOwner = ownerCheck.userId.trim().toLowerCase() === currentUser.trim().toLowerCase();
+    if (!isFormOwner) {
+        let allowed: boolean;
+        try {
+            allowed = await canAccessFormSubmission(db, ownerCheck, currentUser);
+        } catch (e) {
+            // Fails closed, but never silently: the lookup itself broke (D1), not a denial.
+            const errorId = logger.error('form-results: access check failed', e, { submissionId, user: currentUser });
+            return <ErrorState message="No pudimos cargar este formulario. Probá de nuevo en un rato." errorId={errorId} />;
+        }
+        if (!allowed) {
+            logger.info('form-results: denied', { submissionId, userEmail: currentUser });
+            notFound();
+        }
     }
+
+    // The duplicate-match data lives on the FORM-LINK OWNER's notification;
+    // the teammate copy carries only the submitter's name. Read the owner's
+    // (raw user_id, exactly what the submit route stored) so a teammate sees
+    // the same matches block. The viewer's own notification is still the one
+    // marked read.
+    const metaNotif = isFormOwner ? notif : await notifFor(ownerCheck.userId, 'formOwner');
 
     // Notification → mark as read (best-effort) + parse match metadata
     let metadata: NotificationMetadata = { submissionId, matchCount: 0 };
     if (notif) {
-        try { await markNotificationRead(notif.id, currentUser); } catch { /* non-blocking */ }
-        if (notif.metadata) {
-            try {
-                const parsed = JSON.parse(notif.metadata);
-                metadata = {
-                    submissionId,
-                    matchCount: parsed.matchCount ?? 0,
-                    submittedData: parsed.submittedData,
-                    matchedAdopters: parsed.matchedAdopters,
-                };
-            } catch { /* keep defaults */ }
+        try {
+            await markNotificationRead(notif.id, currentUser);
+        } catch (e) {
+            logger.warn('form-results: mark-read failed (non-blocking)', {
+                submissionId, currentUser, notificationId: notif.id,
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+    }
+    if (metaNotif?.metadata) {
+        try {
+            const parsed = JSON.parse(metaNotif.metadata);
+            metadata = {
+                submissionId,
+                matchCount: parsed.matchCount ?? 0,
+                submittedData: parsed.submittedData,
+                matchedAdopters: parsed.matchedAdopters,
+            };
+        } catch (e) {
+            logger.warn('form-results: notification metadata unparseable — no match block', {
+                submissionId, currentUser, notificationId: metaNotif.id,
+                error: e instanceof Error ? e.message : String(e),
+            });
         }
     }
 
@@ -268,11 +302,12 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
     );
 }
 
-function ErrorState({ message }: { message: string }) {
+function ErrorState({ message, errorId }: { message: string; errorId?: string }) {
     return (
         <main className="container mx-auto px-4 py-16 text-center">
             <p className="text-2xl mb-2">😕</p>
             <p className="text-sm text-stone-500 font-medium">{message}</p>
+            {errorId && <p className="text-xs text-stone-400 font-mono mt-2">Error ID: {errorId}</p>}
             <Link href="/" className="text-sm text-blue-600 hover:text-blue-700 mt-4 inline-block">
                 ← Volver al inicio
             </Link>
