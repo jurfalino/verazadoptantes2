@@ -6,6 +6,29 @@
 > same test. If a leg starts restarting again, split that leg further; the
 > sections below are the original proposal, kept for the reasoning.
 
+> **2026-10-15 — splitting is no longer the strategy.** 6→7 `authed` legs held
+> one day. 12 of 40 staging pipelines (10 days) needed a manual re-run or failed.
+> Plan:
+> - **Phase 0 (v2.56.183, shipped):** `scripts/ci-e2e.sh` — when a shard fails AND
+>   its log shows the memory restart, re-run ONLY the failed tests
+>   (`--last-failed`) once, on a fresh server. Real failures fail again; no
+>   restart → no retry. First attempt's log uploaded with the report.
+> - **Phase 1 (2–3 days):** make the full suite pass on the **Cloudflare build**
+>   (`npx @cloudflare/next-on-pages` + `wrangler pages dev --persist-to
+>   <repo>/.wrangler/state`). Spike (branch `spike/e2e-prod-build`, local):
+>   memory ≤ ~730 MB, no restarts, tests sub-second; 138 passed / 20 failed of
+>   158 reached. Failures to work through: email-OTP (test shortcut off), two
+>   15-min hangs (resilience language switch, wizards observation card), and
+>   photos / catalogue / import / contact editing (unexplained — real runtime
+>   differences become bug tickets, not test patches). Wrangler reads secrets
+>   only from `.dev.vars`: generate a test one.
+> - **Phase 2 (1 day):** build once in build-and-lint, share the output with
+>   every shard and the deploy job; prove on a non-deploying branch; keep the
+>   dev-server path one week as fallback. Done = <5% pipelines re-run over two
+>   weeks, no slower than today.
+> - **Ruled out:** `next build && next start` — not because of db.ts: 111 routes
+>   are `runtime = 'edge'` and get no database at all under `next start`.
+
 ## The problem, measured
 
 `.github/workflows/ci.yml`'s e2e job runs **149 tests in one `next dev`

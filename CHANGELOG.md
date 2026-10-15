@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.183] - 2026-10-15
+
+### Changed — CI: one automatic re-run after a dev-server memory restart
+
+The e2e server (`next dev`) restarts itself when it nears its memory limit, and
+whichever test is running dies with a refused connection — 12 of the last 40
+staging pipelines needed a manual re-run. Now, when a test group fails AND its
+log shows that restart, CI re-runs only the failed tests once, on a fresh server.
+A real failure fails again; a failure without the restart is never retried; the
+first attempt's log is kept with the test report. The root fix (running the
+suite on the Cloudflare build) is planned in `.agents/plans/e2e-shard-the-suite.md`.
+
 ## [2.56.182] - 2026-10-14
 
 ### Added — new adoption-form questions (custom forms)
