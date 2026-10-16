@@ -11,6 +11,7 @@
  */
 
 import { selfieUrlColumn } from '@/lib/selfieLink';
+import { photoLinks } from '@/domain/formPhotos';
 import { logger } from '@/lib/logger';
 import { computeAvgRating } from '@/domain/ratings';
 import { buildFlags } from '@/domain/flags';
@@ -161,6 +162,7 @@ export async function loadApplicantsForAnimal(
         phone: formSubmissions.phone,
         address: formSubmissions.address,
         selfieUrl: selfieUrlColumn, // private selfies → their checked route (src/lib/selfieLink.ts)
+        photoKeys: formSubmissions.photoKeys, // → checked links below; never returned
         latitude: formSubmissions.latitude,
         longitude: formSubmissions.longitude,
         intent: formSubmissions.intent,
@@ -176,7 +178,7 @@ export async function loadApplicantsForAnimal(
         .all() as Array<{
             id: string; name: string;
             email: string | null; phone: string | null; address: string | null;
-            selfieUrl: string | null; latitude: string | null; longitude: string | null;
+            selfieUrl: string | null; photoKeys: string | null; latitude: string | null; longitude: string | null;
             intent: string | null; species: string | null; lifeStage: string | null;
             household: string | null; answersJson: string | null;
             linkedAdopterId: string | null; createdAt: Date | null;
@@ -286,6 +288,7 @@ export async function loadApplicantsForAnimal(
                 phone: row.phone,
                 address: row.address,
                 selfieUrl: row.selfieUrl,
+                photos: photoLinks(row.id, row.photoKeys),
                 latitude: row.latitude,
                 longitude: row.longitude,
                 household: parseHousehold(row.household),

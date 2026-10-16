@@ -721,6 +721,7 @@ export const formSubmissions = sqliteTable("form_submissions", {
     // Step 4: Selfie
     selfieUrl: text("selfie_url"),              // R2 URL after upload
     selfieKey: text("selfie_key"),              // 0086: private-storage key (src/lib/contractStorage.ts); server-written only
+    photoKeys: text("photo_keys"),              // 0087: JSON [{ kind, key }] form photos in private storage; server-written only
     // Step 5: Species & Life Stage
     species: text("species"),                    // dog, cat, both, other
     lifeStage: text("life_stage"),               // puppy, young, senior, none

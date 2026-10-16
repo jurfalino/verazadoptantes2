@@ -87,6 +87,7 @@ interface FormResultsContentProps {
     submission: {
         id: string;
         selfieUrl: string | null;
+        photos?: { protection: string[]; sleep: string | null };
         species: string | null;
         lifeStage: string | null;
         specialNeeds: number | null;

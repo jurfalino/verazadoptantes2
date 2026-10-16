@@ -7,6 +7,7 @@ import { isValidFormEmail } from '@/domain/formEmail';
 import { parseHouseholdPeople, childrenAnswer, fullName } from '@/domain/householdPeople';
 import { parseGiftRecipient, recipientFullName } from '@/domain/giftRecipient';
 import { clampFreeText, socialHandle } from '@/domain/formFreeText';
+import { parsePhotoInputs, type StoredPhoto } from '@/domain/formPhotos';
 import type { HouseholdMember } from '@/lib/householdMembers';
 
 export const runtime = 'edge';
@@ -137,6 +138,33 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             }
         }
 
+        // Photos of the protection / where it sleeps (spec 2026-10-14 release 2):
+        // private storage like the selfie; keys only in photo_keys, never in the
+        // answers. A photo that can't be stored never fails the submission.
+        const photoInput = parsePhotoInputs(body);
+        if (photoInput.dropped) logger.warn('form submit: photos dropped (limit, type or size)', { submissionId, dropped: photoInput.dropped });
+        const photoKeys: StoredPhoto[] = [];
+        let photosFailed = 0;
+        const { storeFormPhoto } = await import('@/lib/contractStorage');
+        for (const [kind, dataUrl] of [
+            ...photoInput.protection.map(d => ['protection', d] as const),
+            ...(photoInput.sleep ? [['sleep', photoInput.sleep] as const] : []),
+        ]) {
+            try {
+                const contentType = dataUrl.slice(5, dataUrl.indexOf(';'));
+                const bytes = await fetch(dataUrl).then(r => r.arrayBuffer());
+                photoKeys.push({ kind, key: (await storeFormPhoto(bytes, contentType, submissionId, kind)).key });
+            } catch (e) {
+                photosFailed++;
+                logger.warn('form photo upload failed (non-blocking)', { submissionId, kind, error: e instanceof Error ? e.message : String(e) });
+            }
+        }
+        delete answers.protectionPhotos;
+        delete answers.sleepPhoto;
+        const storedProtection = photoKeys.filter(p => p.kind === 'protection').length;
+        if (storedProtection) answers.protectionPhotos = storedProtection;
+        if (photoKeys.some(p => p.kind === 'sleep')) answers.sleepPhoto = true;
+
         const notificationId = crypto.randomUUID();
 
         // Store in form_submissions
@@ -150,6 +178,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             latitude,
             longitude,
             selfieKey,
+            photoKeys: photoKeys.length ? JSON.stringify(photoKeys) : null,
             species,
             lifeStage,
             specialNeeds,
@@ -353,6 +382,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             submissionId,
             // false: a selfie was sent but couldn't be stored (the form is saved anyway).
             selfieSaved: selfieData && selfieData.startsWith('data:') ? !!selfieKey : null,
+            photosSaved: photosFailed ? false : null,
         }), origin);
     } catch (error) {
         const errorId = logger.error('Form submission failed', error);

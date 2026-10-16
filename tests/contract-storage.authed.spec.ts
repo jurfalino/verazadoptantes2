@@ -142,5 +142,36 @@ test.describe('signed contracts: private storage', () => {
         await page.goto(`/form-results/${submissionId}`);
         await expect(page.locator(`img[src="/api/files/selfie/${submissionId}"]`).first()).toBeVisible({ timeout: 30000 });
     });
-});
 
+    test('form photos (protection + where it sleeps) are stored privately; only who may see the form opens them', async ({ page, baseURL, browser }) => {
+        const anon = await pwRequest.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
+        const stamp = Date.now();
+        const res = await anon.post('/api/form/test-admin-id/submit', {
+            data: {
+                legal: true, name: `Fotosfixture ${stamp}`, email: `fotos-${stamp}@example.com`, phone: '555-0145', address: '2 E2E Ave', intent: 'self',
+                protectionPhotos: [TINY_PNG, TINY_PNG, 'https://evil.example/x.png'], sleepPhoto: TINY_PNG,
+            },
+        });
+        expect(res.ok(), await res.text()).toBeTruthy();
+        const { submissionId } = await res.json();
+        const row = rows(`SELECT photo_keys, answers_json FROM form_submissions WHERE id = '${submissionId}'`)[0];
+        const keys = JSON.parse(String(row.photo_keys)) as Array<{ kind: string; key: string }>;
+        expect(keys.map(k => k.kind)).toEqual(['protection', 'protection', 'sleep']);
+        for (const k of keys) expect(k.key).toMatch(/^form-photos\/[0-9a-f-]{36}\.png$/);
+        // No image data and no storage key in the answers the results page receives.
+        expect(String(row.answers_json)).not.toContain('data:image');
+        expect(String(row.answers_json)).not.toContain('form-photos/');
+        expect(JSON.parse(String(row.answers_json))).toMatchObject({ protectionPhotos: 2, sleepPhoto: true });
+
+        const mine = await page.request.get(`/api/files/form-photo/${submissionId}/0`);
+        expect(mine.status()).toBe(200);
+        expect(mine.headers()['content-type']).toBe('image/png');
+        expect((await page.request.get(`/api/files/form-photo/${submissionId}/2`)).status()).toBe(200);
+        expect((await page.request.get(`/api/files/form-photo/${submissionId}/3`)).status()).toBe(404);
+        const other = await browser.newContext({ storageState: '.auth/user.json' });
+        expect((await other.request.get(`/api/files/form-photo/${submissionId}/0`)).status()).toBe(404);
+        await other.close();
+        expect((await anon.get(`/api/files/form-photo/${submissionId}/0`)).status()).toBe(401);
+        await anon.dispose();
+    });
+});
