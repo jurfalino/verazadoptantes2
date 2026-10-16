@@ -63,7 +63,7 @@ Podés enviar cualquiera de estos datos de la persona:
 
 \`profile.flags\` puede traer además \`verified_identity\` y \`verified_address\` (identidad o domicilio verificados): son buenas señales y por eso no aparecen en \`risk\`.
 
-En las respuestas de ejemplo de \`POST /api/v1/search\` hay un caso de cada tipo: persona excelente, persona peligrosa con alertas, un teléfono compartido con alguien peligroso, desconocida y ambigua.
+Al final de esta página, en **Ejemplos**, hay una respuesta para cada calificación (5★ a 1★ y sin calificar) y para cada situación con alertas.
 
 **\`mode: "fuzzy"\`**: la misma búsqueda de la página de inicio, con cualquier combinación de campos. Devuelve una lista ordenada por relevancia. No registra nada.
 
@@ -87,7 +87,7 @@ curl -X POST https://buenadoptante.org/api/v1/search \\
   -d '{"mode":"exact","person":{"fullName":"María José Pérez","phone":"11 6462-2274"},"activity":{"activityType":"adoption_request"}}'
 \`\`\`
 
-Un pedido completo manda todos los datos que tengas: más datos de contacto ayudan a encontrar a la persona aunque haya cambiado de teléfono. Los ejemplos \`complete_request\` (una solicitud con las respuestas de tu formulario) y \`complete_adoption\` (una adopción con los datos del animal) de \`POST /api/v1/search\` muestran cada campo.
+Un pedido completo manda todos los datos que tengas: más datos de contacto ayudan a encontrar a la persona aunque haya cambiado de teléfono. Ver **Ejemplos** al final de esta página: una solicitud completa (con las respuestas de tu formulario) y una adopción completa (con los datos del animal).
 
 **Mandá siempre el header \`Idempotency-Key\`** (cualquier texto único, por ejemplo un UUID): si reintentás la misma llamada, devuelve la misma respuesta en vez de registrar dos veces.
 
@@ -126,6 +126,52 @@ Muestra a qué rescatista pertenece la clave y cuánto del cupo diario se usó.
 Cada clave tiene un cupo diario de búsquedas exactas y otro (menor) de búsquedas fuzzy. Se reinician a las 00:00 UTC. Al llegar al cupo, la respuesta es \`429\` con \`Retry-After\`.
 `.trim();
 
+// ── Example requests ──
+// Also written out in the guide (## Ejemplos): the explorer hides these in a dropdown.
+export const REQUEST_EXAMPLES = {
+    minimal: {
+        summary: 'Mínimo: registrar una solicitud (nombre + un contacto + tipo)',
+        value: { mode: 'exact', person: { fullName: 'María José Pérez', phone: '11 6462-2274' }, activity: { activityType: 'adoption_request' } },
+    },
+    complete_request: {
+        summary: 'Completo: una solicitud con todos los datos y las respuestas de tu formulario',
+        value: {
+            mode: 'exact',
+            person: {
+                fullName: 'María José Pérez', email: 'maria@example.com', phone: '+54 9 11 6462-2274',
+                documentId: { value: '30.123.456', country: 'AR' }, address: 'Av. Siempreviva 742, CABA',
+                socials: [{ platform: 'instagram', handle: '@mariajose' }, { platform: 'facebook', handle: 'facebook.com/mariajose.perez' }],
+            },
+            activity: {
+                activityType: 'adoption_request', externalId: 'jotform-5512', animalName: 'Luna', species: 'dog',
+                date: '2026-10-12', notes: 'Llamó dos veces preguntando por Luna.',
+                formContent: { '¿Tenés patio?': 'Sí', '¿Quiénes viven en la casa?': ['2 adultos', '1 niño'], mascotas: [{ tipo: 'gato', edad: 3, castrado: true }] },
+            },
+        },
+    },
+    complete_adoption: {
+        summary: 'Completo: una adopción con los datos del animal (species obligatorio; después adjuntá el contrato)',
+        value: {
+            mode: 'exact',
+            person: { fullName: 'María José Pérez', phone: '+54 9 11 6462-2274', email: 'maria@example.com', documentId: { value: '30.123.456', country: 'AR' } },
+            activity: {
+                activityType: 'adoption', externalId: 'adopcion-2026-118',
+                animalName: 'Luna', species: 'cat', age: '2 años', sex: 'female', neutered: true,
+                color: 'atigrada', microchip: '985112345678901',
+                date: '2026-10-12', rating: 5, notes: 'Entrega en domicilio, todo en orden.',
+            },
+        },
+    },
+    exact_lookup: {
+        summary: 'Volver a consultar a alguien que tu rescate ya registró (no guarda nada)',
+        value: { mode: 'exact', person: { fullName: 'María José Pérez', email: 'maria@example.com' } },
+    },
+    fuzzy: {
+        summary: 'Fuzzy: como la búsqueda de la página de inicio',
+        value: { mode: 'fuzzy', person: { fullName: 'María Pérez', socials: [{ platform: 'instagram', handle: '@mariajose' }] } },
+    },
+};
+
 // ── Example answers: one per rating / alert situation a partner must handle ──
 
 type Level = 0 | 1 | 2 | 3 | 4 | 5;
@@ -155,6 +201,33 @@ export function responseExamples(origin: string) {
                 profile: profile('a_ok', 4.8, { flags: ['verified_identity'] }),
                 risk: { worstRating: rating(4.8), flags: [], profilesMatched: 1 },
                 activity: saved('a_ok', false, ['email']),
+            },
+        },
+        found_good: {
+            summary: 'found — 4★ bueno, identidad verificada',
+            value: {
+                requestId: 'b1d0c8e2-0000-4000-8000-000000000011', mode: 'exact', result: 'found',
+                profile: profile('a_good', 4.1, { flags: ['verified_identity'], matchedOn: ['email'] }),
+                risk: { worstRating: rating(4.1), flags: [], profilesMatched: 1 },
+                activity: saved('a_good'),
+            },
+        },
+        found_average: {
+            summary: 'found — 3★ regular: miralo con más cuidado',
+            value: {
+                requestId: 'b1d0c8e2-0000-4000-8000-000000000012', mode: 'exact', result: 'found',
+                profile: profile('a_avg', 3.2, { records: { adoption_request: 3, adoption: 1, follow_up: 1 } }),
+                risk: { worstRating: rating(3.2), flags: [], profilesMatched: 1 },
+                activity: saved('a_avg'),
+            },
+        },
+        found_poor: {
+            summary: 'found — 2★ malo, posible duplicado de otro perfil',
+            value: {
+                requestId: 'b1d0c8e2-0000-4000-8000-000000000013', mode: 'exact', result: 'found',
+                profile: profile('a_poor', 2.0, { flags: ['possible_duplicate'], records: { adoption_request: 2, returned_pet: 1 } }),
+                risk: { worstRating: rating(2.0), flags: ['possible_duplicate'], profilesMatched: 1 },
+                activity: saved('a_poor'),
             },
         },
         found_dangerous: {
@@ -225,6 +298,20 @@ export function responseExamples(origin: string) {
     };
 }
 
+/** The "## Ejemplos" section of the guide: every request and answer example, written out. */
+export function examplesGuide(origin: string): string {
+    const block = (title: string, value: unknown) => `### ${title}\n\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``;
+    const req = REQUEST_EXAMPLES as Record<string, { summary: string; value: unknown }>;
+    const res = responseExamples(origin) as Record<string, { summary: string; value: unknown }>;
+    return [
+        '## Ejemplos',
+        'Pedidos a \`POST /api/v1/search\` (con \`Authorization\`, \`Content-Type: application/json\` e \`Idempotency-Key\`):',
+        ...Object.values(req).map(e => block(`Pedido — ${e.summary}`, e.value)),
+        'Respuestas (\`200\`). Mirá siempre \`risk\`: es la peor señal de **todos** los perfiles que coincidieron.',
+        ...Object.values(res).map(e => block(`Respuesta — ${e.summary}`, e.value)),
+    ].join('\n\n');
+}
+
 export function buildOpenApi(origin: string) {
     const error = { description: 'Error', content: { 'application/json': { schema: schema(errorResponseSchema) } } };
     const errors = {
@@ -240,7 +327,7 @@ export function buildOpenApi(origin: string) {
     };
     return {
         openapi: '3.1.0',
-        info: { title: 'BuenAdoptante API', version: '1.0.0', description: GUIDE },
+        info: { title: 'BuenAdoptante API', version: '1.0.0', description: `${GUIDE}\n\n${examplesGuide(origin)}` },
         servers: [{ url: origin }],
         security: [{ bearerAuth: [] }],
         components: {
@@ -258,56 +345,15 @@ export function buildOpenApi(origin: string) {
                     }, {
                         name: 'X-Dry-Run', in: 'header', required: false,
                         description: 'STAGING ONLY, with a ba_test_ key: `1` answers exactly the same but saves nothing (no activity in the answer). In production it is refused with 403 dry_run_not_allowed, for every key.',
-                        schema: { type: 'string', enum: ['1'] },
+                        // No enum/const: the explorer would pre-fill it into every generated curl.
+                        schema: { type: 'string' },
                     }],
                     requestBody: {
                         required: true,
                         content: {
                             'application/json': {
                                 schema: schema(searchRequestSchema, 'input'),
-                                examples: {
-                                    minimal: {
-                                        summary: 'Mínimo: registrar una solicitud (nombre + un contacto + tipo)',
-                                        value: { mode: 'exact', person: { fullName: 'María José Pérez', phone: '11 6462-2274' }, activity: { activityType: 'adoption_request' } },
-                                    },
-                                    complete_request: {
-                                        summary: 'Completo: una solicitud con todos los datos y las respuestas de tu formulario',
-                                        value: {
-                                            mode: 'exact',
-                                            person: {
-                                                fullName: 'María José Pérez', email: 'maria@example.com', phone: '+54 9 11 6462-2274',
-                                                documentId: { value: '30.123.456', country: 'AR' }, address: 'Av. Siempreviva 742, CABA',
-                                                socials: [{ platform: 'instagram', handle: '@mariajose' }, { platform: 'facebook', handle: 'facebook.com/mariajose.perez' }],
-                                            },
-                                            activity: {
-                                                activityType: 'adoption_request', externalId: 'jotform-5512', animalName: 'Luna', species: 'dog',
-                                                date: '2026-10-12', notes: 'Llamó dos veces preguntando por Luna.',
-                                                formContent: { '¿Tenés patio?': 'Sí', '¿Quiénes viven en la casa?': ['2 adultos', '1 niño'], mascotas: [{ tipo: 'gato', edad: 3, castrado: true }] },
-                                            },
-                                        },
-                                    },
-                                    complete_adoption: {
-                                        summary: 'Completo: una adopción con los datos del animal (species obligatorio; después adjuntá el contrato)',
-                                        value: {
-                                            mode: 'exact',
-                                            person: { fullName: 'María José Pérez', phone: '+54 9 11 6462-2274', email: 'maria@example.com', documentId: { value: '30.123.456', country: 'AR' } },
-                                            activity: {
-                                                activityType: 'adoption', externalId: 'adopcion-2026-118',
-                                                animalName: 'Luna', species: 'cat', age: '2 años', sex: 'female', neutered: true,
-                                                color: 'atigrada', microchip: '985112345678901',
-                                                date: '2026-10-12', rating: 5, notes: 'Entrega en domicilio, todo en orden.',
-                                            },
-                                        },
-                                    },
-                                    exact_lookup: {
-                                        summary: 'Volver a consultar a alguien que tu rescate ya registró (no guarda nada)',
-                                        value: { mode: 'exact', person: { fullName: 'María José Pérez', email: 'maria@example.com' } },
-                                    },
-                                    fuzzy: {
-                                        summary: 'Fuzzy: como la búsqueda de la página de inicio',
-                                        value: { mode: 'fuzzy', person: { fullName: 'María Pérez', socials: [{ platform: 'instagram', handle: '@mariajose' }] } },
-                                    },
-                                },
+                                examples: REQUEST_EXAMPLES,
                             },
                         },
                     },

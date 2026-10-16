@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.189] - 2026-10-16
+
+### Fixed — API docs: the examples are on the page, not hidden in a dropdown
+
+2.56.186's examples only showed in the explorer's small example dropdowns (the
+answers: only the first one). Now every example is written out in the docs under
+**Ejemplos**: the minimal request, a complete request, a complete adoption, and an
+answer for each rating — 5★, 4★, 3★, 2★, 1★ with alerts, never rated — plus a
+phone shared with someone 1★, unknown, both kinds of ambiguous and a dry run.
+The explorer no longer pre-fills `X-Dry-Run: 1` into its generated curl (that
+call would be refused in production).
+
 ## [2.56.188] - 2026-10-15
 
 ### Changed — CI: authed e2e in 8 legs

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildOpenApi, responseExamples } from './openapi';
+import { buildOpenApi, responseExamples, REQUEST_EXAMPLES } from './openapi';
 import { checkSearchRules, exactResponseSchema, searchRequestSchema } from './schemas';
 import { dryRunAllowed } from './handler';
 
@@ -30,6 +30,21 @@ describe('buildOpenApi', () => {
         expect(codes).toEqual(expect.arrayContaining(['activity_required', 'form_content_requires_adoption_request', 'idempotency_key_required', 'dry_run_not_allowed']));
     });
 
+    it('every example is written out in the guide, not only in the explorer\'s dropdown', () => {
+        const guide: string = doc.info.description;
+        expect(guide).toContain('## Ejemplos');
+        for (const e of Object.values(REQUEST_EXAMPLES)) expect(guide).toContain(`### Pedido — ${e.summary}`);
+        for (const e of Object.values(responseExamples('https://staging.buenadoptante.org'))) expect(guide).toContain(`### Respuesta — ${e.summary}`);
+        // One answer per rating level, 5★ down to not rated.
+        for (const level of [5, 4, 3, 2, 1, 0]) expect(guide).toContain(`"ratingLevel": ${level}`);
+    });
+
+    it('the dry-run header is not pre-filled into generated requests (no enum/const/example)', () => {
+        const header = doc.paths['/api/v1/search'].post.parameters.find((p: { name: string }) => p.name === 'X-Dry-Run');
+        expect(header.schema).toEqual({ type: 'string' });
+        expect(header.example).toBeUndefined();
+    });
+
     it('documents the dry run as staging-only', () => {
         expect(doc.info.description).toMatch(/X-Dry-Run: 1/);
         expect(doc.info.description).toMatch(/En producción no funciona/);
@@ -53,7 +68,7 @@ describe('buildOpenApi', () => {
         const ex = responseExamples('https://buenadoptante.org');
         for (const [name, e] of Object.entries(ex)) expect(exactResponseSchema.safeParse(e.value).success, name).toBe(true);
         const labels = new Set(Object.values(ex).map(e => (e.value as { risk: { worstRating: { ratingLabel: string } } }).risk.worstRating.ratingLabel));
-        expect([...labels]).toEqual(expect.arrayContaining(['not_rated', 'dangerous', 'poor', 'average', 'excellent']));
+        expect([...labels]).toEqual(expect.arrayContaining(['not_rated', 'dangerous', 'poor', 'average', 'good', 'excellent']));
         const flags = new Set(Object.values(ex).flatMap(e => (e.value as { risk: { flags: string[] } }).risk.flags));
         expect([...flags]).toEqual(expect.arrayContaining(['inaccurate', 'too_many_requests', 'too_many_adoptions', 'possible_duplicate', 'duplicate']));
         expect(Object.values(ex).map(e => (e.value as { result: string }).result)).toEqual(expect.arrayContaining(['found', 'not_found', 'ambiguous']));
