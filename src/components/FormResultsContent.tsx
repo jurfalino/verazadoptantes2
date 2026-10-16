@@ -4,6 +4,7 @@ import { useState, useRef } from 'react';
 import Link from 'next/link';
 import { useTimezone } from '@/context/TimezoneContext';
 import { useLanguage } from '@/context/LanguageContext';
+import FormPhotos from '@/components/FormPhotos';
 import FormAnswersPanel, { renderFormAnswerValue, AnswerValue, householdPeopleRow, giftRecipientRow, fieldLabel, ADOPTER_INFO_FIELDS, OTHER_PETS_FIELDS } from '@/components/FormAnswersPanel';
 import FormResultMatchCard from '@/components/FormResultMatchCard';
 import LocationMap from '@/components/LocationMap';
@@ -246,6 +247,13 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                         alt={L('selfie_alt')}
                         className="w-24 h-24 rounded-full object-cover mx-auto border-2 border-stone-200 shadow-sm"
                     />
+                </div>
+            )}
+
+            {/* Photos of the home (release 2) — evidence, so outside the collapsed answers */}
+            {submission?.photos && (submission.photos.protection.length > 0 || submission.photos.sleep) && (
+                <div className="mb-6 bg-white rounded-xl border border-stone-200 p-4 shadow-sm">
+                    <FormPhotos photos={submission.photos} />
                 </div>
             )}
 

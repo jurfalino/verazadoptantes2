@@ -173,5 +173,13 @@ test.describe('signed contracts: private storage', () => {
         await other.close();
         expect((await anon.get(`/api/files/form-photo/${submissionId}/0`)).status()).toBe(401);
         await anon.dispose();
+
+        // The form results page shows them through the checked route — never a key.
+        await page.goto(`/form-results/${submissionId}`);
+        const block = page.getByTestId('form-photos');
+        await expect(block.locator(`img[src="/api/files/form-photo/${submissionId}/0"]`)).toBeVisible({ timeout: 30000 });
+        await expect(block.locator(`img[src="/api/files/form-photo/${submissionId}/1"]`)).toBeVisible();
+        await expect(block.locator(`img[src="/api/files/form-photo/${submissionId}/2"]`)).toBeVisible();
+        expect(await page.content()).not.toContain('form-photos/');
     });
 });
