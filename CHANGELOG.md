@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.187] - 2026-10-15
+
+### Added — adoption form: photos, and free-text answers (custom forms)
+
+Only with custom forms switched on; production forms don't change while it's off.
+
+- **Photos of the home.** A rescuer can ask for photos of the protection
+  (balcony, windows, fences) — up to 3, under "¿El espacio está protegido?" —
+  and make them required. With photos on, the form also offers an optional photo
+  of where the animal will sleep. A gift form never requires them (the giver may
+  not have access to the recipient's home). Photos are shrunk on the phone,
+  stored privately like the selfie, and open only for whoever may see that form;
+  they appear on the form screen and in the animal's applicant panel.
+- **"Cómo preguntar": options or free text.** For each question where it makes
+  sense (spec §6.0), the rescuer chooses whether applicants pick an option or
+  write their own answer. Previous animal and moving offer three ways: the new
+  question, the old one, or free text. Free-text answers show as written, with
+  no semáforo dot.
+
 ## [2.56.186] - 2026-10-15
 
 ### Changed — API docs: examples, ratings and alerts, testing without saving
