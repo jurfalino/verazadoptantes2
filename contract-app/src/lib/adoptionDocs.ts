@@ -63,11 +63,21 @@ export const FORM_OPTION_TOKENS = [
     'phone-optional',
     'on:catOutdoor', 'on:dogWalks', 'on:dogTied', 'on:social', 'on:vetReference', 'on:motivation',
     'way:petExperience:old', 'way:movingPlans:old',
+    'on:photos', 'photos-required',
 ] as const
 
 /** The phone is required unless the rescuer turned it off — also when the config couldn't load (null). */
 export function isPhoneRequired(stored: readonly string[] | null | undefined): boolean {
     return !(stored ?? []).includes('phone-optional')
+}
+
+/** Release 2: photos of the protection — never with no config (custom forms off). */
+export function photosOn(stored: readonly string[] | null | undefined): boolean {
+    return (stored ?? []).includes('on:photos')
+}
+
+export function photosRequired(stored: readonly string[] | null | undefined): boolean {
+    return photosOn(stored) && (stored ?? []).includes('photos-required')
 }
 
 /** The schema with the phone field's `required` set from the stored list (spec Part 3). */

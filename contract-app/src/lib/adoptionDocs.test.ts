@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { FORM_STEP_IDS, applyHiddenSteps, restoreStepIndex, stripHiddenAnswers, buildSubmitBody, draftKey, resolveDraft, isValidCustomContract, contractVersionLabel, customSectionFor, STANDARD_CONTRACT_VERSION, fnv1a, isPhoneRequired, withPhoneRequirement, stepAfter, type CustomContract, type RichDoc } from './adoptionDocs'
+import { FORM_STEP_IDS, applyHiddenSteps, restoreStepIndex, stripHiddenAnswers, buildSubmitBody, draftKey, resolveDraft, isValidCustomContract, contractVersionLabel, customSectionFor, STANDARD_CONTRACT_VERSION, fnv1a, isPhoneRequired, withPhoneRequirement, stepAfter, photosOn, photosRequired, type CustomContract, type RichDoc } from './adoptionDocs'
 
 const schema = FORM_STEP_IDS.map(id => ({ id }))
 
@@ -276,5 +276,14 @@ describe('stepAfter', () => {
     })
     it('past the last step means submit', () => {
         expect(stepAfter(cfg, 2, { intent: 'self' })).toBe('submit')
+    })
+})
+
+describe('photos (release 2) — public form', () => {
+    it('never with no config (custom forms off), only with on:photos', () => {
+        expect(photosOn(null)).toBe(false)
+        expect(photosOn(['on:photos'])).toBe(true)
+        expect(photosRequired(['photos-required'])).toBe(false)
+        expect(photosRequired(['on:photos', 'photos-required'])).toBe(true)
     })
 })

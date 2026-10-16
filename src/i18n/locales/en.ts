@@ -2630,6 +2630,8 @@ export const en = {
         only_dog: 'dogs only',
         way_state_old: 'now uses the simple question',
         way_state_new: 'now uses the recommended question',
+        photos_state_required: 'photos are now required',
+        photos_state_optional: 'photos are now optional',
         phone_required: 'Required',
         phone_required_question: 'Phone required',
         phone_state_optional: 'now optional',

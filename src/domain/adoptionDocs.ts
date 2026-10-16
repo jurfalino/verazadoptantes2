@@ -62,6 +62,7 @@ export const FORM_OPTION_TOKENS = [
     'phone-optional',
     'on:catOutdoor', 'on:dogWalks', 'on:dogTied', 'on:social', 'on:vetReference', 'on:motivation',
     'way:petExperience:old', 'way:movingPlans:old',
+    'on:photos', 'photos-required',
 ] as const;
 
 const LOCKED = new Set<string>(LOCKED_FORM_STEPS);
@@ -157,7 +158,17 @@ export function setQuestionWay(rowId: 'petExperience' | 'movingPlans', way: 'new
     return inFormOrder(next);
 }
 
-export type SettingChange = 'asked' | 'notAsked' | 'oldWording' | 'newWording' | 'phoneOptional' | 'phoneRequired';
+export type SettingChange = 'asked' | 'notAsked' | 'oldWording' | 'newWording' | 'phoneOptional' | 'phoneRequired' | 'photosRequired' | 'photosOptional';
+
+/** Release 2: the rescuer asks for photos of the protection (and an optional one of where it sleeps). */
+export function photosOn(hidden: readonly string[]): boolean {
+    return hidden.includes('on:photos');
+}
+
+/** Required only means something while photos are on. */
+export function photosRequired(hidden: readonly string[]): boolean {
+    return photosOn(hidden) && hidden.includes('photos-required');
+}
 
 /**
  * What a stored settings key being present / absent means for the applicant —
@@ -166,6 +177,7 @@ export type SettingChange = 'asked' | 'notAsked' | 'oldWording' | 'newWording' |
  */
 export function settingChange(key: string, present: boolean): SettingChange {
     if (key === 'phone-optional') return present ? 'phoneOptional' : 'phoneRequired';
+    if (key === 'photos-required') return present ? 'photosRequired' : 'photosOptional';
     if (key.startsWith('way:')) return present ? 'oldWording' : 'newWording';
     if (key.startsWith('on:')) return present ? 'asked' : 'notAsked';
     return present ? 'notAsked' : 'asked';

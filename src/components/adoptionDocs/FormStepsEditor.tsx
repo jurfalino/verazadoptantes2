@@ -52,6 +52,8 @@ const CHANGE_KEY: Record<SettingChange, string> = {
     // The phone is always asked; this option only says whether it must be answered.
     phoneOptional: 'adoptionDocs.phone_state_optional',
     phoneRequired: 'adoptionDocs.phone_state_required',
+    photosRequired: 'adoptionDocs.photos_state_required',
+    photosOptional: 'adoptionDocs.photos_state_optional',
     oldWording: 'adoptionDocs.way_state_old',
     newWording: 'adoptionDocs.way_state_new',
 };

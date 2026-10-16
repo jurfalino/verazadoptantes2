@@ -2635,6 +2635,8 @@ export const es = {
         only_dog: 'solo perros',
         way_state_old: 'ahora usa la pregunta simple',
         way_state_new: 'ahora usa la pregunta recomendada',
+        photos_state_required: 'ahora las fotos son obligatorias',
+        photos_state_optional: 'ahora las fotos son opcionales',
         phone_required: 'Obligatorio',
         phone_required_question: 'Teléfono obligatorio',
         phone_state_optional: 'ahora es opcional',

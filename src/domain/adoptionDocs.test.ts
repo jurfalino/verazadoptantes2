@@ -5,7 +5,7 @@ import {
     resolveDocsOwner, normalizeRichDoc, normalizeSections, isStandardSections,
     canonicalSectionsJson, planContractSave, deriveSpecialNeeds, richDocSchema,
     contractSectionsSchema, isContractVersionOwnedBy, parseStoredHiddenSteps, isPhoneRequired, FORM_OPTION_TOKENS,
-    isQuestionOn, toggleQuestion, questionWay, setQuestionWay, settingKeyQuestion, settingChange, DEFAULT_OFF_FORM_STEPS, type RichDoc,
+    isQuestionOn, toggleQuestion, questionWay, setQuestionWay, settingKeyQuestion, settingChange, photosOn, photosRequired, DEFAULT_OFF_FORM_STEPS, type RichDoc,
 } from './adoptionDocs';
 
 const doc = (...texts: string[]): RichDoc => ({ type: 'doc', content: texts.map(t => ({ type: 'paragraph', content: [{ text: t }] })) });
@@ -13,7 +13,7 @@ const doc = (...texts: string[]): RichDoc => ({ type: 'doc', content: texts.map(
 describe('form steps', () => {
     it('locks terms + identity', () => {
         expect(LOCKED_FORM_STEPS).toEqual(['legal', 'identity-name', 'identity-email', 'identity-phone', 'identity-address']);
-        expect(TOGGLEABLE_FORM_STEPS.length).toBe(44); // 35 rows + 9 tokens
+        expect(TOGGLEABLE_FORM_STEPS.length).toBe(46); // 35 rows + 11 tokens
     });
     it('groups cover every toggleable step exactly once', () => {
         const all = (FORM_STEP_GROUPS.flatMap(g => g.steps) as string[]).filter(s => !(LOCKED_FORM_STEPS as readonly string[]).includes(s));
@@ -272,5 +272,22 @@ describe('what a teammate\'s change to a setting means (review fix 2026-10-14)',
     it('the phone option only changes whether it must be answered', () => {
         expect(settingChange('phone-optional', true)).toBe('phoneOptional');
         expect(settingChange('phone-optional', false)).toBe('phoneRequired');
+    });
+});
+
+describe('photos (release 2)', () => {
+    it('are off by default; required only counts when they are on', () => {
+        expect(photosOn([])).toBe(false);
+        expect(photosOn(['on:photos'])).toBe(true);
+        expect(photosRequired(['photos-required'])).toBe(false);
+        expect(photosRequired(['on:photos', 'photos-required'])).toBe(true);
+    });
+    it('the sanitiser keeps both tokens', () => {
+        expect(sanitizeHiddenSteps(['photos-required', 'on:photos', 'x'])).toEqual(['on:photos', 'photos-required']);
+    });
+    it('a teammate turning photos on / making them required is described the right way round', () => {
+        expect(settingChange('on:photos', true)).toBe('asked');
+        expect(settingChange('photos-required', true)).toBe('photosRequired');
+        expect(settingChange('photos-required', false)).toBe('photosOptional');
     });
 });
