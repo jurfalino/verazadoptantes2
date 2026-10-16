@@ -2944,7 +2944,7 @@ export const pt = {
         void_no: 'Cancelar',
         voided_badge: 'Anulado',
         dry_run_badge: 'Teste (não salvo)',
-        dry_run_hint: 'Chamada de teste de um admin: buscou como sempre, mas nada foi salvo.',
+        dry_run_hint: 'Chamada de teste (só no staging): buscou como sempre, mas nada foi salvo.',
         voided_title: 'Registro anulado',
         voided_body: 'O registro não aparece mais no perfil.',
         voided_with_profile: 'O registro e o perfil que a API tinha criado não aparecem mais.',

@@ -100,8 +100,8 @@ export type ApiErrorCode =
     | 'idempotency_key_required' | 'dry_run_not_allowed' | 'idempotency_key_reused'
     | 'external_id_reused' | 'daily_cap_reached' | 'api_disabled' | 'payload_too_large' | 'record_changed' | 'server_error';
 
-/** Every error code a partner can get, published in the docs so clients can switch on them (the admin-only dry-run refusal stays out). */
-export type PublicApiErrorCode = Exclude<ApiErrorCode, 'dry_run_not_allowed'>;
+/** Every error code a partner can get, published in the docs so clients can switch on them. */
+export type PublicApiErrorCode = ApiErrorCode;
 export const API_ERROR_CODES: PublicApiErrorCode[] = [
     'invalid_json', 'invalid_request', 'unauthorized', 'forbidden', 'not_found',
     'full_name_required', 'exact_requires_name_and_identifier', 'invalid_phone',
@@ -109,7 +109,7 @@ export const API_ERROR_CODES: PublicApiErrorCode[] = [
     'activity_requires_exact', 'activity_required', 'form_content_requires_adoption_request',
     'species_required', 'animal_details_require_placement', 'invalid_age',
     'contract_not_allowed', 'contract_exists', 'unsupported_media_type',
-    'idempotency_key_required', 'idempotency_key_reused', 'external_id_reused', 'daily_cap_reached', 'api_disabled',
+    'idempotency_key_required', 'dry_run_not_allowed', 'idempotency_key_reused', 'external_id_reused', 'daily_cap_reached', 'api_disabled',
     'payload_too_large', 'record_changed', 'server_error',
 ];
 

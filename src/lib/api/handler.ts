@@ -13,8 +13,7 @@ import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
 import { getFeatureFlag } from '@/config/features';
-import { isAdminAsyncStrict } from '@/config/admins';
-import { bearerSecret, findActiveKey, scopesOf, type ApiKeyRow } from './keys';
+import { bearerSecret, environmentForHost, findActiveKey, scopesOf, type ApiKeyRow } from './keys';
 import type { ApiErrorCode, ApiScope } from './schemas';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -23,16 +22,21 @@ type Db = any;
 export type ApiEndpoint = 'search' | 'me' | 'void' | 'contract';
 
 /**
- * Read-only test calls: `X-Dry-Run: 1` runs a search end to end — validation,
- * scopes, Idempotency-Key, caps, the found / not_found / ambiguous decision —
- * but writes no record, profile or notification. Deliberately left out of the
- * docs, and honoured only for keys owned by an admin: every rescue's exact
- * search must leave a record. Any other key sending it is refused (403), never
- * silently saved, since its developer believes nothing is being written.
+ * Test calls that save nothing: `X-Dry-Run: 1` runs a search end to end —
+ * validation, scopes, Idempotency-Key, caps, the found / not_found / ambiguous
+ * decision — but writes no record, profile or notification. For partners
+ * building an integration, on STAGING only (Jon, 2026-10-15): a `ba_test_` key
+ * on a non-production host. In production every exact search leaves a record,
+ * whoever's key it is, so the header is refused (403) there — never silently
+ * saved, since the developer believes nothing is being written. Documented.
  */
 export const DRY_RUN_HEADER = 'x-dry-run';
 export function wantsDryRun(value: string | null): boolean {
     return value != null && /^(1|true|yes)$/i.test(value.trim());
+}
+/** May this call be a dry run? Only a test key on a non-production host. Pure. */
+export function dryRunAllowed(keyEnvironment: string, host: string): boolean {
+    return keyEnvironment === 'test' && environmentForHost(host) === 'test';
 }
 
 /** Person data the client sent is kept this long, then dropped from the log. */
@@ -292,7 +296,9 @@ export async function handleApiCall(
         await enforceCallCeiling(db, key);
         if (wantsDryRun(request.headers.get(DRY_RUN_HEADER))) {
             if (endpoint === 'void') throw new ApiError(422, 'dry_run_not_allowed', 'a void cannot be a dry run');
-            if (!(await isAdminAsyncStrict(key.ownerEmail))) throw new ApiError(403, 'dry_run_not_allowed', 'this key cannot make dry runs');
+            if (!dryRunAllowed(key.environment, new URL(request.url).host)) {
+                throw new ApiError(403, 'dry_run_not_allowed', 'dry runs only work on staging, with a ba_test_ key; in production every call is saved');
+            }
             ctx.dryRun = true;
             headers = { 'x-dry-run': '1' };
         }

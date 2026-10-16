@@ -2939,7 +2939,7 @@ export const en = {
         void_no: 'Cancel',
         voided_badge: 'Voided',
         dry_run_badge: 'Test (not saved)',
-        dry_run_hint: 'An admin\'s test call: searched as usual, but nothing was saved.',
+        dry_run_hint: 'A test call (staging only): searched as usual, but nothing was saved.',
         voided_title: 'Record voided',
         voided_body: 'The record no longer shows on the profile.',
         voided_with_profile: 'The record and the profile the API had created no longer show.',

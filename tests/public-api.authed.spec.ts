@@ -6,7 +6,8 @@ import { execSync } from 'child_process';
  * the admin issues a key, a "partner" (no cookies, Bearer key) searches,
  * saves, retries and voids, and both review surfaces show the calls.
  * Every exact search saves a record; the look-ups that must not write use the
- * admin-only read-only mode (X-Dry-Run), which this admin-owned key may use.
+ * read-only mode (X-Dry-Run), which works with test keys off production only —
+ * keys made here, on localhost, are test keys.
  *
  * ENABLE_PUBLIC_API is off in the seed; this file turns it on for itself and
  * is the ONLY spec that touches it (serial). Every person it creates is unique
@@ -99,7 +100,7 @@ test.describe('public API v1', () => {
         expect(countRows(`SELECT count(*) AS n FROM adopters WHERE name = '${NAME}'`)).toBe(0);
     });
 
-    test('admin dry run: the same answer, nothing written, logged as a test', async () => {
+    test('dry run with a test key: the same answer, nothing written, logged as a test', async () => {
         const dry = await check({ mode: 'exact', person: { fullName: NAME, phone: LOCAL_PHONE }, activity: { activityType: 'adoption_request' } });
         expect(dry.status()).toBe(200);
         expect(dry.headers()['x-dry-run']).toBe('1');
@@ -114,17 +115,25 @@ test.describe('public API v1', () => {
         expect((await v.json()).error.code).toBe('dry_run_not_allowed');
     });
 
-    test('a rescue\'s own key cannot dry-run: refused, never silently saved', async ({ page }) => {
+    test('a rescue\'s test key can dry-run too; a live key is refused, never silently saved', async ({ page }) => {
         const res = await page.request.post('/api/admin/api-keys', { data: { ownerEmail: 'testuser@example.com', name: `E2E user ${TAG}` } });
         expect(res.status()).toBe(201);
         const userKey = await res.json();
+        expect(userKey.secret).toMatch(/^ba_test_/);
         const stranger = `Dryrunfixture ${TAG.charAt(0).toUpperCase()}${TAG.slice(1)}`;
-        const r = await api.post('/api/v1/search', {
+        const call = (n: number) => api.post('/api/v1/search', {
             data: { mode: 'exact', person: { fullName: stranger, email: `dry-${STAMP}@example.com` }, activity: { activityType: 'adoption_request' } },
-            headers: { authorization: `Bearer ${userKey.secret}`, 'x-dry-run': '1', 'idempotency-key': `user-dry-${STAMP}` },
+            headers: { authorization: `Bearer ${userKey.secret}`, 'x-dry-run': '1', 'idempotency-key': `user-dry-${n}-${STAMP}` },
         });
-        expect(r.status()).toBe(403);
-        expect((await r.json()).error.code).toBe('dry_run_not_allowed');
+        const ok = await call(1);
+        expect(ok.status()).toBe(200);
+        expect(ok.headers()['x-dry-run']).toBe('1');
+        expect((await ok.json()).activity).toBeUndefined();
+        // The same key as a production (live) key: refused.
+        execD1(`UPDATE api_keys SET environment = 'live' WHERE id = '${userKey.id}'`);
+        const refused = await call(2);
+        expect(refused.status()).toBe(403);
+        expect((await refused.json()).error.code).toBe('dry_run_not_allowed');
         expect(countRows(`SELECT count(*) AS n FROM adopters WHERE name = '${stranger}'`)).toBe(0);
         await page.request.patch(`/api/admin/api-keys/${userKey.id}`, { data: { revoke: true } });
     });

@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.186] - 2026-10-15
+
+### Changed — API docs: examples, ratings and alerts, testing without saving
+
+- **Examples**: a minimal request (name + one contact + the activity type) and two
+  complete ones (a request with every person field and the form's answers; an
+  adoption with the animal's details), plus one example answer per situation:
+  5★ with no alerts, 1★ with alerts, a phone shared with someone 1★, never rated,
+  unknown, and both kinds of ambiguous.
+- **Ratings and alerts** explained in tables (what each level and each `risk.flags`
+  value means; 1★ blocks adopting in BuenAdoptante).
+- **Testing without saving** (`X-Dry-Run: 1`) is documented and now open to every
+  partner — on **staging only**, with a `ba_test_` key (Jon, 2026-10-15). In
+  production it is refused with `403 dry_run_not_allowed` for every key, admins'
+  included: there, every exact search is saved. API flag still off in production.
+
 ## [2.56.185] - 2026-10-15
 
 ### Fixed — CI's automatic re-run could pass without running every test
