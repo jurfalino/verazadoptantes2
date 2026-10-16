@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } fr
 import './petshield.css'
 import { useT } from './i18n/LocaleContext'
 import {
-    FORM_STEP_IDS, formStepsToAsk, withPhoneRequirement, stepsForAnswers, stepAfter, photosOn, photosRequired, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody, childrenAnswer,
+    FORM_STEP_IDS, formStepsToAsk, withPhoneRequirement, stepsForAnswers, stepAfter, photosOn, photosRequired, isAskedOpen, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody, childrenAnswer,
 } from './lib/adoptionDocs'
 import GiftRecipient, { type Recipient } from './components/GiftRecipient'
 import { adaptStepForGift, isGift, recipientFirstName, giftRecipientProblem, settleGiftAnswers } from './lib/giftFlow'
@@ -11,6 +11,7 @@ import { canLeaveHouseholdStep, householdStepTitleKey, type DraftPerson } from '
 import { followUpsUnder, FOLLOW_UP_HOSTS } from './lib/formQuestions'
 import FollowUps, { type ChoiceQuestion } from './components/FollowUps'
 import PhotoPicker from './components/PhotoPicker'
+import { withOpenSteps, isAnswered, openText, type OpenTextStep } from './lib/openAnswers'
 import { draftAnswers, photosMissing, MAX_PROTECTION_PHOTOS } from './lib/formPhotos'
 import { shrinkImage } from './lib/imageShrink'
 
@@ -72,7 +73,7 @@ interface HouseholdPeopleStep {
 }
 
 type FormStep = ConsentStep | TextFieldsStep | GeolocationStep | CameraUploadStep
-    | IconCardsStep | SegmentedCardsStep | ToggleStep | ChecklistStep | PetCounterStep | HouseholdPeopleStep | GiftRecipientStep | ChoiceListStep;
+    | IconCardsStep | SegmentedCardsStep | ToggleStep | ChecklistStep | PetCounterStep | HouseholdPeopleStep | GiftRecipientStep | ChoiceListStep | OpenTextStep;
 
 // ══════════════════════════════════════════════
 // SVG ICONS
@@ -720,7 +721,8 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         : DEFAULT_SCHEMA
     // Never removes a locked step even if the server sends a bad/forged one.
     // The phone is required unless the rescuer made it optional (null → required).
-    const configSchema = withPhoneRequirement(formStepsToAsk(baseSchema, hiddenSteps), hiddenSteps)
+    // Release 3: a question the rescuer switched to free text is asked as a text box.
+    const configSchema = withOpenSteps(withPhoneRequirement(formStepsToAsk(baseSchema, hiddenSteps), hiddenSteps), hiddenSteps) as FormStep[]
     const DRAFT_KEY = draftKey(userId, animalId)
 
     // ── State ──
@@ -888,6 +890,10 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             }
         }
 
+        if (currentStep.type === 'open-text' && !isAnswered(answersToCheck[currentStep.id])) {
+            newErrors[currentStep.id] = t('form.err_required')
+        }
+
         if (currentStep.type === 'icon-cards' || currentStep.type === 'choice-list') {
             if (!answersToCheck[currentStep.id]) {
                 newErrors[currentStep.id] = t('form.err_select_option')
@@ -895,7 +901,8 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         }
 
         for (const id of followUpsUnder(currentStep.id, configSchema, answersToCheck)) {
-            if (!answersToCheck[id]) newErrors[id] = t('form.err_select_option')
+            const open = isAskedOpen(id, hiddenSteps)
+            if (open ? !isAnswered(answersToCheck[id]) : !answersToCheck[id]) newErrors[id] = t(open ? 'form.err_required' : 'form.err_select_option')
         }
 
         if (currentStep.type === 'gift-recipient') {
@@ -920,7 +927,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     // ── Can advance ──
     function canAdvance(): boolean {
         if (!currentStep) return false
-        if (underThis.some(id => !answers[id])) return false
+        if (underThis.some(id => (isAskedOpen(id, hiddenSteps) ? !isAnswered(answers[id]) : !answers[id]))) return false
         if (photoStep === 'isSafe' && photosMissing(answers, hiddenSteps)) return false
         switch (currentStep.type) {
             case 'consent': return !!answers[currentStep.id]
@@ -928,6 +935,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                 return currentStep.fields.filter(f => f.required).every(f => (answers[f.name] || '').trim())
             case 'icon-cards': return !!answers[currentStep.id]
             case 'choice-list': return !!answers[currentStep.id]
+            case 'open-text': return isAnswered(answers[currentStep.id])
             case 'geolocation': return answers[currentStep.id] !== undefined
             case 'camera-upload': return true // optional
             case 'segmented-cards': return true // optional, has default
@@ -1344,6 +1352,21 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                 </div>
             )
 
+            case 'open-text': return (
+                <div className="ps-step" key={key}>
+                    <h1 className="ps-title">{currentStep.title}</h1>
+                    <textarea
+                        className="ps-input ps-textarea"
+                        aria-label={currentStep.title}
+                        placeholder={t('form.open_placeholder')}
+                        maxLength={500}
+                        value={openText(answers[currentStep.id])}
+                        onChange={e => setAnswer(currentStep.id, { open: e.target.value })}
+                        autoFocus
+                    />
+                    {errors[currentStep.id] && <div className="ps-field__error">{errors[currentStep.id]}</div>}
+                </div>
+            )
             case 'choice-list': {
                 const chosen = currentStep.options.find(o => o.value === answers[currentStep.id])
                 return (
@@ -1600,7 +1623,8 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                     {t('form.step_of', { n: step + 1, total: totalSteps })}
                 </div>
                 {renderStep()}
-                <FollowUps ids={underThis} answers={answers} onAnswer={setAnswer} questions={followUpQuestions} />
+                <FollowUps ids={underThis} answers={answers} onAnswer={setAnswer} questions={followUpQuestions}
+                    openIds={underThis.filter(id => isAskedOpen(id, hiddenSteps))} placeholder={t('form.open_placeholder')} />
                 {photoStep === 'isSafe' && (
                     <PhotoPicker
                         testId="photos-protection"

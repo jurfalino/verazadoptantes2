@@ -9,6 +9,7 @@ import type { CatalogSlice } from '../types';
 // raw key string.
 export const form: CatalogSlice = {
     es: {
+        'form.open_placeholder': 'Escribí tu respuesta',
         // ── Photos (spec 2026-10-14, release 2) ──
         'form.photos_protection_title': 'Sacá fotos de las protecciones (balcón, ventanas, rejas)',
         'form.photos_protection_title_gift': 'Fotos de las protecciones en lo de {n} (balcón, ventanas, rejas)',
@@ -296,6 +297,7 @@ export const form: CatalogSlice = {
         'form.invalid_link_desc': 'Este formulario necesita un enlace válido. Pedí uno nuevo al rescatista.',
     },
     en: {
+        'form.open_placeholder': 'Write your answer',
         // ── Photos (spec 2026-10-14, release 2) ──
         'form.photos_protection_title': 'Take photos of the protection (balcony, windows, fences)',
         'form.photos_protection_title_gift': "Photos of the protection at {n}'s (balcony, windows, fences)",
@@ -583,6 +585,7 @@ export const form: CatalogSlice = {
         'form.invalid_link_desc': 'This form needs a valid link. Ask the rescuer for a new one.',
     },
     pt: {
+        'form.open_placeholder': 'Escreva sua resposta',
         // ── Photos (spec 2026-10-14, release 2) ──
         'form.photos_protection_title': 'Tire fotos das proteções (varanda, janelas, grades)',
         'form.photos_protection_title_gift': 'Fotos das proteções na casa de {n} (varanda, janelas, grades)',

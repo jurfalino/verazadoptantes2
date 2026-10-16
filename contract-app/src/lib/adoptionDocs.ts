@@ -10,6 +10,7 @@ import { CONTRACT_CONTENT } from '../i18n/contractContent'
 
 import { stripGiftAnswers } from './giftFlow'
 import { stripPhotos } from './formPhotos'
+import { settleOpenAnswers } from './openAnswers'
 import { NEW_FORM_STEPS, DEFAULT_OFF_FORM_STEPS, isOwnScreen, followUpHost, followUpVisible, stripUnaskedNewAnswers, type FormCtx } from './formQuestions'
 
 const NEW = new Set<string>(NEW_FORM_STEPS)
@@ -253,10 +254,10 @@ export function buildSubmitBody(
 ): Record<string, unknown> {
     // A "Para mí" form never carries a recipient or a "No sé" from a gift draft;
     // a new question carries an answer only if it was really asked (spec 2026-10-14).
-    const cleaned = stripPhotos(
+    const cleaned = settleOpenAnswers(stripPhotos(
         stripUnaskedNewAnswers(stripGiftAnswers(stripHiddenAnswers(finalAnswers, hiddenSteps ?? [])), [...configSchema], ctx),
         hiddenSteps, [...configSchema],
-    )
+    ), hiddenSteps, [...configSchema])
     return {
         ...cleaned,
         ...(animalId ? { animalId } : {}),
