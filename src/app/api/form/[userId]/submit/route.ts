@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { withCors, corsPreflightResponse } from '@/lib/cors';
 import { runAfterResponse } from '@/lib/background';
-import { deriveSpecialNeeds, sanitizeShownSteps, isPhoneRequired } from '@/domain/adoptionDocs';
+import { deriveSpecialNeeds, sanitizeShownSteps, isPhoneRequired, photosOn } from '@/domain/adoptionDocs';
 import { isValidFormEmail } from '@/domain/formEmail';
 import { parseHouseholdPeople, childrenAnswer, fullName } from '@/domain/householdPeople';
 import { parseGiftRecipient, recipientFullName } from '@/domain/giftRecipient';
@@ -111,15 +111,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         }
         const rescuerEmail = user.email;
 
+        // The rescuer's form settings (null while custom forms is off, or
+        // nothing is customised → today's form).
+        const { resolveDocsForRescuer } = await import('@/lib/adoptionDocsRepo');
+        const hiddenSteps = (await resolveDocsForRescuer(db, rescuerEmail))?.hiddenSteps ?? [];
+
         // Spec Part 3: the phone is required unless the rescuer made it
         // optional. Never refused here — a tab opened before the switch
         // changed must still get through — only logged, so a client that
         // skips its own check shows up.
-        if (!phone) {
-            const { resolveDocsForRescuer } = await import('@/lib/adoptionDocsRepo');
-            const resolved = await resolveDocsForRescuer(db, rescuerEmail);
-            if (isPhoneRequired(resolved?.hiddenSteps ?? [])) logger.warn('form submit: phone missing on a phone-required form', { userId });
-        }
+        if (!phone && isPhoneRequired(hiddenSteps)) logger.warn('form submit: phone missing on a phone-required form', { userId });
 
         const submissionId = crypto.randomUUID();
 
@@ -145,7 +146,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         // Photos of the protection / where it sleeps (spec 2026-10-14 release 2):
         // private storage like the selfie; keys only in photo_keys, never in the
         // answers. A photo that can't be stored never fails the submission.
-        const photoInput = parsePhotoInputs(body);
+        // Only kept when this rescuer asks for photos: a forged or stale
+        // submit can't put files in storage on a form that never offered it.
+        const photoInput = photosOn(hiddenSteps) ? parsePhotoInputs(body) : { protection: [], sleep: null, dropped: 0 };
+        if (!photosOn(hiddenSteps) && (body.protectionPhotos != null || body.sleepPhoto != null)) {
+            logger.warn('form submit: photos sent to a form that does not ask for them, ignored', { submissionId });
+        }
         if (photoInput.dropped) logger.warn('form submit: photos dropped (limit, type or size)', { submissionId, dropped: photoInput.dropped });
         const photoKeys: StoredPhoto[] = [];
         let photosFailed = 0;

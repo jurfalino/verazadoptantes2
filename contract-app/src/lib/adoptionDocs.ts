@@ -77,7 +77,6 @@ export const FORM_OPTION_TOKENS = [
     'way:dogTied:open',
     'way:petExperience:open',
     'way:gaveAway:open',
-    'way:willingToSterilize:open',
     'way:sterilizeHow:open',
     'way:movingPlans:open',
     'way:vacationPlan:open',

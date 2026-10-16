@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { draftAnswers, photosMissing, stripPhotos, MAX_PROTECTION_PHOTOS } from './formPhotos'
+import { draftAnswers, photosMissing, stripPhotos, missingPhotosStep, MAX_PROTECTION_PHOTOS } from './formPhotos'
 
 const P = 'data:image/jpeg;base64,AAAA'
 
@@ -24,5 +24,15 @@ describe('form photos (release 2) — public form rules', () => {
         expect(stripPhotos(a, [], cfg)).toEqual({ name: 'A' })
         expect(stripPhotos(a, ['on:photos'], [{ id: 'isSafe' }])).toEqual({ protectionPhotos: [P], name: 'A' })
         expect(stripPhotos({ protectionPhotos: [P, P, P, P] }, ['on:photos'], cfg).protectionPhotos).toHaveLength(MAX_PROTECTION_PHOTOS)
+    })
+    it('sending checks them again: a draft reopened after the photos step lost them goes back there', () => {
+        const on = ['on:photos', 'photos-required']
+        const shown = [{ id: 'name' }, { id: 'isSafe' }, { id: 'sleepPlace' }]
+        expect(missingPhotosStep({ name: 'A', isSafe: 'yes' }, on, shown)).toBe('isSafe')
+        expect(missingPhotosStep({ name: 'A', isSafe: 'yes', protectionPhotos: [P] }, on, shown)).toBeNull()
+        // Not on this applicant's form (hidden, or skipped by an earlier answer): nothing to ask for.
+        expect(missingPhotosStep({ name: 'A' }, on, [{ id: 'name' }])).toBeNull()
+        expect(missingPhotosStep({ intent: 'gift', giftRecipient: { firstName: 'Laura' } }, on, shown)).toBeNull()
+        expect(missingPhotosStep({}, ['on:photos'], shown)).toBeNull()
     })
 })

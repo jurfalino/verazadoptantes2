@@ -25,6 +25,16 @@ export function photosMissing(answers: Record<string, unknown>, stored: readonly
     return !Array.isArray(list) || list.length === 0
 }
 
+/**
+ * Checked again on send: drafts never keep photos, so an applicant who
+ * reopens the form past "¿El espacio está protegido?" has none. Returns the
+ * step to send them back to, or null. `shown` is this applicant's step list —
+ * a protection question that isn't on it asks for nothing.
+ */
+export function missingPhotosStep(answers: Record<string, unknown>, stored: readonly string[] | null | undefined, shown: readonly { id: string }[]): 'isSafe' | null {
+    return shown.some(s => s.id === 'isSafe') && photosMissing(answers, stored) ? 'isSafe' : null
+}
+
 /** The submission carries photos only when asked: photos on, and their question on the form. */
 export function stripPhotos(answers: Record<string, unknown>, stored: readonly string[] | null | undefined, configSchema: { id: string }[]): Record<string, unknown> {
     const on = photosOn(stored)

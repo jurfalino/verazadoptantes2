@@ -5,7 +5,7 @@ import {
     resolveDocsOwner, normalizeRichDoc, normalizeSections, isStandardSections,
     canonicalSectionsJson, planContractSave, deriveSpecialNeeds, richDocSchema,
     contractSectionsSchema, isContractVersionOwnedBy, parseStoredHiddenSteps, isPhoneRequired, FORM_OPTION_TOKENS,
-    isQuestionOn, toggleQuestion, questionWay, setQuestionWay, settingKeyQuestion, settingChange, photosOn, photosRequired, isAskedOpen, answerStyle, setAnswerStyle, OPEN_CAPABLE_STEPS, DEFAULT_OFF_FORM_STEPS, type RichDoc,
+    isQuestionOn, toggleQuestion, questionWay, setQuestionWay, settingKeyQuestion, settingChange, photosOn, photosRequired, isAskedOpen, answerStyle, setAnswerStyle, OPEN_CAPABLE_STEPS, FOLLOW_UP_HOSTS, DEFAULT_OFF_FORM_STEPS, type RichDoc,
 } from './adoptionDocs';
 
 const doc = (...texts: string[]): RichDoc => ({ type: 'doc', content: texts.map(t => ({ type: 'paragraph', content: [{ text: t }] })) });
@@ -13,7 +13,7 @@ const doc = (...texts: string[]): RichDoc => ({ type: 'doc', content: texts.map(
 describe('form steps', () => {
     it('locks terms + identity', () => {
         expect(LOCKED_FORM_STEPS).toEqual(['legal', 'identity-name', 'identity-email', 'identity-phone', 'identity-address']);
-        expect(TOGGLEABLE_FORM_STEPS.length).toBe(63); // 35 rows + 11 tokens + 17 open-text tokens
+        expect(TOGGLEABLE_FORM_STEPS.length).toBe(62); // 35 rows + 11 tokens + 16 open-text tokens
     });
     it('groups cover every toggleable step exactly once', () => {
         const all = (FORM_STEP_GROUPS.flatMap(g => g.steps) as string[]).filter(s => !(LOCKED_FORM_STEPS as readonly string[]).includes(s));
@@ -294,8 +294,14 @@ describe('photos (release 2)', () => {
 
 describe('open vs closed per question (release 3)', () => {
     it('covers the questions spec §6.0 lists — never consents, facts or what the form branches on', () => {
-        expect([...OPEN_CAPABLE_STEPS].sort()).toEqual(['adaptPlan', 'carer', 'catOutdoor', 'dogTied', 'dogWalks', 'gaveAway', 'hoursAlone', 'isSafe', 'movingPlans', 'petExperience', 'petsCare', 'rental', 'returnReasons', 'sleepPlace', 'sterilizeHow', 'vacationPlan', 'willingToSterilize']);
+        expect([...OPEN_CAPABLE_STEPS].sort()).toEqual(['adaptPlan', 'carer', 'catOutdoor', 'dogTied', 'dogWalks', 'gaveAway', 'hoursAlone', 'isSafe', 'movingPlans', 'petExperience', 'petsCare', 'rental', 'returnReasons', 'sleepPlace', 'sterilizeHow', 'vacationPlan']);
         for (const id of ['visitConsent', 'allergy', 'species', 'intent', 'housingType', 'existingPets', 'hasOutdoor']) expect(OPEN_CAPABLE_STEPS as readonly string[]).not.toContain(id);
+    });
+    it('a question a follow-up depends on is never free text (its follow-up would never show)', () => {
+        for (const hosts of Object.values(FOLLOW_UP_HOSTS)) {
+            for (const host of hosts) expect(OPEN_CAPABLE_STEPS as readonly string[]).not.toContain(host);
+        }
+        expect(FORM_OPTION_TOKENS as readonly string[]).not.toContain('way:willingToSterilize:open');
     });
     it('closed by default; open on request; a variant follows its row', () => {
         expect(answerStyle('rental', [])).toBe('closed');

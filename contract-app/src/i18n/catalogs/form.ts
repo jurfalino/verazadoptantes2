@@ -19,6 +19,7 @@ export const form: CatalogSlice = {
         'form.photo_remove': 'Quitar foto',
         'form.err_photo_read': 'No pudimos leer esa foto. Probá con otra.',
         'form.err_photos_not_saved': 'Tu solicitud llegó, pero no pudimos guardar algunas fotos.',
+        'form.err_photos_missing': 'Faltan las fotos de las protecciones: agregalas para enviar la solicitud.',
         // ── New questions (spec 2026-10-14, release 1) ──
         'form.q_carer_title': '¿Quién lo va a cuidar día a día?',
         'form.opt_carer_me': 'Yo',
@@ -307,6 +308,7 @@ export const form: CatalogSlice = {
         'form.photo_remove': 'Remove photo',
         'form.err_photo_read': "We couldn't read that photo. Try another one.",
         'form.err_photos_not_saved': "Your application arrived, but some photos couldn't be saved.",
+        'form.err_photos_missing': 'The photos of the protections are missing: add them to send your application.',
         // ── New questions (spec 2026-10-14, release 1) ──
         'form.q_carer_title': 'Who will look after it day to day?',
         'form.opt_carer_me': 'Me',
@@ -595,6 +597,7 @@ export const form: CatalogSlice = {
         'form.photo_remove': 'Remover foto',
         'form.err_photo_read': 'Não conseguimos ler essa foto. Tente outra.',
         'form.err_photos_not_saved': 'Sua solicitação chegou, mas algumas fotos não puderam ser salvas.',
+        'form.err_photos_missing': 'Faltam as fotos das proteções: adicione-as para enviar a solicitação.',
         // ── New questions (spec 2026-10-14, release 1) ──
         'form.q_carer_title': 'Quem vai cuidar dele no dia a dia?',
         'form.opt_carer_me': 'Eu',

@@ -12,14 +12,18 @@ Only with custom forms switched on; production forms don't change while it's off
   (balcony, windows, fences) — up to 3, under "¿El espacio está protegido?" —
   and make them required. With photos on, the form also offers an optional photo
   of where the animal will sleep. A gift form never requires them (the giver may
-  not have access to the recipient's home). Photos are shrunk on the phone,
-  stored privately like the selfie, and open only for whoever may see that form;
-  they appear on the form screen and in the animal's applicant panel.
+  not have access to the recipient's home). Photos aren't kept in a saved draft,
+  so required photos are checked again on "Enviar": an applicant who reopened
+  the form without them goes back to that question. Photos are shrunk on the
+  phone, stored privately like the selfie, and open only for whoever may see that
+  form — and only kept when that rescuer asks for them; they appear on the form
+  screen and in the animal's applicant panel.
 - **"Cómo preguntar": options or free text.** For each question where it makes
   sense (spec §6.0), the rescuer chooses whether applicants pick an option or
   write their own answer. Previous animal and moving offer three ways: the new
   question, the old one, or free text. Free-text answers show as written, with
-  no semáforo dot.
+  no semáforo dot. "¿Vas a castrarlo?" stays options-only: the "¿Cómo?"
+  follow-up appears only under a "Sí", and a "No" is a red flag.
 
 ## [2.56.186] - 2026-10-15
 

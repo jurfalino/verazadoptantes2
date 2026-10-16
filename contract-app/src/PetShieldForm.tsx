@@ -12,7 +12,7 @@ import { followUpsUnder, FOLLOW_UP_HOSTS } from './lib/formQuestions'
 import FollowUps, { type ChoiceQuestion } from './components/FollowUps'
 import PhotoPicker from './components/PhotoPicker'
 import { withOpenSteps, isAnswered, openText, type OpenTextStep } from './lib/openAnswers'
-import { draftAnswers, photosMissing, MAX_PROTECTION_PHOTOS } from './lib/formPhotos'
+import { draftAnswers, photosMissing, missingPhotosStep, MAX_PROTECTION_PHOTOS } from './lib/formPhotos'
 import { shrinkImage } from './lib/imageShrink'
 
 // ══════════════════════════════════════════════
@@ -995,6 +995,16 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     async function handleSubmit(finalAnswers: Record<string, any>) {
         if (!userId) {
             setToast({ message: t('form.err_invalid_link_user'), id: 'ERR-FORM-001' })
+            return
+        }
+        // Required photos are checked again here: a reopened draft has none.
+        const shown = stepsForAnswers(configSchema, settleGiftAnswers(finalAnswers, intentAsked), formCtx)
+        const redo = missingPhotosStep(finalAnswers, hiddenSteps, shown)
+        if (redo) {
+            setAnimationKey(k => k + 1)
+            setStep(shown.findIndex(s => s.id === redo))
+            persist(redo, finalAnswers)
+            setToast({ message: t('form.err_photos_missing') })
             return
         }
         setSubmitting(true)

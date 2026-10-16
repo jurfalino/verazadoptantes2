@@ -54,9 +54,10 @@ const VARIANT_OF: Record<string, string> = { lastAnimal: 'petExperience', moving
 /**
  * Release 3 (spec §6.0): questions a rescuer may switch to free text
  * (`way:<id>:open`). Never consents, yes/no facts, identity or what the form
- * branches on. The variants follow their row (lastAnimal → petExperience).
+ * branches on — willingToSterilize stays closed: sterilizeHow shows only under
+ * a "yes", and its "no" is a red semáforo signal. The variants follow their row (lastAnimal → petExperience).
  */
-export const OPEN_CAPABLE_STEPS = ['carer', 'petsCare', 'rental', 'isSafe', 'catOutdoor', 'sleepPlace', 'hoursAlone', 'dogWalks', 'dogTied', 'petExperience', 'gaveAway', 'willingToSterilize', 'sterilizeHow', 'movingPlans', 'vacationPlan', 'returnReasons', 'adaptPlan'] as const;
+export const OPEN_CAPABLE_STEPS = ['carer', 'petsCare', 'rental', 'isSafe', 'catOutdoor', 'sleepPlace', 'hoursAlone', 'dogWalks', 'dogTied', 'petExperience', 'gaveAway', 'sterilizeHow', 'movingPlans', 'vacationPlan', 'returnReasons', 'adaptPlan'] as const;
 
 /**
  * Per-form options stored in the same hidden_steps list (spec Part 3):
@@ -81,7 +82,6 @@ export const FORM_OPTION_TOKENS = [
     'way:dogTied:open',
     'way:petExperience:open',
     'way:gaveAway:open',
-    'way:willingToSterilize:open',
     'way:sterilizeHow:open',
     'way:movingPlans:open',
     'way:vacationPlan:open',
