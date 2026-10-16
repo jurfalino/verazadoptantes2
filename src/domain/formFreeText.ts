@@ -1,3 +1,5 @@
+import { OPEN_CAPABLE_STEPS, VARIANT_FORM_STEPS } from './adoptionDocs';
+
 /**
  * Free text from the public adoption form (spec 2026-10-14). The server
  * re-checks it: a hand-made POST can't store a novel or put junk on a profile.
@@ -31,4 +33,23 @@ export function socialHandle(v: unknown, platform: 'instagram' | 'facebook'): { 
     if (!HANDLE.test(t) || !/[A-Za-z0-9]/.test(t)) return null;
     if (NON_ANSWERS.has(t.replace(/^@/, '').toLowerCase())) return null;
     return { value: t.startsWith('@') ? t : `@${t}`, platform };
+}
+
+const OPEN_KEYS = new Set<string>([...OPEN_CAPABLE_STEPS, ...VARIANT_FORM_STEPS]);
+export const OPEN_ANSWER_MAX = 500;
+
+/**
+ * Release 3: a question asked as free text arrives as { open: text }. Keep it
+ * trimmed and clamped; drop empty text and any other object a hand-made POST
+ * sends for those questions. Closed answers (strings) pass untouched.
+ */
+export function normalizeOpenAnswers(answers: Record<string, unknown>): Record<string, unknown> {
+    const out = { ...answers };
+    for (const key of OPEN_KEYS) {
+        const v = out[key];
+        if (!v || typeof v !== 'object') continue;
+        const text = clampFreeText((v as { open?: unknown }).open, OPEN_ANSWER_MAX);
+        if (text === undefined) delete out[key]; else out[key] = { open: text };
+    }
+    return out;
 }

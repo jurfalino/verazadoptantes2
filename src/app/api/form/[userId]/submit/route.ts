@@ -6,7 +6,7 @@ import { deriveSpecialNeeds, sanitizeShownSteps, isPhoneRequired } from '@/domai
 import { isValidFormEmail } from '@/domain/formEmail';
 import { parseHouseholdPeople, childrenAnswer, fullName } from '@/domain/householdPeople';
 import { parseGiftRecipient, recipientFullName } from '@/domain/giftRecipient';
-import { clampFreeText, socialHandle } from '@/domain/formFreeText';
+import { clampFreeText, socialHandle, normalizeOpenAnswers } from '@/domain/formFreeText';
 import { parsePhotoInputs, type StoredPhoto } from '@/domain/formPhotos';
 import type { HouseholdMember } from '@/lib/householdMembers';
 
@@ -63,6 +63,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             const v = clampFreeText(body[key], max);
             if (v === undefined) delete answers[key]; else answers[key] = v;
         }
+        // Free-text answers to closed questions (release 3): { open }, clamped.
+        const normalized = normalizeOpenAnswers(answers);
+        for (const k of Object.keys(answers)) if (!(k in normalized)) delete answers[k];
+        Object.assign(answers, normalized);
         // Instagram / Facebook become profile contacts only when they look like one.
         const socials = [socialHandle(body.instagram, 'instagram'), socialHandle(body.facebook, 'facebook')]
             .filter((s): s is NonNullable<typeof s> => s !== null);

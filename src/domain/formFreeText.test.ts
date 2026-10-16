@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { clampFreeText, socialHandle } from './formFreeText';
+import { clampFreeText, socialHandle, normalizeOpenAnswers } from './formFreeText';
 
 describe('free text from the public form', () => {
     it('trims and clamps; non-strings and blanks are dropped', () => {
@@ -38,5 +38,21 @@ describe('review fixes (2026-10-14)', () => {
         expect(socialHandle('https://www.instagram.com/laura.p?igsh=MXd2a3Y=', 'instagram')).toEqual({ value: 'https://www.instagram.com/laura.p', platform: 'instagram' });
         expect(socialHandle('https://www.facebook.com/profile.php?id=100012345678', 'facebook')).toEqual({ value: 'https://www.facebook.com/profile.php?id=100012345678', platform: 'facebook' });
         expect(socialHandle('https://facebook.com/laura.p?mibextid=ZbWKwL', 'facebook')).toEqual({ value: 'https://facebook.com/laura.p', platform: 'facebook' });
+    });
+});
+
+describe('free-text answers to closed questions (release 3)', () => {
+    it('keep { open } trimmed and clamped; drop empty text and any other object', () => {
+        const out = normalizeOpenAnswers({
+            rental: { open: '  alquilo  ' }, gaveAway: { open: 'x'.repeat(900) }, carer: { open: '   ' },
+            sleepPlace: { evil: true }, lastAnimal: { open: 'murió de viejo' }, existingPets: { dogs: 1 }, name: 'A',
+        });
+        expect(out.rental).toEqual({ open: 'alquilo' });
+        expect((out.gaveAway as { open: string }).open).toHaveLength(500);
+        expect(out).not.toHaveProperty('carer');
+        expect(out).not.toHaveProperty('sleepPlace');
+        expect(out.lastAnimal).toEqual({ open: 'murió de viejo' });
+        expect(out.existingPets).toEqual({ dogs: 1 });
+        expect(out.name).toBe('A');
     });
 });
