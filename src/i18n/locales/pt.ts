@@ -2638,6 +2638,8 @@ export const pt = {
         only_dog: 'só cães',
         way_state_old: 'agora usa a pergunta simples',
         way_state_new: 'agora usa a pergunta recomendada',
+        way_state_open: 'agora respondida com texto livre',
+        way_state_closed: 'agora respondida com opções',
         photos_state_required: 'agora as fotos são obrigatórias',
         photos_state_optional: 'agora as fotos são opcionais',
         photos_ask: 'Pedir fotos das proteções',

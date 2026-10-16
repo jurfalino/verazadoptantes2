@@ -65,11 +65,33 @@ export const FORM_OPTION_TOKENS = [
     'on:catOutdoor', 'on:dogWalks', 'on:dogTied', 'on:social', 'on:vetReference', 'on:motivation',
     'way:petExperience:old', 'way:movingPlans:old',
     'on:photos', 'photos-required',
+    'way:carer:open',
+    'way:petsCare:open',
+    'way:rental:open',
+    'way:isSafe:open',
+    'way:catOutdoor:open',
+    'way:sleepPlace:open',
+    'way:hoursAlone:open',
+    'way:dogWalks:open',
+    'way:dogTied:open',
+    'way:petExperience:open',
+    'way:gaveAway:open',
+    'way:willingToSterilize:open',
+    'way:sterilizeHow:open',
+    'way:movingPlans:open',
+    'way:vacationPlan:open',
+    'way:returnReasons:open',
+    'way:adaptPlan:open',
 ] as const
 
 /** The phone is required unless the rescuer turned it off — also when the config couldn't load (null). */
 export function isPhoneRequired(stored: readonly string[] | null | undefined): boolean {
     return !(stored ?? []).includes('phone-optional')
+}
+
+/** Release 3: this step is asked as free text (`way:<row>:open`) — never with no config. A variant follows its row. */
+export function isAskedOpen(stepId: string, stored: readonly string[] | null | undefined): boolean {
+    return (stored ?? []).includes(`way:${VARIANT_OF[stepId] ?? stepId}:open`)
 }
 
 /** Release 2: photos of the protection — never with no config (custom forms off). */

@@ -54,6 +54,8 @@ const CHANGE_KEY: Record<SettingChange, string> = {
     phoneRequired: 'adoptionDocs.phone_state_required',
     photosRequired: 'adoptionDocs.photos_state_required',
     photosOptional: 'adoptionDocs.photos_state_optional',
+    openWording: 'adoptionDocs.way_state_open',
+    closedWording: 'adoptionDocs.way_state_closed',
     oldWording: 'adoptionDocs.way_state_old',
     newWording: 'adoptionDocs.way_state_new',
 };

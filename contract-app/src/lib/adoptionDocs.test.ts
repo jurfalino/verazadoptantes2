@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { FORM_STEP_IDS, applyHiddenSteps, restoreStepIndex, stripHiddenAnswers, buildSubmitBody, draftKey, resolveDraft, isValidCustomContract, contractVersionLabel, customSectionFor, STANDARD_CONTRACT_VERSION, fnv1a, isPhoneRequired, withPhoneRequirement, stepAfter, photosOn, photosRequired, type CustomContract, type RichDoc } from './adoptionDocs'
+import { FORM_STEP_IDS, applyHiddenSteps, restoreStepIndex, stripHiddenAnswers, buildSubmitBody, draftKey, resolveDraft, isValidCustomContract, contractVersionLabel, customSectionFor, STANDARD_CONTRACT_VERSION, fnv1a, isPhoneRequired, withPhoneRequirement, stepAfter, photosOn, photosRequired, isAskedOpen, formStepsToAsk, type CustomContract, type RichDoc } from './adoptionDocs'
 
 const schema = FORM_STEP_IDS.map(id => ({ id }))
 
@@ -285,5 +285,16 @@ describe('photos (release 2) — public form', () => {
         expect(photosOn(['on:photos'])).toBe(true)
         expect(photosRequired(['photos-required'])).toBe(false)
         expect(photosRequired(['on:photos', 'photos-required'])).toBe(true)
+    })
+})
+
+describe('open answers (release 3) — public form', () => {
+    it('never with no config; a variant follows its row; the open topic still asks the new wording', () => {
+        expect(isAskedOpen('rental', null)).toBe(false)
+        expect(isAskedOpen('rental', ['way:rental:open'])).toBe(true)
+        expect(isAskedOpen('lastAnimal', ['way:petExperience:open'])).toBe(true)
+        const asked = formStepsToAsk(FORM_STEP_IDS.map(id => ({ id })), ['way:petExperience:open']).map(s => s.id)
+        expect(asked).toContain('lastAnimal')
+        expect(asked).not.toContain('petExperience')
     })
 })

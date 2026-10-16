@@ -52,6 +52,13 @@ export const SPECIES_ONLY_STEPS = { catOutdoor: 'cat', dogWalks: 'dog', dogTied:
 const VARIANT_OF: Record<string, string> = { lastAnimal: 'petExperience', movingIfNoPets: 'movingPlans' };
 
 /**
+ * Release 3 (spec §6.0): questions a rescuer may switch to free text
+ * (`way:<id>:open`). Never consents, yes/no facts, identity or what the form
+ * branches on. The variants follow their row (lastAnimal → petExperience).
+ */
+export const OPEN_CAPABLE_STEPS = ['carer', 'petsCare', 'rental', 'isSafe', 'catOutdoor', 'sleepPlace', 'hoursAlone', 'dogWalks', 'dogTied', 'petExperience', 'gaveAway', 'willingToSterilize', 'sterilizeHow', 'movingPlans', 'vacationPlan', 'returnReasons', 'adaptPlan'] as const;
+
+/**
  * Per-form options stored in the same hidden_steps list (spec Part 3):
  * 'phone-optional' lets an applicant leave the phone blank — absent (every
  * existing config) means the phone is required. Not questions: never counted
@@ -63,6 +70,23 @@ export const FORM_OPTION_TOKENS = [
     'on:catOutdoor', 'on:dogWalks', 'on:dogTied', 'on:social', 'on:vetReference', 'on:motivation',
     'way:petExperience:old', 'way:movingPlans:old',
     'on:photos', 'photos-required',
+    'way:carer:open',
+    'way:petsCare:open',
+    'way:rental:open',
+    'way:isSafe:open',
+    'way:catOutdoor:open',
+    'way:sleepPlace:open',
+    'way:hoursAlone:open',
+    'way:dogWalks:open',
+    'way:dogTied:open',
+    'way:petExperience:open',
+    'way:gaveAway:open',
+    'way:willingToSterilize:open',
+    'way:sterilizeHow:open',
+    'way:movingPlans:open',
+    'way:vacationPlan:open',
+    'way:returnReasons:open',
+    'way:adaptPlan:open',
 ] as const;
 
 const LOCKED = new Set<string>(LOCKED_FORM_STEPS);
@@ -148,17 +172,36 @@ export function toggleQuestion(rowId: string, hidden: readonly string[]): string
     return inFormOrder(next);
 }
 
-export function questionWay(rowId: 'petExperience' | 'movingPlans', hidden: readonly string[]): 'new' | 'old' {
-    return hidden.includes(`way:${rowId}:old`) ? 'old' : 'new';
+export function questionWay(rowId: 'petExperience' | 'movingPlans', hidden: readonly string[]): 'new' | 'old' | 'open' {
+    return hidden.includes(`way:${rowId}:open`) ? 'open' : hidden.includes(`way:${rowId}:old`) ? 'old' : 'new';
 }
 
-export function setQuestionWay(rowId: 'petExperience' | 'movingPlans', way: 'new' | 'old', hidden: readonly string[]): string[] {
+/** One way at a time: the new wording (default), the old one, or the new one as free text. */
+export function setQuestionWay(rowId: 'petExperience' | 'movingPlans', way: 'new' | 'old' | 'open', hidden: readonly string[]): string[] {
     const next = new Set(hidden);
-    if (way === 'old') next.add(`way:${rowId}:old`); else next.delete(`way:${rowId}:old`);
+    next.delete(`way:${rowId}:old`);
+    next.delete(`way:${rowId}:open`);
+    if (way !== 'new') next.add(`way:${rowId}:${way}`);
     return inFormOrder(next);
 }
 
-export type SettingChange = 'asked' | 'notAsked' | 'oldWording' | 'newWording' | 'phoneOptional' | 'phoneRequired' | 'photosRequired' | 'photosOptional';
+/** Options (default) or free text, for a question in OPEN_CAPABLE_STEPS. */
+export function answerStyle(rowId: string, hidden: readonly string[]): 'closed' | 'open' {
+    return hidden.includes(`way:${rowId}:open`) ? 'open' : 'closed';
+}
+
+export function setAnswerStyle(rowId: string, style: 'closed' | 'open', hidden: readonly string[]): string[] {
+    const next = new Set(hidden);
+    if (style === 'open') next.add(`way:${rowId}:open`); else next.delete(`way:${rowId}:open`);
+    return inFormOrder(next);
+}
+
+/** Whether the public form asks this step as free text — a variant follows its row. */
+export function isAskedOpen(stepId: string, hidden: readonly string[]): boolean {
+    return hidden.includes(`way:${VARIANT_OF[stepId] ?? stepId}:open`);
+}
+
+export type SettingChange = 'asked' | 'notAsked' | 'oldWording' | 'newWording' | 'openWording' | 'closedWording' | 'phoneOptional' | 'phoneRequired' | 'photosRequired' | 'photosOptional';
 
 /** Release 2: the rescuer asks for photos of the protection (and an optional one of where it sleeps). */
 export function photosOn(hidden: readonly string[]): boolean {
@@ -178,6 +221,7 @@ export function photosRequired(hidden: readonly string[]): boolean {
 export function settingChange(key: string, present: boolean): SettingChange {
     if (key === 'phone-optional') return present ? 'phoneOptional' : 'phoneRequired';
     if (key === 'photos-required') return present ? 'photosRequired' : 'photosOptional';
+    if (key.startsWith('way:') && key.endsWith(':open')) return present ? 'openWording' : 'closedWording';
     if (key.startsWith('way:')) return present ? 'oldWording' : 'newWording';
     if (key.startsWith('on:')) return present ? 'asked' : 'notAsked';
     return present ? 'notAsked' : 'asked';
