@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.188] - 2026-10-15
+
+### Changed — CI: authed e2e in 8 legs
+
+2.56.186 and 2.56.187 never deployed: authed-7 (the sheet-import form-export
+and view-as specs) hit the dev server's memory ceiling 3–5 times, the automatic
+re-run included. Eight legs (was seven), as the sharding plan prescribes.
+
 ## [2.56.187] - 2026-10-15
 
 ### Added — adoption form: photos, and free-text answers (custom forms)
