@@ -2635,6 +2635,8 @@ export const en = {
         way_state_new: 'now uses the recommended question',
         photos_state_required: 'photos are now required',
         photos_state_optional: 'photos are now optional',
+        photos_ask: 'Ask for photos of the protection',
+        photos_required: 'Required',
         phone_required: 'Required',
         phone_required_question: 'Phone required',
         phone_state_optional: 'now optional',

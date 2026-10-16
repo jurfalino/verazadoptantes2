@@ -109,4 +109,26 @@ test.describe('household question choice', () => {
         await page.getByTestId('adoption-docs-save-form').click();
         await expect.poll(stored, { timeout: 15_000 }).toEqual([]);
     });
+
+    test('photos: "Pedir fotos" and "Obligatorias" under protected spaces reach the public form', async ({ page, request }) => {
+        execD1(`UPDATE adoption_doc_settings SET hidden_steps = NULL WHERE ${OWNER}`);
+        await page.goto('/settings/adoption-docs');
+        await dismissCountryBanner(page);
+        const ask = page.getByTestId('form-step-photos');
+        await expect(ask).toHaveAttribute('aria-checked', 'false', { timeout: 30_000 });
+        await dismissCountryBanner(page);
+        await expect(page.getByTestId('form-step-photos-required')).toHaveCount(0); // only once photos are on
+
+        await ask.click();
+        await page.getByTestId('form-step-photos-required').click();
+        await page.getByTestId('adoption-docs-save-form').click();
+        await expect.poll(stored, { timeout: 15_000 }).toEqual(['on:photos', 'photos-required']);
+        const cfg = await (await request.get('/api/form/test-admin-id')).json();
+        expect(cfg.formConfig.hiddenSteps).toEqual(['on:photos', 'photos-required']);
+
+        await page.getByTestId('form-step-photos-required').click();
+        await ask.click();
+        await page.getByTestId('adoption-docs-save-form').click();
+        await expect.poll(stored, { timeout: 15_000 }).toEqual([]);
+    });
 });

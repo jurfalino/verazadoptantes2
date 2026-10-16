@@ -2640,6 +2640,8 @@ export const pt = {
         way_state_new: 'agora usa a pergunta recomendada',
         photos_state_required: 'agora as fotos são obrigatórias',
         photos_state_optional: 'agora as fotos são opcionais',
+        photos_ask: 'Pedir fotos das proteções',
+        photos_required: 'Obrigatórias',
         phone_required: 'Obrigatório',
         phone_required_question: 'Telefone obrigatório',
         phone_state_optional: 'agora é opcional',
