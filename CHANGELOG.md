@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.190] - 2026-10-16
+
+### Fixed — e2e: a database read in a test no longer fails on «database is locked»
+
+2.56.189 never deployed: the contribution-flow test read the local test DB while the
+app was writing a notification, got SQLITE_BUSY three times and failed. The test
+helper now waits and retries on a busy database. Ships 2.56.189 unchanged (API docs
+examples written out under «Ejemplos»).
+
 ## [2.56.189] - 2026-10-16
 
 ### Fixed — API docs: the examples are on the page, not hidden in a dropdown
