@@ -131,4 +131,26 @@ test.describe('household question choice', () => {
         await page.getByTestId('adoption-docs-save-form').click();
         await expect.poll(stored, { timeout: 15_000 }).toEqual([]);
     });
+
+    test('"Cómo preguntar": a question switched to free text, and previous animal asked as free text, reach the public form', async ({ page, request }) => {
+        execD1(`UPDATE adoption_doc_settings SET hidden_steps = NULL WHERE ${OWNER}`);
+        await page.goto('/settings/adoption-docs');
+        await dismissCountryBanner(page);
+        const rentalOpen = page.getByTestId('style-rental-open');
+        await expect(page.getByTestId('style-rental-closed')).toHaveAttribute('aria-checked', 'true', { timeout: 30_000 });
+        await dismissCountryBanner(page);
+        await expect(page.getByTestId('style-visitConsent-open')).toHaveCount(0); // consents stay closed
+
+        await rentalOpen.click();
+        await page.getByTestId('way-petExperience-open').click();
+        await page.getByTestId('adoption-docs-save-form').click();
+        await expect.poll(stored, { timeout: 15_000 }).toEqual(['way:rental:open', 'way:petExperience:open']);
+        const cfg = await (await request.get('/api/form/test-admin-id')).json();
+        expect(cfg.formConfig.hiddenSteps).toEqual(['way:rental:open', 'way:petExperience:open']);
+
+        await page.getByTestId('style-rental-closed').click();
+        await page.getByTestId('way-petExperience-new').click();
+        await page.getByTestId('adoption-docs-save-form').click();
+        await expect.poll(stored, { timeout: 15_000 }).toEqual([]);
+    });
 });

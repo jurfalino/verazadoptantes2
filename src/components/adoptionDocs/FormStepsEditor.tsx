@@ -9,7 +9,7 @@
 import { useLanguage } from '@/context/LanguageContext';
 import {
     FORM_STEP_GROUPS, FORM_STEP_IDS, LOCKED_FORM_STEPS, DERIVED_FORM_STEPS, VARIANT_FORM_STEPS, DEFAULT_OFF_FORM_STEPS, SPECIES_ONLY_STEPS,
-    householdQuestion, isStepAsked, isPhoneRequired, photosOn, photosRequired, inFormOrder, isQuestionOn, toggleQuestion, questionWay, setQuestionWay, settingKeyQuestion, settingChange, type SettingChange,
+    householdQuestion, isStepAsked, isPhoneRequired, photosOn, photosRequired, answerStyle, setAnswerStyle, OPEN_CAPABLE_STEPS, inFormOrder, isQuestionOn, toggleQuestion, questionWay, setQuestionWay, settingKeyQuestion, settingChange, type SettingChange,
 } from '@/domain/adoptionDocs';
 
 const LOCKED = new Set<string>(LOCKED_FORM_STEPS);
@@ -179,6 +179,30 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
         </>
     );
 
+    /** Release 3: options or free text, for a question in OPEN_CAPABLE_STEPS. */
+    const styleChoice = (id: string) => {
+        const style = answerStyle(id, hidden);
+        return (
+            <div role="radiogroup" aria-label={t('adoptionDocs.household_choice_label')} className="flex flex-wrap gap-2 px-4 pb-3">
+                {(['closed', 'open'] as const).map(value => (
+                    <button
+                        key={value}
+                        type="button"
+                        role="radio"
+                        aria-checked={style === value}
+                        onClick={() => onChange(setAnswerStyle(id, value, hidden))}
+                        data-testid={`style-${id}-${value}`}
+                        className={`min-h-11 px-4 py-2 rounded-xl text-[13px] font-bold border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 ${style === value
+                            ? 'bg-teal-600 text-white border-transparent'
+                            : 'bg-white text-stone-700 border-stone-200 hover:bg-[var(--accent-subtle-bg)]'}`}
+                    >
+                        {t(value === 'open' ? 'adoptionDocs.way_open' : 'adoptionDocs.way_closed')}
+                    </button>
+                ))}
+            </div>
+        );
+    };
+
     /** A sub-switch under a question row: its own key, banners and indent (photos, release 2). */
     const subSwitch = (key: string, on: boolean, labelKey: string, testId: string, indent: string) => (
         <>
@@ -215,7 +239,7 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
         const way = questionWay(id, hidden);
         return (
             <div role="radiogroup" aria-label={t('adoptionDocs.household_choice_label')} className="flex flex-wrap gap-2 px-4 pb-3">
-                {(['new', 'old'] as const).map(value => (
+                {(['new', 'old', 'open'] as const).map(value => (
                     <button
                         key={value}
                         type="button"
@@ -227,7 +251,7 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
                             ? 'bg-teal-600 text-white border-transparent'
                             : 'bg-white text-stone-700 border-stone-200 hover:bg-[var(--accent-subtle-bg)]'}`}
                     >
-                        {t(`adoptionDocs.way_${id}_${value}`)}
+                        {t(value === 'open' ? 'adoptionDocs.way_open' : `adoptionDocs.way_${id}_${value}`)}
                     </button>
                 ))}
             </div>
@@ -256,12 +280,16 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
         const key = rowKey(id);
         const conflict = conflicts[key];
         const wayKey = `way:${id}:old`;
+        const openKey = `way:${id}:open`;
+        const openCapable = (OPEN_CAPABLE_STEPS as readonly string[]).includes(id);
+        const threeWays = id === 'petExperience' || id === 'movingPlans';
         const species = (SPECIES_ONLY_STEPS as Record<string, string>)[id];
         return (
             <li key={id}>
                 {conflict && conflictBanner(key, conflict)}
                 {id === 'children' && conflicts.household && conflictBanner('household', conflicts.household)}
                 {conflicts[wayKey] && conflictBanner(wayKey, conflicts[wayKey])}
+                {conflicts[openKey] && conflictBanner(openKey, conflicts[openKey])}
                 {updatedBy[key] !== undefined && !conflict && (
                     <p className="px-4 pt-2 text-xs font-semibold text-teal-700" data-testid={`form-step-${id}-updated-by`}>
                         {t('adoptionDocs.updated_by').replace('{name}', name(updatedBy[key]))}
@@ -293,7 +321,8 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
                 </button>
                 {id === 'children' && on && householdChoice()}
                 {id === 'isSafe' && on && photoSwitches()}
-                {(id === 'petExperience' || id === 'movingPlans') && on && wayChoice(id)}
+                {threeWays && on && wayChoice(id as 'petExperience' | 'movingPlans')}
+                {openCapable && !threeWays && on && styleChoice(id)}
             </li>
         );
     };

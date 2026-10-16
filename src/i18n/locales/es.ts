@@ -2640,6 +2640,8 @@ export const es = {
         way_state_new: 'ahora usa la pregunta recomendada',
         way_state_open: 'ahora se responde con texto libre',
         way_state_closed: 'ahora se responde con opciones',
+        way_closed: 'Opciones',
+        way_open: 'Texto libre',
         photos_state_required: 'ahora las fotos son obligatorias',
         photos_state_optional: 'ahora las fotos son opcionales',
         photos_ask: 'Pedir fotos de las protecciones',

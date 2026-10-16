@@ -2635,6 +2635,8 @@ export const en = {
         way_state_new: 'now uses the recommended question',
         way_state_open: 'now answered in free text',
         way_state_closed: 'now answered with options',
+        way_closed: 'Options',
+        way_open: 'Free text',
         photos_state_required: 'photos are now required',
         photos_state_optional: 'photos are now optional',
         photos_ask: 'Ask for photos of the protection',
