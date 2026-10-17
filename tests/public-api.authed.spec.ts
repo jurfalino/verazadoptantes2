@@ -105,8 +105,8 @@ test.describe('public API v1', () => {
         expect(dry.status()).toBe(200);
         expect(dry.headers()['x-dry-run']).toBe('1');
         const d = await dry.json();
-        expect(d.result).toBe('not_found');
-        expect(d.activity).toBeUndefined();
+        expect(d.match).toBe('not_found');
+        expect(d.saved).toEqual({ action: 'nothing_saved' });
         expect(d.risk).toEqual({ worstRating: { rating: null, ratingLevel: 0, ratingLabel: 'not_rated' }, flags: [], alerts: [], profilesMatched: 0 });
         expect(countRows(`SELECT count(*) AS n FROM adopters WHERE name = '${NAME}'`)).toBe(0);
         expect(countRows(`SELECT count(*) AS n FROM api_requests WHERE id = '${d.requestId}' AND dry_run = 1 AND record_id IS NULL AND outcome = 'not_found'`)).toBe(1);
@@ -128,7 +128,7 @@ test.describe('public API v1', () => {
         const ok = await call(1);
         expect(ok.status()).toBe(200);
         expect(ok.headers()['x-dry-run']).toBe('1');
-        expect((await ok.json()).activity).toBeUndefined();
+        expect((await ok.json()).saved).toEqual({ action: 'nothing_saved' });
         // The same key as a production (live) key: refused.
         execD1(`UPDATE api_keys SET environment = 'live' WHERE id = '${userKey.id}'`);
         const refused = await call(2);
@@ -149,12 +149,12 @@ test.describe('public API v1', () => {
         const saved = await search(body, { 'idempotency-key': `save-${STAMP}` });
         expect(saved.status()).toBe(200);
         const s = await saved.json();
-        expect(s.result).toBe('not_found');
-        expect(s.activity.profileCreated).toBe(true);
-        expect(s.activity.contactsAdded).toEqual([]);
-        expect(s.activity.activityUrl).toContain(`/adopter/${s.activity.profileId}?record=${s.activity.activityId}`);
-        recordId = s.activity.activityId;
-        profileId = s.activity.profileId;
+        expect(s.match).toBe('not_found');
+        expect(s.saved.action).toBe('created_profile');
+        expect(s.saved.contactsAdded).toEqual([]);
+        expect(s.saved.activityUrl).toContain(`/adopter/${s.saved.profileId}?record=${s.saved.activityId}`);
+        recordId = s.saved.activityId;
+        profileId = s.saved.profileId;
         // The form answers are stored as sent; species was read from a code.
         expect(countRows(`SELECT count(*) AS n FROM activity_forms WHERE activity_id = '${recordId}'`)).toBe(1);
         expect(countRows(`SELECT count(*) AS n FROM adoptions WHERE id = '${recordId}' AND species = 'dog'`)).toBe(1);
@@ -163,7 +163,7 @@ test.describe('public API v1', () => {
         const replay = await search(body, { 'idempotency-key': `save-${STAMP}` });
         const r = await replay.json();
         expect(r.replayed).toBe(true);
-        expect(r.activity.activityId).toBe(recordId);
+        expect(r.saved.activityId).toBe(recordId);
         // Same key, different body → refused.
         const clash = await search({ ...body, activity: { ...body.activity, activityType: 'observation', formContent: undefined } }, { 'idempotency-key': `save-${STAMP}` });
         expect(clash.status()).toBe(409);
@@ -176,8 +176,8 @@ test.describe('public API v1', () => {
         const mine = await lookup({ fullName: NAME, email: EMAIL });
         expect(mine.status()).toBe(200);
         const m = await mine.json();
-        expect(m.result).toBe('found');
-        expect(m.activity).toBeUndefined();
+        expect(m.match).toBe('found');
+        expect(m.saved).toEqual({ action: 'nothing_saved' });
         expect(m.risk.profilesMatched).toBe(1);
         expect(countRows(`SELECT count(*) AS n FROM adoptions WHERE adopter_id = '${profileId}'`)).toBe(1);
 
@@ -201,13 +201,13 @@ test.describe('public API v1', () => {
             headers: { authorization: `Bearer ${userKey.secret}`, 'idempotency-key': `stranger-${STAMP}` },
         });
         const stranger = await strangerRes.json();
-        expect(stranger.activity.profileCreated).toBe(true);
+        expect(stranger.saved.action).toMatch(/^created_profile/);
         const ours = await (await lookup({ fullName: NAME, phone: LOCAL_PHONE })).json();
-        expect(ours.result).toBe('found');
+        expect(ours.match).toBe('found');
         expect(ours.otherMatches).toBeUndefined();
         expect(ours.risk.profilesMatched).toBe(1);
-        expect(JSON.stringify(ours)).not.toContain(stranger.activity.profileId);
-        const v = await api.post(`/api/v1/activities/${stranger.activity.activityId}/void`, { headers: { authorization: `Bearer ${userKey.secret}` } });
+        expect(JSON.stringify(ours)).not.toContain(stranger.saved.profileId);
+        const v = await api.post(`/api/v1/activities/${stranger.saved.activityId}/void`, { headers: { authorization: `Bearer ${userKey.secret}` } });
         expect((await v.json()).profileVoided).toBe(true);
         await page.request.patch(`/api/admin/api-keys/${userKey.id}`, { data: { revoke: true } });
     });
@@ -215,7 +215,7 @@ test.describe('public API v1', () => {
     test('the same person in another phone format → found, with one request and no rating', async () => {
         const res = await check({ mode: 'exact', person: { fullName: `${NAME.split(' ')[1]}, ${NAME.split(' ')[0]}`, phone: INTL_PHONE }, activity: { activityType: 'adoption_request' } });
         const b = await res.json();
-        expect(b.result).toBe('found');
+        expect(b.match).toBe('found');
         expect(b.profile.profileId).toBe(profileId);
         expect(b.profile.matchedOn).toEqual(['phone']);
         expect(b.profile.nameMatchedAs).toBe('profile');
@@ -234,12 +234,12 @@ test.describe('public API v1', () => {
             { 'idempotency-key': `obs-${STAMP}` },
         );
         const b = await res.json();
-        expect(b.result).toBe('found');
-        expect(b.activity.profileCreated).toBe(false);
-        expect(b.activity.profileId).toBe(profileId);
+        expect(b.match).toBe('found');
+        expect(b.saved.action).toBe('added_to_profile');
+        expect(b.saved.profileId).toBe(profileId);
         expect(b.profile.records).toEqual({ adoption_request: 1 }); // before this call
         expect(b.profile.ratingLabel).toBe('not_rated');
-        secondRecordId = b.activity.activityId;
+        secondRecordId = b.saved.activityId;
 
         const after = await (await check({ mode: 'exact', person: { fullName: NAME, email: EMAIL }, activity: { activityType: 'observation' } })).json();
         expect(after.profile.records).toEqual({ adoption_request: 1, observation: 1 });
@@ -249,30 +249,30 @@ test.describe('public API v1', () => {
     test('an activity with only its type still saves; a new phone for a known person is added, with a trail, and void takes it back', async () => {
         const res = await search({ mode: 'exact', person: { fullName: NAME, email: EMAIL }, activity: { activityType: 'follow_up' } }, { 'idempotency-key': `plain-${STAMP}` });
         const b = await res.json();
-        expect(b.result).toBe('found');
-        expect(b.activity.profileId).toBe(profileId);
-        expect(b.activity.profileCreated).toBe(false);
+        expect(b.match).toBe('found');
+        expect(b.saved.profileId).toBe(profileId);
+        expect(b.saved.action).toBe('added_to_profile');
         const after = await (await check({ mode: 'exact', person: { fullName: NAME, email: EMAIL }, activity: { activityType: 'follow_up' } })).json();
         expect(after.profile.records.follow_up).toBe(1);
         // Found by email, with a phone the profile didn't have: it is added and logged.
         const withPhone = await (await search({ mode: 'exact', person: { fullName: NAME, email: EMAIL, phone: NEW_PHONE }, activity: { activityType: 'follow_up' } }, { 'idempotency-key': `newphone-${STAMP}` })).json();
-        expect(withPhone.activity.contactsAdded).toEqual(['phone']);
+        expect(withPhone.saved.contactsAdded).toEqual(['phone']);
         expect(countRows(`SELECT count(*) AS n FROM adopter_history WHERE adopter_id = '${profileId}' AND changes LIKE '%contacts_added_via_api%'`)).toBe(1);
         const byNewPhone = await (await check({ mode: 'exact', person: { fullName: NAME, phone: NEW_PHONE }, activity: { activityType: 'observation' } })).json();
-        expect(byNewPhone.result).toBe('found');
+        expect(byNewPhone.match).toBe('found');
         expect(byNewPhone.profile.profileId).toBe(profileId);
         // Put the person back as the next tests expect: void both; the added phone comes back off.
-        for (const id of [b.activity.activityId, withPhone.activity.activityId]) {
+        for (const id of [b.saved.activityId, withPhone.saved.activityId]) {
             const v = await api.post(`/api/v1/activities/${id}/void`, { headers: auth() });
             expect((await v.json()).profileVoided).toBe(false);
         }
-        expect((await (await check({ mode: 'exact', person: { fullName: NAME, phone: NEW_PHONE }, activity: { activityType: 'observation' } })).json()).result).toBe('not_found');
+        expect((await (await check({ mode: 'exact', person: { fullName: NAME, phone: NEW_PHONE }, activity: { activityType: 'observation' } })).json()).match).toBe('not_found');
     });
 
     test('same phone, unrelated name → ambiguous name_mismatch, never a guess', async () => {
         const res = await check({ mode: 'exact', person: { fullName: 'Otra Persona Distinta', phone: LOCAL_PHONE }, activity: { activityType: 'adoption_request' } });
         const b = await res.json();
-        expect(b.result).toBe('ambiguous');
+        expect(b.match).toBe('ambiguous');
         expect(b.reason).toBe('name_mismatch');
         expect(b.candidates).toBe(1);
         // The previous test rated this person 1★: an ambiguous answer still lets the client block.
@@ -322,26 +322,26 @@ test.describe('public API v1', () => {
         // Two profiles with the same name: T1 has an email, a phone and a document; T2 another email.
         const t1 = await (await search({ mode: 'exact', person: { fullName: TWIN, email: `t1-${STAMP}@example.com`, phone: twinPhone }, activity: { activityType: 'observation' } }, { 'idempotency-key': `t1-${STAMP}` })).json();
         const t1doc = await (await search({ mode: 'exact', person: { fullName: TWIN, phone: twinPhone, documentId: { value: doc } }, activity: { activityType: 'observation' } }, { 'idempotency-key': `t1d-${STAMP}` })).json();
-        expect(t1doc.activity.profileId).toBe(t1.activity.profileId);
-        expect(t1doc.activity.contactsAdded).toEqual(['documentId']);
+        expect(t1doc.saved.profileId).toBe(t1.saved.profileId);
+        expect(t1doc.saved.contactsAdded).toEqual(['documentId']);
         const t2 = await (await search({ mode: 'exact', person: { fullName: TWIN, email: `t2-${STAMP}@example.com` }, activity: { activityType: 'observation' } }, { 'idempotency-key': `t2-${STAMP}` })).json();
-        expect(t2.activity.profileCreated).toBe(true);
+        expect(t2.saved.action).toMatch(/^created_profile/);
         // Someone else's email sent along with T1's phone: found T1, but that email is NOT copied onto T1.
         const z = await (await search({ mode: 'exact', person: { fullName: 'Zetafixture Ajeno', email: `z-${STAMP}@example.com` }, activity: { activityType: 'observation' } }, { 'idempotency-key': `z-${STAMP}` })).json();
         const mixed = await (await search({ mode: 'exact', person: { fullName: TWIN, phone: twinPhone, email: `z-${STAMP}@example.com` }, activity: { activityType: 'observation' } }, { 'idempotency-key': `mixed-${STAMP}` })).json();
-        expect(mixed.result).toBe('found');
-        expect(mixed.activity.profileId).toBe(t1.activity.profileId);
-        expect(mixed.activity.contactsAdded).toEqual([]);
-        for (const a of [mixed, z]) await api.post(`/api/v1/activities/${a.activity.activityId}/void`, { headers: auth() });
+        expect(mixed.match).toBe('found');
+        expect(mixed.saved.profileId).toBe(t1.saved.profileId);
+        expect(mixed.saved.contactsAdded).toEqual([]);
+        for (const a of [mixed, z]) await api.post(`/api/v1/activities/${a.saved.activityId}/void`, { headers: auth() });
         // T1 matches on phone + document, T2 on email only → T1.
         const res = await (await search({ mode: 'exact', person: { fullName: TWIN, email: `t2-${STAMP}@example.com`, phone: twinPhone, documentId: { value: doc } }, activity: { activityType: 'adoption_request' } }, { 'idempotency-key': `twin-${STAMP}` })).json();
-        expect(res.result).toBe('ambiguous');
+        expect(res.match).toBe('ambiguous');
         expect(res.reason).toBe('multiple_profiles');
-        expect(res.activity.profileId).toBe(t1.activity.profileId);
-        expect(res.activity.profileCreated).toBe(false);
-        expect(res.activity.contactsAdded).toEqual([]); // never on an ambiguous answer
+        expect(res.saved.profileId).toBe(t1.saved.profileId);
+        expect(res.saved.action).toBe('added_to_best_match');
+        expect(res.saved.contactsAdded).toEqual([]); // never on an ambiguous answer
         expect(res.risk.profilesMatched).toBe(2);
-        for (const a of [res, t2, t1doc, t1]) await api.post(`/api/v1/activities/${a.activity.activityId}/void`, { headers: auth() });
+        for (const a of [res, t2, t1doc, t1]) await api.post(`/api/v1/activities/${a.saved.activityId}/void`, { headers: auth() });
     });
 
     test('both review surfaces list the calls', async ({ page }) => {
@@ -376,22 +376,22 @@ test.describe('public API v1', () => {
             { 'idempotency-key': `amb-${STAMP}` },
         );
         const b = await res.json();
-        expect(b.result).toBe('ambiguous');
-        expect(b.activity.profileCreated).toBe(true);
-        expect(b.activity.profileId).not.toBe(profileId);
+        expect(b.match).toBe('ambiguous');
+        expect(b.saved.action).toBe('created_profile_for_review');
+        expect(b.saved.profileId).not.toBe(profileId);
         // No name fits: a new profile, but the danger signal stays in risk.
         expect(b.risk.worstRating.ratingLabel).toBe('dangerous');
-        const pair = JSON.parse(execD1(`SELECT count(*) AS n FROM duplicate_candidates WHERE (adopter1_id = '${b.activity.profileId}' AND adopter2_id = '${profileId}') OR (adopter1_id = '${profileId}' AND adopter2_id = '${b.activity.profileId}')`));
+        const pair = JSON.parse(execD1(`SELECT count(*) AS n FROM duplicate_candidates WHERE (adopter1_id = '${b.saved.profileId}' AND adopter2_id = '${profileId}') OR (adopter1_id = '${profileId}' AND adopter2_id = '${b.saved.profileId}')`));
         expect(pair[0].results[0].n).toBe(1);
         // Now the phone belongs to two people: the original is still found by
         // name, and the answer says another profile shares the identifier.
         const found = await (await check({ mode: 'exact', person: { fullName: NAME, phone: LOCAL_PHONE }, activity: { activityType: 'adoption_request' } })).json();
-        expect(found.result).toBe('found');
+        expect(found.match).toBe('found');
         expect(found.profile.profileId).toBe(profileId);
         expect(found.otherMatches.count).toBe(1);
-        expect(found.otherMatches.urls[0]).toContain(b.activity.profileId);
+        expect(found.otherMatches.urls[0]).toContain(b.saved.profileId);
         // Clean up through the API itself.
-        const v = await api.post(`/api/v1/activities/${b.activity.activityId}/void`, { headers: auth() });
+        const v = await api.post(`/api/v1/activities/${b.saved.activityId}/void`, { headers: auth() });
         expect((await v.json()).profileVoided).toBe(true);
     });
 
@@ -410,7 +410,7 @@ test.describe('public API v1', () => {
         expect((await api.post('/api/v1/activities/test-adoption-5/void', { headers: auth() })).status()).toBe(404);
 
         const after = await check({ mode: 'exact', person: { fullName: NAME, phone: LOCAL_PHONE }, activity: { activityType: 'adoption_request' } });
-        expect((await after.json()).result).toBe('not_found');
+        expect((await after.json()).match).toBe('not_found');
     });
 
     test('adoption: species required, animal details stored; the signed contract attaches once and opens for the rescue', async ({ page }) => {
@@ -433,7 +433,7 @@ test.describe('public API v1', () => {
             },
         }, { 'idempotency-key': `adopt-${STAMP}` });
         expect(res.status()).toBe(200);
-        const a = (await res.json()).activity;
+        const a = (await res.json()).saved;
         const animal = JSON.parse(execD1(`SELECT species, sex, neutered, color, microchip, age, estimated_birth_date AS b, added_by FROM animals WHERE id = '${a.activityId}'`))[0].results[0];
         expect(animal).toMatchObject({ species: 'cat', sex: 'hembra', neutered: 1, color: 'atigrada', microchip: '985112345678901', age: '2 años', added_by: ADMIN_EMAIL });
         expect(new Date(Number(animal.b) * 1000).getUTCFullYear()).toBe(2024);
@@ -453,7 +453,7 @@ test.describe('public API v1', () => {
         // A dry run never stores or links a file.
         expect((await (await api.post(`/api/v1/activities/${a.activityId}/contract`, { headers: auth({ 'content-type': 'application/pdf', 'x-dry-run': '1' }), data: pdf })).json()).error.code).toBe('dry_run_not_allowed');
         // Only on adoptions / fosters this key saved.
-        const req = (await (await search({ mode: 'exact', person, activity: { activityType: 'adoption_request' } }, { 'idempotency-key': `adreq-${STAMP}` })).json()).activity;
+        const req = (await (await search({ mode: 'exact', person, activity: { activityType: 'adoption_request' } }, { 'idempotency-key': `adreq-${STAMP}` })).json()).saved;
         expect((await (await api.post(`/api/v1/activities/${req.activityId}/contract`, { headers: auth({ 'content-type': 'application/pdf' }), data: pdf })).json()).error.code).toBe('contract_not_allowed');
         expect((await api.post('/api/v1/activities/test-adoption-5/contract', { headers: auth({ 'content-type': 'application/pdf' }), data: pdf })).status()).toBe(404);
 
@@ -520,7 +520,8 @@ test.describe('public API v1', () => {
         expect((await seeded.json()).profiles).toBeGreaterThan(10);
         // Loading twice resets, never duplicates.
         expect((await page.request.post('/api/admin/api-demo')).status()).toBe(200);
-        const strip = (o: Record<string, unknown>) => { const { requestId: _r, activity: _a, ...rest } = o; void _r; void _a; return rest; };
+        // A dry run answers the same, except that nothing is saved (saved.action: nothing_saved).
+        const strip = (o: Record<string, unknown>) => { const { requestId: _r, saved: _s, ...rest } = o; void _r; void _s; return rest; };
         // What the docs page serves — built with THIS environment's alert thresholds.
         const spec = await (await api.get('/api/v1/openapi.json')).json();
         const op = spec.paths['/api/v1/search'].post;
@@ -532,7 +533,9 @@ test.describe('public API v1', () => {
         for (const key of keys) {
             const res = await api.post('/api/v1/search', { data: requests[key].value, headers: auth({ 'x-dry-run': '1', 'idempotency-key': `scenario-${++n}-${STAMP}` }) });
             expect(res.status(), key).toBe(200);
-            expect(strip(await res.json()), key).toEqual(strip(answers[key].value));
+            const got = await res.json();
+            expect(strip(got), key).toEqual(strip(answers[key].value));
+            expect(got.saved, key).toEqual({ action: 'nothing_saved' });
         }
         void baseURL;
     });

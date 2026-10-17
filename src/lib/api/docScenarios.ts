@@ -12,6 +12,7 @@
  * so every documented request really returns the documented answer there.
  */
 import { decideExactOutcome, type NameMatchedAs } from '@/domain/apiExactMatch';
+import { saveActionOf } from './schemas';
 
 type Level = 0 | 1 | 2 | 3 | 4 | 5;
 const LABELS = ['not_rated', 'dangerous', 'poor', 'average', 'good', 'excellent'] as const;
@@ -81,7 +82,7 @@ const DEFS: ScenarioDef[] = [
         }],
         person: { fullName: 'María José Pérez', phone: '+54 9 11 5550-3101', email: 'mariajose.demo@example.com' },
         activity: { activityType: 'adoption_request', animalName: 'Luna', species: 'dog' },
-        why: 'El nombre y el teléfono (escrito en otro formato: es el mismo número) coinciden con un solo perfil → `found`. Su perfil no tenía ese email: se agrega y te lo decimos en `activity.contactsAdded`.',
+        why: 'El nombre y el teléfono (escrito en otro formato: es el mismo número) coinciden con un solo perfil → `found`. Su perfil no tenía ese email: se agrega y te lo decimos en `saved.contactsAdded`. `saved.action`: `added_to_profile`.',
     },
     {
         key: 'four_stars',
@@ -173,7 +174,7 @@ const DEFS: ScenarioDef[] = [
         profiles: [],
         person: { fullName: 'Sofía Medina', email: 'sofia.medina.demo@example.com' },
         activity: { activityType: 'adoption_request', animalName: 'Mora', species: 'cat' },
-        why: 'Ningún perfil tiene ese email → `not_found`. Se crea su perfil con esta actividad (`profileCreated: true`). `risk` vacío.',
+        why: 'Ningún perfil tiene ese email → `not_found`. `saved.action` es `created_profile`: se creó su perfil con esta actividad. `risk` vacío.',
     },
     {
         key: 'name_mismatch',
@@ -182,7 +183,7 @@ const DEFS: ScenarioDef[] = [
         profiles: [{ id: 'demo-api-martin', name: 'Martín Ortiz', phone: '11 5550-3109', history: [{ type: 'adoption_request', rating: 2, daysAgo: 190 }, { type: 'adoption_request', rating: 2, daysAgo: 175 }] }],
         person: { fullName: 'Valeria Castro', phone: '11 5550-3109' },
         activity: { activityType: 'adoption_request' },
-        why: 'El teléfono es de un perfil con otro nombre → `ambiguous` (`name_mismatch`): nunca adivinamos que son la misma persona. La actividad va a un perfil nuevo que un admin revisa como posible duplicado. `risk` igual te muestra el 2★ de ese teléfono.',
+        why: 'El teléfono es de un perfil con otro nombre → `ambiguous` (`name_mismatch`): nunca adivinamos que son la misma persona. `saved.action` es `created_profile_for_review`: la actividad va a un perfil nuevo que un admin revisa como posible duplicado. `risk` igual te muestra el 2★ de ese teléfono.',
     },
     {
         key: 'multiple_profiles',
@@ -194,7 +195,7 @@ const DEFS: ScenarioDef[] = [
         ],
         person: { fullName: 'Laura Díaz', email: 'laura.diaz.demo@example.com', phone: '11 5550-3110' },
         activity: { activityType: 'adoption_request' },
-        why: 'El nombre encaja con los dos perfiles → `ambiguous` (`multiple_profiles`). La actividad va al que mejor coincide: el que tiene email **y** teléfono iguales (`demo-api-laura-a`); no se crea un perfil nuevo.',
+        why: 'El nombre encaja con los dos perfiles → `ambiguous` (`multiple_profiles`). `saved.action` es `added_to_best_match`: la actividad va al que mejor coincide, el que tiene email **y** teléfono iguales (`demo-api-laura-a`); no se crea un perfil nuevo.',
     },
     {
         key: 'dry_run',
@@ -204,7 +205,7 @@ const DEFS: ScenarioDef[] = [
         person: { fullName: 'Sofía Medina', email: 'sofia.medina.demo@example.com' },
         activity: { activityType: 'adoption_request' },
         dryRun: true,
-        why: 'La misma respuesta que una llamada real, pero **sin `activity`**: no se guardó nada. En producción este header se rechaza (`403 dry_run_not_allowed`).',
+        why: 'La misma respuesta que una llamada real, con `saved.action: nothing_saved`: no se guardó nada. En producción este header se rechaza (`403 dry_run_not_allowed`).',
     },
 ];
 
@@ -292,7 +293,7 @@ function answer(def: ScenarioDef, origin: string, n: number, now: Date, cfg: Ale
         for (const a of c.alerts) alerts.push({ ...a, profileId: p.id });
     }
     const body: Record<string, unknown> = {
-        requestId: `b1d0c8e2-0000-4000-8000-${String(n).padStart(12, '0')}`, mode: 'exact', result: outcome.result,
+        requestId: `b1d0c8e2-0000-4000-8000-${String(n).padStart(12, '0')}`, mode: 'exact', match: outcome.result,
     };
     let savedOn: { id: string; created: boolean; contactsAdded: Identifier[] } | null = null;
     const added = (p: Registered | null): Identifier[] => {
@@ -318,10 +319,13 @@ function answer(def: ScenarioDef, origin: string, n: number, now: Date, cfg: Ale
     body.risk = { worstRating: worst(hits), flags: [...flags].sort(), alerts, profilesMatched: hits.length };
     if (def.activity && !def.dryRun && savedOn) {
         const rid = `r_${def.key}`;
-        body.activity = {
+        body.saved = {
+            action: saveActionOf(outcome.result, savedOn.created),
             activityId: rid, activityUrl: `${url(savedOn.id)}?record=${rid}`, profileId: savedOn.id, profileUrl: url(savedOn.id),
-            profileCreated: savedOn.created, contactsAdded: savedOn.contactsAdded,
+            contactsAdded: savedOn.contactsAdded,
         };
+    } else {
+        body.saved = { action: 'nothing_saved' };
     }
     return body;
 }

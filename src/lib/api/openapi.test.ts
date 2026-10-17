@@ -88,11 +88,12 @@ describe('buildOpenApi', () => {
     });
 
     it('scenarios cover every rating level, every result and every alert', () => {
-        type R = { result: string; reason?: string; profile?: { ratingLevel: number }; risk: { worstRating: { ratingLevel: number }; flags: string[] }; activity?: unknown };
+        type R = { match: string; reason?: string; profile?: { ratingLevel: number }; risk: { worstRating: { ratingLevel: number }; flags: string[] }; saved: { action: string } };
         const rs = exactScenarios('https://buenadoptante.org').map(sc => sc.response as unknown as R);
-        const foundLevels = rs.filter(r => r.result === 'found').map(r => r.profile!.ratingLevel);
+        const foundLevels = rs.filter(r => r.match === 'found').map(r => r.profile!.ratingLevel);
         expect(foundLevels).toEqual(expect.arrayContaining([5, 4, 3, 2, 1, 0]));
-        expect(rs.map(r => r.reason ?? r.result)).toEqual(expect.arrayContaining(['found', 'not_found', 'name_mismatch', 'multiple_profiles']));
+        expect(rs.map(r => r.reason ?? r.match)).toEqual(expect.arrayContaining(['found', 'not_found', 'name_mismatch', 'multiple_profiles']));
+        expect([...new Set(rs.map(r => r.saved.action))].sort()).toEqual(['added_to_best_match', 'added_to_profile', 'created_profile', 'created_profile_for_review', 'nothing_saved']);
         expect([...new Set(rs.flatMap(r => r.risk.flags))]).toEqual(expect.arrayContaining(['inaccurate', 'possible_duplicate', 'duplicate']));
         const alertTypes = new Set(rs.flatMap(r => (r.risk as unknown as { alerts: Array<{ type: string }> }).alerts.map(a => a.type)));
         expect([...alertTypes].sort()).toEqual(['too_many_adoptions', 'too_many_requests']);
@@ -102,20 +103,22 @@ describe('buildOpenApi', () => {
 
     it('scenarios say what each one claims (spot checks against the decision rules)', () => {
         const by = Object.fromEntries(exactScenarios('https://buenadoptante.org').map(sc => [sc.key, sc.response as Record<string, any>])); // eslint-disable-line @typescript-eslint/no-explicit-any
-        expect(by.five_stars.activity.contactsAdded).toEqual(['email']);           // the email was new
+        expect(by.five_stars.saved.contactsAdded).toEqual(['email']);
+        expect(by.five_stars.saved.action).toBe('added_to_profile');           // the email was new
         expect(by.three_stars.profile.matchedOn).toEqual(['documentId']);          // "Jorge Ramírez" ~ "Jorge Luis Ramírez"
-        expect(by.shared_phone.result).toBe('found');
+        expect(by.shared_phone.match).toBe('found');
         expect(by.shared_phone.otherMatches.count).toBe(1);
         expect(by.shared_phone.risk.worstRating.ratingLevel).toBe(1);              // the relative's 1★ shows in risk
-        expect(by.name_mismatch.activity.profileCreated).toBe(true);
-        expect(by.multiple_profiles.activity.profileId).toBe('demo-api-laura-a');  // email AND phone match
+        expect(by.name_mismatch.saved.action).toBe('created_profile_for_review');
+        expect(by.multiple_profiles.saved.action).toBe('added_to_best_match');
+        expect(by.multiple_profiles.saved.profileId).toBe('demo-api-laura-a');  // email AND phone match
         expect(by.one_star.profile.alerts).toEqual([{ type: 'too_many_requests', count: 4, periodDays: 30 }]);
         expect(by.one_star.profile.rating).toBe(1.3);
         expect(by.shared_phone.risk.alerts).toEqual([{ type: 'too_many_adoptions', count: 5, periodDays: 90, profileId: 'demo-api-ramon' }]);
         expect(by.five_stars.profile.rating).toBe(4.8);
         expect(by.four_stars.profile.ratingLevel).toBe(4);
-        expect(by.not_found.activity.profileCreated).toBe(true);
-        expect(by.dry_run.activity).toBeUndefined();
+        expect(by.not_found.saved.action).toBe('created_profile');
+        expect(by.dry_run.saved).toEqual({ action: 'nothing_saved' });
     });
 });
 

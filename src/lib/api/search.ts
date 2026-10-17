@@ -9,7 +9,7 @@ import type { DiscoveryMatch } from '@/app/actions/types';
 import { ApiError, claimIdempotencyKey, enforceDailyCap, replayIdempotent, requireScope, type ApiCallContext, type ApiResult } from './handler';
 import { buildProfileSummaries, findIdentifierHits, ownerCountry, profileUrl, ratingFields, registeredByRescue } from './profiles';
 import { saveApiActivity } from './records';
-import { checkSearchRules, searchRequestSchema, type ApiRisk, type ExactResponse, type FuzzyResponse, type ProfileSummary, type SearchRequest } from './schemas';
+import { checkSearchRules, searchRequestSchema, type ApiRisk, type ExactResponse, type FuzzyResponse, saveActionOf, type ProfileSummary, type SearchRequest } from './schemas';
 
 /** The lowest rating among rated profiles; "not rated" only if none is. */
 function worstOf(ratings: Array<number | null | undefined>) {
@@ -103,7 +103,7 @@ async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiRes
     // just-saved request must not flag the person as "asking too often".
     const summaries = await buildProfileSummaries(ctx.db, ids, ctx.origin, ctx.requestId);
 
-    const body: Omit<ExactResponse, 'requestId'> = { mode: 'exact', result: outcome.result, risk: riskOf([]) };
+    const body: Omit<ExactResponse, 'requestId'> = { mode: 'exact', match: outcome.result, risk: riskOf([]), saved: { action: 'nothing_saved' } };
     if (outcome.result === 'found') {
         const summary = summaries.get(outcome.profileId);
         if (!summary) throw new Error(`profile summary missing for ${outcome.profileId}`);
@@ -124,11 +124,13 @@ async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiRes
     body.risk = riskOf(ids.map(id => summaries.get(id)));
     ctx.log.profileIds = ids;
 
-    if (!req.activity) return { status: 200, body };
-    if (!ctx.dryRun) {
-        body.activity = await saveApiActivity(ctx, req, outcome, hits.matchedOn, summaries);
-        ctx.log.profileIds = [body.activity.profileId, ...ids.filter(id => id !== body.activity!.profileId)];
-    }
+    if (!req.activity || ctx.dryRun) return { status: 200, body };
+    const s = await saveApiActivity(ctx, req, outcome, hits.matchedOn, summaries);
+    body.saved = {
+        action: saveActionOf(outcome.result, s.profileCreated),
+        activityId: s.activityId, activityUrl: s.activityUrl, profileId: s.profileId, profileUrl: s.profileUrl, contactsAdded: s.contactsAdded,
+    };
+    ctx.log.profileIds = [s.profileId, ...ids.filter(id => id !== s.profileId)];
     return { status: 200, body };
 }
 

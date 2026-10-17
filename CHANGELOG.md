@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.194] - 2026-10-17
+
+### Changed — API (flag off in production): `match` and `saved.action`
+
+`result: not_found` read as "nothing happened" while the call had just created a
+profile (Jon). An exact answer now says two things separately:
+- **`match`** — what BuenAdoptante had BEFORE the call: `found`, `not_found`,
+  `ambiguous` (was `result`).
+- **`saved`** — always present: `action` = `added_to_profile`, `created_profile`,
+  `added_to_best_match`, `created_profile_for_review` or `nothing_saved` (a look-up
+  without activity, or a dry run), plus `activityId`, links and `contactsAdded`
+  when something was saved (was `activity`, with `profileCreated`).
+Guide, scenarios, examples and tests updated.
+
 ## [2.56.193] - 2026-10-17
 
 ### Changed — API (flag off in production): `alerts`, documented calls that really answer as documented

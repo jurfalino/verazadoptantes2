@@ -184,15 +184,32 @@ export const profileSummarySchema = ratingSchema.extend({
 export type ProfileSummary = z.infer<typeof profileSummarySchema>;
 
 export const CONTACT_FIELDS = ['email', 'phone', 'documentId'] as const;
-const savedActivitySchema = z.object({
-    activityId: z.string(),
-    activityUrl: z.string().meta({ description: 'The profile page, scrolled to this activity.' }),
-    profileId: z.string(),
-    profileUrl: z.string(),
-    profileCreated: z.boolean(),
-    contactsAdded: z.array(z.enum(CONTACT_FIELDS)).meta({ description: 'Contact details you sent that the known person did not have yet, now added to their profile (logged in its history).' }),
+/** What THIS call did (Jon, 2026-10-17: `match` says what existed, `saved.action` what was done). */
+export const SAVE_ACTIONS = ['added_to_profile', 'created_profile', 'added_to_best_match', 'created_profile_for_review', 'nothing_saved'] as const;
+export type SaveAction = typeof SAVE_ACTIONS[number];
+const savedSchema = z.object({
+    action: z.enum(SAVE_ACTIONS).meta({
+        description: 'added_to_profile: the activity went on the person found. created_profile: nobody had that data, a new profile was created with the activity. ' +
+            'added_to_best_match: several profiles fit the name, it went on the best match. created_profile_for_review: the email / phone / document belongs to someone with another name, ' +
+            'so a new profile was created and an admin reviews it as a possible duplicate. nothing_saved: a look-up without activity, or a dry run.',
+    }),
+    activityId: z.string().optional().meta({ description: 'The saved activity (use it to attach a contract or void it). Absent when nothing_saved.' }),
+    activityUrl: z.string().optional().meta({ description: 'The profile page, scrolled to this activity.' }),
+    profileId: z.string().optional(),
+    profileUrl: z.string().optional(),
+    contactsAdded: z.array(z.enum(CONTACT_FIELDS)).optional().meta({ description: 'Contact details you sent that the person did not have yet, now added to their profile (logged in its history).' }),
 });
-export type SavedActivity = z.infer<typeof savedActivitySchema>;
+export type Saved = z.infer<typeof savedSchema>;
+/** What a saving call did, from what it found and whether it had to create the profile. Pure. */
+export function saveActionOf(match: 'found' | 'not_found' | 'ambiguous', profileCreated: boolean): SaveAction {
+    if (match === 'found') return 'added_to_profile';
+    if (match === 'not_found') return 'created_profile';
+    return profileCreated ? 'created_profile_for_review' : 'added_to_best_match';
+}
+
+/** What saveApiActivity hands back to the search (the response's `saved` is built from it). */
+export interface SavedActivity { activityId: string; activityUrl: string; profileId: string; profileUrl: string; profileCreated: boolean; contactsAdded: Array<typeof CONTACT_FIELDS[number]> }
+
 
 const riskSchema = z.object({
     worstRating: ratingSchema,
@@ -205,19 +222,19 @@ export type ApiRisk = z.infer<typeof riskSchema>;
 export const exactResponseSchema = z.object({
     requestId: z.string(),
     mode: z.literal('exact'),
-    result: z.enum(['found', 'not_found', 'ambiguous']),
-    profile: profileSummarySchema.optional().meta({ description: 'result = found. Describes the person BEFORE anything saved by this call.' }),
+    match: z.enum(['found', 'not_found', 'ambiguous']).meta({ description: 'What BuenAdoptante had BEFORE this call: found (one person fits), not_found (nobody has that email / phone / document), ambiguous (several profiles, or a profile with another name). What the call did is in `saved.action`.' }),
+    profile: profileSummarySchema.optional().meta({ description: 'match = found. Describes the person BEFORE anything saved by this call.' }),
     otherMatches: z.object({
         count: z.number().int(),
         urls: z.array(z.string()),
         worstRating: ratingSchema,
-    }).optional().meta({ description: 'result = found: other profiles the same email / phone / document also belongs to, under an unrelated name (e.g. a shared family phone). Check them before deciding.' }),
-    reason: z.enum(['multiple_profiles', 'name_mismatch']).optional().meta({ description: 'result = ambiguous.' }),
+    }).optional().meta({ description: 'match = found: other profiles the same email / phone / document also belongs to, under an unrelated name (e.g. a shared family phone). Check them before deciding.' }),
+    reason: z.enum(['multiple_profiles', 'name_mismatch']).optional().meta({ description: 'match = ambiguous. multiple_profiles: several profiles fit the name. name_mismatch: the email / phone / document belongs to someone with another name.' }),
     candidates: z.number().int().optional(),
     candidateUrls: z.array(z.string()).optional(),
-    worstRating: ratingSchema.optional().meta({ description: 'result = ambiguous: the lowest rating among the candidates, so you can still block.' }),
+    worstRating: ratingSchema.optional().meta({ description: 'match = ambiguous: the lowest rating among the candidates, so you can still block.' }),
     risk: riskSchema,
-    activity: savedActivitySchema.optional().meta({ description: 'The activity this call saved (absent on a look-up without activity).' }),
+    saved: savedSchema.meta({ description: 'Always present: what this call did.' }),
     replayed: z.boolean().optional().meta({ description: 'true when this is the stored answer to an earlier call with the same Idempotency-Key.' }),
 });
 export type ExactResponse = z.infer<typeof exactResponseSchema>;

@@ -35,10 +35,23 @@ Podés enviar cualquiera de estos datos de la persona:
 | \`address\` | Av. Siempreviva 742, CABA |
 | \`socials\` | [{ "platform": "instagram", "handle": "@mariajose" }] |
 
-**\`mode: "exact"\`**: nombre y apellido **más** email, teléfono o documento. Responde:
+**\`mode: "exact"\`**: nombre y apellido **más** email, teléfono o documento. La respuesta dice dos cosas por separado:
+
+**\`match\`: qué había en BuenAdoptante antes de tu llamada**
 - \`found\`: es una persona conocida; incluye su calificación, alertas y un link a su perfil.
-- \`not_found\`: no hay registros de esa persona.
+- \`not_found\`: nadie tiene ese email, teléfono o documento.
 - \`ambiguous\`: el dato coincide con más de un perfil, o con alguien de otro nombre (por ejemplo un teléfono familiar).
+
+**\`saved.action\`: qué hizo tu llamada** (siempre viene)
+| \`match\` | \`saved.action\` | Qué pasó |
+|---|---|---|
+| \`found\` | \`added_to_profile\` | La actividad se sumó al perfil de esa persona. |
+| \`not_found\` | \`created_profile\` | Se creó su perfil, con esta actividad. |
+| \`ambiguous\` | \`added_to_best_match\` | Varios perfiles encajan con el nombre: se sumó al que mejor coincide. |
+| \`ambiguous\` | \`created_profile_for_review\` | El dato es de alguien con otro nombre: se creó un perfil nuevo que un admin revisa como posible duplicado. |
+| cualquiera | \`nothing_saved\` | Una consulta sin \`activity\`, o una prueba con \`X-Dry-Run\`. |
+
+Cuando se guardó algo, \`saved\` trae además \`activityId\` (para adjuntar el contrato o anularla), los links al perfil y \`contactsAdded\`.
 
 **Mirá siempre \`risk\`** antes de entregar un animal: la peor calificación y todas las alertas de **cada** perfil que coincidió con el email, teléfono o documento, sea cual sea el resultado.
 
@@ -78,10 +91,7 @@ Más abajo, en **Búsqueda exacta: qué pedido da cada respuesta**, hay un escen
 **\`mode: "fuzzy"\`**: la misma búsqueda de la página de inicio, con cualquier combinación de campos. Devuelve una lista ordenada por relevancia. No registra nada.
 
 ## Cada búsqueda exacta registra una actividad
-Mandá \`activity\` con su tipo (\`activityType\`): \`adoption_request\`, \`adoption\`, \`foster\`, \`follow_up\`, \`returned_pet\` u \`observation\`. Se guarda sobre la persona:
-- **\`found\`**: en su perfil. Si mandaste un email, teléfono o documento que su perfil no tenía, se agrega (queda en el historial del perfil y te lo decimos en \`activity.contactsAdded\`).
-- **\`not_found\`**: en un perfil nuevo.
-- **\`ambiguous\`**: si el nombre coincide con alguno de los perfiles, en el que mejor coincide; si no coincide con ninguno, en un perfil nuevo que un admin revisa como posible duplicado.
+Mandá \`activity\` con su tipo (\`activityType\`): \`adoption_request\`, \`adoption\`, \`foster\`, \`follow_up\`, \`returned_pet\` u \`observation\`. Dónde se guardó te lo dice \`saved.action\` (tabla de arriba). Si mandaste un email, teléfono o documento que la persona no tenía, se agrega a su perfil (queda en su historial y te lo decimos en \`saved.contactsAdded\`).
 
 Todo lo demás de \`activity\` es opcional: tu id (\`externalId\`), el animal (\`animalName\`, \`species\`), la fecha, notas y la calificación (si no la tenés, no la mandes).
 
@@ -116,7 +126,7 @@ curl -X POST https://buenadoptante.org/api/v1/activities/{activityId}/contract \
 Solo actividades guardadas por tu propia clave. Se quitan también las respuestas del formulario y los datos de contacto que esa llamada agregó.
 
 ## Probar sin guardar: header \`X-Dry-Run: 1\` (solo staging)
-Mientras armás tu integración, agregá \`X-Dry-Run: 1\` a una búsqueda: responde exactamente lo mismo (\`found\`, \`not_found\`, \`ambiguous\`, \`risk\`…), pero **no guarda nada**: ni actividad, ni perfil, ni datos de contacto, ni avisos. La respuesta trae el header \`X-Dry-Run: 1\` y no incluye \`activity\`.
+Mientras armás tu integración, agregá \`X-Dry-Run: 1\` a una búsqueda: responde lo mismo (\`match\`, \`profile\`, \`risk\`…), pero **no guarda nada**: ni actividad, ni perfil, ni datos de contacto, ni avisos. La respuesta trae el header \`X-Dry-Run: 1\` y \`saved.action: nothing_saved\`.
 
 - **Funciona solo en staging, con una clave \`ba_test_…\`.**
 - **En producción no funciona**: con cualquier clave, la llamada se rechaza con \`403 dry_run_not_allowed\` (no se guarda nada, tampoco). En producción cada búsqueda exacta queda registrada.
@@ -207,7 +217,7 @@ export function examplesGuide(origin: string, cfg: AlertConfig = DEFAULT_ALERT_C
         '**Los headers importan:** toda búsqueda exacta que registra una actividad necesita \`Idempotency-Key\`, con **un valor nuevo en cada llamada** (por ejemplo un UUID). Sin él la respuesta es \`422 idempotency_key_required\`.',
         ...(live ? [] : [
             '**En staging estas personas existen**, así que cada llamada devuelve exactamente la respuesta de su escenario. ' +
-            'Para probarlas sin guardar nada, agregá \`-H "X-Dry-Run: 1"\`: la respuesta es la misma, sin \`activity\`. Sin ese header la llamada se guarda (suma la actividad, y la próxima respuesta ya cambia). ' +
+            'Para probarlas sin guardar nada, agregá \`-H "X-Dry-Run: 1"\`: la respuesta es la misma, con \`saved.action: nothing_saved\`. Sin ese header la llamada se guarda (suma la actividad, y la próxima respuesta ya cambia). ' +
             'Un admin las vuelve a dejar como en esta página desde Admin → API → «Personas de ejemplo».',
         ]),
         ...exactScenarios(origin, new Date(), cfg).map((sc, i) => [
@@ -274,7 +284,7 @@ export function buildOpenApi(origin: string, cfg: AlertConfig = DEFAULT_ALERT_CO
                     },
                     responses: {
                         '200': {
-                            description: 'exact → found / not_found / ambiguous; fuzzy → ranked results',
+                            description: 'exact → match (found / not_found / ambiguous) + saved.action; fuzzy → ranked results',
                             content: { 'application/json': { schema: { oneOf: [schema(exactResponseSchema), schema(fuzzyResponseSchema)] }, examples: Object.fromEntries(scenarios.map((sc, i) => [`scenario_${sc.key}`, { summary: `Escenario ${i + 1}: ${sc.title}`, value: sc.response }])) } },
                         },
                         ...errors,
@@ -292,7 +302,7 @@ export function buildOpenApi(origin: string, cfg: AlertConfig = DEFAULT_ALERT_CO
                 post: {
                     summary: 'Adjuntar el contrato firmado a una adopción o tránsito',
                     operationId: 'attachContract',
-                    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: '`activity.activityId` of an adoption / foster this key saved' }],
+                    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: '`saved.activityId` of an adoption / foster this key saved' }],
                     requestBody: {
                         required: true,
                         description: 'The file itself (≤5 MB).',
@@ -316,7 +326,7 @@ export function buildOpenApi(origin: string, cfg: AlertConfig = DEFAULT_ALERT_CO
                 post: {
                     summary: 'Anular una actividad guardada por esta clave',
                     operationId: 'voidActivity',
-                    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: '`activity.activityId` from the search response' }],
+                    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: '`saved.activityId` from the search response' }],
                     responses: {
                         '200': { description: 'Voided', content: { 'application/json': { schema: schema(voidResponseSchema) } } },
                         '401': errors['401'], '403': errors['403'], '404': errors['404'],
