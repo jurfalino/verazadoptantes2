@@ -2,6 +2,42 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.195] - 2026-10-17
+
+### Changed — API (flag off in production): easier to use and to troubleshoot
+
+From the senior-EM usability review (.agents/audits/2026-10-17-api-usability-review.md)
+and Jon's decisions (A, B, C):
+
+- **`externalId` is the retry key** (B): required on every saving call; the
+  `Idempotency-Key` header is gone. Same externalId + same content (in any key
+  order / spacing) → the original answer (`replayed`, `originalRequestId`); other
+  content → `409 external_id_reused` naming what was saved. Voiding frees it.
+- **Exact always saves; to look someone up, fuzzy** (C): the exact look-up without
+  an activity is gone; `activity_required` points to fuzzy.
+- **Dry run says what it would do** (A): `saved.action` + `saved.dryRun: true`.
+- **Fails closed**: if the ratings can't be read, `503 temporarily_unavailable` and
+  nothing is saved — never a 1★ person answered as "not rated".
+- **Production refuses the docs' example people** (`422 example_data`), so a pasted
+  example never creates a fake person there.
+- **Actionable errors**: every validation problem at once (`error.details`, each
+  with its `field`), `error.docUrl`, a Spanish «Errores» table with how to fix each
+  code; distinct 409s (`external_id_reused`, `external_id_expired`,
+  `request_in_progress`, `partially_saved`) with `originalRequestId`,
+  `activityId`, `profileId`; a 401 that says whether the key is missing,
+  malformed or of the other environment.
+- **Quota you can see**: `RateLimit-Limit/Remaining/Reset` on every search;
+  refused calls and replays no longer count; the all-calls ceiling has its own
+  code and shows in `/me`.
+- **Look up a past call**: `GET /api/v1/requests/{requestId}` and
+  `GET /api/v1/requests?externalId=…` (own key only).
+- **One place for risk**: `otherMatches` and `candidates` are lists of
+  `{ profileId, url, nameMatchedAs }`; the duplicate `worstRating`s are gone
+  (`risk` has it). `flags` / `records` are enums. Profiles add `createdAt` and
+  `registeredByYourRescue`.
+- **Docs**: a 3-step quickstart; every example a full curl for the page's own host
+  and key; staging examples dry-run by default; a change policy.
+
 ## [2.56.194] - 2026-10-17
 
 ### Changed — API (flag off in production): `match` and `saved.action`

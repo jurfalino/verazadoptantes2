@@ -43,6 +43,13 @@ function dayAtNoon(day: string): Date {
     return new Date(y, m - 1, d, 12, 0, 0);
 }
 
+/** An ambiguous answer goes on the profile that matches best (pickBestMatch); null = a new profile. Pure. */
+export function bestMatchFor(outcome: ExactOutcome, matchedOn: Map<string, string[]>, summaries: Map<string, ProfileSummary>): string | null {
+    return outcome.result === 'ambiguous'
+        ? pickBestMatch(outcome.compatible, matchedOn, new Map([...summaries].map(([id, s]) => [id, s.lastRecordAt])))
+        : null;
+}
+
 export async function saveApiActivity(
     ctx: ApiCallContext, req: SearchRequest, outcome: ExactOutcome,
     matchedOn: Map<string, string[]>, summaries: Map<string, ProfileSummary>,
@@ -62,15 +69,13 @@ export async function saveApiActivity(
             or(isNotNull(apiRequests.recordId), eq(apiRequests.profileCreated, 1)),
         )).get();
         if (taken && taken.id !== ctx.requestId) {
-            throw new ApiError(409, 'external_id_reused', `externalId ${save.externalId} was already saved by this key (request ${taken.id})`);
+            throw new ApiError(409, 'external_id_reused', `externalId ${save.externalId} was already saved by this key; use a new externalId, or void the earlier activity first`, {}, { originalRequestId: taken.id });
         }
     }
 
     let profileId: string;
     let profileCreated = false;
-    const best = outcome.result === 'ambiguous'
-        ? pickBestMatch(outcome.compatible, matchedOn, new Map([...summaries].map(([id, s]) => [id, s.lastRecordAt])))
-        : null;
+    const best = bestMatchFor(outcome, matchedOn, summaries);
     if (outcome.result === 'found') {
         profileId = outcome.profileId;
     } else if (best) {
@@ -243,7 +248,8 @@ export async function voidApiRecord(db: Db, recordId: string, opts: { keyId: str
 
     // Claim the void, so two concurrent voids can't both run it.
     const now = new Date();
-    const claimed = await db.update(apiRequests).set({ voidedAt: now, voidedBy: opts.actor })
+    // Voiding frees the externalId: the same id can be sent again (as a new activity).
+    const claimed = await db.update(apiRequests).set({ voidedAt: now, voidedBy: opts.actor, idempotencyKey: null })
         .where(and(eq(apiRequests.id, origin.id), isNull(apiRequests.voidedAt)))
         .returning({ id: apiRequests.id });
     if (!claimed.length) return { recordId, profileId: null, profileVoided: false, alreadyVoided: true };

@@ -18,7 +18,7 @@ import { buildContactEntries, contactEntriesToBlob } from '@/lib/contactEntries'
 import { insertRecord } from '@/app/actions/_recordWrite';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { logger } from '@/lib/logger';
-import { DEFAULT_RESCUE, demoCreatedNames, demoProfiles, type Registered } from './docScenarios';
+import { DEFAULT_RESCUE, demoCreatedAt, demoCreatedNames, demoProfiles, type Registered } from './docScenarios';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any;
@@ -39,7 +39,7 @@ async function removeProfile(db: Db, id: string): Promise<void> {
     await db.delete(adopters).where(eq(adopters.id, id));
 }
 
-async function createProfile(db: Db, p: Pick<Registered, 'id' | 'name' | 'email' | 'phone' | 'documentId'>): Promise<void> {
+async function createProfile(db: Db, p: Pick<Registered, 'id' | 'name' | 'email' | 'phone' | 'documentId'>, createdAt: Date = new Date()): Promise<void> {
     const entries = buildContactEntries({
         ids: p.documentId ? [{ value: p.documentId, label: 'Documento' }] : [],
         emails: p.email ? [p.email] : [],
@@ -57,6 +57,7 @@ async function createProfile(db: Db, p: Pick<Registered, 'id' | 'name' | 'email'
         country: 'AR',
         isPublic: 0,
         source: 'api',
+        createdAt,
     });
 }
 
@@ -82,7 +83,8 @@ export async function seedApiDemo(db: Db, now: Date = new Date()): Promise<DemoS
         return d;
     };
     for (const p of profiles) {
-        await createProfile(db, p);
+        // Created on the day of its oldest record, as the docs say (demoCreatedAt).
+        await createProfile(db, p, new Date(`${demoCreatedAt(p, now)}T12:00:00Z`));
         for (const [k, h] of p.history.entries()) {
             const placed = h.type === 'adoption';
             await insertRecord(db, {

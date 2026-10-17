@@ -7,8 +7,10 @@ import { SEARCH_RESULT_LIMIT } from '@/config/constants';
 import { logger } from '@/lib/logger';
 import type { DiscoveryMatch } from '@/app/actions/types';
 import { ApiError, claimIdempotencyKey, enforceDailyCap, replayIdempotent, requireScope, type ApiCallContext, type ApiResult } from './handler';
-import { buildProfileSummaries, findIdentifierHits, ownerCountry, profileUrl, ratingFields, registeredByRescue } from './profiles';
-import { saveApiActivity } from './records';
+import { buildProfileSummaries, findIdentifierHits, ownerCountry, profileUrl, ratingFields } from './profiles';
+import { bestMatchFor, saveApiActivity } from './records';
+import { environmentForHost } from './keys';
+import { isExampleData } from './docScenarios';
 import { checkSearchRules, searchRequestSchema, type ApiRisk, type ExactResponse, type FuzzyResponse, saveActionOf, type ProfileSummary, type SearchRequest } from './schemas';
 
 /** The lowest rating among rated profiles; "not rated" only if none is. */
@@ -23,10 +25,10 @@ const NOT_RISK = new Set(['verified_identity', 'verified_address']);
 /** The worst signal across every profile the identifiers matched (never just the chosen one). */
 export function riskOf(summaries: Array<ProfileSummary | undefined>): ApiRisk {
     const present = summaries.filter((s): s is ProfileSummary => !!s);
-    const flags = new Set<string>();
+    const flags = new Set<ApiRisk['flags'][number]>();
     const alerts: ApiRisk['alerts'] = [];
     for (const s of present) {
-        for (const f of s.flags) if (!NOT_RISK.has(f)) flags.add(f);
+        for (const f of s.flags) if (!NOT_RISK.has(f)) flags.add(f as ApiRisk['flags'][number]);
         for (const a of s.alerts) alerts.push({ ...a, profileId: s.profileId });
     }
     return { worstRating: worstOf(present.map(s => s.rating)), flags: [...flags].sort(), alerts, profilesMatched: present.length };
@@ -39,8 +41,9 @@ function parseRequest(ctx: ApiCallContext): SearchRequest {
     }
     const parsed = searchRequestSchema.safeParse(raw);
     if (!parsed.success) {
-        const issue = parsed.error.issues[0];
-        throw new ApiError(422, 'invalid_request', `${issue.path.join('.') || 'body'}: ${issue.message}`);
+        // Every problem at once, each with its field: one round trip to fix a form, not one per field.
+        const details = parsed.error.issues.map(i => ({ code: 'invalid_request', field: i.path.join('.') || 'body', message: i.message }));
+        throw new ApiError(422, 'invalid_request', `${details[0].field}: ${details[0].message}`, {}, { field: details[0].field, details });
     }
     return parsed.data;
 }
@@ -51,18 +54,26 @@ export async function runSearch(ctx: ApiCallContext): Promise<ApiResult> {
     ctx.log.context = req.activity?.activityType ?? null;
     ctx.log.externalId = req.activity?.externalId ?? null;
 
-    const broken = checkSearchRules(req);
-    if (broken) throw new ApiError(422, broken.code, broken.message);
+    const problems = checkSearchRules(req);
+    if (problems.length) {
+        const [first] = problems;
+        throw new ApiError(422, first.code, first.message, {}, { field: first.field, details: problems });
+    }
+    // The docs' example people exist on staging only: in production they would
+    // become real profiles, so a pasted example is refused there.
+    if (environmentForHost(new URL(ctx.origin).host) === 'live' && isExampleData(req.person)) {
+        throw new ApiError(422, 'example_data', 'these are the documentation\'s example data; in production send a real person (to try the examples, use staging with a ba_test_ key)', {}, { field: 'person' });
+    }
 
     requireScope(ctx, req.mode === 'exact' ? 'search' : 'search:fuzzy');
-    // An exact call saves its activity (Jon, 2026-10-13); without one it is a
-    // look-up, answered only for people this rescue already registered (runExact).
-    // A dry run (admin-owned keys only, see handler) checks all the same things
-    // but writes nothing, so it neither replays nor claims the Idempotency-Key.
-    const saves = req.mode === 'exact' && !!req.activity;
+    // An exact call always saves its activity (Jon, 2026-10-13/17; a look-up is
+    // fuzzy). Its externalId is what makes a resend a retry, not a second
+    // activity. A dry run checks the same things but writes nothing, so it
+    // neither replays nor claims.
+    const saves = req.mode === 'exact';
     if (saves) {
         requireScope(ctx, 'record:write');
-        if (!ctx.idempotencyKey) throw new ApiError(422, 'idempotency_key_required', 'an exact call that saves an activity needs an Idempotency-Key header');
+        ctx.idempotencyKey = `ext:${req.activity!.externalId!}`;
         if (!ctx.dryRun) {
             const replay = await replayIdempotent(ctx);
             if (replay) {
@@ -81,27 +92,14 @@ export async function runSearch(ctx: ApiCallContext): Promise<ApiResult> {
 async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiResult> {
     const country = req.person.phone ? await ownerCountry(ctx.db, ctx.key.ownerEmail, ctx.requestId) : null;
     const hits = await findIdentifierHits(ctx.db, req.person, ctx.requestId, country);
-    let outcome = decideExactOutcome(req.person.fullName!, hits.candidates);
-    let ids = outcome.result === 'found' ? [outcome.profileId, ...outcome.otherProfileIds] : outcome.result === 'ambiguous' ? outcome.profileIds : [];
-
-    if (!req.activity) {
-        // A look-up leaves no activity, so it is only for people this rescue
-        // already registered (Jon, 2026-10-13), and it shows ONLY those
-        // profiles: never a stranger who shares the phone or email. Checked
-        // before anything else is read or logged; everyone else — including
-        // nobody — gets the same refusal, with nothing recorded about who matched.
-        const mine = await registeredByRescue(ctx.db, ids, ctx.key.ownerEmail, ctx.requestId);
-        const answerable = outcome.result === 'found' ? mine.has(outcome.profileId) : mine.size > 0;
-        if (!answerable) throw new ApiError(422, 'activity_required', 'send an activity: an exact call without one is only answered for people your rescue already registered');
-        ids = ids.filter(id => mine.has(id));
-        if (outcome.result === 'found') outcome = { ...outcome, otherProfileIds: outcome.otherProfileIds.filter(id => mine.has(id)) };
-        else if (outcome.result === 'ambiguous') outcome = { ...outcome, profileIds: outcome.profileIds.filter(id => mine.has(id)) };
-    }
+    const outcome = decideExactOutcome(req.person.fullName!, hits.candidates);
+    const ids = outcome.result === 'found' ? [outcome.profileId, ...outcome.otherProfileIds] : outcome.result === 'ambiguous' ? outcome.profileIds : [];
     ctx.log.outcome = outcome.result;
 
     // Describe the person as they stood BEFORE this call: a rescue's own
     // just-saved request must not flag the person as "asking too often".
-    const summaries = await buildProfileSummaries(ctx.db, ids, ctx.origin, ctx.requestId);
+    // Fails closed (503) if the ratings can't be read.
+    const summaries = await buildProfileSummaries(ctx.db, ids, ctx.origin, ctx.requestId, ctx.key.ownerEmail);
 
     const body: Omit<ExactResponse, 'requestId'> = { mode: 'exact', match: outcome.result, risk: riskOf([]), saved: { action: 'nothing_saved' } };
     if (outcome.result === 'found') {
@@ -109,22 +107,22 @@ async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiRes
         if (!summary) throw new Error(`profile summary missing for ${outcome.profileId}`);
         body.profile = { ...summary, matchedOn: hits.matchedOn.get(outcome.profileId) ?? [], nameMatchedAs: outcome.nameMatchedAs };
         if (outcome.otherProfileIds.length) {
-            body.otherMatches = {
-                count: outcome.otherProfileIds.length,
-                urls: outcome.otherProfileIds.map(id => profileUrl(ctx.origin, id)),
-                worstRating: worstOf(outcome.otherProfileIds.map(id => summaries.get(id)?.rating)),
-            };
+            body.otherMatches = outcome.otherProfileIds.map(id => ({ profileId: id, url: profileUrl(ctx.origin, id) }));
         }
     } else if (outcome.result === 'ambiguous') {
+        const fits = new Map(outcome.compatible.map(c => [c.profileId, c.as]));
         body.reason = outcome.reason;
-        body.candidates = outcome.profileIds.length;
-        body.candidateUrls = outcome.profileIds.map(id => profileUrl(ctx.origin, id));
-        body.worstRating = worstOf(outcome.profileIds.map(id => summaries.get(id)?.rating));
+        body.candidates = outcome.profileIds.map(id => ({ profileId: id, url: profileUrl(ctx.origin, id), nameMatchedAs: fits.get(id) ?? null }));
     }
     body.risk = riskOf(ids.map(id => summaries.get(id)));
     ctx.log.profileIds = ids;
 
-    if (!req.activity || ctx.dryRun) return { status: 200, body };
+    if (ctx.dryRun) {
+        // What it WOULD do — the thing a partner tests for — with no ids.
+        const best = bestMatchFor(outcome, hits.matchedOn, summaries);
+        body.saved = { action: saveActionOf(outcome.result, outcome.result === 'ambiguous' && !best), dryRun: true };
+        return { status: 200, body };
+    }
     const s = await saveApiActivity(ctx, req, outcome, hits.matchedOn, summaries);
     body.saved = {
         action: saveActionOf(outcome.result, s.profileCreated),
@@ -153,7 +151,7 @@ async function runFuzzy(ctx: ApiCallContext, req: SearchRequest): Promise<ApiRes
     const matches = [...(res.results as DiscoveryMatch[]), ...((res.lowRelevanceResults ?? []) as DiscoveryMatch[])]
         .slice(0, SEARCH_RESULT_LIMIT);
     const ids = matches.map(m => m.adopterId);
-    const summaries = await buildProfileSummaries(ctx.db, ids, ctx.origin, ctx.requestId);
+    const summaries = await buildProfileSummaries(ctx.db, ids, ctx.origin, ctx.requestId, ctx.key.ownerEmail);
 
     ctx.log.outcome = 'results';
     ctx.log.profileIds = ids;

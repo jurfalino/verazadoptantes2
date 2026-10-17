@@ -205,9 +205,75 @@ const DEFS: ScenarioDef[] = [
         person: { fullName: 'Sofía Medina', email: 'sofia.medina.demo@example.com' },
         activity: { activityType: 'adoption_request' },
         dryRun: true,
-        why: 'La misma respuesta que una llamada real, con `saved.action: nothing_saved`: no se guardó nada. En producción este header se rechaza (`403 dry_run_not_allowed`).',
+        why: 'La misma respuesta que una llamada real; `saved.action` dice lo que **haría** (`created_profile`) y `saved.dryRun: true` que no se guardó nada. En producción este header se rechaza (`403 dry_run_not_allowed`).',
     },
 ];
+
+// ── Request examples (the guide's «Ejemplos de pedidos»): María is a demo person, so on staging they answer. ──
+export const REQUEST_EXAMPLES = {
+    minimal: {
+        summary: 'Mínimo: registrar una solicitud (nombre + un contacto + tipo + tu id)',
+        value: { mode: 'exact', person: { fullName: 'María José Pérez', phone: '11 5550-3101' }, activity: { activityType: 'adoption_request', externalId: 'ejemplo-minimo-1' } },
+    },
+    complete_request: {
+        summary: 'Completo: una solicitud con todos los datos y las respuestas de tu formulario',
+        value: {
+            mode: 'exact',
+            person: {
+                fullName: 'María José Pérez', email: 'mariajose.demo@example.com', phone: '+54 9 11 5550-3101',
+                documentId: { value: '30.555.310', country: 'AR' }, address: 'Av. Siempreviva 742, CABA',
+                socials: [{ platform: 'instagram', handle: '@mariajose.demo' }, { platform: 'facebook', handle: 'facebook.com/mariajose.demo' }],
+            },
+            activity: {
+                activityType: 'adoption_request', externalId: 'jotform-5512', animalName: 'Luna', species: 'dog',
+                date: '2026-10-12', notes: 'Llamó dos veces preguntando por Luna.',
+                formContent: { '¿Tenés patio?': 'Sí', '¿Quiénes viven en la casa?': ['2 adultos', '1 niño'], mascotas: [{ tipo: 'gato', edad: 3, castrado: true }] },
+            },
+        },
+    },
+    complete_adoption: {
+        summary: 'Completo: una adopción con los datos del animal (species obligatorio; después adjuntá el contrato)',
+        value: {
+            mode: 'exact',
+            person: { fullName: 'María José Pérez', phone: '+54 9 11 5550-3101', email: 'mariajose.demo@example.com', documentId: { value: '30.555.310', country: 'AR' } },
+            activity: {
+                activityType: 'adoption', externalId: 'adopcion-2026-118',
+                animalName: 'Luna', species: 'cat', age: '2 años', sex: 'female', neutered: true,
+                color: 'atigrada', microchip: '985112345678901',
+                date: '2026-10-12', rating: 5, notes: 'Entrega en domicilio, todo en orden.',
+            },
+        },
+    },
+    fuzzy: {
+        summary: 'Fuzzy: buscar a alguien sin registrar nada (como la búsqueda de la página de inicio)',
+        value: { mode: 'fuzzy', person: { fullName: 'María Pérez', socials: [{ platform: 'instagram', handle: '@mariajose.demo' }] } },
+    },
+};
+
+type ExamplePerson = { fullName?: string; email?: string; phone?: string; documentId?: { value: string } };
+const foldName = (n: string) => n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+/** The docs' example people: their names and identifiers (production refuses them). */
+const EXAMPLES = (() => {
+    const people: ExamplePerson[] = [
+        ...DEFS.map(d => d.person),
+        ...DEFS.flatMap(d => d.profiles.map(p => ({ fullName: p.name, email: p.email, phone: p.phone, documentId: p.documentId ? { value: p.documentId } : undefined }))),
+        ...Object.values(REQUEST_EXAMPLES).map(e => e.value.person as ExamplePerson),
+    ];
+    return {
+        names: new Set(people.map(p => p.fullName).filter((n): n is string => !!n).map(foldName)),
+        ids: new Set(people.flatMap(p => [
+            p.email && `e:${keyOf.email(p.email)}`, p.phone && `p:${keyOf.phone(p.phone)}`, p.documentId && `d:${keyOf.documentId(p.documentId.value)}`,
+        ]).filter((x): x is string => !!x)),
+    };
+})();
+/** Is this one of the docs' example people — an example name AND one of the examples' identifiers? Pure. */
+export function isExampleData(person: ExamplePerson): boolean {
+    if (!person.fullName || !EXAMPLES.names.has(foldName(person.fullName))) return false;
+    return [
+        person.email && `e:${keyOf.email(person.email)}`, person.phone && `p:${keyOf.phone(person.phone)}`,
+        person.documentId && `d:${keyOf.documentId(person.documentId.value)}`,
+    ].some(k => !!k && EXAMPLES.ids.has(k));
+}
 
 /** Every profile the scenarios need registered (the staging demo seed). */
 export function demoProfiles(): Registered[] {
@@ -238,6 +304,11 @@ function densest<T>(items: Array<{ daysAgo: number; item: T }>, periodDays: numb
 
 const dayMs = 86_400_000;
 const isoDay = (now: Date, daysAgo: number) => new Date(now.getTime() - daysAgo * dayMs).toISOString().slice(0, 10);
+
+/** When the demo seed creates a profile: the day of its oldest record (so the docs know it). */
+export function demoCreatedAt(p: Registered, now: Date): string {
+    return isoDay(now, Math.max(...p.history.map(h => h.daysAgo)));
+}
 
 /** What BuenAdoptante computes for a registered profile: rating, record counts, last record, alerts. */
 function computed(p: Registered, now: Date, cfg: AlertConfig) {
@@ -279,6 +350,7 @@ function answer(def: ScenarioDef, origin: string, n: number, now: Date, cfg: Ale
         return {
             profileId: p.id, url: url(p.id), ...ratingOf(c.avg),
             flags: c.flags, alerts: c.alerts, records: c.records, lastRecordAt: c.lastRecordAt,
+            createdAt: demoCreatedAt(p, now), registeredByYourRescue: false,
         };
     };
     const worst = (ps: Registered[]) => {
@@ -304,11 +376,11 @@ function answer(def: ScenarioDef, origin: string, n: number, now: Date, cfg: Ale
         const p = byId.get(outcome.profileId)!;
         body.profile = { ...summary(p), matchedOn: matchedOn(def.person, p), nameMatchedAs: outcome.nameMatchedAs as NameMatchedAs };
         const others = outcome.otherProfileIds.map(id => byId.get(id)!);
-        if (others.length) body.otherMatches = { count: others.length, urls: others.map(o => url(o.id)), worstRating: worst(others) };
+        if (others.length) body.otherMatches = others.map(o => ({ profileId: o.id, url: url(o.id) }));
         savedOn = { id: p.id, created: false, contactsAdded: added(p) };
     } else if (outcome.result === 'ambiguous') {
-        const cands = outcome.profileIds.map(id => byId.get(id)!);
-        Object.assign(body, { reason: outcome.reason, candidates: cands.length, candidateUrls: cands.map(c => url(c.id)), worstRating: worst(cands) });
+        const fits = new Map(outcome.compatible.map(c => [c.profileId, c.as]));
+        Object.assign(body, { reason: outcome.reason, candidates: outcome.profileIds.map(id => ({ profileId: id, url: url(id), nameMatchedAs: fits.get(id) ?? null })) });
         // Best match (pickBestMatch's first criterion: most identifiers matched); no name fits → a new profile.
         const fitting = outcome.compatible.map(c => byId.get(c.profileId)!)
             .sort((a, b) => matchedOn(def.person, b).length - matchedOn(def.person, a).length);
@@ -317,7 +389,9 @@ function answer(def: ScenarioDef, origin: string, n: number, now: Date, cfg: Ale
         savedOn = { id: `p_new_${def.key}`, created: true, contactsAdded: [] };
     }
     body.risk = { worstRating: worst(hits), flags: [...flags].sort(), alerts, profilesMatched: hits.length };
-    if (def.activity && !def.dryRun && savedOn) {
+    if (def.dryRun && savedOn) {
+        body.saved = { action: saveActionOf(outcome.result, savedOn.created), dryRun: true };
+    } else if (def.activity && savedOn) {
         const rid = `r_${def.key}`;
         body.saved = {
             action: saveActionOf(outcome.result, savedOn.created),
@@ -339,7 +413,7 @@ export interface Scenario {
 export function exactScenarios(origin: string, now: Date = new Date(), cfg: AlertConfig = DEFAULT_ALERT_CONFIG): Scenario[] {
     return DEFS.map((d, i) => ({
         key: d.key, title: d.title, registered: d.registered, why: d.why, dryRun: !!d.dryRun,
-        request: { mode: 'exact', person: d.person, ...(d.activity ? { activity: d.activity } : {}) },
+        request: { mode: 'exact', person: d.person, activity: { activityType: 'adoption_request', ...d.activity, externalId: `escenario-${i + 1}` } },
         response: answer(d, origin, i + 1, now, cfg),
     }));
 }

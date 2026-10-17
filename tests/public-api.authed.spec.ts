@@ -48,13 +48,17 @@ test.describe('public API v1', () => {
     });
 
     const auth = (extra: Record<string, string> = {}) => ({ authorization: `Bearer ${secret}`, ...extra });
-    const search = (data: unknown, headers: Record<string, string> = {}) =>
-        api.post('/api/v1/search', { data, headers: auth(headers) });
+    // externalId is the retry key (was the Idempotency-Key header): a test's per-call
+    // key becomes its activity's externalId, unless the activity already has one.
+    const search = (data: unknown, headers: Record<string, string> = {}) => {
+        const { 'idempotency-key': ext, ...rest } = headers;
+        const d = data as { activity?: Record<string, unknown> };
+        const body = ext && d.activity && !d.activity.externalId ? { ...d, activity: { ...d.activity, externalId: ext } } : data;
+        return api.post('/api/v1/search', { data: body, headers: auth(rest) });
+    };
     // A read-only exact look-up: same answer as a real call, nothing written.
     let dryN = 0;
     const check = (data: unknown) => search(data, { 'x-dry-run': '1', 'idempotency-key': `dry-${++dryN}-${STAMP}` });
-    // A look-up without activity (no dry run): only for people this rescue registered.
-    const lookup = (person: unknown, key = secret) => api.post('/api/v1/search', { data: { mode: 'exact', person }, headers: { authorization: `Bearer ${key}` } });
     const countRows = (sql: string) => JSON.parse(execD1(sql))[0].results[0].n as number;
 
     test('admin issues a key; the secret is shown once and works for /me', async ({ page }) => {
@@ -65,8 +69,14 @@ test.describe('public API v1', () => {
         secret = issued.secret;
         keyId = issued.id;
 
-        expect((await api.get('/api/v1/me')).status()).toBe(401);
-        expect((await api.get('/api/v1/me', { headers: { authorization: 'Bearer ba_test_notarealkeynotarealkeynotarealkey12345' } })).status()).toBe(401);
+        const none = await api.get('/api/v1/me');
+        expect(none.status()).toBe(401);
+        expect((await none.json()).error.message).toMatch(/no API key/);
+        const unknown = await api.get('/api/v1/me', { headers: { authorization: 'Bearer ba_test_notarealkeynotarealkeynotarealkey12345' } });
+        expect(unknown.status()).toBe(401);
+        expect((await unknown.json()).error.message).toBe('unknown or revoked API key');
+        // A production key here (off production) is named as such.
+        expect((await (await api.get('/api/v1/me', { headers: { authorization: 'Bearer ba_live_notarealkeynotarealkeynotarealkey12345' } })).json()).error.message).toMatch(/production key/);
         const me = await api.get('/api/v1/me', { headers: auth() });
         expect(me.status()).toBe(200);
         const body = await me.json();
@@ -94,9 +104,14 @@ test.describe('public API v1', () => {
         const badRating = await search({ mode: 'exact', person: { fullName: NAME, phone: LOCAL_PHONE }, activity: { activityType: 'observation', rating: 7 } }, { 'idempotency-key': `bad-${STAMP}` });
         expect(badRating.status()).toBe(422);
 
-        // Every call that saves an activity needs an Idempotency-Key.
-        const noKey = await search({ mode: 'exact', person: { fullName: NAME, phone: LOCAL_PHONE }, activity: { activityType: 'adoption_request' } });
-        expect((await noKey.json()).error.code).toBe('idempotency_key_required');
+        // Every saving call needs its externalId (the retry key).
+        const noExt = await search({ mode: 'exact', person: { fullName: NAME, phone: LOCAL_PHONE }, activity: { activityType: 'adoption_request' } });
+        const ne = await noExt.json();
+        expect(ne.error).toMatchObject({ code: 'external_id_required', field: 'activity.externalId' });
+        expect(ne.error.docUrl).toMatch(/\/api\/v1\/docs#description\/errores$/);
+        // Every problem at once, each with its field.
+        const many = await (await search({ mode: 'exact', person: { fullName: 'Ana', email: 'nope', phone: 'x' }, activity: { activityType: 'adoption' } })).json();
+        expect(many.error.details.map((d: { code: string }) => d.code)).toEqual(expect.arrayContaining(['invalid_email', 'invalid_phone', 'full_name_required', 'external_id_required', 'species_required']));
         expect(countRows(`SELECT count(*) AS n FROM adopters WHERE name = '${NAME}'`)).toBe(0);
     });
 
@@ -106,7 +121,7 @@ test.describe('public API v1', () => {
         expect(dry.headers()['x-dry-run']).toBe('1');
         const d = await dry.json();
         expect(d.match).toBe('not_found');
-        expect(d.saved).toEqual({ action: 'nothing_saved' });
+        expect(d.saved).toEqual({ action: 'created_profile', dryRun: true }); // what it WOULD do
         expect(d.risk).toEqual({ worstRating: { rating: null, ratingLevel: 0, ratingLabel: 'not_rated' }, flags: [], alerts: [], profilesMatched: 0 });
         expect(countRows(`SELECT count(*) AS n FROM adopters WHERE name = '${NAME}'`)).toBe(0);
         expect(countRows(`SELECT count(*) AS n FROM api_requests WHERE id = '${d.requestId}' AND dry_run = 1 AND record_id IS NULL AND outcome = 'not_found'`)).toBe(1);
@@ -122,13 +137,13 @@ test.describe('public API v1', () => {
         expect(userKey.secret).toMatch(/^ba_test_/);
         const stranger = `Dryrunfixture ${TAG.charAt(0).toUpperCase()}${TAG.slice(1)}`;
         const call = (n: number) => api.post('/api/v1/search', {
-            data: { mode: 'exact', person: { fullName: stranger, email: `dry-${STAMP}@example.com` }, activity: { activityType: 'adoption_request' } },
-            headers: { authorization: `Bearer ${userKey.secret}`, 'x-dry-run': '1', 'idempotency-key': `user-dry-${n}-${STAMP}` },
+            data: { mode: 'exact', person: { fullName: stranger, email: `dry-${STAMP}@example.com` }, activity: { activityType: 'adoption_request', externalId: `user-dry-${n}-${STAMP}` } },
+            headers: { authorization: `Bearer ${userKey.secret}`, 'x-dry-run': '1' },
         });
         const ok = await call(1);
         expect(ok.status()).toBe(200);
         expect(ok.headers()['x-dry-run']).toBe('1');
-        expect((await ok.json()).saved).toEqual({ action: 'nothing_saved' });
+        expect((await ok.json()).saved).toEqual({ action: 'created_profile', dryRun: true });
         // The same key as a production (live) key: refused.
         execD1(`UPDATE api_keys SET environment = 'live' WHERE id = '${userKey.id}'`);
         const refused = await call(2);
@@ -159,57 +174,45 @@ test.describe('public API v1', () => {
         expect(countRows(`SELECT count(*) AS n FROM activity_forms WHERE activity_id = '${recordId}'`)).toBe(1);
         expect(countRows(`SELECT count(*) AS n FROM adoptions WHERE id = '${recordId}' AND species = 'dog'`)).toBe(1);
 
-        // A retry with the same key and body replays the answer and writes nothing.
-        const replay = await search(body, { 'idempotency-key': `save-${STAMP}` });
+        // A retry (same externalId, same content — even with its keys in another order) replays the answer and writes nothing.
+        const reordered = { activity: { ...body.activity }, person: { email: EMAIL, phone: LOCAL_PHONE, fullName: NAME }, mode: 'exact' };
+        const replay = await search(reordered);
         const r = await replay.json();
         expect(r.replayed).toBe(true);
         expect(r.saved.activityId).toBe(recordId);
-        // Same key, different body → refused.
-        const clash = await search({ ...body, activity: { ...body.activity, activityType: 'observation', formContent: undefined } }, { 'idempotency-key': `save-${STAMP}` });
+        expect(r.originalRequestId).toBe(s.requestId);
+        expect(r.requestId).not.toBe(s.requestId);
+        expect(countRows(`SELECT count(*) AS n FROM adoptions WHERE adopter_id = '${profileId}'`)).toBe(1);
+        // Same externalId, different content → refused, naming what was saved.
+        const clash = await search({ ...body, activity: { ...body.activity, activityType: 'observation', formContent: undefined } });
         expect(clash.status()).toBe(409);
-        // Same externalId under a new idempotency key → refused.
-        const dupExt = await search(body, { 'idempotency-key': `save2-${STAMP}` });
-        expect((await dupExt.json()).error.code).toBe('external_id_reused');
+        expect((await clash.json()).error).toMatchObject({ code: 'external_id_reused', originalRequestId: s.requestId, activityId: recordId, profileId });
+
+        // What did that call do? By its requestId, and by the externalId.
+        const byId = await (await api.get(`/api/v1/requests/${s.requestId}`, { headers: auth() })).json();
+        expect(byId.call).toMatchObject({ requestId: s.requestId, externalId: `ext-${STAMP}`, activityId: recordId, voided: false, httpStatus: 200 });
+        expect(byId.call.response.saved.activityId).toBe(recordId);
+        const byExt = await (await api.get(`/api/v1/requests?externalId=ext-${STAMP}`, { headers: auth() })).json();
+        expect(byExt.call.requestId).toBe(s.requestId);
+        expect((await api.get('/api/v1/requests/not-a-request', { headers: auth() })).status()).toBe(404);
     });
 
-    test('a look-up without activity: answered only for people this rescue registered, saves nothing', async ({ page }) => {
-        const mine = await lookup({ fullName: NAME, email: EMAIL });
-        expect(mine.status()).toBe(200);
-        const m = await mine.json();
-        expect(m.match).toBe('found');
-        expect(m.saved).toEqual({ action: 'nothing_saved' });
-        expect(m.risk.profilesMatched).toBe(1);
+    test('an exact call without activity is refused and points to fuzzy; fuzzy finds the person, saves nothing, shows the quota', async () => {
+        const r = await api.post('/api/v1/search', { data: { mode: 'exact', person: { fullName: NAME, email: EMAIL } }, headers: auth() });
+        expect(r.status()).toBe(422);
+        const e = await r.json();
+        expect(e.error).toMatchObject({ code: 'activity_required', field: 'activity' });
+        expect(e.error.message).toMatch(/fuzzy/);
+        // A refusal records nothing about who matched.
+        expect(countRows(`SELECT count(*) AS n FROM api_requests WHERE id = '${e.requestId}' AND profile_ids IS NULL AND outcome = 'error'`)).toBe(1);
+
+        const f = await search({ mode: 'fuzzy', person: { fullName: NAME, email: EMAIL } });
+        expect(f.status()).toBe(200);
+        expect((await f.json()).results.some((x: { profile: { profileId: string } }) => x.profile.profileId === profileId)).toBe(true);
         expect(countRows(`SELECT count(*) AS n FROM adoptions WHERE adopter_id = '${profileId}'`)).toBe(1);
-
-        // Another rescue (no shared organization) and a stranger get the very same refusal.
-        const res = await page.request.post('/api/admin/api-keys', { data: { ownerEmail: 'testuser@example.com', name: `E2E lookup ${TAG}` } });
-        const userKey = await res.json();
-        const other = await lookup({ fullName: NAME, email: EMAIL }, userKey.secret);
-        const nobody = await lookup({ fullName: 'Nadie Conocido', email: `nadie-${STAMP}@example.com` });
-        for (const r of [other, nobody]) {
-            expect(r.status()).toBe(422);
-            const e = await r.json();
-            expect(e.error).toEqual({ code: 'activity_required', message: 'send an activity: an exact call without one is only answered for people your rescue already registered' });
-            // A refusal records nothing about who matched.
-            expect(countRows(`SELECT count(*) AS n FROM api_requests WHERE id = '${e.requestId}' AND profile_ids IS NULL AND outcome = 'error'`)).toBe(1);
-        }
-
-        // Another rescue registers a stranger on the same phone. Our look-up of OUR
-        // person must not reveal them (no otherMatches, not counted in risk).
-        const strangerRes = await api.post('/api/v1/search', {
-            data: { mode: 'exact', person: { fullName: 'Extrañafixture Ajena', phone: LOCAL_PHONE }, activity: { activityType: 'observation' } },
-            headers: { authorization: `Bearer ${userKey.secret}`, 'idempotency-key': `stranger-${STAMP}` },
-        });
-        const stranger = await strangerRes.json();
-        expect(stranger.saved.action).toMatch(/^created_profile/);
-        const ours = await (await lookup({ fullName: NAME, phone: LOCAL_PHONE })).json();
-        expect(ours.match).toBe('found');
-        expect(ours.otherMatches).toBeUndefined();
-        expect(ours.risk.profilesMatched).toBe(1);
-        expect(JSON.stringify(ours)).not.toContain(stranger.saved.profileId);
-        const v = await api.post(`/api/v1/activities/${stranger.saved.activityId}/void`, { headers: { authorization: `Bearer ${userKey.secret}` } });
-        expect((await v.json()).profileVoided).toBe(true);
-        await page.request.patch(`/api/admin/api-keys/${userKey.id}`, { data: { revoke: true } });
+        expect(Number(f.headers()['ratelimit-limit'])).toBeGreaterThan(0);
+        expect(Number(f.headers()['ratelimit-remaining'])).toBeLessThan(Number(f.headers()['ratelimit-limit']));
+        expect(Number(f.headers()['ratelimit-reset'])).toBeGreaterThan(0);
     });
 
     test('the same person in another phone format → found, with one request and no rating', async () => {
@@ -274,10 +277,11 @@ test.describe('public API v1', () => {
         const b = await res.json();
         expect(b.match).toBe('ambiguous');
         expect(b.reason).toBe('name_mismatch');
-        expect(b.candidates).toBe(1);
-        // The previous test rated this person 1★: an ambiguous answer still lets the client block.
-        expect(b.worstRating.ratingLabel).toBe('dangerous');
+        expect(b.candidates).toEqual([expect.objectContaining({ profileId, nameMatchedAs: null })]);
+        // The previous test rated this person 1★: an ambiguous answer still lets the client block (risk is the one place to look).
+        expect(b.worstRating).toBeUndefined();
         expect(b.risk.worstRating.ratingLabel).toBe('dangerous');
+        expect(b.saved).toEqual({ action: 'created_profile_for_review', dryRun: true });
         expect(b.risk.profilesMatched).toBe(1);
         expect(b.profile).toBeUndefined();
     });
@@ -388,8 +392,7 @@ test.describe('public API v1', () => {
         const found = await (await check({ mode: 'exact', person: { fullName: NAME, phone: LOCAL_PHONE }, activity: { activityType: 'adoption_request' } })).json();
         expect(found.match).toBe('found');
         expect(found.profile.profileId).toBe(profileId);
-        expect(found.otherMatches.count).toBe(1);
-        expect(found.otherMatches.urls[0]).toContain(b.saved.profileId);
+        expect(found.otherMatches).toEqual([expect.objectContaining({ profileId: b.saved.profileId })]);
         // Clean up through the API itself.
         const v = await api.post(`/api/v1/activities/${b.saved.activityId}/void`, { headers: auth() });
         expect((await v.json()).profileVoided).toBe(true);
@@ -520,22 +523,18 @@ test.describe('public API v1', () => {
         expect((await seeded.json()).profiles).toBeGreaterThan(10);
         // Loading twice resets, never duplicates.
         expect((await page.request.post('/api/admin/api-demo')).status()).toBe(200);
-        // A dry run answers the same, except that nothing is saved (saved.action: nothing_saved).
-        const strip = (o: Record<string, unknown>) => { const { requestId: _r, saved: _s, ...rest } = o; void _r; void _s; return rest; };
-        // What the docs page serves — built with THIS environment's alert thresholds.
+        // What the docs page serves: built with THIS environment's alert thresholds; off production every call is a dry run.
         const spec = await (await api.get('/api/v1/openapi.json')).json();
         const op = spec.paths['/api/v1/search'].post;
         const requests = op.requestBody.content['application/json'].examples as Record<string, { value: Record<string, unknown> }>;
         const answers = op.responses['200'].content['application/json'].examples as Record<string, { value: Record<string, unknown> }>;
         const keys = Object.keys(answers).filter(k => k.startsWith('scenario_'));
         expect(keys.length).toBeGreaterThanOrEqual(11);
-        let n = 0;
         for (const key of keys) {
-            const res = await api.post('/api/v1/search', { data: requests[key].value, headers: auth({ 'x-dry-run': '1', 'idempotency-key': `scenario-${++n}-${STAMP}` }) });
+            const res = await api.post('/api/v1/search', { data: requests[key].value, headers: auth({ 'x-dry-run': '1' }) });
             expect(res.status(), key).toBe(200);
             const got = await res.json();
-            expect(strip(got), key).toEqual(strip(answers[key].value));
-            expect(got.saved, key).toEqual({ action: 'nothing_saved' });
+            expect({ ...got, requestId: 'x' }, key).toEqual({ ...answers[key].value, requestId: 'x' });
         }
         void baseURL;
     });

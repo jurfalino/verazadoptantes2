@@ -7,7 +7,7 @@
  * daily cap counts, and what a void checks ("did this key create the record?").
  */
 import { NextResponse } from 'next/server';
-import { and, eq, gte, ne, count, lt, isNotNull } from 'drizzle-orm';
+import { and, eq, gte, ne, count, lt, isNotNull, isNull, or } from 'drizzle-orm';
 import { apiKeys, apiRequests } from '@/db/schema';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -19,7 +19,7 @@ import type { ApiErrorCode, ApiScope } from './schemas';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Db = any;
 
-export type ApiEndpoint = 'search' | 'me' | 'void' | 'contract';
+export type ApiEndpoint = 'search' | 'me' | 'void' | 'contract' | 'requests';
 
 /**
  * Test calls that save nothing: `X-Dry-Run: 1` runs a search end to end —
@@ -48,10 +48,24 @@ const MAX_REQUEST_BODY = 64_000;
 /** A save takes seconds; a claim still open after this was abandoned by a dead worker. */
 const ABANDONED_CLAIM_MS = 120_000;
 
+/** Extra, machine-readable fields of an error (all optional). */
+export interface ApiErrorExtra {
+    field?: string;
+    details?: Array<{ code: string; field: string; message: string }>;
+    originalRequestId?: string;
+    activityId?: string;
+    profileId?: string;
+}
+
 export class ApiError extends Error {
-    constructor(public status: number, public code: ApiErrorCode, message: string, public headers: Record<string, string> = {}) {
+    constructor(public status: number, public code: ApiErrorCode, message: string, public headers: Record<string, string> = {}, public extra: ApiErrorExtra = {}) {
         super(message);
     }
+}
+
+/** Where the docs explain errors (the guide's «Errores» section). */
+export function errorDocUrl(origin: string): string {
+    return `${origin}/api/v1/docs#description/errores`;
 }
 
 /** What an endpoint wants written to its transaction row. */
@@ -78,12 +92,15 @@ export interface ApiCallContext {
     bodyText: string;
     /** A file upload's bytes (binary endpoints only); never logged. */
     bodyBytes: ArrayBuffer | null;
+    /** What makes a saving call a retry: `ext:<externalId>` (set by the search once the body is read). */
     idempotencyKey: string | null;
     log: LogFields;
     /** Set when this call already owns a log row (idempotency claim). */
     rowClaimed: boolean;
-    /** An admin's read-only test call: nothing is written but its log row. */
+    /** X-Dry-Run (staging, test keys): nothing is written but its log row. */
     dryRun: boolean;
+    /** The request URL's query (GET endpoints). */
+    query: URLSearchParams;
 }
 
 export interface ApiResult { status: number; body: Record<string, unknown> }
@@ -95,8 +112,8 @@ function json(status: number, body: Record<string, unknown>, requestId: string, 
     });
 }
 
-function errorBody(requestId: string, code: string, message: string, errorId?: string) {
-    return { requestId, error: { code, message, ...(errorId ? { errorId } : {}) } };
+function errorBody(requestId: string, origin: string, code: string, message: string, errorId?: string, extra: ApiErrorExtra = {}) {
+    return { requestId, error: { code, message, ...extra, docUrl: errorDocUrl(origin), ...(errorId ? { errorId } : {}) } };
 }
 
 export function requireScope(ctx: ApiCallContext, scope: ApiScope) {
@@ -108,21 +125,29 @@ export function startOfUtcDay(now = new Date()): Date {
     return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
-/** Searches of one mode this key made today (refused-for-cap calls don't count). */
+/**
+ * Searches of one mode this key made today that count against its cap: the
+ * ones that ran (a refused call — any 4xx — and a replay of an earlier answer
+ * don't; a call still in progress, status 0, does).
+ */
 export async function searchesToday(db: Db, keyId: string, mode: 'exact' | 'fuzzy'): Promise<number> {
     const row = await db.select({ n: count() }).from(apiRequests).where(and(
         eq(apiRequests.keyId, keyId),
         eq(apiRequests.endpoint, 'search'),
         eq(apiRequests.mode, mode),
         gte(apiRequests.createdAt, startOfUtcDay()),
-        ne(apiRequests.httpStatus, 429),
+        lt(apiRequests.httpStatus, 400),
+        or(isNull(apiRequests.outcome), ne(apiRequests.outcome, 'replayed')),
     )).get();
     return row?.n ?? 0;
 }
 
+function secondsToUtcMidnight(now = new Date()): number {
+    return Math.ceil((startOfUtcDay(now).getTime() + 86_400_000 - now.getTime()) / 1000);
+}
+
 function retryAfterMidnight(): Record<string, string> {
-    const now = new Date();
-    return { 'Retry-After': String(Math.ceil((startOfUtcDay(now).getTime() + 86_400_000 - now.getTime()) / 1000)) };
+    return { 'Retry-After': String(secondsToUtcMidnight()) };
 }
 
 /** Checked BEFORE an idempotency claim, so a refused call never becomes the stored answer. */
@@ -139,29 +164,53 @@ export async function enforceDailyCap(ctx: ApiCallContext, mode: 'exact' | 'fuzz
  * log row, so a client stuck in a loop must stop long before the site does.
  */
 export const DAILY_CALL_CEILING_FLOOR = 1000;
-async function enforceCallCeiling(db: Db, key: ApiKeyRow) {
-    const ceiling = Math.max(DAILY_CALL_CEILING_FLOOR, 2 * (key.dailyCapExact + key.dailyCapFuzzy));
+export function callCeilingOf(key: Pick<ApiKeyRow, 'dailyCapExact' | 'dailyCapFuzzy'>): number {
+    return Math.max(DAILY_CALL_CEILING_FLOOR, 2 * (key.dailyCapExact + key.dailyCapFuzzy));
+}
+/** Every call this key made today, of any kind. */
+export async function callsToday(db: Db, keyId: string): Promise<number> {
     const row = await db.select({ n: count() }).from(apiRequests)
-        .where(and(eq(apiRequests.keyId, key.id), gte(apiRequests.createdAt, startOfUtcDay()))).get();
-    if ((row?.n ?? 0) >= ceiling) {
-        throw new ApiError(429, 'daily_cap_reached', `daily ceiling of ${ceiling} calls reached; resets at 00:00 UTC`, retryAfterMidnight());
+        .where(and(eq(apiRequests.keyId, keyId), gte(apiRequests.createdAt, startOfUtcDay()))).get();
+    return row?.n ?? 0;
+}
+async function enforceCallCeiling(db: Db, key: ApiKeyRow) {
+    const ceiling = callCeilingOf(key);
+    if (await callsToday(db, key.id) >= ceiling) {
+        throw new ApiError(429, 'daily_call_ceiling_reached', `this key made ${ceiling} calls today (of any kind), its daily ceiling; resets at 00:00 UTC`, retryAfterMidnight());
     }
+}
+
+/** Same JSON regardless of key order and spacing, so a retry rebuilt by another library still matches. */
+export function canonicalJson(text: string | null): string | null {
+    if (text === null) return null;
+    let v: unknown;
+    try { v = JSON.parse(text); } catch { return text; }
+    const sort = (x: unknown): unknown => Array.isArray(x) ? x.map(sort)
+        : x && typeof x === 'object' ? Object.fromEntries(Object.keys(x as object).sort().map(k => [k, sort((x as Record<string, unknown>)[k])])) : x;
+    return JSON.stringify(sort(v));
 }
 
 type ApiRequestRow = typeof apiRequests.$inferSelect;
 
 /**
- * Idempotent saves, step 1 (read-only): what does an earlier call with this
- * key say? A retry with the same body gets the stored answer; a different body
- * is refused. An earlier call that crashed (5xx) before writing anything is
- * released so the retry runs again; one that crashed AFTER creating a profile
- * or record is not (a rerun would duplicate it); the log shows what exists.
+ * Idempotent saves, step 1 (read-only): did an earlier call with this key save
+ * the same externalId? A retry with the same content gets the stored answer; a
+ * different content is refused, naming what was saved. An earlier call that
+ * crashed (5xx) before writing anything is released so the retry runs again;
+ * one that crashed AFTER creating a profile or record is not (a rerun would
+ * duplicate it): the answer names what exists, to void before retrying.
  */
 export async function replayIdempotent(ctx: ApiCallContext): Promise<ApiResult | null> {
     if (!ctx.idempotencyKey) return null;
     const where = and(eq(apiRequests.keyId, ctx.key.id), eq(apiRequests.idempotencyKey, ctx.idempotencyKey));
     const prior = await ctx.db.select().from(apiRequests).where(where).get() as ApiRequestRow | undefined;
     if (!prior) return null;
+    const firstProfile = (() => { try { return (JSON.parse(prior.profileIds ?? '[]') as string[])[0]; } catch { return undefined; } })();
+    const saved: ApiErrorExtra = {
+        originalRequestId: prior.id,
+        ...(prior.recordId ? { activityId: prior.recordId } : {}),
+        ...(firstProfile ? { profileId: firstProfile } : {}),
+    };
     const partial = !!prior.recordId || prior.profileCreated === 1;
     // A claim nobody finished (the worker died mid-call) counts as a crash.
     const abandoned = prior.httpStatus === 0 && Date.now() - new Date(prior.createdAt).getTime() > ABANDONED_CLAIM_MS;
@@ -170,20 +219,20 @@ export async function replayIdempotent(ctx: ApiCallContext): Promise<ApiResult |
         return null;
     }
     if (prior.httpStatus >= 500 || abandoned) {
-        throw new ApiError(409, 'idempotency_key_reused', `an earlier attempt with this Idempotency-Key (request ${prior.id}) stopped after saving part of the data; it is listed under Settings → API, where it can be voided before you retry with a new key`);
+        throw new ApiError(409, 'partially_saved', 'an earlier call with this externalId stopped after saving part of the data; void that activity (or ask an admin) and send the call again — voiding frees the externalId', {}, saved);
     }
     if (prior.httpStatus === 0) {
-        throw new ApiError(409, 'idempotency_key_reused', 'a request with this Idempotency-Key is still being processed');
+        throw new ApiError(409, 'request_in_progress', 'a call with this externalId is still being processed; retry in a few seconds', { 'Retry-After': '2' }, { originalRequestId: prior.id });
     }
     if (prior.requestBody === null) {
-        throw new ApiError(409, 'idempotency_key_reused', 'this Idempotency-Key is too old to replay; use a new one');
+        throw new ApiError(409, 'external_id_expired', 'this externalId was saved more than 90 days ago and can no longer be replayed; use a new externalId for a new activity', {}, saved);
     }
-    if (prior.requestBody !== ctx.bodyText.slice(0, MAX_LOGGED_BODY)) {
-        throw new ApiError(409, 'idempotency_key_reused', 'this Idempotency-Key was already used with a different request body');
+    if (canonicalJson(prior.requestBody) !== canonicalJson(ctx.bodyText.slice(0, MAX_LOGGED_BODY))) {
+        throw new ApiError(409, 'external_id_reused', 'this externalId was already saved with different content; use a new externalId, or void the earlier activity first', {}, saved);
     }
     logger.info('api: idempotent replay', { requestId: ctx.requestId, originalRequestId: prior.id, keyId: ctx.key.id });
-    const body = prior.responseBody ? JSON.parse(prior.responseBody) : {};
-    return { status: prior.httpStatus, body: { ...body, replayed: true } };
+    const body = prior.responseBody ? JSON.parse(prior.responseBody) as Record<string, unknown> : {};
+    return { status: prior.httpStatus, body: { ...body, replayed: true, originalRequestId: prior.id } };
 }
 
 /** Idempotent saves, step 2: own the key (unique on key + idempotency key) before writing anything. */
@@ -198,7 +247,7 @@ export async function claimIdempotencyKey(ctx: ApiCallContext): Promise<void> {
     } catch (e) {
         // Lost a race with a concurrent identical request.
         logger.warn('api: idempotency claim lost a race', { requestId: ctx.requestId, keyId: ctx.key.id, error: e instanceof Error ? e.message : String(e) });
-        throw new ApiError(409, 'idempotency_key_reused', 'a request with this Idempotency-Key is still being processed');
+        throw new ApiError(409, 'request_in_progress', 'a call with this externalId is still being processed; retry in a few seconds', { 'Retry-After': '2' });
     }
     ctx.rowClaimed = true;
 }
@@ -246,19 +295,21 @@ export async function handleApiCall(
     const requestId = crypto.randomUUID();
     const startedAt = Date.now();
 
+    const origin = new URL(request.url).origin;
     if (!(await getFeatureFlag('ENABLE_PUBLIC_API'))) {
-        return json(404, errorBody(requestId, 'api_disabled', 'the BuenAdoptante API is not enabled'), requestId);
+        return json(404, errorBody(requestId, origin, 'api_disabled', 'the BuenAdoptante API is not enabled'), requestId);
     }
     const db = await getDb();
     if (!db) {
         const errorId = logger.error('api: database unavailable', null, { requestId, endpoint });
-        return json(500, errorBody(requestId, 'server_error', 'database unavailable', errorId), requestId);
+        return json(500, errorBody(requestId, origin, 'server_error', 'database unavailable', errorId), requestId);
     }
-    const secret = bearerSecret(request.headers.get('authorization'));
+    const header = request.headers.get('authorization');
+    const secret = bearerSecret(header);
     const key = secret ? await findActiveKey(db, secret) : null;
     if (!key) {
-        logger.info('api: unauthorized', { requestId, endpoint, hadHeader: !!request.headers.get('authorization') });
-        return json(401, errorBody(requestId, 'unauthorized', 'missing, malformed, unknown or revoked API key'), requestId,
+        logger.info('api: unauthorized', { requestId, endpoint, hadHeader: !!header });
+        return json(401, errorBody(requestId, origin, 'unauthorized', unauthorizedMessage(header, secret, new URL(request.url).host)), requestId,
             { 'WWW-Authenticate': 'Bearer' });
     }
 
@@ -278,13 +329,14 @@ export async function handleApiCall(
     }
     const ctx: ApiCallContext = {
         db, key, scopes: scopesOf(key), requestId,
-        origin: new URL(request.url).origin,
+        origin,
         bodyText,
         bodyBytes,
-        idempotencyKey: request.headers.get('idempotency-key')?.trim().slice(0, 200) || null,
+        idempotencyKey: null,
         log: {},
         rowClaimed: false,
         dryRun: false,
+        query: new URL(request.url).searchParams,
     };
 
     let status: number;
@@ -304,20 +356,31 @@ export async function handleApiCall(
         }
         const result = await run(ctx);
         status = result.status;
-        body = { requestId, ...result.body };
+        // This call's requestId wins over a replayed answer's (that one is in originalRequestId).
+        body = { ...result.body, requestId };
     } catch (e) {
         if (e instanceof ApiError) {
             status = e.status;
-            body = errorBody(requestId, e.code, e.message);
+            body = errorBody(requestId, origin, e.code, e.message, undefined, e.extra);
             headers = { ...headers, ...e.headers };
         } else {
             errorId = logger.error('api: request failed', e, { requestId, keyId: key.id, owner: key.ownerEmail, endpoint, mode: ctx.log.mode, context: ctx.log.context });
             status = 500;
-            body = errorBody(requestId, 'server_error', 'unexpected error', errorId);
+            body = errorBody(requestId, origin, 'server_error', 'unexpected error', errorId);
         }
     }
 
     await writeLog(ctx, endpoint, status, body, errorId, startedAt);
+    // The search quota on every search answer (IETF RateLimit fields): what is left today, and when it resets.
+    if (endpoint === 'search' && ctx.log.mode) {
+        try {
+            const limit = ctx.log.mode === 'exact' ? key.dailyCapExact : key.dailyCapFuzzy;
+            const used = await searchesToday(db, key.id, ctx.log.mode);
+            headers = { ...headers, 'RateLimit-Limit': String(limit), 'RateLimit-Remaining': String(Math.max(0, limit - used)), 'RateLimit-Reset': String(secondsToUtcMidnight()) };
+        } catch (e) {
+            logger.warn('api: rate-limit headers skipped', { requestId, keyId: key.id, error: e instanceof Error ? e.message : String(e) });
+        }
+    }
     logger.info('api: call', { requestId, keyId: key.id, endpoint, mode: ctx.log.mode, outcome: ctx.log.outcome, status, errorId, durationMs: Date.now() - startedAt });
 
     await runAfterResponse('api.touchKey', async () => {
@@ -328,6 +391,20 @@ export async function handleApiCall(
     }, { requestId, keyId: key.id });
 
     return json(status, body, requestId, headers);
+}
+
+/**
+ * Why a key was refused, as precisely as is safe. The prefix of a key is not
+ * secret, so "a test key in production" can be said; an unknown key and a
+ * revoked one stay the same answer.
+ */
+export function unauthorizedMessage(header: string | null, secret: string | null, host: string): string {
+    if (!header) return 'no API key: send the header Authorization: Bearer ba_live_… (production) or ba_test_… (staging)';
+    if (!secret) return 'malformed Authorization header: it must be exactly "Bearer <your key>"';
+    const live = environmentForHost(host) === 'live';
+    if (live && secret.startsWith('ba_test_')) return 'this is a test key (ba_test_…): it only works on staging; use your ba_live_ key here';
+    if (!live && secret.startsWith('ba_live_')) return 'this is a production key (ba_live_…): staging needs a ba_test_ key';
+    return 'unknown or revoked API key';
 }
 
 /** The body's bytes, or null as soon as it passes `max` bytes (a chunked upload has no length to check up front). */

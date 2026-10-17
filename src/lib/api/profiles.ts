@@ -16,6 +16,7 @@ import { RECORD_TYPES } from '@/domain/constants';
 import { normalizeDocumentId, type CandidateNames } from '@/domain/apiExactMatch';
 import { phoneDuplicateTokens } from '@/domain/phoneNumber';
 import type { ProfileSummary, SearchRequest } from './schemas';
+import { ApiError } from './handler';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Db = any;
@@ -106,33 +107,47 @@ export function ratingFields(avgRating: number | null): RatingFields {
     };
 }
 
-/** Same rating, flags and "too many" signals the search cards show (enrichAdopters), plus record counts. */
-export async function buildProfileSummaries(db: Db, ids: string[], origin: string, requestId: string): Promise<Map<string, ProfileSummary>> {
+/**
+ * Same rating, flags and "too many" signals the search cards show
+ * (enrichAdopters), plus record counts, creation date and whether the caller's
+ * rescue registered the person.
+ *
+ * FAILS CLOSED (review 2026-10-17): the search cards degrade a failed read to
+ * "no data", but here that would answer a 1★ person as "not rated, no alerts".
+ * Any failed read throws 503 temporarily_unavailable instead.
+ */
+export async function buildProfileSummaries(db: Db, ids: string[], origin: string, requestId: string, ownerEmail: string): Promise<Map<string, ProfileSummary>> {
     const out = new Map<string, ProfileSummary>();
     if (ids.length === 0) return out;
-    const [enriched, counts] = await Promise.all([
-        enrichAdopters(db, ids),
-        Promise.all(ids.map(id =>
-            db.select({ type: adoptions.recordType, n: count(), last: max(adoptions.date) })
-                .from(adoptions).where(eq(adoptions.adopterId, id)).groupBy(adoptions.recordType)
-                .catch((e: unknown) => {
-                    logger.warn('api: record counts D1 fallback hit', { requestId, adopterId: id, error: e instanceof Error ? e.message : String(e) });
-                    return [];
-                }),
-        )),
-    ]);
+    let enriched: Awaited<ReturnType<typeof enrichAdopters>>;
+    let counts: Array<Array<{ type: string | null; n: number; last: unknown }>>;
+    let created: Array<{ createdAt: unknown } | undefined>;
+    let mine: Set<string>;
+    try {
+        [enriched, counts, created, mine] = await Promise.all([
+            enrichAdopters(db, ids, { strict: true }),
+            Promise.all(ids.map(id =>
+                db.select({ type: adoptions.recordType, n: count(), last: max(adoptions.date) })
+                    .from(adoptions).where(eq(adoptions.adopterId, id)).groupBy(adoptions.recordType).all())),
+            Promise.all(ids.map(id => db.select({ createdAt: adopters.createdAt }).from(adopters).where(eq(adopters.id, id)).get())),
+            registeredByRescue(db, ids, ownerEmail, requestId),
+        ]);
+    } catch (e) {
+        logger.error('api: profile summaries unreadable, refusing to answer without the risk', e, { requestId, profiles: ids.length });
+        throw new ApiError(503, 'temporarily_unavailable', 'could not read the ratings and alerts of the matching profiles; nothing was saved — retry in a moment', { 'Retry-After': '5' });
+    }
     ids.forEach((id, i) => {
         const e = enriched.get(id);
-        const records: Record<string, number> = {};
+        const records: ProfileSummary['records'] = {};
         let last: number | null = null;
         for (const row of counts[i] as Array<{ type: string | null; n: number; last: unknown }>) {
             if (!row.type || row.type === RECORD_TYPES.AVAILABLE) continue;
-            records[row.type] = row.n;
+            records[row.type as keyof ProfileSummary['records']] = row.n;
             const t = row.last instanceof Date ? row.last.getTime() : typeof row.last === 'number' ? row.last * 1000 : null;
             if (t !== null && (last === null || t > last)) last = t;
         }
         const f = e?.flags;
-        const flags: string[] = [];
+        const flags: ProfileSummary['flags'] = [];
         if (f?.inaccurate) flags.push('inaccurate');
         if (f?.duplicate) flags.push('duplicate');
         if (f?.systemDuplicate) flags.push('possible_duplicate');
@@ -149,6 +164,8 @@ export async function buildProfileSummaries(db: Db, ids: string[], origin: strin
             ],
             records,
             lastRecordAt: last === null ? null : new Date(last).toISOString().slice(0, 10),
+            createdAt: dayOf(created[i]?.createdAt),
+            registeredByYourRescue: mine.has(id),
         });
     });
     return out;
@@ -160,6 +177,12 @@ export async function buildProfileSummaries(db: Db, ids: string[], origin: strin
  * form answers). Gates the look-up without activity, and limits what it shows
  * to those profiles. A failed read throws: it must never read as "yes".
  */
+/** A stored date (Date, or seconds) as YYYY-MM-DD UTC, or null. */
+function dayOf(v: unknown): string | null {
+    const t = v instanceof Date ? v.getTime() : typeof v === 'number' ? v * 1000 : null;
+    return t === null || Number.isNaN(t) ? null : new Date(t).toISOString().slice(0, 10);
+}
+
 export async function registeredByRescue(db: Db, ids: string[], ownerEmail: string, requestId: string): Promise<Set<string>> {
     const mine = new Set<string>();
     if (ids.length === 0) return mine;
@@ -168,6 +191,6 @@ export async function registeredByRescue(db: Db, ids: string[], ownerEmail: stri
     const { loadOrgMembership, sameRescueDirect } = await import('@/lib/rescueKeys');
     const membership = await loadOrgMembership(db, 'api.registeredByRescue');
     ids.forEach((id, i) => { if (perProfile[i].some(r => sameRescueDirect(ownerEmail, r.addedBy, membership))) mine.add(id); });
-    logger.info('api: look-up without activity', { requestId, profiles: ids.length, registeredByThisRescue: mine.size });
+    logger.debug('api: registered by this rescue', { requestId, profiles: ids.length, registeredByThisRescue: mine.size });
     return mine;
 }
