@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.192] - 2026-10-17
+
+### Changed — CI: view-as runs in a leg of its own
+
+2.56.191 never deployed: the last authed leg (sheet-import specs + view-as) hit the
+dev server's memory ceiling 4 times, the automatic re-run included — the same pair
+that failed 2.56.181 and 2.56.186. More legs didn't separate them (shards fill in
+file order). view-as is now tagged `@own-leg` and runs alone on a fresh server;
+the other legs exclude the tag (170 authed tests: 165 sharded + 5 own leg). Ships
+2.56.191 unchanged (API docs scenarios).
+
 ## [2.56.191] - 2026-10-17
 
 ### Changed — API docs: exact-search scenarios, each with the request that leads to it
