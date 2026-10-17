@@ -7,6 +7,9 @@
  * The answer is not hand-written: it is worked out from the registered profiles
  * and the request with the same decision the API uses (decideExactOutcome,
  * pickBestMatch's order), so a request and its answer can't disagree.
+ *
+ * The SAME definitions seed the demo people on staging (src/lib/api/demoSeed.ts),
+ * so every documented request really returns the documented answer there.
  */
 import { decideExactOutcome, type NameMatchedAs } from '@/domain/apiExactMatch';
 
@@ -17,19 +20,30 @@ export const ratingOf = (avg: number | null) => {
     return { rating: avg === null ? null : Math.round(avg * 10) / 10, ratingLevel: level, ratingLabel: LABELS[level] };
 };
 
-interface Registered {
+/** One past record on a registered profile; dates are relative to today. */
+export interface PastRecord {
+    type: 'adoption' | 'adoption_request' | 'follow_up' | 'observation';
+    rating?: number;
+    daysAgo: number;
+    /** The rescue that registered it (its email). Different emails = different rescues. */
+    by?: string;
+}
+
+export interface Registered {
     id: string;
     name: string;
     email?: string;
     phone?: string;
     documentId?: string;
-    avg: number | null;
-    flags?: string[];
-    tooManyRequests?: { count: number; periodDays: number };
-    tooManyAdoptions?: { count: number; periodDays: number };
-    records: Record<string, number>;
-    lastRecordAt: string;
+    /** Set by people in BuenAdoptante (adopter_flags.reason). */
+    marks?: Array<'inaccurate_information' | 'duplicate' | 'verified_identity'>;
+    /** BuenAdoptante found another profile that may be the same person (a pending duplicate candidate). */
+    possibleDuplicate?: boolean;
+    history: PastRecord[];
 }
+
+export const DEFAULT_RESCUE = 'rescate-demo-1@example.com';
+const rescue = (n: number) => `rescate-demo-${n}@example.com`;
 
 interface ScenarioDef {
     key: string;
@@ -57,113 +71,194 @@ const DEFS: ScenarioDef[] = [
     {
         key: 'five_stars',
         title: '5★ excelente, sin alertas',
-        registered: 'Un perfil «María José Pérez» con el teléfono 11 6462-2274, calificado 4,8 por los rescates que la conocen y con identidad verificada.',
-        profiles: [{ id: 'p_maria', name: 'María José Pérez', phone: '11 6462-2274', avg: 4.8, flags: ['verified_identity'], records: { adoption: 2, follow_up: 3 }, lastRecordAt: '2026-08-30' }],
-        person: { fullName: 'María José Pérez', phone: '+54 9 11 6462-2274', email: 'maria@example.com' },
+        registered: 'Un perfil «María José Pérez» con el teléfono 11 5550-3101, con una adopción y cuatro seguimientos calificados (promedio 4,8) e identidad verificada.',
+        profiles: [{
+            id: 'demo-api-maria', name: 'María José Pérez', phone: '11 5550-3101', marks: ['verified_identity'],
+            history: [
+                { type: 'adoption', rating: 5, daysAgo: 400 }, { type: 'follow_up', rating: 5, daysAgo: 370 }, { type: 'follow_up', rating: 5, daysAgo: 200 },
+                { type: 'follow_up', rating: 5, daysAgo: 170 }, { type: 'follow_up', rating: 4, daysAgo: 48 },
+            ],
+        }],
+        person: { fullName: 'María José Pérez', phone: '+54 9 11 5550-3101', email: 'mariajose.demo@example.com' },
         activity: { activityType: 'adoption_request', animalName: 'Luna', species: 'dog' },
         why: 'El nombre y el teléfono (escrito en otro formato: es el mismo número) coinciden con un solo perfil → `found`. Su perfil no tenía ese email: se agrega y te lo decimos en `activity.contactsAdded`.',
     },
     {
         key: 'four_stars',
         title: '4★ bueno',
-        registered: 'Un perfil «Lucía Fernández» con el email lucia.fernandez@example.com, calificado 4,1 e identidad verificada.',
-        profiles: [{ id: 'p_lucia', name: 'Lucía Fernández', email: 'lucia.fernandez@example.com', avg: 4.1, flags: ['verified_identity'], records: { adoption: 1, adoption_request: 1 }, lastRecordAt: '2026-05-14' }],
-        person: { fullName: 'Lucía Fernández', email: 'Lucia.Fernandez@example.com' },
+        registered: 'Un perfil «Lucía Fernández» con el email lucia.fernandez.demo@example.com, con una adopción y una solicitud calificadas 4 e identidad verificada.',
+        profiles: [{
+            id: 'demo-api-lucia', name: 'Lucía Fernández', email: 'lucia.fernandez.demo@example.com', marks: ['verified_identity'],
+            history: [{ type: 'adoption_request', rating: 4, daysAgo: 160 }, { type: 'adoption', rating: 4, daysAgo: 150 }],
+        }],
+        person: { fullName: 'Lucía Fernández', email: 'Lucia.Fernandez.Demo@example.com' },
         activity: { activityType: 'adoption_request', animalName: 'Tom', species: 'cat' },
         why: 'El email coincide (mayúsculas no importan) y el nombre también → `found`. `verified_identity` es una buena señal: por eso no aparece en `risk.flags`.',
     },
     {
         key: 'three_stars',
         title: '3★ regular',
-        registered: 'Un perfil «Jorge Luis Ramírez» con el DNI 28.456.789, calificado 3,2.',
-        profiles: [{ id: 'p_jorge', name: 'Jorge Luis Ramírez', documentId: '28.456.789', avg: 3.2, records: { adoption_request: 3, adoption: 1, follow_up: 1 }, lastRecordAt: '2026-07-02' }],
-        person: { fullName: 'Jorge Ramírez', documentId: { value: '28456789', country: 'AR' } },
+        registered: 'Un perfil «Jorge Luis Ramírez» con el DNI 27.913.502, con cinco registros calificados (promedio 3,2).',
+        profiles: [{
+            id: 'demo-api-jorge', name: 'Jorge Luis Ramírez', documentId: '27.913.502',
+            history: [
+                { type: 'adoption_request', rating: 3, daysAgo: 300 }, { type: 'adoption_request', rating: 3, daysAgo: 250 },
+                { type: 'adoption_request', rating: 3, daysAgo: 120 }, { type: 'adoption', rating: 4, daysAgo: 110 }, { type: 'follow_up', rating: 3, daysAgo: 90 },
+            ],
+        }],
+        person: { fullName: 'Jorge Ramírez', documentId: { value: '27913502', country: 'AR' } },
         activity: { activityType: 'adoption_request' },
         why: 'El documento coincide (los puntos no importan) y «Jorge Ramírez» es compatible con «Jorge Luis Ramírez» (todas sus palabras están en el nombre registrado) → `found`. Un 3★ no impide adoptar: miralo con más cuidado.',
     },
     {
         key: 'two_stars',
         title: '2★ malo, posible duplicado',
-        registered: 'Un perfil «Carla Gómez» con el teléfono 11 5521-0098, calificado 2,0, que BuenAdoptante detectó como posible duplicado de otro perfil.',
-        profiles: [{ id: 'p_carla', name: 'Carla Gómez', phone: '11 5521-0098', avg: 2.0, flags: ['possible_duplicate'], records: { adoption_request: 2, returned_pet: 1 }, lastRecordAt: '2026-06-21' }],
-        person: { fullName: 'Carla Gómez', phone: '1155210098' },
+        registered: 'Un perfil «Carla Gómez» con el teléfono 11 5550-3104, con dos solicitudes calificadas 2, que BuenAdoptante detectó como posible duplicado de otro perfil.',
+        profiles: [{
+            id: 'demo-api-carla', name: 'Carla Gómez', phone: '11 5550-3104', possibleDuplicate: true,
+            history: [{ type: 'adoption_request', rating: 2, daysAgo: 140 }, { type: 'observation', rating: 2, daysAgo: 115 }],
+        }],
+        person: { fullName: 'Carla Gómez', phone: '1155503104' },
         activity: { activityType: 'adoption_request' },
         why: 'Teléfono y nombre coinciden → `found`. `possible_duplicate` aparece en `risk.flags`: puede tener otro perfil con más historia.',
     },
     {
         key: 'one_star',
         title: '1★ peligroso, con alertas',
-        registered: 'Un perfil «Diego Sosa» con el teléfono 11 4789-3321 y el email diego.sosa@example.com, calificado 1,3, marcado con datos no confiables, que pidió adoptar en 4 rescates distintos en los últimos 30 días.',
+        registered: 'Un perfil «Diego Sosa» con el teléfono 11 5550-3105 y el email diego.sosa.demo@example.com, calificado 1,3, marcado con datos no confiables, que en los últimos 4 días pidió adoptar en 4 rescates distintos.',
         profiles: [{
-            id: 'p_diego', name: 'Diego Sosa', phone: '11 4789-3321', email: 'diego.sosa@example.com', avg: 1.3, flags: ['inaccurate'],
-            tooManyRequests: { count: 4, periodDays: 30 }, records: { adoption_request: 6, returned_pet: 2, observation: 1 }, lastRecordAt: '2026-10-01',
+            id: 'demo-api-diego', name: 'Diego Sosa', phone: '11 5550-3105', email: 'diego.sosa.demo@example.com', marks: ['inaccurate_information'],
+            history: [
+                { type: 'observation', rating: 1, daysAgo: 200 }, { type: 'observation', rating: 1, daysAgo: 180 },
+                { type: 'adoption_request', rating: 2, daysAgo: 60 },
+                { type: 'adoption_request', daysAgo: 4, by: rescue(1) }, { type: 'adoption_request', daysAgo: 3, by: rescue(2) },
+                { type: 'adoption_request', daysAgo: 2, by: rescue(3) }, { type: 'adoption_request', daysAgo: 1, by: rescue(4) },
+            ],
         }],
-        person: { fullName: 'Diego Sosa', phone: '11 4789-3321', email: 'diego.sosa@example.com' },
+        person: { fullName: 'Diego Sosa', phone: '11 5550-3105', email: 'diego.sosa.demo@example.com' },
         activity: { activityType: 'adoption_request', animalName: 'Rocco', species: 'dog' },
-        why: 'Email, teléfono y nombre coinciden → `found`. `ratingLevel` 1 (`dangerous`): **en BuenAdoptante, 1★ impide adoptar**. `risk.flags` trae las dos alertas. No entregues el animal.',
+        why: 'Email, teléfono y nombre coinciden → `found`. `ratingLevel` 1 (`dangerous`): **en BuenAdoptante, 1★ impide adoptar**. `risk.flags` trae `inaccurate` y `risk.alerts` trae `too_many_requests` (4 rescates distintos en pocos días). No entregues el animal.',
     },
     {
         key: 'not_rated',
         title: 'Conocida, nunca calificada',
-        registered: 'Un perfil «Ana Torres» con el email ana.torres@example.com, con una solicitud anterior y sin calificación.',
-        profiles: [{ id: 'p_ana', name: 'Ana Torres', email: 'ana.torres@example.com', avg: null, records: { adoption_request: 1 }, lastRecordAt: '2026-09-02' }],
-        person: { fullName: 'Ana Torres', email: 'ana.torres@example.com' },
+        registered: 'Un perfil «Ana Torres» con el email ana.torres.demo@example.com, con una solicitud anterior y sin calificación.',
+        profiles: [{ id: 'demo-api-ana', name: 'Ana Torres', email: 'ana.torres.demo@example.com', history: [{ type: 'adoption_request', daysAgo: 45 }] }],
+        person: { fullName: 'Ana Torres', email: 'ana.torres.demo@example.com' },
         activity: { activityType: 'adoption_request' },
         why: '`found`, con `ratingLevel` 0 (`not_rated`): nadie la calificó. No es ni buena ni mala señal; una calificación nunca se infiere.',
     },
     {
         key: 'shared_phone',
         title: '4★, pero su teléfono también es de alguien 1★',
-        registered: 'Un perfil «Pablo Ruiz» (4,2) y otro perfil «Ramón Ruiz» (1,0, adoptó muchos animales en poco tiempo), los dos con el teléfono 11 6033-4410 — un teléfono familiar.',
+        registered: 'Un perfil «Pablo Ruiz» (4,2) y otro perfil «Ramón Ruiz» (1,0, cinco adopciones en la última semana), los dos con el teléfono 11 5550-3107 — un teléfono familiar.',
         profiles: [
-            { id: 'p_pablo', name: 'Pablo Ruiz', phone: '11 6033-4410', avg: 4.2, records: { adoption: 1 }, lastRecordAt: '2026-03-10' },
-            { id: 'p_ramon', name: 'Ramón Ruiz', phone: '11 6033-4410', avg: 1.0, tooManyAdoptions: { count: 5, periodDays: 90 }, records: { adoption: 5, returned_pet: 3 }, lastRecordAt: '2026-09-28' },
+            {
+                id: 'demo-api-pablo', name: 'Pablo Ruiz', phone: '11 5550-3107',
+                history: [{ type: 'adoption', rating: 4, daysAgo: 220 }, { type: 'follow_up', rating: 4, daysAgo: 200 }, { type: 'follow_up', rating: 4, daysAgo: 150 }, { type: 'follow_up', rating: 4, daysAgo: 100 }, { type: 'follow_up', rating: 5, daysAgo: 50 }],
+            },
+            {
+                id: 'demo-api-ramon', name: 'Ramón Ruiz', phone: '11 5550-3107',
+                history: [7, 6, 5, 4, 3].map(d => ({ type: 'adoption' as const, rating: 1, daysAgo: d })),
+            },
         ],
-        person: { fullName: 'Pablo Ruiz', phone: '11 6033-4410' },
+        person: { fullName: 'Pablo Ruiz', phone: '11 5550-3107' },
         activity: { activityType: 'adoption_request' },
-        why: 'El teléfono coincide con dos perfiles, pero solo el nombre de Pablo encaja → `found` (Pablo, 4★). El otro aparece en `otherMatches`, y `risk` muestra la peor señal de **los dos**: 1★ y `too_many_adoptions`. Revisá antes de decidir.',
+        why: 'El teléfono coincide con dos perfiles, pero solo el nombre de Pablo encaja → `found` (Pablo, 4★). El otro aparece en `otherMatches`, y `risk` muestra la peor señal de **los dos**: 1★ y la alerta `too_many_adoptions` de Ramón. Revisá antes de decidir.',
     },
     {
         key: 'not_found',
         title: 'Persona desconocida',
         registered: 'Nadie registró ese email.',
         profiles: [],
-        person: { fullName: 'Sofía Medina', email: 'sofia.medina@example.com' },
+        person: { fullName: 'Sofía Medina', email: 'sofia.medina.demo@example.com' },
         activity: { activityType: 'adoption_request', animalName: 'Mora', species: 'cat' },
         why: 'Ningún perfil tiene ese email → `not_found`. Se crea su perfil con esta actividad (`profileCreated: true`). `risk` vacío.',
     },
     {
         key: 'name_mismatch',
         title: 'El teléfono es de otra persona',
-        registered: 'Un perfil «Martín Ortiz» con el teléfono 11 3344-5566, calificado 2,0.',
-        profiles: [{ id: 'p_martin', name: 'Martín Ortiz', phone: '11 3344-5566', avg: 2.0, records: { adoption_request: 2 }, lastRecordAt: '2026-04-18' }],
-        person: { fullName: 'Valeria Castro', phone: '11 3344-5566' },
+        registered: 'Un perfil «Martín Ortiz» con el teléfono 11 5550-3109, con dos solicitudes calificadas 2.',
+        profiles: [{ id: 'demo-api-martin', name: 'Martín Ortiz', phone: '11 5550-3109', history: [{ type: 'adoption_request', rating: 2, daysAgo: 190 }, { type: 'adoption_request', rating: 2, daysAgo: 175 }] }],
+        person: { fullName: 'Valeria Castro', phone: '11 5550-3109' },
         activity: { activityType: 'adoption_request' },
         why: 'El teléfono es de un perfil con otro nombre → `ambiguous` (`name_mismatch`): nunca adivinamos que son la misma persona. La actividad va a un perfil nuevo que un admin revisa como posible duplicado. `risk` igual te muestra el 2★ de ese teléfono.',
     },
     {
         key: 'multiple_profiles',
         title: 'Dos perfiles con el mismo nombre y email',
-        registered: 'Dos perfiles «Laura Díaz» con el email laura.diaz@example.com: uno con el teléfono 11 2233-4455, calificado 3,0 y marcado como duplicado; el otro sin calificar.',
+        registered: 'Dos perfiles «Laura Díaz» con el email laura.diaz.demo@example.com: uno con el teléfono 11 5550-3110, calificado 3 y marcado como duplicado; el otro sin calificar.',
         profiles: [
-            { id: 'p_laura_a', name: 'Laura Díaz', email: 'laura.diaz@example.com', phone: '11 2233-4455', avg: 3.0, flags: ['duplicate'], records: { adoption: 1 }, lastRecordAt: '2025-11-30' },
-            { id: 'p_laura_b', name: 'Laura Díaz', email: 'laura.diaz@example.com', avg: null, records: { adoption_request: 1 }, lastRecordAt: '2026-02-11' },
+            { id: 'demo-api-laura-a', name: 'Laura Díaz', email: 'laura.diaz.demo@example.com', phone: '11 5550-3110', marks: ['duplicate'], history: [{ type: 'adoption', rating: 3, daysAgo: 320 }] },
+            { id: 'demo-api-laura-b', name: 'Laura Díaz', email: 'laura.diaz.demo@example.com', history: [{ type: 'adoption_request', daysAgo: 240 }] },
         ],
-        person: { fullName: 'Laura Díaz', email: 'laura.diaz@example.com', phone: '11 2233-4455' },
+        person: { fullName: 'Laura Díaz', email: 'laura.diaz.demo@example.com', phone: '11 5550-3110' },
         activity: { activityType: 'adoption_request' },
-        why: 'El nombre encaja con los dos perfiles → `ambiguous` (`multiple_profiles`). La actividad va al que mejor coincide: el que tiene email **y** teléfono iguales (`p_laura_a`); no se crea un perfil nuevo.',
+        why: 'El nombre encaja con los dos perfiles → `ambiguous` (`multiple_profiles`). La actividad va al que mejor coincide: el que tiene email **y** teléfono iguales (`demo-api-laura-a`); no se crea un perfil nuevo.',
     },
     {
         key: 'dry_run',
         title: 'Prueba sin guardar (X-Dry-Run: 1, solo staging)',
-        registered: 'Nadie registró ese email (en staging).',
+        registered: 'Nadie registró ese email.',
         profiles: [],
-        person: { fullName: 'Sofía Medina', email: 'sofia.medina@example.com' },
+        person: { fullName: 'Sofía Medina', email: 'sofia.medina.demo@example.com' },
         activity: { activityType: 'adoption_request' },
         dryRun: true,
         why: 'La misma respuesta que una llamada real, pero **sin `activity`**: no se guardó nada. En producción este header se rechaza (`403 dry_run_not_allowed`).',
     },
 ];
+
+/** Every profile the scenarios need registered (the staging demo seed). */
+export function demoProfiles(): Registered[] {
+    return DEFS.flatMap(d => d.profiles);
+}
+/** Names of the people the scenarios' requests may CREATE (cleaned up by a re-seed). */
+export function demoCreatedNames(): string[] {
+    return [...new Set(DEFS.map(d => d.person.fullName))];
+}
+
+/** The "too many" thresholds — admins change them per environment (app_config, getAdoptionConfig). */
+export interface AlertConfig {
+    threshold: number; periodDays: number;           // too_many_adoptions
+    requestsThreshold: number; requestsPeriodDays: number; // too_many_requests
+}
+export const DEFAULT_ALERT_CONFIG: AlertConfig = { threshold: 5, periodDays: 90, requestsThreshold: 3, requestsPeriodDays: 30 };
+
+/** Most items inside any window of `periodDays` (the same sliding window enrichAdopters uses). */
+function densest<T>(items: Array<{ daysAgo: number; item: T }>, periodDays: number, measure: (inWindow: T[]) => number): number {
+    const sorted = [...items].sort((a, b) => b.daysAgo - a.daysAgo); // oldest first
+    let best = 0;
+    for (let i = 0; i < sorted.length; i++) {
+        const inWindow = sorted.filter(x => x.daysAgo <= sorted[i].daysAgo && sorted[i].daysAgo - x.daysAgo <= periodDays).map(x => x.item);
+        best = Math.max(best, measure(inWindow));
+    }
+    return best;
+}
+
+const dayMs = 86_400_000;
+const isoDay = (now: Date, daysAgo: number) => new Date(now.getTime() - daysAgo * dayMs).toISOString().slice(0, 10);
+
+/** What BuenAdoptante computes for a registered profile: rating, record counts, last record, alerts. */
+function computed(p: Registered, now: Date, cfg: AlertConfig) {
+    const rated = p.history.map(h => h.rating).filter((r): r is number => typeof r === 'number');
+    const avg = rated.length ? rated.reduce((a, b) => a + b, 0) / rated.length : null;
+    const records: Record<string, number> = {};
+    for (const h of p.history) records[h.type] = (records[h.type] ?? 0) + 1;
+    const last = Math.min(...p.history.map(h => h.daysAgo));
+    const alerts: Array<{ type: 'too_many_requests' | 'too_many_adoptions'; count: number; periodDays: number }> = [];
+    // Same order as the API: requests first, then adoptions (profiles.ts).
+    const rescues = densest(p.history.filter(h => h.type === 'adoption_request').map(h => ({ daysAgo: h.daysAgo, item: h.by ?? DEFAULT_RESCUE })),
+        cfg.requestsPeriodDays, w => new Set(w).size);
+    if (rescues >= cfg.requestsThreshold) alerts.push({ type: 'too_many_requests', count: rescues, periodDays: cfg.requestsPeriodDays });
+    const placed = densest(p.history.filter(h => h.type === 'adoption').map(h => ({ daysAgo: h.daysAgo, item: 1 })), cfg.periodDays, w => w.length);
+    if (placed >= cfg.threshold) alerts.push({ type: 'too_many_adoptions', count: placed, periodDays: cfg.periodDays });
+    const flags: string[] = [];
+    if (p.marks?.includes('inaccurate_information')) flags.push('inaccurate');
+    if (p.marks?.includes('duplicate')) flags.push('duplicate');
+    if (p.possibleDuplicate) flags.push('possible_duplicate');
+    if (p.marks?.includes('verified_identity')) flags.push('verified_identity');
+    return { avg, records, lastRecordAt: isoDay(now, last), alerts, flags };
+}
 
 const NOT_RISK = new Set(['verified_identity', 'verified_address']);
 
@@ -173,25 +268,28 @@ function matchedOn(req: ScenarioDef['person'], p: Registered): Identifier[] {
 }
 
 /** Work out the answer the API gives, from the registered profiles and the request. */
-function answer(def: ScenarioDef, origin: string, n: number) {
+function answer(def: ScenarioDef, origin: string, n: number, now: Date, cfg: AlertConfig) {
     const url = (id: string) => `${origin}/adopter/${id}`;
     const hits = def.profiles.filter(p => matchedOn(def.person, p).length > 0);
     const outcome = decideExactOutcome(def.person.fullName, hits.map(p => ({ profileId: p.id, name: p.name, aliases: [], householdNames: [] })));
     const byId = new Map(hits.map(p => [p.id, p]));
-    const summary = (p: Registered) => ({
-        profileId: p.id, url: url(p.id), ...ratingOf(p.avg),
-        flags: p.flags ?? [], tooManyRequests: p.tooManyRequests ?? null, tooManyAdoptions: p.tooManyAdoptions ?? null,
-        records: p.records, lastRecordAt: p.lastRecordAt,
-    });
+    const summary = (p: Registered) => {
+        const c = computed(p, now, cfg);
+        return {
+            profileId: p.id, url: url(p.id), ...ratingOf(c.avg),
+            flags: c.flags, alerts: c.alerts, records: c.records, lastRecordAt: c.lastRecordAt,
+        };
+    };
     const worst = (ps: Registered[]) => {
-        const rated = ps.map(p => p.avg).filter((a): a is number => a !== null);
+        const rated = ps.map(p => computed(p, now, cfg).avg).filter((a): a is number => a !== null);
         return ratingOf(rated.length ? Math.min(...rated) : null);
     };
     const flags = new Set<string>();
+    const alerts: Array<Record<string, unknown>> = [];
     for (const p of hits) {
-        for (const f of p.flags ?? []) if (!NOT_RISK.has(f)) flags.add(f);
-        if (p.tooManyRequests) flags.add('too_many_requests');
-        if (p.tooManyAdoptions) flags.add('too_many_adoptions');
+        const c = computed(p, now, cfg);
+        for (const f of c.flags) if (!NOT_RISK.has(f)) flags.add(f);
+        for (const a of c.alerts) alerts.push({ ...a, profileId: p.id });
     }
     const body: Record<string, unknown> = {
         requestId: `b1d0c8e2-0000-4000-8000-${String(n).padStart(12, '0')}`, mode: 'exact', result: outcome.result,
@@ -217,7 +315,7 @@ function answer(def: ScenarioDef, origin: string, n: number) {
     } else {
         savedOn = { id: `p_new_${def.key}`, created: true, contactsAdded: [] };
     }
-    body.risk = { worstRating: worst(hits), flags: [...flags].sort(), profilesMatched: hits.length };
+    body.risk = { worstRating: worst(hits), flags: [...flags].sort(), alerts, profilesMatched: hits.length };
     if (def.activity && !def.dryRun && savedOn) {
         const rid = `r_${def.key}`;
         body.activity = {
@@ -234,10 +332,10 @@ export interface Scenario {
     response: Record<string, unknown>;
 }
 
-export function exactScenarios(origin: string): Scenario[] {
+export function exactScenarios(origin: string, now: Date = new Date(), cfg: AlertConfig = DEFAULT_ALERT_CONFIG): Scenario[] {
     return DEFS.map((d, i) => ({
         key: d.key, title: d.title, registered: d.registered, why: d.why, dryRun: !!d.dryRun,
         request: { mode: 'exact', person: d.person, ...(d.activity ? { activity: d.activity } : {}) },
-        response: answer(d, origin, i + 1),
+        response: answer(d, origin, i + 1, now, cfg),
     }));
 }

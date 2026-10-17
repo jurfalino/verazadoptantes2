@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.193] - 2026-10-17
+
+### Changed — API (flag off in production): `alerts`, documented calls that really answer as documented
+
+- **`alerts` collection.** `too_many_requests` and `too_many_adoptions` now come in
+  `profile.alerts` as `{ type, count, periodDays }` (were the `tooManyRequests` /
+  `tooManyAdoptions` fields), and `risk.alerts` gathers them from every matched
+  profile with their `profileId`. `flags` / `risk.flags` keep the marks
+  (inaccurate, duplicate, possible_duplicate; verified_* in profile only).
+- **Every scenario shows the whole call**, headers included: `Idempotency-Key` (a
+  new value per call — the docs' examples failed without it with
+  `422 idempotency_key_required`), and the explorer now asks for it.
+- **The scenario people exist on staging.** Admin → API → «Personas de ejemplo»
+  (staging only; refused in production) loads them — or resets them, dated
+  relative to today — through the same write paths as real records. Each documented
+  call (with `X-Dry-Run: 1`) returns exactly its documented answer; an e2e test
+  replays all 11 against what the docs page serves.
+- The documented answers use each environment's own alert thresholds (admins
+  change them), so they match what that environment answers.
+- Demo contact data is unique (`*.demo@example.com`, 11 5550-31xx): the old
+  `maria@example.com` belonged to an existing test profile and changed the answer.
+
 ## [2.56.192] - 2026-10-17
 
 ### Changed — CI: view-as runs in a leg of its own

@@ -143,8 +143,10 @@ export async function buildProfileSummaries(db: Db, ids: string[], origin: strin
             url: profileUrl(origin, id),
             ...ratingFields(e?.avgRating ?? null),
             flags,
-            tooManyRequests: f?.tooManyRequests ? { count: f.tooManyRequests.count, periodDays: f.tooManyRequests.periodDays } : null,
-            tooManyAdoptions: f?.tooManyAdoptions ? { count: f.tooManyAdoptions.count, periodDays: f.tooManyAdoptions.periodDays } : null,
+            alerts: [
+                ...(f?.tooManyRequests ? [{ type: 'too_many_requests' as const, count: f.tooManyRequests.count, periodDays: f.tooManyRequests.periodDays }] : []),
+                ...(f?.tooManyAdoptions ? [{ type: 'too_many_adoptions' as const, count: f.tooManyAdoptions.count, periodDays: f.tooManyAdoptions.periodDays }] : []),
+            ],
             records,
             lastRecordAt: last === null ? null : new Date(last).toISOString().slice(0, 10),
         });

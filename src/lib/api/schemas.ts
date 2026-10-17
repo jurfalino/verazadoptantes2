@@ -163,16 +163,21 @@ const ratingSchema = z.object({
     ratingLabel: z.enum(['not_rated', 'dangerous', 'poor', 'average', 'good', 'excellent']),
 });
 
-const densitySchema = z.object({ count: z.number().int(), periodDays: z.number().int() }).nullable();
+export const ALERT_TYPES = ['too_many_requests', 'too_many_adoptions'] as const;
+const alertSchema = z.object({
+    type: z.enum(ALERT_TYPES).meta({ description: 'too_many_requests: asked to adopt at many DIFFERENT rescues in a short period (count = rescues; several requests to one rescue count once). too_many_adoptions: adopted many animals in a short period (count = adoptions).' }),
+    count: z.number().int(),
+    periodDays: z.number().int(),
+});
+export type ApiAlert = z.infer<typeof alertSchema>;
 
 export const profileSummarySchema = ratingSchema.extend({
     profileId: z.string(),
     url: z.string().meta({ description: 'The profile page. Opens for logged-in BuenAdoptante users, with their own access rules.' }),
     matchedOn: z.array(z.enum(['email', 'phone', 'documentId'])).optional(),
     nameMatchedAs: z.enum(['profile', 'alias', 'household_member']).optional(),
-    flags: z.array(z.string()).meta({ description: 'Active flags, e.g. inaccurate, duplicate, verified_identity.' }),
-    tooManyRequests: densitySchema.meta({ description: 'Set when the person asked to adopt at many DIFFERENT rescues in a short period (count = rescues; several requests to one rescue count once).' }),
-    tooManyAdoptions: densitySchema,
+    flags: z.array(z.string()).meta({ description: 'Marks on the profile: inaccurate, duplicate, possible_duplicate, verified_identity, verified_address.' }),
+    alerts: z.array(alertSchema).meta({ description: 'Activity alerts BuenAdoptante computed for this person: too_many_requests, too_many_adoptions. Empty when none.' }),
     records: z.record(z.string(), z.number().int()).meta({ description: 'Number of records per type.' }),
     lastRecordAt: z.string().nullable(),
 });
@@ -191,7 +196,8 @@ export type SavedActivity = z.infer<typeof savedActivitySchema>;
 
 const riskSchema = z.object({
     worstRating: ratingSchema,
-    flags: z.array(z.string()).meta({ description: 'Every active flag on any matched profile, e.g. inaccurate, too_many_requests.' }),
+    flags: z.array(z.string()).meta({ description: 'Every negative mark on any matched profile: inaccurate, duplicate, possible_duplicate.' }),
+    alerts: z.array(alertSchema.extend({ profileId: z.string() })).meta({ description: 'Every activity alert of any matched profile (too_many_requests, too_many_adoptions), with the profile it belongs to.' }),
     profilesMatched: z.number().int(),
 }).meta({ description: 'Always present: the worst signal across EVERY profile your email / phone / document matched, whatever the result. Check this before handing over an animal.' });
 export type ApiRisk = z.infer<typeof riskSchema>;

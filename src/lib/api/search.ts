@@ -24,12 +24,12 @@ const NOT_RISK = new Set(['verified_identity', 'verified_address']);
 export function riskOf(summaries: Array<ProfileSummary | undefined>): ApiRisk {
     const present = summaries.filter((s): s is ProfileSummary => !!s);
     const flags = new Set<string>();
+    const alerts: ApiRisk['alerts'] = [];
     for (const s of present) {
         for (const f of s.flags) if (!NOT_RISK.has(f)) flags.add(f);
-        if (s.tooManyRequests) flags.add('too_many_requests');
-        if (s.tooManyAdoptions) flags.add('too_many_adoptions');
+        for (const a of s.alerts) alerts.push({ ...a, profileId: s.profileId });
     }
-    return { worstRating: worstOf(present.map(s => s.rating)), flags: [...flags].sort(), profilesMatched: present.length };
+    return { worstRating: worstOf(present.map(s => s.rating)), flags: [...flags].sort(), alerts, profilesMatched: present.length };
 }
 
 function parseRequest(ctx: ApiCallContext): SearchRequest {

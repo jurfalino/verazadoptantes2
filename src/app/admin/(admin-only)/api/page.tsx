@@ -12,6 +12,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import ApiTransactionList, { failure } from '@/components/api/ApiTransactionList';
 import RescuerEmailPicker from '@/components/api/RescuerEmailPicker';
+import ApiDemoPeople from '@/components/api/ApiDemoPeople';
 
 interface KeyView {
     id: string; name: string; ownerEmail: string; prefix: string; environment: string; scopes: string[];
@@ -194,6 +195,8 @@ export default function AdminApiPage() {
                     ))}
                 </ul>
             </section>
+
+            <ApiDemoPeople className={card} />
 
             <section className={card}>
                 <h2 className="text-lg font-semibold text-stone-800 dark:text-stone-200 mb-3">{t('apiReview.transactions_title')}</h2>

@@ -107,7 +107,7 @@ test.describe('public API v1', () => {
         const d = await dry.json();
         expect(d.result).toBe('not_found');
         expect(d.activity).toBeUndefined();
-        expect(d.risk).toEqual({ worstRating: { rating: null, ratingLevel: 0, ratingLabel: 'not_rated' }, flags: [], profilesMatched: 0 });
+        expect(d.risk).toEqual({ worstRating: { rating: null, ratingLevel: 0, ratingLabel: 'not_rated' }, flags: [], alerts: [], profilesMatched: 0 });
         expect(countRows(`SELECT count(*) AS n FROM adopters WHERE name = '${NAME}'`)).toBe(0);
         expect(countRows(`SELECT count(*) AS n FROM api_requests WHERE id = '${d.requestId}' AND dry_run = 1 AND record_id IS NULL AND outcome = 'not_found'`)).toBe(1);
         // A void can't be a dry run.
@@ -512,6 +512,29 @@ test.describe('public API v1', () => {
         // Same key row: its transactions are still listed under it.
         const tx = await page.request.get(`/api/admin/api-requests?keyId=${keyId}`);
         expect(((await tx.json()).rows as unknown[]).length).toBeGreaterThan(5);
+    });
+
+    test('the documented scenarios: with the demo people loaded, every documented call returns its documented answer', async ({ page, baseURL }) => {
+        const seeded = await page.request.post('/api/admin/api-demo');
+        expect(seeded.status()).toBe(200);
+        expect((await seeded.json()).profiles).toBeGreaterThan(10);
+        // Loading twice resets, never duplicates.
+        expect((await page.request.post('/api/admin/api-demo')).status()).toBe(200);
+        const strip = (o: Record<string, unknown>) => { const { requestId: _r, activity: _a, ...rest } = o; void _r; void _a; return rest; };
+        // What the docs page serves — built with THIS environment's alert thresholds.
+        const spec = await (await api.get('/api/v1/openapi.json')).json();
+        const op = spec.paths['/api/v1/search'].post;
+        const requests = op.requestBody.content['application/json'].examples as Record<string, { value: Record<string, unknown> }>;
+        const answers = op.responses['200'].content['application/json'].examples as Record<string, { value: Record<string, unknown> }>;
+        const keys = Object.keys(answers).filter(k => k.startsWith('scenario_'));
+        expect(keys.length).toBeGreaterThanOrEqual(11);
+        let n = 0;
+        for (const key of keys) {
+            const res = await api.post('/api/v1/search', { data: requests[key].value, headers: auth({ 'x-dry-run': '1', 'idempotency-key': `scenario-${++n}-${STAMP}` }) });
+            expect(res.status(), key).toBe(200);
+            expect(strip(await res.json()), key).toEqual(strip(answers[key].value));
+        }
+        void baseURL;
     });
 
     test('docs and spec are served; a revoked key stops working', async ({ page }) => {

@@ -39,10 +39,17 @@ describe('buildOpenApi', () => {
             const at = guide.indexOf(`### ${i + 1}. ${sc.title}`);
             expect(at, sc.key).toBeGreaterThan(-1);
             const section = guide.slice(at, guide.indexOf('### ', at + 4) === -1 ? undefined : guide.indexOf('### ', at + 4));
-            for (const part of ['**Qué hay registrado:**', '**Pedido**', '**Respuesta**', '**Por qué:**']) expect(section, `${sc.key} ${part}`).toContain(part);
+            for (const part of ['**Qué hay registrado:**', '**Llamada**', '**Respuesta**', '**Por qué:**', 'Idempotency-Key: ']) expect(section, `${sc.key} ${part}`).toContain(part);
+            expect(section.includes('X-Dry-Run: 1'), sc.key).toBe(sc.dryRun);
             expect(section).toContain(JSON.stringify(sc.request, null, 2));
             expect(section).toContain(JSON.stringify(sc.response, null, 2));
         });
+    });
+
+    it('the guide on production shows live keys and no dry-run header outside its own scenario', () => {
+        const prod: string = (buildOpenApi('https://buenadoptante.org') as any).info.description; // eslint-disable-line @typescript-eslint/no-explicit-any
+        expect(prod).toContain('ba_live_…');
+        expect(prod).not.toContain('En staging estas personas existen');
     });
 
     it('the dry-run header is not pre-filled into generated requests (no enum/const/example)', () => {
@@ -86,7 +93,11 @@ describe('buildOpenApi', () => {
         const foundLevels = rs.filter(r => r.result === 'found').map(r => r.profile!.ratingLevel);
         expect(foundLevels).toEqual(expect.arrayContaining([5, 4, 3, 2, 1, 0]));
         expect(rs.map(r => r.reason ?? r.result)).toEqual(expect.arrayContaining(['found', 'not_found', 'name_mismatch', 'multiple_profiles']));
-        expect([...new Set(rs.flatMap(r => r.risk.flags))]).toEqual(expect.arrayContaining(['inaccurate', 'too_many_requests', 'too_many_adoptions', 'possible_duplicate', 'duplicate']));
+        expect([...new Set(rs.flatMap(r => r.risk.flags))]).toEqual(expect.arrayContaining(['inaccurate', 'possible_duplicate', 'duplicate']));
+        const alertTypes = new Set(rs.flatMap(r => (r.risk as unknown as { alerts: Array<{ type: string }> }).alerts.map(a => a.type)));
+        expect([...alertTypes].sort()).toEqual(['too_many_adoptions', 'too_many_requests']);
+        // The two "too many" live in alerts, never in flags.
+        expect(rs.flatMap(r => r.risk.flags).filter(f => f.startsWith('too_many'))).toEqual([]);
     });
 
     it('scenarios say what each one claims (spot checks against the decision rules)', () => {
@@ -97,7 +108,12 @@ describe('buildOpenApi', () => {
         expect(by.shared_phone.otherMatches.count).toBe(1);
         expect(by.shared_phone.risk.worstRating.ratingLevel).toBe(1);              // the relative's 1★ shows in risk
         expect(by.name_mismatch.activity.profileCreated).toBe(true);
-        expect(by.multiple_profiles.activity.profileId).toBe('p_laura_a');         // email AND phone match
+        expect(by.multiple_profiles.activity.profileId).toBe('demo-api-laura-a');  // email AND phone match
+        expect(by.one_star.profile.alerts).toEqual([{ type: 'too_many_requests', count: 4, periodDays: 30 }]);
+        expect(by.one_star.profile.rating).toBe(1.3);
+        expect(by.shared_phone.risk.alerts).toEqual([{ type: 'too_many_adoptions', count: 5, periodDays: 90, profileId: 'demo-api-ramon' }]);
+        expect(by.five_stars.profile.rating).toBe(4.8);
+        expect(by.four_stars.profile.ratingLevel).toBe(4);
         expect(by.not_found.activity.profileCreated).toBe(true);
         expect(by.dry_run.activity).toBeUndefined();
     });

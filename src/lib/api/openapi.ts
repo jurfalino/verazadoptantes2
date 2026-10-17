@@ -3,7 +3,8 @@
  * schemas the routes validate with (src/lib/api/schemas.ts).
  */
 import { z } from 'zod';
-import { exactScenarios } from './docScenarios';
+import { exactScenarios, DEFAULT_ALERT_CONFIG, type AlertConfig } from './docScenarios';
+import { environmentForHost } from './keys';
 import {
     errorResponseSchema, contractResponseSchema, exactResponseSchema, fuzzyResponseSchema, meResponseSchema,
     searchRequestSchema, voidResponseSchema,
@@ -53,14 +54,22 @@ Podés enviar cualquiera de estos datos de la persona:
 
 \`rating\` es el promedio (con un decimal) de todas las calificaciones; \`ratingLevel\` es ese promedio redondeado.
 
-### Alertas (\`risk.flags\`)
-| Alerta | Qué significa |
+### Marcas (\`flags\`)
+| Marca | Qué significa |
 |---|---|
 | \`inaccurate\` | Alguien marcó que los datos de esa persona no son confiables. |
 | \`duplicate\` | Un rescatista marcó el perfil como duplicado de otro. |
 | \`possible_duplicate\` | BuenAdoptante detectó que puede ser la misma persona que otro perfil. |
-| \`too_many_requests\` | Pidió adoptar en muchos rescates **distintos** en poco tiempo (detalle en \`profile.tooManyRequests\`). |
-| \`too_many_adoptions\` | Adoptó muchos animales en poco tiempo (detalle en \`profile.tooManyAdoptions\`). |
+
+### Alertas (\`alerts\`)
+Lo que BuenAdoptante calcula de la actividad de la persona. Cada alerta trae \`type\`, \`count\` y \`periodDays\`:
+
+| \`type\` | Qué significa |
+|---|---|
+| \`too_many_requests\` | Pidió adoptar en muchos rescates **distintos** en poco tiempo: \`count\` rescates en \`periodDays\` días (varias solicitudes a un mismo rescate cuentan una vez). |
+| \`too_many_adoptions\` | Adoptó muchos animales en poco tiempo: \`count\` adopciones en \`periodDays\` días. |
+
+\`profile.alerts\` son las de esa persona; \`risk.alerts\` junta las de **todos** los perfiles que coincidieron, cada una con su \`profileId\`.
 
 \`profile.flags\` puede traer además \`verified_identity\` y \`verified_address\` (identidad o domicilio verificados): son buenas señales y por eso no aparecen en \`risk\`.
 
@@ -176,20 +185,36 @@ export const REQUEST_EXAMPLES = {
 const json = (value: unknown) => `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``;
 
 /** The examples part of the guide: request examples, then every exact-search scenario written out. */
-export function examplesGuide(origin: string): string {
+export function examplesGuide(origin: string, cfg: AlertConfig = DEFAULT_ALERT_CONFIG): string {
+    const live = environmentForHost(new URL(origin).host) === 'live';
+    const curl = (body: unknown, dryRun: boolean) => [
+        `curl -X POST ${origin}/api/v1/search \\`,
+        `  -H "Authorization: Bearer ${live ? 'ba_live_…' : 'ba_test_…'}" \\`,
+        '  -H "Content-Type: application/json" \\',
+        '  -H "Idempotency-Key: 3f6c1d2e-un-valor-nuevo-en-cada-llamada" \\',
+        ...(dryRun && !live ? ['  -H "X-Dry-Run: 1" \\'] : []),
+        `  -d '${JSON.stringify(body, null, 2).replace(/'/g, "'\\''")}'`,
+    ].join('\n');
+    const fence = (lang: string, text: string) => `\`\`\`${lang}\n${text}\n\`\`\``;
     const req = REQUEST_EXAMPLES as Record<string, { summary: string; value: unknown }>;
     return [
         '## Ejemplos de pedidos',
         'A \`POST /api/v1/search\`, con \`Authorization\`, \`Content-Type: application/json\` e \`Idempotency-Key\`.',
         ...Object.values(req).map(e => `### ${e.summary}\n${json(e.value)}`),
         '## Búsqueda exacta: qué pedido da cada respuesta',
-        'Cada escenario muestra qué hay registrado en BuenAdoptante, el pedido exacto que mandás y la respuesta que recibís. ' +
+        'Cada escenario muestra qué hay registrado en BuenAdoptante, la llamada exacta que hacés y la respuesta que recibís. ' +
         'Mirá siempre \`risk\`: es la peor señal de **todos** los perfiles que coincidieron con el email, teléfono o documento.',
-        ...exactScenarios(origin).map((sc, i) => [
+        '**Los headers importan:** toda búsqueda exacta que registra una actividad necesita \`Idempotency-Key\`, con **un valor nuevo en cada llamada** (por ejemplo un UUID). Sin él la respuesta es \`422 idempotency_key_required\`.',
+        ...(live ? [] : [
+            '**En staging estas personas existen**, así que cada llamada devuelve exactamente la respuesta de su escenario. ' +
+            'Para probarlas sin guardar nada, agregá \`-H "X-Dry-Run: 1"\`: la respuesta es la misma, sin \`activity\`. Sin ese header la llamada se guarda (suma la actividad, y la próxima respuesta ya cambia). ' +
+            'Un admin las vuelve a dejar como en esta página desde Admin → API → «Personas de ejemplo».',
+        ]),
+        ...exactScenarios(origin, new Date(), cfg).map((sc, i) => [
             `### ${i + 1}. ${sc.title}`,
             `**Qué hay registrado:** ${sc.registered}`,
-            `**Pedido**${sc.dryRun ? ' (con el header \`X-Dry-Run: 1\`)' : ''}`,
-            json(sc.request),
+            '**Llamada**',
+            fence('bash', curl(sc.request, sc.dryRun)),
             '**Respuesta** (\`200\`)',
             json(sc.response),
             `**Por qué:** ${sc.why}`,
@@ -197,7 +222,9 @@ export function examplesGuide(origin: string): string {
     ].join('\n\n');
 }
 
-export function buildOpenApi(origin: string) {
+/** `cfg`: this environment's "too many" thresholds, so the documented answers are the ones it gives. */
+export function buildOpenApi(origin: string, cfg: AlertConfig = DEFAULT_ALERT_CONFIG) {
+    const scenarios = exactScenarios(origin, new Date(), cfg);
     const error = { description: 'Error', content: { 'application/json': { schema: schema(errorResponseSchema) } } };
     const errors = {
         '400': { ...error, description: 'Invalid JSON' },
@@ -212,7 +239,7 @@ export function buildOpenApi(origin: string) {
     };
     return {
         openapi: '3.1.0',
-        info: { title: 'BuenAdoptante API', version: '1.0.0', description: `${GUIDE}\n\n${examplesGuide(origin)}` },
+        info: { title: 'BuenAdoptante API', version: '1.0.0', description: `${GUIDE}\n\n${examplesGuide(origin, cfg)}` },
         servers: [{ url: origin }],
         security: [{ bearerAuth: [] }],
         components: {
@@ -224,8 +251,8 @@ export function buildOpenApi(origin: string) {
                     summary: 'Buscar a una persona y registrar su actividad',
                     operationId: 'search',
                     parameters: [{
-                        name: 'Idempotency-Key', in: 'header', required: false,
-                        description: 'Required whenever `activity` is sent. Any unique string, e.g. a UUID; a retry with the same key gets the same answer instead of a second activity.',
+                        name: 'Idempotency-Key', in: 'header', required: true,
+                        description: 'Required whenever `activity` is sent (without it: 422 idempotency_key_required). A NEW value on every call, e.g. a UUID; a retry with the same key gets the same answer instead of a second activity. Harmless on a look-up without activity.',
                         schema: { type: 'string', maxLength: 200 },
                     }, {
                         name: 'X-Dry-Run', in: 'header', required: false,
@@ -240,7 +267,7 @@ export function buildOpenApi(origin: string) {
                                 schema: schema(searchRequestSchema, 'input'),
                                 examples: {
                                     ...REQUEST_EXAMPLES,
-                                    ...Object.fromEntries(exactScenarios(origin).map((sc, i) => [`scenario_${sc.key}`, { summary: `Escenario ${i + 1}: ${sc.title}`, value: sc.request }])),
+                                    ...Object.fromEntries(scenarios.map((sc, i) => [`scenario_${sc.key}`, { summary: `Escenario ${i + 1}: ${sc.title}`, value: sc.request }])),
                                 },
                             },
                         },
@@ -248,7 +275,7 @@ export function buildOpenApi(origin: string) {
                     responses: {
                         '200': {
                             description: 'exact → found / not_found / ambiguous; fuzzy → ranked results',
-                            content: { 'application/json': { schema: { oneOf: [schema(exactResponseSchema), schema(fuzzyResponseSchema)] }, examples: Object.fromEntries(exactScenarios(origin).map((sc, i) => [`scenario_${sc.key}`, { summary: `Escenario ${i + 1}: ${sc.title}`, value: sc.response }])) } },
+                            content: { 'application/json': { schema: { oneOf: [schema(exactResponseSchema), schema(fuzzyResponseSchema)] }, examples: Object.fromEntries(scenarios.map((sc, i) => [`scenario_${sc.key}`, { summary: `Escenario ${i + 1}: ${sc.title}`, value: sc.response }])) } },
                         },
                         ...errors,
                     },
