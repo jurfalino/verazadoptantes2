@@ -99,15 +99,15 @@ const DEFS: ScenarioDef[] = [
     {
         key: 'three_stars',
         title: '3★ regular',
-        registered: 'Un perfil «Jorge Luis Ramírez» con el DNI 27.913.502, con cinco registros calificados (promedio 3,2).',
+        registered: 'Un perfil «Jorge Luis Ramírez» con el DNI 99.913.502, con cinco registros calificados (promedio 3,2).',
         profiles: [{
-            id: 'demo-api-jorge', name: 'Jorge Luis Ramírez', documentId: '27.913.502',
+            id: 'demo-api-jorge', name: 'Jorge Luis Ramírez', documentId: '99.913.502',
             history: [
                 { type: 'adoption_request', rating: 3, daysAgo: 300 }, { type: 'adoption_request', rating: 3, daysAgo: 250 },
                 { type: 'adoption_request', rating: 3, daysAgo: 120 }, { type: 'adoption', rating: 4, daysAgo: 110 }, { type: 'follow_up', rating: 3, daysAgo: 90 },
             ],
         }],
-        person: { fullName: 'Jorge Ramírez', documentId: { value: '27913502', country: 'AR' } },
+        person: { fullName: 'Jorge Ramírez', documentId: { value: '99913502', country: 'AR' } },
         activity: { activityType: 'adoption_request' },
         why: 'El documento coincide (los puntos no importan) y «Jorge Ramírez» es compatible con «Jorge Luis Ramírez» (todas sus palabras están en el nombre registrado) → `found`. Un 3★ no impide adoptar: miralo con más cuidado.',
     },
@@ -221,7 +221,7 @@ export const REQUEST_EXAMPLES = {
             mode: 'exact',
             person: {
                 fullName: 'María José Pérez', email: 'mariajose.demo@example.com', phone: '+54 9 11 5550-3101',
-                documentId: { value: '30.555.310', country: 'AR' }, address: 'Av. Siempreviva 742, CABA',
+                documentId: { value: '99.555.310', country: 'AR' }, address: 'Av. Siempreviva 742, CABA',
                 socials: [{ platform: 'instagram', handle: '@mariajose.demo' }, { platform: 'facebook', handle: 'facebook.com/mariajose.demo' }],
             },
             activity: {
@@ -235,7 +235,7 @@ export const REQUEST_EXAMPLES = {
         summary: 'Completo: una adopción con los datos del animal (species obligatorio; después adjuntá el contrato)',
         value: {
             mode: 'exact',
-            person: { fullName: 'María José Pérez', phone: '+54 9 11 5550-3101', email: 'mariajose.demo@example.com', documentId: { value: '30.555.310', country: 'AR' } },
+            person: { fullName: 'María José Pérez', phone: '+54 9 11 5550-3101', email: 'mariajose.demo@example.com', documentId: { value: '99.555.310', country: 'AR' } },
             activity: {
                 activityType: 'adoption', externalId: 'adopcion-2026-118',
                 animalName: 'Luna', species: 'cat', age: '2 años', sex: 'female', neutered: true,

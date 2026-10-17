@@ -5,7 +5,7 @@
  * D1 note: no IN-lists (they mis-bind on D1); every lookup fans out with
  * Promise.all over single-value queries.
  */
-import { and, count, eq, isNull, max } from 'drizzle-orm';
+import { and, count, eq, isNull, max, sql } from 'drizzle-orm';
 import { adopters, adoptions, duplicateTokens, userProfiles, users } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { deserializeContactEntries } from '@/lib/contactEntries';
@@ -43,9 +43,10 @@ export async function ownerCountry(db: Db, ownerEmail: string, requestId: string
             .where(eq(users.email, ownerEmail)).get();
         return row?.country?.trim() || null;
     } catch (e) {
-        // Phones are then read as Argentine (the default region), never dropped.
+        // Fails closed (review 2026-10-17): guessing Argentina could miss a match
+        // abroad, create a duplicate and show a clean risk. The caller answers 503.
         logger.warn('api: owner country lookup failed', { requestId, error: e instanceof Error ? e.message : String(e) });
-        return null;
+        throw e;
     }
 }
 
@@ -107,6 +108,12 @@ export function ratingFields(avgRating: number | null): RatingFields {
     };
 }
 
+/** A stored date (Date, or seconds) as YYYY-MM-DD UTC, or null. */
+function dayOf(v: unknown): string | null {
+    const t = v instanceof Date ? v.getTime() : typeof v === 'number' ? v * 1000 : null;
+    return t === null || Number.isNaN(t) ? null : new Date(t).toISOString().slice(0, 10);
+}
+
 /**
  * Same rating, flags and "too many" signals the search cards show
  * (enrichAdopters), plus record counts, creation date and whether the caller's
@@ -120,29 +127,60 @@ export async function buildProfileSummaries(db: Db, ids: string[], origin: strin
     const out = new Map<string, ProfileSummary>();
     if (ids.length === 0) return out;
     let enriched: Awaited<ReturnType<typeof enrichAdopters>>;
-    let counts: Array<Array<{ type: string | null; n: number; last: unknown }>>;
-    let created: Array<{ createdAt: unknown } | undefined>;
-    let mine: Set<string>;
+    // Batched (review 2026-10-17): a 50-result fuzzy call used to fan out to ~150
+    // queries. One grouped read per chunk of ids (D1-safe IN list, each id its own
+    // bound parameter, as enrichAdopters does) gives counts, last date and who
+    // registered each record; one more gives the creation dates.
+    const CHUNK = 40;
+    const groups: Array<{ adopterId: string; type: string | null; addedBy: string | null; n: number; last: unknown }> = [];
+    const createdAt = new Map<string, unknown>();
+    let membership: Awaited<ReturnType<typeof import('@/lib/rescueKeys')['loadOrgMembership']>>;
+    let sameRescueDirect: typeof import('@/lib/rescueKeys')['sameRescueDirect'];
     try {
-        [enriched, counts, created, mine] = await Promise.all([
+        const rescueKeys = await import('@/lib/rescueKeys');
+        sameRescueDirect = rescueKeys.sameRescueDirect;
+        const chunks: string[][] = [];
+        for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
+        const [e, m, parts] = await Promise.all([
             enrichAdopters(db, ids, { strict: true }),
-            Promise.all(ids.map(id =>
-                db.select({ type: adoptions.recordType, n: count(), last: max(adoptions.date) })
-                    .from(adoptions).where(eq(adoptions.adopterId, id)).groupBy(adoptions.recordType).all())),
-            Promise.all(ids.map(id => db.select({ createdAt: adopters.createdAt }).from(adopters).where(eq(adopters.id, id)).get())),
-            registeredByRescue(db, ids, ownerEmail, requestId),
+            rescueKeys.loadOrgMembership(db, 'api.profileSummaries'),
+            Promise.all(chunks.map(chunk => {
+                const inList = sql.join(chunk.map(id => sql`${id}`), sql`, `);
+                return Promise.all([
+                    db.select({ adopterId: adoptions.adopterId, type: adoptions.recordType, addedBy: adoptions.addedBy, n: count(), last: max(adoptions.date) })
+                        .from(adoptions).where(sql`${adoptions.adopterId} IN (${inList})`)
+                        .groupBy(adoptions.adopterId, adoptions.recordType, adoptions.addedBy).all(),
+                    db.select({ id: adopters.id, createdAt: adopters.createdAt }).from(adopters).where(sql`${adopters.id} IN (${inList})`).all(),
+                ]);
+            })),
         ]);
+        enriched = e;
+        membership = m;
+        for (const [g, c] of parts as Array<[typeof groups, Array<{ id: string; createdAt: unknown }>]>) {
+            groups.push(...g);
+            for (const r of c) createdAt.set(r.id, r.createdAt);
+        }
     } catch (e) {
         logger.error('api: profile summaries unreadable, refusing to answer without the risk', e, { requestId, profiles: ids.length });
         throw new ApiError(503, 'temporarily_unavailable', 'could not read the ratings and alerts of the matching profiles; nothing was saved — retry in a moment', { 'Retry-After': '5' });
     }
-    ids.forEach((id, i) => {
+    const byProfile = new Map<string, typeof groups>();
+    for (const g of groups) {
+        const list = byProfile.get(g.adopterId) ?? [];
+        list.push(g);
+        byProfile.set(g.adopterId, list);
+    }
+    ids.forEach(id => {
         const e = enriched.get(id);
         const records: ProfileSummary['records'] = {};
         let last: number | null = null;
-        for (const row of counts[i] as Array<{ type: string | null; n: number; last: unknown }>) {
+        let mine = false;
+        for (const row of byProfile.get(id) ?? []) {
+            // The rescue (owner or a directly shared organization) registered something here.
+            if (sameRescueDirect(ownerEmail, row.addedBy, membership)) mine = true;
             if (!row.type || row.type === RECORD_TYPES.AVAILABLE) continue;
-            records[row.type as keyof ProfileSummary['records']] = row.n;
+            const type = row.type as keyof ProfileSummary['records'];
+            records[type] = (records[type] ?? 0) + row.n;
             const t = row.last instanceof Date ? row.last.getTime() : typeof row.last === 'number' ? row.last * 1000 : null;
             if (t !== null && (last === null || t > last)) last = t;
         }
@@ -164,33 +202,10 @@ export async function buildProfileSummaries(db: Db, ids: string[], origin: strin
             ],
             records,
             lastRecordAt: last === null ? null : new Date(last).toISOString().slice(0, 10),
-            createdAt: dayOf(created[i]?.createdAt),
-            registeredByYourRescue: mine.has(id),
+            createdAt: dayOf(createdAt.get(id)),
+            registeredByYourRescue: mine,
         });
     });
     return out;
 }
 
-/**
- * Which of these profiles this key's rescue has put an activity on — the key's
- * owner, or someone in a DIRECTLY shared organization (same rule as who sees
- * form answers). Gates the look-up without activity, and limits what it shows
- * to those profiles. A failed read throws: it must never read as "yes".
- */
-/** A stored date (Date, or seconds) as YYYY-MM-DD UTC, or null. */
-function dayOf(v: unknown): string | null {
-    const t = v instanceof Date ? v.getTime() : typeof v === 'number' ? v * 1000 : null;
-    return t === null || Number.isNaN(t) ? null : new Date(t).toISOString().slice(0, 10);
-}
-
-export async function registeredByRescue(db: Db, ids: string[], ownerEmail: string, requestId: string): Promise<Set<string>> {
-    const mine = new Set<string>();
-    if (ids.length === 0) return mine;
-    const perProfile = await Promise.all(ids.map(id =>
-        db.select({ addedBy: adoptions.addedBy }).from(adoptions).where(eq(adoptions.adopterId, id)).all() as Promise<Array<{ addedBy: string | null }>>));
-    const { loadOrgMembership, sameRescueDirect } = await import('@/lib/rescueKeys');
-    const membership = await loadOrgMembership(db, 'api.registeredByRescue');
-    ids.forEach((id, i) => { if (perProfile[i].some(r => sameRescueDirect(ownerEmail, r.addedBy, membership))) mine.add(id); });
-    logger.debug('api: registered by this rescue', { requestId, profiles: ids.length, registeredByThisRescue: mine.size });
-    return mine;
-}

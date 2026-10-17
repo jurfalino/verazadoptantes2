@@ -11,7 +11,7 @@
  *               2026-10-13). No name fits (the identifier is someone else's):
  *               a NEW profile, with its duplicate candidates for an admin.
  */
-import { and, count, eq, isNotNull, isNull, ne, notLike, or } from 'drizzle-orm';
+import { and, count, eq, gte, isNotNull, isNull, ne, notLike, or } from 'drizzle-orm';
 import { activityForms, adopterEvents, adopterHistory, adopterImages, adopters, adoptions, apiRequests, formSubmissions, placements } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
@@ -21,7 +21,7 @@ import { normalizeSpecies } from '@/domain/importRow';
 import { parseAgeText } from '@/domain/animalAge';
 import { computeBirthDate } from '@/lib/ageUtils';
 import { addApiContacts, newContactFields, parseAddedContacts, removeApiContacts } from './contacts';
-import { ApiError, type ApiCallContext } from './handler';
+import { ApiError, recordProgress, type ApiCallContext } from './handler';
 import { profileUrl, recordUrl } from './profiles';
 import type { ProfileSummary, SavedActivity, SearchRequest } from './schemas';
 
@@ -102,6 +102,7 @@ export async function saveApiActivity(
         // not released (no duplicate on retry) and the log shows what was made.
         ctx.log.profileCreated = true;
         ctx.log.profileIds = [profileId];
+        await recordProgress(ctx, { profileCreated: true, profileIds: [profileId] });
     }
 
     const activityDate = save.date ? dayAtNoon(save.date) : new Date();
@@ -129,6 +130,7 @@ export async function saveApiActivity(
         sourceUrl: null,
     }, key.ownerEmail);
     ctx.log.recordId = recordId;
+    await recordProgress(ctx, { recordId, profileIds: [profileId] });
 
     if (save.formContent) {
         // Stored exactly as sent; never logged (it is the applicant's answers).
@@ -230,7 +232,10 @@ async function profileHasOtherData(db: Db, profileId: string, recordId: string):
  * it (not merged elsewhere since), and nothing else has been put on it.
  */
 export async function voidApiRecord(db: Db, recordId: string, opts: { keyId: string | null; actor: string; requestId: string }): Promise<VoidResult | null> {
-    const conds = [eq(apiRequests.recordId, recordId), eq(apiRequests.endpoint, 'search'), eq(apiRequests.httpStatus, 200)];
+    // A call that saved and then crashed (5xx, or a claim left at 0) holds a real
+    // activity too: it must be voidable, or its externalId stays stuck (review 2026-10-17).
+    const conds = [eq(apiRequests.recordId, recordId), eq(apiRequests.endpoint, 'search'),
+        or(eq(apiRequests.httpStatus, 200), eq(apiRequests.httpStatus, 0), gte(apiRequests.httpStatus, 500))];
     if (opts.keyId) conds.push(eq(apiRequests.keyId, opts.keyId));
     const origin = await db.select().from(apiRequests).where(and(...conds)).get() as typeof apiRequests.$inferSelect | undefined;
     if (!origin) return null;

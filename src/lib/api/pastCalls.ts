@@ -4,7 +4,7 @@
  * doesn't know whether the adoption was saved (review 2026-10-17). Only the
  * key's own calls; any other id answers 404, revealing nothing.
  */
-import { and, desc, eq, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, ne } from 'drizzle-orm';
 import { apiRequests } from '@/db/schema';
 import { ApiError, type ApiCallContext, type ApiResult } from './handler';
 import type { PastCallResponse } from './schemas';
@@ -39,13 +39,14 @@ export async function runPastCall(ctx: ApiCallContext, requestId: string | null)
     const { db, key } = ctx;
     let row: Row | undefined;
     if (requestId) {
-        row = await db.select().from(apiRequests).where(and(eq(apiRequests.id, requestId), eq(apiRequests.keyId, key.id))).get();
+        // Never a look-up of a look-up: only the calls that did something.
+        row = await db.select().from(apiRequests).where(and(eq(apiRequests.id, requestId), eq(apiRequests.keyId, key.id), ne(apiRequests.endpoint, 'requests'))).get();
     } else {
         const externalId = ctx.query.get('externalId')?.trim();
         if (!externalId) throw new ApiError(422, 'invalid_request', 'send a requestId in the path, or ?externalId=', {}, { field: 'externalId' });
         // The call that SAVED it (a retry or a refusal with the same id saved nothing); latest first.
         row = await db.select().from(apiRequests).where(and(
-            eq(apiRequests.keyId, key.id), eq(apiRequests.externalId, externalId), isNotNull(apiRequests.recordId),
+            eq(apiRequests.keyId, key.id), eq(apiRequests.endpoint, 'search'), eq(apiRequests.externalId, externalId), isNotNull(apiRequests.recordId),
         )).orderBy(desc(apiRequests.createdAt)).get();
     }
     if (!row || row.id === ctx.requestId) throw new ApiError(404, 'not_found', 'no call of this key with that id');

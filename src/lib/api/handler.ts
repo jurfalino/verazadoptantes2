@@ -180,14 +180,26 @@ async function enforceCallCeiling(db: Db, key: ApiKeyRow) {
     }
 }
 
-/** Same JSON regardless of key order and spacing, so a retry rebuilt by another library still matches. */
+/**
+ * Same JSON regardless of key order, spacing, a field sent as null instead of
+ * left out, and spaces around a value (the API trims them anyway) — so a retry
+ * rebuilt by another library still matches. Array order still matters.
+ */
 export function canonicalJson(text: string | null): string | null {
     if (text === null) return null;
     let v: unknown;
     try { v = JSON.parse(text); } catch { return text; }
-    const sort = (x: unknown): unknown => Array.isArray(x) ? x.map(sort)
-        : x && typeof x === 'object' ? Object.fromEntries(Object.keys(x as object).sort().map(k => [k, sort((x as Record<string, unknown>)[k])])) : x;
-    return JSON.stringify(sort(v));
+    const norm = (x: unknown): unknown => {
+        if (Array.isArray(x)) return x.map(norm);
+        if (typeof x === 'string') return x.trim();
+        if (x && typeof x === 'object') {
+            return Object.fromEntries(Object.keys(x as object).sort()
+                .filter(k => (x as Record<string, unknown>)[k] !== null && (x as Record<string, unknown>)[k] !== undefined)
+                .map(k => [k, norm((x as Record<string, unknown>)[k])]));
+        }
+        return x;
+    };
+    return JSON.stringify(norm(v));
 }
 
 type ApiRequestRow = typeof apiRequests.$inferSelect;
@@ -200,7 +212,7 @@ type ApiRequestRow = typeof apiRequests.$inferSelect;
  * one that crashed AFTER creating a profile or record is not (a rerun would
  * duplicate it): the answer names what exists, to void before retrying.
  */
-export async function replayIdempotent(ctx: ApiCallContext): Promise<ApiResult | null> {
+export async function replayIdempotent(ctx: ApiCallContext, opts: { readOnly?: boolean } = {}): Promise<ApiResult | null> {
     if (!ctx.idempotencyKey) return null;
     const where = and(eq(apiRequests.keyId, ctx.key.id), eq(apiRequests.idempotencyKey, ctx.idempotencyKey));
     const prior = await ctx.db.select().from(apiRequests).where(where).get() as ApiRequestRow | undefined;
@@ -211,11 +223,14 @@ export async function replayIdempotent(ctx: ApiCallContext): Promise<ApiResult |
         ...(prior.recordId ? { activityId: prior.recordId } : {}),
         ...(firstProfile ? { profileId: firstProfile } : {}),
     };
-    const partial = !!prior.recordId || prior.profileCreated === 1;
+    // Partial = an activity exists. A crash that only created the profile is
+    // released: the retry finds that profile by the same identifiers (it was
+    // indexed when created) and adds the activity to it — no duplicate.
+    const partial = !!prior.recordId;
     // A claim nobody finished (the worker died mid-call) counts as a crash.
     const abandoned = prior.httpStatus === 0 && Date.now() - new Date(prior.createdAt).getTime() > ABANDONED_CLAIM_MS;
     if ((prior.httpStatus >= 500 || abandoned) && !partial) {
-        await ctx.db.delete(apiRequests).where(eq(apiRequests.id, prior.id));
+        if (!opts.readOnly) await ctx.db.delete(apiRequests).where(eq(apiRequests.id, prior.id));
         return null;
     }
     if (prior.httpStatus >= 500 || abandoned) {
@@ -233,6 +248,24 @@ export async function replayIdempotent(ctx: ApiCallContext): Promise<ApiResult |
     logger.info('api: idempotent replay', { requestId: ctx.requestId, originalRequestId: prior.id, keyId: ctx.key.id });
     const body = prior.responseBody ? JSON.parse(prior.responseBody) as Record<string, unknown> : {};
     return { status: prior.httpStatus, body: { ...body, replayed: true, originalRequestId: prior.id } };
+}
+
+/**
+ * Write what a saving call has done SO FAR onto its claimed row, the moment it
+ * happens: if the worker dies before the final log write, a retry must still
+ * see that a profile / activity exists (and never save it twice).
+ */
+export async function recordProgress(ctx: ApiCallContext, fields: { profileCreated?: boolean; profileIds?: string[]; recordId?: string }): Promise<void> {
+    if (!ctx.rowClaimed) return;
+    try {
+        await ctx.db.update(apiRequests).set({
+            ...(fields.profileCreated ? { profileCreated: 1 } : {}),
+            ...(fields.profileIds ? { profileIds: JSON.stringify(fields.profileIds) } : {}),
+            ...(fields.recordId ? { recordId: fields.recordId } : {}),
+        }).where(eq(apiRequests.id, ctx.requestId));
+    } catch (e) {
+        logger.error('api: progress write failed (a retry may not see what this call saved)', e, { requestId: ctx.requestId, keyId: ctx.key.id, ...fields });
+    }
 }
 
 /** Idempotent saves, step 2: own the key (unique on key + idempotency key) before writing anything. */
@@ -264,7 +297,11 @@ async function writeLog(ctx: ApiCallContext, endpoint: ApiEndpoint, status: numb
         httpStatus: status,
         errorId,
         requestBody: ctx.bodyText ? ctx.bodyText.slice(0, MAX_LOGGED_BODY) : null,
-        responseBody: JSON.stringify(body).slice(0, MAX_LOGGED_BODY),
+        // A look-up answer embeds an earlier call's answer: storing it again would
+        // restart that person data's 90-day clock (review 2026-10-17).
+        responseBody: endpoint === 'requests' ? null : JSON.stringify(body).slice(0, MAX_LOGGED_BODY),
+        // A claimed call refused with a 4xx saved nothing: it must not hold the externalId.
+        ...(ctx.rowClaimed && status >= 400 && status < 500 ? { idempotencyKey: null } : {}),
         profileIds: ctx.log.profileIds?.length ? JSON.stringify(ctx.log.profileIds) : null,
         recordId: ctx.log.recordId ?? null,
         profileCreated: ctx.log.profileCreated ? 1 : 0,

@@ -74,12 +74,12 @@ export async function runSearch(ctx: ApiCallContext): Promise<ApiResult> {
     if (saves) {
         requireScope(ctx, 'record:write');
         ctx.idempotencyKey = `ext:${req.activity!.externalId!}`;
-        if (!ctx.dryRun) {
-            const replay = await replayIdempotent(ctx);
-            if (replay) {
-                ctx.log.outcome = 'replayed';
-                return replay;
-            }
+        // A dry run checks it too (read-only): it must answer what the real call
+        // would — a replay, or a 409 for an externalId already used.
+        const replay = await replayIdempotent(ctx, { readOnly: ctx.dryRun });
+        if (replay) {
+            ctx.log.outcome = 'replayed';
+            return replay;
         }
     }
     // Cap before claiming: a refused call must never become the stored answer.
@@ -90,8 +90,16 @@ export async function runSearch(ctx: ApiCallContext): Promise<ApiResult> {
 }
 
 async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiResult> {
-    const country = req.person.phone ? await ownerCountry(ctx.db, ctx.key.ownerEmail, ctx.requestId) : null;
-    const hits = await findIdentifierHits(ctx.db, req.person, ctx.requestId, country);
+    let hits: Awaited<ReturnType<typeof findIdentifierHits>>;
+    try {
+        // The rescuer's country decides how a phone is read: a failed read must not guess.
+        const country = req.person.phone ? await ownerCountry(ctx.db, ctx.key.ownerEmail, ctx.requestId) : null;
+        hits = await findIdentifierHits(ctx.db, req.person, ctx.requestId, country);
+    } catch (e) {
+        if (e instanceof ApiError) throw e;
+        logger.error('api: identifier lookup failed', e, { requestId: ctx.requestId, keyId: ctx.key.id });
+        throw new ApiError(503, 'temporarily_unavailable', 'could not search for the person right now; nothing was saved — retry in a moment', { 'Retry-After': '5' });
+    }
     const outcome = decideExactOutcome(req.person.fullName!, hits.candidates);
     const ids = outcome.result === 'found' ? [outcome.profileId, ...outcome.otherProfileIds] : outcome.result === 'ambiguous' ? outcome.profileIds : [];
     ctx.log.outcome = outcome.result;

@@ -153,6 +153,9 @@ describe('handler helpers', () => {
     it('canonicalJson: key order and spacing do not make a retry look different', () => {
         expect(canonicalJson('{"b":1,"a":{"y":2,"x":[1,{"d":1,"c":2}]}}')).toBe(canonicalJson('{ "a": { "x": [1, {"c":2,"d":1}], "y": 2 }, "b": 1 }'));
         expect(canonicalJson('{"a":1}')).not.toBe(canonicalJson('{"a":2}'));
+        // A field sent as null instead of left out, and spaces around a value, are the same request.
+        expect(canonicalJson('{"a":" x ","b":null}')).toBe(canonicalJson('{"a":"x"}'));
+        expect(canonicalJson('{"a":[2,1]}')).not.toBe(canonicalJson('{"a":[1,2]}')); // order of a list still matters
     });
     it('unauthorizedMessage says why, without telling unknown from revoked', () => {
         expect(unauthorizedMessage(null, null, 'buenadoptante.org')).toMatch(/no API key/);

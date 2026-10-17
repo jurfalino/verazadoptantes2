@@ -57,7 +57,7 @@ Datos de la persona que podés mandar:
 | \`fullName\` | María José Pérez |
 | \`email\` | mariajose.demo@example.com |
 | \`phone\` | +54 9 11 5550-3101 (cualquier formato) |
-| \`documentId.value\` | 30.555.310 (DNI, CI, CPF, RUT…) |
+| \`documentId.value\` | 99.555.310 (DNI, CI, CPF, RUT…) |
 | \`address\` | Av. Siempreviva 742, CABA (solo la usa fuzzy) |
 | \`socials\` | [{ "platform": "instagram", "handle": "@mariajose.demo" }] (solo la usa fuzzy) |
 

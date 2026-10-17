@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.196] - 2026-10-17
+
+### Fixed — API: independent review of 2.56.195
+
+- **A call that saved and then crashed can be recovered**: void finds it (it only
+  looked at successful calls), so its `externalId` is freed as the docs say. A crash
+  that only created the profile is released: the retry finds that profile and adds
+  the activity to it.
+- **No duplicate after a dead worker**: what a saving call has done (profile,
+  activity) is written onto its log row the moment it happens, not at the end.
+- **A refused call (4xx) no longer holds its `externalId`.**
+- **Looking up a past call** stores no copy of its answer (it would restart the
+  90-day clock on that person data) and never returns another look-up.
+- **Fewer queries**: profile summaries are read in batches (a 50-result fuzzy call
+  made ~150 extra queries).
+- Fail closed also when the rescuer's country or the identifier search can't be
+  read (`503`), instead of guessing.
+- A dry run checks the `externalId` like a real call (replay / 409).
+- Retries match even with a field sent as `null` or spaces around a value.
+- Example documents are clearly fictitious (99.xxx.xxx). Staging demo people need a
+  reset (Admin → API → «Reiniciar personas de ejemplo»).
+
 ## [2.56.195] - 2026-10-17
 
 ### Changed — API (flag off in production): easier to use and to troubleshoot

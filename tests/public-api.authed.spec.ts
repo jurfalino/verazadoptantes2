@@ -398,6 +398,27 @@ test.describe('public API v1', () => {
         expect((await v.json()).profileVoided).toBe(true);
     });
 
+    test('a call that saved and then crashed: the retry names it (partially_saved), voiding it frees the externalId', async () => {
+        const ext = `crash-${STAMP}`;
+        const body = { mode: 'exact', person: { fullName: NAME, email: EMAIL }, activity: { activityType: 'observation', externalId: ext } };
+        const first = await (await search(body)).json();
+        expect(first.saved.activityId).toBeTruthy();
+        // As if the worker had died after saving: the row says 500.
+        execD1(`UPDATE api_requests SET http_status = 500 WHERE id = '${first.requestId}'`);
+        const retry = await search(body);
+        expect(retry.status()).toBe(409);
+        expect((await retry.json()).error).toMatchObject({ code: 'partially_saved', originalRequestId: first.requestId, activityId: first.saved.activityId });
+        // The docs say: void it, then send again. Both must work.
+        const v = await api.post(`/api/v1/activities/${first.saved.activityId}/void`, { headers: auth() });
+        expect(v.status()).toBe(200);
+        const again = await search(body);
+        expect(again.status()).toBe(200);
+        const a = await again.json();
+        expect(a.replayed).toBeUndefined();
+        expect(a.saved.activityId).not.toBe(first.saved.activityId);
+        await api.post(`/api/v1/activities/${a.saved.activityId}/void`, { headers: auth() });
+    });
+
     test('void: only once; the API-created profile goes only when nothing is left on it', async () => {
         const first = await api.post(`/api/v1/activities/${secondRecordId}/void`, { headers: auth() });
         expect(first.status()).toBe(200);
