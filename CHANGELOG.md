@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.191] - 2026-10-17
+
+### Changed — API docs: exact-search scenarios, each with the request that leads to it
+
+The answer examples (5★…1★, alerts, ambiguous) stood alone. Now each is a scenario:
+**what is registered** in BuenAdoptante, the **exact request** you send, the
+**answer** you get and **why**. 11 scenarios: 5★ (and a new email added), 4★,
+3★ (a document and a shorter name), 2★ possible duplicate, 1★ with alerts, never
+rated, a family phone shared with someone 1★, unknown, the phone of someone else,
+two profiles with the same name and email, and a dry run. The answers are worked
+out with the API's own decision rules, so request and answer can't disagree.
+
 ## [2.56.190] - 2026-10-16
 
 ### Fixed — e2e: a database read in a test no longer fails on «database is locked»

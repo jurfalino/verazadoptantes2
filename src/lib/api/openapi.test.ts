@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildOpenApi, responseExamples, REQUEST_EXAMPLES } from './openapi';
+import { buildOpenApi, REQUEST_EXAMPLES } from './openapi';
+import { exactScenarios } from './docScenarios';
 import { checkSearchRules, exactResponseSchema, searchRequestSchema } from './schemas';
 import { dryRunAllowed } from './handler';
 
@@ -30,13 +31,18 @@ describe('buildOpenApi', () => {
         expect(codes).toEqual(expect.arrayContaining(['activity_required', 'form_content_requires_adoption_request', 'idempotency_key_required', 'dry_run_not_allowed']));
     });
 
-    it('every example is written out in the guide, not only in the explorer\'s dropdown', () => {
+    it('the guide writes out every request example and every exact scenario: registered, request, answer, why', () => {
         const guide: string = doc.info.description;
-        expect(guide).toContain('## Ejemplos');
-        for (const e of Object.values(REQUEST_EXAMPLES)) expect(guide).toContain(`### Pedido — ${e.summary}`);
-        for (const e of Object.values(responseExamples('https://staging.buenadoptante.org'))) expect(guide).toContain(`### Respuesta — ${e.summary}`);
-        // One answer per rating level, 5★ down to not rated.
-        for (const level of [5, 4, 3, 2, 1, 0]) expect(guide).toContain(`"ratingLevel": ${level}`);
+        for (const e of Object.values(REQUEST_EXAMPLES)) expect(guide).toContain(`### ${e.summary}`);
+        const scenarios = exactScenarios('https://staging.buenadoptante.org');
+        scenarios.forEach((sc, i) => {
+            const at = guide.indexOf(`### ${i + 1}. ${sc.title}`);
+            expect(at, sc.key).toBeGreaterThan(-1);
+            const section = guide.slice(at, guide.indexOf('### ', at + 4) === -1 ? undefined : guide.indexOf('### ', at + 4));
+            for (const part of ['**Qué hay registrado:**', '**Pedido**', '**Respuesta**', '**Por qué:**']) expect(section, `${sc.key} ${part}`).toContain(part);
+            expect(section).toContain(JSON.stringify(sc.request, null, 2));
+            expect(section).toContain(JSON.stringify(sc.response, null, 2));
+        });
     });
 
     it('the dry-run header is not pre-filled into generated requests (no enum/const/example)', () => {
@@ -53,9 +59,9 @@ describe('buildOpenApi', () => {
     });
 
     it('every request example is a valid request (schema and rules)', () => {
-        const examples = doc.paths['/api/v1/search'].post.requestBody.content['application/json'].examples;
+        const examples = doc.paths['/api/v1/search'].post.requestBody.content['application/json'].examples as Record<string, { value: unknown }>;
         expect(Object.keys(examples)).toEqual(expect.arrayContaining(['minimal', 'complete_request', 'complete_adoption']));
-        for (const [name, ex] of Object.entries(examples) as Array<[string, { value: unknown }]>) {
+        for (const [name, ex] of Object.entries(examples)) {
             const parsed = searchRequestSchema.safeParse(ex.value);
             expect(parsed.success, name).toBe(true);
             expect(checkSearchRules(parsed.data!), name).toBeNull();
@@ -64,18 +70,36 @@ describe('buildOpenApi', () => {
         expect(examples.minimal.value).toEqual({ mode: 'exact', person: { fullName: expect.any(String), phone: expect.any(String) }, activity: { activityType: 'adoption_request' } });
     });
 
-    it('every response example matches the response schema, and they cover each rating and alert case', () => {
-        const ex = responseExamples('https://buenadoptante.org');
-        for (const [name, e] of Object.entries(ex)) expect(exactResponseSchema.safeParse(e.value).success, name).toBe(true);
-        const labels = new Set(Object.values(ex).map(e => (e.value as { risk: { worstRating: { ratingLabel: string } } }).risk.worstRating.ratingLabel));
-        expect([...labels]).toEqual(expect.arrayContaining(['not_rated', 'dangerous', 'poor', 'average', 'good', 'excellent']));
-        const flags = new Set(Object.values(ex).flatMap(e => (e.value as { risk: { flags: string[] } }).risk.flags));
-        expect([...flags]).toEqual(expect.arrayContaining(['inaccurate', 'too_many_requests', 'too_many_adoptions', 'possible_duplicate', 'duplicate']));
-        expect(Object.values(ex).map(e => (e.value as { result: string }).result)).toEqual(expect.arrayContaining(['found', 'not_found', 'ambiguous']));
+    it('scenarios: each request is a valid exact request and each answer a valid exact answer', () => {
+        for (const sc of exactScenarios('https://buenadoptante.org')) {
+            const parsed = searchRequestSchema.safeParse(sc.request);
+            expect(parsed.success, sc.key).toBe(true);
+            expect(checkSearchRules(parsed.data!), sc.key).toBeNull();
+            expect(parsed.data!.mode).toBe('exact');
+            expect(exactResponseSchema.safeParse(sc.response).success, sc.key).toBe(true);
+        }
     });
 
-    it('the guide covers every search field', () => {
-        for (const f of ['fullName', 'email', 'phone', 'documentId', 'address', 'socials']) expect(doc.info.description).toContain(f);
+    it('scenarios cover every rating level, every result and every alert', () => {
+        type R = { result: string; reason?: string; profile?: { ratingLevel: number }; risk: { worstRating: { ratingLevel: number }; flags: string[] }; activity?: unknown };
+        const rs = exactScenarios('https://buenadoptante.org').map(sc => sc.response as unknown as R);
+        const foundLevels = rs.filter(r => r.result === 'found').map(r => r.profile!.ratingLevel);
+        expect(foundLevels).toEqual(expect.arrayContaining([5, 4, 3, 2, 1, 0]));
+        expect(rs.map(r => r.reason ?? r.result)).toEqual(expect.arrayContaining(['found', 'not_found', 'name_mismatch', 'multiple_profiles']));
+        expect([...new Set(rs.flatMap(r => r.risk.flags))]).toEqual(expect.arrayContaining(['inaccurate', 'too_many_requests', 'too_many_adoptions', 'possible_duplicate', 'duplicate']));
+    });
+
+    it('scenarios say what each one claims (spot checks against the decision rules)', () => {
+        const by = Object.fromEntries(exactScenarios('https://buenadoptante.org').map(sc => [sc.key, sc.response as Record<string, any>])); // eslint-disable-line @typescript-eslint/no-explicit-any
+        expect(by.five_stars.activity.contactsAdded).toEqual(['email']);           // the email was new
+        expect(by.three_stars.profile.matchedOn).toEqual(['documentId']);          // "Jorge Ramírez" ~ "Jorge Luis Ramírez"
+        expect(by.shared_phone.result).toBe('found');
+        expect(by.shared_phone.otherMatches.count).toBe(1);
+        expect(by.shared_phone.risk.worstRating.ratingLevel).toBe(1);              // the relative's 1★ shows in risk
+        expect(by.name_mismatch.activity.profileCreated).toBe(true);
+        expect(by.multiple_profiles.activity.profileId).toBe('p_laura_a');         // email AND phone match
+        expect(by.not_found.activity.profileCreated).toBe(true);
+        expect(by.dry_run.activity).toBeUndefined();
     });
 });
 

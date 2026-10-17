@@ -3,6 +3,7 @@
  * schemas the routes validate with (src/lib/api/schemas.ts).
  */
 import { z } from 'zod';
+import { exactScenarios } from './docScenarios';
 import {
     errorResponseSchema, contractResponseSchema, exactResponseSchema, fuzzyResponseSchema, meResponseSchema,
     searchRequestSchema, voidResponseSchema,
@@ -63,7 +64,7 @@ Podés enviar cualquiera de estos datos de la persona:
 
 \`profile.flags\` puede traer además \`verified_identity\` y \`verified_address\` (identidad o domicilio verificados): son buenas señales y por eso no aparecen en \`risk\`.
 
-Al final de esta página, en **Ejemplos**, hay una respuesta para cada calificación (5★ a 1★ y sin calificar) y para cada situación con alertas.
+Más abajo, en **Búsqueda exacta: qué pedido da cada respuesta**, hay un escenario por cada calificación (5★ a 1★ y sin calificar) y por cada situación con alertas: qué hay registrado, el pedido exacto y la respuesta.
 
 **\`mode: "fuzzy"\`**: la misma búsqueda de la página de inicio, con cualquier combinación de campos. Devuelve una lista ordenada por relevancia. No registra nada.
 
@@ -87,7 +88,7 @@ curl -X POST https://buenadoptante.org/api/v1/search \\
   -d '{"mode":"exact","person":{"fullName":"María José Pérez","phone":"11 6462-2274"},"activity":{"activityType":"adoption_request"}}'
 \`\`\`
 
-Un pedido completo manda todos los datos que tengas: más datos de contacto ayudan a encontrar a la persona aunque haya cambiado de teléfono. Ver **Ejemplos** al final de esta página: una solicitud completa (con las respuestas de tu formulario) y una adopción completa (con los datos del animal).
+Un pedido completo manda todos los datos que tengas: más datos de contacto ayudan a encontrar a la persona aunque haya cambiado de teléfono. Ver **Ejemplos de pedidos** más abajo: una solicitud completa (con las respuestas de tu formulario) y una adopción completa (con los datos del animal).
 
 **Mandá siempre el header \`Idempotency-Key\`** (cualquier texto único, por ejemplo un UUID): si reintentás la misma llamada, devuelve la misma respuesta en vez de registrar dos veces.
 
@@ -172,143 +173,27 @@ export const REQUEST_EXAMPLES = {
     },
 };
 
-// ── Example answers: one per rating / alert situation a partner must handle ──
+const json = (value: unknown) => `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``;
 
-type Level = 0 | 1 | 2 | 3 | 4 | 5;
-const LABELS = ['not_rated', 'dangerous', 'poor', 'average', 'good', 'excellent'] as const;
-const rating = (avg: number | null) => {
-    const level = (avg === null ? 0 : Math.min(5, Math.max(1, Math.round(avg)))) as Level;
-    return { rating: avg, ratingLevel: level, ratingLabel: LABELS[level] };
-};
-const noRisk = { worstRating: rating(null), flags: [] as string[], profilesMatched: 0 };
-
-/** Exported for the test that checks every example against the response schema. */
-export function responseExamples(origin: string) {
-    const url = (id: string) => `${origin}/adopter/${id}`;
-    const profile = (id: string, avg: number | null, extra: Record<string, unknown> = {}) => ({
-        profileId: id, url: url(id), ...rating(avg), matchedOn: ['phone'], nameMatchedAs: 'profile',
-        flags: [], tooManyRequests: null, tooManyAdoptions: null,
-        records: { adoption_request: 2, adoption: 1 }, lastRecordAt: '2026-08-30', ...extra,
-    });
-    const saved = (id: string, created = false, contactsAdded: string[] = []) => ({
-        activityId: 'r_9f3c1e', activityUrl: `${url(id)}?record=r_9f3c1e`, profileId: id, profileUrl: url(id), profileCreated: created, contactsAdded,
-    });
-    return {
-        found_excellent: {
-            summary: 'found — persona conocida, 5★ excelente, sin alertas',
-            value: {
-                requestId: 'b1d0c8e2-0000-4000-8000-000000000001', mode: 'exact', result: 'found',
-                profile: profile('a_ok', 4.8, { flags: ['verified_identity'] }),
-                risk: { worstRating: rating(4.8), flags: [], profilesMatched: 1 },
-                activity: saved('a_ok', false, ['email']),
-            },
-        },
-        found_good: {
-            summary: 'found — 4★ bueno, identidad verificada',
-            value: {
-                requestId: 'b1d0c8e2-0000-4000-8000-000000000011', mode: 'exact', result: 'found',
-                profile: profile('a_good', 4.1, { flags: ['verified_identity'], matchedOn: ['email'] }),
-                risk: { worstRating: rating(4.1), flags: [], profilesMatched: 1 },
-                activity: saved('a_good'),
-            },
-        },
-        found_average: {
-            summary: 'found — 3★ regular: miralo con más cuidado',
-            value: {
-                requestId: 'b1d0c8e2-0000-4000-8000-000000000012', mode: 'exact', result: 'found',
-                profile: profile('a_avg', 3.2, { records: { adoption_request: 3, adoption: 1, follow_up: 1 } }),
-                risk: { worstRating: rating(3.2), flags: [], profilesMatched: 1 },
-                activity: saved('a_avg'),
-            },
-        },
-        found_poor: {
-            summary: 'found — 2★ malo, posible duplicado de otro perfil',
-            value: {
-                requestId: 'b1d0c8e2-0000-4000-8000-000000000013', mode: 'exact', result: 'found',
-                profile: profile('a_poor', 2.0, { flags: ['possible_duplicate'], records: { adoption_request: 2, returned_pet: 1 } }),
-                risk: { worstRating: rating(2.0), flags: ['possible_duplicate'], profilesMatched: 1 },
-                activity: saved('a_poor'),
-            },
-        },
-        found_dangerous: {
-            summary: 'found — 1★ peligroso, con alertas: no entregues el animal',
-            value: {
-                requestId: 'b1d0c8e2-0000-4000-8000-000000000002', mode: 'exact', result: 'found',
-                profile: profile('a_bad', 1.3, {
-                    matchedOn: ['phone', 'email'], flags: ['inaccurate'],
-                    tooManyRequests: { count: 4, periodDays: 30 },
-                    records: { adoption_request: 6, returned_pet: 2, observation: 1 },
-                }),
-                risk: { worstRating: rating(1.3), flags: ['inaccurate', 'too_many_requests'], profilesMatched: 1 },
-                activity: saved('a_bad'),
-            },
-        },
-        found_shared_phone_risk: {
-            summary: 'found — la persona está bien (4★), pero su teléfono también es de alguien 1★: risk lo muestra',
-            value: {
-                requestId: 'b1d0c8e2-0000-4000-8000-000000000003', mode: 'exact', result: 'found',
-                profile: profile('a_ok', 4.2),
-                otherMatches: { count: 1, urls: [url('a_relative')], worstRating: rating(1) },
-                risk: { worstRating: rating(1), flags: ['too_many_adoptions'], profilesMatched: 2 },
-                activity: saved('a_ok'),
-            },
-        },
-        found_not_rated: {
-            summary: 'found — conocida pero nunca calificada (not_rated): no es buena ni mala señal',
-            value: {
-                requestId: 'b1d0c8e2-0000-4000-8000-000000000004', mode: 'exact', result: 'found',
-                profile: profile('a_new', null, { records: { adoption_request: 1 }, lastRecordAt: '2026-09-02' }),
-                risk: { worstRating: rating(null), flags: [], profilesMatched: 1 },
-                activity: saved('a_new'),
-            },
-        },
-        not_found: {
-            summary: 'not_found — nadie la registró: se crea su perfil con esta actividad',
-            value: {
-                requestId: 'b1d0c8e2-0000-4000-8000-000000000005', mode: 'exact', result: 'not_found',
-                risk: noRisk,
-                activity: saved('a_created', true),
-            },
-        },
-        ambiguous_name_mismatch: {
-            summary: 'ambiguous — el teléfono es de otra persona (otro nombre), calificada 2★',
-            value: {
-                requestId: 'b1d0c8e2-0000-4000-8000-000000000006', mode: 'exact', result: 'ambiguous',
-                reason: 'name_mismatch', candidates: 1, candidateUrls: [url('a_other')], worstRating: rating(2),
-                risk: { worstRating: rating(2), flags: ['possible_duplicate'], profilesMatched: 1 },
-                activity: saved('a_created2', true),
-            },
-        },
-        ambiguous_multiple_profiles: {
-            summary: 'ambiguous — el email está en dos perfiles con el mismo nombre; se guardó en el que mejor coincide',
-            value: {
-                requestId: 'b1d0c8e2-0000-4000-8000-000000000007', mode: 'exact', result: 'ambiguous',
-                reason: 'multiple_profiles', candidates: 2, candidateUrls: [url('a_one'), url('a_two')], worstRating: rating(3),
-                risk: { worstRating: rating(3), flags: ['duplicate'], profilesMatched: 2 },
-                activity: saved('a_one'),
-            },
-        },
-        dry_run: {
-            summary: 'X-Dry-Run: 1 (solo staging) — la misma respuesta, sin activity: no se guardó nada',
-            value: {
-                requestId: 'b1d0c8e2-0000-4000-8000-000000000008', mode: 'exact', result: 'not_found',
-                risk: noRisk,
-            },
-        },
-    };
-}
-
-/** The "## Ejemplos" section of the guide: every request and answer example, written out. */
+/** The examples part of the guide: request examples, then every exact-search scenario written out. */
 export function examplesGuide(origin: string): string {
-    const block = (title: string, value: unknown) => `### ${title}\n\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``;
     const req = REQUEST_EXAMPLES as Record<string, { summary: string; value: unknown }>;
-    const res = responseExamples(origin) as Record<string, { summary: string; value: unknown }>;
     return [
-        '## Ejemplos',
-        'Pedidos a \`POST /api/v1/search\` (con \`Authorization\`, \`Content-Type: application/json\` e \`Idempotency-Key\`):',
-        ...Object.values(req).map(e => block(`Pedido — ${e.summary}`, e.value)),
-        'Respuestas (\`200\`). Mirá siempre \`risk\`: es la peor señal de **todos** los perfiles que coincidieron.',
-        ...Object.values(res).map(e => block(`Respuesta — ${e.summary}`, e.value)),
+        '## Ejemplos de pedidos',
+        'A \`POST /api/v1/search\`, con \`Authorization\`, \`Content-Type: application/json\` e \`Idempotency-Key\`.',
+        ...Object.values(req).map(e => `### ${e.summary}\n${json(e.value)}`),
+        '## Búsqueda exacta: qué pedido da cada respuesta',
+        'Cada escenario muestra qué hay registrado en BuenAdoptante, el pedido exacto que mandás y la respuesta que recibís. ' +
+        'Mirá siempre \`risk\`: es la peor señal de **todos** los perfiles que coincidieron con el email, teléfono o documento.',
+        ...exactScenarios(origin).map((sc, i) => [
+            `### ${i + 1}. ${sc.title}`,
+            `**Qué hay registrado:** ${sc.registered}`,
+            `**Pedido**${sc.dryRun ? ' (con el header \`X-Dry-Run: 1\`)' : ''}`,
+            json(sc.request),
+            '**Respuesta** (\`200\`)',
+            json(sc.response),
+            `**Por qué:** ${sc.why}`,
+        ].join('\n\n')),
     ].join('\n\n');
 }
 
@@ -353,14 +238,17 @@ export function buildOpenApi(origin: string) {
                         content: {
                             'application/json': {
                                 schema: schema(searchRequestSchema, 'input'),
-                                examples: REQUEST_EXAMPLES,
+                                examples: {
+                                    ...REQUEST_EXAMPLES,
+                                    ...Object.fromEntries(exactScenarios(origin).map((sc, i) => [`scenario_${sc.key}`, { summary: `Escenario ${i + 1}: ${sc.title}`, value: sc.request }])),
+                                },
                             },
                         },
                     },
                     responses: {
                         '200': {
                             description: 'exact → found / not_found / ambiguous; fuzzy → ranked results',
-                            content: { 'application/json': { schema: { oneOf: [schema(exactResponseSchema), schema(fuzzyResponseSchema)] }, examples: responseExamples(origin) } },
+                            content: { 'application/json': { schema: { oneOf: [schema(exactResponseSchema), schema(fuzzyResponseSchema)] }, examples: Object.fromEntries(exactScenarios(origin).map((sc, i) => [`scenario_${sc.key}`, { summary: `Escenario ${i + 1}: ${sc.title}`, value: sc.response }])) } },
                         },
                         ...errors,
                     },
