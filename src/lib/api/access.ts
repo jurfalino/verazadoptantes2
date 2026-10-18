@@ -8,7 +8,7 @@
  */
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { apiAccess, apiKeys } from '@/db/schema';
-import { isAdminAsync } from '@/config/admins';
+import { isAdminAsync, isAdminAsyncStrict } from '@/config/admins';
 import { logger } from '@/lib/logger';
 import { maskEmail } from '@/lib/dates';
 
@@ -111,6 +111,7 @@ export type KeyRefusal = 'access_blocked' | 'access_not_approved';
 export async function keyRefusal(db: Db, key: { ownerEmail: string; createdBy: string | null }): Promise<KeyRefusal | null> {
     const status = (await getAccess(db, key.ownerEmail)).status;
     if (status === 'blocked') return 'access_blocked';
-    if (key.createdBy === key.ownerEmail && status !== 'approved' && !(await isAdminAsync(key.ownerEmail))) return 'access_not_approved';
+    // Strict: a failed admin lookup throws (→ 503) instead of reading as "not admin" (→ a wrong 403).
+    if (key.createdBy === key.ownerEmail && status !== 'approved' && !(await isAdminAsyncStrict(key.ownerEmail))) return 'access_not_approved';
     return null;
 }

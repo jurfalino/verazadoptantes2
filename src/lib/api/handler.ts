@@ -392,7 +392,14 @@ export async function handleApiCall(
         return json(401, errorBody(requestId, origin, 'unauthorized', unauthorizedMessage(header, secret, new URL(request.url).host)), requestId,
             { 'WWW-Authenticate': 'Bearer' });
     }
-    const refusal = await keyRefusal(db, key);
+    let refusal: Awaited<ReturnType<typeof keyRefusal>>;
+    try {
+        refusal = await keyRefusal(db, key);
+    } catch (e) {
+        // Fail closed, but as a proper API answer: never let a call through we could not check.
+        const errorId = logger.error('api: access check failed', e, { requestId, endpoint, keyId: key.id });
+        return json(503, errorBody(requestId, origin, 'temporarily_unavailable', 'we could not check this key right now; retry in a minute', errorId), requestId, { 'Retry-After': '60' });
+    }
     if (refusal) {
         logger.info('api: key refused by access status', { requestId, endpoint, keyId: key.id, refusal });
         return json(403, errorBody(requestId, origin, refusal, refusal === 'access_blocked'

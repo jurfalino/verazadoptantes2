@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.203] - 2026-10-18
+
+### Fixed — API access check failures; CI leg for /developers
+
+- If the per-call access check can't reach the database, the partner gets
+  `503 temporarily_unavailable` (with requestId and errorId, logged) instead of a bare 500;
+  a failed admin lookup no longer reads as "not approved".
+- Admin searches of the call list are audited even when they find nothing.
+- Retention also keeps calls that created a profile (whose record then failed).
+- CI: /developers and the access-approval flow moved to their own file and leg
+  (`public-api-developers.authed.spec.ts`, @leg-apidev). 2.56.201–202 never deployed: the
+  apidocs leg's dev server restarted on memory and the admin pages' requests failed.
+  Ships 2.56.201–202.
+
 ## [2.56.202] - 2026-10-17
 
 ### Fixed — API access review findings (2.56.201)

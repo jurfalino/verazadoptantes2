@@ -40,7 +40,8 @@ export async function listResponse(request: Request, actor: string, owner: strin
             owner ? listKeys(db, owner) : Promise.resolve(undefined),
         ]);
         // Admin rows carry who was searched (person data) and `q` searches it: audited like the detail view.
-        if (!owner && page.rows.some(r => r.searched)) {
+        // A search that finds nothing is an answer too ("nobody looked María up"): audited whenever q is set.
+        if (!owner && (q.get('q') || page.rows.some(r => r.searched))) {
             logAudit({ userEmail: actor, action: 'api_calls_viewed', details: {
                 query: q.get('q') || null, ownerFilter: q.get('owner') || null, rows: page.rows.length, before: q.get('before') || null,
             } });
