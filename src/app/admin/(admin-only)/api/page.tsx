@@ -73,7 +73,7 @@ function AdminApiTabs() {
                 </p>
             </header>
 
-            <nav className="flex gap-1 border-b border-stone-200 dark:border-stone-700 overflow-x-auto" role="tablist" aria-label={t('apiAdmin.title')}>
+            <nav className="flex gap-1 border-b border-stone-200 dark:border-stone-700 overflow-x-auto overflow-y-hidden" role="tablist" aria-label={t('apiAdmin.title')}>
                 {TABS.map(k => (
                     <button key={k} type="button" role="tab" aria-selected={tab === k}
                         className={`px-4 py-2 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px ${tab === k ? 'border-current' : 'border-transparent text-stone-500'}`}

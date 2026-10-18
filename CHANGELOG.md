@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.204] - 2026-10-18
+
+### Fixed — Admin → API: stray scrollbar beside the tabs
+
+The active tab's underline overlapped the tab bar by 1px, so the bar showed a vertical
+scrollbar on desktop. Found checking 2.56.203 on staging (no overflow at 1739px or 390px).
+
 ## [2.56.203] - 2026-10-18
 
 ### Fixed — API access check failures; CI leg for /developers
