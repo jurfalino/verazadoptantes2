@@ -277,28 +277,31 @@ jobs:
           - group: user-3
             projects: --project=user --shard=3/3
           - group: authed-1
-            projects: --project=authed --shard=1/8 --grep-invert @own-leg
+            projects: --project=authed --shard=1/8 --grep-invert @leg-
           - group: authed-2
-            projects: --project=authed --shard=2/8 --grep-invert @own-leg
+            projects: --project=authed --shard=2/8 --grep-invert @leg-
           - group: authed-3
-            projects: --project=authed --shard=3/8 --grep-invert @own-leg
+            projects: --project=authed --shard=3/8 --grep-invert @leg-
           - group: authed-4
-            projects: --project=authed --shard=4/8 --grep-invert @own-leg
+            projects: --project=authed --shard=4/8 --grep-invert @leg-
           - group: authed-5
-            projects: --project=authed --shard=5/8 --grep-invert @own-leg
+            projects: --project=authed --shard=5/8 --grep-invert @leg-
           - group: authed-6
-            projects: --project=authed --shard=6/8 --grep-invert @own-leg
+            projects: --project=authed --shard=6/8 --grep-invert @leg-
           - group: authed-7
-            projects: --project=authed --shard=7/8 --grep-invert @own-leg
+            projects: --project=authed --shard=7/8 --grep-invert @leg-
           - group: authed-8
-            projects: --project=authed --shard=8/8 --grep-invert @own-leg
-          # Specs tagged @own-leg run alone on a fresh dev server: view-as opens
+            projects: --project=authed --shard=8/8 --grep-invert @leg-
+          # Specs tagged @leg-<name> run alone on a fresh dev server (2026-10-17:
+          # public-api grew past what a shared server holds, @leg-api). view-as opens
           # many pages and, sharing the last leg with the sheet-import specs,
           # died on memory restarts on 2.56.181, 186 and 191 whatever the leg
           # count (shards fill in file order, so they kept landing together).
-          # The other authed legs exclude the tag, so each test runs exactly once.
-          - group: authed-own-leg
-            projects: --project=authed --grep @own-leg
+          # The other authed legs exclude every @leg- tag, so each test runs exactly once.
+          - group: authed-viewas
+            projects: --project=authed --grep @leg-viewas
+          - group: authed-api
+            projects: --project=authed --grep @leg-api
           - group: rest
             projects: --project=unauthed --project=mobile
     # Each group is now ~5-12 minutes, but the headroom stays: a timeout

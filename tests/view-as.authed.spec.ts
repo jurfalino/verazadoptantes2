@@ -32,9 +32,9 @@ async function exitViewing(page: Page) {
     await expect(banner(page)).toHaveCount(0);
 }
 
-// @own-leg: CI runs this file in a leg of its own (ci.yml) — it opens many pages
+// @leg-viewas: CI runs this file in a leg of its own (ci.yml) — it opens many pages
 // and kept dying on the shared dev server's memory restarts.
-test.describe.serial('admin view as', { tag: '@own-leg' }, () => {
+test.describe.serial('admin view as', { tag: '@leg-viewas' }, () => {
     test('shows the viewed user\'s own settings and refuses to save', async ({ page }) => {
         const adminName = await settingsName(page);
         await startViewingTestUser(page);
@@ -109,7 +109,7 @@ test.describe.serial('admin view as', { tag: '@own-leg' }, () => {
     });
 });
 
-test('a regular user cannot start viewing as someone, even by posting the session update', { tag: '@own-leg' }, async ({ browser }) => {
+test('a regular user cannot start viewing as someone, even by posting the session update', { tag: '@leg-viewas' }, async ({ browser }) => {
     const secret = process.env.AUTH_SECRET;
     test.skip(!secret, 'AUTH_SECRET is required to sign a test session');
     const { encode } = await import('next-auth/jwt');

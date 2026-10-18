@@ -31,7 +31,9 @@ const ADMIN_EMAIL = 'gatitosolivos@gmail.com';
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('public API v1', () => {
+// @leg-api: CI runs this file in a leg of its own (ci.yml) — a long serial flow
+// (example people, docs replay, /developers) that no longer fits a shared dev server.
+test.describe('public API v1', { tag: '@leg-api' }, () => {
     let secret = '';
     let keyId = '';
     let api: APIRequestContext;

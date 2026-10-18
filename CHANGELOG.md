@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.199] - 2026-10-17
+
+### Changed — CI: the API e2e file runs in a leg of its own
+
+2.56.197–198 never deployed: the public-api spec (now with the example people, the
+docs replay and /developers) made its shared leg's dev server restart on memory
+mid-run, failing whichever test was in flight. Tags are now `@leg-<name>`:
+`@leg-viewas` and `@leg-api` each get a leg; the other legs exclude `@leg-`
+(173 authed tests = 142 + 5 + 26). Ships 2.56.197–198 unchanged (/developers).
+
 ## [2.56.198] - 2026-10-17
 
 ### Fixed — e2e: /developers test waits for the page to load
