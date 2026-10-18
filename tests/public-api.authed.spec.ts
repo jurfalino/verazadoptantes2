@@ -10,7 +10,7 @@ import { execSync } from 'child_process';
  * keys made here, on localhost, are test keys.
  *
  * ENABLE_PUBLIC_API is off in the seed; this file turns it on for itself and
- * is the ONLY spec that touches it (serial). Every person it creates is unique
+ * and public-api-docs.authed.spec.ts are the only specs that touch it (each serial, each in its own CI leg). Every person it creates is unique
  * to the run (letters-only stamp: digits in a name would tokenize as a phone).
  */
 function execD1(sql: string): string {
@@ -31,9 +31,9 @@ const ADMIN_EMAIL = 'gatitosolivos@gmail.com';
 
 test.describe.configure({ mode: 'serial' });
 
-// @leg-api: CI runs this file in a leg of its own (ci.yml) — a long serial flow
+// @leg-apicore: CI runs this file in a leg of its own (ci.yml) — a long serial flow
 // (example people, docs replay, /developers) that no longer fits a shared dev server.
-test.describe('public API v1', { tag: '@leg-api' }, () => {
+test.describe('public API v1', { tag: '@leg-apicore' }, () => {
     let secret = '';
     let keyId = '';
     let api: APIRequestContext;
@@ -504,113 +504,6 @@ test.describe('public API v1', { tag: '@leg-api' }, () => {
         const capped = await search({ mode: 'fuzzy', person: { fullName: NAME } });
         expect(capped.status()).toBe(429);
         expect(Number(capped.headers()['retry-after'])).toBeGreaterThan(0);
-    });
-
-    test('admin: the rescuer email suggests matching users; picking one fills the field', async ({ page }) => {
-        await page.goto('/admin/api');
-        const email = page.getByTestId('api-owner-email');
-        await email.fill('gatitos');
-        const options = page.getByTestId('api-owner-options');
-        await expect(options).toContainText(ADMIN_EMAIL, { timeout: 30000 });
-        await options.getByRole('button').filter({ hasText: ADMIN_EMAIL }).first().click();
-        await expect(email).toHaveValue(ADMIN_EMAIL);
-        // The key name says what it is for.
-        await expect(page.locator('#api-key-name-hint')).toBeVisible();
-    });
-
-    test('admin: «Regenerar» shows a new secret once; the old one stops working, the key keeps its history', async ({ page }) => {
-        const oldSecret = secret;
-        expect((await api.get('/api/v1/me', { headers: auth() })).status()).toBe(200);
-        await page.goto('/admin/api');
-        const row = page.getByTestId('api-keys').locator('li').filter({ hasText: `E2E ${TAG}` });
-        await row.getByRole('button', { name: /^(Regenerar|Regenerate)$/ }).click();
-        await row.getByRole('button', { name: /Sí, regenerar|Yes, regenerate|Sim, regenerar/ }).click();
-        const box = page.getByTestId('api-new-secret');
-        await expect(box).toContainText(/Clave nueva|New key|Chave nova/, { timeout: 30000 });
-        const fresh = (await box.locator('code').textContent())?.trim() ?? '';
-        expect(fresh).toMatch(/^ba_test_[A-Za-z0-9]{43}$/);
-        expect(fresh).not.toBe(oldSecret);
-
-        expect((await api.get('/api/v1/me', { headers: { authorization: `Bearer ${oldSecret}` } })).status()).toBe(401);
-        secret = fresh;
-        const me = await api.get('/api/v1/me', { headers: auth() });
-        expect(me.status()).toBe(200);
-        // Same key row: its transactions are still listed under it.
-        const tx = await page.request.get(`/api/admin/api-requests?keyId=${keyId}`);
-        expect(((await tx.json()).rows as unknown[]).length).toBeGreaterThan(5);
-    });
-
-    test('the documented scenarios: with the demo people loaded, every documented call returns its documented answer', async ({ page, baseURL }) => {
-        const seeded = await page.request.post('/api/admin/api-demo');
-        expect(seeded.status()).toBe(200);
-        expect((await seeded.json()).profiles).toBeGreaterThan(10);
-        // Loading twice resets, never duplicates.
-        expect((await page.request.post('/api/admin/api-demo')).status()).toBe(200);
-        // What the docs page serves: built with THIS environment's alert thresholds; off production every call is a dry run.
-        const spec = await (await api.get('/api/v1/openapi.json')).json();
-        const op = spec.paths['/api/v1/search'].post;
-        const requests = op.requestBody.content['application/json'].examples as Record<string, { value: Record<string, unknown> }>;
-        const answers = op.responses['200'].content['application/json'].examples as Record<string, { value: Record<string, unknown> }>;
-        const keys = Object.keys(answers).filter(k => k.startsWith('scenario_'));
-        expect(keys.length).toBeGreaterThanOrEqual(11);
-        for (const key of keys) {
-            const res = await api.post('/api/v1/search', { data: requests[key].value, headers: auth({ 'x-dry-run': '1' }) });
-            expect(res.status(), key).toBe(200);
-            const got = await res.json();
-            expect({ ...got, requestId: 'x' }, key).toEqual({ ...answers[key].value, requestId: 'x' });
-        }
-        void baseURL;
-    });
-
-    test('/developers: sign in, accept the terms, create your own key (shown once), use it, revoke it', async ({ page, browser, baseURL }) => {
-        // Signed out: the page explains and asks to sign in.
-        const anon = await browser.newContext({ storageState: { cookies: [], origins: [] } });
-        const anonPage = await anon.newPage();
-        await anonPage.goto(`${baseURL}/developers`);
-        await expect(anonPage.getByTestId('developers-sign-in')).toBeVisible({ timeout: 30000 });
-        await anon.close();
-
-        // A clean slate for this account, so a rerun behaves like the first run.
-        execD1(`DELETE FROM api_terms_acceptances WHERE user_email = '${ADMIN_EMAIL}'`);
-        execD1(`UPDATE api_keys SET revoked_at = strftime('%s','now') WHERE owner_email = '${ADMIN_EMAIL}' AND created_by = owner_email AND revoked_at IS NULL`);
-        await page.goto('/developers');
-        await expect(page.getByTestId('developers-page')).toBeVisible({ timeout: 30000 });
-        // The page loads the person's keys and usage first (slow on CI's dev server).
-        await expect(page.getByTestId('developers-env')).toContainText(/staging/, { timeout: 30000 });
-        // No key before the terms.
-        expect((await page.request.post('/api/my-api/keys', { data: { name: 'x' } })).status()).toBe(403);
-        await page.getByTestId('developers-terms-check').check({ timeout: 30000 });
-        await page.getByTestId('developers-terms-accept').click();
-        await page.getByTestId('developers-key-name').fill(`Mi formulario ${TAG}`, { timeout: 30000 });
-        await page.getByTestId('developers-create').click();
-        const shown = (await page.getByTestId('developers-secret-value').textContent({ timeout: 30000 }))!.trim();
-        expect(shown).toMatch(/^ba_test_/);
-        // It works, with the self-service limits.
-        const me = await (await api.get('/api/v1/me', { headers: { authorization: `Bearer ${shown}` } })).json();
-        expect(me.caps).toEqual({ exact: 100, fuzzy: 50 });
-        // Shown once: after a reload only the prefix is there.
-        await page.reload();
-        await expect(page.getByTestId('developers-key').filter({ hasText: `Mi formulario ${TAG}` })).toBeVisible({ timeout: 30000 });
-        await expect(page.getByTestId('developers-secret')).toHaveCount(0);
-        // Revoke from the page: it stops working.
-        await page.getByTestId('developers-key').filter({ hasText: `Mi formulario ${TAG}` }).getByTestId('developers-revoke').click();
-        await page.getByTestId('developers-confirm').click();
-        await expect(page.getByTestId('developers-key').filter({ hasText: `Mi formulario ${TAG}` })).toContainText(/Revocada|Revoked|Revogada/, { timeout: 30000 });
-        expect((await api.get('/api/v1/me', { headers: { authorization: `Bearer ${shown}` } })).status()).toBe(401);
-    });
-
-    test('docs and spec are served; a revoked key stops working', async ({ page }) => {
-        const spec = await api.get('/api/v1/openapi.json');
-        expect((await spec.json()).paths['/api/v1/search']).toBeTruthy();
-        const docs = await api.get('/api/v1/docs');
-        expect(docs.headers()['content-type']).toContain('text/html');
-        expect(docs.headers()['content-security-policy']).toContain("connect-src 'self'");
-        // The pinned, integrity-checked explorer actually renders under that CSP.
-        await page.goto('/api/v1/docs');
-        await expect(page.getByText('BuenAdoptante API').first()).toBeVisible({ timeout: 30000 });
-
-        await page.request.patch(`/api/admin/api-keys/${keyId}`, { data: { revoke: true } });
-        expect((await api.get('/api/v1/me', { headers: auth() })).status()).toBe(401);
     });
 
     test('flag off → every endpoint answers 404 api_disabled', async () => {

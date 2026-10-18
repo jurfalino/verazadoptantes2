@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.200] - 2026-10-17
+
+### Changed — CI: the API e2e flow in two files and two legs
+
+2.56.199 still failed: the public-api spec alone restarted its leg's dev server on
+memory 3 times. Split in two: `public-api.authed.spec.ts` (@leg-apicore — searches,
+saves, voids, contracts, caps) and `public-api-docs.authed.spec.ts` (@leg-apidocs —
+admin pages, the documented scenarios, /developers, the docs page), each with its own
+key and leg. 175 authed tests = 142 + 5 + 21 + 7. Ships 2.56.197–199 (/developers).
+
 ## [2.56.199] - 2026-10-17
 
 ### Changed — CI: the API e2e file runs in a leg of its own

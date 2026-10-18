@@ -293,15 +293,17 @@ jobs:
           - group: authed-8
             projects: --project=authed --shard=8/8 --grep-invert @leg-
           # Specs tagged @leg-<name> run alone on a fresh dev server (2026-10-17:
-          # public-api grew past what a shared server holds, @leg-api). view-as opens
+          # public-api grew past what a shared server holds, @leg-apicore and @leg-apidocs). view-as opens
           # many pages and, sharing the last leg with the sheet-import specs,
           # died on memory restarts on 2.56.181, 186 and 191 whatever the leg
           # count (shards fill in file order, so they kept landing together).
           # The other authed legs exclude every @leg- tag, so each test runs exactly once.
           - group: authed-viewas
             projects: --project=authed --grep @leg-viewas
-          - group: authed-api
-            projects: --project=authed --grep @leg-api
+          - group: authed-apicore
+            projects: --project=authed --grep @leg-apicore
+          - group: authed-apidocs
+            projects: --project=authed --grep @leg-apidocs
           - group: rest
             projects: --project=unauthed --project=mobile
     # Each group is now ~5-12 minutes, but the headroom stays: a timeout
