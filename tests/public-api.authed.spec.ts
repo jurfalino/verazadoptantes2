@@ -573,12 +573,13 @@ test.describe('public API v1', () => {
         execD1(`UPDATE api_keys SET revoked_at = strftime('%s','now') WHERE owner_email = '${ADMIN_EMAIL}' AND created_by = owner_email AND revoked_at IS NULL`);
         await page.goto('/developers');
         await expect(page.getByTestId('developers-page')).toBeVisible({ timeout: 30000 });
-        await expect(page.getByTestId('developers-env')).toContainText(/staging/);
+        // The page loads the person's keys and usage first (slow on CI's dev server).
+        await expect(page.getByTestId('developers-env')).toContainText(/staging/, { timeout: 30000 });
         // No key before the terms.
         expect((await page.request.post('/api/my-api/keys', { data: { name: 'x' } })).status()).toBe(403);
-        await page.getByTestId('developers-terms-check').check();
+        await page.getByTestId('developers-terms-check').check({ timeout: 30000 });
         await page.getByTestId('developers-terms-accept').click();
-        await page.getByTestId('developers-key-name').fill(`Mi formulario ${TAG}`);
+        await page.getByTestId('developers-key-name').fill(`Mi formulario ${TAG}`, { timeout: 30000 });
         await page.getByTestId('developers-create').click();
         const shown = (await page.getByTestId('developers-secret-value').textContent({ timeout: 30000 }))!.trim();
         expect(shown).toMatch(/^ba_test_/);

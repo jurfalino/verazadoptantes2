@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.198] - 2026-10-17
+
+### Fixed — e2e: /developers test waits for the page to load
+
+2.56.197 never deployed: the /developers test checked the environment note with the
+default 5-second wait, and on CI's dev server the page's keys and usage load slower.
+Ships 2.56.197 unchanged.
+
 ## [2.56.197] - 2026-10-17
 
 ### Added — /developers: rescuers create their own API keys (API flag off in production)
