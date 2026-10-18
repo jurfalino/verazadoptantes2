@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.197] - 2026-10-17
+
+### Added — /developers: rescuers create their own API keys (API flag off in production)
+
+Jon, 2026-10-17: self-service, on a public page, not through an admin.
+- **/developers** explains the API, links the docs, and for a signed-in user: the API
+  terms (accepted once, versioned), their keys — create (the key is shown once),
+  regenerate, revoke — with today's usage, and their calls. 404 while the API is off.
+- **Who:** any signed-in user, after accepting the terms. **Limits** of a self-created
+  key: 100 exact / 50 fuzzy searches per day, up to 3 active self-created keys (an
+  admin can raise a key's limits). Admin → API marks them «creada por el rescatista».
+- The docs' quickstart and «Autenticación» say how to get a key; Settings → API links
+  to the page (also when there are no keys yet).
+- Migration 0088: `api_terms_acceptances`.
+
+### Changed — API
+
+- Ambiguous `candidates` and `otherMatches` come in a stable order (best match
+  first), never the database's row order.
+- «Personas de ejemplo» loads in a few seconds (was ~40 s): profiles are written in
+  parallel.
+
 ## [2.56.196] - 2026-10-17
 
 ### Fixed — API: independent review of 2.56.195

@@ -11,7 +11,7 @@ import { buildProfileSummaries, findIdentifierHits, ownerCountry, profileUrl, ra
 import { bestMatchFor, saveApiActivity } from './records';
 import { environmentForHost } from './keys';
 import { isExampleData } from './docScenarios';
-import { checkSearchRules, searchRequestSchema, type ApiRisk, type ExactResponse, type FuzzyResponse, saveActionOf, type ProfileSummary, type SearchRequest } from './schemas';
+import { checkSearchRules, searchRequestSchema, type ApiRisk, type ExactResponse, type FuzzyResponse, orderCandidates, saveActionOf, type ProfileSummary, type SearchRequest } from './schemas';
 
 /** The lowest rating among rated profiles; "not rated" only if none is. */
 function worstOf(ratings: Array<number | null | undefined>) {
@@ -110,17 +110,18 @@ async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiRes
     const summaries = await buildProfileSummaries(ctx.db, ids, ctx.origin, ctx.requestId, ctx.key.ownerEmail);
 
     const body: Omit<ExactResponse, 'requestId'> = { mode: 'exact', match: outcome.result, risk: riskOf([]), saved: { action: 'nothing_saved' } };
+    const matched = (id: string) => hits.matchedOn.get(id)?.length ?? 0;
     if (outcome.result === 'found') {
         const summary = summaries.get(outcome.profileId);
         if (!summary) throw new Error(`profile summary missing for ${outcome.profileId}`);
         body.profile = { ...summary, matchedOn: hits.matchedOn.get(outcome.profileId) ?? [], nameMatchedAs: outcome.nameMatchedAs };
         if (outcome.otherProfileIds.length) {
-            body.otherMatches = outcome.otherProfileIds.map(id => ({ profileId: id, url: profileUrl(ctx.origin, id) }));
+            body.otherMatches = orderCandidates(outcome.otherProfileIds.map(id => ({ profileId: id, url: profileUrl(ctx.origin, id) })), matched);
         }
     } else if (outcome.result === 'ambiguous') {
         const fits = new Map(outcome.compatible.map(c => [c.profileId, c.as]));
         body.reason = outcome.reason;
-        body.candidates = outcome.profileIds.map(id => ({ profileId: id, url: profileUrl(ctx.origin, id), nameMatchedAs: fits.get(id) ?? null }));
+        body.candidates = orderCandidates(outcome.profileIds.map(id => ({ profileId: id, url: profileUrl(ctx.origin, id), nameMatchedAs: fits.get(id) ?? null })), matched);
     }
     body.risk = riskOf(ids.map(id => summaries.get(id)));
     ctx.log.profileIds = ids;

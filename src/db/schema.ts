@@ -916,6 +916,15 @@ export const apiKeys = sqliteTable("api_keys", {
     ownerIdx: index("idx_api_keys_owner").on(table.ownerEmail),
 }));
 
+// /developers: who accepted which version of the API terms (needed before a self-created key).
+export const apiTermsAcceptances = sqliteTable("api_terms_acceptances", {
+    userEmail: text("user_email").notNull(),
+    version: integer("version").notNull(),
+    acceptedAt: integer("accepted_at", { mode: "timestamp" }).notNull(),
+}, (table) => ({
+    pk: primaryKey({ columns: [table.userEmail, table.version] }),
+}));
+
 // Form answers sent with an API adoption request (activity.formContent), as sent.
 // Keyed by the activity (adopter_events.id) so a profile merge never strands it.
 export const activityForms = sqliteTable("activity_forms", {

@@ -19,6 +19,7 @@ interface KeyView {
     dailyCapExact: number; dailyCapFuzzy: number; usedToday: { exact: number; fuzzy: number };
     last30?: { activities: number; voided: number };
     createdAt: string | null; lastUsedAt: string | null; revokedAt: string | null;
+    selfService?: boolean;
 }
 
 const card = 'bg-white dark:bg-stone-800 rounded-2xl border border-stone-200 dark:border-stone-700 p-6';
@@ -145,7 +146,7 @@ export default function AdminApiPage() {
                         <li key={k.id} className="py-3 text-sm flex flex-wrap items-center gap-x-4 gap-y-2">
                             <div className="min-w-0">
                                 <p className="font-semibold text-stone-800 dark:text-stone-200">{k.name} <span className="font-mono text-xs text-stone-500">{k.prefix}…</span></p>
-                                <p className="text-xs text-stone-500 break-all">{k.ownerEmail} · {k.environment} · {k.scopes.join(', ')}</p>
+                                <p className="text-xs text-stone-500 break-all">{k.ownerEmail} · {k.environment} · {k.scopes.join(', ')}{k.selfService ? ` · ${t('apiAdmin.self_service')}` : ''}</p>
                                 <p className="text-xs text-stone-500">
                                     {t('apiReview.used_today')}: {k.usedToday.exact}/{k.dailyCapExact} exact · {k.usedToday.fuzzy}/{k.dailyCapFuzzy} fuzzy
                                     {k.lastUsedAt ? ` · ${t('apiReview.last_used')} ${new Date(k.lastUsedAt).toLocaleString()}` : ''}

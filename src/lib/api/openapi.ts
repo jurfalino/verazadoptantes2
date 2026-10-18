@@ -34,6 +34,7 @@ function guide(origin: string, live: boolean): string {
 API para que las herramientas de tu rescate (formulario propio, planilla, sistema de gestión) consulten y registren adoptantes en BuenAdoptante.
 
 ## Empezar en 3 pasos
+0. **Creá tu clave** en [${origin}/developers](${origin}/developers): iniciá sesión, aceptá las condiciones de uso y creala (la ves una sola vez).
 1. **Probá tu clave:**
 ${get('/api/v1/me')}
 2. **Buscá a alguien sin registrar nada** (\`mode: "fuzzy"\`):
@@ -42,6 +43,8 @@ ${post('/api/v1/search', { mode: 'fuzzy', person: { fullName: 'María Pérez' } 
 ${post('/api/v1/search', { mode: 'exact', person: maria, activity: { activityType: 'adoption_request', externalId: 'mi-formulario-1234' } }, live ? [] : ['X-Dry-Run: 1'])}
 
 ## Autenticación
+**Cómo conseguir una clave:** creala vos en [${origin}/developers](${origin}/developers) — iniciá sesión, aceptá las condiciones de uso y creá la clave; se muestra una sola vez (si la perdés, la regenerás ahí). Allí también ves tus llamadas y podés revocarla. ${live ? 'Para probar, creá también una clave en staging.' : 'Acá en staging te da una clave de prueba (`ba_test_…`).'} Cada clave tiene un cupo de 100 búsquedas exactas y 50 fuzzy por día; si necesitás más, escribinos.
+
 Cada clave pertenece a un rescatista. Enviala en cada llamada: \`Authorization: Bearer ba_live_…\` en producción, \`Bearer ba_test_…\` en staging (cada ambiente tiene sus propias claves). Si la clave no sirve, \`401 unauthorized\` dice por qué: que falta, que está mal escrita, que es de otro ambiente, o que no existe o fue revocada.
 
 ## Dos maneras de buscar: \`POST /api/v1/search\`

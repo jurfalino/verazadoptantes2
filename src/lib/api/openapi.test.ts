@@ -106,6 +106,8 @@ describe('exact scenarios', () => {
         expect(by.name_mismatch.saved.action).toBe('created_profile_for_review');
         expect(by.name_mismatch.candidates).toEqual([{ profileId: 'demo-api-martin', url: `${PROD}/adopter/demo-api-martin`, nameMatchedAs: null }]);
         expect(by.multiple_profiles.saved).toMatchObject({ action: 'added_to_best_match', profileId: 'demo-api-laura-a' });
+        // Candidates in a stable order: the best match (email AND phone) first.
+        expect(by.multiple_profiles.candidates.map((c: any) => c.profileId)).toEqual(['demo-api-laura-a', 'demo-api-laura-b']);
         expect(by.not_found.saved.action).toBe('created_profile');
         expect(by.dry_run.saved).toEqual({ action: 'created_profile', dryRun: true });
     });

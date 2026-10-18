@@ -68,12 +68,14 @@ export async function seedApiDemo(db: Db, now: Date = new Date()): Promise<DemoS
     let removed = 0;
 
     // 1. Reset: the demo profiles (and the duplicate twin), then what the API made for the scenarios' people.
+    // Profiles are independent: removed (and below, written) in parallel — one
+    // after another this took ~40 s, long enough for a browser or a proxy to give up.
     const existing = await db.select({ id: adopters.id }).from(adopters).where(like(adopters.id, 'demo-api-%')).all() as Array<{ id: string }>;
-    for (const { id } of existing) { await removeProfile(db, id); removed++; }
-    for (const name of demoCreatedNames()) {
-        const made = await db.select({ id: adopters.id }).from(adopters).where(and(eq(adopters.name, name), eq(adopters.source, 'api'))).all() as Array<{ id: string }>;
-        for (const { id } of made) { await removeProfile(db, id); removed++; }
-    }
+    const made = (await Promise.all(demoCreatedNames().map(name =>
+        db.select({ id: adopters.id }).from(adopters).where(and(eq(adopters.name, name), eq(adopters.source, 'api'))).all() as Promise<Array<{ id: string }>>))).flat();
+    const doomed = [...new Set([...existing, ...made].map(r => r.id))];
+    await Promise.all(doomed.map(id => removeProfile(db, id)));
+    removed = doomed.length;
 
     // 2. Register them again, dated relative to today.
     let records = 0;
@@ -82,7 +84,7 @@ export async function seedApiDemo(db: Db, now: Date = new Date()): Promise<DemoS
         d.setUTCHours(12, 0, 0, 0);
         return d;
     };
-    for (const p of profiles) {
+    await Promise.all(profiles.map(async p => {
         // Created on the day of its oldest record, as the docs say (demoCreatedAt).
         await createProfile(db, p, new Date(`${demoCreatedAt(p, now)}T12:00:00Z`));
         for (const [k, h] of p.history.entries()) {
@@ -111,7 +113,7 @@ export async function seedApiDemo(db: Db, now: Date = new Date()): Promise<DemoS
             await tokenizeAdopter(twin);
         }
         await tokenizeAdopter(p.id);
-    }
+    }));
     logger.info('api demo seed: done', { profiles: profiles.length, records, removed });
     return { profiles: profiles.length, records, removed };
 }

@@ -20,6 +20,7 @@ export interface KeyView {
     /** Last 30 days: activities this key saved, and how many of them it voided (Jon, 2026-10-13: make search-then-void visible). */
     last30: { activities: number; voided: number };
     createdAt: string | null; lastUsedAt: string | null; revokedAt: string | null;
+    selfService: boolean;
 }
 
 export const STATS_DAYS = 30;
@@ -52,6 +53,8 @@ export async function listKeys(db: Db, ownerEmail: string | null): Promise<KeyVi
         },
         last30: await keyActivityStats(db, k.id),
         createdAt: iso(k.createdAt), lastUsedAt: iso(k.lastUsedAt), revokedAt: iso(k.revokedAt),
+        // Created by the rescuer at /developers (not issued by an admin).
+        selfService: k.createdBy === k.ownerEmail,
     })));
 }
 

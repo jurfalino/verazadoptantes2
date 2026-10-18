@@ -560,6 +560,42 @@ test.describe('public API v1', () => {
         void baseURL;
     });
 
+    test('/developers: sign in, accept the terms, create your own key (shown once), use it, revoke it', async ({ page, browser, baseURL }) => {
+        // Signed out: the page explains and asks to sign in.
+        const anon = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+        const anonPage = await anon.newPage();
+        await anonPage.goto(`${baseURL}/developers`);
+        await expect(anonPage.getByTestId('developers-sign-in')).toBeVisible({ timeout: 30000 });
+        await anon.close();
+
+        // A clean slate for this account, so a rerun behaves like the first run.
+        execD1(`DELETE FROM api_terms_acceptances WHERE user_email = '${ADMIN_EMAIL}'`);
+        execD1(`UPDATE api_keys SET revoked_at = strftime('%s','now') WHERE owner_email = '${ADMIN_EMAIL}' AND created_by = owner_email AND revoked_at IS NULL`);
+        await page.goto('/developers');
+        await expect(page.getByTestId('developers-page')).toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId('developers-env')).toContainText(/staging/);
+        // No key before the terms.
+        expect((await page.request.post('/api/my-api/keys', { data: { name: 'x' } })).status()).toBe(403);
+        await page.getByTestId('developers-terms-check').check();
+        await page.getByTestId('developers-terms-accept').click();
+        await page.getByTestId('developers-key-name').fill(`Mi formulario ${TAG}`);
+        await page.getByTestId('developers-create').click();
+        const shown = (await page.getByTestId('developers-secret-value').textContent({ timeout: 30000 }))!.trim();
+        expect(shown).toMatch(/^ba_test_/);
+        // It works, with the self-service limits.
+        const me = await (await api.get('/api/v1/me', { headers: { authorization: `Bearer ${shown}` } })).json();
+        expect(me.caps).toEqual({ exact: 100, fuzzy: 50 });
+        // Shown once: after a reload only the prefix is there.
+        await page.reload();
+        await expect(page.getByTestId('developers-key').filter({ hasText: `Mi formulario ${TAG}` })).toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId('developers-secret')).toHaveCount(0);
+        // Revoke from the page: it stops working.
+        await page.getByTestId('developers-key').filter({ hasText: `Mi formulario ${TAG}` }).getByTestId('developers-revoke').click();
+        await page.getByTestId('developers-confirm').click();
+        await expect(page.getByTestId('developers-key').filter({ hasText: `Mi formulario ${TAG}` })).toContainText(/Revocada|Revoked|Revogada/, { timeout: 30000 });
+        expect((await api.get('/api/v1/me', { headers: { authorization: `Bearer ${shown}` } })).status()).toBe(401);
+    });
+
     test('docs and spec are served; a revoked key stops working', async ({ page }) => {
         const spec = await api.get('/api/v1/openapi.json');
         expect((await spec.json()).paths['/api/v1/search']).toBeTruthy();

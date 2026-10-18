@@ -213,6 +213,17 @@ const savedSchema = z.object({
     contactsAdded: z.array(z.enum(CONTACT_FIELDS)).optional().meta({ description: 'Contact details you sent that the person did not have yet, now added to their profile (logged in its history).' }),
 });
 export type Saved = z.infer<typeof savedSchema>;
+/**
+ * A stable order for ambiguous candidates (and other matches): profiles whose
+ * name fits first, then the one matching more of the sent email / phone /
+ * document, then by id — never the database's row order. Pure.
+ */
+export function orderCandidates<T extends { profileId: string; nameMatchedAs?: string | null }>(items: T[], matchedCount: (profileId: string) => number): T[] {
+    return [...items].sort((a, b) =>
+        Number(!!b.nameMatchedAs) - Number(!!a.nameMatchedAs)
+        || matchedCount(b.profileId) - matchedCount(a.profileId)
+        || (a.profileId < b.profileId ? -1 : a.profileId > b.profileId ? 1 : 0));
+}
 /** What a saving call did, from what it found and whether it had to create the profile. Pure. */
 export function saveActionOf(match: 'found' | 'not_found' | 'ambiguous', profileCreated: boolean): SaveAction {
     if (match === 'found') return 'added_to_profile';

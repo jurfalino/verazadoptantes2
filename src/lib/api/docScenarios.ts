@@ -12,7 +12,7 @@
  * so every documented request really returns the documented answer there.
  */
 import { decideExactOutcome, type NameMatchedAs } from '@/domain/apiExactMatch';
-import { saveActionOf } from './schemas';
+import { orderCandidates, saveActionOf } from './schemas';
 
 type Level = 0 | 1 | 2 | 3 | 4 | 5;
 const LABELS = ['not_rated', 'dangerous', 'poor', 'average', 'good', 'excellent'] as const;
@@ -376,11 +376,11 @@ function answer(def: ScenarioDef, origin: string, n: number, now: Date, cfg: Ale
         const p = byId.get(outcome.profileId)!;
         body.profile = { ...summary(p), matchedOn: matchedOn(def.person, p), nameMatchedAs: outcome.nameMatchedAs as NameMatchedAs };
         const others = outcome.otherProfileIds.map(id => byId.get(id)!);
-        if (others.length) body.otherMatches = others.map(o => ({ profileId: o.id, url: url(o.id) }));
+        if (others.length) body.otherMatches = orderCandidates(others.map(o => ({ profileId: o.id, url: url(o.id) })), id => matchedOn(def.person, byId.get(id)!).length);
         savedOn = { id: p.id, created: false, contactsAdded: added(p) };
     } else if (outcome.result === 'ambiguous') {
         const fits = new Map(outcome.compatible.map(c => [c.profileId, c.as]));
-        Object.assign(body, { reason: outcome.reason, candidates: outcome.profileIds.map(id => ({ profileId: id, url: url(id), nameMatchedAs: fits.get(id) ?? null })) });
+        Object.assign(body, { reason: outcome.reason, candidates: orderCandidates(outcome.profileIds.map(id => ({ profileId: id, url: url(id), nameMatchedAs: fits.get(id) ?? null })), id => matchedOn(def.person, byId.get(id)!).length) });
         // Best match (pickBestMatch's first criterion: most identifiers matched); no name fits → a new profile.
         const fitting = outcome.compatible.map(c => byId.get(c.profileId)!)
             .sort((a, b) => matchedOn(def.person, b).length - matchedOn(def.person, a).length);
