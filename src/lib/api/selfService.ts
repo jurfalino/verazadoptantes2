@@ -66,6 +66,8 @@ async function ownKey(db: Db, email: string, id: string) {
 export async function regenerateMyKey(db: Db, email: string, id: string, host: string) {
     const key = await ownKey(db, email, id);
     if (!key) return { error: 'not_found' as const };
+    // Regenerating is making a key: the same approval applies.
+    if (!(await canCreateKeys(db, email))) return { error: 'not_approved' as const };
     return regenerateKey(db, id, host);
 }
 

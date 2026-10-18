@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
-import { getTransaction, listKeys, listTransactions } from './review';
+import { getTransaction, listKeys, listTransactions, parseCursor } from './review';
 import { voidApiRecord } from './records';
 import { purgeOldRequestBodies } from './handler';
 
@@ -31,7 +31,7 @@ export async function listResponse(request: Request, actor: string, owner: strin
                 outcome: q.get('outcome'),
                 from: dateParam(q.get('from')),
                 to: dateParam(q.get('to')),
-                before: dateParam(q.get('before')),
+                before: parseCursor(q.get('before')),
                 mode: q.get('mode'),
                 errorCode: q.get('errorCode'),
                 dryRun: q.get('dryRun') === '1' ? true : q.get('dryRun') === '0' ? false : null,
@@ -39,6 +39,12 @@ export async function listResponse(request: Request, actor: string, owner: strin
             }),
             owner ? listKeys(db, owner) : Promise.resolve(undefined),
         ]);
+        // Admin rows carry who was searched (person data) and `q` searches it: audited like the detail view.
+        if (!owner && page.rows.some(r => r.searched)) {
+            logAudit({ userEmail: actor, action: 'api_calls_viewed', details: {
+                query: q.get('q') || null, ownerFilter: q.get('owner') || null, rows: page.rows.length, before: q.get('before') || null,
+            } });
+        }
         return NextResponse.json({ ...page, ...(keys ? { keys } : {}) });
     } catch (e) {
         const errorId = logger.error('api review: list failed', e, { actor, owner });

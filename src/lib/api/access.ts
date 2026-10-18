@@ -6,10 +6,11 @@
  * ones, admin-issued included. Its own table, not a user role: a rescuer keeps
  * being a viewer / contributor / admin. Server-only.
  */
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { apiAccess, apiKeys } from '@/db/schema';
 import { isAdminAsync } from '@/config/admins';
 import { logger } from '@/lib/logger';
+import { maskEmail } from '@/lib/dates';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Db = any;
@@ -54,8 +55,17 @@ export async function requestAccess(db: Db, email: string, tool: string, purpose
     if (current.status === 'blocked') return { error: 'blocked' };
     if (current.status === 'approved') return { error: 'already_approved' };
     const now = new Date();
-    await db.insert(apiAccess).values({ userEmail: email, status: 'requested', tool: t, purpose: p || null, requestedAt: now })
-        .onConflictDoUpdate({ target: apiAccess.userEmail, set: { status: 'requested', tool: t, purpose: p || null, requestedAt: now, decidedAt: null, decidedBy: null, note: null } });
+    // Conditional: a block (or approval) decided between the read above and this write must win.
+    const written = await db.insert(apiAccess).values({ userEmail: email, status: 'requested', tool: t, purpose: p || null, requestedAt: now })
+        .onConflictDoUpdate({
+            target: apiAccess.userEmail,
+            set: { status: 'requested', tool: t, purpose: p || null, requestedAt: now, decidedAt: null, decidedBy: null, note: null },
+            setWhere: sql`${apiAccess.status} NOT IN ('blocked', 'approved')`,
+        }).returning({ status: apiAccess.status });
+    if (!written.length) {
+        const now2 = await getAccess(db, email);
+        return { error: now2.status === 'blocked' ? 'blocked' : 'already_approved' };
+    }
     return { ok: true, status: 'requested' };
 }
 
@@ -81,11 +91,26 @@ export async function decideAccess(db: Db, email: string, decision: Decision, ad
             .where(and(eq(apiKeys.ownerEmail, email), isNull(apiKeys.revokedAt))).returning({ id: apiKeys.id });
         keysRevoked = revoked.length;
     }
-    logger.info('api access decided', { email, decision, admin, keysRevoked });
+    logger.info('api access decided', { person: maskEmail(email), decision, admin, keysRevoked });
     return { status, keysRevoked };
 }
 
 /** Blocked people get no key, whoever issues it. */
 export async function isBlocked(db: Db, email: string): Promise<boolean> {
     return (await getAccess(db, email)).status === 'blocked';
+}
+
+export type KeyRefusal = 'access_blocked' | 'access_not_approved';
+
+/**
+ * Checked on EVERY API call, not only when a key is made (review 2026-10-17):
+ * a blocked person's keys stop at once, even one created in a race with the
+ * block; a key the person made themselves needs their access still approved
+ * (a later deny turns it off). Admin-issued keys answer only to a block.
+ */
+export async function keyRefusal(db: Db, key: { ownerEmail: string; createdBy: string | null }): Promise<KeyRefusal | null> {
+    const status = (await getAccess(db, key.ownerEmail)).status;
+    if (status === 'blocked') return 'access_blocked';
+    if (key.createdBy === key.ownerEmail && status !== 'approved' && !(await isAdminAsync(key.ownerEmail))) return 'access_not_approved';
+    return null;
 }

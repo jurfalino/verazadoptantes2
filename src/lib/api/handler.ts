@@ -14,6 +14,7 @@ import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
 import { getFeatureFlag } from '@/config/features';
 import { bearerSecret, environmentForHost, findActiveKey, scopesOf, type ApiKeyRow } from './keys';
+import { keyRefusal } from './access';
 import type { ApiErrorCode, ApiScope } from './schemas';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -41,7 +42,7 @@ export function dryRunAllowed(keyEnvironment: string, host: string): boolean {
 
 /** Person data the client sent is kept this long, then dropped from the log. */
 export const REQUEST_BODY_RETENTION_DAYS = 90;
-/** The slim row (who, when, which profiles, result) is deleted after a year — by the daily cron, workers/followup-cron. */
+/** The slim row (who, when, which profiles, result) is deleted after a year — by the daily cron, workers/followup-cron — unless the call saved a record. */
 export const API_LOG_RETENTION_DAYS = 365;
 /** Whole request kept for review (an adoption form's answers included), then purged as above. */
 const MAX_LOGGED_BODY = 64_000;
@@ -180,8 +181,10 @@ export async function personCap(db: Db, ownerEmail: string, mode: 'exact' | 'fuz
 export async function remainingToday(db: Db, key: ApiKeyRow, mode: 'exact' | 'fuzzy'): Promise<{ limit: number; remaining: number }> {
     const keyCap = mode === 'exact' ? key.dailyCapExact : key.dailyCapFuzzy;
     const [byKey, byPerson, cap] = await Promise.all([searchesToday(db, key.id, mode), personSearchesToday(db, key.ownerEmail, mode), personCap(db, key.ownerEmail, mode)]);
-    const remaining = Math.max(0, Math.min(keyCap - byKey, Math.max(cap, keyCap) - byPerson));
-    return { limit: keyCap, remaining };
+    const personLimit = Math.max(cap, keyCap);
+    const remaining = Math.max(0, Math.min(keyCap - byKey, personLimit - byPerson));
+    // The limit that binds: the person's when their other keys used it up, else the key's own.
+    return { limit: personLimit - byPerson < keyCap - byKey ? personLimit : keyCap, remaining };
 }
 
 /** Checked BEFORE an idempotency claim, so a refused call never becomes the stored answer. */
@@ -388,6 +391,13 @@ export async function handleApiCall(
         logger.info('api: unauthorized', { requestId, endpoint, hadHeader: !!header });
         return json(401, errorBody(requestId, origin, 'unauthorized', unauthorizedMessage(header, secret, new URL(request.url).host)), requestId,
             { 'WWW-Authenticate': 'Bearer' });
+    }
+    const refusal = await keyRefusal(db, key);
+    if (refusal) {
+        logger.info('api: key refused by access status', { requestId, endpoint, keyId: key.id, refusal });
+        return json(403, errorBody(requestId, origin, refusal, refusal === 'access_blocked'
+            ? 'this key\'s owner is blocked from the API; write to us if you think this is a mistake'
+            : 'API access for this key\'s owner is not approved; ask for access at /developers'), requestId);
     }
 
     let bodyText = '';

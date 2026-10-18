@@ -96,7 +96,7 @@ export interface TransactionFilter {
     outcome?: string | null;
     from?: Date | null;
     to?: Date | null;
-    before?: Date | null;         // pagination cursor (createdAt of the last row seen)
+    before?: PageCursor | null;   // pagination cursor (the last row seen)
     mode?: string | null;         // exact | fuzzy
     errorCode?: string | null;    // a refusal's error.code
     dryRun?: boolean | null;      // true: only test calls; false: only real ones
@@ -145,6 +145,25 @@ async function keyNameMap(db: Db, ownerEmail: string | null): Promise<Map<string
 
 export const TRANSACTION_PAGE = 50;
 
+/**
+ * A page cursor: "<createdAt ISO>|<id>". createdAt has one-second precision, so
+ * a scripted partner's calls share seconds; the id breaks the tie and no row
+ * at a page boundary is skipped. A bare ISO date (older clients) still works.
+ */
+export interface PageCursor { at: Date; id: string | null }
+export function parseCursor(v: string | null | undefined): PageCursor | null {
+    if (!v) return null;
+    const [at, id] = v.split('|');
+    const d = new Date(at);
+    return Number.isNaN(d.getTime()) ? null : { at: d, id: id || null };
+}
+export function cursorCondition(c: PageCursor) {
+    return c.id
+        ? or(lt(apiRequests.createdAt, c.at), and(eq(apiRequests.createdAt, c.at), lt(apiRequests.id, c.id)))!
+        : lt(apiRequests.createdAt, c.at);
+}
+export const cursorOf = (r: { createdAt: Date | null; id: string }) => `${iso(r.createdAt)}|${r.id}`;
+
 export async function listTransactions(db: Db, f: TransactionFilter): Promise<{ rows: TransactionRow[]; nextBefore: string | null }> {
     const conds = [];
     if (f.ownerEmail) conds.push(eq(apiRequests.ownerEmail, f.ownerEmail));
@@ -152,7 +171,7 @@ export async function listTransactions(db: Db, f: TransactionFilter): Promise<{ 
     if (f.outcome) conds.push(eq(apiRequests.outcome, f.outcome));
     if (f.from) conds.push(gte(apiRequests.createdAt, f.from));
     if (f.to) conds.push(lt(apiRequests.createdAt, f.to));
-    if (f.before) conds.push(lt(apiRequests.createdAt, f.before));
+    if (f.before) conds.push(cursorCondition(f.before));
     if (f.mode) conds.push(eq(apiRequests.mode, f.mode));
     if (f.errorCode) conds.push(eq(apiRequests.errorCode, f.errorCode));
     if (f.dryRun !== undefined && f.dryRun !== null) conds.push(eq(apiRequests.dryRun, f.dryRun ? 1 : 0));
@@ -165,13 +184,13 @@ export async function listTransactions(db: Db, f: TransactionFilter): Promise<{ 
     }
     const [rows, names] = await Promise.all([
         db.select().from(apiRequests).where(conds.length ? and(...conds) : undefined)
-            .orderBy(desc(apiRequests.createdAt)).limit(TRANSACTION_PAGE + 1),
+            .orderBy(desc(apiRequests.createdAt), desc(apiRequests.id)).limit(TRANSACTION_PAGE + 1),
         keyNameMap(db, f.ownerEmail ?? null),
     ]);
     const page = (rows as Array<typeof apiRequests.$inferSelect>).slice(0, TRANSACTION_PAGE);
     return {
         rows: page.map(r => rowView(r, names)),
-        nextBefore: rows.length > TRANSACTION_PAGE ? iso(page[page.length - 1].createdAt) : null,
+        nextBefore: rows.length > TRANSACTION_PAGE ? cursorOf(page[page.length - 1]) : null,
     };
 }
 

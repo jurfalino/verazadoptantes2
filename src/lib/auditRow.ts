@@ -195,6 +195,7 @@ const API_LABELS: Record<string, [string, string]> = {
     api_key_self_regenerated: ['regeneró su clave de API', 'regenerated their API key'],
     api_key_self_revoked: ['revocó su clave de API', 'revoked their API key'],
     api_request_viewed: ['abrió el detalle de una llamada a la API', 'opened an API call\'s detail'],
+    api_calls_viewed: ['miró la lista de llamadas a la API (con a quiénes buscaron)', 'viewed the API call list (with who was searched)'],
     api_person_viewed: ['miró a quiénes buscó por la API', 'viewed who someone searched via the API'],
     api_record_voided: ['anuló un registro guardado por la API', 'voided a record saved by the API'],
     api_demo_seeded: ['cargó las personas de ejemplo de la API', 'loaded the API example people'],

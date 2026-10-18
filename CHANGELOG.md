@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.202] - 2026-10-17
+
+### Fixed — API access review findings (2.56.201)
+
+- **Access is checked on every API call**, not only when a key is made: a blocked person's
+  keys stop at once (even one created in a race with the block), and a key the person made
+  themselves stops when their access is denied (403 `access_blocked` / `access_not_approved`,
+  documented). Regenerating at /developers needs approval too.
+- People who created keys before approval existed (staging, 2.56.197–200) are grandfathered
+  as approved (migration 0090); the People list shows each person's real status.
+- Admins viewing or searching the call list (which shows who was searched) is audited.
+- A request for access can no longer overwrite a block decided at the same moment.
+- RateLimit headers report the limit that actually binds (the person's or the key's).
+- Paging the call list and a person's searches no longer skips calls made in the same second.
+- Other people's emails are masked in logs.
+- Retention: a call that saved a record keeps its slim row with the record (it refuses a
+  reused externalId and lets the partner void it); lookups still go after 12 months.
+- CI: the approval e2e test compiles its admin routes first (2.56.201's leg timed out on a
+  first compile after a dev-server memory restart).
+
 ## [2.56.201] - 2026-10-17
 
 ### Added — Admin → API: approval, people, tabs, retention

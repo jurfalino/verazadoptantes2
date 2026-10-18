@@ -6,7 +6,9 @@ import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { adminEmailOr401 } from '@/lib/api/sessionGuards';
 import { personDetail } from '@/lib/api/adminInsights';
+import { parseCursor } from '@/lib/api/review';
 import { decideAccess, type Decision } from '@/lib/api/access';
+import { maskEmail } from '@/lib/dates';
 
 export const runtime = 'edge';
 
@@ -20,12 +22,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ emai
     try {
         const db = await getDb();
         if (!db) throw new Error('database unavailable');
-        const detail = await personDetail(db, email, { before: before ? new Date(before) : null });
+        const detail = await personDetail(db, email, { before: parseCursor(before) });
         // The searched names are person data: the admin reading them is audited.
         logAudit({ userEmail: admin, action: 'api_person_viewed', details: { ownerEmail: email } });
         return NextResponse.json(detail);
     } catch (e) {
-        const errorId = logger.error('admin api: person failed', e, { admin, ownerEmail: email });
+        const errorId = logger.error('admin api: person failed', e, { admin, person: maskEmail(email) });
         return NextResponse.json({ error: 'Failed to load the person', errorId }, { status: 500 });
     }
 }
@@ -51,11 +53,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ ema
                 const title = decision === 'approve' ? 'Tu acceso a la API fue aprobado' : decision === 'deny' ? 'Tu pedido de acceso a la API no fue aprobado' : 'Tu acceso a la API fue bloqueado';
                 const bodyText = decision === 'approve' ? 'Ya podés crear tus claves en /developers.' : (body.note?.trim() || 'Si tenés dudas, escribinos.');
                 await createNotification({ userId: email, type: 'api_access', title, body: bodyText, url: '/developers' });
-            }, { ownerEmail: email, decision });
+            }, { person: maskEmail(email), decision });
         }
         return NextResponse.json({ ok: true, ...done });
     } catch (e) {
-        const errorId = logger.error('admin api: access decision failed', e, { admin, ownerEmail: email, decision });
+        const errorId = logger.error('admin api: access decision failed', e, { admin, person: maskEmail(email), decision });
         return NextResponse.json({ error: 'Failed to save the decision', errorId }, { status: 500 });
     }
 }

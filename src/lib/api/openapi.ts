@@ -159,6 +159,8 @@ Toda respuesta de error trae \`error.code\` (estable: tu código puede decidir s
 | \`invalid_json\` | El cuerpo no es JSON válido. | Revisá comillas y comas. |
 | \`invalid_request\` | Un campo no tiene el formato esperado. | Mirá \`error.details\`: cada problema con su campo. |
 | \`unauthorized\` | Falta la clave, está mal escrita, es de otro ambiente, o no existe o fue revocada. | El mensaje dice cuál. |
+| \`access_blocked\` | La persona dueña de la clave fue bloqueada de la API. | Escribinos si creés que es un error. |
+| \`access_not_approved\` | El acceso a la API de la persona dueña de la clave no está aprobado. | Pedí acceso en /developers. |
 | \`forbidden\` | La clave no tiene el permiso para eso. | Pedile a BuenAdoptante el permiso (\`search\`, \`search:fuzzy\`, \`record:write\`). |
 | \`not_found\` | Ese id no existe para tu clave. | Revisá el id. |
 | \`exact_requires_name_and_identifier\` | \`exact\` necesita nombre y apellido más email, teléfono o documento. | Completá los datos, o usá \`fuzzy\`. |

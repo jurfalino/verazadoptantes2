@@ -162,6 +162,13 @@ test.describe('public API v1 — admin, docs, /developers', { tag: '@leg-apidocs
         execD1(`DELETE FROM api_terms_acceptances WHERE user_email = '${USER}'`);
         execD1(`UPDATE api_keys SET revoked_at = strftime('%s','now') WHERE owner_email = '${USER}' AND revoked_at IS NULL`);
         execD1(`DELETE FROM api_keys WHERE owner_email = '${USER}' AND created_by = owner_email`);
+        // Compile the admin routes this test opens first: on CI's dev server (often just restarted
+        // on memory) a first compile alone can outlast an assertion's 30 s.
+        await Promise.all([
+            page.request.get('/api/admin/api-overview'),
+            page.request.get('/api/admin/api-people?status=requested'),
+            page.request.get(`/api/admin/api-people/${encodeURIComponent(USER)}`),
+        ]);
         const ctx = await browser.newContext({ storageState: '.auth/user.json' });
         const user = await ctx.newPage();
         try {
@@ -182,7 +189,7 @@ test.describe('public API v1 — admin, docs, /developers', { tag: '@leg-apidocs
             const row = page.getByTestId('api-person-row').filter({ hasText: USER });
             await expect(row).toContainText(`Formulario ${TAG}`, { timeout: 30000 });
             await row.click();
-            await expect(page.getByTestId('api-person')).toContainText('Revisar adoptantes', { timeout: 30000 });
+            await expect(page.getByTestId('api-person')).toContainText('Revisar adoptantes', { timeout: 60000 });
             await page.getByTestId('api-access-approve').click();
             await expect(page.getByTestId('api-person').getByTestId('api-access-status').first()).toContainText(/Aprobado|Approved/, { timeout: 30000 });
 
@@ -202,6 +209,16 @@ test.describe('public API v1 — admin, docs, /developers', { tag: '@leg-apidocs
             const second = await fuzzy(b.secret);
             expect(second.status()).toBe(429);
             expect((await second.json()).error.code).toBe('daily_cap_reached');
+
+            // Access is checked on every call: a later deny turns their own keys off, approving again turns them on.
+            const decide = (decision: string) => page.request.post(`/api/admin/api-people/${encodeURIComponent(USER)}`, { data: { decision } });
+            expect((await decide('deny')).status()).toBe(200);
+            const denied = await api.get('/api/v1/me', { headers: { authorization: `Bearer ${a.secret}` } });
+            expect(denied.status()).toBe(403);
+            expect((await denied.json()).error.code).toBe('access_not_approved');
+            expect((await user.request.post(`/api/my-api/keys/${a.id}`, { data: { action: 'regenerate' } })).status()).toBe(403);
+            expect((await decide('approve')).status()).toBe(200);
+            expect((await api.get('/api/v1/me', { headers: { authorization: `Bearer ${a.secret}` } })).status()).toBe(200);
 
             // The admin sees who they searched (that view is audited).
             await page.reload();

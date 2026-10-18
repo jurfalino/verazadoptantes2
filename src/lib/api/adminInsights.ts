@@ -8,7 +8,7 @@ import { and, count, desc, eq, gte, isNotNull, lt, sql } from 'drizzle-orm';
 import { apiAccess, apiKeys, apiRequests, users } from '@/db/schema';
 import { getFeatureFlag } from '@/config/features';
 import { getAccess, type AccessStatus } from './access';
-import { listKeys, searchedPerson } from './review';
+import { cursorCondition, cursorOf, listKeys, searchedPerson, type PageCursor } from './review';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Db = any;
@@ -104,7 +104,7 @@ export async function listPeople(db: Db, f: PeopleFilter, now = new Date()): Pro
         if (manyVoids(last30.saved, last30.voided)) badges.push('many_voids');
         return {
             email, name: null,
-            access: (a?.status ?? (keysBy.get(email) ? 'approved' : 'none')) as AccessStatus,
+            access: (a?.status ?? 'none') as AccessStatus,
             tool: a?.tool ?? null, requestedAt: iso(a?.requestedAt),
             activeKeys: keysBy.get(email) ?? 0, last30, fuzzy7d, badges,
         };
@@ -140,10 +140,10 @@ export async function listPeople(db: Db, f: PeopleFilter, now = new Date()): Pro
 
 // ── One person ────────────────────────────────────────────────────────────
 
-export async function personDetail(db: Db, email: string, opts: { before?: Date | null } = {}, now = new Date()) {
+export async function personDetail(db: Db, email: string, opts: { before?: PageCursor | null } = {}, now = new Date()) {
     const since30 = new Date(now.getTime() - 30 * DAY_MS);
     const searchConds = [eq(apiRequests.ownerEmail, email), eq(apiRequests.endpoint, 'search'), isNotNull(apiRequests.requestBody)];
-    if (opts.before) searchConds.push(lt(apiRequests.createdAt, opts.before));
+    if (opts.before) searchConds.push(cursorCondition(opts.before));
     const [access, user, keys, daily, searches] = await Promise.all([
         getAccess(db, email),
         db.select({ name: users.name }).from(users).where(eq(users.email, email)).get(),
@@ -158,7 +158,7 @@ export async function personDetail(db: Db, email: string, opts: { before?: Date 
         db.select({
             id: apiRequests.id, createdAt: apiRequests.createdAt, mode: apiRequests.mode, outcome: apiRequests.outcome,
             httpStatus: apiRequests.httpStatus, dryRun: apiRequests.dryRun, requestBody: apiRequests.requestBody,
-        }).from(apiRequests).where(and(...searchConds)).orderBy(desc(apiRequests.createdAt)).limit(SEARCHES_PAGE + 1).all(),
+        }).from(apiRequests).where(and(...searchConds)).orderBy(desc(apiRequests.createdAt), desc(apiRequests.id)).limit(SEARCHES_PAGE + 1).all(),
     ]);
     const page = (searches as Array<{ id: string; createdAt: unknown; mode: string | null; outcome: string | null; httpStatus: number; dryRun: number; requestBody: string | null }>).slice(0, SEARCHES_PAGE);
     return {
@@ -168,6 +168,6 @@ export async function personDetail(db: Db, email: string, opts: { before?: Date 
             requestId: r.id, createdAt: iso(r.createdAt), mode: r.mode, outcome: r.outcome, httpStatus: r.httpStatus, dryRun: r.dryRun === 1,
             searched: searchedPerson(r.requestBody),
         })),
-        nextBefore: searches.length > SEARCHES_PAGE ? iso(page[page.length - 1].createdAt) : null,
+        nextBefore: searches.length > SEARCHES_PAGE ? cursorOf({ createdAt: page[page.length - 1].createdAt as Date | null, id: page[page.length - 1].id }) : null,
     };
 }

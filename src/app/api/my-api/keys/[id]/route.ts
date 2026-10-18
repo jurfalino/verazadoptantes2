@@ -25,7 +25,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }
         if (action === 'regenerate') {
             const res = await regenerateMyKey(db, me, id, new URL(request.url).host);
-            if ('error' in res) return NextResponse.json({ error: res.error }, { status: res.error === 'not_found' ? 404 : 409 });
+            if ('error' in res) return NextResponse.json({ error: res.error }, { status: res.error === 'not_found' ? 404 : res.error === 'not_approved' ? 403 : 409 });
             logAudit({ userEmail: me, action: 'api_key_self_regenerated', details: { keyId: id } });
             return NextResponse.json({ id: res.id, secret: res.secret, prefix: res.prefix, environment: res.environment });
         }

@@ -64,7 +64,8 @@ type PlacementRow = {
 /**
  * Third-party API log retention (Jon, 2026-10-17): what was searched and
  * answered (request/response bodies — person data) is kept 90 days; the slim
- * row (who, when, which profiles, result) 12 months, then it is deleted.
+ * row (who, when, which profiles, result) 12 months, then it is deleted —
+ * except for calls that saved a record (kept with the record, see below).
  * Runs every day whatever the follow-up gates say (they only gate reminders).
  * Mirrors REQUEST_BODY_RETENTION_DAYS / API_LOG_RETENTION_DAYS in
  * src/lib/api/handler.ts. Best-effort: a failure is logged, never fails the run.
@@ -79,7 +80,10 @@ async function purgeApiLog(env: Env, ctx: ExecutionContext): Promise<void> {
                AND (request_body IS NOT NULL OR response_body IS NOT NULL)`
         ).run();
         const rows = await env.DB.prepare(
-            `DELETE FROM api_requests WHERE created_at < strftime('%s','now') - ${API_LOG_RETENTION_DAYS} * 86400`
+            // A call that SAVED a record keeps its slim row as long as the record: it is the record's
+            // provenance, what refuses a reused externalId and what lets the partner void it. The
+            // record itself already says who registered whom, so this keeps nothing new.
+            `DELETE FROM api_requests WHERE created_at < strftime('%s','now') - ${API_LOG_RETENTION_DAYS} * 86400 AND record_id IS NULL`
         ).run();
         log(env, 'info', { message: 'api log retention', bodiesCleared: bodies.meta?.changes ?? 0, rowsDeleted: rows.meta?.changes ?? 0 }, ctx);
     } catch (e) {
