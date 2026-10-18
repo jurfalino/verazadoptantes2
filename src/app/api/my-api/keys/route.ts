@@ -31,7 +31,7 @@ export async function POST(request: Request) {
         if (!db) throw new Error('database unavailable');
         const res = await createMyKey(db, me, name, new URL(request.url).host);
         if ('error' in res) {
-            const status = res.error === 'terms_required' ? 403 : res.error === 'too_many_keys' ? 409 : 422;
+            const status = res.error === 'terms_required' || res.error === 'not_approved' ? 403 : res.error === 'too_many_keys' || res.error === 'too_many_today' ? 409 : 422;
             return NextResponse.json({ error: res.error }, { status });
         }
         logAudit({ userEmail: me, action: 'api_key_self_created', details: { keyId: res.id, name, environment: res.environment } });

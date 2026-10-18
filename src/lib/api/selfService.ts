@@ -4,8 +4,9 @@
  * admin still sees every key in Admin → API (marked as self-created) and can
  * revoke it or raise its limits. Server-only.
  */
-import { and, eq, isNull, count } from 'drizzle-orm';
+import { and, eq, gte, isNull, count } from 'drizzle-orm';
 import { apiKeys, apiTermsAcceptances } from '@/db/schema';
+import { canCreateKeys, getAccess } from './access';
 import { issueKey, listKeys, regenerateKey } from './review';
 import { environmentForHost } from './keys';
 
@@ -18,6 +19,8 @@ export const API_TERMS_VERSION = 1;
 export const SELF_SERVICE_CAPS = { exact: 100, fuzzy: 50 } as const;
 /** Active keys one person may hold (one per tool is plenty). */
 export const MAX_ACTIVE_KEYS = 3;
+/** Keys one person may create per day: revoke-and-recreate must not be a way around the limits. */
+export const MAX_KEYS_CREATED_PER_DAY = 3;
 
 export async function termsAccepted(db: Db, email: string): Promise<boolean> {
     const row = await db.select({ v: apiTermsAcceptances.version }).from(apiTermsAcceptances)
@@ -30,19 +33,25 @@ export async function acceptTerms(db: Db, email: string): Promise<void> {
 }
 
 export async function myDeveloperState(db: Db, email: string, host: string) {
-    const [accepted, keys] = await Promise.all([termsAccepted(db, email), listKeys(db, email)]);
+    const [accepted, keys, access, allowed] = await Promise.all([termsAccepted(db, email), listKeys(db, email), getAccess(db, email), canCreateKeys(db, email)]);
     return {
         termsAccepted: accepted, termsVersion: API_TERMS_VERSION,
+        // The person's API access (admin approval) and whether they may create keys now.
+        access, canCreateKeys: allowed,
         environment: environmentForHost(host), caps: SELF_SERVICE_CAPS, maxActiveKeys: MAX_ACTIVE_KEYS,
         keys,
     };
 }
 
-export type SelfServiceError = 'terms_required' | 'too_many_keys' | 'name_required' | 'not_found' | 'revoked';
+export type SelfServiceError = 'terms_required' | 'not_approved' | 'too_many_keys' | 'too_many_today' | 'name_required' | 'not_found' | 'revoked';
 
 export async function createMyKey(db: Db, email: string, name: string, host: string) {
     if (!name.trim()) return { error: 'name_required' as const };
     if (!(await termsAccepted(db, email))) return { error: 'terms_required' as const };
+    if (!(await canCreateKeys(db, email))) return { error: 'not_approved' as const };
+    const startOfDay = new Date(); startOfDay.setUTCHours(0, 0, 0, 0);
+    const today = await db.select({ n: count() }).from(apiKeys).where(and(eq(apiKeys.ownerEmail, email), eq(apiKeys.createdBy, email), gte(apiKeys.createdAt, startOfDay))).get();
+    if ((today?.n ?? 0) >= MAX_KEYS_CREATED_PER_DAY) return { error: 'too_many_today' as const };
     // Only the keys they created themselves count: a key an admin issued them doesn't use up the limit.
     const active = await db.select({ n: count() }).from(apiKeys).where(and(eq(apiKeys.ownerEmail, email), eq(apiKeys.createdBy, email), isNull(apiKeys.revokedAt))).get();
     if ((active?.n ?? 0) >= MAX_ACTIVE_KEYS) return { error: 'too_many_keys' as const };

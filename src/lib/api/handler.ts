@@ -7,7 +7,7 @@
  * daily cap counts, and what a void checks ("did this key create the record?").
  */
 import { NextResponse } from 'next/server';
-import { and, eq, gte, ne, count, lt, isNotNull, isNull, or } from 'drizzle-orm';
+import { and, eq, gte, ne, count, lt, isNotNull, isNull, max, or } from 'drizzle-orm';
 import { apiKeys, apiRequests } from '@/db/schema';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -41,6 +41,8 @@ export function dryRunAllowed(keyEnvironment: string, host: string): boolean {
 
 /** Person data the client sent is kept this long, then dropped from the log. */
 export const REQUEST_BODY_RETENTION_DAYS = 90;
+/** The slim row (who, when, which profiles, result) is deleted after a year — by the daily cron, workers/followup-cron. */
+export const API_LOG_RETENTION_DAYS = 365;
 /** Whole request kept for review (an adoption form's answers included), then purged as above. */
 const MAX_LOGGED_BODY = 64_000;
 /** A call is a few hundred bytes, plus up to 50 KB of form answers (FORM_CONTENT_MAX_BYTES). */
@@ -150,11 +152,47 @@ function retryAfterMidnight(): Record<string, string> {
     return { 'Retry-After': String(secondsToUtcMidnight()) };
 }
 
+/** A person's searches of one mode today, across ALL their keys (revoked ones included). */
+export async function personSearchesToday(db: Db, ownerEmail: string, mode: 'exact' | 'fuzzy'): Promise<number> {
+    const row = await db.select({ n: count() }).from(apiRequests).where(and(
+        eq(apiRequests.ownerEmail, ownerEmail),
+        eq(apiRequests.endpoint, 'search'),
+        eq(apiRequests.mode, mode),
+        gte(apiRequests.createdAt, startOfUtcDay()),
+        lt(apiRequests.httpStatus, 400),
+        or(isNull(apiRequests.outcome), ne(apiRequests.outcome, 'replayed')),
+    )).get();
+    return row?.n ?? 0;
+}
+
+/**
+ * A person's daily limit across all their keys: the highest cap among their
+ * active keys (review 2026-10-17: revoke-and-recreate multiplied the per-key
+ * limit without end). Admin-issued partner keys keep their own higher caps.
+ */
+export async function personCap(db: Db, ownerEmail: string, mode: 'exact' | 'fuzzy'): Promise<number> {
+    const col = mode === 'exact' ? apiKeys.dailyCapExact : apiKeys.dailyCapFuzzy;
+    const row = await db.select({ cap: max(col) }).from(apiKeys).where(and(eq(apiKeys.ownerEmail, ownerEmail), isNull(apiKeys.revokedAt))).get();
+    return row?.cap ?? 0;
+}
+
+/** What is left today for this key: the smaller of the key's and the person's remainder. */
+export async function remainingToday(db: Db, key: ApiKeyRow, mode: 'exact' | 'fuzzy'): Promise<{ limit: number; remaining: number }> {
+    const keyCap = mode === 'exact' ? key.dailyCapExact : key.dailyCapFuzzy;
+    const [byKey, byPerson, cap] = await Promise.all([searchesToday(db, key.id, mode), personSearchesToday(db, key.ownerEmail, mode), personCap(db, key.ownerEmail, mode)]);
+    const remaining = Math.max(0, Math.min(keyCap - byKey, Math.max(cap, keyCap) - byPerson));
+    return { limit: keyCap, remaining };
+}
+
 /** Checked BEFORE an idempotency claim, so a refused call never becomes the stored answer. */
 export async function enforceDailyCap(ctx: ApiCallContext, mode: 'exact' | 'fuzzy') {
     const cap = mode === 'exact' ? ctx.key.dailyCapExact : ctx.key.dailyCapFuzzy;
     if (await searchesToday(ctx.db, ctx.key.id, mode) >= cap) {
         throw new ApiError(429, 'daily_cap_reached', `daily ${mode} cap of ${cap} reached; resets at 00:00 UTC`, retryAfterMidnight());
+    }
+    const perPerson = Math.max(await personCap(ctx.db, ctx.key.ownerEmail, mode), cap);
+    if (await personSearchesToday(ctx.db, ctx.key.ownerEmail, mode) >= perPerson) {
+        throw new ApiError(429, 'daily_cap_reached', `daily ${mode} limit of ${perPerson} reached across all your keys; resets at 00:00 UTC`, retryAfterMidnight());
     }
 }
 
@@ -300,6 +338,8 @@ async function writeLog(ctx: ApiCallContext, endpoint: ApiEndpoint, status: numb
         // A look-up answer embeds an earlier call's answer: storing it again would
         // restart that person data's 90-day clock (review 2026-10-17).
         responseBody: endpoint === 'requests' ? null : JSON.stringify(body).slice(0, MAX_LOGGED_BODY),
+        // The refusal's code, kept after the 90-day body purge (filters and support).
+        errorCode: status >= 400 ? ((body.error as { code?: string } | undefined)?.code ?? null) : null,
         // A claimed call refused with a 4xx saved nothing: it must not hold the externalId.
         ...(ctx.rowClaimed && status >= 400 && status < 500 ? { idempotencyKey: null } : {}),
         profileIds: ctx.log.profileIds?.length ? JSON.stringify(ctx.log.profileIds) : null,
@@ -411,9 +451,8 @@ export async function handleApiCall(
     // The search quota on every search answer (IETF RateLimit fields): what is left today, and when it resets.
     if (endpoint === 'search' && ctx.log.mode) {
         try {
-            const limit = ctx.log.mode === 'exact' ? key.dailyCapExact : key.dailyCapFuzzy;
-            const used = await searchesToday(db, key.id, ctx.log.mode);
-            headers = { ...headers, 'RateLimit-Limit': String(limit), 'RateLimit-Remaining': String(Math.max(0, limit - used)), 'RateLimit-Reset': String(secondsToUtcMidnight()) };
+            const { limit, remaining } = await remainingToday(db, key, ctx.log.mode);
+            headers = { ...headers, 'RateLimit-Limit': String(limit), 'RateLimit-Remaining': String(remaining), 'RateLimit-Reset': String(secondsToUtcMidnight()) };
         } catch (e) {
             logger.warn('api: rate-limit headers skipped', { requestId, keyId: key.id, error: e instanceof Error ? e.message : String(e) });
         }

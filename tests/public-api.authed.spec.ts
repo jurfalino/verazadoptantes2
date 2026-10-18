@@ -357,9 +357,8 @@ test.describe('public API v1', { tag: '@leg-apicore' }, () => {
         expect(rows.some(r => r.outcome === 'ambiguous')).toBe(true);
         expect(rows.some(r => r.dryRun && r.recordId === null)).toBe(true);
 
-        await page.goto('/admin/api');
+        await page.goto('/admin/api?tab=keys');
         await expect(page.getByTestId('api-keys')).toContainText(`E2E ${TAG}`, { timeout: 30000 });
-        await expect(page.getByTestId('api-transaction').first()).toBeVisible();
         // Each key shows what it saved and voided in the last 30 days (search-then-void is visible).
         const keys = (await (await page.request.get('/api/admin/api-keys')).json()).keys as Array<{ id: string; last30: { activities: number; voided: number } }>;
         const mine = keys.find(k => k.id === keyId)!;
@@ -367,7 +366,9 @@ test.describe('public API v1', { tag: '@leg-apicore' }, () => {
         expect(mine.last30.voided).toBeGreaterThanOrEqual(2); // the two follow-ups voided earlier
         await expect(page.getByTestId('api-keys').locator('li').filter({ hasText: `E2E ${TAG}` }).getByTestId('api-key-stats'))
             .toContainText(`${mine.last30.activities}`);
-        // Test calls are marked as such: nothing was saved, so nothing to void.
+        // Calls tab: every transaction, test calls marked as such (nothing was saved, so nothing to void).
+        await page.getByTestId('api-tab-calls').click();
+        await expect(page.getByTestId('api-transaction').first()).toBeVisible({ timeout: 30000 });
         const dryRow = page.getByTestId('api-transaction').filter({ has: page.getByTestId('api-dry-run-badge') }).first();
         await expect(dryRow).toBeVisible();
         await expect(dryRow.getByRole('button', { name: /^(Anular|Void)$/ })).toHaveCount(0);

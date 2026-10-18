@@ -179,6 +179,28 @@ export type AuditCategory =
     | 'auth'
     | 'admin_ops';
 
+/** Admin → API and /developers actions (audited since 2.56.197 / 2.56.201). */
+const API_LABELS: Record<string, [string, string]> = {
+    api_terms_accepted: ['aceptó los términos de la API', 'accepted the API terms'],
+    api_access_requested: ['pidió acceso a la API', 'requested API access'],
+    api_access_approve: ['aprobó acceso a la API', 'approved API access'],
+    api_access_deny: ['rechazó acceso a la API', 'denied API access'],
+    api_access_block: ['bloqueó de la API', 'blocked from the API'],
+    api_access_unblock: ['desbloqueó de la API', 'unblocked from the API'],
+    api_key_issued: ['emitió una clave de API', 'issued an API key'],
+    api_key_regenerated: ['regeneró una clave de API', 'regenerated an API key'],
+    api_key_revoked: ['revocó una clave de API', 'revoked an API key'],
+    api_key_updated: ['cambió límites de una clave de API', 'changed an API key\'s limits'],
+    api_key_self_created: ['creó su clave de API', 'created their API key'],
+    api_key_self_regenerated: ['regeneró su clave de API', 'regenerated their API key'],
+    api_key_self_revoked: ['revocó su clave de API', 'revoked their API key'],
+    api_request_viewed: ['abrió el detalle de una llamada a la API', 'opened an API call\'s detail'],
+    api_person_viewed: ['miró a quiénes buscó por la API', 'viewed who someone searched via the API'],
+    api_record_voided: ['anuló un registro guardado por la API', 'voided a record saved by the API'],
+    api_demo_seeded: ['cargó las personas de ejemplo de la API', 'loaded the API example people'],
+};
+const API_AUDIT_ACTIONS = Object.keys(API_LABELS);
+
 export const CATEGORY_ACTIONS: Record<AuditCategory, string[] | null> = {
     all: null, // means: no action filter; profile_viewed still hidden by default
     edits: [
@@ -205,6 +227,7 @@ export const CATEGORY_ACTIONS: Record<AuditCategory, string[] | null> = {
         'adopter_country_backfilled', 'contact_entries_backfilled',
         'adopter_made_public', 'adopter_made_private',
         'adopter_ownership_transferred',
+        ...API_AUDIT_ACTIONS,
     ],
 };
 
@@ -390,6 +413,10 @@ export function deriveSummary(
             };
 
         default:
+            if (API_LABELS[action]) {
+                const who = String(details.ownerEmail ?? '');
+                return { primary: API_LABELS[action][_t ? 0 : 1], secondary: who || undefined };
+            }
             // Unknown action: render the raw action name. Better than dropping
             // the row silently; admin can still expand the raw JSON.
             return { primary: action };
@@ -411,5 +438,6 @@ export function targetIsAdopter(action: string): boolean {
     if (action === 'animal_for_adoption_deleted' || action === 'animal_image_deleted') return false;
     if (action === 'contact_entries_backfilled') return false;
     if (action === 'pii_search_match_grant') return false;
+    if (action.startsWith('api_')) return false;
     return true;
 }

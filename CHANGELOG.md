@@ -2,6 +2,34 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.201] - 2026-10-17
+
+### Added — Admin → API: approval, people, tabs, retention
+
+Per the senior-EM review (.agents/audits/2026-10-17-admin-api-review.md) and Jon's decisions:
+
+- **API access needs an admin's approval.** At /developers, after the terms, a person asks
+  for access (tool + purpose); admins are notified and approve, deny or block in
+  Admin → API → People. Only approved people (and admins) create keys. Blocking revokes
+  every key the person holds and refuses new ones, admin-issued included. Its own
+  status (`api_access`, migration 0089), not a user role.
+- **Admin → API in tabs.** Overview (on/off, pending requests, 24 h / 7 days: calls,
+  refusals, our failures, 503s, limit hits; top fuzzy users; the example people).
+  People (50 a page, status / signal filters, search, sort; a person's request,
+  decisions, 30-day chart, who they searched — audited, their keys and calls). Keys
+  (filters, created date, who revoked, 50 a page). Calls (search by requestId,
+  externalId or searched name / email / phone; mode, error, test, person and date filters).
+- **Limits per person, not just per key**: one daily limit across all of a person's keys,
+  and at most 3 self-created keys a day (revoke-and-recreate no longer resets the count).
+- "Anula mucho" is per person and ignores admins' voids.
+- Admins opening a call's detail or a person's searches is audited; API actions read
+  plainly in /admin/audit.
+- «Regenerar» is hidden on keys their owner created (only the owner may see that secret).
+- Daily limits change with an explicit Save; an empty box is refused instead of saving 0.
+- Each refused call stores its error code (kept after the 90-day body purge).
+- **Retention**: the daily cron (workers/followup-cron) clears request/response bodies after
+  90 days and deletes the call log after 12 months.
+
 ## [2.56.200] - 2026-10-17
 
 ### Changed — CI: the API e2e flow in two files and two legs

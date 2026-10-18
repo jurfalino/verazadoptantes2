@@ -87,7 +87,7 @@ test.describe('public API v1 — admin, docs, /developers', { tag: '@leg-apidocs
     test('admin: «Regenerar» shows a new secret once; the old one stops working, the key keeps its history', async ({ page }) => {
         const oldSecret = secret;
         expect((await api.get('/api/v1/me', { headers: auth() })).status()).toBe(200);
-        await page.goto('/admin/api');
+        await page.goto('/admin/api?tab=keys');
         const row = page.getByTestId('api-keys').locator('li').filter({ hasText: `E2E ${TAG}` });
         await row.getByRole('button', { name: /^(Regenerar|Regenerate)$/ }).click();
         await row.getByRole('button', { name: /Sí, regenerar|Yes, regenerate|Sim, regenerar/ }).click();
@@ -107,7 +107,7 @@ test.describe('public API v1 — admin, docs, /developers', { tag: '@leg-apidocs
     });
 
     test('admin: the rescuer email suggests matching users; picking one fills the field', async ({ page }) => {
-        await page.goto('/admin/api');
+        await page.goto('/admin/api?tab=keys');
         const email = page.getByTestId('api-owner-email');
         await email.fill('gatitos');
         const options = page.getByTestId('api-owner-options');
@@ -153,6 +153,73 @@ test.describe('public API v1 — admin, docs, /developers', { tag: '@leg-apidocs
         await page.getByTestId('developers-confirm').click();
         await expect(page.getByTestId('developers-key').filter({ hasText: `Mi formulario ${TAG}` })).toContainText(/Revocada|Revoked|Revogada/, { timeout: 30000 });
         expect((await api.get('/api/v1/me', { headers: { authorization: `Bearer ${shown}` } })).status()).toBe(401);
+    });
+
+    test('API access by approval: request → admin approves → key → one limit per person → block revokes and refuses', async ({ page, browser }) => {
+        const USER = 'testuser@example.com';
+        // A clean slate for the regular test user, so a rerun behaves like the first run.
+        execD1(`DELETE FROM api_access WHERE user_email = '${USER}'`);
+        execD1(`DELETE FROM api_terms_acceptances WHERE user_email = '${USER}'`);
+        execD1(`UPDATE api_keys SET revoked_at = strftime('%s','now') WHERE owner_email = '${USER}' AND revoked_at IS NULL`);
+        execD1(`DELETE FROM api_keys WHERE owner_email = '${USER}' AND created_by = owner_email`);
+        const ctx = await browser.newContext({ storageState: '.auth/user.json' });
+        const user = await ctx.newPage();
+        try {
+            // Terms first, then no key without approval.
+            expect((await user.request.post('/api/my-api/terms')).status()).toBe(200);
+            expect((await user.request.post('/api/my-api/keys', { data: { name: 'x' } })).status()).toBe(403);
+            await user.goto('/developers');
+            await user.getByTestId('developers-access-tool').fill(`Formulario ${TAG}`, { timeout: 30000 });
+            await user.getByTestId('developers-access-purpose').fill('Revisar adoptantes antes de entregar');
+            await user.getByTestId('developers-access-send').click();
+            await expect(user.getByTestId('developers-access-pending')).toBeVisible({ timeout: 30000 });
+            expect((await user.request.post('/api/my-api/keys', { data: { name: 'x' } })).status()).toBe(403);
+
+            // The admin sees the request and approves it.
+            await page.goto('/admin/api?tab=overview');
+            await expect(page.getByTestId('api-overview-pending')).toBeVisible({ timeout: 30000 });
+            await page.getByTestId('api-overview-pending').click();
+            const row = page.getByTestId('api-person-row').filter({ hasText: USER });
+            await expect(row).toContainText(`Formulario ${TAG}`, { timeout: 30000 });
+            await row.click();
+            await expect(page.getByTestId('api-person')).toContainText('Revisar adoptantes', { timeout: 30000 });
+            await page.getByTestId('api-access-approve').click();
+            await expect(page.getByTestId('api-person').getByTestId('api-access-status').first()).toContainText(/Aprobado|Approved/, { timeout: 30000 });
+
+            // Approved: the person creates keys. One daily limit across all of them.
+            const k1 = await user.request.post('/api/my-api/keys', { data: { name: `A ${TAG}` } });
+            expect(k1.status()).toBe(201);
+            const k2 = await user.request.post('/api/my-api/keys', { data: { name: `B ${TAG}` } });
+            expect(k2.status()).toBe(201);
+            const [a, b] = [await k1.json(), await k2.json()] as Array<{ id: string; secret: string }>;
+            for (const k of [a, b]) {
+                expect((await page.request.patch(`/api/admin/api-keys/${k.id}`, { data: { dailyCapFuzzy: 1 } })).status()).toBe(200);
+            }
+            const fuzzy = (secretOf: string) => api.post('/api/v1/search', {
+                data: { mode: 'fuzzy', person: { fullName: `Nadie ${TAG}` } }, headers: { authorization: `Bearer ${secretOf}` },
+            });
+            expect((await fuzzy(a.secret)).status()).toBe(200);
+            const second = await fuzzy(b.secret);
+            expect(second.status()).toBe(429);
+            expect((await second.json()).error.code).toBe('daily_cap_reached');
+
+            // The admin sees who they searched (that view is audited).
+            await page.reload();
+            await expect(page.getByTestId('api-person-searched').first()).toContainText(`Nadie ${TAG}`, { timeout: 30000 });
+
+            // Block: every key stops working; no new key from anyone.
+            await page.getByTestId('api-access-block').click();
+            await page.getByTestId('api-access-block-yes').click();
+            await expect(page.getByTestId('api-person').getByTestId('api-access-status').first()).toContainText(/Bloqueado|Blocked/, { timeout: 30000 });
+            for (const k of [a, b]) expect((await api.get('/api/v1/me', { headers: { authorization: `Bearer ${k.secret}` } })).status()).toBe(401);
+            expect((await user.request.post('/api/my-api/keys', { data: { name: 'x' } })).status()).toBe(403);
+            expect((await page.request.post('/api/admin/api-keys', { data: { ownerEmail: USER, name: 'x' } })).status()).toBe(409);
+            await user.goto('/developers');
+            await expect(user.getByTestId('developers-access-blocked')).toBeVisible({ timeout: 30000 });
+        } finally {
+            await page.request.post(`/api/admin/api-people/${encodeURIComponent(USER)}`, { data: { decision: 'unblock' } });
+            await ctx.close();
+        }
     });
 
     test('docs and spec are served; a revoked key stops working', async ({ page }) => {

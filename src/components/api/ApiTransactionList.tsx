@@ -18,7 +18,15 @@ export interface TransactionRow {
     externalId: string | null; voidedAt: string | null; voidedBy: string | null; createdAt: string;
     /** An admin's read-only test call (X-Dry-Run): nothing was saved. */
     dryRun?: boolean;
+    /** A refusal's error.code. */
+    errorCode?: string | null;
+    /** Who the call searched for (null after the 90-day purge). */
+    searched?: { fullName: string | null; email: string | null; phone: string | null; documentId: string | null } | null;
 }
+
+/** Error codes worth filtering by (the API's published codes). */
+const ERROR_CODES = ['invalid_request', 'activity_required', 'external_id_required', 'external_id_reused', 'request_in_progress', 'partially_saved',
+    'example_data', 'unauthorized', 'forbidden', 'daily_cap_reached', 'daily_call_ceiling_reached', 'temporarily_unavailable', 'server_error'] as const;
 
 const OUTCOMES = ['found', 'not_found', 'ambiguous', 'results', 'voided', 'replayed', 'error'] as const;
 
@@ -36,12 +44,16 @@ export async function failure(res: Response, what: string): Promise<Error> {
     return new Error(`${body?.error || `${what} failed`} (HTTP ${res.status})${body?.errorId ? ` (ID: ${body.errorId})` : ''}`);
 }
 
-export default function ApiTransactionList({ listUrl, detailUrl, voidUrl, showOwner, keys }: {
+export default function ApiTransactionList({ listUrl, detailUrl, voidUrl, showOwner, keys, advanced = false, owner = null }: {
     listUrl: string;
     detailUrl: (id: string) => string;
     voidUrl: (id: string) => string;
     showOwner: boolean;
     keys: Array<{ id: string; name: string }>;
+    /** Admin: search box (requestId / externalId / searched name), mode, error code, test calls, person filters. */
+    advanced?: boolean;
+    /** Admin: only this person's calls (the People detail). */
+    owner?: string | null;
 }) {
     const { t } = useLanguage();
     const toast = useShowToast();
@@ -50,6 +62,15 @@ export default function ApiTransactionList({ listUrl, detailUrl, voidUrl, showOw
     const [loading, setLoading] = useState(true);
     const [outcome, setOutcome] = useState('');
     const [keyId, setKeyId] = useState('');
+    const [mode, setMode] = useState('');
+    const [errorCode, setErrorCode] = useState('');
+    const [dryRun, setDryRun] = useState('');
+    const [person, setPerson] = useState('');
+    const [personInput, setPersonInput] = useState('');
+    const [from, setFrom] = useState('');
+    const [to, setTo] = useState('');
+    const [query, setQuery] = useState('');
+    const [submittedQuery, setSubmittedQuery] = useState('');
     const [open, setOpen] = useState<Record<string, { requestBody: unknown; responseBody: unknown } | 'loading'>>({});
     const [confirmVoid, setConfirmVoid] = useState<string | null>(null);
 
@@ -59,6 +80,13 @@ export default function ApiTransactionList({ listUrl, detailUrl, voidUrl, showOw
             const q = new URLSearchParams();
             if (outcome) q.set('outcome', outcome);
             if (keyId) q.set('keyId', keyId);
+            if (mode) q.set('mode', mode);
+            if (errorCode) q.set('errorCode', errorCode);
+            if (dryRun) q.set('dryRun', dryRun);
+            if (from) q.set('from', `${from}T00:00:00.000Z`);
+            if (to) q.set('to', `${to}T23:59:59.999Z`);
+            if (owner || person.trim()) q.set('owner', owner ?? person.trim().toLowerCase());
+            if (submittedQuery.trim()) q.set('q', submittedQuery.trim());
             if (before) q.set('before', before);
             const res = await fetch(`${listUrl}?${q}`);
             if (!res.ok) throw await failure(res, 'list');
@@ -70,7 +98,7 @@ export default function ApiTransactionList({ listUrl, detailUrl, voidUrl, showOw
         } finally {
             setLoading(false);
         }
-    }, [listUrl, outcome, keyId, t, toast]);
+    }, [listUrl, outcome, keyId, mode, errorCode, dryRun, owner, person, from, to, submittedQuery, t, toast]);
 
     useEffect(() => { void load(null); }, [load]);
 
@@ -105,7 +133,42 @@ export default function ApiTransactionList({ listUrl, detailUrl, voidUrl, showOw
 
     return (
         <div className="space-y-3">
+            {advanced && (
+                <form className="flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); setSubmittedQuery(query); }}>
+                    <input className={`${select} flex-1 min-w-[220px]`} value={query} onChange={e => setQuery(e.target.value)}
+                        placeholder={t('apiReview.search_placeholder')} aria-label={t('apiReview.search_placeholder')} data-testid="api-calls-search" />
+                    <button type="submit" className="text-sm font-semibold rounded-xl px-4 py-2 border" style={{ background: 'var(--accent-subtle-bg)', color: 'var(--accent)', borderColor: 'var(--border-accent)' }}>{t('apiReview.search')}</button>
+                </form>
+            )}
             <div className="flex flex-wrap gap-2">
+                {advanced && (
+                    <>
+                        <select className={select} value={mode} onChange={e => setMode(e.target.value)} aria-label={t('apiReview.filter_mode')} data-testid="api-calls-mode">
+                            <option value="">{t('apiReview.filter_all_modes')}</option>
+                            <option value="exact">exact</option>
+                            <option value="fuzzy">fuzzy</option>
+                        </select>
+                        <select className={select} value={errorCode} onChange={e => setErrorCode(e.target.value)} aria-label={t('apiReview.filter_error')}>
+                            <option value="">{t('apiReview.filter_all_errors')}</option>
+                            {ERROR_CODES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                        <select className={select} value={dryRun} onChange={e => setDryRun(e.target.value)} aria-label={t('apiReview.filter_dry_run')}>
+                            <option value="">{t('apiReview.filter_all_calls')}</option>
+                            <option value="0">{t('apiReview.filter_real_calls')}</option>
+                            <option value="1">{t('apiReview.filter_test_calls')}</option>
+                        </select>
+                        <label className="text-xs text-stone-600 flex items-center gap-1">{t('apiReview.filter_from')}
+                            <input type="date" className={select} value={from} onChange={e => setFrom(e.target.value)} data-testid="api-calls-from" />
+                        </label>
+                        <label className="text-xs text-stone-600 flex items-center gap-1">{t('apiReview.filter_to')}
+                            <input type="date" className={select} value={to} onChange={e => setTo(e.target.value)} />
+                        </label>
+                        {!owner && (
+                            <input className={select} value={personInput} onChange={e => setPersonInput(e.target.value)} placeholder={t('apiReview.filter_person')} aria-label={t('apiReview.filter_person')}
+                                onBlur={() => setPerson(personInput)} onKeyDown={e => { if (e.key === 'Enter') setPerson(personInput); }} />
+                        )}
+                    </>
+                )}
                 <select className={select} value={outcome} onChange={e => setOutcome(e.target.value)} aria-label={t('apiReview.filter_outcome')}>
                     <option value="">{t('apiReview.filter_all_outcomes')}</option>
                     {OUTCOMES.map(o => <option key={o} value={o}>{t(`apiReview.outcome_${o}`)}</option>)}
@@ -137,10 +200,15 @@ export default function ApiTransactionList({ listUrl, detailUrl, voidUrl, showOw
                                 <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${OUTCOME_CLASS[r.outcome ?? ''] ?? 'bg-stone-100 text-stone-600'}`}>
                                     {r.outcome ? t(`apiReview.outcome_${r.outcome}`) : r.httpStatus}
                                 </span>
-                                {r.httpStatus >= 400 && <span className="text-xs text-red-700">HTTP {r.httpStatus}{r.errorId ? ` · ${r.errorId}` : ''}</span>}
+                                {r.httpStatus >= 400 && <span className="text-xs text-red-700">HTTP {r.httpStatus}{r.errorCode ? ` · ${r.errorCode}` : ''}{r.errorId ? ` · ${r.errorId}` : ''}</span>}
                                 {r.voidedAt && <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-semibold">{t('apiReview.voided_badge')}</span>}
                                 {r.dryRun && <span data-testid="api-dry-run-badge" title={t('apiReview.dry_run_hint')} className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-semibold">{t('apiReview.dry_run_badge')}</span>}
                             </div>
+                            {r.searched && (r.searched.fullName || r.searched.email || r.searched.phone || r.searched.documentId) && (
+                                <p className="mt-1 text-xs text-stone-600 dark:text-stone-300 break-words" data-testid="api-transaction-searched">
+                                    {t('apiReview.searched')}: {[r.searched.fullName, r.searched.email, r.searched.phone, r.searched.documentId].filter(Boolean).join(' · ')}
+                                </p>
+                            )}
                             <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
                                 {profileId && (
                                     <Link className="text-teal-700 underline underline-offset-2" href={r.recordId && !r.voidedAt ? `/adopter/${profileId}?record=${encodeURIComponent(r.recordId)}` : `/adopter/${profileId}`}>

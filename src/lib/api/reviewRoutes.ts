@@ -32,6 +32,10 @@ export async function listResponse(request: Request, actor: string, owner: strin
                 from: dateParam(q.get('from')),
                 to: dateParam(q.get('to')),
                 before: dateParam(q.get('before')),
+                mode: q.get('mode'),
+                errorCode: q.get('errorCode'),
+                dryRun: q.get('dryRun') === '1' ? true : q.get('dryRun') === '0' ? false : null,
+                q: q.get('q'),
             }),
             owner ? listKeys(db, owner) : Promise.resolve(undefined),
         ]);
@@ -48,6 +52,8 @@ export async function detailResponse(id: string, actor: string, owner: string | 
         if (!db) throw new Error('database unavailable');
         const tx = await getTransaction(db, id, owner);
         if (!tx) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+        // An admin opening someone's call reads their person data: leave a trace (review 2026-10-17).
+        if (!owner) logAudit({ userEmail: actor, action: 'api_request_viewed', details: { transactionId: id, ownerEmail: tx.ownerEmail } });
         return NextResponse.json({ transaction: tx });
     } catch (e) {
         const errorId = logger.error('api review: detail failed', e, { actor, owner, transactionId: id });

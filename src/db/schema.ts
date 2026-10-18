@@ -916,6 +916,18 @@ export const apiKeys = sqliteTable("api_keys", {
     ownerIdx: index("idx_api_keys_owner").on(table.ownerEmail),
 }));
 
+// API access by admin approval (Jon, 2026-10-17): requested at /developers, decided in Admin → API.
+export const apiAccess = sqliteTable("api_access", {
+    userEmail: text("user_email").primaryKey(),
+    status: text("status").notNull(), // requested | approved | denied | blocked
+    tool: text("tool"),
+    purpose: text("purpose"),
+    requestedAt: integer("requested_at", { mode: "timestamp" }),
+    decidedAt: integer("decided_at", { mode: "timestamp" }),
+    decidedBy: text("decided_by"),
+    note: text("note"),
+});
+
 // /developers: who accepted which version of the API terms (needed before a self-created key).
 export const apiTermsAcceptances = sqliteTable("api_terms_acceptances", {
     userEmail: text("user_email").notNull(),
@@ -958,6 +970,7 @@ export const apiRequests = sqliteTable("api_requests", {
     voidedAt: integer("voided_at", { mode: "timestamp" }),
     voidedBy: text("voided_by"),
     durationMs: integer("duration_ms"),
+    errorCode: text("error_code"),             // a refused call's error.code (kept after the body purge)
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => ({
     keyTimeIdx: index("idx_api_requests_key_time").on(table.keyId, table.createdAt),
