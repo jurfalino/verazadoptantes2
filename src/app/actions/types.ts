@@ -161,6 +161,12 @@ export interface FindAdoptersOptions {
      * Default: 15 for duplicate mode, 0 for discovery mode.
      */
     minRelevance?: number;
+    /**
+     * Duplicate mode: skip the LIKE scan of every profile's name / contacts (the
+     * fallback for profiles that were never tokenized). For bulk imports, which
+     * run the admin duplicate scan afterwards instead (2026-10-18).
+     */
+    skipLikeFallback?: boolean;
     /** Max results returned. Default: SEARCH_RESULT_LIMIT. */
     limit?: number;
     /**

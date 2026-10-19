@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { RECORD_TYPES } from '@/domain/constants';
 import { isFullName, isUsableDocumentId } from '@/domain/apiExactMatch';
 import { readPhones } from '@/domain/phoneNumber';
+import { API_EMAIL_RE } from '@/domain/apiPersonCleanup';
 import { normalizeSpecies } from '@/domain/importRow';
 
 /** Activity types that place the animal with the person (they create it in the rescue's list). */
@@ -29,7 +30,7 @@ const personSchema = z.object({
     fullName: z.string().trim().min(1).max(200).optional()
         .meta({ description: 'Full name: first name and surname. Required in exact mode.', example: 'María José Pérez' }),
     email: z.string().trim().max(254).optional().meta({ example: 'maria@example.com' }),
-    phone: z.string().trim().max(40).optional()
+    phone: z.string().trim().max(200).optional()
         .meta({ description: 'Any format. Read like BuenAdoptante reads phones, with your country: "+54 9 11 6462-2274" and "11 6462-2274" are the same number.', example: '+54 9 11 6462-2274' }),
     documentId: z.object({
         value: z.string().trim().min(1).max(40).meta({ example: '30.123.456' }),
@@ -115,7 +116,7 @@ export const API_ERROR_CODES: PublicApiErrorCode[] = [
     'temporarily_unavailable', 'server_error',
 ];
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const EMAIL_RE = API_EMAIL_RE;
 
 export interface RuleProblem { code: ApiErrorCode; message: string; field: string }
 
@@ -133,7 +134,7 @@ export function checkSearchRules(req: SearchRequest): RuleProblem[] {
     if (req.mode === 'exact') {
         if (!p.fullName || !(p.email || p.phone || p.documentId)) {
             add('exact_requires_name_and_identifier', p.fullName ? 'person' : 'person.fullName', 'exact mode needs person.fullName plus person.email, person.phone or person.documentId');
-        } else if (!isFullName(p.fullName)) add('full_name_required', 'person.fullName', 'person.fullName must include first name and surname');
+        } else if (!isFullName(p.fullName)) add('full_name_required', 'person.fullName', 'person.fullName must be a first name and surname (not an email, a phone number or a single word)');
         // An exact call always saves (Jon, 2026-10-17): to look someone up, use fuzzy.
         if (!a) add('activity_required', 'activity', 'an exact call always saves an activity; to look someone up without saving anything, use mode "fuzzy"');
         else if (!a.externalId) add('external_id_required', 'activity.externalId', 'activity.externalId is required: your own id for this activity (e.g. your form submission id); it is how a retry is recognised');
@@ -243,6 +244,14 @@ const riskSchema = z.object({
 }).meta({ description: 'Always present: the worst signal across EVERY profile your email / phone / document matched, whatever the result. Check this before handing over an animal.' });
 export type ApiRisk = z.infer<typeof riskSchema>;
 
+export const warningSchema = z.object({
+    field: z.string().meta({ example: 'person.phone' }),
+    code: z.enum(['value_dropped', 'value_cleaned']),
+    reason: z.enum(['not_an_email', 'not_a_phone', 'no_account', 'first_valid_email', 'phone_numbers_only']),
+    message: z.string(),
+}).meta({ description: 'value_dropped: the value was not usable and was not saved (the rest was). value_cleaned: only the usable part was kept (the first valid email; the phone numbers without the note).' });
+export type ApiWarning = z.infer<typeof warningSchema>;
+
 export const exactResponseSchema = z.object({
     requestId: z.string(),
     mode: z.literal('exact'),
@@ -259,6 +268,7 @@ export const exactResponseSchema = z.object({
     saved: savedSchema.meta({ description: 'Always present: what this call did.' }),
     replayed: z.boolean().optional().meta({ description: 'true when this is the stored answer to an earlier call with the same externalId and content (a retry): nothing new was saved.' }),
     originalRequestId: z.string().optional().meta({ description: 'On a replay: the requestId of the call that saved it.' }),
+    warnings: z.array(warningSchema).optional().meta({ description: 'Present when something you sent was not usable and was left out, or only part of it was kept. Fix it at the source.' }),
 });
 export type ExactResponse = z.infer<typeof exactResponseSchema>;
 
@@ -271,6 +281,7 @@ export const fuzzyResponseSchema = z.object({
         profile: profileSummarySchema,
     })),
     truncated: z.boolean().optional(),
+    warnings: z.array(warningSchema).optional(),
 });
 export type FuzzyResponse = z.infer<typeof fuzzyResponseSchema>;
 

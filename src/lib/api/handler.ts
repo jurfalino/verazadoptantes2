@@ -104,6 +104,18 @@ export interface ApiCallContext {
     dryRun: boolean;
     /** The request URL's query (GET endpoints). */
     query: URLSearchParams;
+    /** Today's counts as read by enforceDailyCap (this call not included), reused for the RateLimit headers. */
+    caps?: CapSnapshot;
+}
+
+export interface CapSnapshot { mode: 'exact' | 'fuzzy'; byKey: number; byPerson: number; personCap: number }
+
+/** What is left once this call is counted, from counts read before it ran. Pure. */
+export function remainingFrom(snap: CapSnapshot, keyCap: number, counted: boolean): { limit: number; remaining: number } {
+    const byKey = snap.byKey + (counted ? 1 : 0), byPerson = snap.byPerson + (counted ? 1 : 0);
+    const personLimit = Math.max(snap.personCap, keyCap);
+    const remaining = Math.max(0, Math.min(keyCap - byKey, personLimit - byPerson));
+    return { limit: personLimit - byPerson < keyCap - byKey ? personLimit : keyCap, remaining };
 }
 
 export interface ApiResult { status: number; body: Record<string, unknown> }
@@ -181,20 +193,26 @@ export async function personCap(db: Db, ownerEmail: string, mode: 'exact' | 'fuz
 export async function remainingToday(db: Db, key: ApiKeyRow, mode: 'exact' | 'fuzzy'): Promise<{ limit: number; remaining: number }> {
     const keyCap = mode === 'exact' ? key.dailyCapExact : key.dailyCapFuzzy;
     const [byKey, byPerson, cap] = await Promise.all([searchesToday(db, key.id, mode), personSearchesToday(db, key.ownerEmail, mode), personCap(db, key.ownerEmail, mode)]);
-    const personLimit = Math.max(cap, keyCap);
-    const remaining = Math.max(0, Math.min(keyCap - byKey, personLimit - byPerson));
     // The limit that binds: the person's when their other keys used it up, else the key's own.
-    return { limit: personLimit - byPerson < keyCap - byKey ? personLimit : keyCap, remaining };
+    return remainingFrom({ mode, byKey, byPerson, personCap: cap }, keyCap, false);
 }
 
-/** Checked BEFORE an idempotency claim, so a refused call never becomes the stored answer. */
+/**
+ * Checked BEFORE an idempotency claim, so a refused call never becomes the stored
+ * answer. The three counts are read at once and kept for the RateLimit headers
+ * (they were read twice per call, one after another — 2026-10-18).
+ */
 export async function enforceDailyCap(ctx: ApiCallContext, mode: 'exact' | 'fuzzy') {
     const cap = mode === 'exact' ? ctx.key.dailyCapExact : ctx.key.dailyCapFuzzy;
-    if (await searchesToday(ctx.db, ctx.key.id, mode) >= cap) {
+    const [byKey, byPerson, ownerCap] = await Promise.all([
+        searchesToday(ctx.db, ctx.key.id, mode), personSearchesToday(ctx.db, ctx.key.ownerEmail, mode), personCap(ctx.db, ctx.key.ownerEmail, mode),
+    ]);
+    ctx.caps = { mode, byKey, byPerson, personCap: ownerCap };
+    if (byKey >= cap) {
         throw new ApiError(429, 'daily_cap_reached', `daily ${mode} cap of ${cap} reached; resets at 00:00 UTC`, retryAfterMidnight());
     }
-    const perPerson = Math.max(await personCap(ctx.db, ctx.key.ownerEmail, mode), cap);
-    if (await personSearchesToday(ctx.db, ctx.key.ownerEmail, mode) >= perPerson) {
+    const perPerson = Math.max(ownerCap, cap);
+    if (byPerson >= perPerson) {
         throw new ApiError(429, 'daily_cap_reached', `daily ${mode} limit of ${perPerson} reached across all your keys; resets at 00:00 UTC`, retryAfterMidnight());
     }
 }
@@ -439,7 +457,9 @@ export async function handleApiCall(
     let errorId: string | null = null;
     try {
         if (tooLarge) throw new ApiError(413, 'payload_too_large', `request bodies are limited to ${maxBody} bytes`);
-        await enforceCallCeiling(db, key);
+        // An import-mode key is driven by our own script, which keeps its own budget:
+        // counting today's calls on every call reads more rows the longer the day goes.
+        if (key.importMode !== 1) await enforceCallCeiling(db, key);
         if (wantsDryRun(request.headers.get(DRY_RUN_HEADER))) {
             if (endpoint === 'void') throw new ApiError(422, 'dry_run_not_allowed', 'a void cannot be a dry run');
             if (!dryRunAllowed(key.environment, new URL(request.url).host)) {
@@ -466,9 +486,13 @@ export async function handleApiCall(
 
     await writeLog(ctx, endpoint, status, body, errorId, startedAt);
     // The search quota on every search answer (IETF RateLimit fields): what is left today, and when it resets.
-    if (endpoint === 'search' && ctx.log.mode) {
+    if (endpoint === 'search' && ctx.log.mode && key.importMode !== 1) {
         try {
-            const { limit, remaining } = await remainingToday(db, key, ctx.log.mode);
+            const mode = ctx.log.mode as 'exact' | 'fuzzy';
+            const keyCap = mode === 'exact' ? key.dailyCapExact : key.dailyCapFuzzy;
+            // Counted when it ran (not refused, not a replay) — the same rule as searchesToday.
+            const counted = status < 400 && ctx.log.outcome !== 'replayed';
+            const { limit, remaining } = ctx.caps?.mode === mode ? remainingFrom(ctx.caps, keyCap, counted) : await remainingToday(db, key, mode);
             headers = { ...headers, 'RateLimit-Limit': String(limit), 'RateLimit-Remaining': String(remaining), 'RateLimit-Reset': String(secondsToUtcMidnight()) };
         } catch (e) {
             logger.warn('api: rate-limit headers skipped', { requestId, keyId: key.id, error: e instanceof Error ? e.message : String(e) });

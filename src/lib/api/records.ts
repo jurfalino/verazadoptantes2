@@ -86,13 +86,18 @@ export async function saveApiActivity(
         const created = await createAdopterFromSubmission({
             source: 'api',
             api: { keyName: key.name, requestId: ctx.requestId, context: activityType },
+            bulkImport: key.importMode === 1,
             name: p.fullName!,
             addedBy: key.ownerEmail,
             email: p.email ?? null,
             phone: p.phone ?? null,
             address: p.address ?? null,
             documentId: p.documentId?.value ?? null,
-            socials: (p.socials ?? []).map(s => socialUrl(s.handle, s.platform as SocialPlatform) ?? s.handle),
+            // A link when it is an account; a display name ("Ana Perez") is kept as text with its platform.
+            socials: (p.socials ?? []).map(s => {
+                const url = socialUrl(s.handle, s.platform as SocialPlatform);
+                return url ?? { value: s.handle.trim(), platform: s.platform as SocialPlatform };
+            }),
             animalName: save.animalName ?? null,
             animalSpecies: species,
         });
@@ -184,7 +189,8 @@ export async function saveApiActivity(
         icon: outcome.result === 'ambiguous' ? '⚠️' : '🔌',
         metadata: { requestId: ctx.requestId, keyName: key.name, profileId, recordId, outcome: outcome.result, context: activityType, contactsAdded: contactsAdded.map(c => c.field) },
     };
-    await runAfterResponse('api.notifyRecord', async () => {
+    // A key in import mode notifies nobody: thousands of historical records are not news.
+    if (key.importMode !== 1) await runAfterResponse('api.notifyRecord', async () => {
         const { createNotification, notifyOrgMembers } = await import('@/app/actions/notifications');
         await createNotification({ userId: key.ownerEmail, ...notification });
         await notifyOrgMembers({ actorEmail: key.ownerEmail, ...notification });

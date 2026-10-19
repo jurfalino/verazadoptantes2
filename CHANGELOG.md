@@ -2,6 +2,30 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.205] - 2026-10-18
+
+### Added — API: cleaner person data, import mode, faster duplicate check (before the Catpuccino import)
+
+Decisions: Jon, 2026-10-18, from Catpuccino's 5,889 real forms.
+- **One bad field no longer refuses the call.** A phone that isn't one ("Xiaomi", "999") or
+  an email that isn't one ("@usuario", "no se") is left out when another email / phone /
+  document works; the 200 answer lists it in `warnings` (documented). A phone with a note
+  keeps only the number(s), two numbers both; several emails keep the first valid one.
+- **Names that aren't names are refused** (`full_name_required`): an "@", 6+ digits, no
+  vowels, or a single word. A stray digit is ignored.
+- **Social answers:** "no tengo" / "-" are dropped. A Facebook / Instagram answer that is a
+  name ("Ana Perez") is kept as text — never a broken `facebook.com/Ana Perez` link, never a
+  matching key (it made strangers look like duplicates). Applies to every path, not only the API.
+- **Import mode on a key** (admin, `importMode`): no notifications per saved record, no daily
+  counting, and the duplicate check skips its LIKE scan of every profile (production has 0
+  profiles without a search index; the admin duplicate scan runs after an import).
+- **Faster:** the duplicate check's lookups run at once (~11 fewer sequential D1 round trips
+  per new person), name lookups use the index (a range instead of LIKE), the daily counts are
+  read once per call, and three missing indexes (flags, photos, duplicate pairs — migration 0091).
+- `scripts/api-import-catpuccino.mjs`: the one-off import (one form at a time, oldest first,
+  resumable ledger, undo newest-first). The data never leaves the machine running it.
+- The API plan's "stay on the free tier" is outdated: the account is on Workers Paid.
+
 ## [2.56.204] - 2026-10-18
 
 ### Fixed — Admin → API: stray scrollbar beside the tabs

@@ -117,6 +117,39 @@ test.describe('public API v1', { tag: '@leg-apicore' }, () => {
         expect(countRows(`SELECT count(*) AS n FROM adopters WHERE name = '${NAME}'`)).toBe(0);
     });
 
+    test('one bad field no longer refuses the call: it is left out when another identifier works, and the answer says so', async () => {
+        const res = await check({ mode: 'exact', person: {
+            fullName: `Warn ${TAG} Perez`, email: `warn-${STAMP}@example.com (hija)`, phone: 'Xiaomi',
+            socials: [{ platform: 'facebook', handle: 'no tengo' }, { platform: 'facebook', handle: 'Ana Perez' }],
+        }, activity: { activityType: 'adoption_request' } });
+        expect(res.status()).toBe(200);
+        const j = await res.json();
+        expect(j.warnings).toEqual(expect.arrayContaining([
+            expect.objectContaining({ field: 'person.phone', code: 'value_dropped', reason: 'not_a_phone' }),
+            expect.objectContaining({ field: 'person.socials[0]', code: 'value_dropped', reason: 'no_account' }),
+            expect.objectContaining({ field: 'person.email', code: 'value_cleaned', reason: 'first_valid_email' }),
+        ]));
+        // A name that is an email is refused, not saved as a person called "x@y.com".
+        const asName = await search({ mode: 'exact', person: { fullName: `warn-${STAMP}@example.com`, email: `warn-${STAMP}@example.com` }, activity: { activityType: 'adoption_request' } }, { 'idempotency-key': `asname-${STAMP}` });
+        expect((await asName.json()).error.code).toBe('full_name_required');
+    });
+
+    test('import mode: the save notifies nobody and skips the daily counting', async ({ page }) => {
+        expect((await page.request.patch(`/api/admin/api-keys/${keyId}`, { data: { importMode: true } })).status()).toBe(200);
+        try {
+            const res = await search({ mode: 'exact', person: { fullName: `Importmode ${TAG} Perez`, email: `import-${STAMP}@example.com` }, activity: { activityType: 'adoption_request', externalId: `import-${STAMP}` } });
+            expect(res.status()).toBe(200);
+            const j = await res.json();
+            expect(j.saved.action).toBe('created_profile');
+            expect(res.headers()['ratelimit-remaining']).toBeUndefined();
+            await new Promise(r => setTimeout(r, 2000)); // notifications run after the response
+            expect(countRows(`SELECT count(*) AS n FROM notifications WHERE url LIKE '%${j.saved.profileId}%'`)).toBe(0);
+            await api.post(`/api/v1/activities/${j.saved.activityId}/void`, { headers: auth() });
+        } finally {
+            await page.request.patch(`/api/admin/api-keys/${keyId}`, { data: { importMode: false } });
+        }
+    });
+
     test('dry run with a test key: the same answer, nothing written, logged as a test', async () => {
         const dry = await check({ mode: 'exact', person: { fullName: NAME, phone: LOCAL_PHONE }, activity: { activityType: 'adoption_request' } });
         expect(dry.status()).toBe(200);

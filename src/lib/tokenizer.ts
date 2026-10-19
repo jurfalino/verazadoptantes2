@@ -250,11 +250,15 @@ export function normalizeSocialHandle(value: string, platform?: string | null): 
         const numeric = url.match(/(?:profile\.php\?id=|\/people\/[^/]*\/)(\d{5,})/) || value.match(/\bid=(\d{5,})\b/);
         if (numeric) return `id:${numeric[1]}`;
         const vanity = url.match(/^(?:facebook\.com|fb\.com|fb\.me)\/([a-z0-9.]+)/);
+        // "facebook.com/Ana Perez" is a display name glued to a link, not an account:
+        // its first word ("ana") would match every Ana (2026-10-18, Catpuccino data).
+        if (vanity && /^\s/.test(url.slice(vanity[0].length))) return null;
         if (vanity) {
             const handle = vanity[1].replace(/^@+/, '');
             return NON_PROFILE_SEGMENTS.has(handle) ? null : handle;
         }
-        if (!url.includes('/') && !url.includes('.com')) return v.replace(/^@+/, '') || null;
+        // A bare value with a space is a display name ("Ana Perez"), never a handle.
+        if (!url.includes('/') && !url.includes('.com')) return /\s/.test(v) ? null : (v.replace(/^@+/, '') || null);
         return null;
     }
     v = v.replace(/^@+/, '').replace(/^https?:\/\//, '').replace(/^www\./, '');
@@ -276,7 +280,7 @@ export function normalizeSocialHandle(value: string, platform?: string | null): 
     } else if (detectSocialPlatformFromValue(v)) {
         return null; // a bare social domain (e.g. "instagram.com") carries no handle
     }
-    if (!v || v.length < 3 || NON_PROFILE_SEGMENTS.has(v)) return null;
+    if (!v || v.length < 3 || NON_PROFILE_SEGMENTS.has(v) || /\s/.test(v)) return null;
     return v;
 }
 

@@ -3,6 +3,7 @@
  * Server-only; the route file is a thin wrapper around `runSearch`.
  */
 import { decideExactOutcome } from '@/domain/apiExactMatch';
+import { cleanApiPerson } from '@/domain/apiPersonCleanup';
 import { SEARCH_RESULT_LIMIT } from '@/config/constants';
 import { logger } from '@/lib/logger';
 import type { DiscoveryMatch } from '@/app/actions/types';
@@ -11,7 +12,7 @@ import { buildProfileSummaries, findIdentifierHits, ownerCountry, profileUrl, ra
 import { bestMatchFor, saveApiActivity } from './records';
 import { environmentForHost } from './keys';
 import { isExampleData } from './docScenarios';
-import { checkSearchRules, searchRequestSchema, type ApiRisk, type ExactResponse, type FuzzyResponse, orderCandidates, saveActionOf, type ProfileSummary, type SearchRequest } from './schemas';
+import { checkSearchRules, searchRequestSchema, type ApiRisk, type ExactResponse, type FuzzyResponse, orderCandidates, saveActionOf, type ProfileSummary, type SearchRequest, type ApiWarning } from './schemas';
 
 /** The lowest rating among rated profiles; "not rated" only if none is. */
 function worstOf(ratings: Array<number | null | undefined>) {
@@ -54,6 +55,15 @@ export async function runSearch(ctx: ApiCallContext): Promise<ApiResult> {
     ctx.log.context = req.activity?.activityType ?? null;
     ctx.log.externalId = req.activity?.externalId ?? null;
 
+    // Unusable parts are left out (and said so) before the rules run: one bad
+    // field no longer refuses a call that has another usable identifier.
+    const cleanup = cleanApiPerson(req.person);
+    req.person = cleanup.person;
+    const warnings: ApiWarning[] = [
+        ...cleanup.dropped.map(d => ({ field: d.field, code: 'value_dropped' as const, reason: d.reason, message: `${d.field} was not saved: ${d.reason === 'not_an_email' ? 'it is not an email address' : d.reason === 'not_a_phone' ? 'it is not a readable phone number' : 'it says the person has no account'}` })),
+        ...cleanup.cleaned.map(c => ({ field: c.field, code: 'value_cleaned' as const, reason: c.reason, message: `${c.field}: ${c.reason === 'first_valid_email' ? 'only the first valid email was kept' : 'only the phone number(s) were kept'}` })),
+    ];
+
     const problems = checkSearchRules(req);
     if (problems.length) {
         const [first] = problems;
@@ -83,10 +93,12 @@ export async function runSearch(ctx: ApiCallContext): Promise<ApiResult> {
         }
     }
     // Cap before claiming: a refused call must never become the stored answer.
-    await enforceDailyCap(ctx, req.mode);
+    if (ctx.key.importMode !== 1) await enforceDailyCap(ctx, req.mode);
     if (saves && !ctx.dryRun) await claimIdempotencyKey(ctx);
 
-    return req.mode === 'exact' ? runExact(ctx, req) : runFuzzy(ctx, req);
+    const result = req.mode === 'exact' ? await runExact(ctx, req) : await runFuzzy(ctx, req);
+    if (warnings.length && result.status < 300) (result.body as { warnings?: ApiWarning[] }).warnings = warnings;
+    return result;
 }
 
 async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiResult> {

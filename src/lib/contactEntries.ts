@@ -47,6 +47,8 @@ export function socialUrl(value: string, platform?: SocialPlatform | null): stri
     if (!v) return null;
     if (/^https?:\/\//i.test(v)) return v;
     if (/^[\w-]+(\.[\w-]+)+\//.test(v)) return `https://${v}`;
+    // "Ana Perez" in a Facebook field is a name, not an account: shown as text, never a link.
+    if (/\s/.test(v)) return null;
     const host = SOCIAL_PLATFORMS.find(p => p.key === platform)?.host;
     return host ? `https://${host}/${v.replace(/^@+/, '')}` : null;
 }

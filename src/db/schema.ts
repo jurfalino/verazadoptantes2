@@ -87,7 +87,9 @@ export const adopterImages = sqliteTable("adopter_images", {
     scope: text("scope"),
     mediaType: text("media_type").default("image"), // 'image' or 'video'
     thumbnailUrl: text("thumbnail_url"), // Video thumbnail URL (R2)
-});
+}, (table) => ({
+    adopterIdx: index("idx_adopter_images_adopter").on(table.adopterId),
+}));
 
 export const adopterFlags = sqliteTable("adopter_flags", {
     id: text("id").primaryKey(),
@@ -97,7 +99,9 @@ export const adopterFlags = sqliteTable("adopter_flags", {
     targetAdopterId: text("target_adopter_id"), // If duplicate, which one is the original?
     details: text("details"),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
-});
+}, (table) => ({
+    adopterIdx: index("idx_adopter_flags_adopter").on(table.adopterId),
+}));
 
 export const adopterHistory = sqliteTable("adopter_history", {
     id: text("id").primaryKey(),
@@ -407,7 +411,10 @@ export const duplicateCandidates = sqliteTable("duplicate_candidates", {
     detectedAt: integer("detected_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     resolvedAt: integer("resolved_at", { mode: "timestamp" }),
     resolvedBy: text("resolved_by"),
-});
+}, (table) => ({
+    pairIdx: index("idx_dup_candidates_pair").on(table.adopter1Id, table.adopter2Id),
+    secondIdx: index("idx_dup_candidates_second").on(table.adopter2Id),
+}));
 
 // Data Requests - Track ARCO rights requests and inaccuracy reports
 export const dataRequests = sqliteTable("data_requests", {
@@ -906,6 +913,7 @@ export const apiKeys = sqliteTable("api_keys", {
     scopes: text("scopes").notNull(),                            // JSON: ApiScope[]
     dailyCapExact: integer("daily_cap_exact").notNull().default(500),
     dailyCapFuzzy: integer("daily_cap_fuzzy").notNull().default(50),
+    importMode: integer("import_mode").notNull().default(0), // 1 = bulk import: no notifications, no LIKE scan in the duplicate check
     createdBy: text("created_by").notNull(),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
