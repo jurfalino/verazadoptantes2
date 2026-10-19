@@ -8,8 +8,10 @@
  *
  * - The key must be in import mode (Admin → API, PATCH importMode): no
  *   notifications, no daily counting, no LIKE scan in the duplicate check.
- * - One form at a time, oldest first: one person's forms must never race
- *   (733 emails / 720 phones appear on several forms) or they get two profiles.
+ * - Oldest first, and one person's forms never race (733 emails / 720 phones
+ *   appear on several forms; two at once would make two profiles): --lanes N
+ *   runs N forms at a time, but every form sharing an email or phone with
+ *   another lands in the same lane, in date order.
  * - Resumable: every answer goes to a ledger (<csv>.<host>.ledger.jsonl) and a
  *   form already saved is skipped; a resend of the same form is a replay anyway.
  *   The payload must not change between runs (a changed one is 409 external_id_reused).
@@ -27,6 +29,7 @@ const BASE = String(opt('base', '')).replace(/\/$/, '');
 const LIMIT = Number(opt('limit', 0)) || Infinity;
 const DRY = !!opt('dry-run', false);
 const UNDO = !!opt('undo', false);
+const LANES = Math.max(1, Math.min(8, Number(opt('lanes', 1)) || 1));
 const KEY = process.env.API_KEY;
 const EMIT = opt('emit', null); // write the payloads (JSONL) to this path and exit: for offline checks
 if (!csvPath || (!EMIT && (!BASE || !KEY))) {
@@ -107,6 +110,36 @@ function payloadOf(r, shared) {
     };
 }
 
+/** Forms linked by a shared email or phone (any number in the field) go to the same lane. */
+function lanesOf(rows, n) {
+    const parent = rows.map((_, i) => i);
+    const find = i => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+    const owner = new Map(), owner2 = new Map();
+    rows.forEach((r, i) => {
+        const keys = [];
+        const email = (r[PERSON.email] || '').trim().toLowerCase();
+        if (email.includes('@')) keys.push(`e:${email}`);
+        for (const m of (r[PERSON.phone] || '').matchAll(/\+?\d[\d\s().-]{5,}\d/g)) {
+            const d = m[0].replace(/\D/g, '');
+            if (d.length >= 6) keys.push(`p:${d.slice(-8)}`);
+        }
+        owner2.set(i, keys.map(k => [k, i]));
+        for (const k of keys) { if (owner.has(k)) parent[find(i)] = find(owner.get(k)); else owner.set(k, i); }
+    });
+    const groups = new Map();
+    rows.forEach((r, i) => { const g = find(i); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(r); });
+    // Biggest groups first, each to the currently lightest lane; rows stay in date order inside a lane.
+    const lanes = Array.from({ length: n }, () => []);
+    for (const g of [...groups.values()].sort((a, b) => b.length - a.length)) lanes.reduce((m, l) => (l.length < m.length ? l : m)).push(...g);
+    // Guard: no email / phone may appear in two lanes.
+    const laneOfKey = new Map();
+    lanes.forEach((l, li) => l.forEach(r => {
+        const i = rows.indexOf(r);
+        for (const [k, owner] of owner2.get(i) ?? []) { void owner; if (laneOfKey.has(k) && laneOfKey.get(k) !== li) throw new Error(`lane split on ${k.slice(0, 2)}…`); laneOfKey.set(k, li); }
+    }));
+    return lanes.map(l => l.sort((a, b) => a.fecha.localeCompare(b.fecha) || Number(a.entry_id) - Number(b.entry_id)));
+}
+
 // ── HTTP ────────────────────────────────────────────────────────────────────
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function call(method, path, body) {
@@ -129,11 +162,19 @@ async function importAll() {
     const shared = sharedSocials(rows);
     const done = new Set(readLedger().filter(e => e.op === 'save' && (e.status === 200 || e.status === 422) && !e.dryRun).map(e => e.externalId));
     console.log(`${rows.length} forms; ${done.size} already in the ledger; ${shared.size} shared social values treated as "no account"${DRY ? '; DRY RUN' : ''}`);
-    let sent = 0, fiveXX = 0;
+    let sent = 0, fiveXX = 0, stop = false;
     const tally = {};
     const started = Date.now();
-    for (const r of rows) {
-        if (sent >= LIMIT) break;
+    const lanes = lanesOf(rows, LANES);
+    if (LANES > 1) console.log(`${LANES} lanes: ${lanes.map(l => l.length).join(' / ')} forms`);
+    if (opt('plan', false)) return;
+    await Promise.all(lanes.map(lane => runLane(lane)));
+    console.log(`done: ${sent} sent in ${Math.round((Date.now() - started) / 1000)} s · ${JSON.stringify(tally)}`);
+    console.log(`ledger: ${ledgerPath}`);
+
+    async function runLane(lane) {
+    for (const r of lane) {
+        if (stop || sent >= LIMIT) break;
         const body = payloadOf(r, shared);
         const externalId = body.activity.externalId;
         if (done.has(externalId)) continue;
@@ -161,13 +202,12 @@ async function importAll() {
             const rate = (Date.now() - started) / sent;
             console.log(`${sent} sent · ${Math.round(rate)} ms/form · ${JSON.stringify(tally)}${res.ray ? ` · colo ${res.ray.split('-').pop()}` : ''}`);
         }
-        if (res.status === 429) { console.error('STOP: 429 (limit reached) —', entry.code); break; }
-        if (res.status === 409 && entry.code === 'partially_saved') { console.error(`STOP: partially_saved on ${externalId} — void it and resend (see ledger)`); break; }
-        if (res.status === 409 && entry.code === 'external_id_reused') { console.error(`STOP: ${externalId} was saved with a different payload — the mapping changed between runs`); break; }
-        if (res.status >= 500 || res.status === 0) { if (++fiveXX >= 3) { console.error('STOP: 3 forms failed with server errors'); break; } } else fiveXX = 0;
+        if (res.status === 429) { console.error('STOP: 429 (limit reached) —', entry.code); stop = true; break; }
+        if (res.status === 409 && entry.code === 'partially_saved') { console.error(`STOP: partially_saved on ${externalId} — void it and resend (see ledger)`); stop = true; break; }
+        if (res.status === 409 && entry.code === 'external_id_reused') { console.error(`STOP: ${externalId} was saved with a different payload — the mapping changed between runs`); stop = true; break; }
+        if (res.status >= 500 || res.status === 0) { if (++fiveXX >= 3) { console.error('STOP: 3 forms in a row failed with server errors'); stop = true; break; } } else fiveXX = 0;
     }
-    console.log(`done: ${sent} sent in ${Math.round((Date.now() - started) / 1000)} s · ${JSON.stringify(tally)}`);
-    console.log(`ledger: ${ledgerPath}`);
+    }
 }
 
 async function undoAll() {
