@@ -3,7 +3,7 @@ export const runtime = 'edge';
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { isAdminAsync } from '@/config/admins';
-import { mergeAdopters, mergeCandidatePair } from '@/lib/adopterMerge';
+import { mergeAdopters, mergeCandidatePair, notifyMergeOwners } from '@/lib/adopterMerge';
 
 /**
  * How many secondaries one request may merge into the primary. Each merge is
@@ -27,7 +27,9 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await request.json() as { primaryId?: string; secondaryId?: string; secondaryIds?: string[]; candidateIds?: string[] };
+    const body = await request.json() as { primaryId?: string; secondaryId?: string; secondaryIds?: string[]; candidateIds?: string[]; notifyOwners?: boolean };
+    // The admin chooses, per merge, whether whoever registered the profiles hears about it.
+    const notifyOwners = body.notifyOwners === true;
 
     // Batch PAIR-WISE mode: each candidate pair merges independently, survivor
     // picked automatically (see mergeCandidatePair). This is the queue-clearing
@@ -44,6 +46,7 @@ export async function POST(request: Request) {
         for (const candidateId of candidateIds) {
             const r = await mergeCandidatePair(candidateId, session.user.email);
             results.push({ candidateId, success: r.success, skipped: r.skipped, error: r.error, auditId: r.auditId, primaryId: r.primaryId });
+            if (notifyOwners && r.success && !r.skipped && r.primaryId) await notifyMergeOwners({ ...r, primaryId: r.primaryId }, session.user.email);
         }
         const failed = results.filter(r => !r.success);
         const merged = results.filter(r => r.success && !r.skipped);
@@ -77,6 +80,7 @@ export async function POST(request: Request) {
     for (const secondaryId of secondaryIds) {
         const result = await mergeAdopters(primaryId, secondaryId, session.user.email);
         results.push({ secondaryId, success: result.success, error: result.error, auditId: result.auditId });
+        if (notifyOwners && result.success) await notifyMergeOwners({ ...result, primaryId }, session.user.email);
     }
 
     const failed = results.filter(r => !r.success);

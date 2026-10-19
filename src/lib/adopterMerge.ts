@@ -28,6 +28,9 @@ export interface MergeAdoptersResult {
     mergeDetails?: Record<string, number>;
     primaryName?: string;
     secondaryName?: string;
+    /** Who registered each profile (for the optional owner notification). */
+    primaryAddedBy?: string | null;
+    secondaryAddedBy?: string | null;
     /** audit_log row id of this merge — the handle unmergeAdopters takes. */
     auditId?: string;
 }
@@ -317,6 +320,20 @@ export async function mergeAdopters(
             createdAt: new Date(),
         });
 
+        // 11b. The survivor's own history says it absorbed a profile (2026-10-19,
+        // Jon): the audit log alone was invisible on the profile. Best-effort —
+        // the merge already happened; a missing line must not fail it.
+        await db.insert(adopterHistory).values({
+            id: crypto.randomUUID(),
+            adopterId: primaryId,
+            changedBy: actorEmail,
+            changes: JSON.stringify({ profiles_merged: { fromId: secondaryId, fromName: secondary.name, fromAddedBy: secondary.addedBy ?? null } }),
+            changedAt: new Date(),
+            kind: 'edit',
+        }).catch((e: unknown) => {
+            logger.warn('mergeAdopters: history line not written', { primaryId, secondaryId, actor: actorEmail, error: e instanceof Error ? e.message : String(e) });
+        });
+
         // 12. Re-tokenize the survivor NOW instead of leaving it stale until
         // the next scan — the absorbed phones/emails and the new alias become
         // searchable/dedup-matchable immediately. tokenizeAdopter logs its own
@@ -336,6 +353,8 @@ export async function mergeAdopters(
             mergeDetails,
             primaryName: primary.name,
             secondaryName: secondary.name,
+            primaryAddedBy: primary.addedBy ?? null,
+            secondaryAddedBy: secondary.addedBy ?? null,
             auditId,
         };
     } catch (error) {
@@ -369,8 +388,8 @@ async function repointRows(db: any, table: any, idCol: any, ids: string[], adopt
  * the EXPECTED outcome when a user batch-selects overlapping pairs, not an
  * error; any still-real match resurfaces against the survivor on next scan.
  */
-export async function mergeCandidatePair(candidateId: string, actorEmail: string): Promise<{
-    success: boolean; skipped?: boolean; error?: string; auditId?: string; primaryId?: string; secondaryId?: string;
+export async function mergeCandidatePair(candidateId: string, actorEmail: string): Promise<MergeAdoptersResult & {
+    skipped?: boolean; primaryId?: string; secondaryId?: string;
 }> {
     try {
         const db = await getDb();
@@ -618,6 +637,18 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
             createdAt: new Date(),
         });
 
+        // 6b. Both profiles' histories say they were separated again.
+        await Promise.all([primaryId, secondaryId].map(id => db.insert(adopterHistory).values({
+            id: crypto.randomUUID(),
+            adopterId: id,
+            changedBy: actorEmail,
+            changes: JSON.stringify({ profiles_unmerged: { otherId: id === primaryId ? secondaryId : primaryId, otherName: id === primaryId ? (details.secondaryName ?? null) : null } }),
+            changedAt: new Date(),
+            kind: 'edit',
+        }).catch((e: unknown) => {
+            logger.warn('unmergeAdopters: history line not written', { adopterId: id, mergeAuditId: auditId, actor: actorEmail, error: e instanceof Error ? e.message : String(e) });
+        })));
+
         // 7. Fresh tokens for both, so search/dedup reflect the split at once.
         await tokenizeAdopter(primaryId);
         await tokenizeAdopter(secondaryId);
@@ -628,4 +659,37 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
         const errorId = logger.error('unmergeAdopters failed', error, { auditId, actor: actorEmail });
         return { success: false, error: `Undo failed (Error ID: ${errorId})` };
     }
+}
+
+/**
+ * Optional, admin-chosen (2026-10-19): tell whoever registered each of the two
+ * profiles that they are now one. Never the admin who merged; one notice per
+ * person even when they registered both. Best-effort, logged.
+ */
+export async function notifyMergeOwners(
+    merge: { primaryId: string; primaryName?: string; secondaryName?: string; primaryAddedBy?: string | null; secondaryAddedBy?: string | null },
+    actorEmail: string,
+): Promise<number> {
+    const owners = [...new Set([merge.primaryAddedBy, merge.secondaryAddedBy])]
+        .filter((e): e is string => !!e && e.includes('@') && e !== actorEmail);
+    if (!owners.length) return 0;
+    const { createNotification } = await import('@/app/actions/notifications');
+    let sent = 0;
+    for (const owner of owners) {
+        try {
+            await createNotification({
+                userId: owner,
+                type: 'adopter_merged',
+                title: `Se unieron dos perfiles: ${merge.secondaryName || 'sin nombre'} → ${merge.primaryName || 'sin nombre'}`,
+                body: 'Un administrador los unió porque son la misma persona. Todo lo registrado en los dos quedó en este perfil.',
+                url: `/adopter/${merge.primaryId}`,
+                icon: '🔗',
+                metadata: { primaryId: merge.primaryId, mergedBy: actorEmail },
+            });
+            sent++;
+        } catch (e) {
+            logger.warn('notifyMergeOwners: notification failed', { primaryId: merge.primaryId, actor: actorEmail, error: e instanceof Error ? e.message : String(e) });
+        }
+    }
+    return sent;
 }

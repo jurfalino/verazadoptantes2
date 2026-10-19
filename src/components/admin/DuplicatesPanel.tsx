@@ -30,6 +30,9 @@ interface DuplicateCandidate {
     adopter2Name: string | null;
     adopter2Contact?: string | null;
     adopter2AvgRating?: number | null;
+    /** Email of whoever registered each profile (names in `creatorNames`). */
+    adopter1AddedBy?: string | null;
+    adopter2AddedBy?: string | null;
 }
 
 interface UserFlagged {
@@ -46,6 +49,9 @@ interface UserFlagged {
     adopter2Name: string | null;
     adopter2Contact?: string | null;
     adopter2AvgRating?: number | null;
+    /** Email of whoever registered each profile (names in `creatorNames`). */
+    adopter1AddedBy?: string | null;
+    adopter2AddedBy?: string | null;
 }
 
 interface Counts {
@@ -69,6 +75,8 @@ interface ClusterRecord {
     name: string | null;
     contact?: string | null;
     avgRating?: number | null;
+    /** Email of whoever registered it. */
+    addedBy?: string | null;
 }
 
 /**
@@ -87,8 +95,8 @@ function AdopterNameLabel({ name }: { name: string | null }) {
 /** The two records of a pair, shaped for the mass-merge modal. */
 function pairRecords(c: DuplicateCandidate): ClusterRecord[] {
     return [
-        { id: c.adopter1Id, name: c.adopter1Name, contact: c.adopter1Contact, avgRating: c.adopter1AvgRating },
-        { id: c.adopter2Id, name: c.adopter2Name, contact: c.adopter2Contact, avgRating: c.adopter2AvgRating },
+        { id: c.adopter1Id, name: c.adopter1Name, contact: c.adopter1Contact, avgRating: c.adopter1AvgRating, addedBy: c.adopter1AddedBy },
+        { id: c.adopter2Id, name: c.adopter2Name, contact: c.adopter2Contact, avgRating: c.adopter2AvgRating, addedBy: c.adopter2AddedBy },
     ];
 }
 
@@ -159,6 +167,15 @@ export default function DuplicatesPanel() {
     }, [lastMerge]);
     // Batch pair-merge progress ('' = not running); disables the bar while set.
     const [bulkProgress, setBulkProgress] = useState('');
+    // Who registered each listed profile: email → name.
+    const [creatorNames, setCreatorNames] = useState<Record<string, string | null>>({});
+    // Batch merge (floating bar): tell whoever registered the profiles. The modals have their own.
+    const [notifyOwners, setNotifyOwners] = useState(true);
+    const creatorLabel = (email?: string | null): string | null => {
+        if (!email) return null;
+        const name = creatorNames[email];
+        return name ? `${name} (${email})` : email;
+    };
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -166,8 +183,9 @@ export default function DuplicatesPanel() {
             const conf = showLow ? '' : '&confidence=high,medium';
             const res = await fetch(`/api/admin/duplicates?status=${statusFilter}&page=${page}${conf}`);
             if (!res.ok) throw new Error('Failed to fetch');
-            const data = await res.json() as { userFlagged?: UserFlagged[]; candidates?: DuplicateCandidate[]; counts?: Counts; filteredTotal?: number; staleCount?: number; scan?: { status: string | null; lastRun: string | null } };
+            const data = await res.json() as { userFlagged?: UserFlagged[]; candidates?: DuplicateCandidate[]; counts?: Counts; filteredTotal?: number; staleCount?: number; scan?: { status: string | null; lastRun: string | null }; creatorNames?: Record<string, string | null> };
             setUserFlagged(data.userFlagged || []);
+            setCreatorNames(data.creatorNames || {});
             setCandidates(data.candidates || []);
             setCounts(data.counts || { pending: 0, dismissed: 0, merged: 0, userFlagged: 0 });
             setFilteredTotal(data.filteredTotal ?? (data.candidates?.length || 0));
@@ -260,7 +278,7 @@ export default function DuplicatesPanel() {
                 const res = await fetch('/api/admin/duplicates/merge', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ candidateIds: batch }),
+                    body: JSON.stringify({ candidateIds: batch, notifyOwners }),
                 });
                 const data = await res.json() as { error?: string; results?: Array<{ candidateId: string; success: boolean; skipped?: boolean; error?: string; auditId?: string; primaryId?: string }> };
                 if (!res.ok) {
@@ -406,11 +424,11 @@ export default function DuplicatesPanel() {
         }
     }
 
-    async function handleMerge(primaryId: string, secondaryId: string) {
+    async function handleMerge(primaryId: string, secondaryId: string, opts?: { notifyOwners?: boolean }) {
         const res = await fetch('/api/admin/duplicates/merge', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ primaryId, secondaryId }),
+            body: JSON.stringify({ primaryId, secondaryId, notifyOwners: opts?.notifyOwners === true }),
         });
         const data = await res.json() as { error?: string; results?: Array<{ success: boolean; auditId?: string }> };
         if (res.ok) {
@@ -424,7 +442,7 @@ export default function DuplicatesPanel() {
         }
     }
 
-    async function handleMassMerge(primaryId: string, secondaryIds: string[]) {
+    async function handleMassMerge(primaryId: string, secondaryIds: string[], notify: boolean) {
         // The endpoint caps each request at MERGE_CHUNK secondaries; bigger
         // selections go as sequential batches (server-side merges are already
         // sequential per request, so this is the same semantics, just spread
@@ -438,7 +456,7 @@ export default function DuplicatesPanel() {
             const res = await fetch('/api/admin/duplicates/merge', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ primaryId, secondaryIds: batch }),
+                body: JSON.stringify({ primaryId, secondaryIds: batch, notifyOwners: notify }),
             });
             const data = await res.json() as { error?: string; results?: Array<{ secondaryId: string; success: boolean; error?: string; auditId?: string }> };
             if (!res.ok) {
@@ -512,8 +530,8 @@ export default function DuplicatesPanel() {
                 return;
             }
             setMergeTarget({
-                a1: { id: flag.adopterId, name: flag.adopter1Name ?? '', contact: flag.adopter1Contact, avgRating: flag.adopter1AvgRating },
-                a2: { id: flag.targetAdopterId, name: flag.adopter2Name ?? '', contact: flag.adopter2Contact, avgRating: flag.adopter2AvgRating },
+                a1: { id: flag.adopterId, name: flag.adopter1Name ?? '', contact: flag.adopter1Contact, avgRating: flag.adopter1AvgRating, createdBy: creatorLabel(flag.adopter1AddedBy) },
+                a2: { id: flag.targetAdopterId, name: flag.adopter2Name ?? '', contact: flag.adopter2Contact, avgRating: flag.adopter2AvgRating, createdBy: creatorLabel(flag.adopter2AddedBy) },
                 matchTypes: ['user_flagged'],
                 flagId: flag.flagId,
             });
@@ -521,8 +539,8 @@ export default function DuplicatesPanel() {
             const c = item as DuplicateCandidate;
             const types = JSON.parse(c.matchTypes || '[]');
             setMergeTarget({
-                a1: { id: c.adopter1Id, name: c.adopter1Name ?? '', contact: c.adopter1Contact, avgRating: c.adopter1AvgRating },
-                a2: { id: c.adopter2Id, name: c.adopter2Name ?? '', contact: c.adopter2Contact, avgRating: c.adopter2AvgRating },
+                a1: { id: c.adopter1Id, name: c.adopter1Name ?? '', contact: c.adopter1Contact, avgRating: c.adopter1AvgRating, createdBy: creatorLabel(c.adopter1AddedBy) },
+                a2: { id: c.adopter2Id, name: c.adopter2Name ?? '', contact: c.adopter2Contact, avgRating: c.adopter2AvgRating, createdBy: creatorLabel(c.adopter2AddedBy) },
                 matchTypes: types,
                 candidateId: c.id,
             });
@@ -654,6 +672,8 @@ export default function DuplicatesPanel() {
                                     <CandidateCard
                                         key={flag.flagId}
                                         name1={flag.adopter1Name}
+                                        createdBy1={creatorLabel(flag.adopter1AddedBy)}
+                                        createdBy2={creatorLabel(flag.adopter2AddedBy)}
                                         name2={flag.targetAdopterId ? flag.adopter2Name : '(sin perfil destino)'}
                                         contact1={flag.adopter1Contact}
                                         contact2={flag.adopter2Contact}
@@ -717,6 +737,8 @@ export default function DuplicatesPanel() {
                                             key={c.id}
                                             name1={c.adopter1Name}
                                             name2={c.adopter2Name}
+                                            createdBy1={creatorLabel(c.adopter1AddedBy)}
+                                            createdBy2={creatorLabel(c.adopter2AddedBy)}
                                             contact1={c.adopter1Contact}
                                             contact2={c.adopter2Contact}
                                             id1={c.adopter1Id}
@@ -771,6 +793,10 @@ export default function DuplicatesPanel() {
                     <span className="text-sm">
                         {selectedPairs.size} par{selectedPairs.size === 1 ? '' : 'es'} seleccionado{selectedPairs.size === 1 ? '' : 's'}
                     </span>
+                    <label className="flex items-center gap-2 text-sm text-stone-200 cursor-pointer">
+                        <input type="checkbox" checked={notifyOwners} onChange={e => setNotifyOwners(e.target.checked)} className="h-4 w-4 rounded" data-testid="dup-bulk-notify" />
+                        Avisar a quienes los cargaron
+                    </label>
                     {/* Primary: each pair merges independently (queue clearing). */}
                     <button
                         onClick={handleMergePairs}
@@ -807,6 +833,7 @@ export default function DuplicatesPanel() {
                     adopter2={mergeTarget.a2}
                     matchTypes={mergeTarget.matchTypes}
                     onMerge={handleMerge}
+                    notifyOption
                     onClose={() => setMergeTarget(null)}
                 />
             )}
@@ -852,9 +879,10 @@ function StatCard({ label, value, color, active, onClick }: {
  */
 function MassMergeModal({ records, onMerge, onClose }: {
     records: ClusterRecord[];
-    onMerge: (primaryId: string, secondaryIds: string[]) => Promise<void>;
+    onMerge: (primaryId: string, secondaryIds: string[], notify: boolean) => Promise<void>;
     onClose: () => void;
 }) {
+    const [notify, setNotify] = useState(true);
     const [primaryId, setPrimaryId] = useState<string>(records[0]?.id ?? '');
     const [selected, setSelected] = useState<Set<string>>(new Set(records.map(r => r.id)));
     const [merging, setMerging] = useState(false);
@@ -877,7 +905,7 @@ function MassMergeModal({ records, onMerge, onClose }: {
         // merge is undoable from the panel's post-merge banner.
         setMerging(true);
         try {
-            await onMerge(primaryId, secondaryIds);
+            await onMerge(primaryId, secondaryIds, notify);
         } finally {
             setMerging(false);
         }
@@ -916,6 +944,7 @@ function MassMergeModal({ records, onMerge, onClose }: {
                                 </label>
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm font-semibold text-stone-900 truncate"><AdopterNameLabel name={rec.name} /></p>
+                                    {rec.addedBy && <p className="text-xs text-stone-600 break-words">Cargado por <span className="font-medium">{rec.addedBy}</span></p>}
                                     {rec.contact && <p className="text-xs text-stone-500 line-clamp-1">{rec.contact}</p>}
                                 </div>
                                 {!isPrimary && (
@@ -937,6 +966,10 @@ function MassMergeModal({ records, onMerge, onClose }: {
                         <p className="text-amber-700">
                             Se fusionarán <strong>{secondaryIds.length}</strong> perfil{secondaryIds.length === 1 ? '' : 'es'} en <strong><AdopterNameLabel name={primary?.name ?? null} /></strong>. Sus actividades y contactos se mueven al perfil conservado y sus nombres quedan como alias (siguen encontrándose al buscar).
                         </p>
+                        <label className="flex items-start gap-2 mt-3 text-stone-700 cursor-pointer">
+                            <input type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)} className="mt-0.5 h-4 w-4 rounded" />
+                            <span>Avisar a quienes cargaron estos perfiles <span className="text-stone-500">(les llega una notificación con el link al perfil que queda)</span></span>
+                        </label>
                         {secondaryIds.length > MASS_MERGE_SELECTION_MAX && (
                             <p className="text-red-700 font-medium mt-2">
                                 Máximo {MASS_MERGE_SELECTION_MAX} perfiles por fusión — destildá {secondaryIds.length - MASS_MERGE_SELECTION_MAX} o hacelo en tandas.
@@ -968,12 +1001,14 @@ function MassMergeModal({ records, onMerge, onClose }: {
 }
 
 function CandidateCard({
-    name1, name2, contact1, contact2, id1, id2,
+    name1, name2, contact1, contact2, id1, id2, createdBy1, createdBy2,
     matchTypes, confidence, score, details, flaggedBy,
     onMerge, onDismiss, selected, onToggleSelect,
 }: {
     name1: string | null; name2: string | null;
     contact1?: string | null; contact2?: string | null;
+    /** Who registered each profile ("Name (email)"). */
+    createdBy1?: string | null; createdBy2?: string | null;
     id1: string; id2?: string | null;
     matchTypes: string[]; confidence: string; score: number | null;
     details: string | null; flaggedBy: string | null;
@@ -1016,6 +1051,7 @@ function CandidateCard({
                     <div className="grid grid-cols-2 gap-3 mb-3">
                         <div>
                             <p className="text-sm font-semibold text-stone-900 truncate"><AdopterNameLabel name={name1} /></p>
+                            {createdBy1 && <p className="text-xs text-stone-600 mt-0.5 break-words" data-testid="dup-created-by">Cargado por <span className="font-medium">{createdBy1}</span></p>}
                             {contact1 && <p className="text-xs text-stone-500 mt-0.5 line-clamp-2">{contact1}</p>}
                             <a href={`/adopter/${id1}`} target="_blank" className="text-xs text-teal-700 hover:underline mt-1 inline-block">
                                 View →
@@ -1023,6 +1059,7 @@ function CandidateCard({
                         </div>
                         <div>
                             <p className="text-sm font-semibold text-stone-900 truncate"><AdopterNameLabel name={name2} /></p>
+                            {createdBy2 && <p className="text-xs text-stone-600 mt-0.5 break-words" data-testid="dup-created-by">Cargado por <span className="font-medium">{createdBy2}</span></p>}
                             {contact2 && <p className="text-xs text-stone-500 mt-0.5 line-clamp-2">{contact2}</p>}
                             {id2 && (
                                 <a href={`/adopter/${id2}`} target="_blank" className="text-xs text-teal-700 hover:underline mt-1 inline-block">

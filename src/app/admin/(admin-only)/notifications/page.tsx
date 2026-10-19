@@ -58,6 +58,7 @@ const KNOWN_TYPES: Record<string, { label: string; description: string }> = {
     'form_submission': { label: 'Respuesta al formulario', description: 'Cuando un posible adoptante completa el formulario compartido.' },
     'api_record': { label: 'Registro por API', description: 'Al rescatista (y su organización) cuando una herramienta conectada guarda un registro con su clave.' },
     'contract_attached': { label: 'Contrato vinculado', description: 'Cuando un contrato firmado se vincula a un perfil.' },
+    'adopter_merged': { label: 'Perfiles unidos', description: 'A quienes cargaron dos perfiles cuando un admin los une y elige avisarles.' },
     'form_attached': { label: 'Solicitud vinculada', description: 'Al creador de un perfil cuando otra persona le vincula una solicitud de adopción del formulario.' },
     'follow_up_due': { label: 'Follow-up Reminders', description: 'Daily cron reminder when an adoption/transit follow-up slot is due.' }
 };

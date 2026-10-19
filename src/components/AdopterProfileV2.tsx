@@ -578,6 +578,9 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                             else if (parsed.contacts_added_via_api) { eventType = 'api_contacts'; changes = parsed.contacts_added_via_api; }
                                             else if (parsed.api_record_voided) { eventType = 'api_voided'; changes = parsed.api_record_voided; }
                                             else if (parsed.contract_attached_via_api) { eventType = 'api_contract'; changes = parsed.contract_attached_via_api; }
+                                            // Merges (2026-10-19): the survivor's history says it absorbed a profile, and an undo says so too.
+                                            else if (parsed.profiles_merged) { eventType = 'profiles_merged'; changes = parsed.profiles_merged; }
+                                            else if (parsed.profiles_unmerged) { eventType = 'profiles_unmerged'; changes = parsed.profiles_unmerged; }
                                             else { changes = parsed; }
                                         } catch { /* ignore */ }
 
@@ -603,6 +606,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                         {eventType === 'api_contacts' && <span className="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_contacts')}</span>}
                                                         {eventType === 'api_voided' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_voided')}</span>}
                                                         {eventType === 'api_contract' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_contract')}</span>}
+                                                        {eventType === 'profiles_merged' && <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_profiles_merged')}</span>}
+                                                        {eventType === 'profiles_unmerged' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_profiles_unmerged')}</span>}
                                                     </div>
                                                     <span className="text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
                                                         {t('audit.by')} {(h.changedBy ? actorLabel(h.changedBy, userNameMap?.[h.changedBy], t) : t('common.anonymous'))}
@@ -626,6 +631,18 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                             {eventType === 'api_contacts' && Array.isArray(changes.fields) && (
                                                                 <div className="text-teal-800 font-medium break-words">
                                                                     {t('audit.desc_api_contacts').replace('{fields}', (changes.fields as string[]).map(f => t(f === 'documentId' ? 'audit.field_document' : f === 'phone' ? 'audit.field_phone' : 'audit.field_email')).join(', '))}
+                                                                </div>
+                                                            )}
+                                                            {eventType === 'profiles_merged' && (
+                                                                <div className="text-teal-800 font-medium break-words" data-testid="history-profiles-merged">
+                                                                    {t('audit.desc_profiles_merged')
+                                                                        .replace('{name}', changes.fromName || t('adopter.nameless'))
+                                                                        .replace('{who}', changes.fromAddedBy ? actorLabel(changes.fromAddedBy, userNameMap?.[changes.fromAddedBy], t) : t('common.anonymous'))}
+                                                                </div>
+                                                            )}
+                                                            {eventType === 'profiles_unmerged' && (
+                                                                <div className="text-teal-800 font-medium break-words">
+                                                                    {changes.otherName ? t('audit.desc_profiles_unmerged').replace('{name}', changes.otherName) : t('audit.desc_profiles_unmerged_plain')}
                                                                 </div>
                                                             )}
                                                             {eventType === 'adoption_added' && (
