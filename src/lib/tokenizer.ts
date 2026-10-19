@@ -252,7 +252,8 @@ export function normalizeSocialHandle(value: string, platform?: string | null): 
         const vanity = url.match(/^(?:facebook\.com|fb\.com|fb\.me)\/([a-z0-9.]+)/);
         // "facebook.com/Ana Perez" is a display name glued to a link, not an account:
         // its first word ("ana") would match every Ana (2026-10-18, Catpuccino data).
-        if (vanity && /^\s/.test(url.slice(vanity[0].length))) return null;
+        // A real vanity ("ana.perez", "ana123") followed by a note keeps its handle.
+        if (vanity && /^\s/.test(url.slice(vanity[0].length)) && !/[.\d]/.test(vanity[1])) return null;
         if (vanity) {
             const handle = vanity[1].replace(/^@+/, '');
             return NON_PROFILE_SEGMENTS.has(handle) ? null : handle;

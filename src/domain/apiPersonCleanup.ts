@@ -36,11 +36,18 @@ export interface DroppedValue { field: string; reason: DroppedReason }
 /** A cleaned value differs from what was sent (kept, but trimmed to what is usable). */
 export interface CleanedValue { field: string; reason: 'first_valid_email' | 'phone_numbers_only' }
 
-/** The first well-formed email inside free text ("a@x.com /// b@y.com", "a@x.com (hija)"). */
+/**
+ * The first well-formed email inside free text ("a@x.com /// b@y.com", "a@x.com (hija)").
+ * Never a guess: when a bare word sits right before the address ("ana perez@gmail.com"),
+ * the address might be cut out of a longer one — "perez@gmail.com" is someone else's
+ * (review 2026-10-19), so there is no usable email.
+ */
 export function firstEmailIn(text: string): string | null {
     const v = text.trim().replace(/\s+@\s*|\s*@\s+/g, '@'); // "ana @gmail.com"
     if (API_EMAIL_RE.test(v)) return v;
     for (const m of v.matchAll(/[^\s@,;/()<>[\]"']+@[^\s@,;/()<>[\]"']+/g)) {
+        const before = v.slice(0, m.index);
+        if (/[\p{L}\p{N}._-]\s+$/u.test(before)) return null;
         const candidate = m[0].replace(/[.:]+$/, '');
         if (API_EMAIL_RE.test(candidate)) return candidate;
     }
@@ -48,18 +55,29 @@ export function firstEmailIn(text: string): string | null {
 }
 
 /** Runs of a phone number inside free text: digits with the usual separators. */
-const PHONE_RUN = /\+?\d[\d\s().-]{5,}\d/g;
+const PHONE_RUN = /\+?\(?\d[\d\s().-]{5,}\d/g;
+/** A number labelled as a document is not a phone ("DNI 30123456 cel 11…"). */
+const DOCUMENT_LABEL = /(?:dni|documento|doc\.?|cuit|cuil|pasaporte)\W*$/i;
 
 /**
- * Only the numbers in a phone field: "11 4455-6677 solo WhatsApp" → "11 4455-6677",
- * "11 4455-6677 o el fijo 4567-8901" → "11 4455-6677 / 4567-8901". null when none
- * is readable. A value with no letters is returned as sent (the reader handles it).
+ * Only the numbers in a phone field. When the phone reader already understands
+ * the whole value — a note ("cel", "solo WhatsApp") doesn't bother it — it is
+ * returned as sent: a cleanup must never make a valid phone worse (review
+ * 2026-10-19). Only when it can't (no number, or several numbers glued by words
+ * into one overlong one) are the numbers taken out: "11 4455-6677 el de mi
+ * marido 11 5566-7788" → "11 4455-6677 / 11 5566-7788". null when none is readable.
  */
 export function phoneNumbersIn(text: string, country?: string | null): string | null {
-    const v = text.trim();
-    if (!/[a-zñ@]/i.test(v)) return readPhones(v, country).length ? v : null;
-    const runs = [...v.matchAll(PHONE_RUN)].map(m => m[0].trim()).filter(r => readPhones(r, country).length > 0);
-    return runs.length ? runs.join(' / ') : null;
+    // Typographic dashes and non-breaking spaces read as plain ones.
+    const v = text.replace(/[\u2010-\u2015\u2212]/g, '-').replace(/[\u00a0\u2007\u202f]/g, ' ').trim();
+    const whole = readPhones(v, country);
+    if (whole.length && whole.every(r => r.kind === 'complete' || !r.overlong)) return v;
+    const runs = [...v.matchAll(PHONE_RUN)]
+        .filter(m => !DOCUMENT_LABEL.test(v.slice(0, m.index)))
+        .map(m => m[0].trim())
+        .filter(r => { const read = readPhones(r, country); return read.length > 0 && read.every(x => x.kind === 'complete' || !x.overlong); });
+    if (runs.length) return runs.join(' / ');
+    return whole.length ? v : null; // an overlong number stays as before: accepted, never used to prove a match
 }
 
 /** "Ana Perez" in a Facebook field: a display name, not an account (no link, no @, has a space). */

@@ -13,7 +13,7 @@ import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
 import { getFeatureFlag } from '@/config/features';
-import { bearerSecret, environmentForHost, findActiveKey, scopesOf, type ApiKeyRow } from './keys';
+import { bearerSecret, environmentForHost, findActiveKey, importModeOn, IMPORT_CALL_CEILING, scopesOf, type ApiKeyRow } from './keys';
 import { keyRefusal } from './access';
 import type { ApiErrorCode, ApiScope } from './schemas';
 
@@ -233,7 +233,7 @@ export async function callsToday(db: Db, keyId: string): Promise<number> {
     return row?.n ?? 0;
 }
 async function enforceCallCeiling(db: Db, key: ApiKeyRow) {
-    const ceiling = callCeilingOf(key);
+    const ceiling = importModeOn(key) ? IMPORT_CALL_CEILING : callCeilingOf(key);
     if (await callsToday(db, key.id) >= ceiling) {
         throw new ApiError(429, 'daily_call_ceiling_reached', `this key made ${ceiling} calls today (of any kind), its daily ceiling; resets at 00:00 UTC`, retryAfterMidnight());
     }
@@ -457,9 +457,7 @@ export async function handleApiCall(
     let errorId: string | null = null;
     try {
         if (tooLarge) throw new ApiError(413, 'payload_too_large', `request bodies are limited to ${maxBody} bytes`);
-        // An import-mode key is driven by our own script, which keeps its own budget:
-        // counting today's calls on every call reads more rows the longer the day goes.
-        if (key.importMode !== 1) await enforceCallCeiling(db, key);
+        await enforceCallCeiling(db, key);
         if (wantsDryRun(request.headers.get(DRY_RUN_HEADER))) {
             if (endpoint === 'void') throw new ApiError(422, 'dry_run_not_allowed', 'a void cannot be a dry run');
             if (!dryRunAllowed(key.environment, new URL(request.url).host)) {
@@ -486,7 +484,7 @@ export async function handleApiCall(
 
     await writeLog(ctx, endpoint, status, body, errorId, startedAt);
     // The search quota on every search answer (IETF RateLimit fields): what is left today, and when it resets.
-    if (endpoint === 'search' && ctx.log.mode && key.importMode !== 1) {
+    if (endpoint === 'search' && ctx.log.mode && !(importModeOn(key) && ctx.log.mode === 'exact')) {
         try {
             const mode = ctx.log.mode as 'exact' | 'fuzzy';
             const keyCap = mode === 'exact' ? key.dailyCapExact : key.dailyCapFuzzy;

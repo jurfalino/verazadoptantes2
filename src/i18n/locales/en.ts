@@ -3079,6 +3079,7 @@ export const en = {
         many_voids: 'Many voids',
         revoke_confirm: 'Revoke this key?',
         error_regenerate: 'Couldn\'t regenerate the key.',
+        import_mode_until: 'Import mode until {when}: no notifications, no daily limit on exact searches',
         tab_overview: 'Overview',
         tab_people: 'People',
         tab_keys: 'Keys',

@@ -10,7 +10,7 @@ import type { DiscoveryMatch } from '@/app/actions/types';
 import { ApiError, claimIdempotencyKey, enforceDailyCap, replayIdempotent, requireScope, type ApiCallContext, type ApiResult } from './handler';
 import { buildProfileSummaries, findIdentifierHits, ownerCountry, profileUrl, ratingFields } from './profiles';
 import { bestMatchFor, saveApiActivity } from './records';
-import { environmentForHost } from './keys';
+import { environmentForHost, importModeOn } from './keys';
 import { isExampleData } from './docScenarios';
 import { checkSearchRules, searchRequestSchema, type ApiRisk, type ExactResponse, type FuzzyResponse, orderCandidates, saveActionOf, type ProfileSummary, type SearchRequest, type ApiWarning } from './schemas';
 
@@ -93,7 +93,9 @@ export async function runSearch(ctx: ApiCallContext): Promise<ApiResult> {
         }
     }
     // Cap before claiming: a refused call must never become the stored answer.
-    if (ctx.key.importMode !== 1) await enforceDailyCap(ctx, req.mode);
+    // An import-mode key's exact calls are our own bulk import (its script keeps the budget);
+    // fuzzy keeps its cap — import mode must never open unlimited look-ups.
+    if (!(importModeOn(ctx.key) && req.mode === 'exact')) await enforceDailyCap(ctx, req.mode);
     if (saves && !ctx.dryRun) await claimIdempotencyKey(ctx);
 
     const result = req.mode === 'exact' ? await runExact(ctx, req) : await runFuzzy(ctx, req);

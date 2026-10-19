@@ -913,7 +913,7 @@ export const apiKeys = sqliteTable("api_keys", {
     scopes: text("scopes").notNull(),                            // JSON: ApiScope[]
     dailyCapExact: integer("daily_cap_exact").notNull().default(500),
     dailyCapFuzzy: integer("daily_cap_fuzzy").notNull().default(50),
-    importMode: integer("import_mode").notNull().default(0), // 1 = bulk import: no notifications, no LIKE scan in the duplicate check
+    importMode: integer("import_mode").notNull().default(0), // bulk import until this unix second (0 = off): see importModeOn in src/lib/api/keys.ts
     createdBy: text("created_by").notNull(),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     lastUsedAt: integer("last_used_at", { mode: "timestamp" }),

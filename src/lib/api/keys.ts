@@ -34,6 +34,18 @@ export function environmentForHost(host: string): 'live' | 'test' {
     return host === 'buenadoptante.org' || host === 'www.buenadoptante.org' ? 'live' : 'test';
 }
 
+/**
+ * Import mode (2026-10-18): `api_keys.import_mode` holds when it ends (unix
+ * seconds; 0 = off), so a bulk import can't be left on by mistake. While on:
+ * no notifications, no LIKE scan in the duplicate check, no daily cap on EXACT
+ * calls (fuzzy keeps its cap) and a high call ceiling instead of the normal one.
+ */
+export const IMPORT_MODE_HOURS = 24;
+export const IMPORT_CALL_CEILING = 20_000;
+export function importModeOn(key: { importMode?: number | null }, now = Date.now()): boolean {
+    return (key.importMode ?? 0) > Math.floor(now / 1000);
+}
+
 export function keyPrefixOf(secret: string): string {
     return secret.slice(0, 12);
 }

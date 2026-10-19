@@ -7,6 +7,7 @@ import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { adminEmailOr401 } from '@/lib/api/sessionGuards';
 import { clampCap } from '@/lib/api/review';
+import { IMPORT_MODE_HOURS } from '@/lib/api/keys';
 
 export const runtime = 'edge';
 
@@ -24,7 +25,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (body.revoke && !key.revokedAt) { patch.revokedAt = new Date(); patch.revokedBy = admin; }
         if (body.dailyCapExact !== undefined) patch.dailyCapExact = clampCap(body.dailyCapExact, key.dailyCapExact);
         if (body.dailyCapFuzzy !== undefined) patch.dailyCapFuzzy = clampCap(body.dailyCapFuzzy, key.dailyCapFuzzy);
-        if (body.importMode !== undefined) patch.importMode = body.importMode ? 1 : 0;
+        // On for IMPORT_MODE_HOURS, then off by itself; only a real boolean switches it.
+        if (body.importMode === true) patch.importMode = Math.floor(Date.now() / 1000) + IMPORT_MODE_HOURS * 3600;
+        else if (body.importMode === false) patch.importMode = 0;
         if (Object.keys(patch).length) await db.update(apiKeys).set(patch).where(eq(apiKeys.id, id));
         logAudit({ userEmail: admin, action: body.revoke ? 'api_key_revoked' : 'api_key_updated', details: { keyId: id, ownerEmail: key.ownerEmail, ...patch } });
         return NextResponse.json({ ok: true });

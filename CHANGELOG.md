@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.206] - 2026-10-19
+
+### Fixed — independent review of 2.56.205 (before production and the Catpuccino import)
+
+- **A readable phone is never made worse:** kept exactly as sent when the phone reader
+  understands it (a note, typographic dashes, slashes). Numbers are only taken out when it
+  can't (several numbers glued by words); a number labelled DNI/CUIT is never a phone.
+  (2.56.205 saved "11 4455–6677 cel" as "11 4455".)
+- **An email is never guessed:** "ana perez@gmail.com" no longer becomes "perez@gmail.com"
+  (someone else's) — it is not an email.
+- **A real account with a note keeps working:** "facebook.com/ana.perez (mi perfil)" and
+  "@ana.perez 🙂" link and match the account; only names ("facebook.com/Ana Perez") are text.
+- **Import mode ends by itself** (24 h after an admin turns it on; shown on the key in
+  Admin → API → Claves), keeps the daily cap on fuzzy look-ups, and has a high call ceiling
+  (20,000/day) instead of none. Only a real `true` turns it on.
+
 ## [2.56.205] - 2026-10-18
 
 ### Added — API: cleaner person data, import mode, faster duplicate check (before the Catpuccino import)

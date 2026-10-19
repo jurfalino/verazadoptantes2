@@ -20,6 +20,7 @@ export interface KeyView {
     createdAt: string | null; lastUsedAt: string | null; revokedAt: string | null; revokedBy?: string | null;
     selfService?: boolean;
     canRegenerate?: boolean;
+    importModeUntil?: string | null;
 }
 
 export const card = 'bg-white dark:bg-stone-800 rounded-2xl border border-stone-200 dark:border-stone-700 p-6';
@@ -54,6 +55,11 @@ function KeyRow({ k, onPatch, onRegenerate }: { k: KeyView; onPatch: (id: string
                     {t('apiReview.used_today')}: {k.usedToday.exact}/{k.dailyCapExact} exact · {k.usedToday.fuzzy}/{k.dailyCapFuzzy} fuzzy
                     {k.lastUsedAt ? ` · ${t('apiReview.last_used')} ${new Date(k.lastUsedAt).toLocaleString()}` : ''}
                 </p>
+                {k.importModeUntil && !k.revokedAt && (
+                    <p className="text-xs font-semibold" style={{ color: 'var(--status-warning-text)' }} data-testid="api-key-import-mode">
+                        {t('apiAdmin.import_mode_until').replace('{when}', new Date(k.importModeUntil).toLocaleString())}
+                    </p>
+                )}
                 {k.last30 && (
                     <p className="text-xs text-stone-500" data-testid="api-key-stats">
                         {t('apiAdmin.stats_30d').replace('{activities}', String(k.last30.activities)).replace('{voided}', String(k.last30.voided))}

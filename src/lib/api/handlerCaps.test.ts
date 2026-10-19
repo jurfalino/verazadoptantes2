@@ -16,3 +16,14 @@ describe('remainingFrom — RateLimit headers from the counts read before the ca
         expect(remainingFrom({ mode: 'fuzzy', byKey: 60, byPerson: 60, personCap: 50 }, 50, true).remaining).toBe(0);
     });
 });
+
+describe('importModeOn — import mode ends by itself', () => {
+    it('is on until the stored second, off at 0 and after it', async () => {
+        const { importModeOn } = await import('./keys');
+        const now = Date.UTC(2026, 9, 19, 12);
+        expect(importModeOn({ importMode: now / 1000 + 60 }, now)).toBe(true);
+        expect(importModeOn({ importMode: now / 1000 - 1 }, now)).toBe(false);
+        expect(importModeOn({ importMode: 0 }, now)).toBe(false);
+        expect(importModeOn({ importMode: 1 }, now)).toBe(false); // the old boolean "on" is off
+    });
+});

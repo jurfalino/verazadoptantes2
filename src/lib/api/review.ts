@@ -21,6 +21,8 @@ export interface KeyView {
     last30: { activities: number; voided: number };
     createdAt: string | null; lastUsedAt: string | null; revokedAt: string | null; revokedBy: string | null;
     selfService: boolean;
+    /** When import mode ends (ISO), or null when it is off. */
+    importModeUntil: string | null;
 }
 
 export const STATS_DAYS = 30;
@@ -79,6 +81,7 @@ export async function listKeys(db: Db, ownerEmail: string | null): Promise<KeyVi
         createdAt: iso(k.createdAt), lastUsedAt: iso(k.lastUsedAt), revokedAt: iso(k.revokedAt), revokedBy: k.revokedBy ?? null,
         // Created by the rescuer at /developers (not issued by an admin to someone else).
         selfService: k.createdBy === k.ownerEmail,
+        importModeUntil: k.importMode > Math.floor(Date.now() / 1000) ? new Date(k.importMode * 1000).toISOString() : null,
     }));
 }
 

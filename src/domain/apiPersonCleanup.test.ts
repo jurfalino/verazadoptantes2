@@ -7,6 +7,11 @@ describe('firstEmailIn', () => {
     it('takes the first valid one of several', () => expect(firstEmailIn('ana@example.com /// beto@example.com')).toBe('ana@example.com'));
     it('drops a trailing note', () => expect(firstEmailIn('ana@example.com (hija)')).toBe('ana@example.com'));
     it('closes a space around the @', () => expect(firstEmailIn('ana @example.com')).toBe('ana@example.com'));
+    it('never cuts an address out of a longer one (it would be someone else\'s)', () => {
+        expect(firstEmailIn('ana perez@gmail.com')).toBeNull();
+        expect(firstEmailIn('juan_ perez@hotmail.com')).toBeNull();
+        expect(firstEmailIn('ana perez @gmail.com')).toBeNull();
+    });
     it('refuses what is not an email', () => {
         for (const v of ['@usuario', 'no se', 'ana@gmail', 'ana@gmail.c', 'ana@.com', 'Ana']) expect(firstEmailIn(v)).toBeNull();
     });
@@ -14,9 +19,20 @@ describe('firstEmailIn', () => {
 
 describe('phoneNumbersIn', () => {
     it('returns a plain phone as sent', () => expect(phoneNumbersIn('11 4455-6677')).toBe('11 4455-6677'));
-    it('drops a note', () => expect(phoneNumbersIn('11 4455-6677 solo WhatsApp')).toBe('11 4455-6677'));
-    it('keeps two numbers separated by words, each on its own', () => {
-        expect(phoneNumbersIn('11 4455-6677 o el de mi marido 11 5566-7788')).toBe('11 4455-6677 / 11 5566-7788');
+    it('never makes a readable phone worse (a note, odd dashes, slashes stay as sent)', () => {
+        expect(phoneNumbersIn('11 4455-6677 solo WhatsApp')).toBe('11 4455-6677 solo WhatsApp');
+        expect(phoneNumbersIn('11 4455\u20136677 cel')).toBe('11 4455-6677 cel');
+        expect(phoneNumbersIn('11 4455\u20116677 whatsapp')).toBe('11 4455-6677 whatsapp');
+        expect(phoneNumbersIn('11/4455/6677 cel')).toBe('11/4455/6677 cel');
+        expect(phoneNumbersIn('(011) 4455-6677 casa')).toBe('(011) 4455-6677 casa');
+    });
+    it('a number labelled as a document is not a phone', () => {
+        expect(phoneNumbersIn('DNI 30123456 cel 1144556677')).toBe('1144556677');
+    });
+    it('keeps two numbers glued by words, each on its own', () => {
+        expect(phoneNumbersIn('11 4455-6677 el de mi marido 11 5566-7788')).toBe('11 4455-6677 / 11 5566-7788');
+        // With a separator the reader already finds both: kept as sent.
+        expect(phoneNumbersIn('11 4455-6677 o el de mi marido 11 5566-7788')).toBe('11 4455-6677 o el de mi marido 11 5566-7788');
     });
     it('null when there is no readable number', () => {
         for (const v of ['Xiaomi', 'no te interesa', '999', 'ana@example.com']) expect(phoneNumbersIn(v)).toBeNull();
@@ -59,8 +75,8 @@ describe('cleanApiPerson', () => {
     });
 
     it('cleans rather than drops when part of the value is usable', () => {
-        const r = cleanApiPerson({ ...base, email: 'ana@example.com (hija)', phone: '11 4455-6677 solo WhatsApp' });
-        expect(r.person).toMatchObject({ email: 'ana@example.com', phone: '11 4455-6677' });
+        const r = cleanApiPerson({ ...base, email: 'ana@example.com (hija)', phone: '11 4455-6677 el de mi marido 11 5566-7788 trabajo' });
+        expect(r.person).toMatchObject({ email: 'ana@example.com' });
         expect(r.cleaned.map(c => c.reason).sort()).toEqual(['first_valid_email', 'phone_numbers_only']);
         expect(r.dropped).toEqual([]);
     });

@@ -23,6 +23,7 @@ import { computeBirthDate } from '@/lib/ageUtils';
 import { addApiContacts, newContactFields, parseAddedContacts, removeApiContacts } from './contacts';
 import { ApiError, recordProgress, type ApiCallContext } from './handler';
 import { profileUrl, recordUrl } from './profiles';
+import { importModeOn } from './keys';
 import type { ProfileSummary, SavedActivity, SearchRequest } from './schemas';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -86,7 +87,7 @@ export async function saveApiActivity(
         const created = await createAdopterFromSubmission({
             source: 'api',
             api: { keyName: key.name, requestId: ctx.requestId, context: activityType },
-            bulkImport: key.importMode === 1,
+            bulkImport: importModeOn(key),
             name: p.fullName!,
             addedBy: key.ownerEmail,
             email: p.email ?? null,
@@ -190,7 +191,7 @@ export async function saveApiActivity(
         metadata: { requestId: ctx.requestId, keyName: key.name, profileId, recordId, outcome: outcome.result, context: activityType, contactsAdded: contactsAdded.map(c => c.field) },
     };
     // A key in import mode notifies nobody: thousands of historical records are not news.
-    if (key.importMode !== 1) await runAfterResponse('api.notifyRecord', async () => {
+    if (!importModeOn(key)) await runAfterResponse('api.notifyRecord', async () => {
         const { createNotification, notifyOrgMembers } = await import('@/app/actions/notifications');
         await createNotification({ userId: key.ownerEmail, ...notification });
         await notifyOrgMembers({ actorEmail: key.ownerEmail, ...notification });

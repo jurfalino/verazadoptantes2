@@ -3084,6 +3084,7 @@ export const es = {
         many_voids: 'Muchas anulaciones',
         revoke_confirm: '¿Revocar esta clave?',
         error_regenerate: 'No se pudo regenerar la clave.',
+        import_mode_until: 'Modo importación hasta {when}: sin notificaciones ni límite diario de búsquedas exactas',
         tab_overview: 'Resumen',
         tab_people: 'Personas',
         tab_keys: 'Claves',
