@@ -301,4 +301,57 @@ test.describe('Duplicate mass-merge and undo', () => {
         // ... and the card explains WHY: family-circle match, relative visible.
         await expect(page.getByText(/RelativeFixture Ondina/).first()).toBeVisible({ timeout: 30000 });
     });
+    test('admin merge: the panel shows who registered each profile; owners are told only when asked; both histories record it', async ({ page }) => {
+        const M1 = 'test-mergeowner-fixture-1';
+        const M2 = 'test-mergeowner-fixture-2';
+        const CAND = 'test-cand-mergeowner-12';
+        seedAdopter(M1, 'MergeOwnerFixture Milagros', 'mo-contact 1111-0001');
+        seedAdopter(M2, 'MergeOwnerFixture Mili', 'mo-contact 1111-0002');
+        // M2 was registered by another rescuer (the seed's regular test user).
+        execD1(`UPDATE adopters SET added_by = 'testuser@example.com' WHERE id = '${M2}'`);
+        execD1(`DELETE FROM notifications WHERE type = 'adopter_merged'`);
+        execD1(`DELETE FROM adopter_history WHERE adopter_id = '${M1}' OR adopter_id = '${M2}'`);
+        execD1(
+            `INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at, resolved_at, resolved_by) ` +
+            `VALUES ('${CAND}', '${M1}', '${M2}', '["phone"]', '{}', 999, 'high', 'pending', strftime('%s','now'), NULL, NULL)`,
+        );
+
+        // The pair card says who registered each side.
+        await page.goto('/admin/data-quality');
+        await page.getByRole('button', { name: /Duplicados/ }).click();
+        const card = page.locator('div.rounded-xl', { hasText: 'MergeOwnerFixture Mili' }).filter({ hasText: 'MergeOwnerFixture Milagros' }).last();
+        await expect(card.getByTestId('dup-created-by').first()).toBeVisible({ timeout: 30000 });
+        await expect(card).toContainText('testuser@example.com');
+        // The merge window offers to notify (checked by default).
+        await card.getByRole('button', { name: /^Merge$/ }).click();
+        await expect(page.getByTestId('dmm-notify').locator('input')).toBeChecked();
+        await page.keyboard.press('Escape');
+
+        // Merge asking to notify: the other rescuer is told, the admin who merged is not.
+        const res = await page.request.post('/api/admin/duplicates/merge', { data: { primaryId: M1, secondaryId: M2, notifyOwners: true } });
+        expect(res.ok()).toBeTruthy();
+        const auditId = (await res.json() as { results: Array<{ auditId: string }> }).results[0].auditId;
+        const notes = parseD1Rows(execD1(`SELECT user_id, url FROM notifications WHERE type = 'adopter_merged'`));
+        expect(notes.map(n => n.user_id)).toEqual(['testuser@example.com']);
+        expect(String(notes[0].url)).toBe(`/adopter/${M1}`);
+
+        // The survivor's history records the merge, and the profile shows it.
+        const merged = parseD1Rows(execD1(`SELECT changes FROM adopter_history WHERE adopter_id = '${M1}' AND changes LIKE '%profiles_merged%'`));
+        expect(merged).toHaveLength(1);
+        expect(JSON.parse(String(merged[0].changes)).profiles_merged).toMatchObject({ fromId: M2, fromName: 'MergeOwnerFixture Mili', fromAddedBy: 'testuser@example.com' });
+        await page.goto(`/adopter/${M1}`);
+        await expect(page.getByTestId('history-profiles-merged')).toContainText('MergeOwnerFixture Mili', { timeout: 30000 });
+
+        // Undo: both profiles' histories say so.
+        expect((await page.request.post('/api/admin/duplicates/unmerge', { data: { auditIds: [auditId] } })).ok()).toBeTruthy();
+        for (const id of [M1, M2]) {
+            expect(parseD1Rows(execD1(`SELECT id FROM adopter_history WHERE adopter_id = '${id}' AND changes LIKE '%profiles_unmerged%'`))).toHaveLength(1);
+        }
+
+        // Without asking, nobody is told.
+        execD1(`DELETE FROM notifications WHERE type = 'adopter_merged'`);
+        const quiet = await page.request.post('/api/admin/duplicates/merge', { data: { primaryId: M1, secondaryId: M2 } });
+        expect(quiet.ok()).toBeTruthy();
+        expect(parseD1Rows(execD1(`SELECT id FROM notifications WHERE type = 'adopter_merged'`))).toHaveLength(0);
+    });
 });

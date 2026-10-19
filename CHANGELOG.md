@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.207] - 2026-10-19
+
+### Added — Admin → duplicates: who registered each profile, optional owner notice, merges in the profile history
+
+Jon, 2026-10-19 (merging Catpuccino applicants with existing profiles):
+- **Each profile in a pair says who registered it** (name and email), in the list, the merge
+  window and the "unir todo" window.
+- **"Avisar a quienes cargaron los perfiles"** — a checkbox (on by default) in the merge
+  window, the "unir todo" window and the bulk-merge bar. When ticked, whoever registered each
+  profile gets a notification (type `adopter_merged`, kill switch in Admin → Notificaciones)
+  linking to the profile that stays; never the admin who merged. Before, an admin merge told
+  nobody.
+- **The kept profile's history says it absorbed a profile** ("Perfiles unidos": its name and
+  who registered it); undoing the merge adds "Unión deshecha" to both. Before, a merge was only
+  in the admin audit log.
+- e2e: the daily-cap test is safe to retry.
+
 ## [2.56.206] - 2026-10-19
 
 ### Fixed — independent review of 2.56.205 (before production and the Catpuccino import)

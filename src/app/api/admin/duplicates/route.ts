@@ -2,7 +2,7 @@ export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { adopters, adoptions, duplicateTokens, duplicateCandidates, adopterFlags, appConfig } from '@/db/schema';
+import { adopters, adoptions, duplicateTokens, duplicateCandidates, adopterFlags, appConfig, users } from '@/db/schema';
 import { eq, sql, isNull, or, and } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { isAdminAsync } from '@/config/admins';
@@ -20,6 +20,20 @@ import { getRequestContext } from '@/lib/requestContext';
  * (matches the rest of the app's "no activity = no rating" convention).
  * The legacy `adopter.status` column is deprecated; only avgRating is real.
  */
+/** email → display name for the people who registered the listed profiles (one query per person; never IN on D1). */
+async function creatorNamesFor(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, emails: Array<string | null | undefined>): Promise<Record<string, string | null>> {
+    const distinct = [...new Set(emails.filter((e): e is string => !!e && e.includes('@')))];
+    const rows = await Promise.all(distinct.map(email =>
+        db.select({ name: users.name }).from(users).where(eq(users.email, email)).get()
+            .then((u: { name: string | null } | undefined) => [email, u?.name ?? null] as const)
+            .catch((e: unknown) => {
+                logger.warn('Duplicate list: creator name fallback hit', { error: e instanceof Error ? e.message : String(e) });
+                return [email, null] as const;
+            }),
+    ));
+    return Object.fromEntries(rows);
+}
+
 async function avgRatingFor(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, adopterId: string | null | undefined): Promise<number | null> {
     if (!adopterId) return null;
     const rows = await db.select({ rating: adoptions.rating })
@@ -106,11 +120,11 @@ export async function GET(request: Request) {
         const userFlaggedEnriched = await Promise.all(
             userFlagged.map(async (flag: typeof userFlagged[number]) => {
                 const [adopter1, adopter2, avg1, avg2] = await Promise.all([
-                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo })
+                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy })
                         .from(adopters).where(eq(adopters.id, flag.adopterId)).get()
                         .catch(logFallback('flag adopter fetch', { flagId: flag.flagId, adopterId: flag.adopterId }, undefined)),
                     flag.targetAdopterId
-                        ? db.select({ name: adopters.name, contactInfo: adopters.contactInfo })
+                        ? db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy })
                             .from(adopters).where(eq(adopters.id, flag.targetAdopterId)).get()
                             .catch(logFallback('flag target fetch', { flagId: flag.flagId, adopterId: flag.targetAdopterId }, undefined))
                         : null,
@@ -123,9 +137,11 @@ export async function GET(request: Request) {
                     adopter1Name: nameOf(adopter1),
                     adopter1Contact: adopter1?.contactInfo,
                     adopter1AvgRating: avg1,
+                    adopter1AddedBy: adopter1?.addedBy ?? null,
                     adopter2Name: nameOf(adopter2),
                     adopter2Contact: adopter2?.contactInfo,
                     adopter2AvgRating: avg2,
+                    adopter2AddedBy: adopter2?.addedBy ?? null,
                 };
             })
         );
@@ -150,10 +166,10 @@ export async function GET(request: Request) {
         const candidatesEnriched = await Promise.all(
             candidates.map(async (c: typeof candidates[number]) => {
                 const [adopter1, adopter2, avg1, avg2] = await Promise.all([
-                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo })
+                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy })
                         .from(adopters).where(eq(adopters.id, c.adopter1Id)).get()
                         .catch(logFallback('candidate adopter1 fetch', { candidateId: c.id, adopterId: c.adopter1Id }, undefined)),
-                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo })
+                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy })
                         .from(adopters).where(eq(adopters.id, c.adopter2Id)).get()
                         .catch(logFallback('candidate adopter2 fetch', { candidateId: c.id, adopterId: c.adopter2Id }, undefined)),
                     avgRatingFor(db, c.adopter1Id).catch(logFallback('candidate avgRating1', { candidateId: c.id, adopterId: c.adopter1Id }, null)),
@@ -165,9 +181,11 @@ export async function GET(request: Request) {
                     adopter1Name: nameOf(adopter1),
                     adopter1Contact: adopter1?.contactInfo,
                     adopter1AvgRating: avg1,
+                    adopter1AddedBy: adopter1?.addedBy ?? null,
                     adopter2Name: nameOf(adopter2),
                     adopter2Contact: adopter2?.contactInfo,
                     adopter2AvgRating: avg2,
+                    adopter2AddedBy: adopter2?.addedBy ?? null,
                 };
             })
         );
@@ -248,6 +266,9 @@ export async function GET(request: Request) {
         return NextResponse.json({
             userFlagged: userFlaggedEnriched,
             candidates: candidatesEnriched,
+            // Who registered each profile, by name (admins see the email too).
+            creatorNames: await creatorNamesFor(db, [...userFlaggedEnriched, ...candidatesEnriched]
+                .flatMap((r: { adopter1AddedBy?: string | null; adopter2AddedBy?: string | null }) => [r.adopter1AddedBy, r.adopter2AddedBy])),
             filteredTotal,
             staleCount,
             scan,

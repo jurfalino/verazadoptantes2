@@ -36,14 +36,18 @@ interface Adopter {
      *  project-adopter-status-deprecated. Null when the adopter has no
      *  rated activity yet. */
     avgRating?: number | null;
+    /** Who registered it ("Name (email)"), when the caller knows (admin panel). */
+    createdBy?: string | null;
 }
 
 interface DuplicateMergeModalProps {
     adopter1: Adopter;
     adopter2: Adopter;
     matchTypes?: string[];
-    onMerge: (primaryId: string, secondaryId: string) => Promise<void>;
+    onMerge: (primaryId: string, secondaryId: string, opts?: { notifyOwners?: boolean }) => Promise<void>;
     onClose: () => void;
+    /** Admin merge: offer to notify whoever registered the profiles (checked by default). */
+    notifyOption?: boolean;
 }
 
 export default function DuplicateMergeModal({
@@ -52,10 +56,12 @@ export default function DuplicateMergeModal({
     matchTypes,
     onMerge,
     onClose,
+    notifyOption = false,
 }: DuplicateMergeModalProps) {
     const { t } = useLanguage();
     const [primaryId, setPrimaryId] = useState<string>(adopter1.id);
     const [merging, setMerging] = useState(false);
+    const [notifyOwners, setNotifyOwners] = useState(true);
 
     const primary = primaryId === adopter1.id ? adopter1 : adopter2;
     const secondary = primaryId === adopter1.id ? adopter2 : adopter1;
@@ -66,7 +72,7 @@ export default function DuplicateMergeModal({
         // the merge is undoable from the panel's post-merge banner.
         setMerging(true);
         try {
-            await onMerge(primary.id, secondary.id);
+            await onMerge(primary.id, secondary.id, notifyOption ? { notifyOwners } : undefined);
         } finally {
             setMerging(false);
         }
@@ -122,8 +128,19 @@ export default function DuplicateMergeModal({
                             <li>{withBoldName(t('admin.dmm_bullet_deleted'), adopterDisplayName(secondary, t('adopter.nameless')))}</li>
                             <li>{t('admin.dmm_bullet_records_move')}</li>
                             <li>{t('admin.dmm_bullet_contact_merged')}</li>
+                            <li>{t('admin.dmm_bullet_history')}</li>
                         </ul>
                     </div>
+
+                    {notifyOption && (
+                        <label className="flex items-start gap-3 text-sm text-stone-700 cursor-pointer" data-testid="dmm-notify">
+                            <input type="checkbox" checked={notifyOwners} onChange={e => setNotifyOwners(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-stone-300 text-teal-600 focus:ring-teal-500" />
+                            <span>
+                                <span className="font-medium">{t('admin.dmm_notify_owners')}</span>
+                                <span className="block text-xs text-stone-500 mt-0.5">{t('admin.dmm_notify_owners_hint')}</span>
+                            </span>
+                        </label>
+                    )}
                 </div>
 
                 <div className="p-6 border-t border-stone-200 flex justify-end gap-3">
@@ -180,6 +197,9 @@ function ProfileCard({
             </div>
             <AdopterName adopter={adopter} className="font-semibold text-stone-900 text-sm line-clamp-2 break-words block" title />
             <p className="text-xs text-stone-500 font-mono mt-1 truncate">{adopter.id}</p>
+            {adopter.createdBy && (
+                <p className="text-xs text-stone-600 mt-1 break-words">{t('admin.dmm_created_by')} <span className="font-medium">{adopter.createdBy}</span></p>
+            )}
             {adopter.contact && (
                 <p className="text-xs text-stone-500 mt-2 line-clamp-2 break-words">{adopter.contact}</p>
             )}
