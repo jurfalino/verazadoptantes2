@@ -1563,3 +1563,22 @@ body {
   font-weight: 700;
   color: var(--ps-text);
 }
+
+/* ── Photos (spec 2026-10-14 release 2) ── */
+.ps-photos { border: 0; padding: 0; margin: var(--ps-5) 0 0; min-width: 0; width: 100%; }
+.ps-photos__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ps-2); }
+.ps-photos__item { position: relative; aspect-ratio: 1; border-radius: var(--ps-2); overflow: hidden; border: 1px solid var(--ps-border); }
+.ps-photos__item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ps-photos__remove {
+  position: absolute; top: 4px; right: 4px; width: 32px; height: 32px; border-radius: 50%;
+  border: 0; background: rgba(15, 23, 42, 0.75); color: #fff; font-size: 20px; line-height: 1; cursor: pointer;
+}
+.ps-photos__add {
+  aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--ps-1);
+  border: 1px dashed var(--ps-border-active); border-radius: var(--ps-2); background: var(--ps-card);
+  color: var(--ps-text); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.ps-photos__add span:first-child { font-size: 28px; line-height: 1; }
+
+/* Free-text answers (release 3) */
+.ps-textarea { min-height: 120px; resize: vertical; line-height: 1.4; font-size: 16px; }

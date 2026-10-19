@@ -28,6 +28,8 @@ export interface ApplicantSubmissionPayload {
     phone: string | null;
     address: string | null;
     selfieUrl: string | null;
+    /** Form photos (release 2) as access-checked links — never storage keys. */
+    photos: { protection: string[]; sleep: string | null };
     latitude: string | null;
     longitude: string | null;
     household: string[] | null;

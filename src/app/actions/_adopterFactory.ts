@@ -44,6 +44,8 @@ export interface CreateAdopterInput {
     source: Extract<AdopterSource, 'form' | 'contract' | 'api'>;
     /** source 'api' only: which key and call created the profile, for its history. */
     api?: { keyName: string; requestId: string; context: string };
+    /** Bulk import: skip the duplicate check's LIKE scan (the admin duplicate scan runs afterwards). */
+    bulkImport?: boolean;
     name: string;
     /** Rescuer email — owns the row. Falls back to 'anonymous' only if no rescuer is known. */
     addedBy: string;
@@ -248,7 +250,7 @@ export async function createAdopterFromSubmission(
                 socials: socialList.length ? extractSocials(socialList.map(x => (typeof x === 'string' ? x : x.value)).join('\n')) : [],
                 excludeAdopterId: adopterId,
             },
-            { mode: 'duplicate', minRelevance: 0, limit: 5 },
+            { mode: 'duplicate', minRelevance: 0, limit: 5, skipLikeFallback: input.bulkImport === true },
         );
 
         const matches = (dupResult.results as Array<{ adopterId: string; adopterName: string; matchTypes: string[]; relevancePercent: number }>) || [];

@@ -9,7 +9,7 @@
 import { useLanguage } from '@/context/LanguageContext';
 import {
     FORM_STEP_GROUPS, FORM_STEP_IDS, LOCKED_FORM_STEPS, DERIVED_FORM_STEPS, VARIANT_FORM_STEPS, DEFAULT_OFF_FORM_STEPS, SPECIES_ONLY_STEPS,
-    householdQuestion, isStepAsked, isPhoneRequired, inFormOrder, isQuestionOn, toggleQuestion, questionWay, setQuestionWay, settingKeyQuestion, settingChange, type SettingChange,
+    householdQuestion, isStepAsked, isPhoneRequired, photosOn, photosRequired, answerStyle, setAnswerStyle, OPEN_CAPABLE_STEPS, inFormOrder, isQuestionOn, toggleQuestion, questionWay, setQuestionWay, settingKeyQuestion, settingChange, type SettingChange,
 } from '@/domain/adoptionDocs';
 
 const LOCKED = new Set<string>(LOCKED_FORM_STEPS);
@@ -52,6 +52,10 @@ const CHANGE_KEY: Record<SettingChange, string> = {
     // The phone is always asked; this option only says whether it must be answered.
     phoneOptional: 'adoptionDocs.phone_state_optional',
     phoneRequired: 'adoptionDocs.phone_state_required',
+    photosRequired: 'adoptionDocs.photos_state_required',
+    photosOptional: 'adoptionDocs.photos_state_optional',
+    openWording: 'adoptionDocs.way_state_open',
+    closedWording: 'adoptionDocs.way_state_closed',
     oldWording: 'adoptionDocs.way_state_old',
     newWording: 'adoptionDocs.way_state_new',
 };
@@ -118,6 +122,7 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
                 {key === 'household' && <> ({label('household')})</>}
                 {key.startsWith('way:') && <> ({label(key)})</>}
                 {key === 'phone-optional' && <> ({t('adoptionDocs.phone_required_question')})</>}
+                {(key === 'on:photos' || key === 'photos-required') && <> ({t('adoptionDocs.photos_ask')})</>}
             </p>
             <div className="flex flex-wrap gap-2">
                 <button type="button" disabled={saving} onClick={() => onKeepTheirs?.(key)} className="min-h-11 px-2 text-xs font-semibold text-teal-700 hover:underline disabled:opacity-40" data-testid={`form-step-${key}-keep-theirs`}>
@@ -174,12 +179,67 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
         </>
     );
 
+    /** Release 3: options or free text, for a question in OPEN_CAPABLE_STEPS. */
+    const styleChoice = (id: string) => {
+        const style = answerStyle(id, hidden);
+        return (
+            <div role="radiogroup" aria-label={t('adoptionDocs.household_choice_label')} className="flex flex-wrap gap-2 px-4 pb-3">
+                {(['closed', 'open'] as const).map(value => (
+                    <button
+                        key={value}
+                        type="button"
+                        role="radio"
+                        aria-checked={style === value}
+                        onClick={() => onChange(setAnswerStyle(id, value, hidden))}
+                        data-testid={`style-${id}-${value}`}
+                        className={`min-h-11 px-4 py-2 rounded-xl text-[13px] font-bold border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 ${style === value
+                            ? 'bg-teal-600 text-white border-transparent'
+                            : 'bg-white text-stone-700 border-stone-200 hover:bg-[var(--accent-subtle-bg)]'}`}
+                    >
+                        {t(value === 'open' ? 'adoptionDocs.way_open' : 'adoptionDocs.way_closed')}
+                    </button>
+                ))}
+            </div>
+        );
+    };
+
+    /** A sub-switch under a question row: its own key, banners and indent (photos, release 2). */
+    const subSwitch = (key: string, on: boolean, labelKey: string, testId: string, indent: string) => (
+        <>
+            {conflicts[key] && conflictBanner(key, conflicts[key])}
+            {updatedBy[key] !== undefined && !conflicts[key] && (
+                <p className="px-4 pt-2 text-xs font-semibold text-teal-700" data-testid={`${testId}-updated-by`}>
+                    {t('adoptionDocs.updated_by').replace('{name}', name(updatedBy[key]))}
+                </p>
+            )}
+            <button
+                type="button"
+                role="switch"
+                aria-checked={on}
+                onClick={() => toggle(key)}
+                className={`w-full flex items-center justify-between gap-4 min-h-11 ${indent} pr-4 py-2 text-left rounded-xl hover:bg-stone-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 transition-colors`}
+                data-testid={testId}
+            >
+                <span className={`text-sm ${on ? 'text-stone-900' : 'text-stone-500'}`}>{t(labelKey)}</span>
+                <SwitchTrack on={on} />
+            </button>
+        </>
+    );
+
+    /** Under "Espacios protegidos": ask for photos, and whether they're required (release 2). */
+    const photoSwitches = () => (
+        <>
+            {subSwitch('on:photos', photosOn(hidden), 'adoptionDocs.photos_ask', 'form-step-photos', 'pl-8')}
+            {photosOn(hidden) && subSwitch('photos-required', photosRequired(hidden), 'adoptionDocs.photos_required', 'form-step-photos-required', 'pl-12')}
+        </>
+    );
+
     /** Under "mascotas previas" and "mudanza": the new question or the old one (spec 2026-10-14 §2.3). */
     const wayChoice = (id: 'petExperience' | 'movingPlans') => {
         const way = questionWay(id, hidden);
         return (
             <div role="radiogroup" aria-label={t('adoptionDocs.household_choice_label')} className="flex flex-wrap gap-2 px-4 pb-3">
-                {(['new', 'old'] as const).map(value => (
+                {(['new', 'old', 'open'] as const).map(value => (
                     <button
                         key={value}
                         type="button"
@@ -191,7 +251,7 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
                             ? 'bg-teal-600 text-white border-transparent'
                             : 'bg-white text-stone-700 border-stone-200 hover:bg-[var(--accent-subtle-bg)]'}`}
                     >
-                        {t(`adoptionDocs.way_${id}_${value}`)}
+                        {t(value === 'open' ? 'adoptionDocs.way_open' : `adoptionDocs.way_${id}_${value}`)}
                     </button>
                 ))}
             </div>
@@ -220,12 +280,16 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
         const key = rowKey(id);
         const conflict = conflicts[key];
         const wayKey = `way:${id}:old`;
+        const openKey = `way:${id}:open`;
+        const openCapable = (OPEN_CAPABLE_STEPS as readonly string[]).includes(id);
+        const threeWays = id === 'petExperience' || id === 'movingPlans';
         const species = (SPECIES_ONLY_STEPS as Record<string, string>)[id];
         return (
             <li key={id}>
                 {conflict && conflictBanner(key, conflict)}
                 {id === 'children' && conflicts.household && conflictBanner('household', conflicts.household)}
                 {conflicts[wayKey] && conflictBanner(wayKey, conflicts[wayKey])}
+                {conflicts[openKey] && conflictBanner(openKey, conflicts[openKey])}
                 {updatedBy[key] !== undefined && !conflict && (
                     <p className="px-4 pt-2 text-xs font-semibold text-teal-700" data-testid={`form-step-${id}-updated-by`}>
                         {t('adoptionDocs.updated_by').replace('{name}', name(updatedBy[key]))}
@@ -256,7 +320,9 @@ export default function FormStepsEditor({ hidden, onChange, conflicts = {}, upda
                     <SwitchTrack on={on} />
                 </button>
                 {id === 'children' && on && householdChoice()}
-                {(id === 'petExperience' || id === 'movingPlans') && on && wayChoice(id)}
+                {id === 'isSafe' && on && photoSwitches()}
+                {threeWays && on && wayChoice(id as 'petExperience' | 'movingPlans')}
+                {openCapable && !threeWays && on && styleChoice(id)}
             </li>
         );
     };

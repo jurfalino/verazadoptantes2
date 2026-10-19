@@ -30,7 +30,22 @@ export function nameWords(name: string | null | undefined): string[] {
 
 /** "Full name" = at least two words of two or more letters ("María Pérez", not "María"). */
 export function isFullName(name: string | null | undefined): boolean {
-    return nameWords(name).filter(w => w.length >= 2).length >= 2;
+    return fullNameProblem(name) === null;
+}
+
+/**
+ * Why a full name isn't one (Jon, 2026-10-18 — Catpuccino's forms had emails
+ * autofilled into the name, phone numbers, keyboard mash): an "@", a run of 6+
+ * digits, no vowel at all, or fewer than two words of 2+ letters. A stray digit
+ * ("Ana Perez2") is ignored, not refused. null = a usable full name.
+ */
+export function fullNameProblem(name: string | null | undefined): 'has_email' | 'looks_like_phone' | 'no_vowels' | 'one_word' | null {
+    const n = (name ?? '').trim();
+    if (n.includes('@')) return 'has_email';
+    if (n.replace(/\D/g, '').length >= 6) return 'looks_like_phone';
+    const words = nameWords(n).map(w => w.replace(/\d/g, '')).filter(w => w.length >= 2);
+    if (!/[aeiou]/.test(words.join(''))) return words.length ? 'no_vowels' : 'one_word';
+    return words.length >= 2 ? null : 'one_word';
 }
 
 function levenshtein(a: string, b: string): number {

@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } fr
 import './petshield.css'
 import { useT } from './i18n/LocaleContext'
 import {
-    FORM_STEP_IDS, formStepsToAsk, withPhoneRequirement, stepsForAnswers, stepAfter, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody, childrenAnswer,
+    FORM_STEP_IDS, formStepsToAsk, withPhoneRequirement, stepsForAnswers, stepAfter, photosOn, photosRequired, isAskedOpen, draftKey, LEGACY_DRAFT_KEY, restoreStepIndex, resolveDraft, buildSubmitBody, childrenAnswer,
 } from './lib/adoptionDocs'
 import GiftRecipient, { type Recipient } from './components/GiftRecipient'
 import { adaptStepForGift, isGift, recipientFirstName, giftRecipientProblem, settleGiftAnswers } from './lib/giftFlow'
@@ -10,6 +10,10 @@ import HouseholdPeople, { type Person } from './components/HouseholdPeople'
 import { canLeaveHouseholdStep, householdStepTitleKey, type DraftPerson } from './lib/householdPeopleForm'
 import { followUpsUnder, FOLLOW_UP_HOSTS } from './lib/formQuestions'
 import FollowUps, { type ChoiceQuestion } from './components/FollowUps'
+import PhotoPicker from './components/PhotoPicker'
+import { withOpenSteps, isAnswered, openText, type OpenTextStep } from './lib/openAnswers'
+import { draftAnswers, photosMissing, missingPhotosStep, MAX_PROTECTION_PHOTOS } from './lib/formPhotos'
+import { shrinkImage } from './lib/imageShrink'
 
 // ══════════════════════════════════════════════
 // TYPES — JSON Schema
@@ -69,7 +73,7 @@ interface HouseholdPeopleStep {
 }
 
 type FormStep = ConsentStep | TextFieldsStep | GeolocationStep | CameraUploadStep
-    | IconCardsStep | SegmentedCardsStep | ToggleStep | ChecklistStep | PetCounterStep | HouseholdPeopleStep | GiftRecipientStep | ChoiceListStep;
+    | IconCardsStep | SegmentedCardsStep | ToggleStep | ChecklistStep | PetCounterStep | HouseholdPeopleStep | GiftRecipientStep | ChoiceListStep | OpenTextStep;
 
 // ══════════════════════════════════════════════
 // SVG ICONS
@@ -717,7 +721,8 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         : DEFAULT_SCHEMA
     // Never removes a locked step even if the server sends a bad/forged one.
     // The phone is required unless the rescuer made it optional (null → required).
-    const configSchema = withPhoneRequirement(formStepsToAsk(baseSchema, hiddenSteps), hiddenSteps)
+    // Release 3: a question the rescuer switched to free text is asked as a text box.
+    const configSchema = withOpenSteps(withPhoneRequirement(formStepsToAsk(baseSchema, hiddenSteps), hiddenSteps), hiddenSteps) as FormStep[]
     const DRAFT_KEY = draftKey(userId, animalId)
 
     // ── State ──
@@ -793,7 +798,8 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     // ── Persist to localStorage ──
     const persist = useCallback((stepId: string, currentAnswers: Record<string, any>) => {
         try {
-            localStorage.setItem(DRAFT_KEY, JSON.stringify({ answers: currentAnswers, stepId }))
+            // No photos in drafts: localStorage would overflow and the whole draft be lost.
+            localStorage.setItem(DRAFT_KEY, JSON.stringify({ answers: draftAnswers(currentAnswers), stepId }))
         } catch (e) {
             console.warn('[PetShield] draft persist failed', e)
         }
@@ -822,6 +828,8 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             .map(s => { const g = adaptStepForGift(s, answers, t); return [s.id, { title: g.title, options: g.options }] }),
     )
     const underThis = currentStep ? followUpsUnder(currentStep.id, configSchema, answers) : []
+    // Photos under "¿El espacio está protegido?" / "¿Dónde va a dormir?" (release 2).
+    const photoStep = currentStep && photosOn(hiddenSteps) && (currentStep.id === 'isSafe' || currentStep.id === 'sleepPlace') ? currentStep.id : null
     const isLastStep = step === totalSteps - 1
     const progress = ((step + 1) / totalSteps) * 100
 
@@ -882,6 +890,10 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             }
         }
 
+        if (currentStep.type === 'open-text' && !isAnswered(answersToCheck[currentStep.id])) {
+            newErrors[currentStep.id] = t('form.err_required')
+        }
+
         if (currentStep.type === 'icon-cards' || currentStep.type === 'choice-list') {
             if (!answersToCheck[currentStep.id]) {
                 newErrors[currentStep.id] = t('form.err_select_option')
@@ -889,7 +901,8 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         }
 
         for (const id of followUpsUnder(currentStep.id, configSchema, answersToCheck)) {
-            if (!answersToCheck[id]) newErrors[id] = t('form.err_select_option')
+            const open = isAskedOpen(id, hiddenSteps)
+            if (open ? !isAnswered(answersToCheck[id]) : !answersToCheck[id]) newErrors[id] = t(open ? 'form.err_required' : 'form.err_select_option')
         }
 
         if (currentStep.type === 'gift-recipient') {
@@ -914,13 +927,15 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     // ── Can advance ──
     function canAdvance(): boolean {
         if (!currentStep) return false
-        if (underThis.some(id => !answers[id])) return false
+        if (underThis.some(id => (isAskedOpen(id, hiddenSteps) ? !isAnswered(answers[id]) : !answers[id]))) return false
+        if (photoStep === 'isSafe' && photosMissing(answers, hiddenSteps)) return false
         switch (currentStep.type) {
             case 'consent': return !!answers[currentStep.id]
             case 'text-fields':
                 return currentStep.fields.filter(f => f.required).every(f => (answers[f.name] || '').trim())
             case 'icon-cards': return !!answers[currentStep.id]
             case 'choice-list': return !!answers[currentStep.id]
+            case 'open-text': return isAnswered(answers[currentStep.id])
             case 'geolocation': return answers[currentStep.id] !== undefined
             case 'camera-upload': return true // optional
             case 'segmented-cards': return true // optional, has default
@@ -964,6 +979,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     /** Tap-to-advance, unless the tap reveals follow-up questions under this screen. */
     function advanceUnlessFollowUps(overrides: Record<string, any>) {
         if (currentStep && followUpsUnder(currentStep.id, configSchema, { ...answers, ...overrides }).length) return
+        if (photoStep) return // the photos sit under this answer
         goNext(overrides)
     }
 
@@ -979,6 +995,16 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     async function handleSubmit(finalAnswers: Record<string, any>) {
         if (!userId) {
             setToast({ message: t('form.err_invalid_link_user'), id: 'ERR-FORM-001' })
+            return
+        }
+        // Required photos are checked again here: a reopened draft has none.
+        const shown = stepsForAnswers(configSchema, settleGiftAnswers(finalAnswers, intentAsked), formCtx)
+        const redo = missingPhotosStep(finalAnswers, hiddenSteps, shown)
+        if (redo) {
+            setAnimationKey(k => k + 1)
+            setStep(shown.findIndex(s => s.id === redo))
+            persist(redo, finalAnswers)
+            setToast({ message: t('form.err_photos_missing') })
             return
         }
         setSubmitting(true)
@@ -1002,8 +1028,9 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
             }
             // Success. The form is saved even if its photo wasn't: say so, so the
             // applicant can send it another way.
-            const ok = await res.json().catch(() => ({})) as { selfieSaved?: boolean }
+            const ok = await res.json().catch(() => ({})) as { selfieSaved?: boolean; photosSaved?: boolean }
             if (ok.selfieSaved === false) setToast({ message: t('form.err_selfie_not_saved'), id: 'ERR-FILE-303' })
+            else if (ok.photosSaved === false) setToast({ message: t('form.err_photos_not_saved'), id: 'ERR-FILE-305' })
             localStorage.removeItem(DRAFT_KEY)
             setSubmitted(true)
         } catch (err) {
@@ -1048,32 +1075,13 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
 
     function handleFileSelect(file: File | null) {
         if (!file) return
-        if (!file.type.startsWith('image/')) {
-            setToast({ message: t('form.err_images_only'), id: 'ERR-FILE-301' })
-            return
-        }
-        // Shrunk and re-encoded as JPEG here: the server only keeps PNG / JPEG /
-        // WebP up to 5 MB, and phones hand over 10 MB photos and HEIC files.
-        const reader = new FileReader()
-        reader.onload = () => {
-            const img = new Image()
-            img.onload = () => {
-                const max = 1600
-                let w = img.width, h = img.height
-                if (w > max || h > max) { const k = max / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k) }
-                const canvas = document.createElement('canvas')
-                canvas.width = w; canvas.height = h
-                const ctx = canvas.getContext('2d')
-                if (!ctx) { setToast({ message: t('form.err_selfie_read'), id: 'ERR-FILE-302' }); return }
-                ctx.drawImage(img, 0, 0, w, h)
-                setAnswer('selfie', canvas.toDataURL('image/jpeg', 0.8))
-            }
-            // A format this browser can't decode (e.g. HEIC outside Safari).
-            img.onerror = () => setToast({ message: t('form.err_selfie_read'), id: 'ERR-FILE-302' })
-            img.src = reader.result as string
-        }
-        reader.onerror = () => setToast({ message: t('form.err_selfie_read'), id: 'ERR-FILE-302' })
-        reader.readAsDataURL(file)
+        // Shrunk and re-encoded as JPEG (src/lib/imageShrink.ts): the server only
+        // keeps PNG / JPEG / WebP up to 5 MB, and phones hand over 10 MB photos and HEIC files.
+        shrinkImage(file)
+            .then(dataUrl => setAnswer('selfie', dataUrl))
+            .catch(e => setToast(e instanceof Error && e.message === 'not-image'
+                ? { message: t('form.err_images_only'), id: 'ERR-FILE-301' }
+                : { message: t('form.err_selfie_read'), id: 'ERR-FILE-302' }))
     }
 
     // ── Completion screen ──
@@ -1354,6 +1362,21 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                 </div>
             )
 
+            case 'open-text': return (
+                <div className="ps-step" key={key}>
+                    <h1 className="ps-title">{currentStep.title}</h1>
+                    <textarea
+                        className="ps-input ps-textarea"
+                        aria-label={currentStep.title}
+                        placeholder={t('form.open_placeholder')}
+                        maxLength={500}
+                        value={openText(answers[currentStep.id])}
+                        onChange={e => setAnswer(currentStep.id, { open: e.target.value })}
+                        autoFocus
+                    />
+                    {errors[currentStep.id] && <div className="ps-field__error">{errors[currentStep.id]}</div>}
+                </div>
+            )
             case 'choice-list': {
                 const chosen = currentStep.options.find(o => o.value === answers[currentStep.id])
                 return (
@@ -1610,7 +1633,29 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                     {t('form.step_of', { n: step + 1, total: totalSteps })}
                 </div>
                 {renderStep()}
-                <FollowUps ids={underThis} answers={answers} onAnswer={setAnswer} questions={followUpQuestions} />
+                <FollowUps ids={underThis} answers={answers} onAnswer={setAnswer} questions={followUpQuestions}
+                    openIds={underThis.filter(id => isAskedOpen(id, hiddenSteps))} placeholder={t('form.open_placeholder')} />
+                {photoStep === 'isSafe' && (
+                    <PhotoPicker
+                        testId="photos-protection"
+                        title={isGift(answers) ? t('form.photos_protection_title_gift').replace('{n}', giftName) : t('form.photos_protection_title')}
+                        photos={(answers.protectionPhotos as string[] | undefined) ?? []}
+                        max={MAX_PROTECTION_PHOTOS}
+                        required={photosRequired(hiddenSteps) && !isGift(answers)}
+                        onChange={next => setAnswer('protectionPhotos', next)}
+                        onError={r => setToast({ message: t(r === 'not-image' ? 'form.err_images_only' : 'form.err_photo_read'), id: r === 'not-image' ? 'ERR-FILE-301' : 'ERR-FILE-304' })}
+                    />
+                )}
+                {photoStep === 'sleepPlace' && (
+                    <PhotoPicker
+                        testId="photos-sleep"
+                        title={isGift(answers) ? t('form.photos_sleep_title_gift').replace('{n}', giftName) : t('form.photos_sleep_title')}
+                        photos={answers.sleepPhoto ? [answers.sleepPhoto as string] : []}
+                        max={1}
+                        onChange={next => setAnswer('sleepPhoto', next[0] ?? undefined)}
+                        onError={r => setToast({ message: t(r === 'not-image' ? 'form.err_images_only' : 'form.err_photo_read'), id: r === 'not-image' ? 'ERR-FILE-301' : 'ERR-FILE-304' })}
+                    />
+                )}
             </div>
 
             {/* Navigation */}

@@ -111,6 +111,35 @@ export async function readSelfie(key: string, submissionId: string): Promise<R2O
     return file;
 }
 
+/**
+ * A photo sent with an adoption form (protection, where it sleeps), same rules
+ * as the selfie: random key under form-photos/, tagged with its submission,
+ * served only by /api/files/form-photo/[submissionId]/[n].
+ */
+export async function storeFormPhoto(data: ArrayBuffer, rawContentType: string, submissionId: string, kind: 'protection' | 'sleep'): Promise<{ key: string; size: number }> {
+    const contentType = rawContentType === 'image/jpg' ? 'image/jpeg' : rawContentType;
+    const ext = SELFIE_CONTENT_TYPES[contentType];
+    if (!ext) throw new ContractStorageError(`unsupported photo type ${contentType}`);
+    if (data.byteLength > CONTRACT_MAX_BYTES) throw new ContractStorageError(`photo larger than ${CONTRACT_MAX_BYTES} bytes`);
+    if (!looksLike(contentType, data)) throw new ContractStorageError(`the file is not a valid ${ext.toUpperCase()}`);
+    const key = `form-photos/${crypto.randomUUID()}.${ext}`;
+    const buf = await new Response(new Uint8Array(data)).arrayBuffer();
+    await bucket().put(key, buf, { httpMetadata: { contentType, cacheControl: 'private, no-store' }, customMetadata: { submissionId, kind } });
+    logger.info('form photo stored', { submissionId, kind, size: data.byteLength });
+    return { key, size: data.byteLength };
+}
+
+/** The photo, only if it was stored for this submission. */
+export async function readFormPhoto(key: string, submissionId: string): Promise<R2Object | null> {
+    const file = await bucket().get(key);
+    if (!file) return null;
+    if (file.customMetadata?.submissionId !== submissionId) {
+        logger.warn('form photo: stored for another submission, refused', { submissionId });
+        return null;
+    }
+    return file;
+}
+
 /** The file, only if it was stored for this animal (a key copied onto another record serves nothing). */
 export async function readContract(key: string, animalId: string): Promise<R2Object | null> {
     const file = await bucket().get(key);

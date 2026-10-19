@@ -9,6 +9,17 @@ import type { CatalogSlice } from '../types';
 // raw key string.
 export const form: CatalogSlice = {
     es: {
+        'form.open_placeholder': 'Escribí tu respuesta',
+        // ── Photos (spec 2026-10-14, release 2) ──
+        'form.photos_protection_title': 'Sacá fotos de las protecciones (balcón, ventanas, rejas)',
+        'form.photos_protection_title_gift': 'Fotos de las protecciones en lo de {n} (balcón, ventanas, rejas)',
+        'form.photos_sleep_title': 'Una foto de dónde va a dormir (opcional)',
+        'form.photos_sleep_title_gift': 'Una foto de dónde va a dormir en lo de {n} (opcional)',
+        'form.photo_add': 'Agregar foto',
+        'form.photo_remove': 'Quitar foto',
+        'form.err_photo_read': 'No pudimos leer esa foto. Probá con otra.',
+        'form.err_photos_not_saved': 'Tu solicitud llegó, pero no pudimos guardar algunas fotos.',
+        'form.err_photos_missing': 'Faltan las fotos de las protecciones: agregalas para enviar la solicitud.',
         // ── New questions (spec 2026-10-14, release 1) ──
         'form.q_carer_title': '¿Quién lo va a cuidar día a día?',
         'form.opt_carer_me': 'Yo',
@@ -287,6 +298,17 @@ export const form: CatalogSlice = {
         'form.invalid_link_desc': 'Este formulario necesita un enlace válido. Pedí uno nuevo al rescatista.',
     },
     en: {
+        'form.open_placeholder': 'Write your answer',
+        // ── Photos (spec 2026-10-14, release 2) ──
+        'form.photos_protection_title': 'Take photos of the protection (balcony, windows, fences)',
+        'form.photos_protection_title_gift': "Photos of the protection at {n}'s (balcony, windows, fences)",
+        'form.photos_sleep_title': 'A photo of where it will sleep (optional)',
+        'form.photos_sleep_title_gift': "A photo of where it will sleep at {n}'s (optional)",
+        'form.photo_add': 'Add photo',
+        'form.photo_remove': 'Remove photo',
+        'form.err_photo_read': "We couldn't read that photo. Try another one.",
+        'form.err_photos_not_saved': "Your application arrived, but some photos couldn't be saved.",
+        'form.err_photos_missing': 'The photos of the protections are missing: add them to send your application.',
         // ── New questions (spec 2026-10-14, release 1) ──
         'form.q_carer_title': 'Who will look after it day to day?',
         'form.opt_carer_me': 'Me',
@@ -565,6 +587,17 @@ export const form: CatalogSlice = {
         'form.invalid_link_desc': 'This form needs a valid link. Ask the rescuer for a new one.',
     },
     pt: {
+        'form.open_placeholder': 'Escreva sua resposta',
+        // ── Photos (spec 2026-10-14, release 2) ──
+        'form.photos_protection_title': 'Tire fotos das proteções (varanda, janelas, grades)',
+        'form.photos_protection_title_gift': 'Fotos das proteções na casa de {n} (varanda, janelas, grades)',
+        'form.photos_sleep_title': 'Uma foto de onde ele vai dormir (opcional)',
+        'form.photos_sleep_title_gift': 'Uma foto de onde ele vai dormir na casa de {n} (opcional)',
+        'form.photo_add': 'Adicionar foto',
+        'form.photo_remove': 'Remover foto',
+        'form.err_photo_read': 'Não conseguimos ler essa foto. Tente outra.',
+        'form.err_photos_not_saved': 'Sua solicitação chegou, mas algumas fotos não puderam ser salvas.',
+        'form.err_photos_missing': 'Faltam as fotos das proteções: adicione-as para enviar a solicitação.',
         // ── New questions (spec 2026-10-14, release 1) ──
         'form.q_carer_title': 'Quem vai cuidar dele no dia a dia?',
         'form.opt_carer_me': 'Eu',

@@ -67,3 +67,10 @@ describe('new questions (spec 2026-10-14 §5)', () => {
         expect(answerSignal(field, value)).toBe(expected);
     });
 });
+
+describe('free-text answers (release 3) never get a dot', () => {
+    it('even when the text reads like an option', () => {
+        expect(answerSignal('gaveAway', { open: 'yes' })).toBeNull();
+        expect(answerSignal('catOutdoor', { open: 'yes' })).toBeNull();
+    });
+});

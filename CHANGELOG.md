@@ -2,6 +2,350 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.206] - 2026-10-19
+
+### Fixed — independent review of 2.56.205 (before production and the Catpuccino import)
+
+- **A readable phone is never made worse:** kept exactly as sent when the phone reader
+  understands it (a note, typographic dashes, slashes). Numbers are only taken out when it
+  can't (several numbers glued by words); a number labelled DNI/CUIT is never a phone.
+  (2.56.205 saved "11 4455–6677 cel" as "11 4455".)
+- **An email is never guessed:** "ana perez@gmail.com" no longer becomes "perez@gmail.com"
+  (someone else's) — it is not an email.
+- **A real account with a note keeps working:** "facebook.com/ana.perez (mi perfil)" and
+  "@ana.perez 🙂" link and match the account; only names ("facebook.com/Ana Perez") are text.
+- **Import mode ends by itself** (24 h after an admin turns it on; shown on the key in
+  Admin → API → Claves), keeps the daily cap on fuzzy look-ups, and has a high call ceiling
+  (20,000/day) instead of none. Only a real `true` turns it on.
+
+## [2.56.205] - 2026-10-18
+
+### Added — API: cleaner person data, import mode, faster duplicate check (before the Catpuccino import)
+
+Decisions: Jon, 2026-10-18, from Catpuccino's 5,889 real forms.
+- **One bad field no longer refuses the call.** A phone that isn't one ("Xiaomi", "999") or
+  an email that isn't one ("@usuario", "no se") is left out when another email / phone /
+  document works; the 200 answer lists it in `warnings` (documented). A phone with a note
+  keeps only the number(s), two numbers both; several emails keep the first valid one.
+- **Names that aren't names are refused** (`full_name_required`): an "@", 6+ digits, no
+  vowels, or a single word. A stray digit is ignored.
+- **Social answers:** "no tengo" / "-" are dropped. A Facebook / Instagram answer that is a
+  name ("Ana Perez") is kept as text — never a broken `facebook.com/Ana Perez` link, never a
+  matching key (it made strangers look like duplicates). Applies to every path, not only the API.
+- **Import mode on a key** (admin, `importMode`): no notifications per saved record, no daily
+  counting, and the duplicate check skips its LIKE scan of every profile (production has 0
+  profiles without a search index; the admin duplicate scan runs after an import).
+- **Faster:** the duplicate check's lookups run at once (~11 fewer sequential D1 round trips
+  per new person), name lookups use the index (a range instead of LIKE), the daily counts are
+  read once per call, and three missing indexes (flags, photos, duplicate pairs — migration 0091).
+- `scripts/api-import-catpuccino.mjs`: the one-off import (one form at a time, oldest first,
+  resumable ledger, undo newest-first). The data never leaves the machine running it.
+- The API plan's "stay on the free tier" is outdated: the account is on Workers Paid.
+
+## [2.56.204] - 2026-10-18
+
+### Fixed — Admin → API: stray scrollbar beside the tabs
+
+The active tab's underline overlapped the tab bar by 1px, so the bar showed a vertical
+scrollbar on desktop. Found checking 2.56.203 on staging (no overflow at 1739px or 390px).
+
+## [2.56.203] - 2026-10-18
+
+### Fixed — API access check failures; CI leg for /developers
+
+- If the per-call access check can't reach the database, the partner gets
+  `503 temporarily_unavailable` (with requestId and errorId, logged) instead of a bare 500;
+  a failed admin lookup no longer reads as "not approved".
+- Admin searches of the call list are audited even when they find nothing.
+- Retention also keeps calls that created a profile (whose record then failed).
+- CI: /developers and the access-approval flow moved to their own file and leg
+  (`public-api-developers.authed.spec.ts`, @leg-apidev). 2.56.201–202 never deployed: the
+  apidocs leg's dev server restarted on memory and the admin pages' requests failed.
+  Ships 2.56.201–202.
+
+## [2.56.202] - 2026-10-17
+
+### Fixed — API access review findings (2.56.201)
+
+- **Access is checked on every API call**, not only when a key is made: a blocked person's
+  keys stop at once (even one created in a race with the block), and a key the person made
+  themselves stops when their access is denied (403 `access_blocked` / `access_not_approved`,
+  documented). Regenerating at /developers needs approval too.
+- People who created keys before approval existed (staging, 2.56.197–200) are grandfathered
+  as approved (migration 0090); the People list shows each person's real status.
+- Admins viewing or searching the call list (which shows who was searched) is audited.
+- A request for access can no longer overwrite a block decided at the same moment.
+- RateLimit headers report the limit that actually binds (the person's or the key's).
+- Paging the call list and a person's searches no longer skips calls made in the same second.
+- Other people's emails are masked in logs.
+- Retention: a call that saved a record keeps its slim row with the record (it refuses a
+  reused externalId and lets the partner void it); lookups still go after 12 months.
+- CI: the approval e2e test compiles its admin routes first (2.56.201's leg timed out on a
+  first compile after a dev-server memory restart).
+
+## [2.56.201] - 2026-10-17
+
+### Added — Admin → API: approval, people, tabs, retention
+
+Per the senior-EM review (.agents/audits/2026-10-17-admin-api-review.md) and Jon's decisions:
+
+- **API access needs an admin's approval.** At /developers, after the terms, a person asks
+  for access (tool + purpose); admins are notified and approve, deny or block in
+  Admin → API → People. Only approved people (and admins) create keys. Blocking revokes
+  every key the person holds and refuses new ones, admin-issued included. Its own
+  status (`api_access`, migration 0089), not a user role.
+- **Admin → API in tabs.** Overview (on/off, pending requests, 24 h / 7 days: calls,
+  refusals, our failures, 503s, limit hits; top fuzzy users; the example people).
+  People (50 a page, status / signal filters, search, sort; a person's request,
+  decisions, 30-day chart, who they searched — audited, their keys and calls). Keys
+  (filters, created date, who revoked, 50 a page). Calls (search by requestId,
+  externalId or searched name / email / phone; mode, error, test, person and date filters).
+- **Limits per person, not just per key**: one daily limit across all of a person's keys,
+  and at most 3 self-created keys a day (revoke-and-recreate no longer resets the count).
+- "Anula mucho" is per person and ignores admins' voids.
+- Admins opening a call's detail or a person's searches is audited; API actions read
+  plainly in /admin/audit.
+- «Regenerar» is hidden on keys their owner created (only the owner may see that secret).
+- Daily limits change with an explicit Save; an empty box is refused instead of saving 0.
+- Each refused call stores its error code (kept after the 90-day body purge).
+- **Retention**: the daily cron (workers/followup-cron) clears request/response bodies after
+  90 days and deletes the call log after 12 months.
+
+## [2.56.200] - 2026-10-17
+
+### Changed — CI: the API e2e flow in two files and two legs
+
+2.56.199 still failed: the public-api spec alone restarted its leg's dev server on
+memory 3 times. Split in two: `public-api.authed.spec.ts` (@leg-apicore — searches,
+saves, voids, contracts, caps) and `public-api-docs.authed.spec.ts` (@leg-apidocs —
+admin pages, the documented scenarios, /developers, the docs page), each with its own
+key and leg. 175 authed tests = 142 + 5 + 21 + 7. Ships 2.56.197–199 (/developers).
+
+## [2.56.199] - 2026-10-17
+
+### Changed — CI: the API e2e file runs in a leg of its own
+
+2.56.197–198 never deployed: the public-api spec (now with the example people, the
+docs replay and /developers) made its shared leg's dev server restart on memory
+mid-run, failing whichever test was in flight. Tags are now `@leg-<name>`:
+`@leg-viewas` and `@leg-api` each get a leg; the other legs exclude `@leg-`
+(173 authed tests = 142 + 5 + 26). Ships 2.56.197–198 unchanged (/developers).
+
+## [2.56.198] - 2026-10-17
+
+### Fixed — e2e: /developers test waits for the page to load
+
+2.56.197 never deployed: the /developers test checked the environment note with the
+default 5-second wait, and on CI's dev server the page's keys and usage load slower.
+Ships 2.56.197 unchanged.
+
+## [2.56.197] - 2026-10-17
+
+### Added — /developers: rescuers create their own API keys (API flag off in production)
+
+Jon, 2026-10-17: self-service, on a public page, not through an admin.
+- **/developers** explains the API, links the docs, and for a signed-in user: the API
+  terms (accepted once, versioned), their keys — create (the key is shown once),
+  regenerate, revoke — with today's usage, and their calls. 404 while the API is off.
+- **Who:** any signed-in user, after accepting the terms. **Limits** of a self-created
+  key: 100 exact / 50 fuzzy searches per day, up to 3 active self-created keys (an
+  admin can raise a key's limits). Admin → API marks them «creada por el rescatista».
+- The docs' quickstart and «Autenticación» say how to get a key; Settings → API links
+  to the page (also when there are no keys yet).
+- Migration 0088: `api_terms_acceptances`.
+
+### Changed — API
+
+- Ambiguous `candidates` and `otherMatches` come in a stable order (best match
+  first), never the database's row order.
+- «Personas de ejemplo» loads in a few seconds (was ~40 s): profiles are written in
+  parallel.
+
+## [2.56.196] - 2026-10-17
+
+### Fixed — API: independent review of 2.56.195
+
+- **A call that saved and then crashed can be recovered**: void finds it (it only
+  looked at successful calls), so its `externalId` is freed as the docs say. A crash
+  that only created the profile is released: the retry finds that profile and adds
+  the activity to it.
+- **No duplicate after a dead worker**: what a saving call has done (profile,
+  activity) is written onto its log row the moment it happens, not at the end.
+- **A refused call (4xx) no longer holds its `externalId`.**
+- **Looking up a past call** stores no copy of its answer (it would restart the
+  90-day clock on that person data) and never returns another look-up.
+- **Fewer queries**: profile summaries are read in batches (a 50-result fuzzy call
+  made ~150 extra queries).
+- Fail closed also when the rescuer's country or the identifier search can't be
+  read (`503`), instead of guessing.
+- A dry run checks the `externalId` like a real call (replay / 409).
+- Retries match even with a field sent as `null` or spaces around a value.
+- Example documents are clearly fictitious (99.xxx.xxx). Staging demo people need a
+  reset (Admin → API → «Reiniciar personas de ejemplo»).
+
+## [2.56.195] - 2026-10-17
+
+### Changed — API (flag off in production): easier to use and to troubleshoot
+
+From the senior-EM usability review (.agents/audits/2026-10-17-api-usability-review.md)
+and Jon's decisions (A, B, C):
+
+- **`externalId` is the retry key** (B): required on every saving call; the
+  `Idempotency-Key` header is gone. Same externalId + same content (in any key
+  order / spacing) → the original answer (`replayed`, `originalRequestId`); other
+  content → `409 external_id_reused` naming what was saved. Voiding frees it.
+- **Exact always saves; to look someone up, fuzzy** (C): the exact look-up without
+  an activity is gone; `activity_required` points to fuzzy.
+- **Dry run says what it would do** (A): `saved.action` + `saved.dryRun: true`.
+- **Fails closed**: if the ratings can't be read, `503 temporarily_unavailable` and
+  nothing is saved — never a 1★ person answered as "not rated".
+- **Production refuses the docs' example people** (`422 example_data`), so a pasted
+  example never creates a fake person there.
+- **Actionable errors**: every validation problem at once (`error.details`, each
+  with its `field`), `error.docUrl`, a Spanish «Errores» table with how to fix each
+  code; distinct 409s (`external_id_reused`, `external_id_expired`,
+  `request_in_progress`, `partially_saved`) with `originalRequestId`,
+  `activityId`, `profileId`; a 401 that says whether the key is missing,
+  malformed or of the other environment.
+- **Quota you can see**: `RateLimit-Limit/Remaining/Reset` on every search;
+  refused calls and replays no longer count; the all-calls ceiling has its own
+  code and shows in `/me`.
+- **Look up a past call**: `GET /api/v1/requests/{requestId}` and
+  `GET /api/v1/requests?externalId=…` (own key only).
+- **One place for risk**: `otherMatches` and `candidates` are lists of
+  `{ profileId, url, nameMatchedAs }`; the duplicate `worstRating`s are gone
+  (`risk` has it). `flags` / `records` are enums. Profiles add `createdAt` and
+  `registeredByYourRescue`.
+- **Docs**: a 3-step quickstart; every example a full curl for the page's own host
+  and key; staging examples dry-run by default; a change policy.
+
+## [2.56.194] - 2026-10-17
+
+### Changed — API (flag off in production): `match` and `saved.action`
+
+`result: not_found` read as "nothing happened" while the call had just created a
+profile (Jon). An exact answer now says two things separately:
+- **`match`** — what BuenAdoptante had BEFORE the call: `found`, `not_found`,
+  `ambiguous` (was `result`).
+- **`saved`** — always present: `action` = `added_to_profile`, `created_profile`,
+  `added_to_best_match`, `created_profile_for_review` or `nothing_saved` (a look-up
+  without activity, or a dry run), plus `activityId`, links and `contactsAdded`
+  when something was saved (was `activity`, with `profileCreated`).
+Guide, scenarios, examples and tests updated.
+
+## [2.56.193] - 2026-10-17
+
+### Changed — API (flag off in production): `alerts`, documented calls that really answer as documented
+
+- **`alerts` collection.** `too_many_requests` and `too_many_adoptions` now come in
+  `profile.alerts` as `{ type, count, periodDays }` (were the `tooManyRequests` /
+  `tooManyAdoptions` fields), and `risk.alerts` gathers them from every matched
+  profile with their `profileId`. `flags` / `risk.flags` keep the marks
+  (inaccurate, duplicate, possible_duplicate; verified_* in profile only).
+- **Every scenario shows the whole call**, headers included: `Idempotency-Key` (a
+  new value per call — the docs' examples failed without it with
+  `422 idempotency_key_required`), and the explorer now asks for it.
+- **The scenario people exist on staging.** Admin → API → «Personas de ejemplo»
+  (staging only; refused in production) loads them — or resets them, dated
+  relative to today — through the same write paths as real records. Each documented
+  call (with `X-Dry-Run: 1`) returns exactly its documented answer; an e2e test
+  replays all 11 against what the docs page serves.
+- The documented answers use each environment's own alert thresholds (admins
+  change them), so they match what that environment answers.
+- Demo contact data is unique (`*.demo@example.com`, 11 5550-31xx): the old
+  `maria@example.com` belonged to an existing test profile and changed the answer.
+
+## [2.56.192] - 2026-10-17
+
+### Changed — CI: view-as runs in a leg of its own
+
+2.56.191 never deployed: the last authed leg (sheet-import specs + view-as) hit the
+dev server's memory ceiling 4 times, the automatic re-run included — the same pair
+that failed 2.56.181 and 2.56.186. More legs didn't separate them (shards fill in
+file order). view-as is now tagged `@own-leg` and runs alone on a fresh server;
+the other legs exclude the tag (170 authed tests: 165 sharded + 5 own leg). Ships
+2.56.191 unchanged (API docs scenarios).
+
+## [2.56.191] - 2026-10-17
+
+### Changed — API docs: exact-search scenarios, each with the request that leads to it
+
+The answer examples (5★…1★, alerts, ambiguous) stood alone. Now each is a scenario:
+**what is registered** in BuenAdoptante, the **exact request** you send, the
+**answer** you get and **why**. 11 scenarios: 5★ (and a new email added), 4★,
+3★ (a document and a shorter name), 2★ possible duplicate, 1★ with alerts, never
+rated, a family phone shared with someone 1★, unknown, the phone of someone else,
+two profiles with the same name and email, and a dry run. The answers are worked
+out with the API's own decision rules, so request and answer can't disagree.
+
+## [2.56.190] - 2026-10-16
+
+### Fixed — e2e: a database read in a test no longer fails on «database is locked»
+
+2.56.189 never deployed: the contribution-flow test read the local test DB while the
+app was writing a notification, got SQLITE_BUSY three times and failed. The test
+helper now waits and retries on a busy database. Ships 2.56.189 unchanged (API docs
+examples written out under «Ejemplos»).
+
+## [2.56.189] - 2026-10-16
+
+### Fixed — API docs: the examples are on the page, not hidden in a dropdown
+
+2.56.186's examples only showed in the explorer's small example dropdowns (the
+answers: only the first one). Now every example is written out in the docs under
+**Ejemplos**: the minimal request, a complete request, a complete adoption, and an
+answer for each rating — 5★, 4★, 3★, 2★, 1★ with alerts, never rated — plus a
+phone shared with someone 1★, unknown, both kinds of ambiguous and a dry run.
+The explorer no longer pre-fills `X-Dry-Run: 1` into its generated curl (that
+call would be refused in production).
+
+## [2.56.188] - 2026-10-15
+
+### Changed — CI: authed e2e in 8 legs
+
+2.56.186 and 2.56.187 never deployed: authed-7 (the sheet-import form-export
+and view-as specs) hit the dev server's memory ceiling 3–5 times, the automatic
+re-run included. Eight legs (was seven), as the sharding plan prescribes.
+
+## [2.56.187] - 2026-10-15
+
+### Added — adoption form: photos, and free-text answers (custom forms)
+
+Only with custom forms switched on; production forms don't change while it's off.
+
+- **Photos of the home.** A rescuer can ask for photos of the protection
+  (balcony, windows, fences) — up to 3, under "¿El espacio está protegido?" —
+  and make them required. With photos on, the form also offers an optional photo
+  of where the animal will sleep. A gift form never requires them (the giver may
+  not have access to the recipient's home). Photos aren't kept in a saved draft,
+  so required photos are checked again on "Enviar": an applicant who reopened
+  the form without them goes back to that question. Photos are shrunk on the
+  phone, stored privately like the selfie, and open only for whoever may see that
+  form — and only kept when that rescuer asks for them; they appear on the form
+  screen and in the animal's applicant panel.
+- **"Cómo preguntar": options or free text.** For each question where it makes
+  sense (spec §6.0), the rescuer chooses whether applicants pick an option or
+  write their own answer. Previous animal and moving offer three ways: the new
+  question, the old one, or free text. Free-text answers show as written, with
+  no semáforo dot. "¿Vas a castrarlo?" stays options-only: the "¿Cómo?"
+  follow-up appears only under a "Sí", and a "No" is a red flag.
+
+## [2.56.186] - 2026-10-15
+
+### Changed — API docs: examples, ratings and alerts, testing without saving
+
+- **Examples**: a minimal request (name + one contact + the activity type) and two
+  complete ones (a request with every person field and the form's answers; an
+  adoption with the animal's details), plus one example answer per situation:
+  5★ with no alerts, 1★ with alerts, a phone shared with someone 1★, never rated,
+  unknown, and both kinds of ambiguous.
+- **Ratings and alerts** explained in tables (what each level and each `risk.flags`
+  value means; 1★ blocks adopting in BuenAdoptante).
+- **Testing without saving** (`X-Dry-Run: 1`) is documented and now open to every
+  partner — on **staging only**, with a `ba_test_` key (Jon, 2026-10-15). In
+  production it is refused with `403 dry_run_not_allowed` for every key, admins'
+  included: there, every exact search is saved. API flag still off in production.
+
 ## [2.56.185] - 2026-10-15
 
 ### Fixed — CI's automatic re-run could pass without running every test

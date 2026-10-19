@@ -24,11 +24,21 @@ const NAME = 'ContributionFlow Titular';
 const OWNER = 'gatitosolivos@gmail.com';
 const CONTRIBUTOR = 'testuser@example.com';
 
+// The dev server may hold the local DB's write lock (a notification written after
+// the response): SQLITE_BUSY is "try again", not a failure. Other errors throw.
 function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-    );
+    for (let attempt = 1; ; attempt++) {
+        try {
+            return execSync(
+                `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
+                { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+            );
+        } catch (e) {
+            const busy = /SQLITE_BUSY|database is locked/.test(String((e as { stderr?: unknown }).stderr ?? '') + String(e));
+            if (!busy || attempt >= 6) throw e;
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500 * attempt);
+        }
+    }
 }
 const rows = (sql: string) => JSON.parse(execD1(sql))[0].results as Array<Record<string, unknown>>;
 

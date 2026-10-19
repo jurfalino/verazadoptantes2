@@ -5,7 +5,7 @@ import {
     resolveDocsOwner, normalizeRichDoc, normalizeSections, isStandardSections,
     canonicalSectionsJson, planContractSave, deriveSpecialNeeds, richDocSchema,
     contractSectionsSchema, isContractVersionOwnedBy, parseStoredHiddenSteps, isPhoneRequired, FORM_OPTION_TOKENS,
-    isQuestionOn, toggleQuestion, questionWay, setQuestionWay, settingKeyQuestion, settingChange, DEFAULT_OFF_FORM_STEPS, type RichDoc,
+    isQuestionOn, toggleQuestion, questionWay, setQuestionWay, settingKeyQuestion, settingChange, photosOn, photosRequired, isAskedOpen, answerStyle, setAnswerStyle, OPEN_CAPABLE_STEPS, FOLLOW_UP_HOSTS, DEFAULT_OFF_FORM_STEPS, type RichDoc,
 } from './adoptionDocs';
 
 const doc = (...texts: string[]): RichDoc => ({ type: 'doc', content: texts.map(t => ({ type: 'paragraph', content: [{ text: t }] })) });
@@ -13,7 +13,7 @@ const doc = (...texts: string[]): RichDoc => ({ type: 'doc', content: texts.map(
 describe('form steps', () => {
     it('locks terms + identity', () => {
         expect(LOCKED_FORM_STEPS).toEqual(['legal', 'identity-name', 'identity-email', 'identity-phone', 'identity-address']);
-        expect(TOGGLEABLE_FORM_STEPS.length).toBe(44); // 35 rows + 9 tokens
+        expect(TOGGLEABLE_FORM_STEPS.length).toBe(62); // 35 rows + 11 tokens + 16 open-text tokens
     });
     it('groups cover every toggleable step exactly once', () => {
         const all = (FORM_STEP_GROUPS.flatMap(g => g.steps) as string[]).filter(s => !(LOCKED_FORM_STEPS as readonly string[]).includes(s));
@@ -272,5 +272,58 @@ describe('what a teammate\'s change to a setting means (review fix 2026-10-14)',
     it('the phone option only changes whether it must be answered', () => {
         expect(settingChange('phone-optional', true)).toBe('phoneOptional');
         expect(settingChange('phone-optional', false)).toBe('phoneRequired');
+    });
+});
+
+describe('photos (release 2)', () => {
+    it('are off by default; required only counts when they are on', () => {
+        expect(photosOn([])).toBe(false);
+        expect(photosOn(['on:photos'])).toBe(true);
+        expect(photosRequired(['photos-required'])).toBe(false);
+        expect(photosRequired(['on:photos', 'photos-required'])).toBe(true);
+    });
+    it('the sanitiser keeps both tokens', () => {
+        expect(sanitizeHiddenSteps(['photos-required', 'on:photos', 'x'])).toEqual(['on:photos', 'photos-required']);
+    });
+    it('a teammate turning photos on / making them required is described the right way round', () => {
+        expect(settingChange('on:photos', true)).toBe('asked');
+        expect(settingChange('photos-required', true)).toBe('photosRequired');
+        expect(settingChange('photos-required', false)).toBe('photosOptional');
+    });
+});
+
+describe('open vs closed per question (release 3)', () => {
+    it('covers the questions spec §6.0 lists — never consents, facts or what the form branches on', () => {
+        expect([...OPEN_CAPABLE_STEPS].sort()).toEqual(['adaptPlan', 'carer', 'catOutdoor', 'dogTied', 'dogWalks', 'gaveAway', 'hoursAlone', 'isSafe', 'movingPlans', 'petExperience', 'petsCare', 'rental', 'returnReasons', 'sleepPlace', 'sterilizeHow', 'vacationPlan']);
+        for (const id of ['visitConsent', 'allergy', 'species', 'intent', 'housingType', 'existingPets', 'hasOutdoor']) expect(OPEN_CAPABLE_STEPS as readonly string[]).not.toContain(id);
+    });
+    it('a question a follow-up depends on is never free text (its follow-up would never show)', () => {
+        for (const hosts of Object.values(FOLLOW_UP_HOSTS)) {
+            for (const host of hosts) expect(OPEN_CAPABLE_STEPS as readonly string[]).not.toContain(host);
+        }
+        expect(FORM_OPTION_TOKENS as readonly string[]).not.toContain('way:willingToSterilize:open');
+    });
+    it('closed by default; open on request; a variant follows its row', () => {
+        expect(answerStyle('rental', [])).toBe('closed');
+        const open = setAnswerStyle('rental', 'open', []);
+        expect(open).toEqual(['way:rental:open']);
+        expect(isAskedOpen('rental', open)).toBe(true);
+        expect(setAnswerStyle('rental', 'closed', open)).toEqual([]);
+        expect(isAskedOpen('lastAnimal', ['way:petExperience:open'])).toBe(true);
+    });
+    it('previous animal / moving: new, old or open — one at a time', () => {
+        const old = setQuestionWay('petExperience', 'old', []);
+        const open = setQuestionWay('petExperience', 'open', old);
+        expect(open).toEqual(['way:petExperience:open']);
+        expect(questionWay('petExperience', open)).toBe('open');
+        expect(isStepAsked('lastAnimal', open)).toBe(true);
+        expect(setQuestionWay('petExperience', 'old', open)).toEqual(['way:petExperience:old']);
+    });
+    it('the sanitiser keeps open tokens for capable questions only', () => {
+        expect(sanitizeHiddenSteps(['way:rental:open', 'way:visitConsent:open'])).toEqual(['way:rental:open']);
+    });
+    it('a teammate switching a question to free text is described as such', () => {
+        expect(settingChange('way:rental:open', true)).toBe('openWording');
+        expect(settingChange('way:rental:open', false)).toBe('closedWording');
     });
 });

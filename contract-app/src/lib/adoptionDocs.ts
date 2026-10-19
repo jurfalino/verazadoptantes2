@@ -9,6 +9,8 @@
 import { CONTRACT_CONTENT } from '../i18n/contractContent'
 
 import { stripGiftAnswers } from './giftFlow'
+import { stripPhotos } from './formPhotos'
+import { settleOpenAnswers } from './openAnswers'
 import { NEW_FORM_STEPS, DEFAULT_OFF_FORM_STEPS, isOwnScreen, followUpHost, followUpVisible, stripUnaskedNewAnswers, type FormCtx } from './formQuestions'
 
 const NEW = new Set<string>(NEW_FORM_STEPS)
@@ -63,11 +65,42 @@ export const FORM_OPTION_TOKENS = [
     'phone-optional',
     'on:catOutdoor', 'on:dogWalks', 'on:dogTied', 'on:social', 'on:vetReference', 'on:motivation',
     'way:petExperience:old', 'way:movingPlans:old',
+    'on:photos', 'photos-required',
+    'way:carer:open',
+    'way:petsCare:open',
+    'way:rental:open',
+    'way:isSafe:open',
+    'way:catOutdoor:open',
+    'way:sleepPlace:open',
+    'way:hoursAlone:open',
+    'way:dogWalks:open',
+    'way:dogTied:open',
+    'way:petExperience:open',
+    'way:gaveAway:open',
+    'way:sterilizeHow:open',
+    'way:movingPlans:open',
+    'way:vacationPlan:open',
+    'way:returnReasons:open',
+    'way:adaptPlan:open',
 ] as const
 
 /** The phone is required unless the rescuer turned it off — also when the config couldn't load (null). */
 export function isPhoneRequired(stored: readonly string[] | null | undefined): boolean {
     return !(stored ?? []).includes('phone-optional')
+}
+
+/** Release 3: this step is asked as free text (`way:<row>:open`) — never with no config. A variant follows its row. */
+export function isAskedOpen(stepId: string, stored: readonly string[] | null | undefined): boolean {
+    return (stored ?? []).includes(`way:${VARIANT_OF[stepId] ?? stepId}:open`)
+}
+
+/** Release 2: photos of the protection — never with no config (custom forms off). */
+export function photosOn(stored: readonly string[] | null | undefined): boolean {
+    return (stored ?? []).includes('on:photos')
+}
+
+export function photosRequired(stored: readonly string[] | null | undefined): boolean {
+    return photosOn(stored) && (stored ?? []).includes('photos-required')
 }
 
 /** The schema with the phone field's `required` set from the stored list (spec Part 3). */
@@ -220,10 +253,10 @@ export function buildSubmitBody(
 ): Record<string, unknown> {
     // A "Para mí" form never carries a recipient or a "No sé" from a gift draft;
     // a new question carries an answer only if it was really asked (spec 2026-10-14).
-    const cleaned = stripUnaskedNewAnswers(
-        stripGiftAnswers(stripHiddenAnswers(finalAnswers, hiddenSteps ?? [])),
-        [...configSchema], ctx,
-    )
+    const cleaned = settleOpenAnswers(stripPhotos(
+        stripUnaskedNewAnswers(stripGiftAnswers(stripHiddenAnswers(finalAnswers, hiddenSteps ?? [])), [...configSchema], ctx),
+        hiddenSteps, [...configSchema],
+    ), hiddenSteps, [...configSchema])
     return {
         ...cleaned,
         ...(animalId ? { animalId } : {}),

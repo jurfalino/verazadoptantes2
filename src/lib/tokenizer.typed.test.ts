@@ -120,3 +120,20 @@ describe('categorizeContactText', () => {
         expect(entries.some(e => e.type === 'social')).toBe(true);
     });
 });
+
+describe('normalizeSocialHandle — display names are not accounts (2026-10-18)', () => {
+    it('a name typed in a Facebook field is no handle', () => {
+        expect(normalizeSocialHandle('Ana Perez', 'facebook')).toBeNull();
+        expect(normalizeSocialHandle('no tengo', 'facebook')).toBeNull();
+        expect(normalizeSocialHandle('https://facebook.com/Ana Perez', 'facebook')).toBeNull();
+        expect(normalizeSocialHandle('no tengo', 'instagram')).toBeNull();
+    });
+    it('a real vanity followed by a note keeps its handle', () => {
+        expect(normalizeSocialHandle('facebook.com/ana.perez (mi perfil)', 'facebook')).toBe('ana.perez');
+        expect(normalizeSocialHandle('https://facebook.com/ana.perez mi cuenta', 'facebook')).toBe('ana.perez');
+    });
+    it('real accounts still are', () => {
+        expect(normalizeSocialHandle('https://facebook.com/ana.perez', 'facebook')).toBe('ana.perez');
+        expect(normalizeSocialHandle('@ana.perez', 'instagram')).toBe('ana.perez');
+    });
+});

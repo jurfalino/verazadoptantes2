@@ -96,3 +96,9 @@ describe('new question tokens ride the per-question saves', () => {
         expect(stepStates([])['way:petExperience:old']).toBe('shown');
     });
 });
+
+describe('photo tokens ride the per-question saves', () => {
+    it('mergeHidden keeps them when another question changes', () => {
+        expect(mergeHidden(['on:photos', 'photos-required'], [{ key: 'gaveAway', hidden: true }])).toEqual(['gaveAway', 'on:photos', 'photos-required']);
+    });
+});

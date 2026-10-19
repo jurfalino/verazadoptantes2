@@ -372,6 +372,28 @@ test.describe('form-results: linking to an existing profile', () => {
         expect(String(one(`SELECT contact_entries FROM adopters WHERE id = '${autoC}'`).contact_entries)).not.toMatch(/@ninguno|@no\b/);
     });
 
+    test('a free-text answer shows as the applicant wrote it, with no dot even if it reads like an option', async ({ page, request }) => {
+        const stamp = Date.now();
+        const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {
+            name: `E2E Abierta ${stamp}`, email: `e2e-abierta-${stamp}@example.com`, phone: `34${String(stamp).slice(-8)}`, address: '1 Open St',
+            intent: 'self', gaveAway: { open: 'yes' }, rental: { open: 'Alquilo, el dueño acepta gatos' },
+            carer: { open: '   ' }, sleepPlace: { evil: true },
+        } });
+        expect(res.ok(), await res.text()).toBeTruthy();
+        const { submissionId } = await res.json();
+        const stored = JSON.parse(String(one(`SELECT answers_json FROM form_submissions WHERE id = '${submissionId}'`).answers_json));
+        expect(stored).not.toHaveProperty('carer');      // empty text
+        expect(stored).not.toHaveProperty('sleepPlace'); // not { open }
+        await page.goto(`/form-results/${submissionId}`);
+        await dismissCountryBanner(page);
+        const answers = page.getByRole('button', { name: /Complete answers|Respuestas completas|Respostas completas/ });
+        if ((await answers.getAttribute('aria-expanded')) === 'false') await answers.click();
+        const row = (label: RegExp) => page.locator('div.flex.items-baseline', { hasText: label });
+        await expect(row(/Gave an animal away|Regaló un animal|Deu um animal/)).toContainText('yes');
+        await expect(row(/Gave an animal away|Regaló un animal|Deu um animal/).locator('[data-signal]')).toHaveCount(0);
+        await expect(page.getByText('Alquilo, el dueño acepta gatos')).toBeVisible();
+    });
+
     test('gift with a first-name-only recipient: nothing on the profile', async ({ request }) => {
         const stamp = Date.now();
         const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, { data: {

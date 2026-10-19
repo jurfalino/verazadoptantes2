@@ -11,7 +11,7 @@
  *               2026-10-13). No name fits (the identifier is someone else's):
  *               a NEW profile, with its duplicate candidates for an admin.
  */
-import { and, count, eq, isNotNull, isNull, ne, notLike, or } from 'drizzle-orm';
+import { and, count, eq, gte, isNotNull, isNull, ne, notLike, or } from 'drizzle-orm';
 import { activityForms, adopterEvents, adopterHistory, adopterImages, adopters, adoptions, apiRequests, formSubmissions, placements } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
@@ -21,8 +21,9 @@ import { normalizeSpecies } from '@/domain/importRow';
 import { parseAgeText } from '@/domain/animalAge';
 import { computeBirthDate } from '@/lib/ageUtils';
 import { addApiContacts, newContactFields, parseAddedContacts, removeApiContacts } from './contacts';
-import { ApiError, type ApiCallContext } from './handler';
+import { ApiError, recordProgress, type ApiCallContext } from './handler';
 import { profileUrl, recordUrl } from './profiles';
+import { importModeOn } from './keys';
 import type { ProfileSummary, SavedActivity, SearchRequest } from './schemas';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -41,6 +42,13 @@ const CONTEXT_LABEL_ES: Record<string, string> = {
 function dayAtNoon(day: string): Date {
     const [y, m, d] = day.split('-').map(Number);
     return new Date(y, m - 1, d, 12, 0, 0);
+}
+
+/** An ambiguous answer goes on the profile that matches best (pickBestMatch); null = a new profile. Pure. */
+export function bestMatchFor(outcome: ExactOutcome, matchedOn: Map<string, string[]>, summaries: Map<string, ProfileSummary>): string | null {
+    return outcome.result === 'ambiguous'
+        ? pickBestMatch(outcome.compatible, matchedOn, new Map([...summaries].map(([id, s]) => [id, s.lastRecordAt])))
+        : null;
 }
 
 export async function saveApiActivity(
@@ -62,15 +70,13 @@ export async function saveApiActivity(
             or(isNotNull(apiRequests.recordId), eq(apiRequests.profileCreated, 1)),
         )).get();
         if (taken && taken.id !== ctx.requestId) {
-            throw new ApiError(409, 'external_id_reused', `externalId ${save.externalId} was already saved by this key (request ${taken.id})`);
+            throw new ApiError(409, 'external_id_reused', `externalId ${save.externalId} was already saved by this key; use a new externalId, or void the earlier activity first`, {}, { originalRequestId: taken.id });
         }
     }
 
     let profileId: string;
     let profileCreated = false;
-    const best = outcome.result === 'ambiguous'
-        ? pickBestMatch(outcome.compatible, matchedOn, new Map([...summaries].map(([id, s]) => [id, s.lastRecordAt])))
-        : null;
+    const best = bestMatchFor(outcome, matchedOn, summaries);
     if (outcome.result === 'found') {
         profileId = outcome.profileId;
     } else if (best) {
@@ -81,13 +87,18 @@ export async function saveApiActivity(
         const created = await createAdopterFromSubmission({
             source: 'api',
             api: { keyName: key.name, requestId: ctx.requestId, context: activityType },
+            bulkImport: importModeOn(key),
             name: p.fullName!,
             addedBy: key.ownerEmail,
             email: p.email ?? null,
             phone: p.phone ?? null,
             address: p.address ?? null,
             documentId: p.documentId?.value ?? null,
-            socials: (p.socials ?? []).map(s => socialUrl(s.handle, s.platform as SocialPlatform) ?? s.handle),
+            // A link when it is an account; a display name ("Ana Perez") is kept as text with its platform.
+            socials: (p.socials ?? []).map(s => {
+                const url = socialUrl(s.handle, s.platform as SocialPlatform);
+                return url ?? { value: s.handle.trim(), platform: s.platform as SocialPlatform };
+            }),
             animalName: save.animalName ?? null,
             animalSpecies: species,
         });
@@ -97,6 +108,7 @@ export async function saveApiActivity(
         // not released (no duplicate on retry) and the log shows what was made.
         ctx.log.profileCreated = true;
         ctx.log.profileIds = [profileId];
+        await recordProgress(ctx, { profileCreated: true, profileIds: [profileId] });
     }
 
     const activityDate = save.date ? dayAtNoon(save.date) : new Date();
@@ -124,6 +136,7 @@ export async function saveApiActivity(
         sourceUrl: null,
     }, key.ownerEmail);
     ctx.log.recordId = recordId;
+    await recordProgress(ctx, { recordId, profileIds: [profileId] });
 
     if (save.formContent) {
         // Stored exactly as sent; never logged (it is the applicant's answers).
@@ -177,7 +190,8 @@ export async function saveApiActivity(
         icon: outcome.result === 'ambiguous' ? '⚠️' : '🔌',
         metadata: { requestId: ctx.requestId, keyName: key.name, profileId, recordId, outcome: outcome.result, context: activityType, contactsAdded: contactsAdded.map(c => c.field) },
     };
-    await runAfterResponse('api.notifyRecord', async () => {
+    // A key in import mode notifies nobody: thousands of historical records are not news.
+    if (!importModeOn(key)) await runAfterResponse('api.notifyRecord', async () => {
         const { createNotification, notifyOrgMembers } = await import('@/app/actions/notifications');
         await createNotification({ userId: key.ownerEmail, ...notification });
         await notifyOrgMembers({ actorEmail: key.ownerEmail, ...notification });
@@ -225,7 +239,10 @@ async function profileHasOtherData(db: Db, profileId: string, recordId: string):
  * it (not merged elsewhere since), and nothing else has been put on it.
  */
 export async function voidApiRecord(db: Db, recordId: string, opts: { keyId: string | null; actor: string; requestId: string }): Promise<VoidResult | null> {
-    const conds = [eq(apiRequests.recordId, recordId), eq(apiRequests.endpoint, 'search'), eq(apiRequests.httpStatus, 200)];
+    // A call that saved and then crashed (5xx, or a claim left at 0) holds a real
+    // activity too: it must be voidable, or its externalId stays stuck (review 2026-10-17).
+    const conds = [eq(apiRequests.recordId, recordId), eq(apiRequests.endpoint, 'search'),
+        or(eq(apiRequests.httpStatus, 200), eq(apiRequests.httpStatus, 0), gte(apiRequests.httpStatus, 500))];
     if (opts.keyId) conds.push(eq(apiRequests.keyId, opts.keyId));
     const origin = await db.select().from(apiRequests).where(and(...conds)).get() as typeof apiRequests.$inferSelect | undefined;
     if (!origin) return null;
@@ -243,7 +260,8 @@ export async function voidApiRecord(db: Db, recordId: string, opts: { keyId: str
 
     // Claim the void, so two concurrent voids can't both run it.
     const now = new Date();
-    const claimed = await db.update(apiRequests).set({ voidedAt: now, voidedBy: opts.actor })
+    // Voiding frees the externalId: the same id can be sent again (as a new activity).
+    const claimed = await db.update(apiRequests).set({ voidedAt: now, voidedBy: opts.actor, idempotencyKey: null })
         .where(and(eq(apiRequests.id, origin.id), isNull(apiRequests.voidedAt)))
         .returning({ id: apiRequests.id });
     if (!claimed.length) return { recordId, profileId: null, profileVoided: false, alreadyVoided: true };

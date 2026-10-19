@@ -45,6 +45,15 @@ export function detectSocialPlatform(value: string | null | undefined): SocialPl
 export function socialUrl(value: string, platform?: SocialPlatform | null): string | null {
     const v = (value || '').trim();
     if (!v) return null;
+    if (/\s/.test(v)) {
+        // "facebook.com/ana.perez (mi perfil)": link the account, not the note.
+        // "facebook.com/Ana Perez", "Ana Perez": a name, shown as text, never a link.
+        const first = v.split(/\s+/)[0];
+        const segment = first.replace(/^https?:\/\//i, '').split('/')[1] ?? '';
+        if (first.includes('/')) return /[.\d]/.test(segment) ? socialUrl(first, platform) : null;
+        // "@ana.perez 🙂": a handle with a note. A plain first word ("Ana") is not one.
+        return /^@?[\w.]+$/.test(first) && /^@|[.\d]/.test(first) ? socialUrl(first, platform) : null;
+    }
     if (/^https?:\/\//i.test(v)) return v;
     if (/^[\w-]+(\.[\w-]+)+\//.test(v)) return `https://${v}`;
     const host = SOCIAL_PLATFORMS.find(p => p.key === platform)?.host;

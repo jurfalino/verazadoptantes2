@@ -334,6 +334,7 @@ function AdoptionDocsEditor() {
                 // `on:` / `way:` keys name the question they belong to (spec 2026-10-14 §6.1).
                 const id = settingKeyQuestion(key);
                 return t(key === 'phone-optional' ? 'adoptionDocs.phone_required_question'
+                    : key === 'on:photos' || key === 'photos-required' ? 'adoptionDocs.photos_ask'
                     : id.startsWith('identity-') || id === 'selfie' ? `adoptionDocs.step_${id.replace('-', '_')}` : `petshield.fields.${id}`);
             };
             for (const x of d.updatedByOthers) {

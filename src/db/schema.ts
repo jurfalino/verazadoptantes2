@@ -87,7 +87,9 @@ export const adopterImages = sqliteTable("adopter_images", {
     scope: text("scope"),
     mediaType: text("media_type").default("image"), // 'image' or 'video'
     thumbnailUrl: text("thumbnail_url"), // Video thumbnail URL (R2)
-});
+}, (table) => ({
+    adopterIdx: index("idx_adopter_images_adopter").on(table.adopterId),
+}));
 
 export const adopterFlags = sqliteTable("adopter_flags", {
     id: text("id").primaryKey(),
@@ -97,7 +99,9 @@ export const adopterFlags = sqliteTable("adopter_flags", {
     targetAdopterId: text("target_adopter_id"), // If duplicate, which one is the original?
     details: text("details"),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
-});
+}, (table) => ({
+    adopterIdx: index("idx_adopter_flags_adopter").on(table.adopterId),
+}));
 
 export const adopterHistory = sqliteTable("adopter_history", {
     id: text("id").primaryKey(),
@@ -407,7 +411,10 @@ export const duplicateCandidates = sqliteTable("duplicate_candidates", {
     detectedAt: integer("detected_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     resolvedAt: integer("resolved_at", { mode: "timestamp" }),
     resolvedBy: text("resolved_by"),
-});
+}, (table) => ({
+    pairIdx: index("idx_dup_candidates_pair").on(table.adopter1Id, table.adopter2Id),
+    secondIdx: index("idx_dup_candidates_second").on(table.adopter2Id),
+}));
 
 // Data Requests - Track ARCO rights requests and inaccuracy reports
 export const dataRequests = sqliteTable("data_requests", {
@@ -721,6 +728,7 @@ export const formSubmissions = sqliteTable("form_submissions", {
     // Step 4: Selfie
     selfieUrl: text("selfie_url"),              // R2 URL after upload
     selfieKey: text("selfie_key"),              // 0086: private-storage key (src/lib/contractStorage.ts); server-written only
+    photoKeys: text("photo_keys"),              // 0087: JSON [{ kind, key }] form photos in private storage; server-written only
     // Step 5: Species & Life Stage
     species: text("species"),                    // dog, cat, both, other
     lifeStage: text("life_stage"),               // puppy, young, senior, none
@@ -905,6 +913,7 @@ export const apiKeys = sqliteTable("api_keys", {
     scopes: text("scopes").notNull(),                            // JSON: ApiScope[]
     dailyCapExact: integer("daily_cap_exact").notNull().default(500),
     dailyCapFuzzy: integer("daily_cap_fuzzy").notNull().default(50),
+    importMode: integer("import_mode").notNull().default(0), // bulk import until this unix second (0 = off): see importModeOn in src/lib/api/keys.ts
     createdBy: text("created_by").notNull(),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
@@ -913,6 +922,27 @@ export const apiKeys = sqliteTable("api_keys", {
 }, (table) => ({
     hashIdx: uniqueIndex("idx_api_keys_hash").on(table.keyHash),
     ownerIdx: index("idx_api_keys_owner").on(table.ownerEmail),
+}));
+
+// API access by admin approval (Jon, 2026-10-17): requested at /developers, decided in Admin → API.
+export const apiAccess = sqliteTable("api_access", {
+    userEmail: text("user_email").primaryKey(),
+    status: text("status").notNull(), // requested | approved | denied | blocked
+    tool: text("tool"),
+    purpose: text("purpose"),
+    requestedAt: integer("requested_at", { mode: "timestamp" }),
+    decidedAt: integer("decided_at", { mode: "timestamp" }),
+    decidedBy: text("decided_by"),
+    note: text("note"),
+});
+
+// /developers: who accepted which version of the API terms (needed before a self-created key).
+export const apiTermsAcceptances = sqliteTable("api_terms_acceptances", {
+    userEmail: text("user_email").notNull(),
+    version: integer("version").notNull(),
+    acceptedAt: integer("accepted_at", { mode: "timestamp" }).notNull(),
+}, (table) => ({
+    pk: primaryKey({ columns: [table.userEmail, table.version] }),
 }));
 
 // Form answers sent with an API adoption request (activity.formContent), as sent.
@@ -948,6 +978,7 @@ export const apiRequests = sqliteTable("api_requests", {
     voidedAt: integer("voided_at", { mode: "timestamp" }),
     voidedBy: text("voided_by"),
     durationMs: integer("duration_ms"),
+    errorCode: text("error_code"),             // a refused call's error.code (kept after the body purge)
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => ({
     keyTimeIdx: index("idx_api_requests_key_time").on(table.keyId, table.createdAt),

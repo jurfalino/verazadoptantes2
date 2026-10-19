@@ -40,17 +40,25 @@ export interface EnrichmentResult {
  * Enrich a list of adopter profiles with ratings, stats, flags, and thumbnails.
  * Used by both the search action and the admin adopters page.
  */
+/**
+ * `strict`: a failed read of what decides risk (records, flags, duplicate
+ * candidates) THROWS instead of degrading to "no data" — for answers that must
+ * never call a dangerous person clean (the third-party API). Thumbnails and
+ * stats still degrade.
+ */
 export async function enrichAdopters(
     db: any,
-    adopterIds: string[]
+    adopterIds: string[],
+    opts: { strict?: boolean } = {},
 ): Promise<Map<string, EnrichmentResult>> {
     if (adopterIds.length === 0) return new Map();
-    return withTrace('enrichAdopters', () => _enrichAdoptersImpl(db, adopterIds), { count: adopterIds.length });
+    return withTrace('enrichAdopters', () => _enrichAdoptersImpl(db, adopterIds, !!opts.strict), { count: adopterIds.length });
 }
 
 async function _enrichAdoptersImpl(
     db: any,
-    adopterIds: string[]
+    adopterIds: string[],
+    strict: boolean,
 ): Promise<Map<string, EnrichmentResult>> {
     const adoptionConfig = await getAdoptionConfig();
 
@@ -67,6 +75,11 @@ async function _enrichAdoptersImpl(
     type ImageRow = { adopterId: string; url: string; isProfilePicture: number | null };
     type DupRow = { adopter1Id: string; adopter2Id: string };
 
+    // What decides risk: in strict mode a failed read is an error, never "no data".
+    const riskRead = (op: string, chunkSize: number) => (e: unknown) => {
+        if (strict) throw e;
+        return logBatchFallback(op, chunkSize)(e);
+    };
     const adoptionRows: AdoptionRow[] = [];
     const flagRows: FlagRow[] = [];
     const statRows: StatRow[] = [];
@@ -78,9 +91,9 @@ async function _enrichAdoptersImpl(
         const inList = sql.join(chunk.map((id) => sql`${id}`), sql`, `);
         const [a, f, s, im, d] = await Promise.all([
             db.select({ adopterId: adoptions.adopterId, rating: adoptions.rating, recordType: adoptions.recordType, date: adoptions.date, addedBy: adoptions.addedBy })
-                .from(adoptions).where(sql`${adoptions.adopterId} IN (${inList})`).catch(logBatchFallback('adoptions', chunk.length)),
+                .from(adoptions).where(sql`${adoptions.adopterId} IN (${inList})`).catch(riskRead('adoptions', chunk.length)),
             db.select({ adopterId: adopterFlags.adopterId, reason: adopterFlags.reason })
-                .from(adopterFlags).where(sql`${adopterFlags.adopterId} IN (${inList})`).catch(logBatchFallback('flags', chunk.length)),
+                .from(adopterFlags).where(sql`${adopterFlags.adopterId} IN (${inList})`).catch(riskRead('flags', chunk.length)),
             db.select({ adopterId: adopterStats.adopterId, eventType: adopterStats.eventType })
                 .from(adopterStats).where(and(
                     sql`${adopterStats.adopterId} IN (${inList})`,
@@ -100,7 +113,7 @@ async function _enrichAdoptersImpl(
                     eq(duplicateCandidates.status, 'pending'),
                     ne(duplicateCandidates.confidence, 'low'),
                     sql`(${duplicateCandidates.adopter1Id} IN (${inList}) OR ${duplicateCandidates.adopter2Id} IN (${inList}))`
-                )).catch(logBatchFallback('dupCandidates', chunk.length)),
+                )).catch(riskRead('dupCandidates', chunk.length)),
         ]);
         adoptionRows.push(...(a as AdoptionRow[]));
         flagRows.push(...(f as FlagRow[]));

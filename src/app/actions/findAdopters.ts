@@ -20,7 +20,7 @@
 
 import { adopters, searches, adopterHistory, adoptions, adopterStats, duplicateTokens, piiAccessGrants } from '@/db/schema';
 import { recordPendingSearch } from '@/lib/pendingSearchLog';
-import { or, like, sql, and, isNull, eq, ne, desc } from 'drizzle-orm';
+import { or, like, sql, and, isNull, eq, ne, desc, gte, lt } from 'drizzle-orm';
 import { logger, withTrace } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
@@ -535,39 +535,47 @@ async function runDuplicateMode(
         if (!arr.some(v => v.type === type && v.value === value)) arr.push({ type, value });
     }
 
-    for (const token of rawTokens) {
-        let rows: Array<{ adopterId: string; tokenValue: string }>;
+    // Every token's lookup at once (2026-10-18: they ran one after another, ~10
+    // sequential D1 round trips per new profile); results are merged in token order.
+    const tokenRows = await Promise.all(rawTokens.map(async (token): Promise<Array<{ adopterId: string; tokenValue: string }> | null> => {
         try {
-        if (token.type === 'name_word' || token.type === 'name_full') {
-            // Prefix-LIKE: catches 'jonathan' when stored as 'jonatan' and vice-versa
-            // D1/SQLite safe formulation:
-            rows = await db.select({ adopterId: duplicateTokens.adopterId, tokenValue: duplicateTokens.tokenValue })
-                .from(duplicateTokens)
-                .where(and(
-                    eq(duplicateTokens.tokenType, token.type),
-                    like(duplicateTokens.tokenValue, `${escapeLike(token.value.slice(0, Math.max(3, token.value.length - 2)))}%`)
-                ))
-                .limit(20);
-        } else {
+            if (token.type === 'name_word' || token.type === 'name_full') {
+                // Prefix match: catches 'jonathan' when stored as 'jonatan' and vice-versa.
+                // A range on the (token_type, token_value) index, not LIKE 'pre%' — SQLite
+                // can't use the index for LIKE here, so it walked every name token.
+                // Tokens are stored normalized (lowercase), as the prefix is.
+                const prefix = token.value.slice(0, Math.max(3, token.value.length - 2));
+                return await db.select({ adopterId: duplicateTokens.adopterId, tokenValue: duplicateTokens.tokenValue })
+                    .from(duplicateTokens)
+                    .where(and(
+                        eq(duplicateTokens.tokenType, token.type),
+                        gte(duplicateTokens.tokenValue, prefix),
+                        lt(duplicateTokens.tokenValue, `${prefix}\uffff`),
+                    ))
+                    .limit(20);
+            }
             // Exact match for phone/email/social — must stay precise
-            rows = await db.select({ adopterId: duplicateTokens.adopterId, tokenValue: duplicateTokens.tokenValue })
+            return await db.select({ adopterId: duplicateTokens.adopterId, tokenValue: duplicateTokens.tokenValue })
                 .from(duplicateTokens)
                 .where(and(
                     eq(duplicateTokens.tokenType, token.type),
                     eq(duplicateTokens.tokenValue, token.value),
                 ))
                 .limit(20);
-        }
         } catch (e) {
             // A junk "name" field or an over-long value (e.g. a full Facebook
-            // profile URL) can make SQLite reject the LIKE with "pattern too
-            // complex". Degrade this token's lookup instead of throwing the whole
-            // findAdopters call — otherwise the caller (import detection) drops the
-            // row from comparison entirely. Other tokens/strategies still run.
+            // profile URL) can make SQLite reject the query. Degrade this token's
+            // lookup instead of throwing the whole findAdopters call — otherwise the
+            // caller (import detection) drops the row from comparison entirely.
+            // Other tokens/strategies still run.
             logger.warn('findAdopters: token lookup degraded', { tokenType: token.type, error: e instanceof Error ? e.message : String(e) });
-            continue;
+            return null;
         }
+    }));
 
+    for (const [i, token] of rawTokens.entries()) {
+        const rows = tokenRows[i];
+        if (!rows) continue;
         for (const m of rows) {
             if (excludeId && m.adopterId === excludeId) continue;
             if (!matchMap.has(m.adopterId)) matchMap.set(m.adopterId, new Set());
@@ -638,8 +646,13 @@ async function runDuplicateMode(
             matchMap.get(r.id)!.add(bucket);
         }
     };
-    await runLikeFallback(nameLikeConditions, 'like_fallback_name');
-    await runLikeFallback(contactLikeConditions, 'like_fallback_contact');
+    if (!options.skipLikeFallback) {
+        // Both at once; each keeps its own bucket, so the order they finish in doesn't matter.
+        await Promise.all([
+            runLikeFallback(nameLikeConditions, 'like_fallback_name'),
+            runLikeFallback(contactLikeConditions, 'like_fallback_contact'),
+        ]);
+    }
 
     if (matchMap.size === 0) return [];
 

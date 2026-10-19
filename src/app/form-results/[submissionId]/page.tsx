@@ -1,6 +1,7 @@
 export const runtime = 'edge';
 
 import { selfieUrlColumn } from '@/lib/selfieLink';
+import { photoLinks } from '@/domain/formPhotos';
 import { redirect, notFound } from 'next/navigation';
 import { getDb } from '@/lib/db';
 import { notifications, adopters, formSubmissions, adopterImages, adoptions } from '@/db/schema';
@@ -82,6 +83,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         db.select({
             id: formSubmissions.id,
             selfieUrl: selfieUrlColumn, // private selfies → their checked route (src/lib/selfieLink.ts)
+            photoKeys: formSubmissions.photoKeys, // turned into checked links below; never sent to the page
             species: formSubmissions.species,
             lifeStage: formSubmissions.lifeStage,
             specialNeeds: formSubmissions.specialNeeds,
@@ -286,10 +288,16 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         // Invalid household JSON
     }
 
+    // Photos (release 2): access-checked links only — the storage keys stay here.
+    const submissionView = submission ? (() => {
+        const { photoKeys, ...rest } = submission;
+        return { ...rest, photos: photoLinks(submission.id, photoKeys) };
+    })() : submission;
+
     return (
         <FormResultsContent
             submitted={submitted}
-            submission={submission}
+            submission={submissionView}
             fullAnswers={fullAnswers}
             householdItems={householdItems}
             hasMatches={hasMatches}

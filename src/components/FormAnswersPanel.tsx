@@ -138,6 +138,8 @@ export const OTHER_PETS_FIELDS = ['lastAnimal', 'petExperience', 'gaveAway', 'ga
 /** Shared form-answer display logic (used by FormResultsContent for adopter info + other pets). */
 export function renderFormAnswerValue(key: string, raw: any, t: (path: string) => string): string | null {
     if (raw === undefined || raw === null || raw === '') return null;
+    // A question the rescuer asked as free text (release 3): the applicant's words, as written.
+    if (typeof raw === 'object' && typeof raw.open === 'string') return raw.open || null;
     switch (key) {
         case 'geo':
             return t(`petshield.options.geo.${raw === 'yes' ? 'yes' : 'no'}`);

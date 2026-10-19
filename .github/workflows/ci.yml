@@ -262,6 +262,9 @@ jobs:
           # 6 → 7 on 2026-10-14: the sheet-import form-export spec (v2.56.177–180)
           # tipped authed-6 over; it restarted three times and view-as died on
           # ERR_CONNECTION_REFUSED twice in a row.
+          # 7 → 8 on 2026-10-15: authed-7 (sheet-import form-export + view-as)
+          # restarted 3-5× on 2.56.181 master and 2.56.186, the automatic re-run
+          # included.
           #
           # `--shard` rather than naming files per leg: a new spec joins a
           # shard automatically. Listing files by hand means a spec someone
@@ -274,19 +277,36 @@ jobs:
           - group: user-3
             projects: --project=user --shard=3/3
           - group: authed-1
-            projects: --project=authed --shard=1/7
+            projects: --project=authed --shard=1/8 --grep-invert @leg-
           - group: authed-2
-            projects: --project=authed --shard=2/7
+            projects: --project=authed --shard=2/8 --grep-invert @leg-
           - group: authed-3
-            projects: --project=authed --shard=3/7
+            projects: --project=authed --shard=3/8 --grep-invert @leg-
           - group: authed-4
-            projects: --project=authed --shard=4/7
+            projects: --project=authed --shard=4/8 --grep-invert @leg-
           - group: authed-5
-            projects: --project=authed --shard=5/7
+            projects: --project=authed --shard=5/8 --grep-invert @leg-
           - group: authed-6
-            projects: --project=authed --shard=6/7
+            projects: --project=authed --shard=6/8 --grep-invert @leg-
           - group: authed-7
-            projects: --project=authed --shard=7/7
+            projects: --project=authed --shard=7/8 --grep-invert @leg-
+          - group: authed-8
+            projects: --project=authed --shard=8/8 --grep-invert @leg-
+          # Specs tagged @leg-<name> run alone on a fresh dev server (2026-10-17:
+          # public-api grew past what a shared server holds, @leg-apicore, @leg-apidocs and,
+          # since 2026-10-18, @leg-apidev). view-as opens
+          # many pages and, sharing the last leg with the sheet-import specs,
+          # died on memory restarts on 2.56.181, 186 and 191 whatever the leg
+          # count (shards fill in file order, so they kept landing together).
+          # The other authed legs exclude every @leg- tag, so each test runs exactly once.
+          - group: authed-viewas
+            projects: --project=authed --grep @leg-viewas
+          - group: authed-apicore
+            projects: --project=authed --grep @leg-apicore
+          - group: authed-apidocs
+            projects: --project=authed --grep @leg-apidocs
+          - group: authed-apidev
+            projects: --project=authed --grep @leg-apidev
           - group: rest
             projects: --project=unauthed --project=mobile
     # Each group is now ~5-12 minutes, but the headroom stays: a timeout

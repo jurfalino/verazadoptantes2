@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
-import { getTransaction, listKeys, listTransactions } from './review';
+import { getTransaction, listKeys, listTransactions, parseCursor } from './review';
 import { voidApiRecord } from './records';
 import { purgeOldRequestBodies } from './handler';
 
@@ -31,10 +31,21 @@ export async function listResponse(request: Request, actor: string, owner: strin
                 outcome: q.get('outcome'),
                 from: dateParam(q.get('from')),
                 to: dateParam(q.get('to')),
-                before: dateParam(q.get('before')),
+                before: parseCursor(q.get('before')),
+                mode: q.get('mode'),
+                errorCode: q.get('errorCode'),
+                dryRun: q.get('dryRun') === '1' ? true : q.get('dryRun') === '0' ? false : null,
+                q: q.get('q'),
             }),
             owner ? listKeys(db, owner) : Promise.resolve(undefined),
         ]);
+        // Admin rows carry who was searched (person data) and `q` searches it: audited like the detail view.
+        // A search that finds nothing is an answer too ("nobody looked María up"): audited whenever q is set.
+        if (!owner && (q.get('q') || page.rows.some(r => r.searched))) {
+            logAudit({ userEmail: actor, action: 'api_calls_viewed', details: {
+                query: q.get('q') || null, ownerFilter: q.get('owner') || null, rows: page.rows.length, before: q.get('before') || null,
+            } });
+        }
         return NextResponse.json({ ...page, ...(keys ? { keys } : {}) });
     } catch (e) {
         const errorId = logger.error('api review: list failed', e, { actor, owner });
@@ -48,6 +59,8 @@ export async function detailResponse(id: string, actor: string, owner: string | 
         if (!db) throw new Error('database unavailable');
         const tx = await getTransaction(db, id, owner);
         if (!tx) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+        // An admin opening someone's call reads their person data: leave a trace (review 2026-10-17).
+        if (!owner) logAudit({ userEmail: actor, action: 'api_request_viewed', details: { transactionId: id, ownerEmail: tx.ownerEmail } });
         return NextResponse.json({ transaction: tx });
     } catch (e) {
         const errorId = logger.error('api review: detail failed', e, { actor, owner, transactionId: id });

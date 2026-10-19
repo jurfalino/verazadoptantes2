@@ -39,7 +39,19 @@ export default function ApiSettingsSection() {
         return () => { cancelled = true; };
     }, [t, toast]);
 
-    if (!state || (state.keys.length === 0 && !state.hasRows)) return null;
+    if (!state) return null;
+    if (state.keys.length === 0 && !state.hasRows) {
+        // No keys yet: point to where they're created (self-service).
+        return (
+            <section className="bg-white dark:bg-stone-800 rounded-2xl border border-stone-200 dark:border-stone-700 p-6" data-testid="settings-api">
+                <h2 className="text-lg font-semibold text-stone-800 dark:text-stone-200 mb-1">{t('apiReview.settings_title')}</h2>
+                <p className="text-sm text-stone-500">
+                    {t('apiReview.connect_tools')}{' '}
+                    <a className="text-teal-700 underline underline-offset-2" href="/developers">{t('apiReview.manage_keys')}</a>
+                </p>
+            </section>
+        );
+    }
 
     return (
         <section className="bg-white dark:bg-stone-800 rounded-2xl border border-stone-200 dark:border-stone-700 p-6" data-testid="settings-api">
@@ -47,6 +59,8 @@ export default function ApiSettingsSection() {
             <p className="text-sm text-stone-500 mb-4">
                 {t('apiReview.settings_desc')}{' '}
                 <a className="text-teal-700 underline underline-offset-2" href="/api/v1/docs" target="_blank" rel="noreferrer">{t('apiReview.docs_link')}</a>
+                {' · '}
+                <a className="text-teal-700 underline underline-offset-2" href="/developers">{t('apiReview.manage_keys')}</a>
             </p>
             <ul className="mb-4 space-y-2">
                 {state.keys.map(k => (

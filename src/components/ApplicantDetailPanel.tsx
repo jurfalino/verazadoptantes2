@@ -23,6 +23,7 @@ import { useDateFormat } from '@/context/TimezoneContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
 import FormAnswersPanel from '@/components/FormAnswersPanel';
+import FormPhotos from '@/components/FormPhotos';
 import { createContractInvitation } from '@/app/actions/contract';
 import { zarazTrack } from '@/lib/zaraz';
 import type { ApplicantSummary } from '@/app/actions/applicants';
@@ -327,6 +328,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
                                     />
                                 </div>
                             )}
+                            <FormPhotos photos={applicant.submission.photos} compact />
                             <LocationMap
                                 latitude={applicant.submission.latitude}
                                 longitude={applicant.submission.longitude}

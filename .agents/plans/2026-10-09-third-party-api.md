@@ -18,7 +18,7 @@ without anyone re-typing it into BuenAdoptante.
 | 1 | Third parties are **each rescue connecting its own tools**. There is one API key per rescuer or org. A vendor acting for many rescues (delegated / OAuth) is out of scope. |
 | 2 | Saved records **go live directly**, with no inbox. **Every API transaction is logged and admins can review it.** |
 | 3 | The API **answers whether the person is flagged** (rating + flags + record counts), masked the same way as logged-in search. |
-| 4 | **Stay on the Cloudflare free tier.** |
+| 4 | ~~Stay on the Cloudflare free tier.~~ **Outdated (2026-10-18): the account is on Workers Paid + R2 Paid** (Jon's billing page). D1 limits are monthly (25B rows read, 50M written included) and ~1,000 queries per invocation. |
 | 5 | Search has two modes. **Fuzzy** is the same engine as the homepage. **Exact** requires `fullName` + one of `email` / `phone` / `documentId`. |
 | 6 | Exact search has **three outcomes**: `found`, `not_found`, `ambiguous`. `ambiguous` carries the worst rating among the candidates, so a client can still block automatically. |
 | 7 | `context` (the record type) is required. An exact search can **save the record in the same call** (option "c"). |
@@ -37,7 +37,7 @@ without anyone re-typing it into BuenAdoptante.
 - A separate Worker (same D1/R2 bindings) is the later option, for when releases need to be independent. It saves no money, because the free quota is per account.
 - Put all API logic in `src/lib/api/` + `src/domain/`, so a later move to a Worker is a copy and not a rewrite.
 
-### Free-tier budget (shared with the whole site)
+### Free-tier budget (shared with the whole site) — HISTORICAL: we are on Workers Paid since at least 2026-10 (see decision 4)
 
 | Limit (per day, per account) | API cost | Consequence |
 |---|---|---|
