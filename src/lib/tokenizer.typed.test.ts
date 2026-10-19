@@ -132,6 +132,14 @@ describe('normalizeSocialHandle — display names are not accounts (2026-10-18)'
         expect(normalizeSocialHandle('facebook.com/ana.perez (mi perfil)', 'facebook')).toBe('ana.perez');
         expect(normalizeSocialHandle('https://facebook.com/ana.perez mi cuenta', 'facebook')).toBe('ana.perez');
     });
+    it('a website is never a handle (a rescue\'s own site typed as Facebook)', () => {
+        expect(normalizeSocialHandle('https://adopciones.catpuccino.org', 'facebook')).toBeNull();
+        expect(normalizeSocialHandle('adopciones.catpuccino.org', 'facebook')).toBeNull();
+        expect(normalizeSocialHandle('www.mirefugio.org.ar', 'instagram')).toBeNull();
+        expect(normalizeSocialHandle('ana.perez', 'instagram')).toBe('ana.perez');
+        // A typo in the domain is still the network (not a website).
+        expect(normalizeSocialHandle('https://Instagram.con/ana.perez', 'instagram')).toBe('ana.perez');
+    });
     it('real accounts still are', () => {
         expect(normalizeSocialHandle('https://facebook.com/ana.perez', 'facebook')).toBe('ana.perez');
         expect(normalizeSocialHandle('@ana.perez', 'instagram')).toBe('ana.perez');

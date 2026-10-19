@@ -60,7 +60,7 @@ export async function runSearch(ctx: ApiCallContext): Promise<ApiResult> {
     const cleanup = cleanApiPerson(req.person);
     req.person = cleanup.person;
     const warnings: ApiWarning[] = [
-        ...cleanup.dropped.map(d => ({ field: d.field, code: 'value_dropped' as const, reason: d.reason, message: `${d.field} was not saved: ${d.reason === 'not_an_email' ? 'it is not an email address' : d.reason === 'not_a_phone' ? 'it is not a readable phone number' : 'it says the person has no account'}` })),
+        ...cleanup.dropped.map(d => ({ field: d.field, code: 'value_dropped' as const, reason: d.reason, message: `${d.field} was not saved: ${d.reason === 'not_an_email' ? 'it is not an email address' : d.reason === 'not_a_phone' ? 'it is not a readable phone number' : d.reason === 'not_a_social_profile' ? 'it is a website, not a social network profile' : 'it says the person has no account'}` })),
         ...cleanup.cleaned.map(c => ({ field: c.field, code: 'value_cleaned' as const, reason: c.reason, message: `${c.field}: ${c.reason === 'first_valid_email' ? 'only the first valid email was kept' : 'only the phone number(s) were kept'}` })),
     ];
 

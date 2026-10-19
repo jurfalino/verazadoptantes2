@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.208] - 2026-10-19
+
+### Fixed — a website is never a social account
+
+Jon found "https://adopciones.catpuccino.org" (the rescue's own site, typed in an applicant's
+Facebook field) saved as a social contact by the Catpuccino import. A link or bare domain of a
+website that isn't a social network is now: left out by the API (`warnings`, reason
+`not_a_social_profile`), and never a social matching key anywhere (forms, imports, duplicate
+detection). A typo in the network's domain ("Instagram.con/…") still counts as the network.
+
 ## [2.56.207] - 2026-10-19
 
 ### Added — Admin → duplicates: who registered each profile, optional owner notice, merges in the profile history

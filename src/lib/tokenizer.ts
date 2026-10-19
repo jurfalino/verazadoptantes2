@@ -206,6 +206,17 @@ export function extractSocials(text: string): string[] {
  * free of the contactEntries import (documented circular dependency). Returns
  * null for a bare handle (no host to key on).
  */
+/** A link or bare domain that points at a website, not at a social network profile. */
+export function isNonSocialWebsite(value: string): boolean {
+    const v = (value || '').trim().toLowerCase();
+    if (!v || detectSocialPlatformFromValue(v)) return false;
+    // detectSocialPlatformFromValue misses "https://x.com/…" (it wants x.com at the start or after a dot).
+    if (/(?:^|\/\/|\.)(?:facebook\.co[mn]|fb\.com|fb\.me|instagram\.co[mn]|instagr\.am|tiktok\.com|x\.com|twitter\.com|t\.co|threads\.(?:net|com))\b/.test(v)) return false;
+    return /^(https?:\/\/|www\.)/.test(v)
+        || /^[\w-]+(\.[\w-]+)+\//.test(v)
+        || /^[\w-]+(\.[\w-]+)*\.(com|org|net|ar|io|me|info|edu|gob|gov)(\.[a-z]{2})?\/?$/.test(v);
+}
+
 export function detectSocialPlatformFromValue(value: string): 'facebook' | 'instagram' | 'tiktok' | 'x' | 'threads' | null {
     const v = (value || '').trim().toLowerCase();
     if (!v) return null;
@@ -244,6 +255,9 @@ const NON_PROFILE_SEGMENTS = new Set([
 export function normalizeSocialHandle(value: string, platform?: string | null): string | null {
     let v = (value || '').toLowerCase().trim();
     if (!v) return null;
+    // A link to a website that is not a social network ("https://adopciones.catpuccino.org"
+    // typed in a Facebook field, 2026-10-19) is nobody's account: never a matching key.
+    if (isNonSocialWebsite(v)) return null;
     const url = v.replace(/^https?:\/\//, '').replace(/^www\.|^m\.|^web\./, '');
     const isFb = /^(facebook\.com|fb\.com|fb\.me)\b/.test(url) || platform === 'facebook';
     if (isFb) {

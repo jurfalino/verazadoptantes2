@@ -247,7 +247,7 @@ export type ApiRisk = z.infer<typeof riskSchema>;
 export const warningSchema = z.object({
     field: z.string().meta({ example: 'person.phone' }),
     code: z.enum(['value_dropped', 'value_cleaned']),
-    reason: z.enum(['not_an_email', 'not_a_phone', 'no_account', 'first_valid_email', 'phone_numbers_only']),
+    reason: z.enum(['not_an_email', 'not_a_phone', 'no_account', 'not_a_social_profile', 'first_valid_email', 'phone_numbers_only']),
     message: z.string(),
 }).meta({ description: 'value_dropped: the value was not usable and was not saved (the rest was). value_cleaned: only the usable part was kept (the first valid email; the phone numbers without the note).' });
 export type ApiWarning = z.infer<typeof warningSchema>;
