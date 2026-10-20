@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useTimezone } from '@/context/TimezoneContext';
 import { useLanguage } from '@/context/LanguageContext';
 import FormPhotos from '@/components/FormPhotos';
-import FormAnswersPanel, { renderFormAnswerValue, AnswerValue, householdPeopleRow, giftRecipientRow, fieldLabel, ADOPTER_INFO_FIELDS, OTHER_PETS_FIELDS } from '@/components/FormAnswersPanel';
+import FormAnswersPanel, { renderFormAnswerValue, AnswerValue, AnswerRow, emailWithBreaks, householdPeopleRow, giftRecipientRow, fieldLabel, ADOPTER_INFO_FIELDS, OTHER_PETS_FIELDS } from '@/components/FormAnswersPanel';
 import FormResultMatchCard from '@/components/FormResultMatchCard';
 import LocationMap from '@/components/LocationMap';
 import { buttonClasses } from '@/components/ui/Button';
@@ -271,28 +271,16 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                             <div className="space-y-1">
                                 {giftRecipientRow(fullAnswers, t)}
                                 {submitted?.name && (
-                                    <div className="flex items-baseline gap-2 text-xs">
-                                        <span className="font-semibold text-stone-600 min-w-[140px]">{L('name_label')}:</span>
-                                        <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{submitted.name}</span>
-                                    </div>
+                                    <AnswerRow label={L('name_label')}>{submitted.name}</AnswerRow>
                                 )}
                                 {submitted?.email && (
-                                    <div className="flex items-baseline gap-2 text-xs">
-                                        <span className="font-semibold text-stone-600 min-w-[140px]">{L('email_label')}:</span>
-                                        <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{submitted.email}</span>
-                                    </div>
+                                    <AnswerRow label={L('email_label')} kind="email">{emailWithBreaks(submitted.email)}</AnswerRow>
                                 )}
                                 {submitted?.phone && (
-                                    <div className="flex items-baseline gap-2 text-xs">
-                                        <span className="font-semibold text-stone-600 min-w-[140px]">{L('phone_label')}:</span>
-                                        <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{submitted.phone}</span>
-                                    </div>
+                                    <AnswerRow label={L('phone_label')}>{submitted.phone}</AnswerRow>
                                 )}
                                 {submitted?.address && (
-                                    <div className="flex items-baseline gap-2 text-xs">
-                                        <span className="font-semibold text-stone-600 min-w-[140px]">{L('address_label')}:</span>
-                                        <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{submitted.address}</span>
-                                    </div>
+                                    <AnswerRow label={L('address_label')}>{submitted.address}</AnswerRow>
                                 )}
                                 {ADOPTER_INFO_FIELDS.map((field) => {
                                     if (field === 'children') {
@@ -303,12 +291,9 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                     const display = renderFormAnswerValue(field, raw, t);
                                     if (!display) return null;
                                     return (
-                                        <div key={field} className="flex items-baseline gap-2 text-xs">
-                                            <span className="font-semibold text-stone-600 min-w-[140px]">
-                                                {fieldLabel(field, fullAnswers, t)}:
-                                            </span>
+                                        <AnswerRow key={field} label={fieldLabel(field, fullAnswers, t)}>
                                             <AnswerValue field={field} raw={raw} display={display} />
-                                        </div>
+                                        </AnswerRow>
                                     );
                                 })}
                                 {householdItems.length > 0 && (
@@ -338,12 +323,9 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                         const display = renderFormAnswerValue(field, raw, t);
                                         if (!display) return null;
                                         return (
-                                            <div key={field} className="flex items-baseline gap-2 text-xs">
-                                                <span className="font-semibold text-stone-600 min-w-[140px]">
-                                                    {fieldLabel(field, fullAnswers, t)}:
-                                                </span>
+                                            <AnswerRow key={field} label={fieldLabel(field, fullAnswers, t)}>
                                                 <AnswerValue field={field} raw={raw} display={display} />
-                                            </div>
+                                            </AnswerRow>
                                         );
                                     })}
                                 </div>

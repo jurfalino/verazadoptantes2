@@ -1,5 +1,6 @@
 'use client';
 
+import { Fragment, type ReactNode } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { answerSignal, personSignal, type AnswerSignal } from '@/domain/answerSignals';
 import { parseGiftRecipient, recipientFullName, type GiftRecipient } from '@/domain/giftRecipient';
@@ -25,6 +26,57 @@ function SignalDot({ signal }: { signal: AnswerSignal }) {
     );
 }
 
+/**
+ * `text` with a line-break opportunity (<wbr>) after each of `after`: an email
+ * breaks as «diego.ruiz@ / ejemplo.com.ar», a label as «castración/ /
+ * esterilización», instead of mid-word wherever the column ends.
+ */
+export function withBreaks(text: string, after: string): ReactNode {
+    const parts: ReactNode[] = [];
+    let start = 0;
+    for (let i = 0; i < text.length; i++) {
+        if (after.includes(text[i]) && i < text.length - 1) {
+            parts.push(<Fragment key={i}>{text.slice(start, i + 1)}<wbr /></Fragment>);
+            start = i + 1;
+        }
+    }
+    parts.push(text.slice(start));
+    return parts.length === 1 ? text : <>{parts}</>;
+}
+
+/** Break points for links and handles: after «/» and «.». */
+export const LINK_BREAKS = './';
+
+/**
+ * An email with break opportunities after «@» and after the dots BEFORE it —
+ * never inside the domain, so a narrow column shows «diego.ruiz@ /
+ * ejemplo.com.ar», not «diego.ruiz@ejemplo.com. / ar».
+ */
+export function emailWithBreaks(email: string): ReactNode {
+    const at = email.lastIndexOf('@');
+    if (at <= 0) return withBreaks(email, '.');
+    return <>{withBreaks(email.slice(0, at + 1), '.@')}<wbr />{email.slice(at + 1)}</>;
+}
+
+/**
+ * One answer: label | value. Every row uses the same two-column template, so
+ * values line up in one column across rows and sections. The LABEL wraps in its
+ * own track (40% in a narrow card or the applicant panel, 14rem once the card
+ * is ≥ 28rem wide — a container query, not the viewport) — a long label used to squeeze
+ * its value until «No» broke into «N / o». Values break mid-word only when a
+ * single word is wider than the whole column (`overflow-wrap: break-word`).
+ */
+export function AnswerRow({ label, children, testId, kind }: { label: string; children: ReactNode; testId?: string; kind?: string }) {
+    return (
+        <div className="@container" data-testid={testId ?? 'answer-row'}>
+            <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] @md:grid-cols-[14rem_minmax(0,1fr)] gap-x-4 items-baseline text-xs">
+                <span className="font-semibold text-stone-600 min-w-0 [overflow-wrap:break-word]">{withBreaks(label, '/')}:</span>
+                <div className="min-w-0 text-stone-800 [overflow-wrap:break-word]" data-answer-kind={kind}>{children}</div>
+            </div>
+        </div>
+    );
+}
+
 type FormPerson = { relationship: string; age: number; firstName?: string; lastName?: string };
 
 /**
@@ -46,7 +98,7 @@ export function HouseholdPeopleAnswer({ people, livesAlone }: { people: FormPers
             {people.map((p, i) => {
                 const name = [p.firstName, p.lastName].filter(Boolean).join(' ');
                 return (
-                    <li key={i} className="flex items-baseline gap-1.5 text-stone-800 min-w-0 [overflow-wrap:anywhere]">
+                    <li key={i} className="flex items-baseline gap-1.5 text-stone-800 min-w-0 [overflow-wrap:break-word]">
                         <SignalDot signal={personSignal(p.age)} />
                         <span>
                             {t(`adopter.hh_rel_${p.relationship}`)} · {t('formResults.household_years').replace('{n}', String(p.age))}
@@ -63,10 +115,9 @@ export function HouseholdPeopleAnswer({ people, livesAlone }: { people: FormPers
 export function householdPeopleRow(answers: Record<string, unknown>, label: string) {
     if (!Array.isArray(answers.householdPeople)) return null;
     return (
-        <div key="household" className="flex items-baseline gap-2 text-xs">
-            <span className="font-semibold text-stone-600 min-w-[140px]">{label}:</span>
+        <AnswerRow key="household" label={label}>
             <HouseholdPeopleAnswer people={answers.householdPeople as FormPerson[]} livesAlone={answers.livesAlone === true} />
-        </div>
+        </AnswerRow>
     );
 }
 
@@ -94,14 +145,11 @@ export function giftRecipientRow(answers: Record<string, unknown>, t: (path: str
     const r = giftRecipientOf(answers);
     if (!r) return null;
     return (
-        <div key="giftRecipient" className="flex items-baseline gap-2 text-xs" data-testid="gift-recipient">
-            <span className="font-semibold text-stone-600 min-w-[140px]">{t('formResults.gift_for')}:</span>
-            <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">
-                <span className="text-stone-500">{t(`adopter.hh_rel_${r.relationship}`)} · </span>
-                {recipientFullName(r) ?? r.firstName}
-                {r.phone && <span className="text-stone-500"> · {r.phone}</span>}
-            </span>
-        </div>
+        <AnswerRow key="giftRecipient" label={t('formResults.gift_for')} testId="gift-recipient">
+            <span className="text-stone-500">{t(`adopter.hh_rel_${r.relationship}`)} · </span>
+            {recipientFullName(r) ?? r.firstName}
+            {r.phone && <span className="text-stone-500"> · {r.phone}</span>}
+        </AnswerRow>
     );
 }
 
@@ -114,7 +162,7 @@ export function AnswerValue({ field, raw, display }: { field: string; raw: unkno
     const { t } = useLanguage();
     const signal = answerSignal(field, raw);
     return (
-        <span className="inline-flex items-baseline gap-1.5 text-stone-800 min-w-0 [overflow-wrap:anywhere]">
+        <span className="inline-flex items-baseline gap-1.5 text-stone-800 min-w-0 max-w-full">
             {signal && (
                 <span
                     role="img"
@@ -125,10 +173,13 @@ export function AnswerValue({ field, raw, display }: { field: string; raw: unkno
                     style={{ background: SIGNAL_COLOR[signal] }}
                 />
             )}
-            <span>{display}</span>
+            <span className="min-w-0">{LINK_FIELDS.has(field) ? (/^[^\s/@]+@[^\s@]+$/.test(display) ? emailWithBreaks(display) : withBreaks(display, LINK_BREAKS)) : display}</span>
         </span>
     );
 }
+
+/** Answers that are usually a link or a handle: they break at «@ . /», not mid-word. */
+const LINK_FIELDS = new Set(['instagram', 'facebook', 'vetReference']);
 
 /** "Datos del adoptante" on the form screen, after name/email/phone/address. */
 export const ADOPTER_INFO_FIELDS = ['ageRange', 'carer', 'children', 'allergy', 'housingType', 'rental', 'hasOutdoor', 'isSafe', 'catOutdoor', 'sleepPlace', 'hoursAlone', 'dogWalks', 'dogTied', 'instagram', 'facebook', 'vetReference', 'motivation', 'howHeard'];
@@ -252,12 +303,9 @@ export default function FormAnswersPanel({ fullAnswers, excludeSections = [] }: 
                                 const display = renderValue(field, raw);
                                 if (!display) return null;
                                 return (
-                                    <div key={field} className="flex items-baseline gap-2 text-xs">
-                                        <span className="font-semibold text-stone-600 min-w-[140px]">
-                                            {fieldLabel(field, fullAnswers, t)}:
-                                        </span>
+                                    <AnswerRow key={field} label={fieldLabel(field, fullAnswers, t)}>
                                         <AnswerValue field={field} raw={raw} display={display} />
-                                    </div>
+                                    </AnswerRow>
                                 );
                             })}
                         </div>

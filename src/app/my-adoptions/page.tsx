@@ -224,7 +224,7 @@ export default function MyAdoptionsPage() {
                                                         )}
                                                         <div className="text-xs text-stone-500 capitalize">{adoption.species || t('dashboard.unknown_species')}</div>
                                                         {adoption.addedBy && adoption.addedBy !== currentEmail && (
-                                                            <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', actorLabel(adoption.addedBy, adoption.addedByName, t))}</div>
+                                                            <div className="text-[10px] text-indigo-500 font-medium mt-0.5 [overflow-wrap:break-word]">👤 {t('organizations.added_by').replace('{name}', actorLabel(adoption.addedBy, adoption.addedByName, t))}</div>
                                                         )}
                                                     </div>
                                                 </div>
@@ -314,7 +314,7 @@ export default function MyAdoptionsPage() {
                                             )}
                                             <div className="text-xs text-stone-500 capitalize">{adoption.species || t('dashboard.unknown_species')}</div>
                                             {adoption.addedBy && adoption.addedBy !== currentEmail && (
-                                                <div className="text-[10px] text-indigo-500 font-medium mt-0.5 truncate">👤 {t('organizations.added_by').replace('{name}', actorLabel(adoption.addedBy, adoption.addedByName, t))}</div>
+                                                <div className="text-[10px] text-indigo-500 font-medium mt-0.5 [overflow-wrap:break-word]">👤 {t('organizations.added_by').replace('{name}', actorLabel(adoption.addedBy, adoption.addedByName, t))}</div>
                                             )}
                                             {/* Type Badge */}
                                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold mt-1 ${getTypeBadgeStyle(adoption.recordType)}`}>

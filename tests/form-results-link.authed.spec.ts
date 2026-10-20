@@ -178,14 +178,14 @@ test.describe('form-results: linking to an existing profile', () => {
         if ((await answers.getAttribute('aria-expanded')) === 'false') await answers.click();
 
         const dot = (label: RegExp, signal: string) =>
-            page.locator('div.flex.items-baseline', { hasText: label }).locator(`[data-signal="${signal}"]`);
+            page.getByTestId('answer-row').filter({ hasText: label }).locator(`[data-signal="${signal}"]`);
         await expect(dot(/Children in household|Niños en el hogar|Crianças/, 'caution')).toBeVisible();
         await expect(dot(/Protected spaces|Secure spaces|Espacios protegidos|Espaços protegidos/, 'risk')).toBeVisible();
         await expect(dot(/Intent|Intención|Intenção/, 'risk')).toBeVisible();
         // Colour is never the only signal: each dot is labelled.
         await expect(dot(/Intent|Intención|Intenção/, 'risk')).toHaveAttribute('aria-label', /Attention|Atención|Atenção/);
         // Questions outside the semáforo get no dot.
-        await expect(page.locator('div.flex.items-baseline', { hasText: /Home type|Tipo de vivienda|Tipo de moradia/ }).locator('[data-signal]')).toHaveCount(0);
+        await expect(page.getByTestId('answer-row').filter({ hasText: /Home type|Tipo de vivienda|Tipo de moradia/ }).locator('[data-signal]')).toHaveCount(0);
     });
 
     test('household people: only the fully named one reaches the profile, children is recomputed, the request is recorded at submit', async ({ request }) => {
@@ -245,7 +245,7 @@ test.describe('form-results: linking to an existing profile', () => {
         await expect(people.locator('[data-signal="ok"]')).toHaveCount(1);      // 38
         await expect(people).toContainText('Tomás López');
         // The derived count is not shown twice next to the list.
-        await expect(page.locator('div.flex.items-baseline', { hasText: /Children in household|Niños en el hogar/ })).toHaveCount(0);
+        await expect(page.getByTestId('answer-row').filter({ hasText: /Children in household|Niños en el hogar/ })).toHaveCount(0);
 
         await page.goto(`/adopter/${row.auto_adopter_id}`);
         await dismissCountryBanner(page);
@@ -286,7 +286,7 @@ test.describe('form-results: linking to an existing profile', () => {
         await expect(page.getByText(/Patio o jardín de Laura|Laura's patio or yard|Quintal ou jardim de Laura/)).toBeVisible();
         await expect(page.getByText(/Plan para vacaciones de Laura|Laura's vacation plan|Plano de férias de Laura/)).toBeVisible();
         for (const label of [/patio or yard|patio o jardín|quintal ou jardim/i, /Protected spaces|Secure spaces|Espacios protegidos|Espaços protegidos/]) {
-            const line = page.locator('div.flex.items-baseline', { hasText: label });
+            const line = page.getByTestId('answer-row').filter({ hasText: label });
             await expect(line).toContainText(/No sabe|Doesn't know|Não sabe/);
             await expect(line.locator('[data-signal]')).toHaveCount(0);
         }
@@ -341,7 +341,7 @@ test.describe('form-results: linking to an existing profile', () => {
         await dismissCountryBanner(page);
         const answers = page.getByRole('button', { name: /Complete answers|Respuestas completas|Respostas completas/ });
         if ((await answers.getAttribute('aria-expanded')) === 'false') await answers.click();
-        const row = (label: RegExp) => page.locator('div.flex.items-baseline', { hasText: label });
+        const row = (label: RegExp) => page.getByTestId('answer-row').filter({ hasText: label });
         await expect(row(/Moving, no animals|Mudanza sin animales|Mudança sem animais/).locator('[data-signal="risk"]')).toBeVisible();
         await expect(row(/Gave an animal away|Regaló un animal|Deu um animal/).locator('[data-signal="risk"]')).toBeVisible();
         await expect(page.getByText('Me mudé')).toBeVisible();
@@ -388,7 +388,7 @@ test.describe('form-results: linking to an existing profile', () => {
         await dismissCountryBanner(page);
         const answers = page.getByRole('button', { name: /Complete answers|Respuestas completas|Respostas completas/ });
         if ((await answers.getAttribute('aria-expanded')) === 'false') await answers.click();
-        const row = (label: RegExp) => page.locator('div.flex.items-baseline', { hasText: label });
+        const row = (label: RegExp) => page.getByTestId('answer-row').filter({ hasText: label });
         await expect(row(/Gave an animal away|Regaló un animal|Deu um animal/)).toContainText('yes');
         await expect(row(/Gave an animal away|Regaló un animal|Deu um animal/).locator('[data-signal]')).toHaveCount(0);
         await expect(page.getByText('Alquilo, el dueño acepta gatos')).toBeVisible();

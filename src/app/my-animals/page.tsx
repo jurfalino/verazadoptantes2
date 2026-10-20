@@ -542,12 +542,14 @@ export default function MyAnimalsPage() {
 
                                         {/* flex-wrap + a floor on the meta column: controls drop
                                             to their own line rather than squeezing the card's date
-                                            and «Actualizado por» into an ellipsis (measured at 31px
-                                            before v2.56.134). */}
+                                            and «Actualizado por» (measured at 31px before v2.56.134).
+                                            The lines WRAP instead of ending in an ellipsis: at 9rem
+                                            «Actualizado por Caro Méndez · hace 20 días» read
+                                            «…Caro Méndez · …», so who and when were both lost. */}
                                         <div className="flex flex-wrap items-center gap-2">
                                             <div className="text-xs text-stone-500 flex-1 min-w-[9rem] space-y-0.5">
                                                 {animal.date && (
-                                                    <p className="truncate" data-testid={`card-date-${animal.id}`}>
+                                                    <p className="[overflow-wrap:break-word]" data-testid={`card-date-${animal.id}`}>
                                                         {animal.adopterId && !isFoster
                                                             ? (t('myAnimals.date_adopted') || 'Adoptado el')
                                                             : isFoster
@@ -557,7 +559,7 @@ export default function MyAnimalsPage() {
                                                     </p>
                                                 )}
                                                 {animal.lastUpdate && (
-                                                    <p className="truncate" data-testid={`last-update-${animal.id}`}>
+                                                    <p className="[overflow-wrap:break-word]" data-testid={`last-update-${animal.id}`}>
                                                         {animal.lastUpdate.kind === 'updated'
                                                             ? (t('myAnimals.updated_by') || 'Actualizado por')
                                                             : (t('common.added_by') || 'Agregado por')}
@@ -570,7 +572,7 @@ export default function MyAnimalsPage() {
                                                             Keep the separator with it or the line renders a dangling " · ". */}
                                                         {(() => {
                                                             const rel = formatRelativeTime(animal.lastUpdate.at, locale === 'en' ? 'en' : 'es');
-                                                            return rel ? <>{' · '}{rel}</> : null;
+                                                            return rel ? <>{' · '}<span className="whitespace-nowrap">{rel}</span></> : null;
                                                         })()}
                                                     </p>
                                                 )}
