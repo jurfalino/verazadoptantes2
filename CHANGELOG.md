@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.209] - 2026-10-20
+
+### Fixed — form answers and animal cards read cleanly on phones
+
+- **Form answers** (/form-results and the applicant panel): every answer lines up in
+  one column, long questions wrap in their own column, and short answers never break
+  («No» used to split into «N / o» next to «Compromiso de castración/esterilización»).
+  Emails break after «@», never inside the domain.
+- **Animal cards** (Mis Animales) and **Mis Adopciones**: «Actualizado por <nombre> ·
+  hace N días» / «Agregado por …» wrap instead of being cut off.
+
 ## [2.56.208] - 2026-10-19
 
 ### Fixed — a website is never a social account
