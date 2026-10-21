@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitLinkAndText, appendContext } from './importInput';
+import { splitLinkAndText, appendContext, canSaveImportedProfile, importRecordType, recordTypeHasAnimal } from './importInput';
 
 describe('splitLinkAndText', () => {
     it('reads a bare link as a link with no extra text', () => {
@@ -35,6 +35,11 @@ describe('splitLinkAndText', () => {
         expect(splitLinkAndText('https://a.com/x y https://b.com/y').url).toBeNull();
     });
 
+    it('counts the same link twice as one link', () => {
+        expect(splitLinkAndText('Ojo https://fb.com/p/1\nhttps://fb.com/p/1'))
+            .toEqual({ url: 'https://fb.com/p/1', text: 'Ojo' });
+    });
+
     it('treats empty input as nothing', () => {
         expect(splitLinkAndText('   ')).toEqual({ url: null, text: '' });
     });
@@ -51,5 +56,42 @@ describe('appendContext', () => {
 
     it('uses the context alone when the post had no text', () => {
         expect(appendContext('', 'Mirá esto')).toBe('Mirá esto');
+    });
+});
+
+
+describe('canSaveImportedProfile', () => {
+    it('saves with a name', () => {
+        expect(canSaveImportedProfile('Juan', [])).toBe(true);
+    });
+
+    it('saves a nameless profile that has a phone, email, social handle or ID', () => {
+        for (const type of ['phone', 'email', 'social', 'id']) {
+            expect(canSaveImportedProfile('', [{ type, value: 'x' }])).toBe(true);
+        }
+    });
+
+    it('does not save a nameless profile with only an address or a note', () => {
+        expect(canSaveImportedProfile('  ', [{ type: 'address', value: 'Calle 1' }, { type: 'other', value: 'algo' }])).toBe(false);
+    });
+
+    it('ignores blank identifiers', () => {
+        expect(canSaveImportedProfile('', [{ type: 'phone', value: '  ' }])).toBe(false);
+    });
+});
+
+describe('importRecordType', () => {
+    it('keeps a type the AI returned', () => {
+        expect(importRecordType('adoption_request')).toBe('adoption_request');
+    });
+
+    it('falls back to observation — the same default the save uses', () => {
+        expect(importRecordType(undefined)).toBe('observation');
+        expect(importRecordType('nonsense')).toBe('observation');
+    });
+
+    it('gives animal fields to everything but an observation', () => {
+        expect(recordTypeHasAnimal('observation')).toBe(false);
+        expect(recordTypeHasAnimal('adoption')).toBe(true);
     });
 });

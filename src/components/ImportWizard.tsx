@@ -43,9 +43,11 @@ const BTN_PRIMARY =
     'focus-visible:ring-teal-500 disabled:opacity-40 disabled:cursor-not-allowed';
 import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
-import { userFacingMessage, handledAsStale } from '@/lib/errorMessage';
+import { handledAsStale } from '@/lib/errorMessage';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-import { splitLinkAndText, appendContext } from '@/domain/importInput';
+import { splitLinkAndText, appendContext, canSaveImportedProfile, importRecordType, recordTypeHasAnimal, IMPORT_RECORD_TYPES } from '@/domain/importInput';
+import StickyActions from '@/components/import/StickyActions';
+import MediaPicker from '@/components/import/MediaPicker';
 
 interface PersonMatch {
     id: string;
@@ -91,14 +93,14 @@ export default function ImportWizard() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const toast = useShowToast();
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // How the rescuer got here. The share target is the main mobile path, so
     // every import event carries it — without it no drop-off can be attributed.
-    const entry: 'share' | 'contacts' | 'paste' =
+    // Read once: the share parameters are stripped from the address after mount.
+    const [entry] = useState<'share' | 'contacts' | 'paste'>(() =>
         searchParams.get('shared') === 'true' || searchParams.has('shared_url') || searchParams.has('shared_text') ? 'share'
             : searchParams.get('contact_import') === '1' ? 'contacts'
-                : 'paste';
+                : 'paste');
     const trackImport = (event: string, props: Record<string, string | number | boolean> = {}) =>
         zarazTrack(event, { entry, ...props });
 
@@ -138,6 +140,9 @@ export default function ImportWizard() {
         } catch { return 1; }
     });
     const [loading, setLoading] = useState(false);
+    // Which wait the spinner stands for — step 1 now runs both the link fetch
+    // and (for pasted text) the AI read.
+    const [loadingKind, setLoadingKind] = useState<'fetch' | 'extract'>('fetch');
     const [error, setError] = useState<string | null>(null);
     // A real failure (not a hint) carries an errorId — logged to Axiom under the
     // same id — and names the operation that failed, so "Reintentar" retries
@@ -149,7 +154,10 @@ export default function ImportWizard() {
     /** Report a caught failure: banner + errorId, unless it is a stale tab (the "new version" notice covers that). */
     const showFailure = (err: unknown, fallback: string, op: 'fetch' | 'extract' | null, source: string) => {
         if (handledAsStale(err)) return;
-        setError(userFacingMessage(err, fallback));
+        // The translated sentence, not err.message: thrown messages are English
+        // server strings or raw browser errors ("Failed to fetch"). The raw text
+        // still reaches Axiom with the report under the same Error ID.
+        setError(fallback);
         setErrorId(resolveErrorId(err, source));
         setFailedOp(op);
     };
@@ -463,6 +471,14 @@ export default function ImportWizard() {
         const isSharedVcard = searchParams.get('shared_vcard') === 'true';
         const sharedVcardLost = searchParams.get('shared_vcard_lost') === 'true';
 
+        // The shared link and caption ride in the address (?shared_url=…&shared_text=…),
+        // and analytics record the address with every event and pageview. A caption can
+        // carry the adopter's name or phone, so drop the parameters once read; the
+        // draft survives a reload through sessionStorage (review of v2.56.210, item 5).
+        if ([...searchParams.keys()].some(k => k.startsWith('shared') || k === 'url' || k === 'text' || k === 'title')) {
+            window.history.replaceState(window.history.state, '', window.location.pathname);
+        }
+
         // Contact-import fast path (v2.16.0-33): the user picked a contact
         // on the homepage (or shared one from their phone's Contacts app)
         // and we already have structured fields. Skip Steps 1–2 entirely
@@ -474,17 +490,13 @@ export default function ImportWizard() {
         if (sharedVcardLost) {
             // SW was inactive when the share arrived — file body never made it
             // to the cache. Show a soft hint, leave the user on Step 1.
-            setError(t('import.vcard_parse_failed') || (locale !== 'en'
-                ? 'No se pudo cargar el contacto compartido. Probá nuevamente.'
-                : 'Could not load the shared contact. Please try again.'));
+            setError(t('import.vcard_parse_failed'));
             return;
         }
         if (isSharedVcard) {
             loadSharedVcard().then(loaded => {
                 if (!loaded) {
-                    setError(t('import.vcard_parse_failed') || (locale !== 'en'
-                        ? 'No se pudo cargar el contacto compartido. Probá nuevamente.'
-                        : 'Could not load the shared contact. Please try again.'));
+                    setError(t('import.vcard_parse_failed'));
                 }
             });
             return;
@@ -497,9 +509,7 @@ export default function ImportWizard() {
 
         // Show warning if SW wasn't active and images were lost
         if (imagesLost) {
-            setError(locale !== 'en'
-                ? 'Las imágenes compartidas no se pudieron cargar. Por favor, subilas manualmente.'
-                : 'Shared images could not be loaded. Please upload them manually.');
+            setError(t('import.images_lost'));
         }
 
         if (sharedUrl) {
@@ -516,7 +526,8 @@ export default function ImportWizard() {
                 // swallow the error, so this fallback never ran and the rescuer
                 // was left on an empty step 2 (audit 2026-10-21, A1).
                 setStep(1);
-                setInputContent(sharedText ? `${sharedText}\n${sharedUrl}` : sharedUrl);
+                // Some apps put the link in both share fields; never write it twice.
+                setInputContent(sharedText && !sharedText.includes(sharedUrl) ? `${sharedText}\n${sharedUrl}` : (sharedText || sharedUrl));
                 setSharedFrom(null);
             });
         } else if (sharedText) {
@@ -561,6 +572,7 @@ export default function ImportWizard() {
         if (!targetUrl.trim()) return false;
 
         setLoading(true);
+        setLoadingKind('fetch');
         clearError();
         // Re-evaluated per attempt so retrying against a readable URL clears it.
         setSourceNotPublic(false);
@@ -638,9 +650,7 @@ export default function ImportWizard() {
                         }
                         setError(responseData.sourceNotPublic
                             ? t('import.source_not_public')
-                            : responseData.error || (locale !== 'en'
-                                ? 'No se pudo extraer contenido. Pegá el texto manualmente.'
-                                : 'Could not extract content. Please paste text manually.'));
+                            : t('import.manual_input_needed'));
                         setEditableText(appendContext('', context));
                         trackImport('import_fetch_failed', { reason: responseData.sourceNotPublic ? 'not_public' : 'manual_input', facebook: true });
                         setStep(2);
@@ -648,11 +658,7 @@ export default function ImportWizard() {
                     }
                     // Temporary extraction failure — start 30s retry countdown
                     setRetryCountdown(30);
-                    throw new Error(
-                        responseData.error || (locale !== 'en'
-                            ? 'No se pudo extraer contenido de esta publicación.'
-                            : 'Could not extract content from this post.')
-                    );
+                    throw new Error(t('import.post_unreadable'));
                 }
             } else {
                 const res = await fetch('/api/import/fetch-content', {
@@ -702,29 +708,30 @@ export default function ImportWizard() {
         const { url, text } = splitLinkAndText(content);
         if (url) {
             handleFetchUrl(url, text);
-        } else if (content) {
-            // Plain text — go directly to content review
+        } else {
+            // Plain text and/or screenshots go straight to the AI read. The
+            // review-content step only repeated what was just pasted, under a
+            // wrong "Texto Extraído" label (design change 12, approved 2026-10-21).
+            // It stays for fetched links, where there is a scraped caption and
+            // photos to check first.
             setFetchedText(content);
             setEditableText(content);
-            setStep(2);
-        } else {
-            // Images only — go to content review
-            setStep(2);
+            handleExtract(content);
         }
     };
 
-    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files;
-        if (!files) return;
-
-        for (const file of Array.from(files)) {
+    /** Add picked, dropped or pasted files. Videos over 50 MB are refused out loud. */
+    const addFiles = async (files: File[]) => {
+        for (const file of files) {
             const isVideoFile = file.type.startsWith('video/');
 
             if (isVideoFile) {
                 // Video: store File object only — don't read as base64
                 // Videos will be uploaded via FormData after adopter creation
                 if (file.size > 50 * 1024 * 1024) {
-                    continue; // Skip oversized videos silently
+                    // Used to be skipped silently: the rescuer believed it was attached.
+                    toast.warning(t('import.video_too_large').replace('{name}', file.name));
+                    continue;
                 }
                 // Generate thumbnail
                 let thumbnail: string | undefined;
@@ -740,7 +747,7 @@ export default function ImportWizard() {
                     file,
                     thumbnail,
                 }]);
-            } else {
+            } else if (file.type.startsWith('image/')) {
                 // Image: read as base64 for preview and sending in JSON
                 const reader = new FileReader();
                 reader.onload = () => {
@@ -755,8 +762,18 @@ export default function ImportWizard() {
                 reader.readAsDataURL(file);
             }
         }
-        // Reset input so same file can be re-selected
-        e.target.value = '';
+    };
+
+    /**
+     * A screenshot pasted anywhere on steps 1–2 is attached (audit A8). Text
+     * pastes are left alone so the textarea behaves as usual.
+     */
+    const handlePaste = (e: React.ClipboardEvent) => {
+        if (step > 2 || showConfirmModal) return;
+        const files = Array.from(e.clipboardData?.files ?? []).filter(f => f.type.startsWith('image/'));
+        if (!files.length) return;
+        e.preventDefault();
+        addFiles(files);
     };
 
     const removeImage = (index: number) => {
@@ -764,8 +781,11 @@ export default function ImportWizard() {
     };
 
     // AI Extraction — text + images sent together; hardened prompt prevents hallucination
-    const handleExtract = async () => {
+    const handleExtract = async (textOverride?: string) => {
+        // Called straight from step 1 for pasted text, before the state update lands.
+        const text = textOverride ?? editableText;
         setLoading(true);
+        setLoadingKind('extract');
         clearError();
 
         try {
@@ -779,7 +799,7 @@ export default function ImportWizard() {
             setExtractedFromSource(!!sourceUrl || imagesToSend.length > 0 || imageUrls.length > 0);
             trackImport('import_extract_started', {
                 hasUrl: !!sourceUrl,
-                hasText: !!editableText.trim(),
+                hasText: !!text.trim(),
                 images: imagesToSend.length + imageUrls.length,
             });
 
@@ -787,7 +807,7 @@ export default function ImportWizard() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    text: editableText || undefined,
+                    text: text || undefined,
                     images: imagesToSend.length > 0 ? imagesToSend : undefined,
                     imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
                     model: selectedModel || undefined,
@@ -809,9 +829,9 @@ export default function ImportWizard() {
             const aiData = result.data || { confidence: 'low' as const };
 
             // Preserve original post text untouched, append any AI-extracted notes after
-            if (editableText?.trim()) {
+            if (text?.trim()) {
                 const aiNotes = aiData.notes?.trim();
-                aiData.notes = editableText + (aiNotes ? '\n\n---\n' + aiNotes : '');
+                aiData.notes = text + (aiNotes ? '\n\n---\n' + aiNotes : '');
             }
 
             setExtractedData(aiData);
@@ -867,6 +887,10 @@ export default function ImportWizard() {
         setPersonMatches([]);
         setSelectedMatch(null);
         setDuplicateCheckFailed(false);
+        // Local mirrors of the state above: the decision at the end must not
+        // wait for a re-render.
+        let foundMatches = false;
+        let checkFailed = false;
 
         // Check for URL duplicate
         if (sourceUrl) {
@@ -887,6 +911,7 @@ export default function ImportWizard() {
             } catch (e) {
                 console.warn('[ImportWizard] URL duplicate check failed', e);
                 setDuplicateCheckFailed(true);
+                checkFailed = true;
             }
         }
 
@@ -919,6 +944,7 @@ export default function ImportWizard() {
                         confidence: confidenceBand(r.relevancePercent) as 'high' | 'medium' | 'low',
                         matchTypes: r.matchTypes,
                     }));
+                    foundMatches = true;
                     setPersonMatches(matches);
                     setSelectedMatch(matches[0]);
                     trackImport('import_duplicate_shown', { kind: 'person', count: matches.length, topBand: matches[0].confidence });
@@ -926,7 +952,18 @@ export default function ImportWizard() {
             } catch (e) {
                 console.error('[ImportWizard] Token match check failed', e);
                 setDuplicateCheckFailed(true);
+                checkFailed = true;
             }
+        }
+
+        // Nothing to decide: save straight away. The "¿Crear nuevo perfil?"
+        // screen only repeated the name (decision B3, 2026-10-21). It still
+        // shows when there are matches, or when the check failed and the
+        // rescuer has to look for themselves.
+        if (!foundMatches && !checkFailed) {
+            setShowConfirmModal(true);
+            await handleConfirmSave();
+            return;
         }
 
         setIsSaving(false);
@@ -991,7 +1028,7 @@ export default function ImportWizard() {
                         // v2.19.52: blank goes through as undefined → API saves NULL.
                         animalName: extractedData.animalName?.trim() || undefined,
                         species: extractedData.animalSpecies,
-                        recordType: extractedData.recordType || 'observation',
+                        recordType: importRecordType(extractedData.recordType),
                         rating: extractedData.adoptionRating || undefined,
                         date: extractedData.adoptionDate || new Date().toISOString().split('T')[0],
                     },
@@ -1014,7 +1051,8 @@ export default function ImportWizard() {
                 const base = result.details?.length
                     ? `${result.error || 'Invalid input'}: ${result.details.join('; ')}`
                     : (result.error || 'Failed to create adopter');
-                throw new Error(result.errorId ? `${base} (${result.errorId})` : base);
+                // "Error ID:" so resolveErrorId reuses the server's id instead of minting a second one.
+                throw new Error(result.errorId ? `${base} (Error ID: ${result.errorId})` : base);
             }
 
             const adopterId = result.id;
@@ -1066,7 +1104,8 @@ export default function ImportWizard() {
         } catch (err) {
             showFailure(err, t('import.save_failed'), null, 'ImportWizard.save');
             setShowConfirmModal(false);
-        } finally {
+            // Reset only on failure: on success the "saving" screen stays up while
+            // the profile loads, so nothing can be tapped twice into a duplicate.
             setIsSaving(false);
             setSavingMode(null);
         }
@@ -1138,7 +1177,7 @@ export default function ImportWizard() {
                     // undefined → API saves NULL.
                     animalName: extractedData.animalName?.trim() || undefined,
                     species: extractedData.animalSpecies,
-                    recordType: extractedData.recordType || 'observation',
+                    recordType: importRecordType(extractedData.recordType),
                     rating: extractedData.adoptionRating || undefined,
                     date: extractedData.adoptionDate || new Date().toISOString().split('T')[0],
                 },
@@ -1161,7 +1200,7 @@ export default function ImportWizard() {
             const result = await response.json() as { adoptionId?: string; adopterId?: string; adopterName?: string; error?: string; errorId?: string };
 
             if (!response.ok) {
-                throw new Error(result.errorId ? `${result.error || 'Failed to add record'} (${result.errorId})` : (result.error || 'Failed to add record'));
+                throw new Error(result.errorId ? `${result.error || 'Failed to add record'} (Error ID: ${result.errorId})` : (result.error || 'Failed to add record'));
             }
 
             const adopterId = result.adopterId || mergeTarget.id;
@@ -1222,7 +1261,7 @@ export default function ImportWizard() {
         } catch (err) {
             showFailure(err, t('import.save_failed'), null, 'ImportWizard.merge');
             setShowConfirmModal(false);
-        } finally {
+            // Reset only on failure (see handleConfirmSave).
             setIsSaving(false);
             setSavingMode(null);
         }
@@ -1230,80 +1269,100 @@ export default function ImportWizard() {
 
     // --- RENDER ---
 
-    const stepLabels = [t('import.stepInput') || 'Input', t('import.stepContent') || 'Content', t('import.stepReview') || 'Review'];
+    const stepLabels = [t('import.stepInput'), t('import.stepContent'), t('import.stepReview')];
+    const spinner = <svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>;
+    const canRetry = (failedOp === 'extract' || (failedOp === 'fetch' && !!inputContent.trim())) && !loading;
 
     return (
-        <div className="max-w-2xl mx-auto">
-            {/* Header */}
+        <div className="max-w-2xl mx-auto" onPaste={handlePaste}>
+            {/* Header. The top control leaves the wizard ("Cancelar", to home);
+                only the bottom "Volver" steps back. Both used to read "Volver",
+                and the top one was router.back(), which after a share left the
+                app (design change 14, approved 2026-10-21). */}
             <div className="mb-6">
                 <button
-                    onClick={() => router.back()}
-                    className="text-sm text-stone-500 hover:text-stone-700 mb-2 flex items-center gap-1"
+                    type="button"
+                    onClick={() => {
+                        sessionStorage.removeItem('import_wizard_state');
+                        router.push('/');
+                    }}
+                    className="-ml-2 mb-1 inline-flex items-center gap-1 min-h-[44px] px-2 text-sm text-stone-500 hover:text-stone-700"
                 >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                    </svg>
-                    {t('import.back') || 'Back'}
+                    <CloseIcon className="w-4 h-4" />
+                    {t('common.cancel')}
                 </button>
-                <h1 className="text-2xl font-semibold text-stone-900">{t('import.title') || 'Import Content'}</h1>
-                <p className="text-stone-500 text-sm mt-1">
-                    {t('import.subtitle') || 'Extract adopter information from links, text, or images using AI'}
-                </p>
+                <h1 className="text-2xl font-semibold text-stone-900">{t('import.title')}</h1>
+                <p className="text-stone-500 text-sm mt-1">{t('import.subtitle')}</p>
             </div>
 
-            {/* Step Indicator */}
+            {/* Step Indicator — teal (themed); the old blue-* did not remap in
+                Azul Noche. On phones the labels don't fit, so the current step's
+                name shows underneath instead of bare numbers (design change 15). */}
             {!showConfirmModal && (
-                <div className="flex items-center justify-center gap-4 py-4 mb-6 bg-white rounded-xl border border-stone-200">
-                    {stepLabels.map((label, i) => (
-                        <div key={i} className="flex items-center gap-2">
-                            {i > 0 && <div className="w-8 h-px bg-stone-200" />}
-                            <div className={`flex items-center gap-2 ${step >= i + 1 ? 'text-blue-600' : 'text-stone-500'}`}>
-                                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-semibold ${step >= i + 1 ? 'bg-blue-100' : 'bg-stone-100'}`}>
-                                    {i + 1}
+                <div className="py-4 mb-6 bg-white rounded-xl border border-stone-200">
+                    <ol className="flex items-center justify-center gap-4">
+                        {stepLabels.map((label, i) => (
+                            <li key={i} className="flex items-center gap-2" aria-current={step === i + 1 ? 'step' : undefined}>
+                                {i > 0 && <span aria-hidden="true" className="w-8 h-px bg-stone-200" />}
+                                <span className={`flex items-center gap-2 ${step >= i + 1 ? 'text-teal-700' : 'text-stone-500'}`}>
+                                    <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-semibold ${step >= i + 1 ? 'bg-teal-100' : 'bg-stone-100'}`}>
+                                        {i + 1}
+                                    </span>
+                                    <span className="text-sm font-medium hidden sm:block">{label}</span>
                                 </span>
-                                <span className="text-sm font-medium hidden sm:block">{label}</span>
-                            </div>
-                        </div>
-                    ))}
+                            </li>
+                        ))}
+                    </ol>
+                    <p className="sm:hidden mt-2 text-center text-xs font-semibold text-teal-700">
+                        {t('import.step_n_of')
+                            .replace('{n}', String(Math.min(step, 3)))
+                            .replace('{total}', '3')
+                            .replace('{label}', stepLabels[Math.min(step, 3) - 1])}
+                    </p>
                 </div>
             )}
 
-            {/* Error Display */}
+            {/* Error Display — rose (themed), with the Error ID logged under it. */}
             {error && (
-                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-sm">
+                <div className="mb-4 p-4 bg-rose-50 border border-rose-200 rounded-xl text-sm" role="alert">
                     <div className="flex items-start gap-3">
-                        <WarningIcon className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                        <WarningIcon className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
                         <div className="flex-1 min-w-0">
-                            <p className="text-red-700 font-medium break-words">{error}</p>
+                            <p className="text-rose-700 font-medium break-words">{error}</p>
                             {errorId && (
-                                <p className="text-xs text-red-500 mt-1 font-mono select-all">Error ID: {errorId}</p>
+                                <p className="text-xs text-rose-600 mt-1 font-mono select-all">Error ID: {errorId}</p>
                             )}
                             {retryCountdown > 0 && (
-                                <p className="text-red-500 mt-1">
-                                    {locale !== 'en'
-                                        ? `Podés reintentar en ${retryCountdown}s`
-                                        : `You can retry in ${retryCountdown}s`}
+                                <p className="text-rose-600 mt-1">
+                                    {t('import.retry_in').replace('{s}', String(retryCountdown))}
                                 </p>
                             )}
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="flex items-center gap-1 flex-shrink-0">
                             {retryCountdown > 0 ? (
-                                <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-red-100 text-red-400 font-semibold text-sm tabular-nums">
+                                <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-rose-100 text-rose-600 font-semibold text-sm tabular-nums">
                                     {retryCountdown}
                                 </span>
-                            ) : (failedOp === 'extract' || (failedOp === 'fetch' && inputContent.trim())) && !loading ? (
+                            ) : canRetry ? (
                                 <button
+                                    type="button"
                                     onClick={() => {
-                                        // Retry what failed: the AI read, or fetching the link.
-                                        if (failedOp === 'extract') handleExtract();
+                                        // Retry what failed. A pasted text read from step 1 re-runs
+                                        // step 1; a read from step 2 re-runs the read.
+                                        if (failedOp === 'extract' && step !== 1) handleExtract();
                                         else handleSmartSubmit();
                                     }}
-                                    className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700 transition-colors"
+                                    className="min-h-[44px] px-4 bg-rose-600 text-white rounded-xl text-sm font-bold hover:bg-rose-700 transition-colors"
                                 >
-                                    {locale !== 'en' ? 'Reintentar' : 'Retry'}
+                                    {t('import.retry')}
                                 </button>
                             ) : null}
-                            <button onClick={() => { clearError(); setRetryCountdown(0); }} className="text-red-400 hover:text-red-600">
+                            <button
+                                type="button"
+                                onClick={() => { clearError(); setRetryCountdown(0); }}
+                                aria-label={t('common.close')}
+                                className="w-11 h-11 inline-flex items-center justify-center rounded-full text-rose-500 hover:text-rose-700"
+                            >
                                 <CloseIcon className="w-4 h-4" />
                             </button>
                         </div>
@@ -1316,100 +1375,62 @@ export default function ImportWizard() {
                 <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-6">
                     {/* Smart textarea */}
                     <div>
-                        <label className="block text-sm font-medium text-stone-700 mb-2">
-                            {t('import.smartLabel') || 'Paste a link or text about an adopter'}
+                        <label htmlFor="import-input" className="block text-sm font-medium text-stone-700 mb-2">
+                            {t('import.smartLabel')}
                         </label>
                         <textarea
+                            id="import-input"
                             value={inputContent}
                             onChange={e => setInputContent(e.target.value)}
-                            placeholder={t('import.smartPlaceholder') || 'Paste a URL, Instagram post, WhatsApp message, or any text with adopter info...'}
+                            placeholder={t('import.smartPlaceholder')}
                             className="w-full px-4 py-3 border border-stone-300 rounded-xl outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100 text-base min-h-[120px] resize-y"
                             autoFocus
                         />
-                        <p className="text-xs text-stone-500 mt-1">
-                            {t('import.smartHint') || 'Links are fetched automatically. Text is sent directly to AI extraction.'}
-                        </p>
+                        <p className="text-xs text-stone-500 mt-1">{t('import.smartHint')}</p>
                     </div>
 
-                    {/* Photo upload - always visible */}
-                    <div>
-                        <label className="block text-sm font-medium text-stone-700 mb-2">
-                            <AttachIcon className="w-4 h-4 shrink-0" />{t('import.photoUploadLabel') || 'Add photos (optional)'}
-                        </label>
-                        <div
-                            onClick={() => fileInputRef.current?.click()}
-                            className="border-2 border-dashed border-stone-300 rounded-xl p-6 text-center cursor-pointer hover:border-teal-400 hover:bg-blue-50 transition-colors"
+                    <MediaPicker
+                        items={manualImages}
+                        onAddFiles={addFiles}
+                        onRemove={removeImage}
+                        label={t('import.photoUploadLabel')}
+                        dropzoneText={t('import.dropzone')}
+                        hint={t('import.paste_hint')}
+                        removeLabel={t('import.removeImage')}
+                        testId="import-dropzone"
+                    />
+
+                    <StickyActions>
+                        <button
+                            type="button"
+                            onClick={handleSmartSubmit}
+                            disabled={(!inputContent.trim() && manualImages.length === 0) || loading}
+                            className={`${BTN_PRIMARY} w-full`}
                         >
-                            <svg className="w-8 h-8 mx-auto text-stone-500 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            <p className="text-sm text-stone-500">{t('import.imageDropzone') || 'Click to upload images'}</p>
-                            <p className="text-xs text-stone-500 mt-0.5">{t('import.imageHint') || 'Screenshots of posts, chat messages, etc.'}</p>
-                        </div>
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept="image/*,video/*"
-                            multiple
-                            onChange={handleImageUpload}
-                            className="hidden"
-                        />
-
-                        {/* Image previews */}
-                        {manualImages.length > 0 && (
-                            <div className="grid grid-cols-4 gap-2 mt-3">
-                                {manualImages.map((img, i) => (
-                                    <div key={i} className="relative group">
-                                        {img.file ? (
-                                            <div className="w-full h-20 rounded-lg bg-gradient-to-br from-teal-600 to-teal-800 flex items-center justify-center">
-                                                <div className="w-8 h-8 rounded-full bg-white/25 flex items-center justify-center">
-                                                    <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <img src={img.preview} alt="" className="w-full h-20 object-cover rounded-lg" />
-                                        )}
-                                        <button
-                                            onClick={() => removeImage(i)}
-                                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs md:opacity-0 md:group-hover:opacity-100 transition-opacity"
-                                        >
-                                            <CloseIcon className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Submit button */}
-                    <button
-                        onClick={handleSmartSubmit}
-                        disabled={(!inputContent.trim() && manualImages.length === 0) || loading}
-                        className="w-full py-3 bg-teal-600 text-white rounded-xl font-medium hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-                    >
-                        {loading ? (
-                            <>
-                                <svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
-                                {t('import.fetching') || 'Fetching content...'} {fetchProgress > 0 && <span className="tabular-nums">{fetchProgress}%</span>}
-                            </>
-                        ) : (
-                            <>
-                                {t('import.continueBtn') || 'Continue'} →
-                            </>
-                        )}
-                    </button>
+                            {loading ? (
+                                <>
+                                    {spinner}
+                                    {loadingKind === 'extract'
+                                        ? t('import.aiAnalyzing')
+                                        : <>{t('import.fetching')} {fetchProgress > 0 && <span className="tabular-nums">{fetchProgress}%</span>}</>}
+                                </>
+                            ) : (
+                                <>{t('import.continueBtn')} →</>
+                            )}
+                        </button>
+                    </StickyActions>
                 </div>
             )}
 
-            {/* === STEP 2: Content Review + Extract === */}
+            {/* === STEP 2: Content Review + Extract (fetched links only) === */}
             {step === 2 && !showConfirmModal && (
                 <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
                     {/* Shared from badge */}
                     {sharedFrom && sharedFrom !== 'shared' && (
-                        <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
-                            <UploadIcon className="w-5 h-5" />
-                            <span className="font-medium">{t('import.sharedFrom') || 'Shared from'}:</span>
-                            <span className="truncate text-blue-600">{(() => { try { return new URL(sharedFrom).hostname; } catch { return sharedFrom; } })()}</span>
+                        <div className="flex items-center gap-2 px-3 py-2 bg-teal-50 border border-teal-200 rounded-lg text-sm text-teal-800 min-w-0">
+                            <UploadIcon className="w-5 h-5 shrink-0" />
+                            <span className="font-medium shrink-0">{t('import.sharedFrom')}:</span>
+                            <span className="truncate">{(() => { try { return new URL(sharedFrom).hostname; } catch { return sharedFrom; } })()}</span>
                         </div>
                     )}
 
@@ -1418,9 +1439,8 @@ export default function ImportWizard() {
                         <div className="flex flex-col items-center gap-3 py-8 text-stone-500">
                             <svg className="w-7 h-7 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
                             <p className="text-sm">
-                                {t('import.fetchingShared') || 'Fetching shared content...'} {fetchProgress > 0 && <span className="tabular-nums font-medium">{fetchProgress}%</span>}
+                                {t('import.fetchingShared')} {fetchProgress > 0 && <span className="tabular-nums font-medium">{fetchProgress}%</span>}
                             </p>
-                            {/* Progress bar */}
                             <div className="w-48 h-1.5 bg-stone-200 rounded-full overflow-hidden">
                                 <div
                                     className="h-full bg-teal-600 rounded-full transition-all duration-500 ease-out"
@@ -1430,29 +1450,29 @@ export default function ImportWizard() {
                         </div>
                     )}
 
-                    <h3 className="text-lg font-semibold text-stone-900">{t('import.reviewTitle') || 'Review Content'}</h3>
+                    <h3 className="text-lg font-semibold text-stone-900">{t('import.reviewTitle')}</h3>
 
                     {/* Video post warning */}
                     {isVideoPost && (
                         <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
                             <VideoIcon className="w-5 h-5 shrink-0" />
                             <div>
-                                <p className="font-medium">{locale !== 'en' ? 'Este enlace contiene un video' : 'This link contains a video'}</p>
-                                <p className="mt-0.5 text-amber-700">
-                                    {locale !== 'en'
-                                        ? 'La información puede estar en el video. Adjuntá capturas de pantalla del video para que las analicemos mejor.'
-                                        : 'The information may be in the video. Attach screenshots from the video for better extraction.'}
-                                </p>
+                                <p className="font-medium">{t('import.video_post_title')}</p>
+                                <p className="mt-0.5 text-amber-700">{t('import.video_post_hint')}</p>
                             </div>
                         </div>
                     )}
 
                     {/* Editable text */}
                     <div>
-                        <label className="block text-sm font-medium text-stone-600 mb-1">
-                            {t('import.extractedText') || 'Extracted Text'} {sourceUrl && <span className="text-stone-500">(from {new URL(sourceUrl).hostname})</span>}
+                        <label htmlFor="import-fetched-text" className="block text-sm font-medium text-stone-600 mb-1">
+                            {t('import.extractedText')}{' '}
+                            {sourceUrl && (() => {
+                                try { return <span className="text-stone-500">{t('import.from_host').replace('{host}', new URL(sourceUrl).hostname)}</span>; } catch { return null; }
+                            })()}
                         </label>
                         <textarea
+                            id="import-fetched-text"
                             value={editableText}
                             onChange={e => setEditableText(e.target.value)}
                             className="w-full px-4 py-3 border border-stone-300 rounded-xl text-base min-h-[150px] resize-y outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
@@ -1463,9 +1483,9 @@ export default function ImportWizard() {
                     {fetchedImages.length > 0 && (
                         <div>
                             <div className="flex items-center justify-between mb-2">
-                                <label className="block text-sm font-medium text-stone-600">
-                                    {selectedFetchedImages.size} {t('import.imagesOf') || 'of'} {fetchedImages.length} {fetchedImages.length !== 1 ? (t('import.imagesFoundPlural') || 'images') : (t('import.imagesFound') || 'image')} {t('import.imagesSelected') || 'selected'}
-                                </label>
+                                <span className="block text-sm font-medium text-stone-600">
+                                    {selectedFetchedImages.size} {t('import.imagesOf')} {fetchedImages.length} {fetchedImages.length !== 1 ? t('import.imagesFoundPlural') : t('import.imagesFound')} {t('import.imagesSelected')}
+                                </span>
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -1475,9 +1495,9 @@ export default function ImportWizard() {
                                             setSelectedFetchedImages(new Set(fetchedImages.map((_, i) => i)));
                                         }
                                     }}
-                                    className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                                    className="min-h-[44px] px-2 -mr-2 text-xs font-semibold text-teal-700 hover:text-teal-800"
                                 >
-                                    {selectedFetchedImages.size === fetchedImages.length ? (t('import.deselectAll') || 'Deselect All') : (t('import.selectAll') || 'Select All')}
+                                    {selectedFetchedImages.size === fetchedImages.length ? t('import.deselectAll') : t('import.selectAll')}
                                 </button>
                             </div>
                             <div className="grid grid-cols-4 gap-2">
@@ -1487,6 +1507,7 @@ export default function ImportWizard() {
                                         <button
                                             key={i}
                                             type="button"
+                                            aria-pressed={isSelected}
                                             onClick={() => {
                                                 setSelectedFetchedImages(prev => {
                                                     const next = new Set(prev);
@@ -1505,29 +1526,38 @@ export default function ImportWizard() {
                                                 alt=""
                                                 className="w-full h-20 object-cover bg-stone-100"
                                             />
-                                            {/* Checkmark overlay */}
-                                            <div className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs transition-all ${isSelected
+                                            {/* Selection mark — the whole tile is the control. */}
+                                            <span aria-hidden="true" className={`absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center transition-all ${isSelected
                                                 ? 'bg-teal-600 text-white'
                                                 : 'bg-white/80 text-stone-500 border border-stone-300'
                                                 }`}>
-                                                {isSelected ? <CheckIcon className="w-3 h-3" /> : null}
-                                            </div>
-                                            {/* Expand button */}
-                                            <div
+                                                {isSelected ? <CheckIcon className="w-3.5 h-3.5" /> : null}
+                                            </span>
+                                            {/* Expand and discard: <span role=button> because the tile
+                                                itself is a button and nesting buttons is invalid HTML.
+                                                24px visual, 44px hit area (§1.5) via ::after. */}
+                                            <span
+                                                role="button"
+                                                tabIndex={0}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     setLightboxItem({ url: `/api/proxy-image?url=${encodeURIComponent(url)}`, mediaType: 'image' });
                                                 }}
-                                                className="absolute bottom-1 left-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center text-xs md:opacity-0 md:group-hover:opacity-100 hover:bg-black/80 transition-opacity cursor-pointer"
+                                                onKeyDown={(e) => {
+                                                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    setLightboxItem({ url: `/api/proxy-image?url=${encodeURIComponent(url)}`, mediaType: 'image' });
+                                                }}
+                                                className="absolute bottom-1 left-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 cursor-pointer after:absolute after:-inset-2.5 after:content-['']"
                                                 title={t('nav.expand_image')}
+                                                aria-label={t('nav.expand_image')}
                                             >
-                                                ⤢
-                                            </div>
-                                            {/* Discard. A <div> rather than a <button>
-                                                because the tile itself is a button and
-                                                nesting them is invalid HTML — same
-                                                reason the expand control above is one. */}
-                                            <div
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                                                </svg>
+                                            </span>
+                                            <span
                                                 role="button"
                                                 tabIndex={0}
                                                 onClick={(e) => {
@@ -1540,14 +1570,12 @@ export default function ImportWizard() {
                                                     e.stopPropagation();
                                                     removeFetchedImage(i);
                                                 }}
-                                                className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center md:opacity-0 md:group-hover:opacity-100 transition-opacity cursor-pointer"
+                                                className="absolute bottom-1 right-1 w-6 h-6 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center cursor-pointer after:absolute after:-inset-2.5 after:content-['']"
                                                 title={t('import.removeImage')}
                                                 aria-label={t('import.removeImage')}
                                             >
-                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                </svg>
-                                            </div>
+                                                <CloseIcon className="w-3.5 h-3.5" />
+                                            </span>
                                         </button>
                                     );
                                 })}
@@ -1558,92 +1586,72 @@ export default function ImportWizard() {
                     {/* Fetched videos */}
                     {fetchedVideos.length > 0 && (
                         <div>
-                            <label className="block text-sm font-medium text-stone-600 mb-2">
-                                <VideoIcon className="w-4 h-4 inline-block mr-1 -mt-0.5" />{fetchedVideos.length} {fetchedVideos.length !== 1 ? 'videos' : 'video'} {locale !== 'en' ? 'encontrados' : 'found'}
-                            </label>
+                            <span className="flex items-center gap-1 text-sm font-medium text-stone-600 mb-2">
+                                <VideoIcon className="w-4 h-4" />{t('import.videos_found').replace('{count}', String(fetchedVideos.length))}
+                            </span>
                             <div className="grid grid-cols-2 gap-3">
                                 {fetchedVideos.map((url, i) => (
-                                    <div
+                                    <button
+                                        type="button"
                                         key={i}
-                                        className="relative rounded-xl overflow-hidden border-2 border-teal-300 aspect-video cursor-pointer group bg-gradient-to-br from-teal-600 to-teal-800"
+                                        className="relative rounded-xl overflow-hidden border-2 border-teal-300 aspect-video group bg-gradient-to-br from-teal-600 to-teal-800"
                                         onClick={() => setLightboxItem({ url, mediaType: 'video' })}
                                     >
                                         {/* Video placeholder — actual playback happens in lightbox */}
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                            <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                                                <svg className="w-7 h-7 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                        <span className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                            <span className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                                <svg className="w-7 h-7 text-white ml-1" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                                     <path d="M8 5v14l11-7z" />
                                                 </svg>
-                                            </div>
-                                            <span className="text-white/80 text-xs mt-2 font-medium">Video {i + 1}</span>
-                                        </div>
-                                    </div>
+                                            </span>
+                                            <span className="text-white/80 text-xs mt-2 font-medium">{t('import.video_n').replace('{n}', String(i + 1))}</span>
+                                        </span>
+                                    </button>
                                 ))}
                             </div>
                         </div>
                     )}
 
-                    {/* Manual image upload */}
-                    <div>
-                        <label className="block text-sm font-medium text-stone-600 mb-1">
-                            {t('import.addMoreImages') || 'Add more images (optional)'}
-                        </label>
-                        <input
-                            type="file"
-                            accept="image/*,video/*"
-                            multiple
-                            onChange={handleImageUpload}
-                            className=""
-                        />
-                        {manualImages.length > 0 && (
-                            <div className="grid grid-cols-4 gap-2 mt-2">
-                                {manualImages.map((img, i) => (
-                                    <div key={i} className="relative group">
-                                        <img src={img.preview} alt="" className="w-full h-20 object-cover rounded-lg" />
-                                        <button
-                                            onClick={() => removeImage(i)}
-                                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs md:opacity-0 md:group-hover:opacity-100 transition-opacity"
-                                        >
-                                            <CloseIcon className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+                    {/* More photos — the same picker as step 1 (it was a bare file input). */}
+                    <MediaPicker
+                        items={manualImages}
+                        onAddFiles={addFiles}
+                        onRemove={removeImage}
+                        label={t('import.addMoreImages')}
+                        dropzoneText={t('import.dropzone')}
+                        hint={t('import.paste_hint')}
+                        removeLabel={t('import.removeImage')}
+                    />
 
-                    <div className="flex gap-3 pt-2">
+                    <StickyActions className="flex gap-3">
                         <button
-                            onClick={() => setStep(1)}
-                            className="px-4 py-2.5 border border-stone-300 rounded-xl text-sm font-medium text-stone-600 hover:bg-stone-50"
+                            type="button"
+                            onClick={() => { clearError(); setStep(1); }}
+                            className="min-h-[44px] px-4 border border-stone-300 rounded-xl text-sm font-bold text-stone-600 hover:bg-stone-50"
                         >
-                            ← {t('import.back') || 'Back'}
+                            ← {t('import.back')}
                         </button>
                         <button
-                            onClick={handleExtract}
+                            type="button"
+                            onClick={() => handleExtract()}
                             disabled={loading || (!editableText.trim() && manualImages.length === 0 && selectedFetchedImages.size === 0)}
                             className={`${BTN_PRIMARY} flex-1`}
                         >
                             {loading ? (
-                                <>
-                                    <svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
-                                    {t('import.aiAnalyzing') || 'AI is analyzing...'}
-                                </>
+                                <>{spinner}{t('import.aiAnalyzing')}</>
                             ) : (
-                                <>
-                                    <SparkIcon className="w-4 h-4 shrink-0" />{t('import.extractWithAi') || 'Extract with AI'}
-                                </>
+                                <><SparkIcon className="w-4 h-4 shrink-0" />{t('import.extractWithAi')}</>
                             )}
                         </button>
-                    </div>
+                    </StickyActions>
                 </div>
             )}
 
             {/* === STEP 3: Review Extracted Data === */}
             {step === 3 && !showConfirmModal && extractedData && (
                 <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-semibold text-stone-900">{t('import.reviewExtracted') || 'Review Extracted Data'}</h3>
+                    <div className="flex items-center justify-between gap-3">
+                        <h3 className="text-lg font-semibold text-stone-900">{t('import.reviewExtracted')}</h3>
                         {/* The pill grades the AI EXTRACTION, so it only shows when
                             the model actually had to interpret something — a fetched
                             post, a photo, a video.
@@ -1652,9 +1660,9 @@ export default function ImportWizard() {
                             pastes, where the user handed over the data directly and a
                             confidence grade on reading it back says nothing. */}
                         {!fromContacts && extractedFromSource && (
-                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${extractedData.confidence === 'high' ? 'bg-green-100 text-green-700' :
-                                extractedData.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                                    'bg-red-100 text-red-700'
+                            <span className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-medium ${extractedData.confidence === 'high' ? 'bg-teal-100 text-teal-800' :
+                                extractedData.confidence === 'medium' ? 'bg-amber-100 text-amber-800' :
+                                    'bg-rose-100 text-rose-700'
                                 }`}>
                                 {t(`import.confidence_${extractedData.confidence}`)}
                             </span>
@@ -1690,30 +1698,37 @@ export default function ImportWizard() {
                         Default ON (preserves the historical FB-import-is-public
                         behaviour) but the rescuer can flip it off if they want
                         the record gated like a normal manual entry. */}
+                    {/* The whole row is the switch: 44px+ target, and a line on what
+                        "public" means for this person (decision B2, 2026-10-21). It
+                        was a 36x20 toggle. */}
                     {!fromContacts && !!sourceUrl?.trim() && (
-                        <div className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border ${isPublicProfile ? 'bg-teal-50 border-teal-200' : 'bg-stone-50 border-stone-200'}`}>
-                            <button
-                                type="button"
-                                onClick={() => setIsPublicProfile(p => !p)}
-                                aria-pressed={isPublicProfile}
-                                className={`mt-0.5 relative w-9 h-5 rounded-full transition-colors shrink-0 ${isPublicProfile ? 'bg-teal-500' : 'bg-stone-300'}`}
-                                title={t('import.public_profile_toggle_title')}
-                            >
-                                <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${isPublicProfile ? 'translate-x-4' : 'translate-x-0'}`} />
-                            </button>
-                            <div className="flex-1 min-w-0 text-xs">
-                                <p className={`font-medium ${isPublicProfile ? 'text-teal-800' : 'text-stone-700'}`}>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={isPublicProfile}
+                            onClick={() => setIsPublicProfile(p => !p)}
+                            title={t('import.public_profile_toggle_title')}
+                            className={`w-full text-left flex items-start gap-3 px-3 py-3 min-h-[44px] rounded-xl border transition-colors ${isPublicProfile ? 'bg-teal-50 border-teal-200' : 'bg-stone-50 border-stone-200'}`}
+                        >
+                            <span aria-hidden="true" className={`mt-0.5 relative w-11 h-6 rounded-full transition-colors shrink-0 ${isPublicProfile ? 'bg-teal-500' : 'bg-stone-300'}`}>
+                                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${isPublicProfile ? 'translate-x-5' : 'translate-x-0'}`} />
+                            </span>
+                            <span className="flex-1 min-w-0 text-xs">
+                                <span className={`block text-sm font-semibold ${isPublicProfile ? 'text-teal-800' : 'text-stone-700'}`}>
                                     {isPublicProfile
                                         ? t('import.public_profile_on')
                                         : t('import.public_profile_off')}
-                                </p>
-                                <p className="text-stone-600 mt-0.5">
+                                </span>
+                                {isPublicProfile && (
+                                    <span className="block text-teal-800 mt-0.5">{t('import.public_profile_on_consequence')}</span>
+                                )}
+                                <span className="block text-stone-600 mt-0.5">
                                     {sourceNotPublic
                                         ? t('import.public_profile_explainer_private_source')
                                         : t('import.public_profile_explainer')}
-                                </p>
-                            </div>
-                        </div>
+                                </span>
+                            </span>
+                        </button>
                     )}
 
                     {/* Name */}
@@ -1773,108 +1788,115 @@ export default function ImportWizard() {
                         </div>
                     )}
 
-                    {/* Adoption / Record Detection */}
-                    {extractedData.adoptionDetected && (
-                        <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
-                            <div className="flex items-center gap-2 text-green-700 font-medium text-sm">
-                                <span>🐾</span>
-                                {t('import.adoptionDetected') || '🐾 Adoption Detected'}
-                                <span className={`px-2 py-0.5 rounded-full text-xs ${extractedData.adoptionConfidence === 'high' ? 'bg-green-200' :
-                                    extractedData.adoptionConfidence === 'medium' ? 'bg-yellow-200' :
-                                        'bg-stone-200'
-                                    }`}>
-                                    {extractedData.adoptionConfidence}
-                                </span>
-                            </div>
+                    {/* Record type — always shown, pre-selected from the AI (design
+                        change 13, approved 2026-10-21). It used to appear only when
+                        the AI flagged an adoption, so a miss could not be corrected
+                        and an "adoption_request" saved without the rescuer ever
+                        seeing it. One default for the pills and the save
+                        (importRecordType); they used to disagree. */}
+                    {!fromContacts && (() => {
+                        const recordType = importRecordType(extractedData.recordType);
+                        const typeMeta: Record<string, { icon: string; label: string }> = {
+                            adoption: { icon: '🏠', label: t('import.typeAdoption') },
+                            adoption_request: { icon: '📝', label: t('import.typeRequest') },
+                            returned_pet: { icon: '↩️', label: t('import.typeReturned') },
+                            follow_up: { icon: '📞', label: t('import.typeFollowUp') },
+                            observation: { icon: '👁️', label: t('import.typeObservation') },
+                        };
+                        return (
+                            <div className="rounded-xl border border-stone-200 p-4 space-y-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <h3 className="text-sm font-semibold text-teal-800 uppercase tracking-wider">{t('import.recordType')}</h3>
+                                    {extractedData.adoptionDetected && (
+                                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
+                                            {t('import.adoptionDetected')}
+                                            {extractedData.adoptionConfidence && <> · {t(`import.confidence_${extractedData.adoptionConfidence}`)}</>}
+                                        </span>
+                                    )}
+                                </div>
 
-                            {/* Record Type Pills */}
-                            <div>
-                                <label className="block text-xs font-medium text-green-700 mb-1.5">
-                                    {t('import.recordType') || 'Record Type'}
-                                </label>
-                                <div className="flex flex-wrap gap-1.5">
-                                    {[
-                                        { value: 'adoption', icon: '🏠', label: t('import.typeAdoption') || 'Adoption' },
-                                        { value: 'adoption_request', icon: '📝', label: t('import.typeRequest') || 'Request' },
-                                        { value: 'returned_pet', icon: '↩️', label: t('import.typeReturned') || 'Returned' },
-                                        { value: 'follow_up', icon: '📞', label: t('import.typeFollowUp') || 'Follow-up' },
-                                        { value: 'observation', icon: '👁️', label: t('import.typeObservation') || 'Note' }
-                                    ].map(type => {
-                                        const isSelected = (extractedData.recordType || 'adoption') === type.value;
+                                {/* Emoji here are decorative subject markers next to text (§1.3). */}
+                                <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={t('import.recordType')}>
+                                    {IMPORT_RECORD_TYPES.map(value => {
+                                        const isSelected = recordType === value;
                                         return (
                                             <button
-                                                key={type.value}
+                                                key={value}
                                                 type="button"
-                                                onClick={() => setExtractedData({ ...extractedData, recordType: type.value as any })}
-                                                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${isSelected
-                                                    ? 'bg-green-200 border-green-400 text-green-800'
-                                                    : 'bg-white border-green-200 text-green-600 hover:border-green-300'
+                                                role="radio"
+                                                aria-checked={isSelected}
+                                                onClick={() => setExtractedData({ ...extractedData, recordType: value })}
+                                                className={`inline-flex items-center gap-1.5 min-h-[44px] px-3 rounded-xl text-sm font-semibold border transition-all ${isSelected
+                                                    ? 'bg-teal-100 border-teal-400 text-teal-800'
+                                                    : 'bg-white border-stone-200 text-stone-600 hover:border-teal-300'
                                                     }`}
                                             >
-                                                <span>{type.icon}</span>
-                                                <span>{type.label}</span>
+                                                <span aria-hidden="true">{typeMeta[value].icon}</span>
+                                                <span>{typeMeta[value].label}</span>
                                             </button>
                                         );
                                     })}
                                 </div>
-                            </div>
 
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-medium text-stone-500 mb-1">
-                                        {t('import.animalName') || 'Animal Name'}
-                                        <span className="ml-1 lowercase">({t('common.optional')})</span>
-                                    </label>
-                                    {/* v2.19.52: "unknown name" checkbox gone. Field is just
-                                        optional — see AdoptionFormWizard for the full rationale.
-                                        Empty saves as NULL on the API side. */}
-                                    <input
-                                        value={extractedData.animalName || ''}
-                                        onChange={e => setExtractedData({ ...extractedData, animalName: e.target.value })}
-                                        className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.species') || 'Species'}</label>
-                                    <select
-                                        value={extractedData.animalSpecies || ''}
-                                        onChange={e => setExtractedData({ ...extractedData, animalSpecies: e.target.value as any })}
-                                        className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
-                                    >
-                                        <option value="dog">{t('import.speciesDog') || '🐕 Dog'}</option>
-                                        <option value="cat">{t('import.speciesCat') || '🐱 Cat'}</option>
-                                        <option value="bird">{t('import.speciesBird') || '🐦 Bird'}</option>
-                                        <option value="other">{t('import.speciesOther') || 'Other'}</option>
-                                    </select>
-                                </div>
-                            </div>
+                                {recordTypeHasAnimal(recordType) && (
+                                    <>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div>
+                                                <label htmlFor="import-animal-name" className="block text-xs font-medium text-stone-500 mb-1">
+                                                    {t('import.animalName')}
+                                                    <span className="ml-1 lowercase">({t('common.optional')})</span>
+                                                </label>
+                                                {/* v2.19.52: optional; empty saves as NULL on the API side. */}
+                                                <input
+                                                    id="import-animal-name"
+                                                    value={extractedData.animalName || ''}
+                                                    onChange={e => setExtractedData({ ...extractedData, animalName: e.target.value })}
+                                                    className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label htmlFor="import-species" className="block text-xs font-medium text-stone-500 mb-1">{t('import.species')}</label>
+                                                <select
+                                                    id="import-species"
+                                                    value={extractedData.animalSpecies || ''}
+                                                    onChange={e => setExtractedData({ ...extractedData, animalSpecies: e.target.value as ExtractedAdopterData['animalSpecies'] })}
+                                                    className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
+                                                >
+                                                    <option value="dog">{t('import.speciesDog')}</option>
+                                                    <option value="cat">{t('import.speciesCat')}</option>
+                                                    <option value="bird">{t('import.speciesBird')}</option>
+                                                    <option value="other">{t('import.speciesOther')}</option>
+                                                </select>
+                                            </div>
+                                        </div>
 
-                            <div>
-                                <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.rating') || 'Rating'}</label>
-                                <StarRating
-                                    value={extractedData.adoptionRating || 0}
-                                    onChange={(r: number) => setExtractedData({ ...extractedData, adoptionRating: r })}
-                                    size="md"
-                                    showLabel
-                                />
-                            </div>
+                                        <div>
+                                            <span className="block text-xs font-medium text-stone-500 mb-1">{t('import.rating')}</span>
+                                            <StarRating
+                                                value={extractedData.adoptionRating || 0}
+                                                onChange={(r: number) => setExtractedData({ ...extractedData, adoptionRating: r })}
+                                                size="md"
+                                                showLabel
+                                            />
+                                        </div>
 
-                            {/* Adoption Date */}
-                            <div>
-                                <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.adoptionDate') || 'Date'}</label>
-                                <input
-                                    type="date"
-                                    value={extractedData.adoptionDate || new Date().toISOString().split('T')[0]}
-                                    onChange={e => setExtractedData({ ...extractedData, adoptionDate: e.target.value })}
-                                    className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
-                                />
-                            </div>
+                                        <div>
+                                            <label htmlFor="import-date" className="block text-xs font-medium text-stone-500 mb-1">{t('import.adoptionDate')}</label>
+                                            <input
+                                                id="import-date"
+                                                type="date"
+                                                value={extractedData.adoptionDate || new Date().toISOString().split('T')[0]}
+                                                onChange={e => setExtractedData({ ...extractedData, adoptionDate: e.target.value })}
+                                                className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
+                                            />
+                                        </div>
+                                    </>
+                                )}
 
-                            <p className="text-xs text-green-600">
-                                {t('import.adoptionNote') || 'A record will be created automatically.'}
-                            </p>
-                        </div>
-                    )}
+                                <p className="text-xs text-stone-500">{t('import.adoptionNote')}</p>
+                            </div>
+                        );
+                    })()}
 
                     {/* Media preview — every image and video that WILL be saved,
                         each de-selectable so the rescuer drops what they don't want
@@ -1942,7 +1964,7 @@ export default function ImportWizard() {
                                                     onClick={(e) => { e.stopPropagation(); toggleMediaExcluded(m.key); }}
                                                     aria-label={excluded ? (t('import.mediaInclude') || 'Include') : (t('import.mediaExclude') || 'Exclude')}
                                                     title={excluded ? (t('import.mediaInclude') || 'Include') : (t('import.mediaExclude') || 'Exclude')}
-                                                    className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center shadow transition-all ${excluded ? 'bg-white text-teal-700 border border-teal-300 hover:bg-teal-50' : 'bg-black/60 text-white hover:bg-black/80'}`}
+                                                    className={`absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center shadow transition-all after:absolute after:-inset-2.5 after:content-[''] ${excluded ? 'bg-white text-teal-700 border border-teal-300 hover:bg-teal-50' : 'bg-black/60 text-white hover:bg-black/80'}`}
                                                 >
                                                     {excluded
                                                         ? <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
@@ -1958,31 +1980,44 @@ export default function ImportWizard() {
 
                     <LegalConsent />
 
-                    <div className="flex gap-3 pt-2">
-                        {/* v2.19.20: contacts imports skip steps 1+2 entirely
-                            (hydrateFromContact jumps straight to step 3), so
-                            "Back" must not drop the rescuer onto step 2's AI
-                            text-paste screen they never saw. Send them home —
-                            the contact picker is one tap away on the home
-                            page. */}
-                        <button
-                            onClick={() => fromContacts ? router.push('/') : setStep(2)}
-                            className="px-4 py-2.5 border border-stone-300 rounded-xl text-sm font-medium text-stone-600 hover:bg-stone-50"
-                        >
-                            ← {t('import.back') || 'Back'}
-                        </button>
-                        <button
-                            onClick={handlePreSave}
-                            disabled={!extractedData.name?.trim() || isSaving}
-                            className={`${BTN_PRIMARY} flex-1`}
-                        >
-                            {isSaving ? (
-                                <><svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg> {t('import.checking') || 'Checking...'}</>
-                            ) : (
-                                <><SaveIcon className="w-4 h-4 shrink-0" />{t('import.saveAdopter') || 'Save Adopter'}</>
-                            )}
-                        </button>
-                    </div>
+                    {(() => {
+                        const canSave = canSaveImportedProfile(extractedData.name, contactEntries);
+                        return (
+                            <StickyActions>
+                                {/* Why "Guardar" is off — it used to be disabled with no word (decision B4). */}
+                                {!canSave && (
+                                    <p id="import-save-hint" className="text-xs text-amber-800 mb-2">{t('import.save_needs_identifier')}</p>
+                                )}
+                                <div className="flex gap-3">
+                                    {/* v2.19.20: contacts imports skip steps 1+2 entirely
+                                        (hydrateFromContact jumps straight to step 3), so
+                                        "Back" must not drop the rescuer onto step 2's AI
+                                        text-paste screen they never saw. Send them home.
+                                        Pasted text skips step 2 too, so it goes to step 1. */}
+                                    <button
+                                        type="button"
+                                        onClick={() => fromContacts ? router.push('/') : setStep(sourceUrl ? 2 : 1)}
+                                        className="min-h-[44px] px-4 border border-stone-300 rounded-xl text-sm font-bold text-stone-600 hover:bg-stone-50"
+                                    >
+                                        ← {t('import.back')}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handlePreSave}
+                                        disabled={!canSave || isSaving}
+                                        aria-describedby={!canSave ? 'import-save-hint' : undefined}
+                                        className={`${BTN_PRIMARY} flex-1`}
+                                    >
+                                        {isSaving ? (
+                                            <>{spinner} {t('import.checking')}</>
+                                        ) : (
+                                            <><SaveIcon className="w-4 h-4 shrink-0" />{t('import.saveAdopter')}</>
+                                        )}
+                                    </button>
+                                </div>
+                            </StickyActions>
+                        );
+                    })()}
                 </div>
             )}
 
@@ -2008,7 +2043,7 @@ export default function ImportWizard() {
                             <p className="text-lg font-semibold text-stone-900">
                                 {savingMode === 'merge'
                                     ? `${t('import.saving_merging_prefix') || 'Agregando datos a'} ${savingTargetName || (t('import.thisProfile') || 'este perfil')}…`
-                                    : `${t('import.saving_creating') || 'Creando perfil'}${savingTargetName ? ` de ${savingTargetName}` : ''}…`}
+                                    : `${savingTargetName ? t('import.saving_creating_for').replace('{name}', savingTargetName) : t('import.saving_creating')}…`}
                             </p>
                             <p className="text-sm text-stone-500">
                                 {fromContacts

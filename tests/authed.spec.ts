@@ -85,7 +85,13 @@ test.describe('Authenticated User', () => {
         await expect(saveBtn).not.toBeVisible({ timeout: 30000 });
     });
 
-    test('Import Wizard: text input reaches Step 2', async ({ page }) => {
+    test('Import Wizard: pasted text goes straight to the AI read', async ({ page }) => {
+        // Pasted text skips the old "Revisar Contenido" echo step (design change 12,
+        // 2026-10-21). The AI route is stubbed: Gemini is not under test here.
+        await page.route('**/api/ai/extract-from-post', route => route.fulfill({
+            status: 200, contentType: 'application/json',
+            body: JSON.stringify({ success: true, data: { name: 'María González', phones: ['099123456'], emails: [], addresses: [], socialProfiles: [], notes: '', confidence: 'high', adoptionDetected: true, recordType: 'adoption', animalName: 'Luna', animalSpecies: 'dog' } }),
+        }));
         await page.goto('/import');
         await page.waitForLoadState('networkidle');
 
@@ -93,7 +99,7 @@ test.describe('Authenticated User', () => {
         await expect(page.getByRole('heading', { name: /Import Content|Importar Contenido/i })).toBeVisible({ timeout: 30000 });
 
         // The wizard has a text input for URL or text
-        const inputField = page.getByPlaceholder(/paste|pegar|URL|text/i);
+        const inputField = page.getByPlaceholder(/paste|pegar|pegá|URL|text/i);
         await expect(inputField).toBeVisible({ timeout: 30000 });
 
         // Type sample adopter text
@@ -104,10 +110,9 @@ test.describe('Authenticated User', () => {
         await expect(continueBtn).toBeEnabled({ timeout: 5000 });
         await continueBtn.click();
 
-        // Step 2 should show "Review Content" heading
-        await expect(page.getByRole('heading', { name: /Review Content|Revisar Contenido/i })).toBeVisible({ timeout: 30000 });
-
-        // The extracted text should be visible in a textbox
-        await expect(page.getByText('María González')).toBeVisible({ timeout: 30000 });
+        // Straight to the review of what the AI read
+        await expect(page.getByRole('heading', { name: /Review Extracted Data|Revisar Datos Extraídos/i })).toBeVisible({ timeout: 30000 });
+        await expect(page.getByRole('heading', { name: /Review Content|Revisar Contenido/i })).toHaveCount(0);
+        await expect(page.locator('input[aria-labelledby="import-name-heading"]')).toHaveValue('María González');
     });
 });

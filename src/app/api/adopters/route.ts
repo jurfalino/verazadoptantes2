@@ -478,16 +478,18 @@ export async function POST(request: Request) {
         // Create interaction record if adoption data provided
         let adoptionId: string | null = null;
         if (adoption) {
-            // Pack notes (only if this adoption IS the observation) and contact info into
-            // details for searchability. If recordType !== 'observation', notes is handled
-            // separately below as its own observation record.
+            // Pack notes (only if this adoption IS the observation) into details. If
+            // recordType !== 'observation', notes is handled separately below as its
+            // own observation record. Contacts are NOT copied in any more: they live
+            // in the profile's contact entries (tokenized, so still searchable), where
+            // protected/public applies per entry — a plain-text copy in the note
+            // bypassed that (audit 2026-10-21, D8; same change as add-record).
             const detailsParts: string[] = [];
             const adoptionRecordType = adoption.recordType || 'adoption';
             // v2.24.6: an explicit per-record `details` (spreadsheet import) is
             // part of the record itself, regardless of type.
             if (adoption.details?.trim()) detailsParts.push(adoption.details.trim());
             if (notes && adoptionRecordType === 'observation') detailsParts.push(notes);
-            if (contactInfoStr) detailsParts.push(`Contact: ${contactInfoStr}`);
 
             const { insertRecord } = await import('@/app/actions/_recordWrite');
             adoptionId = await insertRecord(db, {

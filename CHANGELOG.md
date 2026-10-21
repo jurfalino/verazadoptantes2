@@ -2,6 +2,39 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.212] - 2026-10-21
+
+### Changed — import wizard on phones, fewer steps (audit 2026-10-21, batch 2)
+
+- **Buttons stay pinned to the bottom on phones** for every step; the chat bubble moves above them.
+- **Pasted text or screenshots go straight to the AI read** — the step that only repeated the
+  paste («Revisar Contenido», labelled «Texto Extraído») now shows only for fetched links.
+- **The record type is always shown**, pre-selected from the AI, so a miss can be corrected
+  (a request used to save as one without the rescuer ever seeing it). Pills and save share one default.
+- **No «¿Crear nuevo perfil?» screen when there are no duplicates** — it saves straight away.
+- **Saving without a name** works when there is a phone, email, social account or ID; otherwise
+  a line says what is missing (it used to be a silently disabled button).
+- **«Cancelar»** at the top (to home) — only the bottom «Volver» goes back a step.
+- **Step name under the numbers on phones** instead of bare «1 2 3».
+- **Public switch**: the whole row is the switch (44px), with a line on what «public» means.
+- **One photo box** on both steps: drag-and-drop, paste a screenshot (Ctrl/Cmd+V), video thumbnails.
+  Step 2's raw «Choose Files» input (16px sideways scroll at 390px) is gone.
+- **Videos over 50 MB** are refused with a message instead of silently.
+- **Language**: every wizard string in es/en/pt (Portuguese got Spanish); page title in Spanish.
+  Themed colours replace blue/green/red in the wizard
+  (Azul Noche); tile controls have 44px targets.
+
+### Fixed — from the independent review of 2.56.211
+
+- **New profiles no longer copy the contact list into the activity note** either (2.56.210 fixed
+  only the merge path).
+- **One Error ID** per failure — the server's id is reused instead of a second one being minted.
+- Error banners show the translated sentence; the raw message goes to the report.
+- A link shared in both share fields is still fetched.
+- The shared link and caption are removed from the address once read (analytics recorded it).
+- A sign-in refused for an outdated session version now opens the sign-in prompt.
+- The saving screen stays up until the profile opens, so nothing can be tapped twice.
+
 ## [2.56.211] - 2026-10-21
 
 ### Fixed — importing a post no longer dead-ends (audit 2026-10-21, batch 1)

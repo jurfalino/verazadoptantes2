@@ -61,7 +61,10 @@ export default function HomeClient({ initialConfig, userEmail }: { initialConfig
         const params = new URLSearchParams(window.location.search);
         const callbackUrl = params.get('callbackUrl');
         const authRequired = params.get('authRequired');
-        if (callbackUrl && !session?.user) {
+        // authRequired means the middleware refused the session — including one
+        // with a stale REQUIRED_SESSION_VERSION, which still carries a user. Open the
+        // sign-in prompt then too, or a shared post lands on a bare home page.
+        if (callbackUrl && (!session?.user || authRequired)) {
             try {
                 const url = new URL(callbackUrl, window.location.origin);
                 const fullPath = url.pathname === '/' && url.search === ''
