@@ -10,6 +10,22 @@ test.describe('Unauthenticated User — protected pages', () => {
         await page.goto('/import/sheet');
         await page.waitForURL(u => !u.pathname.startsWith('/import/sheet'), { timeout: 30000 });
     });
+
+    test('a post shared while logged out asks to sign in and keeps the post', async ({ page }) => {
+        // The PWA share target lands here. It used to open the wizard anyway and
+        // fail at "Extraer con IA" with a raw "Unauthorized" (audit 2026-10-21, A2).
+        // Read the redirect itself: the home page strips callbackUrl once the
+        // sign-in prompt has opened, so the final URL no longer carries it.
+        const shared = 'https://www.facebook.com/groups/1/posts/2/';
+        const res = await page.request.get(`/import?shared=true&shared_url=${encodeURIComponent(shared)}`, { maxRedirects: 0 });
+        expect(res.status()).toBe(307);
+        // Location may be relative (dev) or absolute (Cloudflare); resolve against the request.
+        const location = new URL(res.headers()['location'] ?? '', res.url());
+        expect(location.pathname).toBe('/');
+        const callback = new URL(location.searchParams.get('callbackUrl') ?? '', location.origin);
+        expect(callback.pathname).toBe('/import');
+        expect(callback.searchParams.get('shared_url')).toBe(shared);
+    });
 });
 
 test.describe('Unauthenticated User — PII Masking', () => {

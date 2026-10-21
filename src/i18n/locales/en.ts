@@ -2171,6 +2171,11 @@ export const en = {
         link_error_busy: 'This request is being linked in another tab. Reload the page in a few seconds.',
     },
     import: {
+        // Post-import wizard (/import): failures and outcome (audit 2026-10-21)
+        profile_created: 'Profile created',
+        fetch_failed: 'We couldn\'t open the link. Check that the post is public, or paste its text.',
+        extract_failed: 'We couldn\'t read the content with AI.',
+        save_failed: 'Could not save.',
         // /import/sheet column-mapping select (one entry per import field)
         sheet_field: {
             name: 'Adopter name',

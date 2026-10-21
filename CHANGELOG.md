@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.211] - 2026-10-21
+
+### Fixed — importing a post no longer dead-ends (audit 2026-10-21, batch 1)
+
+- **Signed-out visitors** are asked to sign in before the import wizard opens and come back
+  to the post they shared. They used to fill everything in and get a raw «Unauthorized».
+- **A shared post that can't be read** returns to step 1 with the link (and any shared text)
+  still in the field and a working «Reintentar». It used to leave an empty step 2, and «Volver»
+  lost the link.
+- **«Reintentar» retries what failed**: a failed AI read runs the AI read again (it used to do nothing).
+- **A link pasted with words around it** («Mirá este post https://…») is opened; the words are kept
+  below the post's text. Before, only a bare link was fetched.
+- **After saving or adding to a profile, the rescuer lands on that profile** (decision B1), not on home.
+- **Failures show an Error ID** in the wizard and are logged under it.
+- **Merges no longer copy the contact list into the activity note** — contacts go only to the
+  profile's contact entries, where protected/public applies.
+- **Tracking**: link-fetch failures, AI read started/succeeded/failed, the duplicate screen
+  (url/person, band) and the choice made, all tagged with the entry point (share/paste/contacts).
 ## [2.56.210] - 2026-10-21
 
 ### Changed — /funcionalidades: «La herramienta que tu refugio necesita»

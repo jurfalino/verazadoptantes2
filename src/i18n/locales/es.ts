@@ -2176,6 +2176,11 @@ export const es = {
         link_error_busy: 'Esta solicitud se está vinculando en otra pestaña. Recargá la página en unos segundos.',
     },
     import: {
+        // Post-import wizard (/import): failures and outcome (audit 2026-10-21)
+        profile_created: 'Perfil creado',
+        fetch_failed: 'No pudimos abrir el link. Revisá que el post sea público o pegá el texto.',
+        extract_failed: 'No pudimos leer el contenido con IA.',
+        save_failed: 'No se pudo guardar.',
         // /import/sheet column-mapping select (one entry per import field)
         sheet_field: {
             name: 'Nombre del adoptante',

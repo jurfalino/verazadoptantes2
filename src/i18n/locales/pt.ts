@@ -2176,6 +2176,11 @@ export const pt = {
         link_error_busy: 'Esta solicitação está sendo vinculada em outra aba. Recarregue a página em alguns segundos.',
     },
     import: {
+        // Post-import wizard (/import): failures and outcome (audit 2026-10-21)
+        profile_created: 'Perfil criado',
+        fetch_failed: 'Não conseguimos abrir o link. Verifique se a publicação é pública ou cole o texto.',
+        extract_failed: 'Não conseguimos ler o conteúdo com IA.',
+        save_failed: 'Não foi possível salvar.',
         // /import/sheet column-mapping select (one entry per import field)
         sheet_field: {
             name: 'Nome do adotante',

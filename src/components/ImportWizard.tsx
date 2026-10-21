@@ -43,7 +43,9 @@ const BTN_PRIMARY =
     'focus-visible:ring-teal-500 disabled:opacity-40 disabled:cursor-not-allowed';
 import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
-import { userFacingMessage } from '@/lib/errorMessage';
+import { userFacingMessage, handledAsStale } from '@/lib/errorMessage';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { splitLinkAndText, appendContext } from '@/domain/importInput';
 
 interface PersonMatch {
     id: string;
@@ -91,6 +93,15 @@ export default function ImportWizard() {
     const toast = useShowToast();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // How the rescuer got here. The share target is the main mobile path, so
+    // every import event carries it — without it no drop-off can be attributed.
+    const entry: 'share' | 'contacts' | 'paste' =
+        searchParams.get('shared') === 'true' || searchParams.has('shared_url') || searchParams.has('shared_text') ? 'share'
+            : searchParams.get('contact_import') === '1' ? 'contacts'
+                : 'paste';
+    const trackImport = (event: string, props: Record<string, string | number | boolean> = {}) =>
+        zarazTrack(event, { entry, ...props });
+
     // Steps: 1=Input, 2=Content/Extract, 3=Review, 4=Confirm
     const [step, setStep] = useState(() => {
         if (typeof window === 'undefined') return 1;
@@ -128,6 +139,20 @@ export default function ImportWizard() {
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // A real failure (not a hint) carries an errorId — logged to Axiom under the
+    // same id — and names the operation that failed, so "Reintentar" retries
+    // that operation. It used to always re-run step 1, which on a failed AI read
+    // just re-showed step 2 and did nothing (audit 2026-10-21, A3).
+    const [errorId, setErrorId] = useState<string | null>(null);
+    const [failedOp, setFailedOp] = useState<'fetch' | 'extract' | null>(null);
+    const clearError = () => { setError(null); setErrorId(null); setFailedOp(null); };
+    /** Report a caught failure: banner + errorId, unless it is a stale tab (the "new version" notice covers that). */
+    const showFailure = (err: unknown, fallback: string, op: 'fetch' | 'extract' | null, source: string) => {
+        if (handledAsStale(err)) return;
+        setError(userFacingMessage(err, fallback));
+        setErrorId(resolveErrorId(err, source));
+        setFailedOp(op);
+    };
     const [fetchProgress, setFetchProgress] = useState(0);
 
     // Fake progress bar: non-linear ease-out curve over ~110s
@@ -478,14 +503,20 @@ export default function ImportWizard() {
         }
 
         if (sharedUrl) {
-            // Share intent with URL: skip Step 1, auto-fetch
+            // Share intent with URL: skip Step 1, auto-fetch. Any text shared
+            // alongside the link rides along as context — it used to be dropped.
             setSharedFrom(sharedUrl);
             setLoading(true);
             setStep(2);
-            handleFetchUrl(sharedUrl).catch(() => {
-                // Fetch failed — fall back to Step 1 with pre-filled content
+            handleFetchUrl(sharedUrl, sharedText || '').then(ok => {
+                if (ok) return;
+                // Fetch failed — back to Step 1 with the link (and its text) still
+                // in the field, so "Reintentar" works and nothing has to be copied
+                // again. handleFetchUrl reports failure by its result: it used to
+                // swallow the error, so this fallback never ran and the rescuer
+                // was left on an empty step 2 (audit 2026-10-21, A1).
                 setStep(1);
-                setInputContent(sharedUrl);
+                setInputContent(sharedText ? `${sharedText}\n${sharedUrl}` : sharedUrl);
                 setSharedFrom(null);
             });
         } else if (sharedText) {
@@ -519,12 +550,18 @@ export default function ImportWizard() {
         });
     };
 
-    const handleFetchUrl = async (url?: string) => {
+    /**
+     * Fetch a post and move to step 2. `context` is what the rescuer wrote around
+     * the link; it is kept below the fetched text. Resolves true when the wizard
+     * moved on (including the "paste the text yourself" path), false on failure —
+     * the caller decides where the rescuer lands.
+     */
+    const handleFetchUrl = async (url?: string, context = ''): Promise<boolean> => {
         const targetUrl = url || inputContent;
-        if (!targetUrl.trim()) return;
+        if (!targetUrl.trim()) return false;
 
         setLoading(true);
-        setError(null);
+        clearError();
         // Re-evaluated per attempt so retrying against a readable URL clears it.
         setSourceNotPublic(false);
 
@@ -561,7 +598,7 @@ export default function ImportWizard() {
                         }
                     }
                     setFetchedText(responseData.data.text || '');
-                    setEditableText(responseData.data.text || '');
+                    setEditableText(appendContext(responseData.data.text || '', context));
                     // Facebook serves one photo under many signed URLs, and the
                     // Playwright scraper path does no de-duplication of its own, so
                     // collapse them here as well as in the route. Capped so that what
@@ -604,8 +641,10 @@ export default function ImportWizard() {
                             : responseData.error || (locale !== 'en'
                                 ? 'No se pudo extraer contenido. Pegá el texto manualmente.'
                                 : 'Could not extract content. Please paste text manually.'));
+                        setEditableText(appendContext('', context));
+                        trackImport('import_fetch_failed', { reason: responseData.sourceNotPublic ? 'not_public' : 'manual_input', facebook: true });
                         setStep(2);
-                        return;
+                        return true;
                     }
                     // Temporary extraction failure — start 30s retry countdown
                     setRetryCountdown(30);
@@ -630,7 +669,7 @@ export default function ImportWizard() {
                 if (responseData.success && responseData.data) {
                     const titlePrefix = responseData.data.title ? `[${responseData.data.title}]\n\n` : '';
                     setFetchedText(titlePrefix + (responseData.data.text || ''));
-                    setEditableText(titlePrefix + (responseData.data.text || ''));
+                    setEditableText(appendContext(titlePrefix + (responseData.data.text || ''), context));
                     const imgs = responseData.data.images || [];
                     setFetchedImages(imgs);
                     setSelectedFetchedImages(new Set(imgs.map((_: string, i: number) => i)));
@@ -642,8 +681,11 @@ export default function ImportWizard() {
 
             setSourceUrl(targetUrl);
             setStep(2);
+            return true;
         } catch (err) {
-            setError(userFacingMessage(err, 'Failed to fetch content'));
+            showFailure(err, t('import.fetch_failed'), 'fetch', 'ImportWizard.fetch');
+            trackImport('import_fetch_failed', { reason: 'error', facebook: /facebook\.com|fb\.com/i.test(targetUrl) });
+            return false;
         } finally {
             setLoading(false);
         }
@@ -653,11 +695,13 @@ export default function ImportWizard() {
     const handleSmartSubmit = () => {
         const content = inputContent.trim();
         if (!content && manualImages.length === 0) return;
+        clearError();
 
-        // Auto-detect: if content looks like a URL, fetch it
-        const urlPattern = /^https?:\/\/\S+$/i;
-        if (urlPattern.test(content)) {
-            handleFetchUrl(content);
+        // A single link — alone or inside a caption — is fetched; the words
+        // around it are kept as context (audit 2026-10-21, A4).
+        const { url, text } = splitLinkAndText(content);
+        if (url) {
+            handleFetchUrl(url, text);
         } else if (content) {
             // Plain text — go directly to content review
             setFetchedText(content);
@@ -722,7 +766,7 @@ export default function ImportWizard() {
     // AI Extraction — text + images sent together; hardened prompt prevents hallucination
     const handleExtract = async () => {
         setLoading(true);
-        setError(null);
+        clearError();
 
         try {
             const imagesToSend: Array<{ data: string; mimeType: string }> = [];
@@ -733,6 +777,11 @@ export default function ImportWizard() {
             const imageUrls = fetchedImages.filter((_, i) => selectedFetchedImages.has(i));
 
             setExtractedFromSource(!!sourceUrl || imagesToSend.length > 0 || imageUrls.length > 0);
+            trackImport('import_extract_started', {
+                hasUrl: !!sourceUrl,
+                hasText: !!editableText.trim(),
+                images: imagesToSend.length + imageUrls.length,
+            });
 
             const response = await fetch('/api/ai/extract-from-post', {
                 method: 'POST',
@@ -780,9 +829,15 @@ export default function ImportWizard() {
             if (result.processedImages) {
                 setProcessedImages(result.processedImages);
             }
+            trackImport('import_extract_succeeded', {
+                confidence: aiData.confidence || 'unknown',
+                adoptionDetected: !!aiData.adoptionDetected,
+                hasName: !!aiData.name?.trim(),
+            });
             setStep(3);
         } catch (err) {
-            setError(userFacingMessage(err, 'Failed to extract data'));
+            showFailure(err, t('import.extract_failed'), 'extract', 'ImportWizard.extract');
+            trackImport('import_extract_failed');
         } finally {
             setLoading(false);
         }
@@ -824,6 +879,7 @@ export default function ImportWizard() {
                 const data = await res.json() as { matches: any[]; matchType?: string };
                 if (data.matches && data.matches.length > 0) {
                     setDuplicateAdopter(data.matches[0]);
+                    trackImport('import_duplicate_shown', { kind: 'url', count: data.matches.length });
                     setIsSaving(false);
                     setShowConfirmModal(true);
                     return;
@@ -865,6 +921,7 @@ export default function ImportWizard() {
                     }));
                     setPersonMatches(matches);
                     setSelectedMatch(matches[0]);
+                    trackImport('import_duplicate_shown', { kind: 'person', count: matches.length, topBand: matches[0].confidence });
                 }
             } catch (e) {
                 console.error('[ImportWizard] Token match check failed', e);
@@ -979,21 +1036,12 @@ export default function ImportWizard() {
                 }
             }
 
-            // v2.19.18: contacts-import suppresses the success toast because
-            // we redirect straight to the new profile — the redirect IS the
-            // success signal, and a "→ Ver Perfil" CTA pointing to the same
-            // destination the browser is already loading is just visual
-            // noise. Facebook / share-URL imports keep the toast since their
-            // redirect goes back to `/`.
+            // Every import now lands on the new profile (decision B1, 2026-10-21),
+            // so the toast carries no "→ Ver Perfil" link: it would point at the
+            // page already loading. Contacts imports stay silent as before — the
+            // redirect is their success signal.
             if (!fromContacts) {
-                const successMessage = extractedData.adoptionDetected && extractedData.adoptionConfidence !== 'low'
-                    ? 'Profile + adoption record created'
-                    : (extractedData.name || 'New Profile');
-
-                toast.success('¡Adoptante Creado!', successMessage, {
-                    label: '→ Ver Perfil',
-                    href: `/adopter/${adopterId}`,
-                });
+                toast.success(t('import.profile_created'), extractedData.name?.trim() || undefined);
             }
 
             // Clear persisted wizard state on completion so reopening starts
@@ -1003,25 +1051,20 @@ export default function ImportWizard() {
             // it → the "reopens at step 2 with old data" bug).
             sessionStorage.removeItem('import_wizard_state');
 
-            // Track import event in Amplitude via Zaraz
-            zarazTrack('import_completed', {
+            // Track import event in Amplitude via Zaraz (mirrored to PostHog)
+            trackImport('import_completed', {
                 source: sourceUrl ? 'url' : (fromContacts ? 'contacts' : 'text'),
                 hasImages: (processedImages.length + manualImages.length) > 0 ? 1 : 0,
                 confidence: extractedData.confidence || 'unknown',
+                afterDuplicates: personMatches.length > 0,
             });
 
-            // v2.19.17: contacts-import path lands on the new profile so the
-            // rescuer can declare the real intent via the always-present
-            // VisitIntentCard. The Facebook / share-URL paths already created
-            // an activity at save time, so they keep the original "back home"
-            // redirect.
-            if (fromContacts) {
-                router.push(`/adopter/${adopterId}`);
-            } else {
-                router.push('/');
-            }
+            // Land on the new profile, for every kind of import (decision B1):
+            // it is where the rescuer checks what was saved. Contacts imports
+            // also get the VisitIntentCard there to declare the real activity.
+            router.push(`/adopter/${adopterId}`);
         } catch (err) {
-            setError(userFacingMessage(err, 'Failed to save'));
+            showFailure(err, t('import.save_failed'), null, 'ImportWizard.save');
             setShowConfirmModal(false);
         } finally {
             setIsSaving(false);
@@ -1061,9 +1104,10 @@ export default function ImportWizard() {
                 if (!result.success) {
                     throw new Error(result.error || 'Failed to merge contact data');
                 }
-                zarazTrack('import_merged', {
+                trackImport('import_merged', {
                     hasImages: 0,
                     fromContacts: 1,
+                    kind: duplicateAdopter ? 'url' : 'person',
                 });
                 router.push(`/adopter/${mergeTarget.id}`);
                 return;
@@ -1082,10 +1126,11 @@ export default function ImportWizard() {
                 })
             );
 
+            // Contacts go to the profile's typed entries below (appendToExistingAdopter),
+            // never into the activity note (audit 2026-10-21, D8).
             const payload = {
                 sourceUrl,
                 notes: extractedData.notes,
-                contactInfo: contactEntriesToBlob(contactEntries) || undefined,
                 adoption: {
                     // v2.19.52: was `|| 'Unknown'` — literal English string
                     // overwrote empty names with "Unknown" regardless of locale
@@ -1159,23 +1204,23 @@ export default function ImportWizard() {
                 }
             }
 
-            toast.success(t('import.record_added_to_profile') || 'Registro agregado al perfil', adopterName, {
-                label: t('import.go_to_profile_link') || '→ Ver perfil',
-                href: `/adopter/${adopterId}`,
-            });
+            // Lands on the profile (decision B1), so no "→ Ver perfil" link.
+            toast.success(t('import.record_added_to_profile'), adopterName);
 
             // Clear persisted wizard state on completion (see create path) so
             // reopening starts fresh instead of rehydrating the stale snapshot.
             sessionStorage.removeItem('import_wizard_state');
 
-            // Track merge event in Amplitude via Zaraz
-            zarazTrack('import_merged', {
+            // Track merge event in Amplitude via Zaraz (mirrored to PostHog)
+            trackImport('import_merged', {
                 hasImages: (processedImages.length + manualImages.length) > 0 ? 1 : 0,
+                kind: duplicateAdopter ? 'url' : 'person',
+                band: duplicateAdopter ? 'url' : (mergeTarget as PersonMatch).confidence ?? 'unknown',
             });
 
-            router.push('/');
+            router.push(`/adopter/${adopterId}`);
         } catch (err) {
-            setError(userFacingMessage(err, 'Failed to add record'));
+            showFailure(err, t('import.save_failed'), null, 'ImportWizard.merge');
             setShowConfirmModal(false);
         } finally {
             setIsSaving(false);
@@ -1228,8 +1273,11 @@ export default function ImportWizard() {
                 <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-sm">
                     <div className="flex items-start gap-3">
                         <WarningIcon className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-                        <div className="flex-1">
-                            <p className="text-red-700 font-medium">{error}</p>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-red-700 font-medium break-words">{error}</p>
+                            {errorId && (
+                                <p className="text-xs text-red-500 mt-1 font-mono select-all">Error ID: {errorId}</p>
+                            )}
                             {retryCountdown > 0 && (
                                 <p className="text-red-500 mt-1">
                                     {locale !== 'en'
@@ -1243,18 +1291,19 @@ export default function ImportWizard() {
                                 <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-red-100 text-red-400 font-semibold text-sm tabular-nums">
                                     {retryCountdown}
                                 </span>
-                            ) : retryCountdown === 0 && error && inputContent.trim() ? (
+                            ) : (failedOp === 'extract' || (failedOp === 'fetch' && inputContent.trim())) && !loading ? (
                                 <button
                                     onClick={() => {
-                                        setError(null);
-                                        handleSmartSubmit();
+                                        // Retry what failed: the AI read, or fetching the link.
+                                        if (failedOp === 'extract') handleExtract();
+                                        else handleSmartSubmit();
                                     }}
                                     className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700 transition-colors"
                                 >
                                     {locale !== 'en' ? 'Reintentar' : 'Retry'}
                                 </button>
                             ) : null}
-                            <button onClick={() => { setError(null); setRetryCountdown(0); }} className="text-red-400 hover:text-red-600">
+                            <button onClick={() => { clearError(); setRetryCountdown(0); }} className="text-red-400 hover:text-red-600">
                                 <CloseIcon className="w-4 h-4" />
                             </button>
                         </div>
@@ -2076,12 +2125,13 @@ export default function ImportWizard() {
                                 </button>
                                 <a
                                     href={`/adopter/${duplicateAdopter.id}`}
+                                    onClick={() => trackImport('import_duplicate_choice', { choice: 'view', kind: 'url' })}
                                     className={BTN_PRIMARY}
                                 >
                                     {t('import.viewExisting') || '→ View Existing Profile'}
                                 </a>
                                 <button
-                                    onClick={() => { setDuplicateAdopter(null); setShowConfirmModal(false); }}
+                                    onClick={() => { trackImport('import_duplicate_choice', { choice: 'back', kind: 'url' }); setDuplicateAdopter(null); setShowConfirmModal(false); }}
                                     className="py-2.5 px-4 border border-stone-300 rounded-xl text-sm font-medium text-stone-600 hover:bg-stone-50"
                                 >
                                     {t('import.backToReview') || '← Back to Review'}
@@ -2104,7 +2154,7 @@ export default function ImportWizard() {
                                     {t('import.createNewAnyway') || 'Create New Profile Instead'}
                                 </button>
                                 <button
-                                    onClick={() => { setPersonMatches([]); setSelectedMatch(null); setShowConfirmModal(false); }}
+                                    onClick={() => { trackImport('import_duplicate_choice', { choice: 'back', kind: 'person' }); setPersonMatches([]); setSelectedMatch(null); setShowConfirmModal(false); }}
                                     className="py-2.5 px-4 border border-stone-300 rounded-xl text-sm font-medium text-stone-600 hover:bg-stone-50"
                                 >
                                     {t('import.backToReview') || '← Back to Review'}

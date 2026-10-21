@@ -42,7 +42,7 @@ export async function POST(
         return NextResponse.json({ error: 'Invalid JSON body', errorId }, { status: 400 });
     }
 
-    const { sourceUrl, notes, contactInfo, adoption, images } = body;
+    const { sourceUrl, notes, adoption, images } = body;
 
     if (!adoption) {
         return NextResponse.json({ error: 'Missing adoption data', errorId }, { status: 400 });
@@ -70,10 +70,13 @@ export async function POST(
             return NextResponse.json({ error: 'Adopter not found', errorId }, { status: 404 });
         }
 
-        // Pack all extracted info into details
+        // The note is the post text plus where it came from. Contacts are NOT
+        // copied in: the import wizard merges them into the profile's typed
+        // entries (appendToExistingAdopter), where visibility applies per entry.
+        // A plain-text copy in the activity note bypassed that, and is exactly
+        // the "PII in notes" the data-quality tool hunts for (audit 2026-10-21, D8).
         const detailsParts: string[] = [];
         if (notes) detailsParts.push(notes);
-        if (contactInfo) detailsParts.push(`Contact: ${contactInfo}`);
         if (sourceUrl) detailsParts.push(`Source: ${sourceUrl}`);
 
         // Create the adoption/observation/follow-up record
