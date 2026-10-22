@@ -237,6 +237,10 @@ export async function POST(request: NextRequest) {
         // count on its own — this predicate used to include it, which made the guard
         // below unreachable and dead-ended the import on an empty success.
         if (!hasExtractableContent(postData, isVideoUrl)) {
+            // The rescuer is sent to paste the text by hand — a degraded import.
+            logger.warn('Facebook post text unavailable', {
+                reason: 'not_extractable', sourceNotPublic: isSourceNotPublic(postData), isVideo: !!postData.isVideo, user: userId,
+            });
             // Private group posts and some reels can't be scraped — 
             // tell the UI to skip to manual input instead of retrying
             return NextResponse.json({
@@ -260,6 +264,12 @@ export async function POST(request: NextRequest) {
         // the wizard has to say so rather than hand the AI a captionless photo.
         const missingPostText = !hasPostText(postData);
         const sourceNotPublic = isSourceNotPublic(postData);
+        if (missingPostText) {
+            // Photo and poster, no caption: the rescuer has to supply the text.
+            logger.warn('Facebook post text unavailable', {
+                reason: 'missing_caption', sourceNotPublic, isVideo: !!postData.isVideo, imageCount: postData.images?.length ?? 0, user: userId,
+            });
+        }
 
         // For video posts with minimal text, prepend the author/group name for context
         if (postData.isVideo && postData.author && (!postData.text || postData.text.length < 20)) {

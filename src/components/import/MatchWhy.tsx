@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { getMatchContext, type MatchContext } from '@/app/actions';
+import { reportClientError } from '@/lib/clientErrorReporter';
 
 const NAME_SIGNALS = new Set(['name_full', 'name_word', 'name_phonetic', 'name_word_fuzzy', 'like_fallback_name']);
 
@@ -28,8 +29,9 @@ export default function MatchWhy({ adopterId, matchTypes, t }: {
             getMatchContext(adopterId)
                 .then(c => setCtx(c.ok ? c : 'error'))
                 .catch(e => {
-                    // Degraded, not broken: the panel says it could not load.
-                    console.warn('[MatchWhy] getMatchContext failed', { adopterId, error: e instanceof Error ? e.message : String(e) });
+                    // Degraded, not broken: the panel says it could not load — and it
+                    // is logged, like every problem the rescuer sees (Jon, 2026-10-22).
+                    void reportClientError({ message: 'import: match details could not load', source: 'MatchWhy', level: 'warn', extra: { adopterId, error: e instanceof Error ? e.message : String(e) } });
                     setCtx('error');
                 });
         }

@@ -126,12 +126,20 @@ test.describe('Import wizard', () => {
     });
 
     test('the AI says what it could not read, and a name with no contact is flagged', async ({ page }) => {
+        // Every problem shown is also logged (Jon, 2026-10-22): capture the report.
+        const reports: Array<{ message: string; level?: string; extra?: { issues?: string[] } }> = [];
+        await page.route('**/api/log-client-error', async route => {
+            reports.push(route.request().postDataJSON());
+            await route.fulfill({ status: 200, contentType: 'application/json', body: '{"errorId":null}' });
+        });
         await stubAi(page, { name: 'Persona Prueba', phones: [], confidence: 'medium', extractionIssues: ['image_unreadable', 'not_a_code'] });
         await pasteAndContinue(page, 'Persona Prueba');
         const hints = page.getByTestId('import-quality');
         await expect(hints.locator('[data-issue]')).toHaveCount(2);
         await expect(hints.locator('[data-issue="image_unreadable"]').getByRole('button')).toBeVisible();
         await expect(hints.locator('[data-issue="no_contact_found"]')).toBeVisible();
+        await expect.poll(() => reports.find(r => r.message === 'import: extraction problems shown')?.extra?.issues).toEqual(['image_unreadable', 'no_contact_found']);
+        expect(reports.find(r => r.message === 'import: extraction problems shown')?.level).toBe('warn');
     });
 
     test('a post whose text Facebook hid is flagged, with a way back to add it', async ({ page }) => {

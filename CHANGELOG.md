@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.224] - 2026-10-22
+
+### Fixed — every problem the rescuer meets in the import is logged (Jon, 2026-10-22)
+
+Principle: ANY issue affecting the user experience is logged, not only hard failures. Axiom now gets
+(codes and counts only — never names, contacts or post text):
+- **Server:** «Facebook post text unavailable» (caption missing / not extractable, with whether the source
+  is non-public or a video); «AI extraction completed with issues» with the AI's extraction issues, a failed
+  read, and phone/email/account/other-people counts.
+- **Wizard (warn):** the extraction problems shown on review (and whether the profile cannot be saved yet);
+  problems still open when the rescuer saves anyway; a video over 50 MB refused; shared images or a shared
+  contact lost or unreadable; a failed same-post or name/contact duplicate check; an alias not kept on
+  another team's profile; video thumbnails that failed; the «¿Por qué?» panel failing to load.
+- PostHog `import_completed` carries the extraction quality and the problems still open.
+
 ## [2.56.223] - 2026-10-22
 
 ### Changed — extraction quality: what we couldn't extract, and how to fix it (Jon, 2026-10-22)

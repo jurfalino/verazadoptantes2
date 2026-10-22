@@ -43,7 +43,7 @@ const BTN_PRIMARY =
 import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
 import { handledAsStale } from '@/lib/errorMessage';
-import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { resolveErrorId, reportClientError } from '@/lib/clientErrorReporter';
 import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, recordDateFrom, aliasForMerge, cleanOtherPeople, matchedOnName, extractionQuality, type PostPerson, type ExtractionIssue } from '@/domain/importInput';
 import DatePicker from '@/components/ui/DatePicker';
 import MatchWhy from '@/components/import/MatchWhy';
@@ -105,6 +105,14 @@ export default function ImportWizard() {
                 : 'paste');
     const trackImport = (event: string, props: Record<string, string | number | boolean> = {}) =>
         zarazTrack(event, { entry, ...props });
+    /**
+     * Every problem that affects the rescuer goes to Axiom (warn), not only hard
+     * failures: a hint shown, a file refused, a lookup that degraded. Codes and
+     * counts only — never names, contacts or post text (Jon, 2026-10-22).
+     */
+    const logUxIssue = (message: string, extra: Record<string, unknown> = {}) => {
+        void reportClientError({ message, source: 'ImportWizard', level: 'warn', extra: { entry, ...extra } });
+    };
 
     // The saved draft (sessionStorage) is read in the state initializers below,
     // which the server cannot do: it renders an empty field and a DISABLED
@@ -406,7 +414,7 @@ export default function ImportWizard() {
                 await cache.delete(request);
             }
         } catch (e) {
-            console.warn('[ImportWizard] Failed to load shared images from cache:', e);
+            logUxIssue('import: shared images could not be loaded', { error: e instanceof Error ? e.message : String(e) });
         }
     };
 
@@ -486,7 +494,7 @@ export default function ImportWizard() {
             hydrateFromContact(parsed);
             return true;
         } catch (e) {
-            console.warn('[ImportWizard] Failed to load shared vCard from cache:', e);
+            logUxIssue('import: shared contact could not be loaded', { error: e instanceof Error ? e.message : String(e) });
             return false;
         }
     };
@@ -521,11 +529,13 @@ export default function ImportWizard() {
             // SW was inactive when the share arrived — file body never made it
             // to the cache. Show a soft hint, leave the user on Step 1.
             setError(t('import.vcard_parse_failed'));
+            logUxIssue('import: shared contact lost (service worker inactive)');
             return;
         }
         if (isSharedVcard) {
             loadSharedVcard().then(loaded => {
                 if (!loaded) {
+                    logUxIssue('import: shared contact could not be read');
                     setError(t('import.vcard_parse_failed'));
                 }
             });
@@ -540,6 +550,7 @@ export default function ImportWizard() {
         // Show warning if SW wasn't active and images were lost
         if (imagesLost) {
             setError(t('import.images_lost'));
+            logUxIssue('import: shared images lost (service worker inactive)');
         }
 
         if (sharedUrl) {
@@ -768,6 +779,7 @@ export default function ImportWizard() {
                 if (file.size > 50 * 1024 * 1024) {
                     // Used to be skipped silently: the rescuer believed it was attached.
                     toast.warning(t('import.video_too_large').replace('{name}', file.name));
+                    logUxIssue('import: video over 50 MB refused', { sizeMb: Math.round(file.size / 1048576) });
                     continue;
                 }
                 // Generate thumbnail
@@ -775,7 +787,7 @@ export default function ImportWizard() {
                 try {
                     thumbnail = await extractVideoThumbnail(file);
                 } catch (err) {
-                    console.warn('Thumbnail extraction failed:', (err as Error).message);
+                    logUxIssue('import: video thumbnail could not be made', { error: (err as Error).message });
                 }
                 setManualImages(prev => [...prev, {
                     data: '',
@@ -872,13 +884,25 @@ export default function ImportWizard() {
             // The rescuer filled in what the fetch could not get (pasted the text or
             // added screenshots): the missing caption is no longer a problem.
             const addedOwnContent = manualImages.length > 0 || text.trim() !== _fetchedText.trim();
-            setExtractionFacts({
+            const facts = {
                 aiConfidence: aiData.confidence,
                 aiIssues: aiData.extractionIssues,
                 aiFailed,
                 postTextMissing: postTextMissing && !addedOwnContent,
                 videoOnly: isVideoPost && manualImages.length === 0 && !text.trim(),
+            };
+            setExtractionFacts(facts);
+            // What the rescuer is about to be told is missing — logged, so we know
+            // how often each problem happens (Jon, 2026-10-22).
+            const shown = extractionQuality({
+                ...facts,
+                name: aiData.name,
+                entries: buildContactEntries({ phones: aiData.phones, emails: aiData.emails, socials: aiData.socialProfiles }),
             });
+            const cannotSave = !canSaveImportedProfile(aiData.name, buildContactEntries({ phones: aiData.phones, emails: aiData.emails, socials: aiData.socialProfiles }));
+            if (shown.issues.length || cannotSave) {
+                logUxIssue('import: extraction problems shown', { issues: shown.issues, level: shown.level, cannotSave });
+            }
 
             // Preserve original post text untouched, append any AI-extracted notes after
             // (never the "Extraction failed: …" diagnostic).
@@ -978,7 +1002,7 @@ export default function ImportWizard() {
                     return;
                 }
             } catch (e) {
-                console.warn('[ImportWizard] URL duplicate check failed', e);
+                logUxIssue('import: same-post check failed', { error: e instanceof Error ? e.message : String(e) });
                 setDuplicateCheckFailed(true);
                 checkFailed = true;
             }
@@ -1024,7 +1048,7 @@ export default function ImportWizard() {
                     trackImport('import_duplicate_shown', { kind: 'person', count: matches.length, topBand: matches[0].confidence });
                 }
             } catch (e) {
-                console.error('[ImportWizard] Token match check failed', e);
+                logUxIssue('import: duplicate (name/contact) check failed', { error: e instanceof Error ? e.message : String(e) });
                 setDuplicateCheckFailed(true);
                 checkFailed = true;
             }
@@ -1054,8 +1078,14 @@ export default function ImportWizard() {
     };
 
     // Save new adopter
+    /** Problems still on screen when the rescuer saves anyway — worth knowing which ones. */
+    const logOpenIssuesAtSave = (mode: 'create' | 'merge') => {
+        if (quality?.issues.length) logUxIssue('import: saved with open extraction problems', { mode, issues: quality.issues, level: quality.level });
+    };
+
     const handleConfirmSave = async () => {
         if (!extractedData) return;
+        logOpenIssuesAtSave('create');
         setSavingMode('create');
         setSavingTargetName(extractedData.name || '');
         setIsSaving(true);
@@ -1072,7 +1102,7 @@ export default function ImportWizard() {
                     try {
                         thumbnail = await extractVideoThumbnailFromUrl(`/api/proxy-image?url=${encodeURIComponent(videoUrl)}`);
                     } catch (e) {
-                        console.warn('[ImportWizard] Fetched video thumbnail failed:', (e as Error).message);
+                        logUxIssue('import: fetched video thumbnail failed', { error: (e as Error).message });
                     }
                     return { data: '', mimeType: 'video/mp4', originalUrl: videoUrl, thumbnail };
                 })
@@ -1181,6 +1211,7 @@ export default function ImportWizard() {
                 source: sourceUrl ? 'url' : (fromContacts ? 'contacts' : 'text'),
                 hasImages: (processedImages.length + manualImages.length) > 0 ? 1 : 0,
                 quality: quality?.level ?? 'n/a',
+                openIssues: quality?.issues.join(',') ?? '',
                 afterDuplicates: personMatches.length > 0,
             });
 
@@ -1217,6 +1248,7 @@ export default function ImportWizard() {
     const handleMerge = async (target?: { id: string; name: string }) => {
         const mergeTarget = target || selectedMatch;
         if (!extractedData || !mergeTarget) return;
+        logOpenIssuesAtSave('merge');
         setSavingMode('merge');
         setSavingTargetName(mergeTarget.name || '');
         setIsSaving(true);
@@ -1261,7 +1293,7 @@ export default function ImportWizard() {
                     try {
                         thumbnail = await extractVideoThumbnailFromUrl(`/api/proxy-image?url=${encodeURIComponent(videoUrl)}`);
                     } catch (e) {
-                        console.warn('[ImportWizard] Fetched video thumbnail failed:', (e as Error).message);
+                        logUxIssue('import: fetched video thumbnail failed', { error: (e as Error).message });
                     }
                     return { data: '', mimeType: 'video/mp4', originalUrl: videoUrl, thumbnail };
                 })
@@ -1344,7 +1376,7 @@ export default function ImportWizard() {
                     // 2.56.213, item 6); with contacts, the rescuer has to know.
                     const refused = /not authorized/i.test(appendRes?.error ?? '');
                     if (refused && contactEntries.length === 0) {
-                        console.warn('[ImportWizard] alias not kept: profile belongs to another team', { adopterId: mergeTarget.id });
+                        logUxIssue('import: alias not kept (profile of another team)', { adopterId: mergeTarget.id });
                     } else {
                         const id = appendRes?.error?.match(/Error ID:\s*([a-f0-9-]{6,})/i)?.[1];
                         toast.error(t('errors.generic'), refused ? t('import.contact_merge_not_allowed') : t('import.contact_merge_failed'), id);
