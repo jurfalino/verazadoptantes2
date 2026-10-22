@@ -70,15 +70,24 @@ test.describe('Import wizard', () => {
         await expect.poll(() => calls, { timeout: 30000 }).toBe(2);
     });
 
-    test('the record type shows even when the AI saw no adoption, and can be changed', async ({ page }) => {
-        await stubAi(page, { name: 'Persona Prueba', phones: ['1100000000'], adoptionDetected: false, recordType: undefined });
-        await pasteAndContinue(page, 'Persona Prueba consulta por un gato');
+    test('no activity type to pick; the AI rating is a tagged suggestion the rescuer can change', async ({ page }) => {
+        await stubAi(page, { name: 'Persona Prueba', phones: ['1100000000'], adoptionRating: 1, ratingReason: 'abandonó a su perro' });
+        await pasteAndContinue(page, 'Persona Prueba abandonó a su perro en la ruta');
 
-        const observation = page.getByRole('radio', { name: /Note|Nota|Observa/i });
-        await expect(observation).toHaveAttribute('aria-checked', 'true');
-        // Picking a type that involves an animal opens its fields.
-        await page.getByRole('radio', { name: /Request|Solicitud|Pedido/i }).click();
-        await expect(page.locator('#import-animal-name')).toBeVisible();
+        await expect(page.getByRole('radio', { name: /Adoption|Adopción|Request|Solicitud/i })).toHaveCount(0);
+        const rating = page.getByTestId('import-rating');
+        await expect(rating).toBeVisible();
+        await expect(page.getByTestId('import-rating-suggested')).toContainText('abandonó a su perro');
+        // Changing the stars removes the "suggested" tag.
+        await rating.getByRole('button').nth(1).click();
+        await expect(page.getByTestId('import-rating-suggested')).toHaveCount(0);
+    });
+
+    test('with no grounds the AI suggests nothing and the stars start empty', async ({ page }) => {
+        await stubAi(page, { name: 'Persona Prueba', phones: ['1100000000'], adoptionRating: 2.5 });
+        await pasteAndContinue(page, 'Persona Prueba');
+        await expect(page.getByTestId('import-rating')).toBeVisible();
+        await expect(page.getByTestId('import-rating-suggested')).toHaveCount(0);
     });
 
     test('a profile with no name can be saved when it has a phone', async ({ page }) => {
@@ -101,13 +110,21 @@ test.describe('Import wizard', () => {
         const unique = `Fixture Sinduplicado ${Date.now()}`;
         await stubAi(page, { name: unique, phones: [] });
         // The create is stubbed so the shared e2e database is not written to.
-        await page.route('**/api/adopters', route => route.request().method() === 'POST'
-            ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'test-import-fixture-1' }) })
-            : route.continue());
+        let sent: { adoption?: Record<string, unknown> } = {};
+        await page.route('**/api/adopters', route => {
+            if (route.request().method() !== 'POST') return route.continue();
+            sent = route.request().postDataJSON();
+            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'test-import-fixture-1' }) });
+        });
         await pasteAndContinue(page, `${unique} quiere adoptar`);
+        await page.locator('#import-month').fill('2026-03');
 
         await page.getByRole('button', { name: /Save Adopter|Guardar Adoptante/i }).click();
         await page.waitForURL(/\/adopter\/test-import-fixture-1/, { timeout: 30000 });
+        // A report: no activity type chosen, no animal, month kept as the 1st.
+        expect(sent.adoption?.recordType).toBe('observation');
+        expect(sent.adoption?.date).toBe('2026-03-01');
+        expect(sent.adoption?.species).toBeUndefined();
     });
 });
 

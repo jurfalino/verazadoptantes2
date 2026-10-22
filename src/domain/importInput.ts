@@ -58,22 +58,30 @@ export function canSaveImportedProfile(name: string | undefined, entries: Array<
     return entries.some(e => STRONG_IDENTIFIERS.has(e.type) && e.value.trim().length > 0);
 }
 
-/** The record types an import can create. One default for the pills and the save. */
-export const IMPORT_RECORD_TYPES = ['adoption', 'adoption_request', 'returned_pet', 'follow_up', 'observation'] as const;
-export type ImportRecordType = typeof IMPORT_RECORD_TYPES[number];
-
 /**
- * The record type to show selected and to save. The pills used to default to
- * 'adoption' while the save defaulted to 'observation', so an untouched form
- * saved something other than what it showed.
+ * The AI's suggested rating, if it is one we can show: a whole number 1–5.
+ * Anything else is "no suggestion" — ratings are never invented (Jon,
+ * 2026-10-09); the suggestion is shown, tagged, and the rescuer confirms it
+ * (Jon, 2026-10-22).
  */
-export function importRecordType(aiType: string | undefined | null): ImportRecordType {
-    return (IMPORT_RECORD_TYPES as readonly string[]).includes(aiType ?? '') ? aiType as ImportRecordType : 'observation';
+export function suggestedRating(raw: unknown): number | null {
+    return typeof raw === 'number' && Number.isInteger(raw) && raw >= 1 && raw <= 5 ? raw : null;
 }
 
-/** Record types that describe an animal changing hands — they get the animal/rating/date fields. */
-export function recordTypeHasAnimal(type: ImportRecordType): boolean {
-    return type !== 'observation';
+/** "2026-10" from "2026-10-14" (or from "2026-10"); '' when there is no usable date. */
+export function monthOf(isoDate: string | null | undefined): string {
+    const m = /^(\d{4})-(\d{2})/.exec(isoDate ?? '');
+    return m && +m[2] >= 1 && +m[2] <= 12 ? `${m[1]}-${m[2]}` : '';
+}
+
+/**
+ * The record's date from the month/year the rescuer kept: the 1st of that month.
+ * Reports often say "en marzo" or nothing at all; a day would be invented.
+ * No month → undefined, which the API stores as NULL (it refuses to fabricate
+ * "now" as the date of a past event).
+ */
+export function dateFromMonth(month: string): string | undefined {
+    return monthOf(month) ? `${monthOf(month)}-01` : undefined;
 }
 
 /** Lowercase, accents and extra spaces removed — for comparing two spellings of a name. */

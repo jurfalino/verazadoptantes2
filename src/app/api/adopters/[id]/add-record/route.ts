@@ -91,7 +91,8 @@ export async function POST(
             rating: adoption.rating || null,
             recordType: adoption.recordType || 'observation',
             animalId: adoption.animalId || null,
-            date: adoption.date ? new Date(adoption.date) : new Date(),
+            // NULL when unknown, as the create path does: "now" is not the date of a past event.
+            date: adoption.date ? new Date(adoption.date) : null,
             sourceUrl: sourceUrl || null,
             details: detailsParts.length > 0 ? detailsParts.join('\n') : null
         }, session.user.email || 'anonymous');

@@ -2177,6 +2177,11 @@ export const es = {
     },
     import: {
         // Post-import wizard (/import): failures and outcome (audit 2026-10-21)
+        rating_title: 'Calificación',
+        rating_suggested: 'Sugerido por la IA. Revisalo antes de guardar.',
+        rating_suggested_reason: 'Sugerido por la IA: {reason}. Revisalo antes de guardar.',
+        rating_one_bans: '1★ (Peligroso) impide que esta persona adopte.',
+        report_month: 'Cuándo pasó (mes y año, opcional)',
         not_same_post: '¿No es el mismo post? Crear un perfil nuevo',
         saving_merging: 'Agregando datos…',
         contact_merge_not_allowed: 'El registro se guardó, pero los contactos no: ese perfil es de otro equipo.',

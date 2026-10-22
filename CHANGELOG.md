@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.219] - 2026-10-22
+
+### Changed — a social post is a report; the rating is what matters (Jon, 2026-10-22)
+
+- **No activity type to choose.** Social-post imports are almost always call-outs (abuse, abandonment,
+  torture, killing…), so the record is always a report. The animal name/species fields are gone too.
+- **Rating up front**, right after the name. The AI **suggests** one from the conduct the post describes —
+  1★ for harm (abuse, torture, killing, poisoning, abandonment…), 2★ for neglect or broken commitments,
+  nothing when the post gives no grounds — shown with a «Sugerido por la IA: <motivo>» tag until the
+  rescuer changes it. Never saved silently; the rescuer can clear it. A 1★ shows that it stops the
+  person from adopting.
+  Before this, call-out posts got no rating at all, and since 2.56.212 the rating field didn't even show.
+- **When it happened: month and year, optional.** No day is invented; with no month the record has no
+  date (it used to get today's).
+- The AI no longer defaults adoption posts to 2★ without grounds.
+
 ## [2.56.218] - 2026-10-21
 
 ### Fixed — from the quick review of 2.56.217

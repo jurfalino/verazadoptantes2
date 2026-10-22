@@ -2172,6 +2172,11 @@ export const en = {
     },
     import: {
         // Post-import wizard (/import): failures and outcome (audit 2026-10-21)
+        rating_title: 'Rating',
+        rating_suggested: 'Suggested by the AI. Check it before saving.',
+        rating_suggested_reason: 'Suggested by the AI: {reason}. Check it before saving.',
+        rating_one_bans: '1★ (Dangerous) stops this person from adopting.',
+        report_month: 'When it happened (month and year, optional)',
         not_same_post: 'Not the same post? Create a new profile',
         saving_merging: 'Adding the details…',
         contact_merge_not_allowed: 'The record was saved, but not the contacts: that profile belongs to another team.',

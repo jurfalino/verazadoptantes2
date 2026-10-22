@@ -27,7 +27,8 @@ export interface ExtractedAdopterData {
     animalSpecies?: string;
     adoptionConfidence?: 'high' | 'medium' | 'low';
     recordType?: 'adoption' | 'adoption_request' | 'returned_pet' | 'follow_up' | 'observation';
-    adoptionRating?: number; // 1-5 rating for the adoption
+    adoptionRating?: number; // 1-5 SUGGESTED rating — shown to the rescuer to confirm, never saved silently
+    ratingReason?: string; // one short phrase: why that rating (shown next to the suggestion)
     adoptionDate?: string; // YYYY-MM-DD format if mentioned in the post
 }
 
@@ -76,13 +77,18 @@ Look for phrases like "ya adoptado", "ya tiene hogar", "fue adoptado", "adopted"
 If an adoption is mentioned, extract the animal's name, species, and the date of the adoption if mentioned.
 For the adoption date, look for explicit dates, relative dates ("yesterday", "last week", "hace 2 días"), or contextual dates from the post. Return in YYYY-MM-DD format, or null if no date is mentioned.
 
-RATING: If an adoption is detected, assign a rating from 1 to 5 based on your assessment:
-- 1 = Concerning (red flags, rushed adoption, unknown person)
-- 2 = Low confidence (limited info, cannot verify)
-- 3 = Neutral (some info but not enough to assess)
-- 4 = Positive (good signs, responsive adopter)
-- 5 = Excellent (verified, thorough process)
-For most adoption announcements from rescue groups where you have minimal information about the adopter, default to rating 2 (low confidence).
+RATING — a SUGGESTION the rescuer will confirm or change. Most posts imported here REPORT or CALL OUT a person
+(denuncias, escraches) for what they did to animals. Suggest a rating from what the post says the person did:
+- 1 = HARM: abuse, beating, torture, killing, poisoning, sexual abuse of animals, abandonment (dumping, leaving an
+  animal behind or tied up), selling or giving away adopted animals, hoarding with suffering.
+- 2 = NEGLECT / IRRESPONSIBILITY: neglect without described harm, broken adoption commitments (no spay/neuter,
+  no follow-up, not answering), returning animals, lying on an adoption form, irresponsible behaviour.
+- 3, 4 or 5 only when the post clearly praises the person as an adopter (rare here).
+- null when the post gives no grounds (unclear who did what, no conduct described). NEVER default to a rating
+  without grounds in the post.
+Also return "ratingReason": one short phrase in the response language naming the conduct that justifies the
+suggestion (e.g. "abandonó a su perro en la ruta"), or null when the rating is null.
+DATE: "adoptionDate" is when the reported events (or the adoption) happened, if the post says; else null.
 
 RECORD TYPE CLASSIFICATION — CRITICAL:
 You MUST ALWAYS classify the post into one of these record types:
@@ -112,11 +118,12 @@ Respond ONLY with valid JSON in this exact format:
   "animalSpecies": "dog" | "cat" | "bird" | "other" | null,
   "adoptionConfidence": "high" | "medium" | "low" | null,
   "adoptionRating": 1-5 or null,
+  "ratingReason": "short phrase or null",
   "adoptionDate": "YYYY-MM-DD or null"
 }
 
 If you cannot extract any relevant information, return:
-{"name": null, "phones": [], "emails": [], "addresses": [], "socialProfiles": [], "notes": "", "confidence": "low", "adoptionDetected": false, "recordType": "observation", "animalName": null, "animalSpecies": null, "adoptionConfidence": null, "adoptionRating": null, "adoptionDate": null}
+{"name": null, "phones": [], "emails": [], "addresses": [], "socialProfiles": [], "notes": "", "confidence": "low", "adoptionDetected": false, "recordType": "observation", "animalName": null, "animalSpecies": null, "adoptionConfidence": null, "adoptionRating": null, "ratingReason": null, "adoptionDate": null}
 `;
 }
 

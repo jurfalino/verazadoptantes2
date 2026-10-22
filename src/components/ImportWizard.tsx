@@ -45,7 +45,7 @@ import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
 import { handledAsStale } from '@/lib/errorMessage';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-import { splitLinkAndText, appendContext, canSaveImportedProfile, importRecordType, recordTypeHasAnimal, IMPORT_RECORD_TYPES, aliasForMerge } from '@/domain/importInput';
+import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, dateFromMonth, aliasForMerge } from '@/domain/importInput';
 import MatchWhy from '@/components/import/MatchWhy';
 import { buttonClasses } from '@/components/ui/Button';
 import StickyActions from '@/components/import/StickyActions';
@@ -312,6 +312,11 @@ export default function ImportWizard() {
 
     // AI extraction state
     const [extractedData, setExtractedData] = useState<ExtractedAdopterData | null>(null);
+    // The rating is the point of a report (Jon, 2026-10-22). The AI may SUGGEST
+    // one; it is shown tagged until the rescuer touches the stars.
+    const [ratingTouched, setRatingTouched] = useState(false);
+    // When it happened, month and year only ('' = unknown → saved as today).
+    const [reportMonth, setReportMonth] = useState('');
     const [contactEntries, setContactEntries] = useState<ContactEntry[]>([]);
     const [processedImages, setProcessedImages] = useState<Array<{ data: string; mimeType: string; originalUrl?: string }>>([]);
     // Media the rescuer has de-selected in the review step so it is NOT imported.
@@ -842,6 +847,11 @@ export default function ImportWizard() {
             }
 
             const aiData = result.data || { confidence: 'low' as const };
+            // Only a whole 1–5 suggestion is shown; anything else is "no suggestion".
+            aiData.adoptionRating = suggestedRating(aiData.adoptionRating) ?? undefined;
+            if (!aiData.adoptionRating) aiData.ratingReason = undefined;
+            setRatingTouched(false);
+            setReportMonth(monthOf(aiData.adoptionDate));
 
             // Preserve original post text untouched, append any AI-extracted notes after
             if (text?.trim()) {
@@ -1066,11 +1076,12 @@ export default function ImportWizard() {
                 ...(fromContacts ? {} : {
                     adoption: {
                         // v2.19.52: blank goes through as undefined → API saves NULL.
-                        animalName: extractedData.animalName?.trim() || undefined,
-                        species: extractedData.animalSpecies,
-                        recordType: importRecordType(extractedData.recordType),
+                        // A social post is a report about the person (Jon, 2026-10-22):
+                        // no activity type to pick, no animal fields. What matters is
+                        // the rating the rescuer confirmed, and roughly when.
+                        recordType: 'observation',
                         rating: extractedData.adoptionRating || undefined,
-                        date: extractedData.adoptionDate || new Date().toISOString().split('T')[0],
+                        date: dateFromMonth(reportMonth),
                     },
                 }),
             };
@@ -1215,11 +1226,10 @@ export default function ImportWizard() {
                     // overwrote empty names with "Unknown" regardless of locale
                     // and stuffed it into the DB. Blank now passes through as
                     // undefined → API saves NULL.
-                    animalName: extractedData.animalName?.trim() || undefined,
-                    species: extractedData.animalSpecies,
-                    recordType: importRecordType(extractedData.recordType),
+                    // Same report shape as the create path (Jon, 2026-10-22).
+                    recordType: 'observation',
                     rating: extractedData.adoptionRating || undefined,
-                    date: extractedData.adoptionDate || new Date().toISOString().split('T')[0],
+                    date: dateFromMonth(reportMonth),
                 },
                 images: [
                     // Honor the review-step de-selection: a processed image is
@@ -1854,6 +1864,49 @@ export default function ImportWizard() {
                         />
                     </div>
 
+                    {/* Rating — the point of a report (Jon, 2026-10-22). Social-post
+                        imports are almost always call-outs, so there is no activity
+                        type to choose: the record is a report, and the rating is what
+                        protects other rescuers. The AI may suggest one from the
+                        conduct described; it is tagged as a suggestion, with the
+                        reason, until the rescuer touches the stars. Never saved
+                        silently. Contacts imports keep their own flow. */}
+                    {!fromContacts && (
+                        <div data-testid="import-rating" className="rounded-xl border border-stone-200 p-4 space-y-3">
+                            <h3 className="text-sm font-semibold text-teal-800 uppercase tracking-wider">{t('import.rating_title')}</h3>
+                            <StarRating
+                                value={extractedData.adoptionRating || 0}
+                                onChange={(r: number) => {
+                                    setRatingTouched(true);
+                                    setExtractedData({ ...extractedData, adoptionRating: r || undefined });
+                                }}
+                                size="md"
+                                showLabel
+                            />
+                            {!ratingTouched && !!extractedData.adoptionRating && (
+                                <p data-testid="import-rating-suggested" className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                                    {extractedData.ratingReason
+                                        ? t('import.rating_suggested_reason').replace('{reason}', extractedData.ratingReason)
+                                        : t('import.rating_suggested')}
+                                </p>
+                            )}
+                            {extractedData.adoptionRating === 1 && (
+                                <p className="text-xs text-rose-700">{t('import.rating_one_bans')}</p>
+                            )}
+                            <div>
+                                <label htmlFor="import-month" className="block text-xs font-medium text-stone-500 mb-1">{t('import.report_month')}</label>
+                                <input
+                                    id="import-month"
+                                    type="month"
+                                    value={reportMonth}
+                                    max={new Date().toISOString().slice(0, 7)}
+                                    onChange={e => setReportMonth(e.target.value)}
+                                    className="w-full sm:w-auto px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
+                                />
+                            </div>
+                        </div>
+                    )}
+
                     {/* Contact Info — typed entries, AI-categorized and editable */}
                     <div>
                         <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
@@ -1910,116 +1963,6 @@ export default function ImportWizard() {
                             />
                         </div>
                     )}
-
-                    {/* Record type — always shown, pre-selected from the AI (design
-                        change 13, approved 2026-10-21). It used to appear only when
-                        the AI flagged an adoption, so a miss could not be corrected
-                        and an "adoption_request" saved without the rescuer ever
-                        seeing it. One default for the pills and the save
-                        (importRecordType); they used to disagree. */}
-                    {!fromContacts && (() => {
-                        const recordType = importRecordType(extractedData.recordType);
-                        const typeMeta: Record<string, { icon: string; label: string }> = {
-                            adoption: { icon: '🏠', label: t('import.typeAdoption') },
-                            adoption_request: { icon: '📝', label: t('import.typeRequest') },
-                            returned_pet: { icon: '↩️', label: t('import.typeReturned') },
-                            follow_up: { icon: '📞', label: t('import.typeFollowUp') },
-                            observation: { icon: '👁️', label: t('import.typeObservation') },
-                        };
-                        return (
-                            <div className="rounded-xl border border-stone-200 p-4 space-y-3">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <h3 className="text-sm font-semibold text-teal-800 uppercase tracking-wider">{t('import.recordType')}</h3>
-                                    {extractedData.adoptionDetected && (
-                                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
-                                            {t('import.adoptionDetected')}
-                                            {extractedData.adoptionConfidence && <> · {t(`import.confidence_${extractedData.adoptionConfidence}`)}</>}
-                                        </span>
-                                    )}
-                                </div>
-
-                                {/* Emoji here are decorative subject markers next to text (§1.3). */}
-                                <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={t('import.recordType')}>
-                                    {IMPORT_RECORD_TYPES.map(value => {
-                                        const isSelected = recordType === value;
-                                        return (
-                                            <button
-                                                key={value}
-                                                type="button"
-                                                role="radio"
-                                                aria-checked={isSelected}
-                                                onClick={() => setExtractedData({ ...extractedData, recordType: value })}
-                                                className={`inline-flex items-center gap-1.5 min-h-[44px] px-3 rounded-xl text-sm font-semibold border transition-all ${isSelected
-                                                    ? 'bg-teal-100 border-teal-400 text-teal-800'
-                                                    : 'bg-white border-stone-200 text-stone-600 hover:border-teal-300'
-                                                    }`}
-                                            >
-                                                <span aria-hidden="true">{typeMeta[value].icon}</span>
-                                                <span>{typeMeta[value].label}</span>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-
-                                {recordTypeHasAnimal(recordType) && (
-                                    <>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                            <div>
-                                                <label htmlFor="import-animal-name" className="block text-xs font-medium text-stone-500 mb-1">
-                                                    {t('import.animalName')}
-                                                    <span className="ml-1 lowercase">({t('common.optional')})</span>
-                                                </label>
-                                                {/* v2.19.52: optional; empty saves as NULL on the API side. */}
-                                                <input
-                                                    id="import-animal-name"
-                                                    value={extractedData.animalName || ''}
-                                                    onChange={e => setExtractedData({ ...extractedData, animalName: e.target.value })}
-                                                    className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label htmlFor="import-species" className="block text-xs font-medium text-stone-500 mb-1">{t('import.species')}</label>
-                                                <select
-                                                    id="import-species"
-                                                    value={extractedData.animalSpecies || ''}
-                                                    onChange={e => setExtractedData({ ...extractedData, animalSpecies: e.target.value as ExtractedAdopterData['animalSpecies'] })}
-                                                    className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
-                                                >
-                                                    <option value="dog">{t('import.speciesDog')}</option>
-                                                    <option value="cat">{t('import.speciesCat')}</option>
-                                                    <option value="bird">{t('import.speciesBird')}</option>
-                                                    <option value="other">{t('import.speciesOther')}</option>
-                                                </select>
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <span className="block text-xs font-medium text-stone-500 mb-1">{t('import.rating')}</span>
-                                            <StarRating
-                                                value={extractedData.adoptionRating || 0}
-                                                onChange={(r: number) => setExtractedData({ ...extractedData, adoptionRating: r })}
-                                                size="md"
-                                                showLabel
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label htmlFor="import-date" className="block text-xs font-medium text-stone-500 mb-1">{t('import.adoptionDate')}</label>
-                                            <input
-                                                id="import-date"
-                                                type="date"
-                                                value={extractedData.adoptionDate || new Date().toISOString().split('T')[0]}
-                                                onChange={e => setExtractedData({ ...extractedData, adoptionDate: e.target.value })}
-                                                className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
-                                            />
-                                        </div>
-                                    </>
-                                )}
-
-                                <p className="text-xs text-stone-500">{t('import.adoptionNote')}</p>
-                            </div>
-                        );
-                    })()}
 
                     {/* Media preview — every image and video that WILL be saved,
                         each de-selectable so the rescuer drops what they don't want

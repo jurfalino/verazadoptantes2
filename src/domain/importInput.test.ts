@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitLinkAndText, appendContext, canSaveImportedProfile, importRecordType, recordTypeHasAnimal, aliasForMerge } from './importInput';
+import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, dateFromMonth, aliasForMerge } from './importInput';
 
 describe('splitLinkAndText', () => {
     it('reads a bare link as a link with no extra text', () => {
@@ -80,19 +80,28 @@ describe('canSaveImportedProfile', () => {
     });
 });
 
-describe('importRecordType', () => {
-    it('keeps a type the AI returned', () => {
-        expect(importRecordType('adoption_request')).toBe('adoption_request');
+describe('suggestedRating', () => {
+    it('keeps a whole 1–5 rating', () => {
+        expect(suggestedRating(1)).toBe(1);
+        expect(suggestedRating(5)).toBe(5);
     });
 
-    it('falls back to observation — the same default the save uses', () => {
-        expect(importRecordType(undefined)).toBe('observation');
-        expect(importRecordType('nonsense')).toBe('observation');
+    it('drops anything else instead of inventing one', () => {
+        for (const v of [0, 6, 2.5, null, undefined, '1', NaN]) expect(suggestedRating(v)).toBeNull();
+    });
+});
+
+describe('monthOf / dateFromMonth', () => {
+    it('reads the month of a date', () => {
+        expect(monthOf('2026-03-14')).toBe('2026-03');
+        expect(monthOf('2026-03')).toBe('2026-03');
+        expect(monthOf('marzo')).toBe('');
+        expect(monthOf('2026-13-01')).toBe('');
     });
 
-    it('gives animal fields to everything but an observation', () => {
-        expect(recordTypeHasAnimal('observation')).toBe(false);
-        expect(recordTypeHasAnimal('adoption')).toBe(true);
+    it('saves the first of the month, or no date when there is none', () => {
+        expect(dateFromMonth('2026-03')).toBe('2026-03-01');
+        expect(dateFromMonth('')).toBeUndefined();
     });
 });
 
