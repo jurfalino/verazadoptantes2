@@ -21,7 +21,7 @@ import {
     mergeContactEntries,
 } from '@/lib/contactEntries';
 import { canEditAdopterRecord, maskAdopterContact, redactHistoryChanges, renderName } from '@/lib/piiAccess';
-import { isPiiGatingEnabled, resolveAdopterVisibility, buildMaskOptions } from '@/lib/piiAccessServer';
+import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdopterVisibility, buildMaskOptions } from '@/lib/piiAccessServer';
 import { deleteAdopterRecords } from '@/app/actions/_recordWrite';
 import { runAfterResponse } from '@/lib/background';
 
@@ -93,7 +93,16 @@ async function getAdopterImpl(id: string) {
  */
 export async function appendToExistingAdopter(
     targetId: string,
-    fields: { contactInfo?: string; contactEntries?: string; addressInfo?: string; familyMembers?: string; sourceUrl?: string },
+    fields: {
+        contactInfo?: string; contactEntries?: string; addressInfo?: string; familyMembers?: string; sourceUrl?: string;
+        /**
+         * The import wizard's "público" switch was on for a post from a public
+         * source. Stamps the incoming entries public under the same rule the
+         * create path uses (needs a sourceUrl and ENABLE_PUBLIC_PROFILES). Merged
+         * contacts used to land protected whatever the switch said (audit D8).
+         */
+        publicSource?: boolean;
+    },
 ): Promise<{ success: boolean; adopterId?: string; error?: string }> {
     try {
         if (!targetId) return { success: false, error: 'Missing target adopter id' };
@@ -121,6 +130,9 @@ export async function appendToExistingAdopter(
             return { success: false, error: 'Not authorized to modify this adopter' };
         }
 
+        const stampPublic = !!fields.publicSource && !!fields.sourceUrl?.trim()
+            && await isPublicProfilesEnabled();
+
         const appendIfNew = (existing: string | null, incoming: string | undefined): string | null => {
             if (!incoming || !incoming.trim()) return existing;
             const trimmed = incoming.trim();
@@ -141,7 +153,8 @@ export async function appendToExistingAdopter(
             // the caller sends contactEntries; fall back to the legacy blob append
             // for callers that only send a contactInfo string.
             if (fields.contactEntries) {
-                const incoming = deserializeContactEntries(fields.contactEntries);
+                const parsed = deserializeContactEntries(fields.contactEntries);
+                const incoming = stampPublic ? parsed.map(e => ({ ...e, isPublic: true })) : parsed;
                 if (incoming.length) {
                     const targetEntries = deserializeContactEntries(row.contactEntries);
                     const base = targetEntries.length ? targetEntries : parseBlobToContactEntries(row.contactInfo);

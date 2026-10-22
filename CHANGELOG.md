@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.213] - 2026-10-21
+
+### Changed — duplicate handling in the post import (audit 2026-10-21, batch 2b)
+
+- **The same post is recognised however its link looks**: www/m./web., tracking parameters,
+  `/posts/<id>` vs `permalink.php?story_fbid=<id>`, Instagram `/p/` and `/reel/`. Facebook
+  `/share/…` links (18% of stored links) are resolved to the post's own link when Facebook allows.
+- **Posts merged into an existing profile are remembered** — the check now also looks at activity
+  records, and lists every profile the post was saved to.
+- **«Ya importaste este post»**: «Ver perfil» leads (decision B9); «Agregar una nueva interacción»
+  is secondary; **«Es otra persona del post»** saves this person as a relative (household member,
+  with their contacts) of that profile (decision B6).
+- **Possible matches**: a weak match is no longer pre-selected; «Agregar al perfil elegido» is the
+  main button only for a strong match, otherwise «Crear un perfil nuevo» leads (B5). Each match has a
+  «¿Por qué?» panel — what the existing profile has (presence only), and a warning when only the
+  name matched with nothing to compare (same idea as the spreadsheet import).
+- **Review screen names the likely match** with «Agregar a este perfil» instead of a bare count (B7).
+- **Merging keeps the post's name as an alias** when it differs (B8), and **honours the «público»
+  switch** (merged contacts used to land protected whatever it said).
+- Duplicate screens use theme colours (no purple/blue) and pinned buttons on phones.
+
 ## [2.56.212] - 2026-10-21
 
 ### Changed — import wizard on phones, fewer steps (audit 2026-10-21, batch 2)

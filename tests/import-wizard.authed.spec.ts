@@ -111,6 +111,67 @@ test.describe('Import wizard', () => {
     });
 });
 
+test.describe('Import wizard — duplicates', () => {
+    test('an already-imported post leads with "Ver perfil" and offers adding a relative', async ({ page }) => {
+        await page.route('**/api/facebook/fetch-post', route => route.fulfill({
+            status: 200, contentType: 'application/json',
+            body: JSON.stringify({ success: true, data: { text: 'Cuidado con Juan y Ana', images: [] } }),
+        }));
+        await stubAi(page, { name: 'Ana Prueba', phones: [] });
+        let lookedUp = '';
+        await page.route('**/api/adopters?sourceUrl=*', route => {
+            lookedUp = new URL(route.request().url()).searchParams.get('sourceUrl') ?? '';
+            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ matchType: 'url', matches: [{ id: 'test-import-fixture-juan', name: 'Juan Prueba' }] }) });
+        });
+
+        await page.goto('/import');
+        const field = page.getByPlaceholder(/paste|pegá|URL|text/i);
+        await expect(field).toBeVisible({ timeout: 30000 });
+        await field.fill(POST);
+        await page.getByRole('button', { name: /Continue|Continuar/i }).click();
+        await page.getByRole('button', { name: /Extract with AI|Extraer con IA/i }).click();
+        await page.getByRole('button', { name: /Save Adopter|Guardar Adoptante/i }).click();
+
+        await expect(page.getByRole('heading', { name: /already imported|Ya importaste/i })).toBeVisible({ timeout: 30000 });
+        expect(lookedUp).toBe(POST);
+        const actions = page.getByTestId('import-actions');
+        // "Ver perfil" first (decision B9), then add-interaction, then add-as-relative (B6).
+        await expect(actions.locator('a, button').first()).toHaveAttribute('href', '/adopter/test-import-fixture-juan');
+        await expect(actions.getByRole('button', { name: /relative|familiar/i })).toBeVisible();
+    });
+
+    test('a name-only match is not pre-selected, and "create new" leads', async ({ page }) => {
+        // Seeded profile; the AI returns the same name and no contact.
+        await stubAi(page, { name: 'María García López', phones: [] });
+        await pasteAndContinue(page, 'María García López quiere adoptar');
+
+        // The review screen names the match and offers to add to it (decision B7).
+        const hint = page.getByTestId('import-match-hint');
+        await expect(hint).toContainText('María García López', { timeout: 30000 });
+
+        await page.getByRole('button', { name: /Save Adopter|Guardar Adoptante/i }).click();
+        await expect(page.getByRole('heading', { name: /may already exist|ya exista/i })).toBeVisible({ timeout: 30000 });
+        await expect(page.getByRole('radio').first()).toBeVisible();
+        // A name with no contact is never a strong match, so nothing is selected
+        // and "create" is the main action (audit D5, decision B5).
+        await expect(page.locator('[role="radio"][aria-checked="true"]')).toHaveCount(0);
+        await expect(page.getByTestId('import-actions').getByRole('button').first()).toHaveText(/Create a new profile|Crear un perfil nuevo/i);
+        await expect(page.getByRole('button', { name: /Add to the selected|Agregar al perfil elegido/i })).toBeDisabled();
+    });
+
+    test('"Agregar a este perfil" on the review screen opens the match, selected', async ({ page }) => {
+        await stubAi(page, { name: 'María García López', phones: [] });
+        await pasteAndContinue(page, 'María García López quiere adoptar');
+        const hint = page.getByTestId('import-match-hint');
+        await expect(hint).toBeVisible({ timeout: 30000 });
+        await hint.getByRole('button', { name: /Add to this profile|Agregar a este perfil/i }).click();
+
+        await expect(page.getByRole('heading', { name: /may already exist|ya exista/i })).toBeVisible({ timeout: 30000 });
+        await expect(page.locator('[role="radio"][aria-checked="true"]')).toHaveCount(1);
+        await expect(page.getByRole('button', { name: /Add to the selected|Agregar al perfil elegido/i })).toBeEnabled();
+    });
+});
+
 test.describe('Import wizard on a phone', () => {
     test.use({ viewport: { width: 390, height: 844 } });
 

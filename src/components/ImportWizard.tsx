@@ -12,7 +12,7 @@ import type { MediaItem } from '@/components/ui/MediaLightbox';
 import LegalConsent from '@/components/LegalConsent';
 import { extractVideoThumbnail, extractVideoThumbnailFromUrl } from '@/lib/videoThumbnail';
 import { zarazTrack } from '@/lib/zaraz';
-import { findAdopters } from '@/app/actions';
+import { findAdopters, addHouseholdMember, addMemberContactEntry } from '@/app/actions';
 import type { DuplicateMatch } from '@/app/actions';
 import { confidenceBand } from '@/lib/scoring';
 import type { ExtractedAdopterData } from '@/lib/gemini';
@@ -45,7 +45,9 @@ import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
 import { handledAsStale } from '@/lib/errorMessage';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-import { splitLinkAndText, appendContext, canSaveImportedProfile, importRecordType, recordTypeHasAnimal, IMPORT_RECORD_TYPES } from '@/domain/importInput';
+import { splitLinkAndText, appendContext, canSaveImportedProfile, importRecordType, recordTypeHasAnimal, IMPORT_RECORD_TYPES, aliasForMerge } from '@/domain/importInput';
+import MatchWhy from '@/components/import/MatchWhy';
+import { buttonClasses } from '@/components/ui/Button';
 import StickyActions from '@/components/import/StickyActions';
 import MediaPicker from '@/components/import/MediaPicker';
 
@@ -332,6 +334,8 @@ export default function ImportWizard() {
     const [savingTargetName, setSavingTargetName] = useState<string>('');
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [duplicateAdopter, setDuplicateAdopter] = useState<any>(null);
+    // Every profile this post was already saved to (the first is duplicateAdopter).
+    const [duplicateAdopters, setDuplicateAdopters] = useState<Array<{ id: string; name: string | null }>>([]);
     const [personMatches, setPersonMatches] = useState<PersonMatch[]>([]);
     const [selectedMatch, setSelectedMatch] = useState<PersonMatch | null>(null);
     const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
@@ -643,7 +647,9 @@ export default function ImportWizard() {
                         // Private group post or restricted content — skip to manual
                         // input. The URL is still worth keeping: it is the audit trail
                         // for where the record came from, even when we could not read it.
-                        setSourceUrl(targetUrl);
+                        // A /share/ link resolved by the fetcher is stored as the post's
+                        // own link, so the same post is recognised next time (audit D1).
+                        setSourceUrl(responseData.resolvedUrl || targetUrl);
                         if (responseData.sourceNotPublic) {
                             setSourceNotPublic(true);
                             setIsPublicProfile(false);
@@ -685,7 +691,7 @@ export default function ImportWizard() {
                 }
             }
 
-            setSourceUrl(targetUrl);
+            setSourceUrl(responseData?.resolvedUrl || targetUrl);
             setStep(2);
             return true;
         } catch (err) {
@@ -884,6 +890,7 @@ export default function ImportWizard() {
     const handlePreSave = async () => {
         setIsSaving(true);
         setDuplicateAdopter(null);
+        setDuplicateAdopters([]);
         setPersonMatches([]);
         setSelectedMatch(null);
         setDuplicateCheckFailed(false);
@@ -903,6 +910,7 @@ export default function ImportWizard() {
                 const data = await res.json() as { matches: any[]; matchType?: string };
                 if (data.matches && data.matches.length > 0) {
                     setDuplicateAdopter(data.matches[0]);
+                    setDuplicateAdopters(data.matches.map(m => ({ id: m.id, name: m.name })));
                     trackImport('import_duplicate_shown', { kind: 'url', count: data.matches.length });
                     setIsSaving(false);
                     setShowConfirmModal(true);
@@ -946,7 +954,10 @@ export default function ImportWizard() {
                     }));
                     foundMatches = true;
                     setPersonMatches(matches);
-                    setSelectedMatch(matches[0]);
+                    // Pre-select only a strong match. A weak one used to come
+                    // pre-selected, one tap from merging into the wrong person;
+                    // the spreadsheet import makes the rescuer choose (audit D5).
+                    setSelectedMatch(matches[0].confidence === 'high' ? matches[0] : null);
                     trackImport('import_duplicate_shown', { kind: 'person', count: matches.length, topBand: matches[0].confidence });
                 }
             } catch (e) {
@@ -1212,12 +1223,20 @@ export default function ImportWizard() {
             // edits the rescuer made in the review step actually land on the
             // profile and in the dedup index (the contacts-import path already
             // does this; the post-import merge path used to drop them).
-            if (contactEntries.length) {
+            // The post's name, when it differs, stays on the profile as an alias
+            // (decision B8) — aliases are searchable and feed duplicate matching.
+            const alias = aliasForMerge(extractedData.name, mergeTarget.name);
+            const entriesToMerge: ContactEntry[] = alias
+                ? [...contactEntries, { type: 'alias', value: alias }]
+                : contactEntries;
+            if (entriesToMerge.length) {
                 const { appendToExistingAdopter } = await import('@/app/actions');
                 const appendRes = await appendToExistingAdopter(mergeTarget.id, {
-                    contactInfo: contactEntriesToBlob(contactEntries) || undefined,
-                    contactEntries: JSON.stringify(contactEntries),
+                    contactInfo: contactEntriesToBlob(entriesToMerge) || undefined,
+                    contactEntries: JSON.stringify(entriesToMerge),
                     sourceUrl: sourceUrl || undefined,
+                    // Honour the "público" switch the rescuer saw (audit D8).
+                    publicSource: !!sourceUrl && isPublicProfile,
                 });
                 if (!appendRes?.success) {
                     // Non-fatal: the activity record saved. appendRes.error already
@@ -1265,6 +1284,61 @@ export default function ImportWizard() {
             setIsSaving(false);
             setSavingMode(null);
         }
+    };
+
+    /**
+     * The post was already imported for someone else: this person is another one
+     * named in it. Save them as a relative of that profile (decision B6,
+     * 2026-10-21) — name, plus their contacts on the member. Turning relatives
+     * into profiles of their own is a later phase.
+     */
+    const handleAddAsRelative = async (target: { id: string; name: string | null }) => {
+        if (!extractedData) return;
+        setSavingMode('merge');
+        setSavingTargetName(target.name || '');
+        setIsSaving(true);
+        try {
+            const added = await addHouseholdMember({ adopterId: target.id, name: extractedData.name?.trim() || '', relationship: 'unknown' });
+            if (!added.ok) throw new Error(added.error === 'busy' && 'errorId' in added ? `busy (Error ID: ${added.errorId})` : added.error);
+            // One at a time: each write is a compare-and-swap on the household list.
+            for (const e of contactEntries) {
+                const res = await addMemberContactEntry({
+                    adopterId: target.id,
+                    memberId: added.memberId,
+                    type: e.type,
+                    value: e.value,
+                    ...(e.streetAndNumber ? { streetAndNumber: e.streetAndNumber } : {}),
+                    ...(e.locality ? { locality: e.locality } : {}),
+                    ...(e.platform ? { platform: e.platform } : {}),
+                });
+                if (!res.ok) throw new Error(res.error === 'busy' && 'errorId' in res ? `busy (Error ID: ${res.errorId})` : res.error);
+            }
+            trackImport('import_duplicate_choice', { choice: 'relative', kind: 'url' });
+            toast.success(t('import.relative_added'), target.name || undefined);
+            sessionStorage.removeItem('import_wizard_state');
+            router.push(`/adopter/${target.id}`);
+        } catch (err) {
+            showFailure(err, t('import.relative_failed'), null, 'ImportWizard.relative');
+            setShowConfirmModal(false);
+            setIsSaving(false);
+            setSavingMode(null);
+        }
+    };
+
+    /** "Agregar a este perfil" on the review screen: open the match, pre-selected (decision B7). */
+    const openMatchFromHint = (hint: DuplicateMatch) => {
+        const match: PersonMatch = {
+            id: hint.adopterId,
+            name: hint.adopterName,
+            confidence: confidenceBand(hint.relevancePercent) as 'high' | 'medium' | 'low',
+            matchTypes: hint.matchTypes,
+        };
+        setDuplicateAdopter(null);
+        setDuplicateAdopters([]);
+        setPersonMatches([match]);
+        setSelectedMatch(match);
+        trackImport('import_duplicate_shown', { kind: 'person', count: 1, topBand: match.confidence, fromHint: true });
+        setShowConfirmModal(true);
     };
 
     // --- RENDER ---
@@ -1746,28 +1820,38 @@ export default function ImportWizard() {
                     <div>
                         <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
                         <ContactEntriesInput entries={contactEntries} onChange={setContactEntries} />
-                        {/* Field-overlap preview (v2.16.0-43 — Option B).
-                            Step 3 previously surfaced every duplicate as its
-                            own chip with type-list labels and a percentage,
-                            duplicating the dedup decision UI on Step 4. Now
-                            it shows a single count line — the user knows
-                            something will surface at save-time, the decision
-                            still happens on Step 4. We only count hits above
-                            the 15% noise floor (same threshold the old
-                            "visible" bucket used). */}
+                        {/* Field-overlap preview. Was a bare count ("1 posible
+                            duplicado") the rescuer could not act on, so they kept
+                            editing a profile they might end up merging. Now it
+                            names the strongest match and offers to add to it
+                            (decision B7, 2026-10-21); the decision still happens
+                            on the duplicate screen, which opens pre-selected.
+                            Hits under the 15% noise floor stay hidden. */}
                         {(() => {
-                            const visibleCount = fieldOverlapHints.filter(h => h.relevancePercent >= 15).length;
-                            if (visibleCount === 0) return null;
-                            const template = visibleCount === 1
-                                ? t('import.duplicates_found_count_one')
-                                : t('import.duplicates_found_count_other').replace('{count}', String(visibleCount));
+                            const visible = fieldOverlapHints
+                                .filter(h => h.relevancePercent >= 15)
+                                .sort((x, y) => y.relevancePercent - x.relevancePercent);
+                            if (visible.length === 0) return null;
+                            const top = visible[0];
                             return (
-                                <p className="mt-1.5 text-xs text-amber-700 flex items-start gap-1.5">
-                                    <svg className="w-3.5 h-3.5 flex-shrink-0 mt-px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                    </svg>
-                                    <span>{template}</span>
-                                </p>
+                                <div data-testid="import-match-hint" className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 space-y-2">
+                                    <p className="flex items-start gap-1.5">
+                                        <WarningIcon className="w-3.5 h-3.5 flex-shrink-0 mt-px" />
+                                        <span>
+                                            {t('import.review_hint_match')
+                                                .replace('{name}', top.adopterName?.trim() || t('import.unnamed_profile'))
+                                                .replace('{why}', humanMatchSentence(top.matchTypes || [], t))}
+                                            {visible.length > 1 && <> {t('import.duplicates_found_count_other').replace('{count}', String(visible.length))}</>}
+                                        </span>
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => openMatchFromHint(top)}
+                                        className="min-h-[44px] px-4 rounded-xl border border-teal-200 bg-teal-50 text-teal-800 text-sm font-bold hover:bg-teal-100"
+                                    >
+                                        {t('import.review_hint_action')}
+                                    </button>
+                                </div>
                             );
                         })()}
                     </div>
@@ -2054,167 +2138,180 @@ export default function ImportWizard() {
                     </div>
                 </div>
             )}
-            {showConfirmModal && !isSaving && (
-                <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-6">
-                    <div className="flex flex-col items-center text-center">
-                        <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${duplicateAdopter ? 'bg-yellow-100 text-yellow-600' :
-                            personMatches.length > 0 ? 'bg-purple-100 text-purple-600' :
-                                'bg-blue-100 text-blue-600'
-                            }`}>
-                            {personMatches.length > 0 && !duplicateAdopter ? (
-                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                                </svg>
-                            ) : (
-                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                </svg>
-                            )}
-                        </div>
+            {showConfirmModal && !isSaving && (() => {
+                const secondary = buttonClasses({ variant: 'secondary', fullWidth: true });
+                const backToReview = (kind: 'url' | 'person' | 'none') => (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (kind !== 'none') trackImport('import_duplicate_choice', { choice: 'back', kind });
+                            setDuplicateAdopter(null);
+                            setDuplicateAdopters([]);
+                            setPersonMatches([]);
+                            setSelectedMatch(null);
+                            setShowConfirmModal(false);
+                        }}
+                        className="-ml-2 inline-flex items-center min-h-[44px] px-2 text-sm font-semibold text-stone-500 hover:text-stone-700"
+                    >
+                        {t('import.backToReview')}
+                    </button>
+                );
 
-                        <h3 className="text-xl font-semibold text-stone-900 mb-2">
-                            {duplicateAdopter
-                                ? (<span className="inline-flex items-center gap-1.5"><WarningIcon className="w-4 h-4 shrink-0" />{t('import.duplicateWarning') || 'Duplicate Post Detected'}</span>)
-                                : personMatches.length > 0
-                                    ? (t('import.personMatchTitle') || 'Existing Profiles Found')
-                                    : (t('import.confirmCreate') || 'Create New Profile?')}
-                        </h3>
-
-                        <p className="text-stone-600 mb-4">
-                            {duplicateAdopter
-                                ? <>{t('import.duplicateUrl') || 'This URL was already imported. Existing profile:'} <a href={`/adopter/${duplicateAdopter.id}`} target="_blank" className="underline font-medium text-blue-600">{duplicateAdopter.name}</a></>
-                                : personMatches.length > 0
-                                    ? (t('import.personMatchDesc') || 'Select a profile to add this record to, or create a new one')
-                                    : <>{t('import.aboutToCreate') || 'You are about to create a new profile for'} <strong className="text-stone-900">{extractedData?.name || (t('import.unknownName') || 'Unknown')}</strong>.</>
-                            }
-                        </p>
-
-                        {/* Warning when duplicate check failed */}
-                        {duplicateCheckFailed && !duplicateAdopter && personMatches.length === 0 && (
-                            <div className="w-full px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 text-left flex items-start gap-2 mb-2 outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100">
-                                <WarningIcon className="w-4 h-4 shrink-0 mt-0.5" />
-                                <span>{t('import.duplicateCheckFailed') || 'Could not verify if this person already exists. Please check manually before saving.'}</span>
+                // ── The post was already imported (decisions B9 + B6) ──
+                if (duplicateAdopter) {
+                    const first = duplicateAdopters[0] ?? { id: duplicateAdopter.id, name: duplicateAdopter.name };
+                    const firstName = first.name?.trim() || t('import.unnamed_profile');
+                    return (
+                        <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
+                            {backToReview('url')}
+                            <div className="flex items-start gap-3">
+                                <span className="w-10 h-10 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                                    <WarningIcon className="w-5 h-5" />
+                                </span>
+                                <div className="min-w-0">
+                                    <h3 className="text-lg font-semibold text-stone-900">{t('import.already_imported_title')}</h3>
+                                    <p className="text-sm text-stone-600 mt-0.5">{t('import.already_imported_desc')}</p>
+                                </div>
                             </div>
-                        )}
+                            <ul className="space-y-2">
+                                {(duplicateAdopters.length ? duplicateAdopters : [first]).map(p => (
+                                    <li key={p.id} className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 bg-stone-50 px-4 py-2">
+                                        <span className="font-semibold text-stone-900 line-clamp-2 break-words">{p.name?.trim() || t('import.unnamed_profile')}</span>
+                                        <a
+                                            href={`/adopter/${p.id}`}
+                                            onClick={() => trackImport('import_duplicate_choice', { choice: 'view', kind: 'url' })}
+                                            className="shrink-0 inline-flex items-center min-h-[44px] px-2 text-sm font-semibold text-teal-700 underline underline-offset-2"
+                                        >
+                                            {t('import.viewProfile')}
+                                        </a>
+                                    </li>
+                                ))}
+                            </ul>
+                            <StickyActions className="flex flex-col gap-2">
+                                <a
+                                    href={`/adopter/${first.id}`}
+                                    onClick={() => trackImport('import_duplicate_choice', { choice: 'view', kind: 'url' })}
+                                    className={`${BTN_PRIMARY} w-full`}
+                                >
+                                    {t('import.view_profile_btn')}
+                                </a>
+                                <button type="button" onClick={() => handleMerge({ id: first.id, name: first.name || '' })} className={secondary}>
+                                    {t('import.add_interaction_to').replace('{name}', firstName)}
+                                </button>
+                                <button type="button" onClick={() => handleAddAsRelative(first)} className={secondary}>
+                                    {t('import.add_as_relative_of').replace('{name}', firstName)}
+                                </button>
+                            </StickyActions>
+                        </div>
+                    );
+                }
 
-                        {/* Person Match Cards — selectable list */}
-                        {personMatches.length > 0 && !duplicateAdopter && (
-                            <div className="w-full space-y-2 mb-2">
-                                {personMatches.map((match) => {
+                // ── Possible matches by name / contact (decision B5, audit D5–D6) ──
+                if (personMatches.length > 0) {
+                    const mergeLeads = selectedMatch?.confidence === 'high';
+                    const mergeBtn = (
+                        <button
+                            type="button"
+                            onClick={() => handleMerge()}
+                            disabled={!selectedMatch}
+                            className={mergeLeads ? `${BTN_PRIMARY} w-full` : secondary}
+                        >
+                            {t('import.add_to_selected')}
+                        </button>
+                    );
+                    const createBtn = (
+                        <button
+                            type="button"
+                            onClick={() => { trackImport('import_duplicate_choice', { choice: 'create', kind: 'person' }); handleConfirmSave(); }}
+                            className={mergeLeads ? secondary : `${BTN_PRIMARY} w-full`}
+                        >
+                            {t('import.create_new_instead')}
+                        </button>
+                    );
+                    return (
+                        <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
+                            {backToReview('person')}
+                            <div>
+                                <h3 className="text-lg font-semibold text-stone-900">{t('import.possible_match_title')}</h3>
+                                <p className="text-sm text-stone-600 mt-0.5">{t('import.possible_match_desc')}</p>
+                            </div>
+                            <div className="space-y-2" role="radiogroup" aria-label={t('import.possible_match_title')}>
+                                {personMatches.map(match => {
                                     const isSelected = selectedMatch?.id === match.id;
                                     return (
-                                        <button
+                                        <div
                                             key={match.id}
-                                            type="button"
+                                            role="radio"
+                                            aria-checked={isSelected}
+                                            tabIndex={0}
                                             onClick={() => setSelectedMatch(isSelected ? null : match)}
-                                            className={`w-full text-left rounded-xl p-4 border-2 transition-all ${isSelected
-                                                ? 'border-purple-500 bg-purple-50 ring-1 ring-purple-200'
+                                            onKeyDown={e => {
+                                                if (e.key !== 'Enter' && e.key !== ' ') return;
+                                                e.preventDefault();
+                                                setSelectedMatch(isSelected ? null : match);
+                                            }}
+                                            className={`w-full text-left rounded-xl p-4 border-2 cursor-pointer transition-all ${isSelected
+                                                ? 'border-teal-500 bg-teal-50'
                                                 : 'border-stone-200 bg-stone-50 hover:border-stone-300'
                                                 }`}
                                         >
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-3">
-                                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-purple-500 bg-purple-500' : 'border-stone-300'
-                                                        }`}>
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="flex items-start gap-3 min-w-0">
+                                                    <span aria-hidden="true" className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-teal-600 bg-teal-600' : 'border-stone-300'}`}>
                                                         {isSelected && <CheckIcon className="w-3 h-3 text-white" />}
-                                                    </div>
-                                                    <div className="min-w-0 flex-1">
-                                                        <p className="font-semibold text-stone-900 line-clamp-2 break-words" title={match.name}>{match.name}</p>
-                                                        {/* Natural-sentence dedup reason (v2.16.0-43). Replaced
-                                                            the chip list of raw token-type labels with one line
-                                                            that names what's shared in user-language. */}
-                                                        <p className="text-xs text-stone-600 mt-1">
-                                                            {humanMatchSentence(match.matchTypes || [], t)}
-                                                        </p>
+                                                    </span>
+                                                    <div className="min-w-0">
+                                                        <p className="font-semibold text-stone-900 line-clamp-2 break-words" title={match.name}>{match.name?.trim() || t('import.unnamed_profile')}</p>
+                                                        <p className="text-xs text-stone-600 mt-1">{humanMatchSentence(match.matchTypes || [], t)}</p>
+                                                        <MatchWhy adopterId={match.id} matchTypes={match.matchTypes || []} t={t} />
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex flex-col items-end gap-1 shrink-0">
                                                     <MatchBandPill band={match.confidence} t={t} />
                                                     <a
                                                         href={`/adopter/${match.id}`}
                                                         target="_blank"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        className="text-teal-600 hover:text-blue-700 text-xs underline"
-                                                    >{t('import.viewProfile') || 'View'}</a>
+                                                        rel="noopener"
+                                                        onClick={e => { e.stopPropagation(); trackImport('import_duplicate_choice', { choice: 'view', kind: 'person' }); }}
+                                                        className="inline-flex items-center min-h-[44px] px-1 text-xs font-semibold text-teal-700 underline underline-offset-2"
+                                                    >
+                                                        {t('import.viewProfile')}
+                                                    </a>
                                                 </div>
                                             </div>
-                                        </button>
+                                        </div>
                                     );
                                 })}
                             </div>
-                        )}
-                    </div>
+                            <StickyActions className="flex flex-col gap-2">
+                                {mergeLeads ? <>{mergeBtn}{createBtn}</> : <>{createBtn}{mergeBtn}</>}
+                            </StickyActions>
+                        </div>
+                    );
+                }
 
-                    {/* Action Buttons */}
-                    <div className="flex flex-col gap-2">
-                        {duplicateAdopter ? (
-                            <>
-                                <button
-                                    onClick={() => {
-                                        handleMerge({ id: duplicateAdopter.id, name: duplicateAdopter.name });
-                                    }}
-                                    disabled={isSaving}
-                                    className="py-2.5 px-4 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                >
-                                    {isSaving ? <><svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg> {t('import.addingRecord') || 'Adding...'}</> : <>{t('import.addInteraction') || '➕ Add New Interaction to This Profile'}</>}
-                                </button>
-                                <a
-                                    href={`/adopter/${duplicateAdopter.id}`}
-                                    onClick={() => trackImport('import_duplicate_choice', { choice: 'view', kind: 'url' })}
-                                    className={BTN_PRIMARY}
-                                >
-                                    {t('import.viewExisting') || '→ View Existing Profile'}
-                                </a>
-                                <button
-                                    onClick={() => { trackImport('import_duplicate_choice', { choice: 'back', kind: 'url' }); setDuplicateAdopter(null); setShowConfirmModal(false); }}
-                                    className="py-2.5 px-4 border border-stone-300 rounded-xl text-sm font-medium text-stone-600 hover:bg-stone-50"
-                                >
-                                    {t('import.backToReview') || '← Back to Review'}
-                                </button>
-                            </>
-                        ) : personMatches.length > 0 ? (
-                            <>
-                                <button
-                                    onClick={() => handleMerge()}
-                                    disabled={isSaving || !selectedMatch}
-                                    className="py-2.5 px-4 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                >
-                                    {isSaving ? <><svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg> {t('import.addingRecord') || 'Adding record...'}</> : <>{t('import.addToExisting') || 'Add Record to Selected Profile'}</>}
-                                </button>
-                                <button
-                                    onClick={handleConfirmSave}
-                                    disabled={isSaving}
-                                    className={BTN_PRIMARY}
-                                >
-                                    {t('import.createNewAnyway') || 'Create New Profile Instead'}
-                                </button>
-                                <button
-                                    onClick={() => { trackImport('import_duplicate_choice', { choice: 'back', kind: 'person' }); setPersonMatches([]); setSelectedMatch(null); setShowConfirmModal(false); }}
-                                    className="py-2.5 px-4 border border-stone-300 rounded-xl text-sm font-medium text-stone-600 hover:bg-stone-50"
-                                >
-                                    {t('import.backToReview') || '← Back to Review'}
-                                </button>
-                            </>
-                        ) : (
-                            <>
-                                <button
-                                    onClick={handleConfirmSave}
-                                    disabled={isSaving}
-                                    className={BTN_PRIMARY}
-                                >
-                                    {isSaving ? <><svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg> {t('import.creating') || 'Creating...'}</> : <><CheckIcon className="w-4 h-4 shrink-0" />{t('import.createProfile') || 'Create Profile'}</>}
-                                </button>
-                                <button
-                                    onClick={() => setShowConfirmModal(false)}
-                                    className="py-2.5 px-4 border border-stone-300 rounded-xl text-sm font-medium text-stone-600 hover:bg-stone-50"
-                                >
-                                    {t('import.backToReview') || '← Back to Review'}
-                                </button>
-                            </>
+                // ── No match, but the check itself failed: the rescuer has to look ──
+                return (
+                    <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
+                        {backToReview('none')}
+                        <h3 className="text-lg font-semibold text-stone-900">{t('import.confirmCreate')}</h3>
+                        <p className="text-sm text-stone-600">
+                            {t('import.aboutToCreate')} <strong className="text-stone-900">{extractedData?.name?.trim() || t('import.unnamed_profile')}</strong>.
+                        </p>
+                        {duplicateCheckFailed && (
+                            <div className="px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-start gap-2">
+                                <WarningIcon className="w-4 h-4 shrink-0 mt-0.5" />
+                                <span>{t('import.duplicateCheckFailed')}</span>
+                            </div>
                         )}
+                        <StickyActions>
+                            <button type="button" onClick={handleConfirmSave} className={`${BTN_PRIMARY} w-full`}>
+                                <CheckIcon className="w-4 h-4 shrink-0" />{t('import.createProfile')}
+                            </button>
+                        </StickyActions>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* Image/Video Lightbox */}
             <MediaLightbox item={lightboxItem} onClose={() => setLightboxItem(null)} />

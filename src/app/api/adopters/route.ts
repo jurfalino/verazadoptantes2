@@ -2,7 +2,8 @@ export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { adopters, adopterFlags, adopterImages } from '@/db/schema';
+import { adopters, adopterFlags, adopterImages, adoptions } from '@/db/schema';
+import { postKey, samePost } from '@/domain/postKey';
 import { eq, like, or, and, isNull, type InferSelectModel } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
@@ -68,11 +69,39 @@ export async function GET(request: Request) {
         const db = await getDb();
         if (!db) throw new Error('Database not available');
 
-        // Mode 1: Exact URL match (same-post duplicate detection)
+        // Mode 1: same-post detection. Matched by the POST the link names, not the
+        // link's exact text (www/m., tracking parameters, permalink vs /posts/ —
+        // audit 2026-10-21, D1), and against activity records too: a post merged
+        // into an existing profile is stored on the activity only (D2). Every
+        // profile that post was saved to is returned, not just the first.
         if (sourceUrl) {
-            const matches = await db.select()
-                .from(adopters)
-                .where(and(isNull(adopters.deletedAt), eq(adopters.sourceUrl, sourceUrl)));
+            const key = postKey(sourceUrl);
+            if (!key) return NextResponse.json({ matches: [], matchType: 'url' });
+            // LIKE on the post id narrows the scan; samePost() decides.
+            const needle = `%${key.needle}%`;
+            type AdopterRow = InferSelectModel<typeof adopters>;
+            const [direct, viaRecords]: [AdopterRow[], Array<{ adopterId: string | null; sourceUrl: string | null }>] = await Promise.all([
+                db.select().from(adopters)
+                    .where(and(isNull(adopters.deletedAt), like(adopters.sourceUrl, needle)))
+                    .limit(50),
+                db.select({ adopterId: adoptions.adopterId, sourceUrl: adoptions.sourceUrl }).from(adoptions)
+                    .where(like(adoptions.sourceUrl, needle))
+                    .limit(50),
+            ]);
+            const matches = direct.filter(r => samePost(r.sourceUrl, sourceUrl));
+            const seen = new Set(matches.map(r => r.id));
+            const recordAdopterIds = [...new Set(viaRecords
+                .filter(r => samePost(r.sourceUrl, sourceUrl))
+                .map(r => r.adopterId)
+                .filter((id): id is string => !!id && !seen.has(id)))];
+            // One query per id: D1 does not expand arrays in IN (CLAUDE.md).
+            const viaRecordRows: Array<AdopterRow | undefined> = await Promise.all(recordAdopterIds.map(id =>
+                db.select().from(adopters).where(and(eq(adopters.id, id), isNull(adopters.deletedAt))).get()
+                    .catch((e: unknown) => {
+                        logger.warn('Adopter duplicate check: record-adopter lookup failed', { adopterId: id, error: e instanceof Error ? e.message : String(e) });
+                        return undefined;
+                    })));
+            matches.push(...viaRecordRows.filter((r): r is AdopterRow => !!r));
             return NextResponse.json({
                 matches: await maskMatchesForViewer(matches, session.user.email),
                 matchType: 'url',

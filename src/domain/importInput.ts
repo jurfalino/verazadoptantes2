@@ -75,3 +75,19 @@ export function importRecordType(aiType: string | undefined | null): ImportRecor
 export function recordTypeHasAnimal(type: ImportRecordType): boolean {
     return type !== 'observation';
 }
+
+/** Lowercase, accents and extra spaces removed — for comparing two spellings of a name. */
+function foldName(name: string): string {
+    return name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * The post's name to keep as an alias when it is merged into a profile that goes
+ * by another name (decision B8, 2026-10-21) — "Mari G" into "María Gómez".
+ * Null when there is no name or it is the same name spelled the same way.
+ */
+export function aliasForMerge(postName: string | undefined, targetName: string | undefined): string | null {
+    const name = postName?.trim();
+    if (!name) return null;
+    return foldName(name) === foldName(targetName ?? '') ? null : name;
+}

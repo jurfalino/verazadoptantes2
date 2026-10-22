@@ -5,6 +5,7 @@ import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { arrayBufferToBase64 } from '@/lib/base64';
 import { hasExtractableContent, hasPostText, imageIdentity, isPlaceholderAssetUrl, isSourceNotPublic, realImages, sanitizePostText } from '@/domain/facebookExtraction';
+import { postKey } from '@/domain/postKey';
 
 interface FacebookPostData {
     text: string;
@@ -53,6 +54,13 @@ export async function POST(request: NextRequest) {
         const desktopUrl = url.replace(/m\.facebook\.com/i, 'www.facebook.com');
 
         const userId = session?.user?.email || 'unknown';
+
+        // A /share/… link names the share, not the post: two shares of one post
+        // carry different codes, so "already imported" could never match them
+        // (audit 2026-10-21, D1 — 70 of 392 stored links). Ask Facebook where it
+        // points and hand that back; the wizard stores and matches the post's own
+        // link. Best effort: on any failure the original link is used as before.
+        const resolvedUrl = await resolveShareLink(desktopUrl, userId);
 
         // Detect video/reel URLs early — skip Playwright scraper for these
         // (Playwright can't extract video content and wastes ~8s returning empty data)
@@ -111,6 +119,7 @@ export async function POST(request: NextRequest) {
                                 },
                                 source: 'playwright',
                                 ...(isVideoUrl ? { isVideo: true as const } : {}),
+                                ...(resolvedUrl ? { resolvedUrl } : {}),
                             });
                         }
                     }
@@ -240,6 +249,7 @@ export async function POST(request: NextRequest) {
                 // data was already public, and that premise fails here.
                 sourceNotPublic: isSourceNotPublic(postData),
                 error: 'Esta publicación es de un grupo privado o tiene restricciones. Pegá el texto y/o capturas de pantalla manualmente.',
+                ...(resolvedUrl ? { resolvedUrl } : {}),
             });
         }
 
@@ -264,6 +274,7 @@ export async function POST(request: NextRequest) {
             sourceNotPublic,
             data: postData,
             ...(postData.isVideo && { isVideo: true }),
+            ...(resolvedUrl ? { resolvedUrl } : {}),
         });
 
     } catch (error) {
@@ -460,4 +471,36 @@ function decodeHtmlEntities(text: string): string {
         .replace(/\\u003C/g, '<')
         .replace(/\\u003E/g, '>')
         .replace(/\\n/g, '\n');
+}
+
+/**
+ * Where a Facebook /share/… link points, or null. One manual-redirect request
+ * with Facebook's own crawler identity, capped at 5 s; only a Facebook link
+ * that names a post (not another share, not a login wall) is accepted.
+ */
+async function resolveShareLink(url: string, userId: string): Promise<string | null> {
+    if (!/facebook\.com\/share\//i.test(url)) return null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+        const res = await fetch(url, {
+            method: 'GET',
+            redirect: 'manual',
+            headers: { 'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)' },
+            signal: controller.signal,
+        });
+        const location = res.headers.get('location');
+        const target = location ? new URL(location, url).toString() : null;
+        const key = target ? postKey(target)?.key : null;
+        if (!target || !key || key.startsWith('fb:share:') || !key.startsWith('fb:')) {
+            logger.info('Facebook share link not resolved', { status: res.status, hasLocation: !!location, user: userId });
+            return null;
+        }
+        return target;
+    } catch (e) {
+        logger.warn('Facebook share link resolve failed', { error: e instanceof Error ? e.message : String(e), user: userId });
+        return null;
+    } finally {
+        clearTimeout(timer);
+    }
 }

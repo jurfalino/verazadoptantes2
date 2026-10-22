@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitLinkAndText, appendContext, canSaveImportedProfile, importRecordType, recordTypeHasAnimal } from './importInput';
+import { splitLinkAndText, appendContext, canSaveImportedProfile, importRecordType, recordTypeHasAnimal, aliasForMerge } from './importInput';
 
 describe('splitLinkAndText', () => {
     it('reads a bare link as a link with no extra text', () => {
@@ -93,5 +93,19 @@ describe('importRecordType', () => {
     it('gives animal fields to everything but an observation', () => {
         expect(recordTypeHasAnimal('observation')).toBe(false);
         expect(recordTypeHasAnimal('adoption')).toBe(true);
+    });
+});
+
+describe('aliasForMerge', () => {
+    it('keeps a different name from the post', () => {
+        expect(aliasForMerge('Mari G', 'María Gómez')).toBe('Mari G');
+    });
+
+    it('skips the same name with other accents, case or spacing', () => {
+        expect(aliasForMerge('maria  gomez', 'María Gómez')).toBeNull();
+    });
+
+    it('skips when the post had no name', () => {
+        expect(aliasForMerge('  ', 'María Gómez')).toBeNull();
     });
 });
