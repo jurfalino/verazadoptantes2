@@ -70,24 +70,24 @@ test.describe('Import wizard', () => {
         await expect.poll(() => calls, { timeout: 30000 }).toBe(2);
     });
 
-    test('no activity type to pick; the AI rating is a tagged suggestion the rescuer can change', async ({ page }) => {
-        await stubAi(page, { name: 'Persona Prueba', phones: ['1100000000'], adoptionRating: 1, ratingReason: 'abandonó a su perro' });
+    test('no activity type to pick; the AI rating is pre-filled and can be changed', async ({ page }) => {
+        await stubAi(page, { name: 'Persona Prueba', phones: ['1100000000'], adoptionRating: 1 });
         await pasteAndContinue(page, 'Persona Prueba abandonó a su perro en la ruta');
 
         await expect(page.getByRole('radio', { name: /Adoption|Adopción|Request|Solicitud/i })).toHaveCount(0);
         const rating = page.getByTestId('import-rating');
-        await expect(rating).toBeVisible();
-        await expect(page.getByTestId('import-rating-suggested')).toContainText('abandonó a su perro');
-        // Changing the stars removes the "suggested" tag.
+        await expect(rating).toContainText(/Dangerous|Peligroso/);
+        // Terse (Jon, 2026-10-22): no «Quitar», no confidence pill.
+        await expect(rating.getByRole('button', { name: /Clear|Quitar/i })).toHaveCount(0);
+        await expect(page.getByText(/High confidence|Alta confianza/i)).toHaveCount(0);
         await rating.getByRole('button').nth(1).click();
-        await expect(page.getByTestId('import-rating-suggested')).toHaveCount(0);
+        await expect(rating).toContainText(/Risky|Riesgoso|Arriscado/);
     });
 
     test('with no grounds the AI suggests nothing and the stars start empty', async ({ page }) => {
         await stubAi(page, { name: 'Persona Prueba', phones: ['1100000000'], adoptionRating: 2.5 });
         await pasteAndContinue(page, 'Persona Prueba');
-        await expect(page.getByTestId('import-rating')).toBeVisible();
-        await expect(page.getByTestId('import-rating-suggested')).toHaveCount(0);
+        await expect(page.getByTestId('import-rating')).toContainText(/Not rated|Sin calificar/i);
     });
 
     test('other people the post names are listed and saved as relatives', async ({ page }) => {
@@ -136,7 +136,8 @@ test.describe('Import wizard', () => {
 
     test('no duplicates: saves straight away and lands on the new profile', async ({ page }) => {
         const unique = `Fixture Sinduplicado ${Date.now()}`;
-        await stubAi(page, { name: unique, phones: [] });
+        // The AI read a date: the shared DatePicker opens on month and year.
+        await stubAi(page, { name: unique, phones: [], adoptionDate: '2026-03-10' });
         // The create is stubbed so the shared e2e database is not written to.
         let sent: { adoption?: Record<string, unknown> } = {};
         await page.route('**/api/adopters', route => {
@@ -145,7 +146,6 @@ test.describe('Import wizard', () => {
             return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'test-import-fixture-1' }) });
         });
         await pasteAndContinue(page, `${unique} quiere adoptar`);
-        await page.locator('#import-month').fill('2026-03');
 
         await page.getByRole('button', { name: /Save Adopter|Guardar Adoptante/i }).click();
         await page.waitForURL(/\/adopter\/test-import-fixture-1/, { timeout: 30000 });

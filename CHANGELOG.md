@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.222] - 2026-10-22
+
+### Changed — a terser rating, the shared date picker (Jon, 2026-10-22)
+
+- The rating shows only the stars, pre-filled with the AI's suggestion when the post gives grounds —
+  no «Sugerido por la IA: …» caption, no «Quitar» (re-tapping the star still clears it).
+- «Cuándo pasó» uses the app's shared DatePicker (the adoption form's, with «No sé el día exacto»
+  for month and year) instead of a one-off month field. A date the AI read opens on month and year.
+- The «Alta/Media/Baja confianza» pill is gone from the review screen.
+
 ## [2.56.221] - 2026-10-22
 
 ### Changed — people named together in a post become relatives (Jon, 2026-10-22)

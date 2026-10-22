@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, dateFromMonth, aliasForMerge, cleanOtherPeople, matchedOnName } from './importInput';
+import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, recordDateFrom, aliasForMerge, cleanOtherPeople, matchedOnName } from './importInput';
 
 describe('splitLinkAndText', () => {
     it('reads a bare link as a link with no extra text', () => {
@@ -91,7 +91,7 @@ describe('suggestedRating', () => {
     });
 });
 
-describe('monthOf / dateFromMonth', () => {
+describe('monthOf / recordDateFrom', () => {
     it('reads the month of a date', () => {
         expect(monthOf('2026-03-14')).toBe('2026-03');
         expect(monthOf('2026-03')).toBe('2026-03');
@@ -99,9 +99,10 @@ describe('monthOf / dateFromMonth', () => {
         expect(monthOf('2026-13-01')).toBe('');
     });
 
-    it('saves the first of the month, or no date when there is none', () => {
-        expect(dateFromMonth('2026-03')).toBe('2026-03-01');
-        expect(dateFromMonth('')).toBeUndefined();
+    it('keeps a full day, saves a month as its 1st, and no date when empty', () => {
+        expect(recordDateFrom('2026-03-14')).toBe('2026-03-14');
+        expect(recordDateFrom('2026-03')).toBe('2026-03-01');
+        expect(recordDateFrom('')).toBeUndefined();
     });
 });
 

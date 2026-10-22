@@ -45,7 +45,8 @@ import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
 import { handledAsStale } from '@/lib/errorMessage';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, dateFromMonth, aliasForMerge, cleanOtherPeople, matchedOnName, type PostPerson } from '@/domain/importInput';
+import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, recordDateFrom, aliasForMerge, cleanOtherPeople, matchedOnName, type PostPerson } from '@/domain/importInput';
+import DatePicker from '@/components/ui/DatePicker';
 import MatchWhy from '@/components/import/MatchWhy';
 import { buttonClasses } from '@/components/ui/Button';
 import StickyActions from '@/components/import/StickyActions';
@@ -209,13 +210,6 @@ export default function ImportWizard() {
     // of the social-media post flow. Drives the Step 3 breadcrumb so the user
     // knows why animal fields are empty.
     const [fromContacts, setFromContacts] = useState(false);
-    // Did the AI have to INTERPRET something (a fetched post, a photo, a video),
-    // as opposed to the user pasting text directly? Captured at extraction time
-    // rather than read from current UI state, which the user can still change on
-    // step 3. Gates the confidence pill: grading how well the model read an image
-    // or a scraped post is meaningful; grading how well it read text the user
-    // typed themselves is not.
-    const [extractedFromSource, setExtractedFromSource] = useState(false);
     // Set when Facebook named the poster but served none of the post's text — i.e.
     // the source is not publicly readable. Flips the import to protected and swaps
     // the "it came from a public source" explainer, which would otherwise be a
@@ -322,11 +316,9 @@ export default function ImportWizard() {
 
     // AI extraction state
     const [extractedData, setExtractedData] = useState<ExtractedAdopterData | null>(null);
-    // The rating is the point of a report (Jon, 2026-10-22). The AI may SUGGEST
-    // one; it is shown tagged until the rescuer touches the stars.
-    const [ratingTouched, setRatingTouched] = useState(false);
-    // When it happened, month and year only ('' = unknown → no date).
-    const [reportMonth, setReportMonth] = useState('');
+    // When it happened: 'YYYY-MM' (month and year), 'YYYY-MM-DD', or '' (no date).
+    // Edited with the shared DatePicker, as on the adoption form.
+    const [reportDate, setReportDate] = useState('');
     // Other people the post names: saved as relatives of the profile (Jon, 2026-10-22).
     const [relatives, setRelatives] = useState<PostPerson[]>([]);
     // Merging into a profile matched only on phone/email/address: is the post's
@@ -830,8 +822,6 @@ export default function ImportWizard() {
             }
 
             const imageUrls = fetchedImages.filter((_, i) => selectedFetchedImages.has(i));
-
-            setExtractedFromSource(!!sourceUrl || imagesToSend.length > 0 || imageUrls.length > 0);
             trackImport('import_extract_started', {
                 hasUrl: !!sourceUrl,
                 hasText: !!text.trim(),
@@ -862,11 +852,10 @@ export default function ImportWizard() {
             }
 
             const aiData = result.data || { confidence: 'low' as const };
-            // Only a whole 1–5 suggestion is shown; anything else is "no suggestion".
+            // Only a whole 1–5 suggestion is pre-filled; anything else stays unrated.
             aiData.adoptionRating = suggestedRating(aiData.adoptionRating) ?? undefined;
-            if (!aiData.adoptionRating) aiData.ratingReason = undefined;
-            setRatingTouched(false);
-            setReportMonth(monthOf(aiData.adoptionDate));
+            // Month and year: the day is rarely in a post, and would be invented.
+            setReportDate(monthOf(aiData.adoptionDate));
             setRelatives(cleanOtherPeople(aiData.otherPeople, aiData.name));
 
             // Preserve original post text untouched, append any AI-extracted notes after
@@ -1100,7 +1089,7 @@ export default function ImportWizard() {
                         // the rating the rescuer confirmed, and roughly when.
                         recordType: 'observation',
                         rating: extractedData.adoptionRating || undefined,
-                        date: dateFromMonth(reportMonth),
+                        date: recordDateFrom(reportDate),
                     },
                 }),
             };
@@ -1263,7 +1252,7 @@ export default function ImportWizard() {
                     // Same report shape as the create path (Jon, 2026-10-22).
                     recordType: 'observation',
                     rating: extractedData.adoptionRating || undefined,
-                    date: dateFromMonth(reportMonth),
+                    date: recordDateFrom(reportDate),
                 },
                 images: [
                     // Honor the review-step de-selection: a processed image is
@@ -1796,21 +1785,6 @@ export default function ImportWizard() {
                 <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
                     <div className="flex items-center justify-between gap-3">
                         <h3 className="text-lg font-semibold text-stone-900">{t('import.reviewExtracted')}</h3>
-                        {/* The pill grades the AI EXTRACTION, so it only shows when
-                            the model actually had to interpret something — a fetched
-                            post, a photo, a video.
-                            Hidden for contacts imports (the hydrate path hardcodes
-                            'low'; there is no AI signal to grade) and for plain text
-                            pastes, where the user handed over the data directly and a
-                            confidence grade on reading it back says nothing. */}
-                        {!fromContacts && extractedFromSource && (
-                            <span className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-medium ${extractedData.confidence === 'high' ? 'bg-teal-100 text-teal-800' :
-                                extractedData.confidence === 'medium' ? 'bg-amber-100 text-amber-800' :
-                                    'bg-rose-100 text-rose-700'
-                                }`}>
-                                {t(`import.confidence_${extractedData.confidence}`)}
-                            </span>
-                        )}
                     </div>
 
                     {/* Contact-import breadcrumb — only shown when the wizard
@@ -1896,34 +1870,26 @@ export default function ImportWizard() {
                     {!fromContacts && (
                         <div data-testid="import-rating" className="rounded-xl border border-stone-200 p-4 space-y-3">
                             <h3 className="text-sm font-semibold text-teal-800 uppercase tracking-wider">{t('import.rating_title')}</h3>
+                            {/* Pre-filled with the AI's suggestion when the post gives grounds;
+                                the rescuer changes it with a tap (re-tapping clears). Kept terse
+                                (Jon, 2026-10-22): no suggestion caption, no «Quitar». */}
                             <StarRating
                                 value={extractedData.adoptionRating || 0}
-                                onChange={(r: number) => {
-                                    setRatingTouched(true);
-                                    setExtractedData({ ...extractedData, adoptionRating: r || undefined });
-                                }}
+                                onChange={(r: number) => setExtractedData({ ...extractedData, adoptionRating: r || undefined })}
                                 size="md"
                                 showLabel
+                                clearable={false}
                             />
-                            {!ratingTouched && !!extractedData.adoptionRating && (
-                                <p data-testid="import-rating-suggested" className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
-                                    {extractedData.ratingReason
-                                        ? t('import.rating_suggested_reason').replace('{reason}', extractedData.ratingReason)
-                                        : t('import.rating_suggested')}
-                                </p>
-                            )}
                             {extractedData.adoptionRating === 1 && (
                                 <p className="text-xs text-rose-700">{t('import.rating_one_bans')}</p>
                             )}
                             <div>
-                                <label htmlFor="import-month" className="block text-xs font-medium text-stone-500 mb-1">{t('import.report_month')}</label>
-                                <input
-                                    id="import-month"
-                                    type="month"
-                                    value={reportMonth}
-                                    max={new Date().toISOString().slice(0, 7)}
-                                    onChange={e => setReportMonth(e.target.value)}
-                                    className="w-full sm:w-auto px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
+                                <span className="block text-xs font-medium text-stone-500 mb-1">{t('import.report_month')}</span>
+                                <DatePicker
+                                    value={reportDate}
+                                    onChange={setReportDate}
+                                    maxDate={new Date().toISOString().split('T')[0]}
+                                    dayOptional
                                 />
                             </div>
                         </div>

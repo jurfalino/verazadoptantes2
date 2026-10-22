@@ -75,13 +75,14 @@ export function monthOf(isoDate: string | null | undefined): string {
 }
 
 /**
- * The record's date from the month/year the rescuer kept: the 1st of that month.
- * Reports often say "en marzo" or nothing at all; a day would be invented.
- * No month → undefined, which the API stores as NULL (it refuses to fabricate
+ * The record's date from the DatePicker value: a full day as given, a month and
+ * year ('YYYY-MM', its "No sé el día exacto" mode) as the 1st of that month.
+ * Empty → undefined, which the API stores as NULL (it refuses to fabricate
  * "now" as the date of a past event).
  */
-export function dateFromMonth(month: string): string | undefined {
-    return monthOf(month) ? `${monthOf(month)}-01` : undefined;
+export function recordDateFrom(value: string): string | undefined {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value) && monthOf(value)) return value;
+    return monthOf(value) ? `${monthOf(value)}-01` : undefined;
 }
 
 /** Lowercase, accents and extra spaces removed — for comparing two spellings of a name. */

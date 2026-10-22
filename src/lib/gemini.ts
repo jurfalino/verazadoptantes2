@@ -28,7 +28,6 @@ export interface ExtractedAdopterData {
     adoptionConfidence?: 'high' | 'medium' | 'low';
     recordType?: 'adoption' | 'adoption_request' | 'returned_pet' | 'follow_up' | 'observation';
     adoptionRating?: number; // 1-5 SUGGESTED rating — shown to the rescuer to confirm, never saved silently
-    ratingReason?: string; // one short phrase: why that rating (shown next to the suggestion)
     // Other people the post names alongside the main person (a partner, a relative,
     // someone they live with). Saved as relatives of the main profile (Jon, 2026-10-22).
     otherPeople?: Array<{
@@ -94,8 +93,6 @@ RATING — a SUGGESTION the rescuer will confirm or change. Most posts imported 
 - 3, 4 or 5 only when the post clearly praises the person as an adopter (rare here).
 - null when the post gives no grounds (unclear who did what, no conduct described). NEVER default to a rating
   without grounds in the post.
-Also return "ratingReason": one short phrase in the response language naming the conduct that justifies the
-suggestion (e.g. "abandonó a su perro en la ruta"), or null when the rating is null.
 DATE: "adoptionDate" is when the reported events (or the adoption) happened, if the post says; else null.
 
 SEVERAL PEOPLE: a post may name more than one person (e.g. "cuidado con Juan Pérez y su pareja Ana Gómez").
@@ -136,13 +133,12 @@ Respond ONLY with valid JSON in this exact format:
   "animalSpecies": "dog" | "cat" | "bird" | "other" | null,
   "adoptionConfidence": "high" | "medium" | "low" | null,
   "adoptionRating": 1-5 or null,
-  "ratingReason": "short phrase or null",
   "otherPeople": [{"name": "string", "relationship": "partner|child|parent|sibling|other_relative|housemate|unknown", "phones": [], "socialProfiles": []}],
   "adoptionDate": "YYYY-MM-DD or null"
 }
 
 If you cannot extract any relevant information, return:
-{"name": null, "phones": [], "emails": [], "addresses": [], "socialProfiles": [], "notes": "", "confidence": "low", "adoptionDetected": false, "recordType": "observation", "animalName": null, "animalSpecies": null, "adoptionConfidence": null, "adoptionRating": null, "ratingReason": null, "otherPeople": [], "adoptionDate": null}
+{"name": null, "phones": [], "emails": [], "addresses": [], "socialProfiles": [], "notes": "", "confidence": "low", "adoptionDetected": false, "recordType": "observation", "animalName": null, "animalSpecies": null, "adoptionConfidence": null, "adoptionRating": null, "otherPeople": [], "adoptionDate": null}
 `;
 }
 
