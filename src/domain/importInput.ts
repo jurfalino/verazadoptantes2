@@ -149,3 +149,60 @@ const NAME_MATCH_SIGNALS = new Set(['name_full', 'name_word', 'name_phonetic', '
 export function matchedOnName(matchTypes: string[] | undefined): boolean {
     return (matchTypes ?? []).some(t => NAME_MATCH_SIGNALS.has(t));
 }
+
+/** Problems that got in the way of extracting a post's data. Never about what the post means. */
+export type ExtractionIssue =
+    // What happened during the import (facts)
+    | 'extraction_failed' | 'post_text_unavailable' | 'info_in_video' | 'no_contact_found'
+    // What the AI reports it could not read well
+    | 'image_unreadable' | 'text_cut_off' | 'uncertain_contact' | 'uncertain_name' | 'unclear_attribution';
+
+const AI_ISSUES = new Set<ExtractionIssue>(['image_unreadable', 'text_cut_off', 'uncertain_contact', 'uncertain_name', 'unclear_attribution']);
+/** Shown most-blocking first. */
+const ISSUE_ORDER: ExtractionIssue[] = [
+    'extraction_failed', 'post_text_unavailable', 'info_in_video', 'image_unreadable', 'text_cut_off',
+    'unclear_attribution', 'uncertain_name', 'uncertain_contact', 'no_contact_found',
+];
+type Level = 'high' | 'medium' | 'low';
+const RANK: Record<Level, number> = { high: 2, medium: 1, low: 0 };
+/** Each fact caps the level: some make the extraction weak however sure the AI was. */
+const CAP: Partial<Record<ExtractionIssue, Level>> = {
+    extraction_failed: 'low', post_text_unavailable: 'low', info_in_video: 'medium', no_contact_found: 'medium',
+};
+
+/**
+ * How well a post's data was EXTRACTED (Jon, 2026-10-22): what happened during
+ * the import plus the AI's own report of what it could not read — never how it
+ * interprets the post (that is the rating). Each issue maps to a fix the
+ * rescuer can make; nothing is shown when there is none.
+ */
+export function extractionQuality(input: {
+    aiConfidence: unknown;
+    aiIssues: unknown;
+    aiFailed: boolean;
+    postTextMissing: boolean;
+    videoOnly: boolean;
+    name: string | undefined;
+    entries: Array<{ type: string; value: string }>;
+}): { level: Level; issues: ExtractionIssue[] } {
+    if (input.aiFailed) return { level: 'low', issues: ['extraction_failed'] };
+    const issues = new Set<ExtractionIssue>();
+    if (Array.isArray(input.aiIssues)) {
+        for (const i of input.aiIssues) if (AI_ISSUES.has(i as ExtractionIssue)) issues.add(i as ExtractionIssue);
+    }
+    if (input.postTextMissing) issues.add('post_text_unavailable');
+    if (input.videoOnly) issues.add('info_in_video');
+    // A name but nothing to recognise the person by elsewhere. (No name and no
+    // contact is already said by the save button's hint.)
+    const hasIdentifier = input.entries.some(e => STRONG_IDENTIFIERS.has(e.type) && e.value.trim());
+    if (input.name?.trim() && !hasIdentifier) issues.add('no_contact_found');
+
+    let level: Level = input.aiConfidence === 'high' || input.aiConfidence === 'low' ? input.aiConfidence : 'medium';
+    for (const i of issues) {
+        const cap = CAP[i];
+        if (cap && RANK[cap] < RANK[level]) level = cap;
+    }
+    // An AI that reports problems is not "high", whatever it graded.
+    if (level === 'high' && [...issues].some(i => AI_ISSUES.has(i))) level = 'medium';
+    return { level, issues: ISSUE_ORDER.filter(i => issues.has(i)) };
+}

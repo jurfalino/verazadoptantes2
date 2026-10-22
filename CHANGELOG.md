@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.223] - 2026-10-22
+
+### Changed — extraction quality: what we couldn't extract, and how to fix it (Jon, 2026-10-22)
+
+- **Confidence now means "how well we extracted the data"**, from two sources: what happened during the
+  import (Facebook hid the text, a video with no text, the AI call failed, a name with no phone/email/
+  account) and the AI's own report of what it could not read (blurry image, cut-off text, unsure digits
+  or spelling, unclear which detail is whose) — defined in the prompt, and never about what the post means
+  (that is the rating). Before, it was the AI's undefined impression.
+- **The review screen shows only real problems, each with its fix** («Facebook no mostró el texto del
+  post. Pegalo o subí una captura» → «Agregar» goes back to add it; a failed read → «Reintentar»). The
+  generic «AI-extracted data may contain errors» banner is gone; hints disappear as the rescuer fixes them.
+- **No more `import_high/medium/low` flags on profiles.** They counted in admin «Active Flags» and showed
+  in the reported-content panel. (The 105 already in production are untouched — Jon's call.)
+- A failed AI read no longer copies its «Extraction failed: …» diagnostic into the record's note.
+
 ## [2.56.222] - 2026-10-22
 
 ### Changed — a terser rating, the shared date picker (Jon, 2026-10-22)

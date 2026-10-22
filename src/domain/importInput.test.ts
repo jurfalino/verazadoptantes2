@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, recordDateFrom, aliasForMerge, cleanOtherPeople, matchedOnName } from './importInput';
+import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, recordDateFrom, aliasForMerge, cleanOtherPeople, matchedOnName, extractionQuality } from './importInput';
 
 describe('splitLinkAndText', () => {
     it('reads a bare link as a link with no extra text', () => {
@@ -148,5 +148,36 @@ describe('matchedOnName', () => {
     it('is false for phone, email or address only', () => {
         expect(matchedOnName(['phone_suffix', 'address_word'])).toBe(false);
         expect(matchedOnName(undefined)).toBe(false);
+    });
+});
+
+describe('extractionQuality', () => {
+    const base = { aiConfidence: 'high', aiIssues: [], aiFailed: false, postTextMissing: false, videoOnly: false, name: 'Juan', entries: [{ type: 'phone', value: '11' }] };
+
+    it('is high with no issues when everything was read', () => {
+        expect(extractionQuality(base)).toEqual({ level: 'high', issues: [] });
+    });
+
+    it('takes the AI report of what it could not read', () => {
+        const q = extractionQuality({ ...base, aiIssues: ['uncertain_contact', 'image_unreadable', 'made_up'] });
+        expect(q.issues).toEqual(['image_unreadable', 'uncertain_contact']);
+        expect(q.level).toBe('medium');
+    });
+
+    it('caps the level with what happened during the import', () => {
+        expect(extractionQuality({ ...base, postTextMissing: true }).level).toBe('low');
+        expect(extractionQuality({ ...base, videoOnly: true }).level).toBe('medium');
+    });
+
+    it('flags a name with nothing to recognise the person by', () => {
+        expect(extractionQuality({ ...base, entries: [{ type: 'address', value: 'x' }] }).issues).toEqual(['no_contact_found']);
+    });
+
+    it('a failed AI call is low with one issue', () => {
+        expect(extractionQuality({ ...base, aiFailed: true })).toEqual({ level: 'low', issues: ['extraction_failed'] });
+    });
+
+    it('an unknown AI grade counts as medium', () => {
+        expect(extractionQuality({ ...base, aiConfidence: 'sure' }).level).toBe('medium');
     });
 });

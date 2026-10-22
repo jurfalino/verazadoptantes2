@@ -2177,6 +2177,16 @@ export const es = {
     },
     import: {
         // Post-import wizard (/import): failures and outcome (audit 2026-10-21)
+        issue_extraction_failed: 'No pudimos leer el contenido con IA.',
+        issue_post_text_unavailable: 'Facebook no mostró el texto del post. Pegalo o subí una captura.',
+        issue_info_in_video: 'La información puede estar en el video. Subí capturas del video.',
+        issue_image_unreadable: 'Una imagen no se leía bien. Subí una captura más nítida.',
+        issue_text_cut_off: 'El texto o la captura estaba cortado: puede faltar información.',
+        issue_unclear_attribution: 'No quedó claro qué dato es de quién. Revisá los contactos.',
+        issue_uncertain_name: 'La IA no estaba segura del nombre. Revisalo.',
+        issue_uncertain_contact: 'La IA no estaba segura de algún teléfono o red. Revisalos.',
+        issue_no_contact_found: 'No encontramos teléfono, email ni red social. Si tenés el perfil de la persona, agregalo.',
+        issue_fix_add: 'Agregar',
         relatives_title: 'Otras personas del post',
         relatives_hint: 'Se guardan como familiares de este perfil. Quitá a quien no corresponda.',
         relative_remove: 'Quitar a {name}',

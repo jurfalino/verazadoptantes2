@@ -118,6 +118,41 @@ test.describe('Import wizard', () => {
         expect(members.map(m => [m.name, m.relationship])).toEqual([['Ana Pareja', 'partner']]);
     });
 
+    test('extraction hints: only real problems, each with its fix', async ({ page }) => {
+        // Everything read: no hint box at all (no generic banner, no confidence pill).
+        await stubAi(page, { name: 'Persona Prueba', phones: ['1100000000'], confidence: 'high', extractionIssues: [] });
+        await pasteAndContinue(page, 'Persona Prueba, tel 11 0000 0000');
+        await expect(page.getByTestId('import-quality')).toHaveCount(0);
+    });
+
+    test('the AI says what it could not read, and a name with no contact is flagged', async ({ page }) => {
+        await stubAi(page, { name: 'Persona Prueba', phones: [], confidence: 'medium', extractionIssues: ['image_unreadable', 'not_a_code'] });
+        await pasteAndContinue(page, 'Persona Prueba');
+        const hints = page.getByTestId('import-quality');
+        await expect(hints.locator('[data-issue]')).toHaveCount(2);
+        await expect(hints.locator('[data-issue="image_unreadable"]').getByRole('button')).toBeVisible();
+        await expect(hints.locator('[data-issue="no_contact_found"]')).toBeVisible();
+    });
+
+    test('a post whose text Facebook hid is flagged, with a way back to add it', async ({ page }) => {
+        await page.route('**/api/facebook/fetch-post', route => route.fulfill({
+            status: 200, contentType: 'application/json',
+            body: JSON.stringify({ success: true, missingPostText: true, data: { text: '', images: ['https://example.com/a.jpg'] } }),
+        }));
+        await stubAi(page, { name: 'Persona Prueba', phones: ['1100000000'], confidence: 'high' });
+        await page.goto('/import');
+        const field = page.getByPlaceholder(/paste|pegá|URL|text/i);
+        await expect(field).toBeVisible({ timeout: 30000 });
+        await field.fill(POST);
+        await page.getByRole('button', { name: /Continue|Continuar/i }).click();
+        await page.getByRole('button', { name: /Extract with AI|Extraer con IA/i }).click();
+
+        const hint = page.getByTestId('import-quality').locator('[data-issue="post_text_unavailable"]');
+        await expect(hint).toBeVisible({ timeout: 30000 });
+        await hint.getByRole('button', { name: /Add|Agregar/i }).click();
+        await expect(page.getByRole('heading', { name: /Review Content|Revisar Contenido/i })).toBeVisible();
+    });
+
     test('a profile with no name can be saved when it has a phone', async ({ page }) => {
         await stubAi(page, { name: '', phones: ['1100000000'] });
         await pasteAndContinue(page, 'sin nombre, tel 11 0000 0000');

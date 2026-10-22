@@ -2172,6 +2172,16 @@ export const en = {
     },
     import: {
         // Post-import wizard (/import): failures and outcome (audit 2026-10-21)
+        issue_extraction_failed: "We couldn't read the content with AI.",
+        issue_post_text_unavailable: "Facebook didn't show the post's text. Paste it or add a screenshot.",
+        issue_info_in_video: 'The information may be in the video. Add screenshots of it.',
+        issue_image_unreadable: 'An image was hard to read. Add a sharper screenshot.',
+        issue_text_cut_off: 'The text or screenshot was cut off: information may be missing.',
+        issue_unclear_attribution: "It wasn't clear which detail belongs to whom. Check the contacts.",
+        issue_uncertain_name: "The AI wasn't sure of the name. Check it.",
+        issue_uncertain_contact: "The AI wasn't sure of a phone or account. Check them.",
+        issue_no_contact_found: "No phone, email or social account found. If you have the person's profile, add it.",
+        issue_fix_add: 'Add',
         relatives_title: 'Other people in the post',
         relatives_hint: "They are saved as relatives of this profile. Remove anyone who doesn't belong.",
         relative_remove: 'Remove {name}',

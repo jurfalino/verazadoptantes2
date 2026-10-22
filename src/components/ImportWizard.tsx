@@ -19,7 +19,6 @@ import type { ExtractedAdopterData } from '@/lib/gemini';
 import ContactEntriesInput from '@/components/ContactEntriesInput';
 import { buildContactEntries, contactEntriesToBlob, type ContactEntry } from '@/lib/contactEntries';
 import { humanMatchSentence } from '@/lib/importMatch';
-import { IMPORT_FLAGS } from '@/domain/constants';
 import { dedupeImages } from '@/domain/facebookExtraction';
 import { WarningIcon, CloseIcon, CheckIcon, AttachIcon, UploadIcon, VideoIcon, SparkIcon, SaveIcon } from '@/components/ui/Glyph';
 
@@ -45,7 +44,7 @@ import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
 import { handledAsStale } from '@/lib/errorMessage';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, recordDateFrom, aliasForMerge, cleanOtherPeople, matchedOnName, type PostPerson } from '@/domain/importInput';
+import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, recordDateFrom, aliasForMerge, cleanOtherPeople, matchedOnName, extractionQuality, type PostPerson, type ExtractionIssue } from '@/domain/importInput';
 import DatePicker from '@/components/ui/DatePicker';
 import MatchWhy from '@/components/import/MatchWhy';
 import { buttonClasses } from '@/components/ui/Button';
@@ -273,6 +272,14 @@ export default function ImportWizard() {
     });
     const [_sourceType, setSourceType] = useState<string>('');
     const [isVideoPost, setIsVideoPost] = useState(false);
+    // Facebook served no caption (or no post at all): a fact about the fetch,
+    // part of the extraction quality (Jon, 2026-10-22).
+    const [postTextMissing, setPostTextMissing] = useState(false);
+    // What the extraction knew when it finished; the quality is computed live from
+    // these plus the fields the rescuer is editing, so a fixed problem disappears.
+    const [extractionFacts, setExtractionFacts] = useState<{
+        aiConfidence: unknown; aiIssues: unknown; aiFailed: boolean; postTextMissing: boolean; videoOnly: boolean;
+    } | null>(null);
     const [fetchedVideos, setFetchedVideos] = useState<string[]>([]);
     const [_videoLoading, _setVideoLoading] = useState(false);
     const [retryCountdown, setRetryCountdown] = useState(0);
@@ -597,6 +604,7 @@ export default function ImportWizard() {
         setLoading(true);
         setLoadingKind('fetch');
         clearError();
+        setPostTextMissing(false);
         // Re-evaluated per attempt so retrying against a readable URL clears it.
         setSourceNotPublic(false);
 
@@ -626,6 +634,7 @@ export default function ImportWizard() {
                     // signal that the part carrying the adopter's details is missing.
                     // Everything scraped is still kept and still removable below.
                     if (responseData.missingPostText) {
+                        setPostTextMissing(true);
                         setError(t('import.missing_post_text'));
                         if (responseData.sourceNotPublic) {
                             setSourceNotPublic(true);
@@ -663,6 +672,7 @@ export default function ImportWizard() {
                     }
                 } else if (responseData.extractionFailed) {
                     if (responseData.requiresManualInput) {
+                        setPostTextMissing(true);
                         // Private group post or restricted content — skip to manual
                         // input. The URL is still worth keeping: it is the audit trail
                         // for where the record came from, even when we could not read it.
@@ -858,10 +868,25 @@ export default function ImportWizard() {
             setReportDate(monthOf(aiData.adoptionDate));
             setRelatives(cleanOtherPeople(aiData.otherPeople, aiData.name));
 
+            const aiFailed = !!aiData.extractionFailed;
+            // The rescuer filled in what the fetch could not get (pasted the text or
+            // added screenshots): the missing caption is no longer a problem.
+            const addedOwnContent = manualImages.length > 0 || text.trim() !== _fetchedText.trim();
+            setExtractionFacts({
+                aiConfidence: aiData.confidence,
+                aiIssues: aiData.extractionIssues,
+                aiFailed,
+                postTextMissing: postTextMissing && !addedOwnContent,
+                videoOnly: isVideoPost && manualImages.length === 0 && !text.trim(),
+            });
+
             // Preserve original post text untouched, append any AI-extracted notes after
+            // (never the "Extraction failed: …" diagnostic).
             if (text?.trim()) {
-                const aiNotes = aiData.notes?.trim();
+                const aiNotes = aiFailed ? '' : aiData.notes?.trim();
                 aiData.notes = text + (aiNotes ? '\n\n---\n' + aiNotes : '');
+            } else if (aiFailed) {
+                aiData.notes = '';
             }
 
             setExtractedData(aiData);
@@ -880,7 +905,9 @@ export default function ImportWizard() {
                 setProcessedImages(result.processedImages);
             }
             trackImport('import_extract_succeeded', {
-                confidence: aiData.confidence || 'unknown',
+                aiConfidence: typeof aiData.confidence === 'string' ? aiData.confidence : 'unknown',
+                aiFailed,
+                aiIssues: Array.isArray(aiData.extractionIssues) ? aiData.extractionIssues.join(',') : '',
                 adoptionDetected: !!aiData.adoptionDetected,
                 hasName: !!aiData.name?.trim(),
             });
@@ -1034,7 +1061,9 @@ export default function ImportWizard() {
         setIsSaving(true);
 
         try {
-            const flags = [IMPORT_FLAGS[extractedData.confidence] ?? IMPORT_FLAGS.low];
+            // No import_high/medium/low flag any more: it was the AI's undefined
+            // impression, stored as a moderation flag that inflated "Active Flags"
+            // and the reported-content panel (Jon, 2026-10-22).
 
             // Generate thumbnails for fetched videos (via proxy for CORS)
             const videoPayloads = await Promise.all(
@@ -1066,7 +1095,6 @@ export default function ImportWizard() {
                 ...(sourceUrl && !fromContacts ? { isPublic: isPublicProfile } : {}),
                 // The other people the post names, as relatives of this profile.
                 ...(relatives.length ? { householdMembers: JSON.stringify(relatives.map(toMember)) } : {}),
-                flags,
                 images: [
                     // Honor the review-step de-selection: a processed image is
                     // excluded by `p:<i>`, a manual image by `m:<i>`.
@@ -1152,7 +1180,7 @@ export default function ImportWizard() {
             trackImport('import_completed', {
                 source: sourceUrl ? 'url' : (fromContacts ? 'contacts' : 'text'),
                 hasImages: (processedImages.length + manualImages.length) > 0 ? 1 : 0,
-                confidence: extractedData.confidence || 'unknown',
+                quality: quality?.level ?? 'n/a',
                 afterDuplicates: personMatches.length > 0,
             });
 
@@ -1397,6 +1425,11 @@ export default function ImportWizard() {
     const stepLabels = [t('import.stepInput'), t('import.stepContent'), t('import.stepReview')];
     const spinner = <svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>;
     const canRetry = (failedOp === 'extract' || (failedOp === 'fetch' && !!inputContent.trim())) && !loading;
+    // Extraction quality, live: facts from the import + the AI's report + what the
+    // rescuer has fixed since (a name, a contact).
+    const quality = extractionFacts && extractedData && !fromContacts
+        ? extractionQuality({ ...extractionFacts, name: extractedData.name, entries: contactEntries })
+        : null;
 
     if (!mounted) {
         return (
@@ -1799,15 +1832,44 @@ export default function ImportWizard() {
                         </div>
                     )}
 
-                    {/* Validation warning — only when AI extraction ran. The
-                        contact-import path has no AI in the loop, so the
-                        warning would be inaccurate. */}
-                    {!fromContacts && (
-                        <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-                            <WarningIcon className="w-4 h-4 shrink-0 mt-0.5" />
-                            <span>{t('import.aiValidationWarning') || 'AI-extracted data may contain errors. Please verify all fields before saving.'}</span>
-                        </div>
+                    {/* What could not be extracted, and how to fix it (Jon, 2026-10-22).
+                        Only when there is a problem — no generic "verify everything"
+                        banner, no confidence grade. Each hint is a fact of the import or
+                        something the AI says it could not read; never its opinion of
+                        the post. Hints about missing source content offer the way
+                        back to add it; the rest point at the field right here. */}
+                    {quality && quality.issues.length > 0 && (
+                        <ul data-testid="import-quality" className="space-y-2">
+                            {quality.issues.map((issue: ExtractionIssue) => {
+                                const goBack = ['post_text_unavailable', 'info_in_video', 'image_unreadable', 'text_cut_off'].includes(issue);
+                                return (
+                                    <li key={issue} data-issue={issue} className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900">
+                                        <WarningIcon className="w-4 h-4 shrink-0 mt-0.5" />
+                                        <span className="flex-1 min-w-0">{t(`import.issue_${issue}`)}</span>
+                                        {goBack && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setStep(sourceUrl ? 2 : 1)}
+                                                className="shrink-0 min-h-[44px] -my-2.5 px-2 text-sm font-semibold text-teal-800 underline underline-offset-2"
+                                            >
+                                                {t('import.issue_fix_add')}
+                                            </button>
+                                        )}
+                                        {issue === 'extraction_failed' && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleExtract()}
+                                                className="shrink-0 min-h-[44px] -my-2.5 px-2 text-sm font-semibold text-teal-800 underline underline-offset-2"
+                                            >
+                                                {t('import.retry')}
+                                            </button>
+                                        )}
+                                    </li>
+                                );
+                            })}
+                        </ul>
                     )}
+
 
                     {/* v2.19.47: per-record public-visibility consent toggle.
                         Only rendered for social-URL imports — Google Contacts

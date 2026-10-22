@@ -19,7 +19,12 @@ export interface ExtractedAdopterData {
     addresses?: string[];
     socialProfiles?: string[];
     notes?: string;
+    /** How well the AI could READ and EXTRACT the data — never how it interprets the post. */
     confidence: 'high' | 'medium' | 'low';
+    /** What got in the way of extracting (see EXTRACTION QUALITY in the prompt). */
+    extractionIssues?: string[];
+    /** The AI call itself failed; nothing was read. */
+    extractionFailed?: boolean;
     rawExtraction?: string;
     // Adoption detection
     adoptionDetected?: boolean;
@@ -95,6 +100,20 @@ RATING — a SUGGESTION the rescuer will confirm or change. Most posts imported 
   without grounds in the post.
 DATE: "adoptionDate" is when the reported events (or the adoption) happened, if the post says; else null.
 
+EXTRACTION QUALITY — "confidence" and "extractionIssues" describe ONLY how well you could read and extract the
+data from the text/images you were given. They must NOT reflect what you think of the content (whether the
+accusation is true, how serious it is — that belongs in the rating).
+- "high": everything relevant was legible and you are sure of every name, phone, email and handle you returned.
+- "medium": minor doubts (a digit or a spelling you are not sure of, part of the text hard to read).
+- "low": important parts were unreadable, cut off or missing, or you had to guess.
+"extractionIssues" lists each problem you hit, using only these codes:
+- "image_unreadable": an image is blurry, too small, dark or otherwise hard to read
+- "text_cut_off": the text or screenshot is cut off / truncated, so information may be missing
+- "uncertain_contact": you are not sure of some digits of a phone or the spelling of an email/handle
+- "uncertain_name": you are not sure how a name is spelled, or only part of it is visible
+- "unclear_attribution": you cannot tell which contact or detail belongs to which person
+Use [] when there were no extraction problems.
+
 SEVERAL PEOPLE: a post may name more than one person (e.g. "cuidado con Juan Pérez y su pareja Ana Gómez").
 - "name" and the top-level contacts belong to the MAIN person: the one the post is mainly about (usually the
   first one named or the one directly accused).
@@ -127,6 +146,7 @@ Respond ONLY with valid JSON in this exact format:
   "socialProfiles": ["MUST include ALL @handles and profile links found — never omit them"],
   "notes": "any other relevant information as a string",
   "confidence": "high" | "medium" | "low",
+  "extractionIssues": ["image_unreadable" | "text_cut_off" | "uncertain_contact" | "uncertain_name" | "unclear_attribution"],
   "adoptionDetected": true | false,
   "recordType": "adoption" | "adoption_request" | "follow_up" | "observation" | "returned_pet",
   "animalName": "name of the animal or null",
@@ -138,7 +158,7 @@ Respond ONLY with valid JSON in this exact format:
 }
 
 If you cannot extract any relevant information, return:
-{"name": null, "phones": [], "emails": [], "addresses": [], "socialProfiles": [], "notes": "", "confidence": "low", "adoptionDetected": false, "recordType": "observation", "animalName": null, "animalSpecies": null, "adoptionConfidence": null, "adoptionRating": null, "otherPeople": [], "adoptionDate": null}
+{"name": null, "phones": [], "emails": [], "addresses": [], "socialProfiles": [], "notes": "", "confidence": "low", "extractionIssues": [], "adoptionDetected": false, "recordType": "observation", "animalName": null, "animalSpecies": null, "adoptionConfidence": null, "adoptionRating": null, "otherPeople": [], "adoptionDate": null}
 `;
 }
 
@@ -220,6 +240,9 @@ export async function extractAdopterData(
         logger.error('Gemini extraction failed', error);
         return {
             confidence: 'low',
+            // Said explicitly so the wizard shows "we could not read it, retry"
+            // instead of a review screen of empty fields (Jon, 2026-10-22).
+            extractionFailed: true,
             notes: `Extraction failed: ${error instanceof Error ? error.message : String(error)}`,
             rawExtraction: String(error),
         };
