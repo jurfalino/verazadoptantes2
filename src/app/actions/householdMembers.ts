@@ -180,7 +180,16 @@ function sameAge(m: HouseholdMember, age: number | null | undefined): boolean {
 }
 
 export async function addHouseholdMember(
-    input: { adopterId: string; name?: string; relationship?: Relationship | null; age?: number | null },
+    input: {
+        adopterId: string; name?: string; relationship?: Relationship | null; age?: number | null;
+        /**
+         * The member's contacts, saved in the SAME write as the member. The post
+         * importer used to add them one action at a time, so a failure halfway
+         * left a half-filled member and a retry made a second one (review of
+         * 2.56.213, item 5).
+         */
+        contactEntries?: Array<{ type: ContactEntry['type']; value: string; streetAndNumber?: string; locality?: string; platform?: SocialPlatform; apps?: MessagingApp[] }>;
+    },
 ): Promise<{ ok: true; memberId: string } | Busy | Err> {
     const actor = await authActor();
     if (!actor) return { ok: false, error: 'Not authenticated' };
@@ -191,13 +200,17 @@ export async function addHouseholdMember(
     try {
         const r = await loadEditable(adopterId, actor);
         if (!r.ok) return r;
-        const member: HouseholdMember = { id: crypto.randomUUID(), name, relationship, contactEntries: [], addedBy: actor };
+        const entries = (input.contactEntries ?? [])
+            .slice(0, 50)
+            .filter(e => VALID_TYPES.has(e.type) && (String(e.value || '').trim() || (e.type === 'address' && (e.streetAndNumber || e.locality))))
+            .map(e => buildEntry(actor, e.type, String(e.value || '').trim(), e));
+        const member: HouseholdMember = { id: crypto.randomUUID(), name, relationship, contactEntries: entries, addedBy: actor };
         applyAge(member, input.age);
         const out = await mutateHousehold(r.db, adopterId, (members) => ({ members: [...members, member], result: null }), { op: 'addHouseholdMember', actor });
         if (out.status === 'missing') return { ok: false, error: 'Adopter not found' };
         if (out.status === 'busy') return busy(out.errorId);
         await insertHouseholdHistory(r.db, adopterId, actor, { household_member_added: { id: member.id, relationship } });
-        logAudit({ userEmail: actor, action: 'household_member_added', target: adopterId, details: { relationship } });
+        logAudit({ userEmail: actor, action: 'household_member_added', target: adopterId, details: { relationship, contacts: entries.length } });
         return { ok: true, memberId: member.id };
     } catch (error) {
         const errorId = logger.error('addHouseholdMember failed', error, { adopterId, actor });

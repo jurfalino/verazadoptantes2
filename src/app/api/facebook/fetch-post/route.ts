@@ -479,7 +479,7 @@ function decodeHtmlEntities(text: string): string {
  * that names a post (not another share, not a login wall) is accepted.
  */
 async function resolveShareLink(url: string, userId: string): Promise<string | null> {
-    if (!/facebook\.com\/share\//i.test(url)) return null;
+    if (!/^https?:\/\/([a-z]+\.)?(facebook|fb)\.com\/share\//i.test(url)) return null;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
     try {
@@ -490,6 +490,8 @@ async function resolveShareLink(url: string, userId: string): Promise<string | n
             signal: controller.signal,
         });
         const location = res.headers.get('location');
+        // Only the header is needed; release the body.
+        await res.body?.cancel().catch(() => undefined);
         const target = location ? new URL(location, url).toString() : null;
         const key = target ? postKey(target)?.key : null;
         if (!target || !key || key.startsWith('fb:share:') || !key.startsWith('fb:')) {

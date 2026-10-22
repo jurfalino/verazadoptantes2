@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { adopters, adopterFlags, adopterImages, adoptions } from '@/db/schema';
 import { postKey, samePost } from '@/domain/postKey';
-import { eq, like, or, and, isNull, type InferSelectModel } from 'drizzle-orm';
+import { eq, like, or, and, isNull, sql, type InferSelectModel } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
@@ -74,26 +74,38 @@ export async function GET(request: Request) {
         // audit 2026-10-21, D1), and against activity records too: a post merged
         // into an existing profile is stored on the activity only (D2). Every
         // profile that post was saved to is returned, not just the first.
+        //
+        // Several `sourceUrl` values may be sent (the link as shared and the one
+        // Facebook resolved it to); a profile matching any of them counts.
+        //
+        // instr(), not LIKE: D1 rejects LIKE patterns over ~50 bytes ("pattern too
+        // complex"), and Facebook pfbid ids are 60–70 chars — the check threw, the
+        // catch below answered "no matches", and a re-paste created a duplicate
+        // (review of 2.56.213, item 1). instr has no length cap and no wildcards.
+        //
+        // Only id, name and whether the viewer may edit the profile go back: the
+        // full row carried notes and the other rescuer's email (review item 10).
         if (sourceUrl) {
-            const key = postKey(sourceUrl);
-            if (!key) return NextResponse.json({ matches: [], matchType: 'url' });
-            // LIKE on the post id narrows the scan; samePost() decides.
-            const needle = `%${key.needle}%`;
+            const links = [...new Set(searchParams.getAll('sourceUrl').map(u => u.trim()).filter(Boolean))].slice(0, 3);
+            const keys = links.map(postKey).filter((k): k is NonNullable<typeof k> => !!k);
+            if (!keys.length) return NextResponse.json({ matches: [], matchType: 'url' });
+            const matchesAny = (stored: string | null) => !!stored && links.some(l => samePost(stored, l));
             type AdopterRow = InferSelectModel<typeof adopters>;
-            const [direct, viaRecords]: [AdopterRow[], Array<{ adopterId: string | null; sourceUrl: string | null }>] = await Promise.all([
+            const needles = [...new Set(keys.map(k => k.needle))];
+            const perNeedle = await Promise.all(needles.map(needle => Promise.all([
                 db.select().from(adopters)
-                    .where(and(isNull(adopters.deletedAt), like(adopters.sourceUrl, needle)))
-                    .limit(50),
+                    .where(and(isNull(adopters.deletedAt), sql`instr(${adopters.sourceUrl}, ${needle}) > 0`))
+                    .limit(50) as Promise<AdopterRow[]>,
                 db.select({ adopterId: adoptions.adopterId, sourceUrl: adoptions.sourceUrl }).from(adoptions)
-                    .where(like(adoptions.sourceUrl, needle))
-                    .limit(50),
-            ]);
-            const matches = direct.filter(r => samePost(r.sourceUrl, sourceUrl));
-            const seen = new Set(matches.map(r => r.id));
-            const recordAdopterIds = [...new Set(viaRecords
-                .filter(r => samePost(r.sourceUrl, sourceUrl))
+                    .where(sql`instr(${adoptions.sourceUrl}, ${needle}) > 0`)
+                    .limit(50) as Promise<Array<{ adopterId: string | null; sourceUrl: string | null }>>,
+            ])));
+            const byId = new Map<string, AdopterRow>();
+            for (const [direct] of perNeedle) for (const r of direct) if (matchesAny(r.sourceUrl)) byId.set(r.id, r);
+            const recordAdopterIds = [...new Set(perNeedle.flatMap(([, recs]) => recs)
+                .filter(r => matchesAny(r.sourceUrl))
                 .map(r => r.adopterId)
-                .filter((id): id is string => !!id && !seen.has(id)))];
+                .filter((id): id is string => !!id && !byId.has(id)))];
             // One query per id: D1 does not expand arrays in IN (CLAUDE.md).
             const viaRecordRows: Array<AdopterRow | undefined> = await Promise.all(recordAdopterIds.map(id =>
                 db.select().from(adopters).where(and(eq(adopters.id, id), isNull(adopters.deletedAt))).get()
@@ -101,11 +113,23 @@ export async function GET(request: Request) {
                         logger.warn('Adopter duplicate check: record-adopter lookup failed', { adopterId: id, error: e instanceof Error ? e.message : String(e) });
                         return undefined;
                     })));
-            matches.push(...viaRecordRows.filter((r): r is AdopterRow => !!r));
-            return NextResponse.json({
-                matches: await maskMatchesForViewer(matches, session.user.email),
-                matchType: 'url',
-            });
+            for (const r of viaRecordRows) if (r) byId.set(r.id, r);
+
+            // canEdit drives the wizard's "add as a relative" (household writes are
+            // owner / admin / org-mate only — review item 5).
+            const viewer = session.user.email ?? '';
+            const { isAdminAsync } = await import('@/config/admins');
+            const { isOrgMate } = await import('@/lib/orgMembership');
+            const viewerIsAdmin = await isAdminAsync(viewer);
+            const matches = await Promise.all([...byId.values()].map(async r => ({
+                id: r.id,
+                name: r.name,
+                canEdit: viewerIsAdmin || r.addedBy === viewer || await isOrgMate(viewer, r.addedBy).catch((e: unknown) => {
+                    logger.warn('Adopter duplicate check: org lookup failed', { adopterId: r.id, error: e instanceof Error ? e.message : String(e) });
+                    return false;
+                }),
+            })));
+            return NextResponse.json({ matches, matchType: 'url' });
         }
 
         // Mode 2: Multi-field person matching (different post, same person)
@@ -206,8 +230,13 @@ export async function GET(request: Request) {
             confidence: scoredMatches[0]?.confidence || 'none'
         });
     } catch (error) {
-        logger.error('Adopter duplicate check failed', error, { sourceUrl: sourceUrl || undefined, matchName: matchName || undefined });
-        return NextResponse.json({ matches: [], matchType: sourceUrl ? 'url' : 'person', confidence: 'none' });
+        // No names or links in the log (privacy); the mode is enough to triage.
+        const errorId = logger.error('Adopter duplicate check failed', error, { mode: sourceUrl ? 'url' : 'person', user: session.user.email });
+        // The same-post check must fail LOUDLY: an empty 200 read as "not imported
+        // yet" and let a re-paste create a duplicate. The wizard shows its
+        // "couldn't verify" warning on a non-OK answer.
+        if (sourceUrl) return NextResponse.json({ error: 'Duplicate check failed', errorId }, { status: 500 });
+        return NextResponse.json({ matches: [], matchType: 'person', confidence: 'none' });
     }
 }
 

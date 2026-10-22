@@ -64,4 +64,38 @@ describe('postKey', () => {
         const { needle } = postKey('https://m.facebook.com/groups/1/posts/456?x=1')!;
         expect('https://www.facebook.com/groups/1/posts/456/'.includes(needle)).toBe(true);
     });
+
+    // Review of 2.56.213, item 3: the catch-all dropped the whole query string.
+    it('keeps a query that identifies the page, drops tracking parameters', () => {
+        expect(samePost('https://www.youtube.com/watch?v=AAA', 'https://www.youtube.com/watch?v=BBB')).toBe(false);
+        expect(samePost('https://www.youtube.com/watch?v=AAA&utm_source=x', 'https://youtube.com/watch?v=AAA')).toBe(true);
+        expect(samePost('https://www.facebook.com/media/set/?set=a.1', 'https://www.facebook.com/media/set/?set=a.2')).toBe(false);
+    });
+
+    it('reads a group multi_permalinks link as that post', () => {
+        expect(samePost(
+            'https://www.facebook.com/groups/123/?multi_permalinks=456&ref=share',
+            'https://www.facebook.com/groups/123/posts/456/',
+        )).toBe(true);
+        expect(samePost('https://www.facebook.com/groups/123/?multi_permalinks=456', 'https://www.facebook.com/groups/123/')).toBe(false);
+    });
+
+    it('unwraps Facebook and Instagram outbound redirect links', () => {
+        const wrapped = 'https://l.facebook.com/l.php?u=' + encodeURIComponent('https://example.com/nota/1') + '&h=AT0';
+        expect(samePost(wrapped, 'https://example.com/nota/1')).toBe(true);
+        const igWrapped = 'https://l.instagram.com/?u=' + encodeURIComponent('https://example.com/nota/2');
+        expect(samePost(igWrapped, 'https://example.com/nota/2')).toBe(true);
+    });
+
+    it('keys a reel by its path even when the link carries an fbid', () => {
+        expect(postKey('https://www.facebook.com/reel/888?fbid=1')?.key).toBe('fb:video:888');
+    });
+
+    it('reads ?v= as a video only on watch links', () => {
+        expect(postKey('https://www.facebook.com/somepage?v=1')?.key).not.toBe('fb:video:1');
+    });
+
+    it('treats fb.com share links like facebook.com ones', () => {
+        expect(postKey('https://fb.com/share/p/1AbCd/')?.key).toBe('fb:share:1AbCd');
+    });
 });

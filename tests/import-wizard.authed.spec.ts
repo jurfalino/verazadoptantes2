@@ -121,7 +121,7 @@ test.describe('Import wizard — duplicates', () => {
         let lookedUp = '';
         await page.route('**/api/adopters?sourceUrl=*', route => {
             lookedUp = new URL(route.request().url()).searchParams.get('sourceUrl') ?? '';
-            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ matchType: 'url', matches: [{ id: 'test-import-fixture-juan', name: 'Juan Prueba' }] }) });
+            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ matchType: 'url', matches: [{ id: 'test-import-fixture-juan', name: 'Juan Prueba', canEdit: true }] }) });
         });
 
         await page.goto('/import');
@@ -138,6 +138,34 @@ test.describe('Import wizard — duplicates', () => {
         // "Ver perfil" first (decision B9), then add-interaction, then add-as-relative (B6).
         await expect(actions.locator('a, button').first()).toHaveAttribute('href', '/adopter/test-import-fixture-juan');
         await expect(actions.getByRole('button', { name: /relative|familiar/i })).toBeVisible();
+    });
+
+    test('when the same-post check fails, it says so instead of saving as new', async ({ page }) => {
+        // It used to answer "no matches" on error, and a re-paste became a duplicate
+        // profile with no warning (review of 2.56.213, item 1).
+        await page.route('**/api/facebook/fetch-post', route => route.fulfill({
+            status: 200, contentType: 'application/json',
+            body: JSON.stringify({ success: true, data: { text: 'Post', images: [] } }),
+        }));
+        await stubAi(page, { name: `Fixture Sincheck ${Date.now()}`, phones: [] });
+        let created = false;
+        await page.route('**/api/adopters**', route => {
+            const req = route.request();
+            if (req.method() === 'POST') { created = true; return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'x' }) }); }
+            if (req.url().includes('sourceUrl=')) return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Duplicate check failed', errorId: 'abcd1234' }) });
+            return route.continue();
+        });
+
+        await page.goto('/import');
+        const field = page.getByPlaceholder(/paste|pegá|URL|text/i);
+        await expect(field).toBeVisible({ timeout: 30000 });
+        await field.fill(POST);
+        await page.getByRole('button', { name: /Continue|Continuar/i }).click();
+        await page.getByRole('button', { name: /Extract with AI|Extraer con IA/i }).click();
+        await page.getByRole('button', { name: /Save Adopter|Guardar Adoptante/i }).click();
+
+        await expect(page.getByText(/Could not verify|No se pudo verificar/i)).toBeVisible({ timeout: 30000 });
+        expect(created).toBe(false);
     });
 
     test('a name-only match is not pre-selected, and "create new" leads', async ({ page }) => {

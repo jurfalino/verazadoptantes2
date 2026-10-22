@@ -27,7 +27,11 @@ export default function MatchWhy({ adopterId, matchTypes, t }: {
             setCtx('loading');
             getMatchContext(adopterId)
                 .then(c => setCtx(c.ok ? c : 'error'))
-                .catch(() => setCtx('error'));
+                .catch(e => {
+                    // Degraded, not broken: the panel says it could not load.
+                    console.warn('[MatchWhy] getMatchContext failed', { adopterId, error: e instanceof Error ? e.message : String(e) });
+                    setCtx('error');
+                });
         }
     };
 

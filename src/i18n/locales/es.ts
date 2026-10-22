@@ -2177,6 +2177,8 @@ export const es = {
     },
     import: {
         // Post-import wizard (/import): failures and outcome (audit 2026-10-21)
+        saving_merging: 'Agregando datos…',
+        contact_merge_not_allowed: 'El registro se guardó, pero los contactos no: ese perfil es de otro equipo.',
         why_toggle: '¿Por qué?',
         why_unavailable: 'No pudimos cargar el detalle.',
         why_existing_has: 'El perfil existente tiene:',

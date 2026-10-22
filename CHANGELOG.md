@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.214] - 2026-10-21
+
+### Fixed — from the independent review of 2.56.213
+
+- **Long post links no longer slip past the «ya importado» check.** Facebook `pfbid…` ids (60–70
+  characters) made the database reject the lookup («pattern too complex»), the error read as «not
+  imported», and a re-paste created a duplicate profile silently. The lookup uses `instr` now, and a
+  failed check says so («No se pudo verificar…») instead of saving as new.
+- **Old share links are still recognised**: the link as shared and the one Facebook resolved it to
+  are both checked.
+- **Different posts no longer share a key**: query strings that identify a page (?v=, ?set=) are kept,
+  tracking parameters dropped; group `?multi_permalinks=` links read as that post; Facebook/Instagram
+  redirect wrappers unwrapped; reels keyed by their path; `fb.com/share` links resolved too.
+- **«Agregar a este perfil» on the review screen runs the same checks as «Guardar»**, same-post first.
+- **«Agregar como familiar»** is offered only on profiles you can edit, and saves the person with all
+  their contacts in one write (no half-filled relative, no duplicate on retry).
+- Merging into another team's profile no longer shows a raw «Not authorized» after the record saved;
+  when contacts could not be added it says why, in the rescuer's language.
+- The same-post lookup returns only id, name and whether you can edit — not the full profile row.
+- Keyboard: Enter on «Ver» inside a match card opens the profile instead of toggling the card.
+
 ## [2.56.213] - 2026-10-21
 
 ### Changed — duplicate handling in the post import (audit 2026-10-21, batch 2b)

@@ -12,7 +12,7 @@ import type { MediaItem } from '@/components/ui/MediaLightbox';
 import LegalConsent from '@/components/LegalConsent';
 import { extractVideoThumbnail, extractVideoThumbnailFromUrl } from '@/lib/videoThumbnail';
 import { zarazTrack } from '@/lib/zaraz';
-import { findAdopters, addHouseholdMember, addMemberContactEntry } from '@/app/actions';
+import { findAdopters, addHouseholdMember } from '@/app/actions';
 import type { DuplicateMatch } from '@/app/actions';
 import { confidenceBand } from '@/lib/scoring';
 import type { ExtractedAdopterData } from '@/lib/gemini';
@@ -252,6 +252,10 @@ export default function ImportWizard() {
     });
     const [fetchedImages, setFetchedImages] = useState<string[]>([]);
     const [selectedFetchedImages, setSelectedFetchedImages] = useState<Set<number>>(new Set());
+    // The link as the rescuer shared it, when Facebook resolved it to another
+    // one. Both are checked for "already imported": links stored before 2.56.213
+    // are the share links themselves (review of 2.56.213, item 2).
+    const [sharedLinkAsGiven, setSharedLinkAsGiven] = useState<string | null>(null);
     const [sourceUrl, setSourceUrl] = useState(() => {
         if (typeof window === 'undefined') return '';
         const saved = sessionStorage.getItem('import_wizard_state');
@@ -335,7 +339,7 @@ export default function ImportWizard() {
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [duplicateAdopter, setDuplicateAdopter] = useState<any>(null);
     // Every profile this post was already saved to (the first is duplicateAdopter).
-    const [duplicateAdopters, setDuplicateAdopters] = useState<Array<{ id: string; name: string | null }>>([]);
+    const [duplicateAdopters, setDuplicateAdopters] = useState<Array<{ id: string; name: string | null; canEdit?: boolean }>>([]);
     const [personMatches, setPersonMatches] = useState<PersonMatch[]>([]);
     const [selectedMatch, setSelectedMatch] = useState<PersonMatch | null>(null);
     const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
@@ -650,6 +654,7 @@ export default function ImportWizard() {
                         // A /share/ link resolved by the fetcher is stored as the post's
                         // own link, so the same post is recognised next time (audit D1).
                         setSourceUrl(responseData.resolvedUrl || targetUrl);
+                        setSharedLinkAsGiven(responseData.resolvedUrl && responseData.resolvedUrl !== targetUrl ? targetUrl : null);
                         if (responseData.sourceNotPublic) {
                             setSourceNotPublic(true);
                             setIsPublicProfile(false);
@@ -692,6 +697,7 @@ export default function ImportWizard() {
             }
 
             setSourceUrl(responseData?.resolvedUrl || targetUrl);
+            setSharedLinkAsGiven(responseData?.resolvedUrl && responseData.resolvedUrl !== targetUrl ? targetUrl : null);
             setStep(2);
             return true;
         } catch (err) {
@@ -887,7 +893,13 @@ export default function ImportWizard() {
     }, [step, extractedData?.name, contactEntries]);
 
     // Pre-save duplicate check
-    const handlePreSave = async () => {
+    /**
+     * Check for duplicates, then show the choice — or save straight away when
+     * there is nothing to choose. `preselectId` is the match the rescuer picked
+     * on the review screen ("Agregar a este perfil"): the same checks still run,
+     * the same-post one first (review of 2.56.213, item 4).
+     */
+    const handlePreSave = async (preselect?: PersonMatch) => {
         setIsSaving(true);
         setDuplicateAdopter(null);
         setDuplicateAdopters([]);
@@ -902,15 +914,16 @@ export default function ImportWizard() {
         // Check for URL duplicate
         if (sourceUrl) {
             try {
-                const res = await fetch(`/api/adopters?sourceUrl=${encodeURIComponent(sourceUrl)}`);
+                const query = [sourceUrl, sharedLinkAsGiven].filter(Boolean).map(u => `sourceUrl=${encodeURIComponent(u!)}`).join('&');
+                const res = await fetch(`/api/adopters?${query}`);
                 // M4: a 500 here used to fall through as "no duplicate" (res.json()
                 // succeeds on an error body, matches undefined). Treat non-OK as a
                 // failed check so the warning UI shows instead of silently skipping.
                 if (!res.ok) throw new Error(`URL duplicate check failed (${res.status})`);
-                const data = await res.json() as { matches: any[]; matchType?: string };
+                const data = await res.json() as { matches: Array<{ id: string; name: string | null; canEdit?: boolean }>; matchType?: string };
                 if (data.matches && data.matches.length > 0) {
                     setDuplicateAdopter(data.matches[0]);
-                    setDuplicateAdopters(data.matches.map(m => ({ id: m.id, name: m.name })));
+                    setDuplicateAdopters(data.matches.map(m => ({ id: m.id, name: m.name, canEdit: !!m.canEdit })));
                     trackImport('import_duplicate_shown', { kind: 'url', count: data.matches.length });
                     setIsSaving(false);
                     setShowConfirmModal(true);
@@ -953,11 +966,13 @@ export default function ImportWizard() {
                         matchTypes: r.matchTypes,
                     }));
                     foundMatches = true;
-                    setPersonMatches(matches);
-                    // Pre-select only a strong match. A weak one used to come
+                    // The match picked on the review screen stays on the list and selected.
+                    const list = preselect && !matches.some(m => m.id === preselect.id) ? [preselect, ...matches] : matches;
+                    setPersonMatches(list);
+                    // Otherwise pre-select only a strong match. A weak one used to come
                     // pre-selected, one tap from merging into the wrong person;
                     // the spreadsheet import makes the rescuer choose (audit D5).
-                    setSelectedMatch(matches[0].confidence === 'high' ? matches[0] : null);
+                    setSelectedMatch(preselect ? list.find(m => m.id === preselect.id)! : (matches[0].confidence === 'high' ? matches[0] : null));
                     trackImport('import_duplicate_shown', { kind: 'person', count: matches.length, topBand: matches[0].confidence });
                 }
             } catch (e) {
@@ -965,6 +980,12 @@ export default function ImportWizard() {
                 setDuplicateCheckFailed(true);
                 checkFailed = true;
             }
+        }
+
+        if (preselect && !foundMatches && !checkFailed) {
+            setPersonMatches([preselect]);
+            setSelectedMatch(preselect);
+            foundMatches = true;
         }
 
         // Nothing to decide: save straight away. The "¿Crear nuevo perfil?"
@@ -1239,9 +1260,18 @@ export default function ImportWizard() {
                     publicSource: !!sourceUrl && isPublicProfile,
                 });
                 if (!appendRes?.success) {
-                    // Non-fatal: the activity record saved. appendRes.error already
-                    // carries an "(Error ID: …)" suffix from the server action.
-                    toast.error(t('errors.generic') || 'Error', appendRes?.error || (t('import.contact_merge_failed') || 'No se pudieron fusionar los datos de contacto'));
+                    // Non-fatal: the activity record saved. Contacts and the alias go
+                    // through the owner/teammate-only append; on another team's
+                    // profile it is refused by design. With only the alias to add,
+                    // that refusal is expected and not worth a toast (review of
+                    // 2.56.213, item 6); with contacts, the rescuer has to know.
+                    const refused = /not authorized/i.test(appendRes?.error ?? '');
+                    if (refused && contactEntries.length === 0) {
+                        console.warn('[ImportWizard] alias not kept: profile belongs to another team', { adopterId: mergeTarget.id });
+                    } else {
+                        const id = appendRes?.error?.match(/Error ID:\s*([a-f0-9-]{6,})/i)?.[1];
+                        toast.error(t('errors.generic'), refused ? t('import.contact_merge_not_allowed') : t('import.contact_merge_failed'), id);
+                    }
                 }
             }
 
@@ -1298,21 +1328,21 @@ export default function ImportWizard() {
         setSavingTargetName(target.name || '');
         setIsSaving(true);
         try {
-            const added = await addHouseholdMember({ adopterId: target.id, name: extractedData.name?.trim() || '', relationship: 'unknown' });
-            if (!added.ok) throw new Error(added.error === 'busy' && 'errorId' in added ? `busy (Error ID: ${added.errorId})` : added.error);
-            // One at a time: each write is a compare-and-swap on the household list.
-            for (const e of contactEntries) {
-                const res = await addMemberContactEntry({
-                    adopterId: target.id,
-                    memberId: added.memberId,
+            // One write: the member and all their contacts (review of 2.56.213, item 5).
+            const added = await addHouseholdMember({
+                adopterId: target.id,
+                name: extractedData.name?.trim() || '',
+                relationship: 'unknown',
+                contactEntries: contactEntries.map(e => ({
                     type: e.type,
                     value: e.value,
                     ...(e.streetAndNumber ? { streetAndNumber: e.streetAndNumber } : {}),
                     ...(e.locality ? { locality: e.locality } : {}),
                     ...(e.platform ? { platform: e.platform } : {}),
-                });
-                if (!res.ok) throw new Error(res.error === 'busy' && 'errorId' in res ? `busy (Error ID: ${res.errorId})` : res.error);
-            }
+                    ...(e.apps ? { apps: e.apps } : {}),
+                })),
+            });
+            if (!added.ok) throw new Error(added.error === 'busy' && 'errorId' in added ? `busy (Error ID: ${added.errorId})` : added.error);
             trackImport('import_duplicate_choice', { choice: 'relative', kind: 'url' });
             toast.success(t('import.relative_added'), target.name || undefined);
             sessionStorage.removeItem('import_wizard_state');
@@ -1325,20 +1355,20 @@ export default function ImportWizard() {
         }
     };
 
-    /** "Agregar a este perfil" on the review screen: open the match, pre-selected (decision B7). */
+    /**
+     * "Agregar a este perfil" on the review screen (decision B7): run the same
+     * checks as "Guardar" — the same-post one first — with this match selected.
+     * It used to open the match screen directly and skip the same-post check
+     * (review of 2.56.213, item 4).
+     */
     const openMatchFromHint = (hint: DuplicateMatch) => {
-        const match: PersonMatch = {
+        trackImport('import_duplicate_choice', { choice: 'hint', kind: 'person' });
+        handlePreSave({
             id: hint.adopterId,
             name: hint.adopterName,
             confidence: confidenceBand(hint.relevancePercent) as 'high' | 'medium' | 'low',
             matchTypes: hint.matchTypes,
-        };
-        setDuplicateAdopter(null);
-        setDuplicateAdopters([]);
-        setPersonMatches([match]);
-        setSelectedMatch(match);
-        trackImport('import_duplicate_shown', { kind: 'person', count: 1, topBand: match.confidence, fromHint: true });
-        setShowConfirmModal(true);
+        });
     };
 
     // --- RENDER ---
@@ -2087,7 +2117,7 @@ export default function ImportWizard() {
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={handlePreSave}
+                                        onClick={() => handlePreSave()}
                                         disabled={!canSave || isSaving}
                                         aria-describedby={!canSave ? 'import-save-hint' : undefined}
                                         className={`${BTN_PRIMARY} flex-1`}
@@ -2159,7 +2189,7 @@ export default function ImportWizard() {
 
                 // ── The post was already imported (decisions B9 + B6) ──
                 if (duplicateAdopter) {
-                    const first = duplicateAdopters[0] ?? { id: duplicateAdopter.id, name: duplicateAdopter.name };
+                    const first = duplicateAdopters[0] ?? { id: duplicateAdopter.id, name: duplicateAdopter.name, canEdit: false };
                     const firstName = first.name?.trim() || t('import.unnamed_profile');
                     return (
                         <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
@@ -2198,9 +2228,13 @@ export default function ImportWizard() {
                                 <button type="button" onClick={() => handleMerge({ id: first.id, name: first.name || '' })} className={secondary}>
                                     {t('import.add_interaction_to').replace('{name}', firstName)}
                                 </button>
-                                <button type="button" onClick={() => handleAddAsRelative(first)} className={secondary}>
-                                    {t('import.add_as_relative_of').replace('{name}', firstName)}
-                                </button>
+                                {/* Household writes are owner / admin / teammate only: offered
+                                    only where it can succeed (review of 2.56.213, item 5). */}
+                                {first.canEdit && (
+                                    <button type="button" onClick={() => handleAddAsRelative(first)} className={secondary}>
+                                        {t('import.add_as_relative_of').replace('{name}', firstName)}
+                                    </button>
+                                )}
                             </StickyActions>
                         </div>
                     );
@@ -2246,6 +2280,8 @@ export default function ImportWizard() {
                                             tabIndex={0}
                                             onClick={() => setSelectedMatch(isSelected ? null : match)}
                                             onKeyDown={e => {
+                                                // Enter on the nested "Ver" link or "¿Por qué?" must not toggle the card.
+                                                if (e.target !== e.currentTarget) return;
                                                 if (e.key !== 'Enter' && e.key !== ' ') return;
                                                 e.preventDefault();
                                                 setSelectedMatch(isSelected ? null : match);
