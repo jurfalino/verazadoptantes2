@@ -41,12 +41,19 @@ const TRACKING = /^(utm.*|fbclid|gclid|igsh|igshid|mibextid|rdid|share_url|ref|r
  * On Facebook and Instagram nearly every parameter is noise (_rdc, refid, sk,
  * hl, locale, __xts__…), and keeping them split one page into many keys — the
  * same silent duplicate the check exists to stop (re-review of 2.56.214, A).
- * Only these identify a page there.
+ * These are the ones that DO identify a page there, wherever they appear
+ * (profile.php?id, groups/…?view=permalink&id, video.php?v, media/set?set,
+ * photos?album_id, search?q, events?event_time_id, sharer.php?u). Dropping
+ * them merged different pages (final review of 2.56.215, item 1).
  */
-const META_KEEP: Record<string, string[]> = { 'profile.php': ['id'], 'set': ['set'] };
+const META_IDENTIFYING = new Set(['id', 'v', 'set', 'album_id', 'story_fbid', 'fbid', 'q', 'u', 'event_time_id']);
 
-/** Characters never percent-encoded in a path, plus '/'. */
-const UNRESERVED_RUN = /[A-Za-z0-9._~\/-]+/g;
+/**
+ * Characters never percent-encoded anywhere in a URL. No '/' and no '~': both
+ * are encoded inside a wrapped link (l.php?u=https%3A%2F%2F…) or by some
+ * clients, and the needle must be found in every stored form (item 2).
+ */
+const UNRESERVED_RUN = /[A-Za-z0-9._-]+/g;
 
 /**
  * The longest stretch of unreserved characters in the DECODED text: such a
@@ -57,7 +64,7 @@ function longestRun(text: string): string {
     let decoded = text;
     try { decoded = decodeURIComponent(text); } catch { /* keep as is */ }
     const runs = decoded.match(UNRESERVED_RUN) ?? [];
-    return runs.map(r => r.replace(/^\/+|\/+$/g, '')).reduce((best, r) => (r.length > best.length ? r : best), '');
+    return runs.reduce((best, r) => (r.length > best.length ? r : best), '');
 }
 
 export function postKey(input: string): PostKey | null {
@@ -76,6 +83,12 @@ export function postKey(input: string): PostKey | null {
     const wrapped = q.get('u');
     if (wrapped && ((isFb && (parts[0] === 'l.php' || /^l[a-z]?\./.test(host))) || host === 'l.instagram.com')) {
         return postKey(wrapped);
+    }
+
+    // A login wall stands for the page it guards (?next=/p/AAA/ or a full link).
+    const next = q.get('next');
+    if (next && (isFb || isIg) && parts.includes('login')) {
+        try { return postKey(new URL(next, `https://${u.hostname}`).toString()); } catch { /* not a link: fall through */ }
     }
 
     if (isFb) {
@@ -112,9 +125,8 @@ export function postKey(input: string): PostKey | null {
     // (?v=, ?set=, ?id= often ARE the page there).
     const path = parts.map(seg => { try { return decodeURIComponent(seg); } catch { return seg; } }).join('/');
     const bare = path ? `${host}/${path}` : host;
-    const metaAllow = isFb || isIg ? (META_KEEP[parts[parts.length - 1] ?? ''] ?? META_KEEP[parts[0] === 'media' ? 'set' : ''] ?? []) : null;
     const kept = [...q.entries()]
-        .filter(([k]) => (metaAllow ? metaAllow.includes(k) : !TRACKING.test(k)))
+        .filter(([k]) => (isFb || isIg ? META_IDENTIFYING.has(k) : !TRACKING.test(k)))
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([k, v]) => `${k}=${v}`)
         .join('&');

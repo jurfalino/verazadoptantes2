@@ -132,11 +132,46 @@ describe('postKey', () => {
         }
     });
 
-    it('prefers the whole path as the needle', () => {
-        expect(postKey('https://www.facebook.com/somepage/about')?.needle).toBe('somepage/about');
+    it('takes the longest plain stretch of the path as the needle', () => {
+        expect(postKey('https://www.facebook.com/somepage/about')?.needle).toBe('somepage');
     });
 
     it('uses the identifying parameter as the needle when there is one', () => {
         expect(postKey('https://www.facebook.com/profile.php?id=100045&sk=photos')?.needle).toBe('100045');
+    });
+
+    // Final review of 2.56.215, item 1: identifying parameters on Meta hosts.
+    it('keeps the parameters that identify a Facebook page apart', () => {
+        const apart: Array<[string, string]> = [
+            ['https://m.facebook.com/groups/123/?view=permalink&id=999', 'https://m.facebook.com/groups/123/?view=permalink&id=888'],
+            ['https://m.facebook.com/groups/123/?view=permalink&id=999', 'https://www.facebook.com/groups/123/'],
+            ['https://www.facebook.com/video.php?v=11', 'https://www.facebook.com/video.php?v=22'],
+            ['https://www.facebook.com/page/photos/?tab=album&album_id=1', 'https://www.facebook.com/page/photos/?tab=album&album_id=2'],
+            ['https://www.facebook.com/search/top?q=juan', 'https://www.facebook.com/search/top?q=ana'],
+            ['https://www.facebook.com/events/66?event_time_id=1', 'https://www.facebook.com/events/66?event_time_id=2'],
+            ['https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fa.com', 'https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fb.com'],
+        ];
+        for (const [a, b] of apart) expect(samePost(a, b), `${a} vs ${b}`).toBe(false);
+    });
+
+    it('reads a login wall as the page it guards', () => {
+        expect(samePost('https://www.instagram.com/accounts/login/?next=/p/AAA/', 'https://www.instagram.com/p/AAA/')).toBe(true);
+        expect(samePost('https://www.instagram.com/accounts/login/?next=/p/AAA/', 'https://www.instagram.com/accounts/login/?next=/p/BBB/')).toBe(false);
+        expect(samePost('https://www.facebook.com/login/?next=https%3A%2F%2Fwww.facebook.com%2Fgroups%2F1%2Fposts%2F2%2F', 'https://www.facebook.com/groups/1/posts/2/')).toBe(true);
+    });
+
+    // Item 4: a page called "constructor" must not crash the lookup.
+    it('does not throw on page names that are object built-ins', () => {
+        expect(() => postKey('https://www.facebook.com/constructor?x=1')).not.toThrow();
+        expect(() => postKey('https://www.instagram.com/toString/?hl=es')).not.toThrow();
+        expect(() => postKey('https://www.facebook.com/__proto__?a=1')).not.toThrow();
+    });
+
+    // Item 2: the needle must be in every stored form, wrappers included.
+    it('picks a needle found inside a stored redirect wrapper', () => {
+        const target = 'https://example.com/nota/9';
+        const stored = 'https://l.facebook.com/l.php?u=' + encodeURIComponent(target);
+        expect(stored.includes(postKey(target)!.needle)).toBe(true);
+        expect(stored.includes(postKey(stored)!.needle)).toBe(true);
     });
 });

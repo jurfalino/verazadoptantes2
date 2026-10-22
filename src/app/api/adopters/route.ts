@@ -2,7 +2,7 @@ export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { adopters, adopterFlags, adopterImages, adoptions } from '@/db/schema';
+import { adopters, adopterFlags, adopterImages, adopterEvents, placements } from '@/db/schema';
 import { postKey, samePost } from '@/domain/postKey';
 import { eq, like, or, and, isNull, sql, desc, type InferSelectModel } from 'drizzle-orm';
 import { auth } from '@/auth';
@@ -96,16 +96,25 @@ export async function GET(request: Request) {
                 // A generic needle can hit many rows; newest first and a roomy cap so
                 // the right one is not cut before samePost() decides.
                 db.select().from(adopters)
-                    .where(and(isNull(adopters.deletedAt), sql`instr(${adopters.sourceUrl}, ${needle}) > 0`))
+                    // lower() on both sides: instr is case-sensitive, stored hosts and
+                    // vanity names are not (final review of 2.56.215, item 2).
+                    .where(and(isNull(adopters.deletedAt), sql`instr(lower(${adopters.sourceUrl}), lower(${needle})) > 0`))
                     .orderBy(desc(adopters.createdAt))
                     .limit(200) as Promise<AdopterRow[]>,
-                db.select({ adopterId: adoptions.adopterId, sourceUrl: adoptions.sourceUrl }).from(adoptions)
-                    .where(sql`instr(${adoptions.sourceUrl}, ${needle}) > 0`)
+                // The tables behind the `adoptions` view, not the view: it has no
+                // created_at to order by, and it hides links on ended placements.
+                db.select({ adopterId: adopterEvents.adopterId, sourceUrl: adopterEvents.sourceUrl }).from(adopterEvents)
+                    .where(sql`instr(lower(${adopterEvents.sourceUrl}), lower(${needle})) > 0`)
+                    .orderBy(desc(adopterEvents.createdAt))
+                    .limit(200) as Promise<Array<{ adopterId: string | null; sourceUrl: string | null }>>,
+                db.select({ adopterId: placements.adopterId, sourceUrl: placements.sourceUrl }).from(placements)
+                    .where(sql`instr(lower(${placements.sourceUrl}), lower(${needle})) > 0`)
+                    .orderBy(desc(placements.createdAt))
                     .limit(200) as Promise<Array<{ adopterId: string | null; sourceUrl: string | null }>>,
             ])));
             const byId = new Map<string, AdopterRow>();
             for (const [direct] of perNeedle) for (const r of direct) if (matchesAny(r.sourceUrl)) byId.set(r.id, r);
-            const recordAdopterIds = [...new Set(perNeedle.flatMap(([, recs]) => recs)
+            const recordAdopterIds = [...new Set(perNeedle.flatMap(([, events, placed]) => [...events, ...placed])
                 .filter(r => matchesAny(r.sourceUrl))
                 .map(r => r.adopterId)
                 .filter((id): id is string => !!id && !byId.has(id)))];

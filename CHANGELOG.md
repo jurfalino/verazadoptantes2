@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.216] - 2026-10-21
+
+### Fixed — from the final review of 2.56.215
+
+- **Different Facebook/Instagram pages stay apart again**: parameters that identify a page are kept
+  wherever they appear (`?id=`, `?v=`, `?set=`, `?album_id=`, `?q=`, `?event_time_id=`, `?u=`),
+  so old group-permalink links, `video.php?v=` and album links no longer collapse into one.
+- A login-wall link (`/login?next=…`) counts as the page it guards.
+- A page named like an object built-in (`/constructor`) no longer breaks the lookup.
+- The lookup is case-insensitive and its search text is found inside stored redirect links too.
+- Activity records are looked up in the event and placement tables directly (newest first), so links
+  on ended placements are found.
+
 ## [2.56.215] - 2026-10-21
 
 ### Fixed — from the re-review of 2.56.214
