@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.226] - 2026-10-22
+
+### Fixed — the CI install retry actually retries (review of 2.56.225)
+
+2.56.225's retry loop failed 4 legs: `timeout` killed `npx` but not the `apt-get` that Playwright runs via
+`sudo` (its own session), which kept the dpkg lock, so retries 2 and 3 died in a second.
+- Browser binaries download without `--with-deps` (user-owned, killable), retried.
+- System packages install as root so apt runs inside timeout's process group; apt retries downloads, times out
+  stalled mirror connections and waits for the lock; a failed attempt kills leftovers and repairs dpkg.
+- Only the `rest` leg (the iPhone/webkit tests) installs webkit and its ~120 MB of packages — the download
+  that crawled on the Ubuntu mirror; the other 15 legs install chromium only.
+- The fingerprint fails loudly instead of collapsing to a constant cache key; cache keys include the runner
+  image and .npmrc; the e2e job drops the npm cache that filled the 10 GB quota on every version bump.
+
 ## [2.56.225] - 2026-10-22
 
 ### Fixed — CI e2e setup no longer hangs a deploy
