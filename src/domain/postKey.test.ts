@@ -98,4 +98,45 @@ describe('postKey', () => {
     it('treats fb.com share links like facebook.com ones', () => {
         expect(postKey('https://fb.com/share/p/1AbCd/')?.key).toBe('fb:share:1AbCd');
     });
+
+    // Re-review of 2.56.214, item A: on Facebook/Instagram most parameters are
+    // noise, and keeping them broke matches that worked before.
+    it('ignores non-identifying Facebook and Instagram parameters', () => {
+        expect(samePost('https://m.facebook.com/somepage?_rdc=1&_rdr', 'https://www.facebook.com/somepage')).toBe(true);
+        expect(samePost('https://www.facebook.com/profile.php?id=100&sk=photos', 'https://www.facebook.com/profile.php?id=100')).toBe(true);
+        expect(samePost('https://www.instagram.com/someuser/?hl=es', 'https://instagram.com/someuser')).toBe(true);
+        expect(samePost('https://www.facebook.com/somepage?refid=8&__xts__[0]=x&eav=1&paipv=0&locale=es_LA&app=fbl', 'https://www.facebook.com/somepage/')).toBe(true);
+    });
+
+    it('keys a photo inside an album by the photo id', () => {
+        expect(samePost('https://www.facebook.com/somepage/photos/a.1/2/?type=3', 'https://www.facebook.com/somepage/photos/a.1/2')).toBe(true);
+        expect(postKey('https://www.facebook.com/somepage/photos/a.1/2/?type=3')?.key).toBe('fb:photo:2');
+    });
+
+    it('unwraps l.php on any Facebook host', () => {
+        const target = 'https://example.com/nota/9';
+        expect(samePost('https://lm.facebook.com/l.php?u=' + encodeURIComponent(target), target)).toBe(true);
+        expect(samePost('https://www.facebook.com/l.php?u=' + encodeURIComponent(target), target)).toBe(true);
+    });
+
+    // Item B: the needle must be found in the link however it was stored.
+    it('picks a needle found in both the encoded and the decoded link', () => {
+        for (const [a, b] of [
+            ['https://example.com/b?q=hola%20mundo', 'https://example.com/b?q=hola mundo'],
+            ['https://example.com/caf%C3%A9', 'https://example.com/café'],
+        ]) {
+            const { needle } = postKey(a)!;
+            expect(a.includes(needle)).toBe(true);
+            expect(b.includes(needle)).toBe(true);
+            expect(postKey(b)!.needle).toBe(needle);
+        }
+    });
+
+    it('prefers the whole path as the needle', () => {
+        expect(postKey('https://www.facebook.com/somepage/about')?.needle).toBe('somepage/about');
+    });
+
+    it('uses the identifying parameter as the needle when there is one', () => {
+        expect(postKey('https://www.facebook.com/profile.php?id=100045&sk=photos')?.needle).toBe('100045');
+    });
 });

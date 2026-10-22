@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { adopters, adopterFlags, adopterImages, adoptions } from '@/db/schema';
 import { postKey, samePost } from '@/domain/postKey';
-import { eq, like, or, and, isNull, sql, type InferSelectModel } from 'drizzle-orm';
+import { eq, like, or, and, isNull, sql, desc, type InferSelectModel } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
@@ -93,12 +93,15 @@ export async function GET(request: Request) {
             type AdopterRow = InferSelectModel<typeof adopters>;
             const needles = [...new Set(keys.map(k => k.needle))];
             const perNeedle = await Promise.all(needles.map(needle => Promise.all([
+                // A generic needle can hit many rows; newest first and a roomy cap so
+                // the right one is not cut before samePost() decides.
                 db.select().from(adopters)
                     .where(and(isNull(adopters.deletedAt), sql`instr(${adopters.sourceUrl}, ${needle}) > 0`))
-                    .limit(50) as Promise<AdopterRow[]>,
+                    .orderBy(desc(adopters.createdAt))
+                    .limit(200) as Promise<AdopterRow[]>,
                 db.select({ adopterId: adoptions.adopterId, sourceUrl: adoptions.sourceUrl }).from(adoptions)
                     .where(sql`instr(${adoptions.sourceUrl}, ${needle}) > 0`)
-                    .limit(50) as Promise<Array<{ adopterId: string | null; sourceUrl: string | null }>>,
+                    .limit(200) as Promise<Array<{ adopterId: string | null; sourceUrl: string | null }>>,
             ])));
             const byId = new Map<string, AdopterRow>();
             for (const [direct] of perNeedle) for (const r of direct) if (matchesAny(r.sourceUrl)) byId.set(r.id, r);

@@ -168,6 +168,29 @@ test.describe('Import wizard — duplicates', () => {
         expect(created).toBe(false);
     });
 
+    test('a failed same-post check is shown on the match screen too', async ({ page }) => {
+        // Re-review of 2.56.214, D: with any person match, the warning used to vanish.
+        await page.route('**/api/facebook/fetch-post', route => route.fulfill({
+            status: 200, contentType: 'application/json',
+            body: JSON.stringify({ success: true, data: { text: 'Post', images: [] } }),
+        }));
+        await stubAi(page, { name: 'María García López', phones: [] });
+        await page.route('**/api/adopters?sourceUrl=*', route => route.fulfill({
+            status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Duplicate check failed', errorId: 'abcd1234' }),
+        }));
+
+        await page.goto('/import');
+        const field = page.getByPlaceholder(/paste|pegá|URL|text/i);
+        await expect(field).toBeVisible({ timeout: 30000 });
+        await field.fill(POST);
+        await page.getByRole('button', { name: /Continue|Continuar/i }).click();
+        await page.getByRole('button', { name: /Extract with AI|Extraer con IA/i }).click();
+        await page.getByRole('button', { name: /Save Adopter|Guardar Adoptante/i }).click();
+
+        await expect(page.getByRole('heading', { name: /may already exist|ya exista/i })).toBeVisible({ timeout: 30000 });
+        await expect(page.getByText(/Could not verify|No se pudo verificar/i)).toBeVisible();
+    });
+
     test('a name-only match is not pre-selected, and "create new" leads', async ({ page }) => {
         // Seeded profile; the AI returns the same name and no contact.
         await stubAi(page, { name: 'María García López', phones: [] });

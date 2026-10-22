@@ -483,7 +483,10 @@ async function resolveShareLink(url: string, userId: string): Promise<string | n
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
     try {
-        const res = await fetch(url, {
+        // fb.com first redirects to facebook.com/share/…, which would read as
+        // unresolved after the single hop below; start from the canonical host.
+        const start = url.replace(/^https?:\/\/([a-z]+\.)?fb\.com\//i, 'https://www.facebook.com/');
+        const res = await fetch(start, {
             method: 'GET',
             redirect: 'manual',
             headers: { 'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)' },
@@ -492,7 +495,7 @@ async function resolveShareLink(url: string, userId: string): Promise<string | n
         const location = res.headers.get('location');
         // Only the header is needed; release the body.
         await res.body?.cancel().catch(() => undefined);
-        const target = location ? new URL(location, url).toString() : null;
+        const target = location ? new URL(location, start).toString() : null;
         const key = target ? postKey(target)?.key : null;
         if (!target || !key || key.startsWith('fb:share:') || !key.startsWith('fb:')) {
             logger.info('Facebook share link not resolved', { status: res.status, hasLocation: !!location, user: userId });

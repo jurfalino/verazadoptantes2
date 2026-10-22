@@ -209,8 +209,11 @@ export async function addHouseholdMember(
         const out = await mutateHousehold(r.db, adopterId, (members) => ({ members: [...members, member], result: null }), { op: 'addHouseholdMember', actor });
         if (out.status === 'missing') return { ok: false, error: 'Adopter not found' };
         if (out.status === 'busy') return busy(out.errorId);
-        await insertHouseholdHistory(r.db, adopterId, actor, { household_member_added: { id: member.id, relationship } });
-        logAudit({ userEmail: actor, action: 'household_member_added', target: adopterId, details: { relationship, contacts: entries.length } });
+        // Contact TYPES (never values) so the history shows what came with the member,
+        // as the per-contact path does (re-review of 2.56.214, E).
+        const contactTypes = entries.map(e => e.type);
+        await insertHouseholdHistory(r.db, adopterId, actor, { household_member_added: { id: member.id, relationship, ...(contactTypes.length ? { contactTypes } : {}) } });
+        logAudit({ userEmail: actor, action: 'household_member_added', target: adopterId, details: { relationship, contactTypes } });
         return { ok: true, memberId: member.id };
     } catch (error) {
         const errorId = logger.error('addHouseholdMember failed', error, { adopterId, actor });

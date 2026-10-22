@@ -255,7 +255,10 @@ export default function ImportWizard() {
     // The link as the rescuer shared it, when Facebook resolved it to another
     // one. Both are checked for "already imported": links stored before 2.56.213
     // are the share links themselves (review of 2.56.213, item 2).
-    const [sharedLinkAsGiven, setSharedLinkAsGiven] = useState<string | null>(null);
+    const [sharedLinkAsGiven, setSharedLinkAsGiven] = useState<string | null>(() => {
+        if (typeof window === 'undefined') return null;
+        try { return JSON.parse(sessionStorage.getItem('import_wizard_state') || '{}').sharedLinkAsGiven || null; } catch { return null; }
+    });
     const [sourceUrl, setSourceUrl] = useState(() => {
         if (typeof window === 'undefined') return '';
         const saved = sessionStorage.getItem('import_wizard_state');
@@ -288,9 +291,9 @@ export default function ImportWizard() {
             return;
         }
         sessionStorage.setItem('import_wizard_state', JSON.stringify({
-            step, inputContent, editableText, sourceUrl, sourceNotPublic
+            step, inputContent, editableText, sourceUrl, sourceNotPublic, sharedLinkAsGiven
         }));
-    }, [step, inputContent, editableText, sourceUrl, sourceNotPublic]);
+    }, [step, inputContent, editableText, sourceUrl, sourceNotPublic, sharedLinkAsGiven]);
 
     // Retry countdown timer
     useEffect(() => {
@@ -982,7 +985,10 @@ export default function ImportWizard() {
             }
         }
 
-        if (preselect && !foundMatches && !checkFailed) {
+        // Keep the profile the rescuer picked even when a check failed — the
+        // "couldn't verify" screen alone only offers "Crear perfil", pushing them
+        // toward the duplicate they were avoiding (re-review of 2.56.214, C).
+        if (preselect && !foundMatches) {
             setPersonMatches([preselect]);
             setSelectedMatch(preselect);
             foundMatches = true;
@@ -1877,7 +1883,8 @@ export default function ImportWizard() {
                                     <button
                                         type="button"
                                         onClick={() => openMatchFromHint(top)}
-                                        className="min-h-[44px] px-4 rounded-xl border border-teal-200 bg-teal-50 text-teal-800 text-sm font-bold hover:bg-teal-100"
+                                        disabled={isSaving}
+                                        className="min-h-[44px] px-4 rounded-xl border border-teal-200 bg-teal-50 text-teal-800 text-sm font-bold hover:bg-teal-100 disabled:opacity-40"
                                     >
                                         {t('import.review_hint_action')}
                                     </button>
@@ -2269,6 +2276,14 @@ export default function ImportWizard() {
                                 <h3 className="text-lg font-semibold text-stone-900">{t('import.possible_match_title')}</h3>
                                 <p className="text-sm text-stone-600 mt-0.5">{t('import.possible_match_desc')}</p>
                             </div>
+                            {/* A failed check is said here too, not only when nothing
+                                matched (re-review of 2.56.214, D). */}
+                            {duplicateCheckFailed && (
+                                <div className="px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-start gap-2">
+                                    <WarningIcon className="w-4 h-4 shrink-0 mt-0.5" />
+                                    <span>{t('import.duplicateCheckFailed')}</span>
+                                </div>
+                            )}
                             <div className="space-y-2" role="radiogroup" aria-label={t('import.possible_match_title')}>
                                 {personMatches.map(match => {
                                     const isSelected = selectedMatch?.id === match.id;

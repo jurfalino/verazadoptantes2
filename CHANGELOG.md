@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.215] - 2026-10-21
+
+### Fixed — from the re-review of 2.56.214
+
+- **Profile and page links with harmless extras match again** (`?_rdc=1`, `?hl=es`, `&sk=photos`,
+  `refid`, `locale`…). 2.56.214 kept those parameters and split one page into many keys — on
+  Facebook/Instagram only identifying parameters (`profile.php?id`, `set`) count now. Checked
+  against every stored production link: nothing that matched in 2.56.213 stops matching.
+- Photos inside an album key by the photo id; `l.php` redirect links unwrapped on any Facebook host.
+- The lookup finds links stored encoded or as typed (accents, spaces), and newest profiles come first.
+- **«Agregar a este perfil» keeps the chosen profile** even when a check fails, and the
+  «No se pudo verificar…» warning also shows on the match screen.
+- Adding a relative records which kinds of contact came with them (types only) in the history.
+- `fb.com/share` links start from facebook.com so they can resolve; the shared link survives a refresh.
+
 ## [2.56.214] - 2026-10-21
 
 ### Fixed — from the independent review of 2.56.213
