@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.218] - 2026-10-21
+
+### Fixed — from the quick review of 2.56.217
+
+- `fb.watch/<code>` links keep their case (the code is case-sensitive; two videos could merge).
+- A share link that Facebook answers with a login wall stores the post it guards, not the login page.
+
 ## [2.56.217] - 2026-10-21
 
 ### Added — «¿No es el mismo post? Crear un perfil nuevo» (Jon, 2026-10-21)

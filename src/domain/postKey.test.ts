@@ -205,4 +205,8 @@ describe('postKey', () => {
         expect(samePost('https://es-la.facebook.com/somepage', 'https://www.facebook.com/somepage')).toBe(true);
         expect(samePost('https://touch.facebook.com/somepage', 'https://fb.com/somepage')).toBe(true);
     });
+
+    it('keeps fb.watch codes case-sensitive', () => {
+        expect(samePost('https://fb.watch/AbCdEf/', 'https://fb.watch/abcdef/')).toBe(false);
+    });
 });

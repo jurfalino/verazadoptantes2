@@ -143,7 +143,8 @@ export function postKey(input: string): PostKey | null {
     const path = parts.map((seg, i) => {
         let d = seg;
         try { d = decodeURIComponent(seg); } catch { /* keep */ }
-        return (isFb || isIg) && i === 0 ? d.toLowerCase() : d;
+        // fb.watch/<code>: the code is case-sensitive — never lowercase it.
+        return (isFb || isIg) && i === 0 && host !== 'fb.watch' ? d.toLowerCase() : d;
     }).join('/');
     const bare = path ? `${host}/${path}` : host;
     const kept = [...q.entries()]

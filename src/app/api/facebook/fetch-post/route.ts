@@ -501,6 +501,12 @@ async function resolveShareLink(url: string, userId: string): Promise<string | n
             logger.info('Facebook share link not resolved', { status: res.status, hasLocation: !!location, user: userId });
             return null;
         }
+        // A login wall (login.php?next=<post>) keys as the post it guards; store
+        // that post's link, not the wall.
+        const guarded = new URL(target).searchParams.get('next');
+        if (guarded && /\/(login(\.php)?|checkpoint)\b/.test(new URL(target).pathname)) {
+            try { return new URL(guarded, target).toString(); } catch { /* keep target */ }
+        }
         return target;
     } catch (e) {
         logger.warn('Facebook share link resolve failed', { error: e instanceof Error ? e.message : String(e), user: userId });

@@ -117,7 +117,8 @@ test.describe('Import wizard — duplicates', () => {
             status: 200, contentType: 'application/json',
             body: JSON.stringify({ success: true, data: { text: 'Cuidado con Juan y Ana', images: [] } }),
         }));
-        await stubAi(page, { name: 'Ana Prueba', phones: [] });
+        // Unique name: the "no es el mismo post" step must not find a name match in the seed.
+        await stubAi(page, { name: `Fixture Otrapersona ${Date.now()}`, phones: [] });
         let lookedUp = '';
         await page.route('**/api/adopters?sourceUrl=*', route => {
             lookedUp = new URL(route.request().url()).searchParams.get('sourceUrl') ?? '';
