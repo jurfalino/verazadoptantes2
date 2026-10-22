@@ -90,6 +90,34 @@ test.describe('Import wizard', () => {
         await expect(page.getByTestId('import-rating-suggested')).toHaveCount(0);
     });
 
+    test('other people the post names are listed and saved as relatives', async ({ page }) => {
+        await stubAi(page, {
+            name: `Fixture Titular ${Date.now()}`, phones: [],
+            otherPeople: [
+                { name: 'Ana Pareja', relationship: 'partner', phones: ['11 3333 4444'] },
+                { name: 'Leo Error', relationship: 'unknown' },
+            ],
+        });
+        let sent: { householdMembers?: string } = {};
+        await page.route('**/api/adopters', route => {
+            if (route.request().method() !== 'POST') return route.continue();
+            sent = route.request().postDataJSON();
+            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'test-import-fixture-2' }) });
+        });
+        await pasteAndContinue(page, 'Cuidado con este y su pareja Ana');
+
+        const list = page.getByTestId('import-relatives');
+        await expect(list).toContainText('Ana Pareja');
+        // The rescuer drops the one the AI got wrong.
+        await list.getByRole('button', { name: /Leo Error/ }).click();
+        await expect(list).not.toContainText('Leo Error');
+
+        await page.getByRole('button', { name: /Save Adopter|Guardar Adoptante/i }).click();
+        await page.waitForURL(/\/adopter\/test-import-fixture-2/, { timeout: 30000 });
+        const members = JSON.parse(sent.householdMembers ?? '[]') as Array<{ name: string; relationship: string }>;
+        expect(members.map(m => [m.name, m.relationship])).toEqual([['Ana Pareja', 'partner']]);
+    });
+
     test('a profile with no name can be saved when it has a phone', async ({ page }) => {
         await stubAi(page, { name: '', phones: ['1100000000'] });
         await pasteAndContinue(page, 'sin nombre, tel 11 0000 0000');
@@ -129,7 +157,7 @@ test.describe('Import wizard', () => {
 });
 
 test.describe('Import wizard — duplicates', () => {
-    test('an already-imported post leads with "Ver perfil" and offers adding a relative', async ({ page }) => {
+    test('an already-imported post leads with "Ver perfil"', async ({ page }) => {
         await page.route('**/api/facebook/fetch-post', route => route.fulfill({
             status: 200, contentType: 'application/json',
             body: JSON.stringify({ success: true, data: { text: 'Cuidado con Juan y Ana', images: [] } }),
@@ -153,9 +181,10 @@ test.describe('Import wizard — duplicates', () => {
         await expect(page.getByRole('heading', { name: /already imported|Ya importaste/i })).toBeVisible({ timeout: 30000 });
         expect(lookedUp).toBe(POST);
         const actions = page.getByTestId('import-actions');
-        // "Ver perfil" first (decision B9), then add-interaction, then add-as-relative (B6).
+        // "Ver perfil" first (decision B9). No "otra persona del post" option any more:
+        // people a post names are saved as relatives on the first import (Jon, 2026-10-22).
         await expect(actions.locator('a, button').first()).toHaveAttribute('href', '/adopter/test-import-fixture-juan');
-        await expect(actions.getByRole('button', { name: /relative|familiar/i })).toBeVisible();
+        await expect(page.getByRole('button', { name: /relative|familiar/i })).toHaveCount(0);
 
         // "No es el mismo post" leaves the screen and saves as new when nothing else matches.
         let created = false;
@@ -218,6 +247,23 @@ test.describe('Import wizard — duplicates', () => {
 
         await expect(page.getByRole('heading', { name: /may already exist|ya exista/i })).toBeVisible({ timeout: 30000 });
         await expect(page.getByText(/Could not verify|No se pudo verificar/i)).toBeVisible();
+    });
+
+    test('a match on the phone but not the name asks: same person or a relative?', async ({ page }) => {
+        // Seeded María has phone 555-1234; the post names someone else with that phone.
+        await stubAi(page, { name: 'Pedro Prueba', phones: ['555-1234'] });
+        await pasteAndContinue(page, 'Pedro Prueba, tel 555-1234');
+        await page.getByRole('button', { name: /Save Adopter|Guardar Adoptante/i }).click();
+        await expect(page.getByRole('heading', { name: /may already exist|ya exista/i })).toBeVisible({ timeout: 30000 });
+
+        const card = page.locator('[role="radio"]').filter({ hasText: /María/ }).first();
+        if ((await card.getAttribute('aria-checked')) !== 'true') await card.click();
+        const choice = page.getByTestId('import-identity-choice');
+        await expect(choice).toBeVisible();
+        const merge = page.getByRole('button', { name: /Add to the selected|Agregar al perfil elegido/i });
+        await expect(merge).toBeDisabled();
+        await choice.getByRole('radio', { name: /relative|familiar/i }).check();
+        await expect(merge).toBeEnabled();
     });
 
     test('a name-only match is not pre-selected, and "create new" leads', async ({ page }) => {

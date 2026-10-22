@@ -2177,6 +2177,13 @@ export const pt = {
     },
     import: {
         // Post-import wizard (/import): failures and outcome (audit 2026-10-21)
+        relatives_title: 'Outras pessoas da publicação',
+        relatives_hint: 'São salvas como familiares deste perfil. Remova quem não corresponder.',
+        relative_remove: 'Remover {name}',
+        relatives_not_allowed: 'O registro foi salvo, mas os familiares não: esse perfil é de outra equipe.',
+        identity_question: 'Quem é {post} para {profile}?',
+        identity_alias: 'A mesma pessoa, com outro nome',
+        identity_relative: 'Um familiar ou alguém que mora com essa pessoa',
         rating_title: 'Avaliação',
         rating_suggested: 'Sugerido pela IA. Revise antes de salvar.',
         rating_suggested_reason: 'Sugerido pela IA: {reason}. Revise antes de salvar.',
@@ -2198,8 +2205,6 @@ export const pt = {
         already_imported_desc: 'Está salvo em:',
         view_profile_btn: 'Ver perfil',
         add_interaction_to: 'Adicionar uma nova interação a {name}',
-        add_as_relative_of: 'É outra pessoa da publicação: adicioná-la como familiar de {name}',
-        relative_added: 'Adicionado como familiar',
         relative_failed: 'Não foi possível adicionar como familiar',
         possible_match_title: 'Esta pessoa pode já existir',
         possible_match_desc: 'Escolha o perfil ao qual adicionar este registro ou crie um novo.',

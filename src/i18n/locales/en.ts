@@ -2172,6 +2172,13 @@ export const en = {
     },
     import: {
         // Post-import wizard (/import): failures and outcome (audit 2026-10-21)
+        relatives_title: 'Other people in the post',
+        relatives_hint: "They are saved as relatives of this profile. Remove anyone who doesn't belong.",
+        relative_remove: 'Remove {name}',
+        relatives_not_allowed: 'The record was saved, but not the relatives: that profile belongs to another team.',
+        identity_question: 'Who is {post} to {profile}?',
+        identity_alias: 'The same person, under another name',
+        identity_relative: 'A relative or someone who lives with them',
         rating_title: 'Rating',
         rating_suggested: 'Suggested by the AI. Check it before saving.',
         rating_suggested_reason: 'Suggested by the AI: {reason}. Check it before saving.',
@@ -2193,8 +2200,6 @@ export const en = {
         already_imported_desc: 'It is saved on:',
         view_profile_btn: 'View profile',
         add_interaction_to: 'Add a new interaction to {name}',
-        add_as_relative_of: "It's someone else in the post: add them as a relative of {name}",
-        relative_added: 'Added as a relative',
         relative_failed: 'Could not add as a relative',
         possible_match_title: 'This person may already exist',
         possible_match_desc: 'Choose the profile to add this record to, or create a new one.',

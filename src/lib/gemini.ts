@@ -29,6 +29,14 @@ export interface ExtractedAdopterData {
     recordType?: 'adoption' | 'adoption_request' | 'returned_pet' | 'follow_up' | 'observation';
     adoptionRating?: number; // 1-5 SUGGESTED rating — shown to the rescuer to confirm, never saved silently
     ratingReason?: string; // one short phrase: why that rating (shown next to the suggestion)
+    // Other people the post names alongside the main person (a partner, a relative,
+    // someone they live with). Saved as relatives of the main profile (Jon, 2026-10-22).
+    otherPeople?: Array<{
+        name: string;
+        relationship?: 'partner' | 'child' | 'parent' | 'sibling' | 'other_relative' | 'housemate' | 'unknown';
+        phones?: string[];
+        socialProfiles?: string[];
+    }>;
     adoptionDate?: string; // YYYY-MM-DD format if mentioned in the post
 }
 
@@ -90,6 +98,16 @@ Also return "ratingReason": one short phrase in the response language naming the
 suggestion (e.g. "abandonó a su perro en la ruta"), or null when the rating is null.
 DATE: "adoptionDate" is when the reported events (or the adoption) happened, if the post says; else null.
 
+SEVERAL PEOPLE: a post may name more than one person (e.g. "cuidado con Juan Pérez y su pareja Ana Gómez").
+- "name" and the top-level contacts belong to the MAIN person: the one the post is mainly about (usually the
+  first one named or the one directly accused).
+- Put every OTHER person the post names as involved with the main person (partner, relative, someone they
+  live with, an accomplice) in "otherPeople", each with their own name, relationship to the main person if
+  stated ("partner" | "child" | "parent" | "sibling" | "other_relative" | "housemate" | "unknown"), and ONLY
+  the phones/social profiles the post attributes to THEM (never duplicate the main person's).
+- Do NOT include the author of the post, the rescuers, the victims (animals) or people only mentioned in
+  passing. Use [] when the post names only one person.
+
 RECORD TYPE CLASSIFICATION — CRITICAL:
 You MUST ALWAYS classify the post into one of these record types:
 - "adoption" = The post announces a COMPLETED adoption (animal has been placed with someone).
@@ -119,11 +137,12 @@ Respond ONLY with valid JSON in this exact format:
   "adoptionConfidence": "high" | "medium" | "low" | null,
   "adoptionRating": 1-5 or null,
   "ratingReason": "short phrase or null",
+  "otherPeople": [{"name": "string", "relationship": "partner|child|parent|sibling|other_relative|housemate|unknown", "phones": [], "socialProfiles": []}],
   "adoptionDate": "YYYY-MM-DD or null"
 }
 
 If you cannot extract any relevant information, return:
-{"name": null, "phones": [], "emails": [], "addresses": [], "socialProfiles": [], "notes": "", "confidence": "low", "adoptionDetected": false, "recordType": "observation", "animalName": null, "animalSpecies": null, "adoptionConfidence": null, "adoptionRating": null, "ratingReason": null, "adoptionDate": null}
+{"name": null, "phones": [], "emails": [], "addresses": [], "socialProfiles": [], "notes": "", "confidence": "low", "adoptionDetected": false, "recordType": "observation", "animalName": null, "animalSpecies": null, "adoptionConfidence": null, "adoptionRating": null, "ratingReason": null, "otherPeople": [], "adoptionDate": null}
 `;
 }
 

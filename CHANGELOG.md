@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.221] - 2026-10-22
+
+### Changed — people named together in a post become relatives (Jon, 2026-10-22)
+
+- **«Es otra persona del post…» is gone.** It showed on every «Ya importaste este post» screen,
+  even for posts about one person, where it would have made someone their own relative.
+- **A post that names several people is handled in the first import.** The AI reads the main
+  person and the others («cuidado con Juan y su pareja Ana»); the review screen lists the others
+  («Otras personas del post», removable) and they are saved as relatives of the profile, with the
+  phones/accounts the post gives them, in the same save. When merging into an existing profile,
+  they are added to that profile's relatives.
+- **Matched on phone/email/address but not the name?** Before adding to that profile, the rescuer
+  says who the post's person is: «la misma persona, con otro nombre» (kept as an alias) or «un
+  familiar o alguien que vive con esa persona» (added as a relative with the post's contacts).
+  When the name matched, the post's spelling is still kept as an alias automatically.
+
 ## [2.56.220] - 2026-10-22
 
 ### Fixed — «Continuar» stuck disabled after the page reloaded with a saved draft

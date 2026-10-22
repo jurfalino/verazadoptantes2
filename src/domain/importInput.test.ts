@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, dateFromMonth, aliasForMerge } from './importInput';
+import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, dateFromMonth, aliasForMerge, cleanOtherPeople, matchedOnName } from './importInput';
 
 describe('splitLinkAndText', () => {
     it('reads a bare link as a link with no extra text', () => {
@@ -116,5 +116,36 @@ describe('aliasForMerge', () => {
 
     it('skips when the post had no name', () => {
         expect(aliasForMerge('  ', 'María Gómez')).toBeNull();
+    });
+});
+
+describe('cleanOtherPeople', () => {
+    it('keeps named people with a known relationship and their own contacts', () => {
+        expect(cleanOtherPeople([{ name: 'Ana Gómez', relationship: 'partner', phones: ['11 2222'], socialProfiles: [] }], 'Juan Pérez'))
+            .toEqual([{ name: 'Ana Gómez', relationship: 'partner', phones: ['11 2222'], socialProfiles: [] }]);
+    });
+
+    it('drops the main person, repeats, nameless entries and junk', () => {
+        const out = cleanOtherPeople([
+            { name: 'juan perez' }, { name: 'Ana' }, { name: 'ANA' }, { name: '' }, null, 'x', { name: 'Leo', relationship: 'boss' },
+        ], 'Juan Pérez');
+        expect(out.map(p => p.name)).toEqual(['Ana', 'Leo']);
+        expect(out[1].relationship).toBe('unknown');
+    });
+
+    it('is empty for anything that is not a list', () => {
+        expect(cleanOtherPeople(undefined, 'x')).toEqual([]);
+        expect(cleanOtherPeople({ name: 'Ana' }, 'x')).toEqual([]);
+    });
+});
+
+describe('matchedOnName', () => {
+    it('is true when a name signal is among the match types', () => {
+        expect(matchedOnName(['phone', 'name_word'])).toBe(true);
+    });
+
+    it('is false for phone, email or address only', () => {
+        expect(matchedOnName(['phone_suffix', 'address_word'])).toBe(false);
+        expect(matchedOnName(undefined)).toBe(false);
     });
 });

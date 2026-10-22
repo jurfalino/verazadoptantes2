@@ -99,3 +99,52 @@ export function aliasForMerge(postName: string | undefined, targetName: string |
     if (!name) return null;
     return foldName(name) === foldName(targetName ?? '') ? null : name;
 }
+
+export type PostRelationship = 'partner' | 'child' | 'parent' | 'sibling' | 'other_relative' | 'housemate' | 'unknown';
+const RELATIONSHIPS = new Set<PostRelationship>(['partner', 'child', 'parent', 'sibling', 'other_relative', 'housemate', 'unknown']);
+
+export interface PostPerson {
+    name: string;
+    relationship: PostRelationship;
+    phones: string[];
+    socialProfiles: string[];
+}
+
+/**
+ * The other people a post names, as the AI read them, cleaned up: named,
+ * not the main person again, not repeated, a known relationship, capped.
+ * They are saved as relatives of the main profile (Jon, 2026-10-22).
+ */
+export function cleanOtherPeople(raw: unknown, mainName: string | undefined): PostPerson[] {
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set<string>([foldName(mainName ?? '')]);
+    const out: PostPerson[] = [];
+    for (const p of raw) {
+        if (!p || typeof p !== 'object') continue;
+        const r = p as Record<string, unknown>;
+        const name = typeof r.name === 'string' ? r.name.trim().slice(0, 200) : '';
+        const key = foldName(name);
+        if (!name || seen.has(key)) continue;
+        seen.add(key);
+        const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()).slice(0, 10) : []);
+        out.push({
+            name,
+            relationship: RELATIONSHIPS.has(r.relationship as PostRelationship) ? r.relationship as PostRelationship : 'unknown',
+            phones: strings(r.phones),
+            socialProfiles: strings(r.socialProfiles),
+        });
+        if (out.length >= 10) break;
+    }
+    return out;
+}
+
+const NAME_MATCH_SIGNALS = new Set(['name_full', 'name_word', 'name_phonetic', 'name_word_fuzzy', 'like_fallback_name']);
+
+/**
+ * Did a duplicate match include the NAME? When it matched only on phone,
+ * email or address, the post's person may be someone else in that household —
+ * so merging asks "same person (alias) or a relative?" (Jon, 2026-10-22).
+ */
+export function matchedOnName(matchTypes: string[] | undefined): boolean {
+    return (matchTypes ?? []).some(t => NAME_MATCH_SIGNALS.has(t));
+}

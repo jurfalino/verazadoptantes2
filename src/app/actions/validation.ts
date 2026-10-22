@@ -205,6 +205,9 @@ export const createAdopterApiSchema = z.object({
     // skips the `stampPublic` block entirely so entries land non-public.
     // Omitted by callers other than the social-URL path → existing behaviour.
     isPublic: z.boolean().optional(),
+    // JSON HouseholdMember[] — the other people a post names, saved as relatives
+    // in the same write (Jon, 2026-10-22). Sanitized by deserializeHouseholdMembers.
+    householdMembers: z.string().max(50_000).optional().nullable(),
     flags: z.array(z.string().max(200)).max(20).optional(),
     images: z.array(z.object({
         data: z.string().max(10_000_000), // ~7.5MB base64

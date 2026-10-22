@@ -45,7 +45,7 @@ import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
 import { handledAsStale } from '@/lib/errorMessage';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, dateFromMonth, aliasForMerge } from '@/domain/importInput';
+import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, dateFromMonth, aliasForMerge, cleanOtherPeople, matchedOnName, type PostPerson } from '@/domain/importInput';
 import MatchWhy from '@/components/import/MatchWhy';
 import { buttonClasses } from '@/components/ui/Button';
 import StickyActions from '@/components/import/StickyActions';
@@ -325,8 +325,13 @@ export default function ImportWizard() {
     // The rating is the point of a report (Jon, 2026-10-22). The AI may SUGGEST
     // one; it is shown tagged until the rescuer touches the stars.
     const [ratingTouched, setRatingTouched] = useState(false);
-    // When it happened, month and year only ('' = unknown → saved as today).
+    // When it happened, month and year only ('' = unknown → no date).
     const [reportMonth, setReportMonth] = useState('');
+    // Other people the post names: saved as relatives of the profile (Jon, 2026-10-22).
+    const [relatives, setRelatives] = useState<PostPerson[]>([]);
+    // Merging into a profile matched only on phone/email/address: is the post's
+    // person the same one under another name, or someone in that household?
+    const [mergeAs, setMergeAs] = useState<'alias' | 'relative' | null>(null);
     const [contactEntries, setContactEntries] = useState<ContactEntry[]>([]);
     const [processedImages, setProcessedImages] = useState<Array<{ data: string; mimeType: string; originalUrl?: string }>>([]);
     // Media the rescuer has de-selected in the review step so it is NOT imported.
@@ -862,6 +867,7 @@ export default function ImportWizard() {
             if (!aiData.adoptionRating) aiData.ratingReason = undefined;
             setRatingTouched(false);
             setReportMonth(monthOf(aiData.adoptionDate));
+            setRelatives(cleanOtherPeople(aiData.otherPeople, aiData.name));
 
             // Preserve original post text untouched, append any AI-extracted notes after
             if (text?.trim()) {
@@ -929,6 +935,7 @@ export default function ImportWizard() {
         setPersonMatches([]);
         setSelectedMatch(null);
         setDuplicateCheckFailed(false);
+        setMergeAs(null);
         // Local mirrors of the state above: the decision at the end must not
         // wait for a re-render.
         let foundMatches = false;
@@ -1068,6 +1075,8 @@ export default function ImportWizard() {
                 // default (private). When `false`, the API skips the
                 // stampPublic block entirely → entries land non-public.
                 ...(sourceUrl && !fromContacts ? { isPublic: isPublicProfile } : {}),
+                // The other people the post names, as relatives of this profile.
+                ...(relatives.length ? { householdMembers: JSON.stringify(relatives.map(toMember)) } : {}),
                 flags,
                 images: [
                     // Honor the review-step de-selection: a processed image is
@@ -1173,6 +1182,21 @@ export default function ImportWizard() {
     };
 
     // Merge into existing profile
+    /** A post person as a household member: name, relationship, their own contacts. */
+    const toMember = (p: PostPerson) => ({
+        name: p.name,
+        relationship: p.relationship,
+        contactEntries: buildContactEntries({ phones: p.phones, socials: p.socialProfiles }),
+    });
+
+    /**
+     * Merging into a match that did NOT match on the name (only phone, email or
+     * address) with a different name: ask whether the post's person is the same
+     * one (alias) or someone in that household (relative) — Jon, 2026-10-22.
+     */
+    const needsIdentityChoice = (match: PersonMatch | null) =>
+        !!match && !duplicateAdopter && !matchedOnName(match.matchTypes) && !!aliasForMerge(extractedData?.name, match.name);
+
     const handleMerge = async (target?: { id: string; name: string }) => {
         const mergeTarget = target || selectedMatch;
         if (!extractedData || !mergeTarget) return;
@@ -1272,12 +1296,20 @@ export default function ImportWizard() {
             // edits the rescuer made in the review step actually land on the
             // profile and in the dedup index (the contacts-import path already
             // does this; the post-import merge path used to drop them).
-            // The post's name, when it differs, stays on the profile as an alias
-            // (decision B8) — aliases are searchable and feed duplicate matching.
-            const alias = aliasForMerge(extractedData.name, mergeTarget.name);
-            const entriesToMerge: ContactEntry[] = alias
+            // Who is the post's person to this profile? Matched only on phone /
+            // email / address with another name, the rescuer chose (Jon,
+            // 2026-10-22): the same person → alias; someone in that household →
+            // a relative carrying the post's contacts. Otherwise the post's name,
+            // when it differs, stays as an alias (decision B8).
+            const asRelative = mergeAs === 'relative' && needsIdentityChoice(selectedMatch);
+            const members = [
+                ...(asRelative ? [{ name: extractedData.name?.trim() || '', relationship: 'unknown' as const, contactEntries }] : []),
+                ...relatives.map(toMember),
+            ];
+            const alias = asRelative ? null : aliasForMerge(extractedData.name, mergeTarget.name);
+            const entriesToMerge: ContactEntry[] = asRelative ? [] : (alias
                 ? [...contactEntries, { type: 'alias', value: alias }]
-                : contactEntries;
+                : contactEntries);
             if (entriesToMerge.length) {
                 const { appendToExistingAdopter } = await import('@/app/actions');
                 const appendRes = await appendToExistingAdopter(mergeTarget.id, {
@@ -1300,6 +1332,17 @@ export default function ImportWizard() {
                         const id = appendRes?.error?.match(/Error ID:\s*([a-f0-9-]{6,})/i)?.[1];
                         toast.error(t('errors.generic'), refused ? t('import.contact_merge_not_allowed') : t('import.contact_merge_failed'), id);
                     }
+                }
+            }
+            // Relatives: one write each, member + their contacts together. Refused
+            // on another team's profile (household edits are owner/teammate only).
+            for (const m of members) {
+                const res = await addHouseholdMember({ adopterId: mergeTarget.id, ...m });
+                if (!res.ok) {
+                    const refused = /not authorized/i.test(res.error);
+                    const id = res.error === 'busy' && 'errorId' in res ? res.errorId : res.error.match(/Error ID:\s*([a-f0-9-]{6,})/i)?.[1];
+                    toast.error(t('errors.generic'), refused ? t('import.relatives_not_allowed') : t('import.relative_failed'), id);
+                    break;
                 }
             }
 
@@ -1339,45 +1382,6 @@ export default function ImportWizard() {
             showFailure(err, t('import.save_failed'), null, 'ImportWizard.merge');
             setShowConfirmModal(false);
             // Reset only on failure (see handleConfirmSave).
-            setIsSaving(false);
-            setSavingMode(null);
-        }
-    };
-
-    /**
-     * The post was already imported for someone else: this person is another one
-     * named in it. Save them as a relative of that profile (decision B6,
-     * 2026-10-21) — name, plus their contacts on the member. Turning relatives
-     * into profiles of their own is a later phase.
-     */
-    const handleAddAsRelative = async (target: { id: string; name: string | null }) => {
-        if (!extractedData) return;
-        setSavingMode('merge');
-        setSavingTargetName(target.name || '');
-        setIsSaving(true);
-        try {
-            // One write: the member and all their contacts (review of 2.56.213, item 5).
-            const added = await addHouseholdMember({
-                adopterId: target.id,
-                name: extractedData.name?.trim() || '',
-                relationship: 'unknown',
-                contactEntries: contactEntries.map(e => ({
-                    type: e.type,
-                    value: e.value,
-                    ...(e.streetAndNumber ? { streetAndNumber: e.streetAndNumber } : {}),
-                    ...(e.locality ? { locality: e.locality } : {}),
-                    ...(e.platform ? { platform: e.platform } : {}),
-                    ...(e.apps ? { apps: e.apps } : {}),
-                })),
-            });
-            if (!added.ok) throw new Error(added.error === 'busy' && 'errorId' in added ? `busy (Error ID: ${added.errorId})` : added.error);
-            trackImport('import_duplicate_choice', { choice: 'relative', kind: 'url' });
-            toast.success(t('import.relative_added'), target.name || undefined);
-            sessionStorage.removeItem('import_wizard_state');
-            router.push(`/adopter/${target.id}`);
-        } catch (err) {
-            showFailure(err, t('import.relative_failed'), null, 'ImportWizard.relative');
-            setShowConfirmModal(false);
             setIsSaving(false);
             setSavingMode(null);
         }
@@ -1925,6 +1929,38 @@ export default function ImportWizard() {
                         </div>
                     )}
 
+                    {/* Other people the post names (Jon, 2026-10-22): saved as relatives
+                        of this profile in the same save. The rescuer can drop anyone the
+                        AI got wrong. */}
+                    {!fromContacts && relatives.length > 0 && (
+                        <div data-testid="import-relatives" className="rounded-xl border border-stone-200 p-4 space-y-2">
+                            <h3 className="text-sm font-semibold text-teal-800 uppercase tracking-wider">{t('import.relatives_title')}</h3>
+                            <p className="text-xs text-stone-500">{t('import.relatives_hint')}</p>
+                            <ul className="space-y-2">
+                                {relatives.map((p, i) => (
+                                    <li key={`${p.name}-${i}`} className="flex items-center justify-between gap-3 rounded-lg bg-stone-50 border border-stone-200 pl-3">
+                                        <span className="min-w-0 py-2">
+                                            <span className="block font-semibold text-stone-900 break-words">{p.name}</span>
+                                            <span className="block text-xs text-stone-500">
+                                                {t(p.relationship === 'unknown' ? 'adopter.hh_rel_unknown_display' : `adopter.hh_rel_${p.relationship}`)}
+                                                {[...p.phones, ...p.socialProfiles].length > 0 && <> · {[...p.phones, ...p.socialProfiles].join(' · ')}</>}
+                                            </span>
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setRelatives(prev => prev.filter((_, j) => j !== i))}
+                                            aria-label={t('import.relative_remove').replace('{name}', p.name)}
+                                            title={t('import.relative_remove').replace('{name}', p.name)}
+                                            className="shrink-0 w-11 h-11 inline-flex items-center justify-center rounded-full text-stone-500 hover:text-rose-700"
+                                        >
+                                            <CloseIcon className="w-4 h-4" />
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
                     {/* Contact Info — typed entries, AI-categorized and editable */}
                     <div>
                         <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
@@ -2212,13 +2248,6 @@ export default function ImportWizard() {
                                 <button type="button" onClick={() => handleMerge({ id: first.id, name: first.name || '' })} className={secondary}>
                                     {t('import.add_interaction_to').replace('{name}', firstName)}
                                 </button>
-                                {/* Household writes are owner / admin / teammate only: offered
-                                    only where it can succeed (review of 2.56.213, item 5). */}
-                                {first.canEdit && (
-                                    <button type="button" onClick={() => handleAddAsRelative(first)} className={secondary}>
-                                        {t('import.add_as_relative_of').replace('{name}', firstName)}
-                                    </button>
-                                )}
                             </StickyActions>
                         </div>
                     );
@@ -2231,7 +2260,7 @@ export default function ImportWizard() {
                         <button
                             type="button"
                             onClick={() => handleMerge()}
-                            disabled={!selectedMatch}
+                            disabled={!selectedMatch || (needsIdentityChoice(selectedMatch) && !mergeAs)}
                             className={mergeLeads ? `${BTN_PRIMARY} w-full` : secondary}
                         >
                             {t('import.add_to_selected')}
@@ -2270,12 +2299,13 @@ export default function ImportWizard() {
                                             role="radio"
                                             aria-checked={isSelected}
                                             tabIndex={0}
-                                            onClick={() => setSelectedMatch(isSelected ? null : match)}
+                                            onClick={() => { setMergeAs(null); setSelectedMatch(isSelected ? null : match); }}
                                             onKeyDown={e => {
                                                 // Enter on the nested "Ver" link or "¿Por qué?" must not toggle the card.
                                                 if (e.target !== e.currentTarget) return;
                                                 if (e.key !== 'Enter' && e.key !== ' ') return;
                                                 e.preventDefault();
+                                                setMergeAs(null);
                                                 setSelectedMatch(isSelected ? null : match);
                                             }}
                                             className={`w-full text-left rounded-xl p-4 border-2 cursor-pointer transition-all ${isSelected
@@ -2311,6 +2341,30 @@ export default function ImportWizard() {
                                     );
                                 })}
                             </div>
+                            {/* Matched on phone/email/address but not the name: who is the
+                                post's person to that profile? (Jon, 2026-10-22) */}
+                            {needsIdentityChoice(selectedMatch) && (
+                                <fieldset data-testid="import-identity-choice" className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-1">
+                                    <legend className="px-1 text-sm font-semibold text-amber-900">
+                                        {t('import.identity_question')
+                                            .replace('{post}', extractedData?.name?.trim() || t('import.unnamed_profile'))
+                                            .replace('{profile}', selectedMatch?.name?.trim() || t('import.unnamed_profile'))}
+                                    </legend>
+                                    {(['alias', 'relative'] as const).map(choice => (
+                                        <label key={choice} className="flex items-center gap-3 min-h-[44px] text-sm text-stone-800 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="import-identity"
+                                                value={choice}
+                                                checked={mergeAs === choice}
+                                                onChange={() => setMergeAs(choice)}
+                                                className="w-5 h-5 accent-teal-600"
+                                            />
+                                            {t(choice === 'alias' ? 'import.identity_alias' : 'import.identity_relative')}
+                                        </label>
+                                    ))}
+                                </fieldset>
+                            )}
                             <StickyActions className="flex flex-col gap-2">
                                 {mergeLeads ? <>{mergeBtn}{createBtn}</> : <>{createBtn}{mergeBtn}</>}
                             </StickyActions>
