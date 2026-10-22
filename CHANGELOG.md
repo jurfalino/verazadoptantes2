@@ -2,6 +2,43 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.210] - 2026-10-21
+
+### Changed — /funcionalidades: «La herramienta que tu refugio necesita»
+
+/funcionalidades is the page the homepage's WhatsApp referral banner shares, so it is an
+invited colleague's first look at the product (anonymous, on a phone). Redesigned for them:
+
+- **Heading and copy** around one tool for the whole adoption, in es/en/pt. Seven features
+  with fresh phone screenshots (fictional data): adopter history, protected contact
+  details, online form and contract, customizable form and contract, animals and
+  catalogue, follow-ups and notifications, teams. Every claim was checked against the
+  code; privacy copy is scoped to protected profiles.
+- **Trust right after the hero** (free, protected contact details, who we are) instead of
+  a strip at the end.
+- **"Abrir" on each feature for everyone**: search opens directly (name searches need no
+  account); the rest open sign-in and land on that feature.
+- **WhatsApp/social preview** now has its own 1200×630 image and title. The page used to
+  drop the site's preview image entirely.
+- **Referral share link** carries `utm_source=whatsapp&utm_medium=referral&utm_campaign=invite`
+  (WhatsApp hides the referrer).
+- **Events** `features_feature_opened`, `features_signup_clicked`, `features_guide_opened`.
+- Accessibility: AA contrast on buttons and labels in both themes, 44px tap targets,
+  visible focus, reduced motion respected.
+
+### Fixed
+
+- The phone-width menu said «Log in» in English on every page; it now follows the language
+  («Entrar»).
+
+### Notes
+
+- Screenshots: `scripts/capture-feature-screenshots.mjs` (fictional data on a fresh local DB;
+  refuses to run over uncommitted local DBs, restores them on Ctrl-C). Preview image:
+  `scripts/render-features-og.mjs`.
+- The old `/images/features/*.png` stay for one release so pages opened before the deploy
+  don't lose their images; remove them in a later release.
+
 ## [2.56.209] - 2026-10-20
 
 ### Fixed — form answers and animal cards read cleanly on phones

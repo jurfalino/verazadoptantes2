@@ -24,7 +24,9 @@ export default function ReferralBanner() {
         localStorage.setItem('referral_banner_dismissed', Date.now().toString());
     };
 
-    const shareUrl = 'https://buenadoptante.org/funcionalidades';
+    // UTM-tagged: WhatsApp hides the referrer, so without these the invited
+    // colleague's visit is indistinguishable from direct traffic.
+    const shareUrl = 'https://buenadoptante.org/funcionalidades?utm_source=whatsapp&utm_medium=referral&utm_campaign=invite';
     const shareText = t('referral.message');
     const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(`${shareText}\n${shareUrl}`)}`;
 
