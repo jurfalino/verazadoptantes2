@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.217] - 2026-10-21
+
+### Added — «¿No es el mismo post? Crear un perfil nuevo» (Jon, 2026-10-21)
+
+- The «Ya importaste este post» screen gets a way out: when the rescuer knows it is a different
+  post or person, they create a new profile. The name/contact duplicate check still runs.
+
+### Fixed — from the review of 2.56.216
+
+- Mobile `login.php` and `checkpoint` walls count as the post they guard (they had merged
+  different posts into one).
+- Older video links (`/videos/vb.<page>/<id>/`, `/videos/<title>/<id>/`) key by the video id;
+  `video.php?v=`, `groups/…?view=permalink&id=`, `/photos/<id>/` and `/people/<name>/<id>/` match
+  their usual forms.
+- Profile, page and group names match regardless of letter case; `es-la.`, `touch.` and `fb.com`
+  count as facebook.com.
+- The same-post lookup also checks the animal's own link on a placement (as the old view did).
+
 ## [2.56.216] - 2026-10-21
 
 ### Fixed — from the final review of 2.56.215

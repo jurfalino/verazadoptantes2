@@ -2177,6 +2177,7 @@ export const pt = {
     },
     import: {
         // Post-import wizard (/import): failures and outcome (audit 2026-10-21)
+        not_same_post: 'Não é a mesma publicação? Criar um perfil novo',
         saving_merging: 'Adicionando os dados…',
         contact_merge_not_allowed: 'O registro foi salvo, mas os contatos não: esse perfil é de outra equipe.',
         why_toggle: 'Por quê?',

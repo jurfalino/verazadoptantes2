@@ -2,7 +2,7 @@ export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { adopters, adopterFlags, adopterImages, adopterEvents, placements } from '@/db/schema';
+import { adopters, adopterFlags, adopterImages, adopterEvents, placements, animals } from '@/db/schema';
 import { postKey, samePost } from '@/domain/postKey';
 import { eq, like, or, and, isNull, sql, desc, type InferSelectModel } from 'drizzle-orm';
 import { auth } from '@/auth';
@@ -111,10 +111,17 @@ export async function GET(request: Request) {
                     .where(sql`instr(lower(${placements.sourceUrl}), lower(${needle})) > 0`)
                     .orderBy(desc(placements.createdAt))
                     .limit(200) as Promise<Array<{ adopterId: string | null; sourceUrl: string | null }>>,
+                // The view fell back to the animal's own link (COALESCE) when the
+                // placement had none; keep that (review of 2.56.216, item 5).
+                db.select({ adopterId: placements.adopterId, sourceUrl: animals.sourceUrl }).from(placements)
+                    .innerJoin(animals, eq(placements.animalId, animals.id))
+                    .where(and(isNull(animals.deletedAt), sql`instr(lower(${animals.sourceUrl}), lower(${needle})) > 0`))
+                    .orderBy(desc(placements.createdAt))
+                    .limit(200) as Promise<Array<{ adopterId: string | null; sourceUrl: string | null }>>,
             ])));
             const byId = new Map<string, AdopterRow>();
             for (const [direct] of perNeedle) for (const r of direct) if (matchesAny(r.sourceUrl)) byId.set(r.id, r);
-            const recordAdopterIds = [...new Set(perNeedle.flatMap(([, events, placed]) => [...events, ...placed])
+            const recordAdopterIds = [...new Set(perNeedle.flatMap(([, events, placed, viaAnimal]) => [...events, ...placed, ...viaAnimal])
                 .filter(r => matchesAny(r.sourceUrl))
                 .map(r => r.adopterId)
                 .filter((id): id is string => !!id && !byId.has(id)))];

@@ -138,6 +138,17 @@ test.describe('Import wizard — duplicates', () => {
         // "Ver perfil" first (decision B9), then add-interaction, then add-as-relative (B6).
         await expect(actions.locator('a, button').first()).toHaveAttribute('href', '/adopter/test-import-fixture-juan');
         await expect(actions.getByRole('button', { name: /relative|familiar/i })).toBeVisible();
+
+        // "No es el mismo post" leaves the screen and saves as new when nothing else matches.
+        let created = false;
+        await page.route('**/api/adopters', route => {
+            if (route.request().method() !== 'POST') return route.continue();
+            created = true;
+            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'test-import-fixture-ana' }) });
+        });
+        await page.getByRole('button', { name: /Not the same post|No es el mismo post/i }).click();
+        await page.waitForURL(/\/adopter\/test-import-fixture-ana/, { timeout: 30000 });
+        expect(created).toBe(true);
     });
 
     test('when the same-post check fails, it says so instead of saving as new', async ({ page }) => {

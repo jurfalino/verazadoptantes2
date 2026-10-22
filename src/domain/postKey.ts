@@ -72,7 +72,11 @@ export function postKey(input: string): PostKey | null {
     if (!u) return null;
     // www./m./mobile. mirrors are the same page on any site (as before 2.56.214);
     // web./mbasic. only on Facebook.
-    const host = u.hostname.toLowerCase().replace(/^(web|mbasic)\.(?=(facebook|fb)\.)/, '').replace(/^(www|m|mobile)\./, '');
+    // Locale (es-la.) and touch. mirrors and fb.com are facebook.com too.
+    const host = u.hostname.toLowerCase()
+        .replace(/^(web|mbasic|touch|[a-z]{2}-[a-z]{2})\.(?=(facebook|fb)\.com$)/, '')
+        .replace(/^(www|m|mobile)\./, '')
+        .replace(/^fb\.com$/, 'facebook.com');
     const q = u.searchParams;
     const parts = u.pathname.split('/').filter(Boolean);
     const isFb = FB_HOST.test(host) || /^l[a-z]?\.facebook\.com$/.test(host);
@@ -87,7 +91,7 @@ export function postKey(input: string): PostKey | null {
 
     // A login wall stands for the page it guards (?next=/p/AAA/ or a full link).
     const next = q.get('next');
-    if (next && (isFb || isIg) && parts.includes('login')) {
+    if (next && (isFb || isIg) && parts.some(p => p === 'login' || p === 'login.php' || p === 'checkpoint')) {
         try { return postKey(new URL(next, `https://${u.hostname}`).toString()); } catch { /* not a link: fall through */ }
     }
 
@@ -97,17 +101,28 @@ export function postKey(input: string): PostKey | null {
             return i >= 0 && parts[i + 1] ? parts[i + 1] : null;
         };
         // Path-identified kinds first: a reel link can carry an unrelated ?fbid=.
-        const video = at('videos') ?? at('reel') ?? (parts[0] === 'watch' ? q.get('v') : null);
+        // Under /videos/ the id is the last numeric segment (older links put a
+        // vb.<page> or a title slug before it).
+        const videosAt = parts.indexOf('videos');
+        const videoId = videosAt >= 0 ? [...parts.slice(videosAt + 1)].reverse().find(p => /^\d+$/.test(p)) ?? parts[videosAt + 1] : null;
+        const video = videoId ?? at('reel') ?? (parts[0] === 'watch' || parts[0] === 'video.php' ? q.get('v') : null);
         if (video) return { key: `fb:video:${video}`, needle: video };
         const story = q.get('story_fbid');
         if (story) return { key: `fb:post:${story}`, needle: story };
-        const post = at('posts') ?? at('permalink') ?? q.get('multi_permalinks');
+        const post = at('posts') ?? at('permalink') ?? q.get('multi_permalinks')
+            ?? (parts[0] === 'groups' && q.get('view') === 'permalink' ? q.get('id') : null);
         if (post) return { key: `fb:post:${post}`, needle: post };
         // /<page>/photos/<album>/<photo id>/ — the last segment is the photo.
+        // /<page>/photos/<photo id>/ (no album) when that segment is numeric.
         const photosAt = parts.indexOf('photos');
-        const albumPhoto = photosAt >= 0 && parts.length >= photosAt + 3 ? parts[photosAt + 2] : null;
+        const albumPhoto = photosAt >= 0 && parts.length >= photosAt + 3 ? parts[photosAt + 2]
+            : photosAt >= 0 && /^\d+$/.test(parts[photosAt + 1] ?? '') ? parts[photosAt + 1] : null;
         const fbid = q.get('fbid') ?? albumPhoto;
         if (fbid) return { key: `fb:photo:${fbid}`, needle: fbid };
+        // /people/<name>/<id>/ is profile.php?id=<id>.
+        if (parts[0] === 'people' && /^\d+$/.test(parts[2] ?? '')) {
+            return { key: `url:facebook.com/profile.php?id=${parts[2]}`, needle: parts[2] };
+        }
         if (parts[0] === 'share' && parts.length >= 2) {
             const code = parts[parts.length - 1];
             return { key: `fb:share:${code}`, needle: code };
@@ -123,7 +138,13 @@ export function postKey(input: string): PostKey | null {
     // without scheme, www, fragment or trailing slash. On Facebook/Instagram only
     // the identifying parameters stay; elsewhere everything but tracking does
     // (?v=, ?set=, ?id= often ARE the page there).
-    const path = parts.map(seg => { try { return decodeURIComponent(seg); } catch { return seg; } }).join('/');
+    // Profile, page and group names are case-insensitive on Facebook/Instagram;
+    // post codes and ids are not, and are keyed above.
+    const path = parts.map((seg, i) => {
+        let d = seg;
+        try { d = decodeURIComponent(seg); } catch { /* keep */ }
+        return (isFb || isIg) && i === 0 ? d.toLowerCase() : d;
+    }).join('/');
     const bare = path ? `${host}/${path}` : host;
     const kept = [...q.entries()]
         .filter(([k]) => (isFb || isIg ? META_IDENTIFYING.has(k) : !TRACKING.test(k)))

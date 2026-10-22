@@ -902,7 +902,7 @@ export default function ImportWizard() {
      * on the review screen ("Agregar a este perfil"): the same checks still run,
      * the same-post one first (review of 2.56.213, item 4).
      */
-    const handlePreSave = async (preselect?: PersonMatch) => {
+    const handlePreSave = async (preselect?: PersonMatch, opts: { skipUrlCheck?: boolean } = {}) => {
         setIsSaving(true);
         setDuplicateAdopter(null);
         setDuplicateAdopters([]);
@@ -914,8 +914,10 @@ export default function ImportWizard() {
         let foundMatches = false;
         let checkFailed = false;
 
-        // Check for URL duplicate
-        if (sourceUrl) {
+        // Check for URL duplicate — skipped when the rescuer said "it is not the
+        // same post" on that screen (Jon, 2026-10-21): link matching can still
+        // misfire on shapes we have not seen, and the screen had no way out.
+        if (sourceUrl && !opts.skipUrlCheck) {
             try {
                 const query = [sourceUrl, sharedLinkAsGiven].filter(Boolean).map(u => `sourceUrl=${encodeURIComponent(u!)}`).join('&');
                 const res = await fetch(`/api/adopters?${query}`);
@@ -2224,6 +2226,20 @@ export default function ImportWizard() {
                                     </li>
                                 ))}
                             </ul>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    trackImport('import_duplicate_choice', { choice: 'not_same_post', kind: 'url' });
+                                    setDuplicateAdopter(null);
+                                    setDuplicateAdopters([]);
+                                    setShowConfirmModal(false);
+                                    // The name/contact check still runs.
+                                    handlePreSave(undefined, { skipUrlCheck: true });
+                                }}
+                                className="inline-flex items-center min-h-[44px] text-sm font-semibold text-stone-600 underline underline-offset-2 hover:text-stone-800"
+                            >
+                                {t('import.not_same_post')}
+                            </button>
                             <StickyActions className="flex flex-col gap-2">
                                 <a
                                     href={`/adopter/${first.id}`}

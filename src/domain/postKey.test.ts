@@ -174,4 +174,35 @@ describe('postKey', () => {
         expect(stored.includes(postKey(target)!.needle)).toBe(true);
         expect(stored.includes(postKey(stored)!.needle)).toBe(true);
     });
+
+    // Review of 2.56.216.
+    it('unwraps the mobile login.php and checkpoint walls', () => {
+        const wall = (n: string) => 'https://m.facebook.com/login.php?next=' + encodeURIComponent(`https://m.facebook.com/groups/1/posts/${n}/`);
+        expect(samePost(wall('456'), wall('789'))).toBe(false);
+        expect(samePost(wall('456'), 'https://www.facebook.com/groups/1/posts/456/')).toBe(true);
+        expect(samePost('https://www.facebook.com/checkpoint/?next=' + encodeURIComponent('https://www.facebook.com/groups/1/posts/456/'), 'https://www.facebook.com/groups/1/posts/456/')).toBe(true);
+    });
+
+    it('keys older video links by their numeric id', () => {
+        expect(samePost('https://www.facebook.com/page/videos/vb.555/999/', 'https://www.facebook.com/page/videos/vb.555/998/')).toBe(false);
+        expect(samePost('https://www.facebook.com/page/videos/rescate-gatito/999/', 'https://www.facebook.com/watch/?v=999')).toBe(true);
+        expect(samePost('https://www.facebook.com/video.php?v=999', 'https://www.facebook.com/watch/?v=999')).toBe(true);
+    });
+
+    it('maps alternative forms to the same post, photo and profile', () => {
+        expect(samePost('https://m.facebook.com/groups/123?view=permalink&id=456', 'https://www.facebook.com/groups/123/posts/456/')).toBe(true);
+        expect(samePost('https://www.facebook.com/page/photos/777/', 'https://www.facebook.com/photo/?fbid=777')).toBe(true);
+        expect(samePost('https://www.facebook.com/people/Juan-Perez/100045/', 'https://www.facebook.com/profile.php?id=100045')).toBe(true);
+    });
+
+    it('ignores letter case in profile and page names, not in post codes', () => {
+        expect(samePost('https://www.facebook.com/Juan.Perez.123', 'https://www.facebook.com/juan.perez.123')).toBe(true);
+        expect(samePost('https://www.instagram.com/SomeUser/', 'https://instagram.com/someuser')).toBe(true);
+        expect(samePost('https://www.instagram.com/p/AbC/', 'https://www.instagram.com/p/abc/')).toBe(false);
+    });
+
+    it('treats locale and touch mirrors and fb.com as facebook.com', () => {
+        expect(samePost('https://es-la.facebook.com/somepage', 'https://www.facebook.com/somepage')).toBe(true);
+        expect(samePost('https://touch.facebook.com/somepage', 'https://fb.com/somepage')).toBe(true);
+    });
 });
