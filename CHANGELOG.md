@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.220] - 2026-10-22
+
+### Fixed — «Continuar» stuck disabled after the page reloaded with a saved draft
+
+Jon, on his phone: back to step 1, the link was still in the field, but «Continuar» stayed
+disabled even after editing it. The tab had reloaded (PostHog shows the reload). The wizard
+restores its draft from sessionStorage while rendering; the server cannot, so it sent an empty
+field and a disabled button, and React does not repair attribute mismatches on hydration — the
+button kept `disabled` forever. The wizard now waits until it is mounted before rendering, so the
+draft applies on a clean client render. This bug predates this audit (draft restore since v2.16).
+
 ## [2.56.219] - 2026-10-22
 
 ### Changed — a social post is a report; the rating is what matters (Jon, 2026-10-22)

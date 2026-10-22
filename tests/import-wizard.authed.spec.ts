@@ -255,6 +255,22 @@ test.describe('Import wizard — duplicates', () => {
 test.describe('Import wizard on a phone', () => {
     test.use({ viewport: { width: 390, height: 844 } });
 
+    test('after a reload with a saved draft, «Continuar» works', async ({ page }) => {
+        // The tab reloaded on Jon's phone (2026-10-22): the field showed the link
+        // but the button kept the server's `disabled` and never recovered.
+        await page.goto('/import');
+        const field = page.getByPlaceholder(/paste|pegá|URL|text/i);
+        await expect(field).toBeVisible({ timeout: 30000 });
+        await field.fill(POST);
+        await expect.poll(() => page.evaluate(() => sessionStorage.getItem('import_wizard_state') ?? '')).toContain('posts/2');
+        await page.reload();
+        await expect(field).toHaveValue(POST, { timeout: 30000 });
+        const btn = page.getByRole('button', { name: /Continue|Continuar/i });
+        await expect(btn).toBeEnabled();
+        await field.fill(POST + '?x=1');
+        await expect(btn).toBeEnabled();
+    });
+
     test('no sideways scroll, and the step buttons stay pinned to the bottom', async ({ page }) => {
         // Step 2's bare file input poked 16px past the card at 390px (audit A5);
         // the buttons scrolled away under long content (Jon, 2026-10-21).

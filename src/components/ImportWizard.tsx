@@ -106,6 +106,16 @@ export default function ImportWizard() {
     const trackImport = (event: string, props: Record<string, string | number | boolean> = {}) =>
         zarazTrack(event, { entry, ...props });
 
+    // The saved draft (sessionStorage) is read in the state initializers below,
+    // which the server cannot do: it renders an empty field and a DISABLED
+    // «Continuar». Hydrating that with a restored draft is a mismatch React does
+    // not repair for attributes — the button stayed disabled forever while the
+    // field showed the link, even after editing it (Jon's phone, 2026-10-22,
+    // after the tab reloaded). Render nothing until mounted, so the first
+    // client render matches the server and the draft applies cleanly.
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => { setMounted(true); }, []);
+
     // Steps: 1=Input, 2=Content/Extract, 3=Review, 4=Confirm
     const [step, setStep] = useState(() => {
         if (typeof window === 'undefined') return 1;
@@ -1394,6 +1404,14 @@ export default function ImportWizard() {
     const stepLabels = [t('import.stepInput'), t('import.stepContent'), t('import.stepReview')];
     const spinner = <svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>;
     const canRetry = (failedOp === 'extract' || (failedOp === 'fetch' && !!inputContent.trim())) && !loading;
+
+    if (!mounted) {
+        return (
+            <div className="max-w-2xl mx-auto flex items-center justify-center py-20" aria-busy="true">
+                <span className="w-8 h-8 rounded-full border-4 border-stone-200 border-t-teal-600 animate-spin" aria-hidden="true" />
+            </div>
+        );
+    }
 
     return (
         <div className="max-w-2xl mx-auto" onPaste={handlePaste}>
