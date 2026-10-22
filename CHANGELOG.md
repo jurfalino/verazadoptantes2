@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.225] - 2026-10-22
+
+### Fixed — CI e2e setup no longer hangs a deploy
+
+Four staging runs on 2026-10-21/22 failed before any test ran: the browser download or the apt system
+packages hung until the 30-minute job cap, or `next dev` overran the 2-minute readiness wait.
+- Cache keys survive a version bump: they hashed the whole package-lock.json, which every deploy rewrites,
+  so nearly every run missed both caches (full `npm ci` + browser download per shard). Now keyed on the
+  dependency set (lockfile without its version fields) and on the Playwright version.
+- Browser and system-package installs are bounded (6 / 4 minutes per attempt) and retried 3 times.
+- CI's server readiness wait is 4 minutes (local stays at 2).
+
 ## [2.56.224] - 2026-10-22
 
 ### Fixed — every problem the rescuer meets in the import is logged (Jon, 2026-10-22)

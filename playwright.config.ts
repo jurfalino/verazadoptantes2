@@ -102,7 +102,10 @@ export default defineConfig({
     command: 'node scripts/setup-test-db.js && npx next dev',
     url: 'http://localhost:3000/api/ready',
     reuseExistingServer: !process.env.CI,
-    timeout: 120000,
+    // CI: 4 minutes. A cold `next dev` after a dependency-cache miss on a slow
+    // runner overran 2 minutes twice (2026-10-21/22) and failed the deploy
+    // before any test ran. Local stays at 2.
+    timeout: process.env.CI ? 240000 : 120000,
     env: {
       NODE_OPTIONS: '--max-old-space-size=4096 --expose-gc',
       // A fixed build id so the deploy-skew guard is active here exactly as in

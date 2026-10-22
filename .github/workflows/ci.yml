@@ -337,16 +337,28 @@ jobs:
           node-version: '20.18'
           cache: 'npm'
 
+      # Cache keys that survive a version bump. Every deploy bumps the version,
+      # which rewrites package-lock.json, so hashing the whole lockfile missed
+      # BOTH caches on nearly every run: a full `npm ci` plus a fresh browser
+      # download per shard — the download that hung for 30 minutes on
+      # 2026-10-22. The fingerprint drops the root version fields; Playwright's
+      # browsers depend only on the Playwright version.
+      - name: Dependency fingerprint
+        id: deps
+        run: |
+          echo "lock=$(jq -S 'del(.version, .packages[""].version)' package-lock.json | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+          echo "playwright=$(jq -r '.packages["node_modules/@playwright/test"].version // .packages["node_modules/playwright"].version' package-lock.json)" >> "$GITHUB_OUTPUT"
+
       # ~1 minute per leg, and with seven legs that is a minute off the
-      # critical path as well as six off the bill. Keyed on the lockfile and
-      # the Node version because node_modules carries compiled native modules
-      # (better-sqlite3) that are not portable across either.
+      # critical path as well as six off the bill. Keyed on the dependency set
+      # and the Node version because node_modules carries compiled native
+      # modules (better-sqlite3) that are not portable across either.
       - name: Cache node_modules
         id: node-modules-cache
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: node-modules-${{ runner.os }}-node20.18-${{ hashFiles('package-lock.json') }}
+          key: node-modules-${{ runner.os }}-node20.18-${{ steps.deps.outputs.lock }}
 
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
@@ -357,15 +369,33 @@ jobs:
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ hashFiles('package-lock.json') }}
+          key: playwright-${{ runner.os }}-${{ steps.deps.outputs.playwright }}
 
+      # Both installs hit the network (browser CDN, Ubuntu apt mirror) and have
+      # hung until the 30-minute job cap three times (2026-10-21/22), each time
+      # failing the deploy with no test run. Bounded and retried instead: a
+      # stuck attempt is killed after a few minutes and tried again.
       - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install chromium webkit --with-deps
+        timeout-minutes: 20
+        run: |
+          for attempt in 1 2 3; do
+            timeout 360 npx playwright install chromium webkit --with-deps && exit 0
+            echo "::warning::Playwright browser install attempt $attempt failed or timed out; retrying"
+            sleep 10
+          done
+          exit 1
 
       - name: Install Playwright system deps
         if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium webkit
+        timeout-minutes: 15
+        run: |
+          for attempt in 1 2 3; do
+            timeout 240 npx playwright install-deps chromium webkit && exit 0
+            echo "::warning::Playwright system deps attempt $attempt failed or timed out; retrying"
+            sleep 10
+          done
+          exit 1
 
       # One automatic re-run of the WHOLE shard, on a fresh server, and only
       # when the log shows a `next dev` memory restart AND a dropped connection
