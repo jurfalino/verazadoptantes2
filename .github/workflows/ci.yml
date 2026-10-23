@@ -210,7 +210,9 @@ jobs:
     # Keep the tag equal to @playwright/test (guarded by a step below).
     container:
       image: mcr.microsoft.com/playwright:v1.58.0-noble
-      options: --ipc=host
+      # --init reaps exited browser / next dev processes (the job's main process
+      # doesn't), as Playwright's docs recommend; --ipc=host for Chromium.
+      options: --init --ipc=host
     env:
       PLAYWRIGHT_IMAGE_VERSION: '1.58.0'
     # In a container job GitHub's default shell is `sh`, not bash (2.56.227 failed

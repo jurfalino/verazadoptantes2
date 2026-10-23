@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.229] - 2026-10-22
+
+### Fixed — e2e container: no sqlite3 CLI dependency; --init
+
+From the review of 2.56.227: the Playwright image has no `sqlite3` command, which the email-OTP test used
+to plant a known code — it now writes through better-sqlite3 (CI's Node 20), falling back to the CLI
+locally where better-sqlite3 won't load. The container also runs with `--init`, so exited browser and
+`next dev` processes are reaped between the test run and its one automatic re-run.
+
 ## [2.56.228] - 2026-10-22
 
 ### Fixed — e2e container steps run in bash
