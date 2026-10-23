@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.233] - 2026-10-23
+
+### Fixed — browser access to the API is limited to the staging hosts by name
+
+The independent review of 2.56.232 found production also answers on `buenadoptante.org.` (trailing
+dot), Cloudflare's other HTTPS ports and `verazadoptantes2.pages.dev`, and those read as "not
+production". CORS is now an allow-list: only `staging.buenadoptante.org`,
+`staging.verazadoptantes2.pages.dev` and localhost. Tests pin every production name to "no CORS".
+
 ## [2.56.232] - 2026-10-23
 
 ### Changed — the API answers browsers on staging (for the shared Hoppscotch collection)
