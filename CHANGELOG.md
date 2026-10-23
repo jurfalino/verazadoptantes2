@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.235] - 2026-10-23
+
+### Changed — the post-deploy environment check, tightened after its review
+
+Independent review of 2.56.234 (verdict: OK for staging and production) suggested:
+- The deploy-skew check now runs even if the API environment check before it failed, so one red
+  check can't hide the other.
+- In production, an `api_disabled` answer fails the check: the API is on there, so it means the
+  flag couldn't be read, not that all is well. Each probe gives up after 20 seconds.
+- `openapi.test.ts` clears `APP_ENVIRONMENT` so its hostname-based expectations hold even if a
+  build's stamp ever leaks into the test run.
+
 ## [2.56.234] - 2026-10-23
 
 ### Fixed — the API knows it is production on every address production answers on

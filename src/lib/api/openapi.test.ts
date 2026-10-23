@@ -1,8 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { afterAll, describe, it, expect, vi } from 'vitest';
 import { buildOpenApi, examplesGuide, shownScenarios } from './openapi';
 import { exactScenarios, isExampleData, REQUEST_EXAMPLES } from './docScenarios';
 import { API_ERROR_CODES, checkSearchRules, exactResponseSchema, saveActionOf, searchRequestSchema } from './schemas';
 import { canonicalJson, dryRunAllowed, unauthorizedMessage } from './handler';
+
+// These tests pick staging or production by hostname, which is how an unstamped build decides
+// (src/lib/api/keys.ts environmentForHost). Never let a CI build's APP_ENVIRONMENT leak in —
+// at load time, since some documents below are built while the file is collected.
+vi.stubEnv('APP_ENVIRONMENT', '');
+afterAll(() => { vi.unstubAllEnvs(); });
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const STAGING = 'https://staging.buenadoptante.org';
