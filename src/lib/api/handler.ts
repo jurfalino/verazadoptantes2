@@ -15,6 +15,7 @@ import { runAfterResponse } from '@/lib/background';
 import { getFeatureFlag } from '@/config/features';
 import { bearerSecret, environmentForHost, findActiveKey, importModeOn, IMPORT_CALL_CEILING, scopesOf, type ApiKeyRow } from './keys';
 import { keyAccess, PENDING_APPROVAL_CAPS, withPendingCaps, type KeyAccess } from './access';
+import { withCors } from './cors';
 import type { ApiErrorCode, ApiScope } from './schemas';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -401,6 +402,16 @@ export async function handleApiCall(
     endpoint: ApiEndpoint,
     run: (ctx: ApiCallContext) => Promise<ApiResult>,
     opts: { binaryBodyMax?: number } = {},
+): Promise<Response> {
+    // Every answer, errors included: a browser hides a refused call's body otherwise (src/lib/api/cors.ts).
+    return withCors(await answerApiCall(request, endpoint, run, opts), request);
+}
+
+async function answerApiCall(
+    request: Request,
+    endpoint: ApiEndpoint,
+    run: (ctx: ApiCallContext) => Promise<ApiResult>,
+    opts: { binaryBodyMax?: number },
 ): Promise<Response> {
     const requestId = crypto.randomUUID();
     const startedAt = Date.now();

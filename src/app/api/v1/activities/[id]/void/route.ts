@@ -4,8 +4,11 @@
 import { handleApiCall, requireScope, ApiError } from '@/lib/api/handler';
 import { voidApiRecord } from '@/lib/api/records';
 import type { VoidResponse } from '@/lib/api/schemas';
+import { apiPreflight } from '@/lib/api/cors';
 
 export const runtime = 'edge';
+
+export const OPTIONS = apiPreflight;
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;

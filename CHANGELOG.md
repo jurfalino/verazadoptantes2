@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.232] - 2026-10-23
+
+### Changed — the API answers browsers on staging (for the shared Hoppscotch collection)
+
+Jon, 2026-10-23: the shared Hoppscotch test collection runs in the browser (hoppscotch.io), and the
+browser refused every call because the API never said other sites may call it ("Error de red").
+- On **staging and preview hosts only**, every `/api/v1` answer (errors included) and
+  `openapi.json` now say any site may call (`Access-Control-Allow-Origin: *`), and expose the
+  `RateLimit-*`, `Retry-After` and `x-request-id` headers. The browser's preflight (OPTIONS) is
+  answered with the key, JSON and `X-Dry-Run` headers allowed. No cookies are involved: the key
+  travels in `Authorization`.
+- **Production is unchanged**: it sends none of these headers, so browsers stay refused there — a
+  key pasted into a public web page could be copied by anyone; partners call from their server.
+  Pinned in `src/lib/api/cors.test.ts`.
+
 ## [2.56.231] - 2026-10-22
 
 ### Changed — /developers: a key at once, admin approval raises the limit

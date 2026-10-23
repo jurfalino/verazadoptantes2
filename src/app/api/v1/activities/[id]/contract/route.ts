@@ -5,8 +5,11 @@ import { attachApiContract } from '@/lib/api/records';
 import { recordUrl } from '@/lib/api/profiles';
 import { CONTRACT_MAX_BYTES } from '@/lib/contractStorage';
 import type { ContractResponse } from '@/lib/api/schemas';
+import { apiPreflight } from '@/lib/api/cors';
 
 export const runtime = 'edge';
+
+export const OPTIONS = apiPreflight;
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
