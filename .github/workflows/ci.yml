@@ -251,6 +251,10 @@ jobs:
     # .agents/plans/e2e-shard-the-suite.md before reaching for either:
     #   · raising --max-old-space-size (moves the wall, and trades Next's
     #     graceful restart for the kernel's OOM killer on a 7 GB runner)
+    #     — REVISITED 2026-10-22: this repo is public, so its runners have 16 GB,
+    #     not 7. The heap is now half of the runner's RAM, capped at 8 GB (step
+    #     "Size the test server heap"), leaving ~8 GB for Chromium/WebKit and the
+    #     OS. Fewer restarts; the graceful restart still exists at the new wall.
     #   · `next build && next start` (src/lib/db.ts only falls back to the
     #     local SQLite DB when NODE_ENV !== 'production', so a built server has
     #     no database and /api/ready never returns 200)
@@ -400,6 +404,17 @@ jobs:
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci
+
+      # Half of the runner's RAM, capped at 8 GB, for `next dev` (see the
+      # REVISITED note above). Printed so a smaller runner shows up in the log.
+      - name: Size the test server heap
+        run: |
+          total_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
+          heap=$(( total_mb / 2 ))
+          if [ "$heap" -gt 8192 ]; then heap=8192; fi
+          if [ "$heap" -lt 2048 ]; then heap=2048; fi
+          echo "Runner memory: ${total_mb} MB → test server heap: ${heap} MB"
+          echo "E2E_NODE_HEAP_MB=$heap" >> "$GITHUB_ENV"
 
       # One automatic re-run of the WHOLE shard, on a fresh server, and only
       # when the log shows a `next dev` memory restart AND a dropped connection

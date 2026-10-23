@@ -107,7 +107,11 @@ export default defineConfig({
     // before any test ran. Local stays at 2.
     timeout: process.env.CI ? 240000 : 120000,
     env: {
-      NODE_OPTIONS: '--max-old-space-size=4096 --expose-gc',
+      // CI sizes the heap from the runner's memory (E2E_NODE_HEAP_MB, set by
+      // the workflow: half of RAM, capped at 8 GB). `next dev` restarts as it
+      // nears the heap limit, and those restarts are what fail tests mid-flight
+      // (3 per run in the view-as leg, 2026-10-22). Locally: 4 GB as before.
+      NODE_OPTIONS: `--max-old-space-size=${process.env.E2E_NODE_HEAP_MB || 4096} --expose-gc`,
       // A fixed build id so the deploy-skew guard is active here exactly as in
       // production (and identical locally and in CI, where GITHUB_SHA would
       // otherwise be picked up). tests/deploy-skew.authed.spec.ts relies on it.

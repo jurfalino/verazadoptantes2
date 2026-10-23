@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.230] - 2026-10-22
+
+### Fixed — fewer `next dev` restarts in CI e2e
+
+2.56.229 (first run inside the Playwright container: setup ~1 min, 15/16 legs green, 11 min total) failed
+the view-as leg when `next dev` restarted mid-test — 3 restarts in that leg, same as every recent run. The
+old reason not to raise the heap ("7 GB runner") no longer holds: the repo is public, runners have 16 GB.
+CI now sizes the test server's heap to half the runner's RAM, capped at 8 GB (was 4 GB); local stays 4 GB.
+
 ## [2.56.229] - 2026-10-22
 
 ### Fixed — e2e container: no sqlite3 CLI dependency; --init
