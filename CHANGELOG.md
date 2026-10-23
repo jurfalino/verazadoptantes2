@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.227] - 2026-10-22
+
+### Changed — e2e runs inside Playwright's CI image (no downloads at setup)
+
+The 2.56.226 run took 19 minutes: one leg spent 10 minutes installing system packages from the crawling
+Ubuntu mirror (two attempts killed at the limit, each restarting from zero), and the deploy waits for the
+slowest leg. The e2e job now runs in `mcr.microsoft.com/playwright:v1.58.0-noble`, which has the browsers
+and their system packages preinstalled — no browser download, no apt. A step fails the job if the image
+tag and @playwright/test drift apart. node_modules stays cached on a version-bump-proof fingerprint.
+
 ## [2.56.226] - 2026-10-22
 
 ### Fixed — the CI install retry actually retries (review of 2.56.225)

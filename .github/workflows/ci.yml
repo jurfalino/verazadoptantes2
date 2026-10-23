@@ -203,6 +203,16 @@ jobs:
   e2e:
     name: 🎭 E2E Tests
     runs-on: ubuntu-latest
+    # Playwright's own CI image: browsers AND their system packages preinstalled.
+    # Installing them per run went through the Ubuntu apt mirror, which crawled
+    # (~50 KB/s) on 2026-10-21/22 — hung legs at the 30-minute cap, then cost
+    # 10 minutes of a 19-minute run even with retries. No download at setup now.
+    # Keep the tag equal to @playwright/test (guarded by a step below).
+    container:
+      image: mcr.microsoft.com/playwright:v1.58.0-noble
+      options: --ipc=host
+    env:
+      PLAYWRIGHT_IMAGE_VERSION: '1.58.0'
     # ── Split by project, one server each (v2.56.129) ──────────────────────
     #
     # This ran as ONE `next dev` process for the whole suite, ~149 tests over
@@ -339,84 +349,50 @@ jobs:
           # cache keyed on the whole lockfile added ~316 MB per version bump
           # to the 10 GB quota, evicting the caches that matter.
 
-      # Cache keys that survive a version bump. Every deploy bumps the version,
+      # The Playwright image above ships the browsers and their system packages,
+      # so nothing is downloaded at setup. Its tag must match the Playwright the
+      # lockfile installs, or tests would look for browsers the image lacks —
+      # fail loudly here when someone upgrades Playwright without the image.
+      - name: Playwright image matches the lockfile
+        run: |
+          locked=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")
+          if [ "$locked" != "$PLAYWRIGHT_IMAGE_VERSION" ]; then
+            echo "::error::package-lock.json has @playwright/test $locked but the e2e container is v$PLAYWRIGHT_IMAGE_VERSION — update the container image tag in ci.yml"
+            exit 1
+          fi
+
+      # Cache key that survives a version bump. Every deploy bumps the version,
       # which rewrites package-lock.json, so hashing the whole lockfile missed
-      # BOTH caches on nearly every run: a full `npm ci` plus a fresh browser
-      # download per shard. The fingerprint drops only the root version fields
-      # (every package's version/resolved/integrity stays in). It fails loudly:
-      # a silently-empty fingerprint would restore a stale node_modules.
+      # the cache on nearly every run. The fingerprint drops only the root
+      # version fields (every package's version/resolved/integrity stays in),
+      # and fails loudly rather than collapse to a constant key.
       - name: Dependency fingerprint
         id: deps
         run: |
           set -euo pipefail
-          lock=$(jq -eS 'del(.version, .packages[""].version)' package-lock.json | sha256sum | cut -c1-16)
-          pw=$(jq -er '.packages["node_modules/@playwright/test"].version' package-lock.json)
-          [ "$lock" != "$(printf '' | sha256sum | cut -c1-16)" ] || { echo "::error::empty lockfile fingerprint"; exit 1; }
-          # Only the `mobile` project (iPhone 14, in the `rest` leg) uses webkit;
-          # every other leg is Desktop Chrome and skips webkit's ~120 MB of apt
-          # packages — the download that crawled on the Ubuntu mirror.
-          browsers=chromium
-          if [ "${{ matrix.group }}" = "rest" ]; then browsers="chromium webkit"; fi
+          lock=$(node -e "
+            const l = require('./package-lock.json');
+            delete l.version;
+            if (l.packages && l.packages['']) delete l.packages[''].version;
+            const s = JSON.stringify(l);
+            if (s.length < 1000) { console.error('lockfile looks empty'); process.exit(1); }
+            process.stdout.write(require('crypto').createHash('sha256').update(s).digest('hex').slice(0, 16));
+          ")
           echo "lock=$lock" >> "$GITHUB_OUTPUT"
-          echo "playwright=$pw" >> "$GITHUB_OUTPUT"
-          echo "browsers=$browsers" >> "$GITHUB_OUTPUT"
-          echo "browsers_key=${browsers// /-}" >> "$GITHUB_OUTPUT"
 
-      # ~1 minute per leg, and with seven legs that is a minute off the
-      # critical path as well as six off the bill. Keyed on the runner image,
-      # Node, .npmrc and the dependency set: node_modules carries compiled
-      # native modules (better-sqlite3) that are not portable across them.
+      # ~1 minute per leg. Keyed on the container image, Node, .npmrc and the
+      # dependency set: node_modules carries compiled native modules
+      # (better-sqlite3) that are not portable across them.
       - name: Cache node_modules
         id: node-modules-cache
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: node-modules-${{ runner.os }}-${{ env.ImageOS }}-node20.18-${{ steps.deps.outputs.lock }}-${{ hashFiles('.npmrc') }}
+          key: node-modules-playwright-${{ env.PLAYWRIGHT_IMAGE_VERSION }}-noble-node20.18-${{ steps.deps.outputs.lock }}-${{ hashFiles('.npmrc') }}
 
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci
-
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ env.ImageOS }}-${{ steps.deps.outputs.playwright }}-${{ steps.deps.outputs.browsers_key }}
-
-      # Browser binaries only (no --with-deps): a user-owned download that
-      # `timeout` can actually kill, retried. (2026-10-22: with --with-deps the
-      # kill missed sudo's apt-get, which kept the dpkg lock and failed every
-      # retry in a second.)
-      - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        timeout-minutes: 10
-        run: |
-          for attempt in 1 2 3; do
-            timeout -k 15 180 npx playwright install ${{ steps.deps.outputs.browsers }} && exit 0
-            echo "::warning::Playwright browser download attempt $attempt failed or timed out; retrying"
-            sleep 10
-          done
-          exit 1
-
-      # System libraries, every run (the runner image lacks some). Run as root
-      # so Playwright calls apt directly inside timeout's process group — a
-      # killed attempt then takes apt-get with it instead of orphaning it on
-      # the dpkg lock. apt itself retries downloads, times out stalled mirror
-      # connections, and waits briefly for a lock instead of failing at once.
-      - name: Install Playwright system deps
-        timeout-minutes: 12
-        run: |
-          echo 'Acquire::Retries "3"; Acquire::http::Timeout "20"; Acquire::https::Timeout "20"; DPkg::Lock::Timeout "60";' | sudo tee /etc/apt/apt.conf.d/99ci >/dev/null
-          for attempt in 1 2 3; do
-            sudo -E env "PATH=$PATH" timeout -k 15 210 ./node_modules/.bin/playwright install-deps ${{ steps.deps.outputs.browsers }} && exit 0
-            echo "::warning::Playwright system deps attempt $attempt failed or timed out; cleaning up and retrying"
-            sudo pkill -9 -x apt-get || true
-            sudo pkill -9 -x dpkg || true
-            sudo dpkg --configure -a || true
-            sleep 10
-          done
-          exit 1
 
       # One automatic re-run of the WHOLE shard, on a fresh server, and only
       # when the log shows a `next dev` memory restart AND a dropped connection
