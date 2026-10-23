@@ -30,8 +30,19 @@ export function generateSecret(environment: 'live' | 'test'): string {
     return `ba_${environment}_${body}`;
 }
 
+/**
+ * Live or test. The DEPLOYMENT decides first: CI stamps the production build with
+ * APP_ENVIRONMENT=production (next.config.ts inlines it; the build refuses to run
+ * without it), so production is live on every name it answers on. The hostname
+ * alone wasn't enough: production also answers on `buenadoptante.org.`, Cloudflare's
+ * other HTTPS ports and verazadoptantes2.pages.dev, which read as test — test keys,
+ * dry runs and the docs' example people on production data (review of 2.56.232).
+ * The hostname check stays as a floor for a build without the stamp (local dev).
+ */
 export function environmentForHost(host: string): 'live' | 'test' {
-    return host === 'buenadoptante.org' || host === 'www.buenadoptante.org' ? 'live' : 'test';
+    if (process.env.APP_ENVIRONMENT === 'production') return 'live';
+    const hostname = host.toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '');
+    return hostname === 'buenadoptante.org' || hostname === 'www.buenadoptante.org' ? 'live' : 'test';
 }
 
 /**

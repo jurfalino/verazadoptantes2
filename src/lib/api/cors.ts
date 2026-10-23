@@ -10,8 +10,9 @@
  *
  * An ALLOW-list, not "anything but production": production also answers on
  * `buenadoptante.org.`, Cloudflare's other HTTPS ports and verazadoptantes2.pages.dev
- * (the master deployment; middleware's pages.dev redirect skips /api), and
- * environmentForHost reads all of those as test (independent review of 2.56.232).
+ * (the master deployment; middleware's pages.dev redirect skips /api), which
+ * environmentForHost read as test until 2.56.234 (independent review of 2.56.232).
+ * Browser access stays a separate, explicit list either way.
  */
 const BROWSER_HOSTS = new Set(['staging.buenadoptante.org', 'staging.verazadoptantes2.pages.dev', 'localhost', '127.0.0.1']);
 

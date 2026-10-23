@@ -508,6 +508,10 @@ jobs:
           # is sent and nothing is compared (audit 2026-09-19, P1-1). Refuse.
           if [ -z "$APP_BUILD_ID" ]; then echo "::error::APP_BUILD_ID is empty; the deploy-skew guard would be disabled"; exit 1; fi
           if [ -z "$APP_DEPLOY_MAP" ]; then echo "::error::APP_DEPLOY_MAP is unset; the 'Build deploy map' step did not run"; exit 1; fi
+          # The public API decides live vs test from this stamp, not the hostname
+          # (src/lib/api/keys.ts). A production build without it would treat
+          # production reached on another name as staging. Refuse.
+          if [ "$APP_ENVIRONMENT" != "staging" ]; then echo "::error::APP_ENVIRONMENT is '$APP_ENVIRONMENT', expected staging"; exit 1; fi
           npx @cloudflare/next-on-pages
         env:
           SKIP_ENV_VALIDATION: 'true'
@@ -516,6 +520,8 @@ jobs:
           # (compared against it). If this is ever empty the guard goes inert
           # and stale tabs silently fail again — see src/middleware.ts.
           APP_BUILD_ID: ${{ github.sha }}
+          # Which environment this build is: the public API's live/test switch.
+          APP_ENVIRONMENT: staging
 
       - name: Deploy to Cloudflare Pages (Preview)
         shell: bash
@@ -523,6 +529,27 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # The public API must know which environment it is on EVERY name, not just
+      # the canonical one: the deployment's own pages.dev URL is another name. A
+      # made-up ba_live_ key gets "unknown or revoked" from a live API and "this is
+      # a production key… staging needs a ba_test_ key" from a test one.
+      - name: Verify the API environment on the new deployment
+        shell: bash
+        run: |
+          URL=$(grep -oE 'https://[a-z0-9]+\.verazadoptantes2\.pages\.dev' deploy.log | head -1 || true)
+          if [ -z "$URL" ]; then echo "::error::could not find the deployment URL in the wrangler output"; exit 1; fi
+          CODE=""
+          for i in $(seq 1 10); do
+            curl -s "$URL/api/v1/me" -H 'Authorization: Bearer ba_live_CiProbeNotARealKey0000000000000000' > apienv.json || true
+            CODE=$(jq -r '.error.code // empty' apienv.json 2>/dev/null || true)
+            [ -n "$CODE" ] && break
+            sleep 6
+          done
+          MSG=$(jq -r '.error.message // empty' apienv.json 2>/dev/null || true)
+          echo "$URL/api/v1/me with a made-up ba_live_ key -> $CODE: $MSG (staging must answer as staging)"
+          if [ "$CODE" = "api_disabled" ]; then echo "::warning::the public API is off here; nothing to check"; exit 0; fi
+          case "$MSG" in *"production key"*) ;; *) echo "::error::staging did not answer as staging on $URL: $MSG"; exit 1;; esac
 
       # Prove the deploy-skew guard is live on what we just deployed, not just
       # that the code exists (audit 2026-09-19, P1-1 / PR-2). A request claiming
@@ -636,6 +663,10 @@ jobs:
           # is sent and nothing is compared (audit 2026-09-19, P1-1). Refuse.
           if [ -z "$APP_BUILD_ID" ]; then echo "::error::APP_BUILD_ID is empty; the deploy-skew guard would be disabled"; exit 1; fi
           if [ -z "$APP_DEPLOY_MAP" ]; then echo "::error::APP_DEPLOY_MAP is unset; the 'Build deploy map' step did not run"; exit 1; fi
+          # The public API decides live vs test from this stamp, not the hostname
+          # (src/lib/api/keys.ts). A production build without it would treat
+          # production reached on another name as staging. Refuse.
+          if [ "$APP_ENVIRONMENT" != "production" ]; then echo "::error::APP_ENVIRONMENT is '$APP_ENVIRONMENT', expected production"; exit 1; fi
           npx @cloudflare/next-on-pages
         env:
           SKIP_ENV_VALIDATION: 'true'
@@ -644,6 +675,8 @@ jobs:
           # (compared against it). If this is ever empty the guard goes inert
           # and stale tabs silently fail again — see src/middleware.ts.
           APP_BUILD_ID: ${{ github.sha }}
+          # Which environment this build is: the public API's live/test switch.
+          APP_ENVIRONMENT: production
 
       - name: Deploy to Cloudflare Pages (Production)
         shell: bash
@@ -651,6 +684,27 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # The public API must know which environment it is on EVERY name, not just
+      # the canonical one: the deployment's own pages.dev URL is another name. A
+      # made-up ba_live_ key gets "unknown or revoked" from a live API and "this is
+      # a production key… staging needs a ba_test_ key" from a test one.
+      - name: Verify the API environment on the new deployment
+        shell: bash
+        run: |
+          URL=$(grep -oE 'https://[a-z0-9]+\.verazadoptantes2\.pages\.dev' deploy.log | head -1 || true)
+          if [ -z "$URL" ]; then echo "::error::could not find the deployment URL in the wrangler output"; exit 1; fi
+          CODE=""
+          for i in $(seq 1 10); do
+            curl -s "$URL/api/v1/me" -H 'Authorization: Bearer ba_live_CiProbeNotARealKey0000000000000000' > apienv.json || true
+            CODE=$(jq -r '.error.code // empty' apienv.json 2>/dev/null || true)
+            [ -n "$CODE" ] && break
+            sleep 6
+          done
+          MSG=$(jq -r '.error.message // empty' apienv.json 2>/dev/null || true)
+          echo "$URL/api/v1/me with a made-up ba_live_ key -> $CODE: $MSG (production must be LIVE on this name too)"
+          if [ "$CODE" = "api_disabled" ]; then echo "::warning::the public API is off here; nothing to check"; exit 0; fi
+          case "$MSG" in "unknown or revoked"*) ;; *) echo "::error::production answered a ba_live_ key on $URL as if it were staging: $MSG"; exit 1;; esac
 
       # Prove the deploy-skew guard is live on what we just deployed, not just
       # that the code exists (audit 2026-09-19, P1-1 / PR-2). A request claiming

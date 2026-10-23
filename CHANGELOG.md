@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.234] - 2026-10-23
+
+### Fixed — the API knows it is production on every address production answers on
+
+Found by the independent review of 2.56.232: the API decided "production or staging" from the
+address it was called on, and production also answers on `buenadoptante.org.` (trailing dot),
+Cloudflare's other HTTPS ports and `verazadoptantes2.pages.dev`. There it acted as staging: new keys
+came out as `ba_test_`, dry runs ran on production data, and the docs' example people were not
+refused. Checked 2026-10-23 (read-only): production has 1 key (live), 0 dry runs, 0 example profiles
+— it was never used.
+- **CI stamps each build** with `APP_ENVIRONMENT` (`staging` / `production`), inlined by
+  `next.config.ts`; a production build is live on every address. Each build step refuses to run
+  with the wrong stamp.
+- The address check stays as a fallback (local dev) and now ignores a trailing dot, a port and case.
+- **After every deploy, CI calls the new deployment's own pages.dev address** with a made-up
+  `ba_live_` key: production must answer as production, staging as staging. Pinned in
+  `src/lib/api/keys.test.ts`.
+
 ## [2.56.233] - 2026-10-23
 
 ### Fixed — browser access to the API is limited to the staging hosts by name
