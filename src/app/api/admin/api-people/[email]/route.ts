@@ -50,8 +50,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ ema
             const { runAfterResponse } = await import('@/lib/background');
             await runAfterResponse('api.accessDecision.notify', async () => {
                 const { createNotification } = await import('@/app/actions/notifications');
+                const { PENDING_APPROVAL_CAPS } = await import('@/lib/api/access');
+                const { SELF_SERVICE_CAPS } = await import('@/lib/api/selfService');
                 const title = decision === 'approve' ? 'Tu acceso a la API fue aprobado' : decision === 'deny' ? 'Tu pedido de acceso a la API no fue aprobado' : 'Tu acceso a la API fue bloqueado';
-                const bodyText = decision === 'approve' ? 'Ya podés crear tus claves en /developers.' : (body.note?.trim() || 'Si tenés dudas, escribinos.');
+                const note = body.note?.trim();
+                const bodyText = decision === 'approve'
+                    ? `Tus claves pasan a ${SELF_SERVICE_CAPS.exact} búsquedas exactas y ${SELF_SERVICE_CAPS.fuzzy} fuzzy por día.`
+                    : decision === 'deny'
+                        ? `Tus claves siguen con ${PENDING_APPROVAL_CAPS.exact} búsquedas exactas y ${PENDING_APPROVAL_CAPS.fuzzy} fuzzy por día.${note ? ` ${note}` : ''}`
+                        : (note || 'Si tenés dudas, escribinos.');
                 await createNotification({ userId: email, type: 'api_access', title, body: bodyText, url: '/developers' });
             }, { person: maskEmail(email), decision });
         }

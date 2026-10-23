@@ -5,6 +5,7 @@ import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { adminEmailOr401 } from '@/lib/api/sessionGuards';
 import { issueKey, listKeys } from '@/lib/api/review';
+import { hasFullLimits, PENDING_APPROVAL_CAPS } from '@/lib/api/access';
 
 export const runtime = 'edge';
 
@@ -15,7 +16,15 @@ export async function GET() {
         const db = await getDb();
         if (!db) throw new Error('database unavailable');
         // A key its owner created is theirs to regenerate (the admin must not see its secret) — except the admin's own.
-        const keys = (await listKeys(db, null)).map(k => ({ ...k, canRegenerate: !k.revokedAt && (!k.selfService || k.ownerEmail === admin) }));
+        const listed = await listKeys(db, null);
+        // Self-created keys of people not approved yet run at the pending limits: say so on the key.
+        const owners = [...new Set(listed.filter(k => k.selfService && !k.revokedAt).map(k => k.ownerEmail))];
+        const fullLimits = new Map(await Promise.all(owners.map(async o => [o, await hasFullLimits(db, o)] as const)));
+        const keys = listed.map(k => ({
+            ...k,
+            canRegenerate: !k.revokedAt && (!k.selfService || k.ownerEmail === admin),
+            pendingLimits: k.selfService && !k.revokedAt && fullLimits.get(k.ownerEmail) === false ? PENDING_APPROVAL_CAPS : null,
+        }));
         return NextResponse.json({ keys });
     } catch (e) {
         const errorId = logger.error('admin api-keys: list failed', e, { admin });

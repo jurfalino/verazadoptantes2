@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.231] - 2026-10-22
+
+### Changed — /developers: a key at once, admin approval raises the limit
+
+Jon, 2026-10-22: instead of waiting for an admin, a person gets their API key right after
+accepting the terms, with a starting limit, and is told an admin will raise it.
+- Before approval their own keys allow **25 exact and 10 fuzzy searches a day, across all of
+  them**; approved, 100 and 50 (unchanged). A deny keeps them at 25/10; only a block turns keys
+  off. Admins and admin-issued keys are unaffected.
+- The **first key files the approval request** (its name is the tool; an optional "what for"
+  field), and the admins are notified as before. /developers says where the request stands, and
+  the box with the new secret says the key is on the starting limit.
+- The 429 says the limit is the starting one and how it goes up; `access_not_approved` is gone
+  (documented limits updated). Admin → API: keys on the starting limit are marked, and a
+  person's page says what approving changes. Approve/deny notifications speak of limits.
+
 ## [2.56.230] - 2026-10-22
 
 ### Fixed — fewer `next dev` restarts in CI e2e

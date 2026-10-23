@@ -27,3 +27,12 @@ describe('importModeOn — import mode ends by itself', () => {
         expect(importModeOn({ importMode: 1 }, now)).toBe(false); // the old boolean "on" is off
     });
 });
+
+describe('withPendingCaps — a key before approval', () => {
+    it('lowers the caps to 25 exact / 10 fuzzy, never raises them', async () => {
+        const { withPendingCaps, PENDING_APPROVAL_CAPS } = await import('./access');
+        expect(PENDING_APPROVAL_CAPS).toEqual({ exact: 25, fuzzy: 10 });
+        expect(withPendingCaps({ id: 'k', dailyCapExact: 100, dailyCapFuzzy: 50 })).toEqual({ id: 'k', dailyCapExact: 25, dailyCapFuzzy: 10 });
+        expect(withPendingCaps({ dailyCapExact: 5, dailyCapFuzzy: 0 })).toEqual({ dailyCapExact: 5, dailyCapFuzzy: 0 });
+    });
+});

@@ -152,6 +152,9 @@ function PersonDetail({ email, onBack, onChanged }: { email: string; onBack: () 
                         {a.note ? ` — «${a.note}»` : ''}
                     </p>
                 )}
+                {a.status !== 'approved' && a.status !== 'blocked' && (
+                    <p className="text-xs mt-3" style={{ color: 'var(--text-secondary)' }} data-testid="api-person-limits-hint">{t('apiAdmin.approve_raises_limits')}</p>
+                )}
                 <div className="mt-4 flex flex-col gap-2">
                     <label className="text-xs font-semibold text-stone-600 flex flex-col gap-1 max-w-lg">
                         {t('apiAdmin.decision_note')}

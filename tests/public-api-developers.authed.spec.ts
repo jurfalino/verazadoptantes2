@@ -72,7 +72,7 @@ test.describe('public API v1 — /developers and access approval', { tag: '@leg-
         expect((await api.get('/api/v1/me', { headers: { authorization: `Bearer ${shown}` } })).status()).toBe(401);
     });
 
-    test('API access by approval: request → admin approves → key → one limit per person → block revokes and refuses', async ({ page, browser }) => {
+    test('API keys before approval: a key at once at 25/10 (shared by all own keys) → admin approves → 100/50 → deny keeps 25/10 → block revokes', async ({ page, browser }) => {
         const USER = 'testuser@example.com';
         // A clean slate for the regular test user, so a rerun behaves like the first run.
         execD1(`DELETE FROM api_access WHERE user_email = '${USER}'`);
@@ -88,18 +88,39 @@ test.describe('public API v1 — /developers and access approval', { tag: '@leg-
         ]);
         const ctx = await browser.newContext({ storageState: '.auth/user.json' });
         const user = await ctx.newPage();
+        const me = async (secretOf: string) => (await (await api.get('/api/v1/me', { headers: { authorization: `Bearer ${secretOf}` } })).json()) as { caps: { exact: number; fuzzy: number } };
         try {
-            // Terms first, then no key without approval.
+            // Terms first; then the key works at once, at the starting limits, and files the request.
+            expect((await user.request.post('/api/my-api/keys', { data: { name: 'x' } })).status()).toBe(403);
             expect((await user.request.post('/api/my-api/terms')).status()).toBe(200);
-            expect((await user.request.post('/api/my-api/keys', { data: { name: 'x' } })).status()).toBe(403);
             await user.goto('/developers');
-            await user.getByTestId('developers-access-tool').fill(`Formulario ${TAG}`, { timeout: 30000 });
-            await user.getByTestId('developers-access-purpose').fill('Revisar adoptantes antes de entregar');
-            await user.getByTestId('developers-access-send').click();
+            await user.getByTestId('developers-key-name').fill(`Formulario ${TAG}`, { timeout: 30000 });
+            await user.getByTestId('developers-key-purpose').fill('Revisar adoptantes antes de entregar');
+            await user.getByTestId('developers-create').click();
+            const firstSecret = (await user.getByTestId('developers-secret-value').textContent({ timeout: 30000 }))!.trim();
+            await expect(user.getByTestId('developers-secret-limited')).toBeVisible();
+            expect((await me(firstSecret)).caps).toEqual({ exact: 25, fuzzy: 10 });
+            await user.reload();
             await expect(user.getByTestId('developers-access-pending')).toBeVisible({ timeout: 30000 });
-            expect((await user.request.post('/api/my-api/keys', { data: { name: 'x' } })).status()).toBe(403);
+            const mine = (await (await user.request.get('/api/my-api/keys')).json()) as { keys: Array<{ id: string; name: string }> };
+            const a = { id: mine.keys.find(k => k.name === `Formulario ${TAG}`)!.id, secret: firstSecret };
 
-            // The admin sees the request and approves it.
+            // A second key shares the same starting allowance: 10 fuzzy a day across both.
+            const k2 = await user.request.post('/api/my-api/keys', { data: { name: `B ${TAG}` } });
+            expect(k2.status()).toBe(201);
+            const b = await k2.json() as { id: string; secret: string; requested?: boolean };
+            expect(b.requested).toBeFalsy(); // the first key already asked
+            const fuzzy = (secretOf: string) => api.post('/api/v1/search', {
+                data: { mode: 'fuzzy', person: { fullName: `Nadie ${TAG}` } }, headers: { authorization: `Bearer ${secretOf}` },
+            });
+            for (let i = 0; i < 10; i++) expect((await fuzzy(i % 2 ? b.secret : a.secret)).status()).toBe(200);
+            const over = await fuzzy(a.secret);
+            expect(over.status()).toBe(429);
+            const overErr = (await over.json()).error;
+            expect(overErr.code).toBe('daily_cap_reached');
+            expect(overErr.message).toMatch(/approves your access request/);
+
+            // The admin sees the request (from the first key) and approves it: the limits go up.
             await page.goto('/admin/api?tab=overview');
             await expect(page.getByTestId('api-overview-pending')).toBeVisible({ timeout: 30000 });
             await page.getByTestId('api-overview-pending').click();
@@ -107,35 +128,20 @@ test.describe('public API v1 — /developers and access approval', { tag: '@leg-
             await expect(row).toContainText(`Formulario ${TAG}`, { timeout: 30000 });
             await row.click();
             await expect(page.getByTestId('api-person')).toContainText('Revisar adoptantes', { timeout: 60000 });
+            await expect(page.getByTestId('api-person-limits-hint')).toBeVisible();
             await page.getByTestId('api-access-approve').click();
             await expect(page.getByTestId('api-person').getByTestId('api-access-status').first()).toContainText(/Aprobado|Approved/, { timeout: 30000 });
-
-            // Approved: the person creates keys. One daily limit across all of them.
-            const k1 = await user.request.post('/api/my-api/keys', { data: { name: `A ${TAG}` } });
-            expect(k1.status()).toBe(201);
-            const k2 = await user.request.post('/api/my-api/keys', { data: { name: `B ${TAG}` } });
-            expect(k2.status()).toBe(201);
-            const [a, b] = [await k1.json(), await k2.json()] as Array<{ id: string; secret: string }>;
-            for (const k of [a, b]) {
-                expect((await page.request.patch(`/api/admin/api-keys/${k.id}`, { data: { dailyCapFuzzy: 1 } })).status()).toBe(200);
-            }
-            const fuzzy = (secretOf: string) => api.post('/api/v1/search', {
-                data: { mode: 'fuzzy', person: { fullName: `Nadie ${TAG}` } }, headers: { authorization: `Bearer ${secretOf}` },
-            });
+            expect((await me(a.secret)).caps).toEqual({ exact: 100, fuzzy: 50 });
             expect((await fuzzy(a.secret)).status()).toBe(200);
-            const second = await fuzzy(b.secret);
-            expect(second.status()).toBe(429);
-            expect((await second.json()).error.code).toBe('daily_cap_reached');
 
-            // Access is checked on every call: a later deny turns their own keys off, approving again turns them on.
+            // A deny never turns the keys off: they go back to the starting limits.
             const decide = (decision: string) => page.request.post(`/api/admin/api-people/${encodeURIComponent(USER)}`, { data: { decision } });
             expect((await decide('deny')).status()).toBe(200);
-            const denied = await api.get('/api/v1/me', { headers: { authorization: `Bearer ${a.secret}` } });
-            expect(denied.status()).toBe(403);
-            expect((await denied.json()).error.code).toBe('access_not_approved');
-            expect((await user.request.post(`/api/my-api/keys/${a.id}`, { data: { action: 'regenerate' } })).status()).toBe(403);
+            expect((await me(a.secret)).caps).toEqual({ exact: 25, fuzzy: 10 });
+            expect((await user.request.post(`/api/my-api/keys/${a.id}`, { data: { action: 'regenerate' } })).status()).toBe(200);
             expect((await decide('approve')).status()).toBe(200);
-            expect((await api.get('/api/v1/me', { headers: { authorization: `Bearer ${a.secret}` } })).status()).toBe(200);
+            const fresh = (await (await user.request.get('/api/my-api/keys')).json()) as { keys: Array<{ id: string }> };
+            expect(fresh.keys.length).toBeGreaterThan(0);
 
             // The admin sees who they searched (that view is audited).
             await page.reload();

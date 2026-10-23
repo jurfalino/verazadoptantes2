@@ -14,7 +14,7 @@ import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
 import { getFeatureFlag } from '@/config/features';
 import { bearerSecret, environmentForHost, findActiveKey, importModeOn, IMPORT_CALL_CEILING, scopesOf, type ApiKeyRow } from './keys';
-import { keyRefusal } from './access';
+import { keyAccess, PENDING_APPROVAL_CAPS, withPendingCaps, type KeyAccess } from './access';
 import type { ApiErrorCode, ApiScope } from './schemas';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -104,6 +104,8 @@ export interface ApiCallContext {
     dryRun: boolean;
     /** The request URL's query (GET endpoints). */
     query: URLSearchParams;
+    /** A self-created key whose owner is not approved yet: PENDING_APPROVAL_CAPS apply (key already lowered). */
+    limited: boolean;
     /** Today's counts as read by enforceDailyCap (this call not included), reused for the RateLimit headers. */
     caps?: CapSnapshot;
 }
@@ -183,16 +185,24 @@ export async function personSearchesToday(db: Db, ownerEmail: string, mode: 'exa
  * active keys (review 2026-10-17: revoke-and-recreate multiplied the per-key
  * limit without end). Admin-issued partner keys keep their own higher caps.
  */
-export async function personCap(db: Db, ownerEmail: string, mode: 'exact' | 'fuzzy'): Promise<number> {
+export async function personCap(db: Db, ownerEmail: string, mode: 'exact' | 'fuzzy', limited = false): Promise<number> {
     const col = mode === 'exact' ? apiKeys.dailyCapExact : apiKeys.dailyCapFuzzy;
-    const row = await db.select({ cap: max(col) }).from(apiKeys).where(and(eq(apiKeys.ownerEmail, ownerEmail), isNull(apiKeys.revokedAt))).get();
-    return row?.cap ?? 0;
+    if (!limited) {
+        const row = await db.select({ cap: max(col) }).from(apiKeys).where(and(eq(apiKeys.ownerEmail, ownerEmail), isNull(apiKeys.revokedAt))).get();
+        return row?.cap ?? 0;
+    }
+    // Not approved yet: their own keys count at the pending limit, so several keys
+    // share one small allowance (an admin-issued key keeps its own cap).
+    const pending = PENDING_APPROVAL_CAPS[mode];
+    const rows = await db.select({ cap: col, createdBy: apiKeys.createdBy }).from(apiKeys)
+        .where(and(eq(apiKeys.ownerEmail, ownerEmail), isNull(apiKeys.revokedAt))).all() as Array<{ cap: number; createdBy: string | null }>;
+    return rows.reduce((m, r) => Math.max(m, r.createdBy === ownerEmail ? Math.min(r.cap, pending) : r.cap), 0);
 }
 
 /** What is left today for this key: the smaller of the key's and the person's remainder. */
-export async function remainingToday(db: Db, key: ApiKeyRow, mode: 'exact' | 'fuzzy'): Promise<{ limit: number; remaining: number }> {
+export async function remainingToday(db: Db, key: ApiKeyRow, mode: 'exact' | 'fuzzy', limited = false): Promise<{ limit: number; remaining: number }> {
     const keyCap = mode === 'exact' ? key.dailyCapExact : key.dailyCapFuzzy;
-    const [byKey, byPerson, cap] = await Promise.all([searchesToday(db, key.id, mode), personSearchesToday(db, key.ownerEmail, mode), personCap(db, key.ownerEmail, mode)]);
+    const [byKey, byPerson, cap] = await Promise.all([searchesToday(db, key.id, mode), personSearchesToday(db, key.ownerEmail, mode), personCap(db, key.ownerEmail, mode, limited)]);
     // The limit that binds: the person's when their other keys used it up, else the key's own.
     return remainingFrom({ mode, byKey, byPerson, personCap: cap }, keyCap, false);
 }
@@ -205,15 +215,17 @@ export async function remainingToday(db: Db, key: ApiKeyRow, mode: 'exact' | 'fu
 export async function enforceDailyCap(ctx: ApiCallContext, mode: 'exact' | 'fuzzy') {
     const cap = mode === 'exact' ? ctx.key.dailyCapExact : ctx.key.dailyCapFuzzy;
     const [byKey, byPerson, ownerCap] = await Promise.all([
-        searchesToday(ctx.db, ctx.key.id, mode), personSearchesToday(ctx.db, ctx.key.ownerEmail, mode), personCap(ctx.db, ctx.key.ownerEmail, mode),
+        searchesToday(ctx.db, ctx.key.id, mode), personSearchesToday(ctx.db, ctx.key.ownerEmail, mode), personCap(ctx.db, ctx.key.ownerEmail, mode, ctx.limited),
     ]);
     ctx.caps = { mode, byKey, byPerson, personCap: ownerCap };
+    // Not approved yet: say why the limit is low and how it goes up.
+    const pendingNote = ctx.limited ? ' (limit until a BuenAdoptante admin approves your access request at /developers)' : '';
     if (byKey >= cap) {
-        throw new ApiError(429, 'daily_cap_reached', `daily ${mode} cap of ${cap} reached; resets at 00:00 UTC`, retryAfterMidnight());
+        throw new ApiError(429, 'daily_cap_reached', `daily ${mode} cap of ${cap} reached${pendingNote}; resets at 00:00 UTC`, retryAfterMidnight());
     }
     const perPerson = Math.max(ownerCap, cap);
     if (byPerson >= perPerson) {
-        throw new ApiError(429, 'daily_cap_reached', `daily ${mode} limit of ${perPerson} reached across all your keys; resets at 00:00 UTC`, retryAfterMidnight());
+        throw new ApiError(429, 'daily_cap_reached', `daily ${mode} limit of ${perPerson} reached across all your keys${pendingNote}; resets at 00:00 UTC`, retryAfterMidnight());
     }
 }
 
@@ -404,26 +416,27 @@ export async function handleApiCall(
     }
     const header = request.headers.get('authorization');
     const secret = bearerSecret(header);
-    const key = secret ? await findActiveKey(db, secret) : null;
-    if (!key) {
+    const found = secret ? await findActiveKey(db, secret) : null;
+    if (!found) {
         logger.info('api: unauthorized', { requestId, endpoint, hadHeader: !!header });
         return json(401, errorBody(requestId, origin, 'unauthorized', unauthorizedMessage(header, secret, new URL(request.url).host)), requestId,
             { 'WWW-Authenticate': 'Bearer' });
     }
-    let refusal: Awaited<ReturnType<typeof keyRefusal>>;
+    let access: KeyAccess;
     try {
-        refusal = await keyRefusal(db, key);
+        access = await keyAccess(db, found);
     } catch (e) {
         // Fail closed, but as a proper API answer: never let a call through we could not check.
-        const errorId = logger.error('api: access check failed', e, { requestId, endpoint, keyId: key.id });
+        const errorId = logger.error('api: access check failed', e, { requestId, endpoint, keyId: found.id });
         return json(503, errorBody(requestId, origin, 'temporarily_unavailable', 'we could not check this key right now; retry in a minute', errorId), requestId, { 'Retry-After': '60' });
     }
-    if (refusal) {
-        logger.info('api: key refused by access status', { requestId, endpoint, keyId: key.id, refusal });
-        return json(403, errorBody(requestId, origin, refusal, refusal === 'access_blocked'
-            ? 'this key\'s owner is blocked from the API; write to us if you think this is a mistake'
-            : 'API access for this key\'s owner is not approved; ask for access at /developers'), requestId);
+    if (access.refusal) {
+        logger.info('api: key refused by access status', { requestId, endpoint, keyId: found.id, refusal: access.refusal });
+        return json(403, errorBody(requestId, origin, access.refusal, 'this key\'s owner is blocked from the API; write to us if you think this is a mistake'), requestId);
     }
+    // Before approval a self-created key works with the pending limits: every cap below
+    // (key, person, call ceiling, /me, RateLimit headers) reads the lowered values.
+    const key = access.limited ? withPendingCaps(found) : found;
 
     let bodyText = '';
     let bodyBytes: ArrayBuffer | null = null;
@@ -448,6 +461,7 @@ export async function handleApiCall(
         log: {},
         rowClaimed: false,
         dryRun: false,
+        limited: access.limited,
         query: new URL(request.url).searchParams,
     };
 
@@ -490,7 +504,7 @@ export async function handleApiCall(
             const keyCap = mode === 'exact' ? key.dailyCapExact : key.dailyCapFuzzy;
             // Counted when it ran (not refused, not a replay) — the same rule as searchesToday.
             const counted = status < 400 && ctx.log.outcome !== 'replayed';
-            const { limit, remaining } = ctx.caps?.mode === mode ? remainingFrom(ctx.caps, keyCap, counted) : await remainingToday(db, key, mode);
+            const { limit, remaining } = ctx.caps?.mode === mode ? remainingFrom(ctx.caps, keyCap, counted) : await remainingToday(db, key, mode, access.limited);
             headers = { ...headers, 'RateLimit-Limit': String(limit), 'RateLimit-Remaining': String(remaining), 'RateLimit-Reset': String(secondsToUtcMidnight()) };
         } catch (e) {
             logger.warn('api: rate-limit headers skipped', { requestId, keyId: key.id, error: e instanceof Error ? e.message : String(e) });

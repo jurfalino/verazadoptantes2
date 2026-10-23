@@ -43,7 +43,7 @@ ${post('/api/v1/search', { mode: 'fuzzy', person: { fullName: 'María Pérez' } 
 ${post('/api/v1/search', { mode: 'exact', person: maria, activity: { activityType: 'adoption_request', externalId: 'mi-formulario-1234' } }, live ? [] : ['X-Dry-Run: 1'])}
 
 ## Autenticación
-**Cómo conseguir una clave:** creala vos en [${origin}/developers](${origin}/developers) — iniciá sesión, aceptá las condiciones de uso y creá la clave; se muestra una sola vez (si la perdés, la regenerás ahí). Allí también ves tus llamadas y podés revocarla. ${live ? 'Para probar, creá también una clave en staging.' : 'Acá en staging te da una clave de prueba (`ba_test_…`).'} Cada clave tiene un cupo de 100 búsquedas exactas y 50 fuzzy por día; si necesitás más, escribinos.
+**Cómo conseguir una clave:** creala vos en [${origin}/developers](${origin}/developers) — iniciá sesión, aceptá las condiciones de uso y creá la clave; se muestra una sola vez (si la perdés, la regenerás ahí). Allí también ves tus llamadas y podés revocarla. ${live ? 'Para probar, creá también una clave en staging.' : 'Acá en staging te da una clave de prueba (`ba_test_…`).'} La clave funciona enseguida, con un cupo inicial de 25 búsquedas exactas y 10 fuzzy por día (entre todas tus claves). Tu primera clave le pide la aprobación a un administrador de BuenAdoptante; cuando la aprueba, el cupo sube a 100 exactas y 50 fuzzy por día. Si necesitás más, escribinos.
 
 Cada clave pertenece a un rescatista. Enviala en cada llamada: \`Authorization: Bearer ba_live_…\` en producción, \`Bearer ba_test_…\` en staging (cada ambiente tiene sus propias claves). Si la clave no sirve, \`401 unauthorized\` dice por qué: que falta, que está mal escrita, que es de otro ambiente, o que no existe o fue revocada.
 
@@ -162,7 +162,6 @@ Toda respuesta de error trae \`error.code\` (estable: tu código puede decidir s
 | \`invalid_request\` | Un campo no tiene el formato esperado. | Mirá \`error.details\`: cada problema con su campo. |
 | \`unauthorized\` | Falta la clave, está mal escrita, es de otro ambiente, o no existe o fue revocada. | El mensaje dice cuál. |
 | \`access_blocked\` | La persona dueña de la clave fue bloqueada de la API. | Escribinos si creés que es un error. |
-| \`access_not_approved\` | El acceso a la API de la persona dueña de la clave no está aprobado. | Pedí acceso en /developers. |
 | \`forbidden\` | La clave no tiene el permiso para eso. | Pedile a BuenAdoptante el permiso (\`search\`, \`search:fuzzy\`, \`record:write\`). |
 | \`not_found\` | Ese id no existe para tu clave. | Revisá el id. |
 | \`exact_requires_name_and_identifier\` | \`exact\` necesita nombre y apellido más email, teléfono o documento. | Completá los datos, o usá \`fuzzy\`. |
@@ -189,7 +188,7 @@ Toda respuesta de error trae \`error.code\` (estable: tu código puede decidir s
 | \`request_in_progress\` | La misma llamada todavía se está procesando. | Reintentá en unos segundos (\`Retry-After\`). |
 | \`partially_saved\` | Una llamada anterior con ese \`externalId\` se cortó a mitad. | Anulá \`error.activityId\` (o avisá a un admin) y reenviá. |
 | \`record_changed\` | Al anular: el animal se volvió a entregar después. | Avisá a un admin. |
-| \`daily_cap_reached\` | Llegaste al cupo de búsquedas del día. | Esperá al reinicio (\`Retry-After\`); \`RateLimit-Remaining\` te avisa antes. |
+| \`daily_cap_reached\` | Llegaste al cupo de búsquedas del día. | Esperá al reinicio (\`Retry-After\`); \`RateLimit-Remaining\` te avisa antes. Si tu acceso todavía no fue aprobado, el cupo es el inicial (25 exactas y 10 fuzzy) hasta que un administrador lo apruebe. |
 | \`daily_call_ceiling_reached\` | Demasiadas llamadas de cualquier tipo hoy. | Revisá que tu programa no esté en un bucle. |
 | \`temporarily_unavailable\` | No pudimos leer las calificaciones; no se guardó nada. | Reintentá (\`Retry-After\`). |
 | \`api_disabled\` | La API no está habilitada en este ambiente. | Consultá a BuenAdoptante. |
