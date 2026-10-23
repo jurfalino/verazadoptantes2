@@ -213,6 +213,11 @@ jobs:
       options: --ipc=host
     env:
       PLAYWRIGHT_IMAGE_VERSION: '1.58.0'
+    # In a container job GitHub's default shell is `sh`, not bash (2.56.227 failed
+    # every leg on `set -o pipefail`). The steps are written for bash.
+    defaults:
+      run:
+        shell: bash
     # ── Split by project, one server each (v2.56.129) ──────────────────────
     #
     # This ran as ONE `next dev` process for the whole suite, ~149 tests over

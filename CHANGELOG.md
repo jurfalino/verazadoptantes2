@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.56.228] - 2026-10-22
+
+### Fixed — e2e container steps run in bash
+
+2.56.227 failed every leg in 46 seconds: inside a container GitHub's default shell is `sh`, which rejects
+`set -o pipefail`. The e2e job now defaults to bash.
+
 ## [2.56.227] - 2026-10-22
 
 ### Changed — e2e runs inside Playwright's CI image (no downloads at setup)
