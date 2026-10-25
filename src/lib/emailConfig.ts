@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { getDb } from '@/lib/db';
 import { appConfig } from '@/db/schema';
+import { logger } from '@/lib/logger';
 import { getRequestContext } from '@/lib/requestContext';
 
 type Db = Awaited<ReturnType<typeof getDb>>;
@@ -33,7 +34,10 @@ export async function resolveEmailConfig(db: Db): Promise<{ apiKey: string | nul
         ));
         apiKey = rows[0]?.value || apiKey;
         from = rows[1]?.value || from;
-    } catch { /* appConfig read is best-effort; env fallback stands */ }
+    } catch (e) {
+        // Best-effort: the env fallback stands, but a broken read must be visible.
+        logger.warn('resolveEmailConfig: appConfig read failed', { error: e instanceof Error ? e.message : String(e) });
+    }
     return { apiKey: apiKey || null, from };
 }
 

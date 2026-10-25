@@ -3,7 +3,7 @@
  * switches in user_profiles.email_prefs. NOT a 'use server' module.
  * `notifications.user_id` is the recipient EMAIL.
  */
-import { and, eq, gte, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { notifications } from '@/db/schema';
 import { logger } from '@/lib/logger';
@@ -37,6 +37,7 @@ export async function sendNotificationEmail(n: {
         const recent = await db.select({ type: notifications.type })
             .from(notifications)
             .where(and(eq(notifications.userId, n.userId), isNotNull(notifications.emailedAt), gte(notifications.emailedAt, since)))
+            .orderBy(desc(notifications.emailedAt))
             .limit(THROTTLE_SCAN_LIMIT);
         if (recent.some((r: { type: string }) => categoryForType(r.type) === category)) return 'skipped_throttle';
     }

@@ -60,6 +60,11 @@ describe('sendNotificationEmail', () => {
         expect(await call(addNotif('merge_request'), 'merge_request')).toBe('sent');
         expect(send).toHaveBeenCalledTimes(2);
     });
+    it('a different throttleable category is not throttled by a recent email', async () => {
+        expect(await call(addNotif('form_submission'), 'form_submission')).toBe('sent');
+        expect(await call(addNotif('adopter_merged'), 'adopter_merged')).toBe('sent');
+        expect(send).toHaveBeenCalledTimes(2);
+    });
     it('no user/profile row -> sent', async () => {
         expect(await call(addNotif('form_submission'), 'form_submission')).toBe('sent');
     });
