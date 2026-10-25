@@ -94,7 +94,7 @@ Categories, grouping the existing notification `type`s (my grouping, agreed with
 
 Rules:
 - The bell is unaffected by the switches; they only govern email.
-- Email goes out where notifications are created (`createNotification`, `src/app/actions/notifications.ts` already has the commented hook), sent with the existing Resend helper (`src/lib/email.ts`), in the recipient's language (es / en / pt), with a link to the item and to the settings section.
+- Email goes out where notifications are created (`createNotification`, `src/app/actions/notifications.ts` already has the commented hook), sent with the existing Resend helper (`src/lib/email.ts`), in Spanish (the app stores no per-user language yet, and bell notifications are already Spanish; *Claude's call*), with a link to the item and to the settings section.
 - Every email carries a **one-click link to turn that category off without logging in** (signed token). Not offered for the always-on group.
 - **No flood from bulk work** *(Claude's call)*: imports and API batches create many notifications at once (one API import created 5,740 records). Email must never go out one-per-record in those cases; the builder adds a cap/grouping per recipient and category (e.g. one summary email for a batch).
 - Sending failures are logged and never block the action or the bell notification.
