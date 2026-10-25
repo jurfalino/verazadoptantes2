@@ -2182,6 +2182,7 @@ export const en = {
         status_partial: 'similar',
         status_different: 'different',
         elsewhere: 'in another field',
+        also: 'Also:',
         privacy_locked: 'Locked: protected by another team. Only part of it shows, or only that it exists.',
         has_one: 'has one',
         col_post: 'Post',

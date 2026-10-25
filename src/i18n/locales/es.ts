@@ -2187,6 +2187,7 @@ export const es = {
         status_partial: 'parecido',
         status_different: 'distinto',
         elsewhere: 'en otro campo',
+        also: 'También:',
         privacy_locked: 'Con candado: dato protegido de otro equipo. Se ve solo una parte, o solo que existe.',
         has_one: 'tiene uno',
         col_post: 'Post',

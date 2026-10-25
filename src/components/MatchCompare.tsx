@@ -50,7 +50,7 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
     target?: Target;
     t: (key: string) => string;
     defaultOpen?: boolean;
-    /** Already inside an expandable row of its own: blocks always shown, no toggle. */
+    /** A page made for the comparison, or a row that already expands: blocks always shown. */
     bare?: boolean;
     /** The other profile's contact as THIS SCREEN ALREADY SHOWS IT to the viewer
      *  (masked values keep their «•»). */
@@ -59,7 +59,11 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
     sourceHead?: ReactNode;
     targetHead?: ReactNode;
 }) {
-    const [open, setOpen] = useState(defaultOpen || bare);
+    // One candidate (defaultOpen) or a page made for the comparison (bare): the
+    // blocks show directly — no toggle, no summary line repeating their labels.
+    // Only a list of several candidates collapses each to a one-line summary (Jon, 2026-10-25).
+    const always = bare || defaultOpen;
+    const [open, setOpen] = useState(always);
     const [ctx, setCtx] = useState<MatchContext | 'loading' | 'error' | null>(null);
 
     // Loaded up front, not on open: the closed header names the differences,
@@ -112,7 +116,7 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
 
     return (
         <div className="mt-2" data-testid="match-compare">
-            {bare ? <div className="mb-2">{summary}</div> : (
+            {always ? null : (
                 <button
                     type="button"
                     aria-expanded={open}
@@ -142,6 +146,13 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
                     {nameOnly && <p className="rounded-lg px-3 py-2 text-xs font-medium text-amber-800 bg-amber-50">{t('matchCompare.name_only_warning')}</p>}
                     {ctx === 'loading' && <p className="text-xs text-stone-500">{t('matchCompare.loading')}</p>}
                     {ctx === 'error' && <p className="text-xs text-stone-500">{t('matchCompare.unavailable')}</p>}
+                    {/* With no summary line, a signal that isn't a field still needs saying. */}
+                    {always && others.length > 0 && (
+                        <p className="text-sm text-stone-700">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">{t('matchCompare.also')}</span>{' '}
+                            {others.join(' · ')}
+                        </p>
+                    )}
                     {anyLocked && (
                         <p className="text-xs text-stone-500 flex items-center gap-1.5"><LockIcon />{t('matchCompare.privacy_locked')}</p>
                     )}
