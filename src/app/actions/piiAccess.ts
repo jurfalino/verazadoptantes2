@@ -36,6 +36,7 @@ import {
 } from '@/lib/piiAccess';
 import { deserializeContactEntries, type ContactEntryType } from '@/lib/contactEntries';
 import { createNotification, resolveDisplayName, resolveDisplayNames } from './notifications';
+import { notificationContent } from '@/domain/notificationTemplates';
 import { requestPiiAccessSchema, resolvePiiRequestSchema, verifyKnownInfoSchema } from './validation';
 import { loadApprovers, fileAccessRequestFor } from '@/lib/piiAccessRequest';
 
@@ -142,14 +143,13 @@ export async function resolvePiiAccessRequest(
 
         const adopter = await db.select({ name: adopters.name })
             .from(adopters).where(eq(adopters.id, req.adopterId)).get();
-        const adopterName = adopter?.name ?? 'el adoptante';
+        const named = adopter?.name ? { adopterName: adopter.name } : {};
         await createNotification({
             userId: req.requesterEmail,
             type: decision === 'approved' ? 'pii_access_approved' : 'pii_access_denied',
-            title: decision === 'approved' ? 'Acceso a contacto aprobado' : 'Solicitud de acceso no aprobada',
-            body: decision === 'approved'
-                ? `Ya podés ver los datos de contacto de ${adopterName}.`
-                : `Tu solicitud de acceso a ${adopterName} no fue aprobada.${note?.trim() ? ` Nota: ${note.trim()}` : ''}`,
+            ...notificationContent(decision === 'approved'
+                ? { key: 'pii_access_approved', params: named }
+                : { key: 'pii_access_denied', params: { ...named, ...(note?.trim() ? { note: note.trim() } : {}) } }),
             url: `/adopter/${req.adopterId}`,
             icon: decision === 'approved' ? '✅' : '🔒',
             metadata: { adopterId: req.adopterId, requestId },
@@ -197,8 +197,7 @@ export async function revokePiiAccessGrant(grantId: string): Promise<{ ok: boole
         await createNotification({
             userId: grant.granteeEmail,
             type: 'pii_access_revoked',
-            title: 'Acceso a contacto removido',
-            body: `Tu acceso a los datos de contacto de ${adopter?.name ?? 'un adoptante'} fue removido.`,
+            ...notificationContent({ key: 'pii_access_revoked', params: adopter?.name ? { adopterName: adopter.name } : {} }),
             url: `/adopter/${grant.adopterId}`,
             icon: '🔒',
             metadata: { adopterId: grant.adopterId },

@@ -19,6 +19,7 @@ import {
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { hashEntryValue, isRealActorEmail } from '@/lib/piiAccess';
 import { createNotification, resolveDisplayName } from './notifications';
+import { notificationContent } from '@/domain/notificationTemplates';
 import { getAdopterApprovers } from './piiAccess';
 import { runAfterResponse } from '@/lib/background';
 import { fileAccessRequestFor } from '@/lib/piiAccessRequest';
@@ -257,21 +258,14 @@ async function notifyApprovers(
         return;
     }
     const actorName = await resolveDisplayName(actor);
-    const displayName = adopterName || 'el adoptante';
-    const typeLabel: Record<ContactEntry['type'], string> = {
-        phone: 'un teléfono',
-        email: 'un email',
-        social: 'una red social',
-        id: 'un documento',
-        address: 'una dirección',
-        alias: 'un nombre alternativo',
-        other: 'un dato de contacto',
-    };
+    const content = notificationContent({
+        key: 'contact_entry_added',
+        params: { actorName, entryType: type, ...(adopterName ? { adopterName } : {}) },
+    });
     await Promise.all([...recipients].map(email => createNotification({
         userId: email,
         type: 'contact_entry_added',
-        title: 'Nuevo dato de contacto',
-        body: `${actorName} agregó ${typeLabel[type]} a ${displayName}.`,
+        ...content,
         url: `/adopter/${adopterId}`,
         icon: '+',
         metadata: { adopterId, contributor: actor, entryType: type },

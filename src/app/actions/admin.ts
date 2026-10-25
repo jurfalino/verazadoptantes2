@@ -798,7 +798,9 @@ export async function transferAdopterOwnership(adopterId: string, toEmail: strin
         // 4. Notify both parties after the response (kept alive by
         //    runAfterResponse, which also logs a module-load failure).
         await runAfterResponse('transferAdopterOwnership.notify', async () => {
-            const { createNotification } = await import('@/app/actions/notifications');
+            const [{ createNotification, resolveDisplayNames }, { notificationContent }] = await Promise.all([
+                import('@/app/actions/notifications'), import('@/domain/notificationTemplates'),
+            ]);
             const url = `/adopter/${adopterId}`;
             const targets = [from, normalizedTo].filter(e => e && e.includes('@') && e !== 'anonymous');
             // v2.19.23: include the adopter name in both notification bodies
@@ -806,14 +808,17 @@ export async function transferAdopterOwnership(adopterId: string, toEmail: strin
             // having to click through. "an adopter" was useless when an
             // admin transferred several in a sweep — the notifications all
             // looked identical.
-            const adopterLabel = current.name?.trim() || 'un adoptante';
+            // Rescuers read names, never addresses (resolveDisplayNames falls back to the handle).
+            const names = await resolveDisplayNames([actor, normalizedTo]);
+            const nameOf = (e: string) => names.get(e.toLowerCase().trim()) ?? e.split('@')[0];
+            const params = {
+                actorName: nameOf(actor), toName: nameOf(normalizedTo),
+                ...(current.name?.trim() ? { adopterName: current.name.trim() } : {}),
+            };
             await Promise.all(targets.map(email => createNotification({
                 userId: email,
                 type: 'ownership_transferred',
-                title: 'Cambio de propietario',
-                body: email === normalizedTo
-                    ? `Ahora sos el propietario de "${adopterLabel}" (transferido por ${actor}).`
-                    : `Un administrador transfirió "${adopterLabel}" a ${normalizedTo}.`,
+                ...notificationContent({ key: 'ownership_transferred', params: { ...params, role: email === normalizedTo ? 'to' : 'from' } }),
                 url,
             }).catch((e: unknown) => {
                 logger.warn('transferAdopterOwnership: createNotification failed', {

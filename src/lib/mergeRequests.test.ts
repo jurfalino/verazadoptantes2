@@ -42,6 +42,7 @@ vi.mock('@/app/actions/notifications', () => ({
     createNotification: vi.fn(async (d: Record<string, unknown>) => { notify.create.push(d); return 'n'; }),
     notifyAdmins: vi.fn(async (d: Record<string, unknown>) => { notify.admins.push(d); }),
     resolveDisplayName: vi.fn(async (email: string) => email.split('@')[0]),
+    resolveDisplayNames: vi.fn(async (emails: string[]) => new Map(emails.map(e => [e.toLowerCase(), e.split('@')[0]]))),
 }));
 vi.mock('@/lib/adopterMerge', async (orig) => {
     const actual = await orig<typeof import('@/lib/adopterMerge')>();
@@ -120,6 +121,9 @@ describe('createMergeRequest', () => {
             expect(n).toMatchObject({ type: 'merge_request', url: '/my-adopters#pendientes', title: 'stranger pidió combinar dos perfiles' });
             expect(n.body).toContain('Carla Gómez');
             expect(n.body).toContain('Carla Gomez');
+            // D31: which one stays, each with its owner (a name, never the address).
+            expect(n.body).toMatch(/se conserva «Carla Gómez \(de stranger, .+\)» y se absorbe «Carla Gomez \(de owner, .+\)»/);
+            expect(n.template).toMatchObject({ key: 'merge_request', params: { requesterName: 'stranger', survivorOwner: 'stranger', absorbedOwner: 'owner' } });
             expect(JSON.stringify(n)).not.toContain(REQUESTER);
         }
         expect(notify.admins).toEqual([]);
@@ -354,6 +358,11 @@ describe('answerMergeRequest — flip and access after a fold (D26, D40)', () =>
         expect(await answerMergeRequest(db(), id, MATE, 'flip')).toEqual({ ok: true, status: 'accepted' });
         expect(mergeSpy).toHaveBeenCalledWith('o-new', 'r-old', MATE);
         expect(recipients().sort()).toEqual([OWNER, REQUESTER].sort());
+        // The requester reads the flip; the owner reads their teammate's answer to the requester (D26).
+        const to = (email: string) => notify.create.find(n => n.userId === email)!;
+        expect(to(REQUESTER).template).toMatchObject({ key: 'merge_request_flipped', params: { actorName: 'mate', survivorName: 'Carla Gomez' } });
+        expect(to(OWNER).template).toMatchObject({ key: 'merge_request_answered_by_teammate', params: { actorName: 'mate', requesterName: 'stranger', outcome: 'flipped' } });
+        expect(to(OWNER).title).toBe('mate aceptó el pedido de stranger');
     });
 
     it('an admin flips: admin_approved, swapped', async () => {

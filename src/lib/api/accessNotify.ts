@@ -9,9 +9,11 @@ export async function announceAccessRequest(email: string, tool: string): Promis
     logAudit({ userEmail: email, action: 'api_access_requested', details: { tool: tool.slice(0, 120) } });
     await runAfterResponse('api.accessRequest.notifyAdmins', async () => {
         const { notifyAdmins } = await import('@/app/actions/notifications');
+        const { notificationContent } = await import('@/domain/notificationTemplates');
         await notifyAdmins({
-            actorEmail: email, type: 'api_access_requested', title: 'Pedido de acceso a la API',
-            body: `${email} pidió acceso a la API (${tool.slice(0, 80)}). Su clave ya funciona con el límite inicial; aprobalo para subirlo.`,
+            actorEmail: email, type: 'api_access_requested',
+            // Admin-only: the requester's address stays, as today.
+            ...notificationContent({ key: 'api_access_requested', params: { requesterEmail: email, tool: tool.slice(0, 80) } }),
             url: '/admin/api?tab=people&status=requested',
         });
     }, { user: email });

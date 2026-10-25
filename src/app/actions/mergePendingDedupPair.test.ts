@@ -24,7 +24,11 @@ vi.mock('@/lib/mergeRequests', () => ({ createMergeRequest: requestSpy, keepSepa
 vi.mock('@/lib/mergeAccess', () => ({ grantAccessAfterFold: grantSpy }));
 vi.mock('@/config/admins', () => ({ isAdminAsync: async () => false }));
 vi.mock('./householdMembers', () => ({ addHouseholdMember: vi.fn() }));
-vi.mock('./notifications', () => ({ createNotification: notifySpy, resolveDisplayName: async (e: string) => e.split('@')[0] }));
+vi.mock('./notifications', () => ({
+    createNotification: notifySpy,
+    resolveDisplayName: async (e: string) => e.split('@')[0],
+    resolveDisplayNames: async (emails: string[]) => new Map(emails.map(e => [e.toLowerCase(), e.split('@')[0]])),
+}));
 vi.mock('@/lib/adopterTokenize', () => ({ tokenizeAdopter: vi.fn() }));
 // Team rule: the owner plus one teammate.
 vi.mock('@/lib/orgMembership', () => ({

@@ -5,6 +5,7 @@ import { logAudit } from '@/lib/audit';
 import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
 import { isRealActorEmail, piiCooldownUntil, type RequestPiiAccessResult } from '@/lib/piiAccess';
 import { createNotification, resolveDisplayName } from '@/app/actions/notifications';
+import { notificationContent } from '@/domain/notificationTemplates';
 
 /**
  * The core of "request access to a record's contact data", for a requester the
@@ -110,14 +111,14 @@ export async function fileAccessRequestFor(
     // more." Reduces "who is this person and why are they asking?"
     // friction at approval time.
     const isAutoContribution = opts.justification?.trim() === 'auto:contribution';
-    const body = isAutoContribution
-        ? `${requesterName} agregó un dato a ${adopter.name} y solicita acceso a los datos de contacto.`
-        : `${requesterName} solicitó acceso a los datos de contacto de ${adopter.name}.`;
+    const content = notificationContent({
+        key: 'pii_access_request',
+        params: { requesterName, kind: isAutoContribution ? 'contribution' : 'direct', ...(adopter.name ? { adopterName: adopter.name } : {}) },
+    });
     await Promise.all(recipients.map(email => createNotification({
         userId: email,
         type: 'pii_access_request',
-        title: 'Solicitud de acceso a contacto',
-        body,
+        ...content,
         url: `/adopter/${adopterId}`,
         icon: '🔒',
         metadata: { adopterId, requestId },

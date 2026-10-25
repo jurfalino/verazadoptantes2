@@ -28,6 +28,7 @@ vi.mock('./notifications', () => ({
     createNotification: vi.fn(async (d: Record<string, unknown>) => { notify.create.push(d); return 'n'; }),
     notifyAdmins: vi.fn(async (d: Record<string, unknown>) => { notify.admins.push(d); }),
     resolveDisplayName: vi.fn(async (email: string) => email.split('@')[0]),
+    resolveDisplayNames: vi.fn(async (emails: string[]) => new Map(emails.map(e => [e.toLowerCase(), e.split('@')[0]]))),
 }));
 vi.mock('@/lib/adopterMerge', async (orig) => {
     const actual = await orig<typeof import('@/lib/adopterMerge')>();
@@ -166,8 +167,10 @@ describe('mergePendingDedupPair — merge or request', () => {
         expect(notify.create).toEqual([expect.objectContaining({
             type: 'adopter_merged', userId: OWNER,
             title: 'Se unieron dos perfiles: Ana Díaz → Ana Diaz',
-            body: 'stranger combinó su perfil con el tuyo porque son la misma persona. Todo quedó en tu perfil.',
+            // D31: each side names its owner and date.
+            body: "stranger combinó su perfil «Ana Díaz (de stranger, 31 dic '69)» con el tuyo «Ana Diaz (de owner, 31 dic '69)» porque son la misma persona. Todo quedó en tu perfil.",
             url: '/adopter/o-old', icon: '🔗',
+            template: expect.objectContaining({ key: 'adopter_merged_by_rescuer' }),
         })]);
     });
 

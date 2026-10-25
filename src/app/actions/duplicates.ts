@@ -16,6 +16,8 @@ import { normalizeConfidence, confidenceBand, fuzzyNameScore, storedScoreToPerce
 import { mergeAdopters, notifyMergeOwners } from '@/lib/adopterMerge';
 import { createMergeRequest, declinedForViewer, keepSeparate, settleRequestsAsHousehold } from '@/lib/mergeRequests';
 import { grantAccessAfterFold } from '@/lib/mergeAccess';
+import { mergeSideParams } from '@/lib/mergeNotificationSides';
+import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdminAsync } from '@/config/admins';
 import { addHouseholdMember } from './householdMembers';
 
@@ -141,10 +143,10 @@ export async function attachContractToExistingAdopter(
                 await createNotification({
                     userId: match.addedBy,
                     type: 'contract_attached',
-                    title: `${actorName} adjuntó un contrato a tu perfil ${match.name}`,
-                    body: animalName
-                        ? `Adopción de ${animalName} atribuida a este perfil. Tocá para revisar.`
-                        : 'Tocá para revisar.',
+                    ...notificationContent({
+                        key: 'contract_attached',
+                        params: { actorName, profileName: match.name, ...(animalName ? { animalName } : {}) },
+                    }),
                     url: `/adopter/${matchAdopterId}`,
                     icon: '📝',
                     metadata: {
@@ -822,18 +824,20 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
         await grantAccessAfterFold(db, { survivorId: primaryId, absorbedOwnerEmail: realOwner(absorbed.addedBy), actor, mergeAuditId: result.auditId ?? null });
         if (viaAdmin) {
             // Whoever registered either profile hears that an admin joined them.
-            await notifyMergeOwners({ primaryId, ...result }, actor);
+            await notifyMergeOwners({ primaryId, secondaryId, ...result }, actor);
         } else if (notifyOwner) {
             // Their profile absorbed the caller's record: tell them.
             const { createNotification, resolveDisplayName } = await import('./notifications');
-            const requester = await resolveDisplayName(actor);
+            const [requester, sides] = await Promise.all([
+                resolveDisplayName(actor),
+                mergeSideParams(db, { survivorId: primaryId, absorbedId: secondaryId }, { survivorName: result.primaryName, absorbedName: result.secondaryName }),
+            ]);
             await createNotification({
                 type: 'adopter_merged',
                 // Normalized: notifications are keyed (bell, email) by the
                 // lowercased email, and `added_by` keeps whatever case it had.
                 userId: normEmail(notifyOwner),
-                title: `Se unieron dos perfiles: ${result.secondaryName ?? ''} → ${result.primaryName ?? ''}`,
-                body: `${requester} combinó su perfil con el tuyo porque son la misma persona. Todo quedó en tu perfil.`,
+                ...notificationContent({ key: 'adopter_merged_by_rescuer', params: { actorName: requester, ...sides } }),
                 url: `/adopter/${primaryId}`,
                 icon: '🔗',
                 metadata: { primaryId, secondaryId, auditId: result.auditId ?? null },

@@ -307,16 +307,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             // When the submission targets a specific animal the title reads
             // "Juana aplicó para Luna", with the match count appended
             // (src/domain/formNotification.ts — shared with the teammate copy).
-            const { formSubmissionOwnerTitle, formSubmissionTeammateTitle } = await import('@/domain/formNotification');
-            const titleInput = { submitterName: name, animalName: selectedAnimalName, matchCount };
-            const ownerTitle = formSubmissionOwnerTitle(titleInput);
+            const { notificationContent } = await import('@/domain/notificationTemplates');
+            const titleParams = { submitterName: name, matchCount: String(matchCount) };
+            const ownerContent = notificationContent({
+                key: 'form_submission_owner',
+                params: { ...titleParams, ...(selectedAnimalName ? { animalName: selectedAnimalName } : {}) },
+            });
             if (matchCount > 0) {
                 await createNotification({
                     id: notificationId,
                     userId: rescuerEmail,
                     type: 'form_submission',
-                    title: ownerTitle,
-                    body: `Se encontraron posibles registros previos. Tocá para revisar las respuestas y vincular.`,
+                    ...ownerContent,
                     url: `/form-results/${submissionId}`,
                     icon: '⚠️',
                     metadata: {
@@ -339,8 +341,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     id: notificationId,
                     userId: rescuerEmail,
                     type: 'form_submission',
-                    title: ownerTitle,
-                    body: `No se encontraron registros previos. Revisá las respuestas para continuar.`,
+                    ...ownerContent,
                     url: `/form-results/${submissionId}`,
                     icon: '📋',
                     metadata: {
@@ -362,7 +363,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             // the generic title and no animal: never name another team's
             // animal to these teammates.
             await runAfterResponse('formSubmit.notifyOrgMembers', async () => {
-                const [{ notifyOrgMembers }, { getTeamEmails }, { teammateVisibleAnimal }] = await Promise.all([
+                const [{ notifyOrgMembers, resolveDisplayName }, { getTeamEmails }, { teammateVisibleAnimal }] = await Promise.all([
                     import('@/app/actions/notifications'),
                     import('@/lib/orgMembership'),
                     import('@/lib/applicantScope'),
@@ -373,11 +374,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                         await getTeamEmails(rescuerEmail),
                     )
                     : null;
+                // Teammates read the sharer's name, never the address.
+                const sharedByName = await resolveDisplayName(rescuerEmail);
                 await notifyOrgMembers({
                     actorEmail: rescuerEmail,
                     type: 'form_submission',
-                    title: formSubmissionTeammateTitle({ ...titleInput, animalName: animal?.name ?? null }),
-                    body: `${name} completó el formulario de adopción compartido por ${rescuerEmail}.`,
+                    ...notificationContent({
+                        key: 'form_submission_teammate',
+                        params: { ...titleParams, sharedByName, ...(animal?.name ? { animalName: animal.name } : {}) },
+                    }),
                     url: `/form-results/${submissionId}`,
                     icon: '📋',
                     metadata: {

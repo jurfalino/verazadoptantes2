@@ -49,13 +49,14 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
 
         // Notify admins (after the response, kept alive — see src/lib/background.ts)
         await runAfterResponse('flagAdopter.notifyAdmins', async () => {
-            const { notifyAdmins, resolveDisplayName } = await import('@/app/actions/notifications');
+            const [{ notifyAdmins, resolveDisplayName }, { notificationContent }] = await Promise.all([
+                import('@/app/actions/notifications'), import('@/domain/notificationTemplates'),
+            ]);
             const displayName = await resolveDisplayName(flaggedBy);
             await notifyAdmins({
                 actorEmail: flaggedBy,
                 type: 'adopter_flagged',
-                title: '🚩 Adoptante reportado',
-                body: `${displayName} reportó un adoptante. Motivo: ${reason}`,
+                ...notificationContent({ key: 'adopter_flagged', params: { reporterName: displayName, reason } }),
                 url: `/adopter/${adopterId}`,
                 icon: '🚩',
                 metadata: { adopterId, reason, details },

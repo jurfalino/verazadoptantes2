@@ -22,6 +22,8 @@ import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { casAdopterLists } from '@/lib/adopterListCas';
 import { MERGED_FLAG_DETAILS_PREFIX } from '@/domain/dedupPair';
 import { closeRequestsForAdopter } from '@/lib/mergeRequestClose';
+import { mergeSideParams } from '@/lib/mergeNotificationSides';
+import { notificationContent } from '@/domain/notificationTemplates';
 
 export interface MergeAdoptersResult {
     success: boolean;
@@ -689,7 +691,7 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
  * person even when they registered both. Best-effort, logged.
  */
 export async function notifyMergeOwners(
-    merge: { primaryId: string; primaryName?: string; secondaryName?: string; primaryAddedBy?: string | null; secondaryAddedBy?: string | null },
+    merge: { primaryId: string; secondaryId?: string; primaryName?: string; secondaryName?: string; primaryAddedBy?: string | null; secondaryAddedBy?: string | null },
     actorEmail: string,
 ): Promise<number> {
     // Normalized: notifications are keyed (bell, email) by the lowercased
@@ -702,14 +704,25 @@ export async function notifyMergeOwners(
         .filter(e => e !== actorKey);
     if (!owners.length) return 0;
     const { createNotification } = await import('@/app/actions/notifications');
+    // D31: each side's owner and date, when the absorbed profile is known.
+    const known = { survivorName: merge.primaryName, absorbedName: merge.secondaryName };
+    const db = merge.secondaryId
+        ? await getDb().catch((e: unknown) => {
+            logger.warn('notifyMergeOwners: no DB for owners/dates, notice by names only', { primaryId: merge.primaryId, actor: actorEmail, error: e instanceof Error ? e.message : String(e) });
+            return null;
+        })
+        : null;
+    const sides = db && merge.secondaryId
+        ? await mergeSideParams(db, { survivorId: merge.primaryId, absorbedId: merge.secondaryId }, known)
+        : { survivorName: merge.primaryName ?? '', absorbedName: merge.secondaryName ?? '' };
+    const content = notificationContent({ key: 'adopter_merged_by_admin', params: sides });
     let sent = 0;
     for (const owner of owners) {
         try {
             await createNotification({
                 userId: owner,
                 type: 'adopter_merged',
-                title: `Se unieron dos perfiles: ${merge.secondaryName || 'sin nombre'} → ${merge.primaryName || 'sin nombre'}`,
-                body: 'Un administrador los unió porque son la misma persona. Todo lo registrado en los dos quedó en este perfil.',
+                ...content,
                 url: `/adopter/${merge.primaryId}`,
                 icon: '🔗',
                 metadata: { primaryId: merge.primaryId, mergedBy: actorEmail },

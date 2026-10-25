@@ -796,13 +796,14 @@ export async function requestAdopterDeletion(adopterId: string) {
 
         // Notify admins (after the response, kept alive — see src/lib/background.ts)
         await runAfterResponse('requestAdopterDeletion.notifyAdmins', async () => {
-            const { notifyAdmins, resolveDisplayName } = await import('@/app/actions/notifications');
+            const [{ notifyAdmins, resolveDisplayName }, { notificationContent }] = await Promise.all([
+                import('@/app/actions/notifications'), import('@/domain/notificationTemplates'),
+            ]);
             const displayName = await resolveDisplayName(user);
             await notifyAdmins({
                 actorEmail: user,
                 type: 'deletion_request',
-                title: '🗑️ Solicitud de eliminación',
-                body: `${displayName} solicitó eliminar un registro de adoptante.`,
+                ...notificationContent({ key: 'deletion_request', params: { requesterName: displayName } }),
                 url: '/admin/data-requests',
                 icon: '🗑️',
                 metadata: { adopterId },

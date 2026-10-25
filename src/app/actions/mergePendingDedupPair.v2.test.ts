@@ -33,6 +33,7 @@ vi.mock('./notifications', () => ({
     createNotification: vi.fn(async (d: Record<string, unknown>) => { notify.create.push(d); return 'n'; }),
     notifyAdmins: vi.fn(async (d: Record<string, unknown>) => { notify.admins.push(d); }),
     resolveDisplayName: vi.fn(async (email: string) => email.split('@')[0]),
+    resolveDisplayNames: vi.fn(async (emails: string[]) => new Map(emails.map(e => [e.toLowerCase(), e.split('@')[0]]))),
 }));
 vi.mock('@/lib/adopterMerge', async (orig) => {
     const actual = await orig<typeof import('@/lib/adopterMerge')>();

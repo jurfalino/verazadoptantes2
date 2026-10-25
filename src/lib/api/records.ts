@@ -25,19 +25,11 @@ import { addApiContacts, newContactFields, parseAddedContacts, removeApiContacts
 import { ApiError, recordProgress, type ApiCallContext } from './handler';
 import { profileUrl, recordUrl } from './profiles';
 import { importModeOn } from './keys';
+import { notificationContent } from '@/domain/notificationTemplates';
 import type { ProfileSummary, SavedActivity, SearchRequest } from './schemas';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Db = any;
-
-const CONTEXT_LABEL_ES: Record<string, string> = {
-    adoption_request: 'solicitud de adopción',
-    adoption: 'adopción',
-    foster: 'tránsito',
-    follow_up: 'seguimiento',
-    returned_pet: 'devolución',
-    observation: 'observación',
-};
 
 /** A YYYY-MM-DD date at local noon, so it never shifts a day across time zones. */
 function dayAtNoon(day: string): Date {
@@ -173,20 +165,18 @@ export async function saveApiActivity(
 
     // One notification per saved record (decision 10), like a form submission.
     const name = req.person.fullName!;
-    const what = CONTEXT_LABEL_ES[activityType] ?? activityType;
-    const FIELD_ES: Record<string, string> = { email: 'email', phone: 'teléfono', documentId: 'documento' };
-    const added = contactsAdded.length ? ` También se agregó a su perfil: ${contactsAdded.map(c => FIELD_ES[c.field]).join(', ')}.` : '';
-    const body = outcome.result === 'found'
-        ? `Se agregó a un perfil existente.${added}`
-        : best
-            ? 'Coincide con más de un perfil: se agregó al que mejor coincide. Revisá si es la misma persona.'
-            : outcome.result === 'ambiguous'
-                ? 'Coincide con más de un perfil: se creó uno nuevo para que revises si es la misma persona.'
-                : 'No había registros previos: se creó un perfil nuevo.';
     const notification = {
         type: 'api_record',
-        title: `${name}: ${what} (vía ${key.name})`,
-        body,
+        ...notificationContent({
+            key: 'api_record',
+            params: {
+                personName: name,
+                context: activityType,
+                keyName: key.name,
+                outcome: outcome.result === 'found' ? 'found' : best ? 'best_match' : outcome.result === 'ambiguous' ? 'ambiguous' : 'created',
+                ...(contactsAdded.length ? { contactsAdded: contactsAdded.map(c => c.field).join(',') } : {}),
+            },
+        }),
         url: `/adopter/${profileId}?record=${encodeURIComponent(recordId)}`,
         icon: outcome.result === 'ambiguous' ? '⚠️' : '🔌',
         metadata: { requestId: ctx.requestId, keyName: key.name, profileId, recordId, outcome: outcome.result, context: activityType, contactsAdded: contactsAdded.map(c => c.field) },

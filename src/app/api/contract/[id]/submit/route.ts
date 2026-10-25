@@ -338,7 +338,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             const rescuerEmail = animal.addedBy;
             if (rescuerEmail && rescuerEmail !== 'anonymous' && rescuerEmail !== 'contract') {
                 const { createNotification } = await import('@/app/actions/notifications');
+                const { notificationContent } = await import('@/domain/notificationTemplates');
                 const matchCount = matches.length;
+                const animalParam = animal.animalName ? { animalName: animal.animalName } : {};
                 const animalName = animal.animalName || 'Animal';
                 const notificationId = crypto.randomUUID();
 
@@ -347,8 +349,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         id: notificationId,
                         userId: rescuerEmail,
                         type: 'contract_result',
-                        title: `${matchCount} coincidencia${matchCount > 1 ? 's' : ''} para ${fullName}`,
-                        body: `${animalName} fue adoptado por ${fullName}. Se encontraron posibles registros previos. Tocá para revisar.`,
+                        ...notificationContent({ key: 'contract_result_matches', params: { adopterName: fullName, matchCount: String(matchCount), ...animalParam } }),
                         url: `/contract-results/${notificationId}`,
                         icon: '⚠️',
                         metadata: {
@@ -373,8 +374,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         id: notificationId,
                         userId: rescuerEmail,
                         type: 'contract_result',
-                        title: `${animalName} adoptado por ${fullName}`,
-                        body: `No se encontraron registros previos para ${fullName}. Todo en orden.`,
+                        ...notificationContent({ key: 'contract_result_clear', params: { adopterName: fullName, ...animalParam } }),
                         icon: '✅',
                         metadata: {
                             animalId,
@@ -395,8 +395,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                     await notifyOrgMembers({
                         actorEmail: rescuerEmail,
                         type: 'contract_result',
-                        title: `Contrato firmado: ${animal.animalName || 'Animal'}`,
-                        body: `${fullName} firmó el contrato de adopción de ${animal.animalName || 'un animal'}.`,
+                        ...notificationContent({ key: 'contract_result_teammate', params: { adopterName: fullName, ...animalParam } }),
                         url: `/adopter/${adopterId}`,
                         icon: '📝',
                         metadata: { adopterId, adopterName: fullName, animalName: animal.animalName },

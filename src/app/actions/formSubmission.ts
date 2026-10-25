@@ -8,6 +8,7 @@ import { getDb, getUser } from './_db';
 import { addFormRequestRecord, SPECIES_LABELS, LIFE_STAGE_LABELS, INTENT_LABELS } from '@/lib/formRequest';
 import { mergeAdopters } from '@/lib/adopterMerge';
 import { createNotification, resolveDisplayName } from './notifications';
+import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdmin } from '@/config/admins';
 import { planFormLink, canLinkSubmissionDirectly } from '@/domain/formLink';
 import { logger, generateErrorId } from '@/lib/logger';
@@ -420,8 +421,7 @@ async function notifyProfileCreator(
         await createNotification({
             userId: target.addedBy,
             type: 'form_attached',
-            title: `${actorName} vinculó una solicitud de adopción a tu perfil ${target.name}`,
-            body: 'Tocá para revisar.',
+            ...notificationContent({ key: 'form_attached', params: { actorName, profileName: target.name } }),
             url: `/adopter/${adopterId}`,
             icon: '📋',
             metadata: { attachedBy: actorEmail, submissionId },

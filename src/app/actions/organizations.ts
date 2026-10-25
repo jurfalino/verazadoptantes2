@@ -354,13 +354,14 @@ export async function joinOrganization(inviteToken: string): Promise<{ success: 
 
         // Notify existing org members about the new member (after the response, kept alive — see src/lib/background.ts)
         await runAfterResponse('joinOrganization.notifyOrgMembers', async () => {
-            const { notifyOrgMembers, resolveDisplayName } = await import('@/app/actions/notifications');
+            const [{ notifyOrgMembers, resolveDisplayName }, { notificationContent }] = await Promise.all([
+                import('@/app/actions/notifications'), import('@/domain/notificationTemplates'),
+            ]);
             const displayName = await resolveDisplayName(user);
             await notifyOrgMembers({
                 actorEmail: user,
                 type: 'member_joined',
-                title: '👋 Nuevo miembro',
-                body: `${displayName} se unió a ${org?.name || 'la organización'}.`,
+                ...notificationContent({ key: 'member_joined', params: { memberName: displayName, ...(org?.name ? { orgName: org.name } : {}) } }),
                 url: '/organizations',
                 icon: '👋',
                 metadata: { orgId: invite.orgId, orgName: org?.name },

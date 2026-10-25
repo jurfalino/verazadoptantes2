@@ -14,6 +14,7 @@ import { adopters, mergeRequests } from '@/db/schema';
 import { logger, generateErrorId } from '@/lib/logger';
 import { getOrgMemberEmailsFor, isOwnerOrOrgMate, normEmail } from '@/lib/orgMembership';
 import { createNotification, resolveDisplayName } from './notifications';
+import { notificationContent } from '@/domain/notificationTemplates';
 
 type ActionResult = { success: boolean; error?: string; errorId?: string };
 
@@ -63,10 +64,14 @@ export async function sendPairMessage(requestId: string, text: string): Promise<
             resolveDisplayName(actor),
             db.select({ name: adopters.name }).from(adopters).where(eq(adopters.id, req.primaryId)).get() as Promise<{ name: string } | undefined>,
         ]);
-        const title = `${fromName} te escribió sobre «${profile?.name ?? ''}»`;
+        const content = notificationContent({
+            key: 'pair_message',
+            params: { fromName, message, ...(profile?.name ? { profileName: profile.name } : {}) },
+        });
+        // replyTo stays in metadata: the email twin's reply_to (the template rides beside it).
         const metadata = { requestId, replyTo: actor, fromName };
         await Promise.all(recipients.map(userId =>
-            createNotification({ userId, type: 'pair_message', title, body: message, url: '/my-adopters#pendientes', icon: '✉️', metadata })));
+            createNotification({ userId, type: 'pair_message', ...content, url: '/my-adopters#pendientes', icon: '✉️', metadata })));
         logger.info('sendPairMessage: sent', { requestId, actor, recipientCount: recipients.length });
         return { success: true };
     } catch (e) {

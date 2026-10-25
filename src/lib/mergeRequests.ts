@@ -28,6 +28,8 @@ import { isAdminAsync } from '@/config/admins';
 import { createNotification, notifyAdmins, resolveDisplayName } from '@/app/actions/notifications';
 import { rowsAffected } from '@/lib/interviews/rowsAffected';
 import { grantAccessAfterFold } from '@/lib/mergeAccess';
+import { mergeSideParams } from '@/lib/mergeNotificationSides';
+import { notificationContent, type MergeSides, type NotificationTemplate } from '@/domain/notificationTemplates';
 import {
     canRequestAgain,
     decideMergeRequestAnswer,
@@ -161,17 +163,16 @@ export async function createMergeRequest(db: Db, input: {
 async function notifyRequestFiled(db: Db, requestId: string, input: {
     primaryId: string; secondaryId: string; requesterEmail: string; ownerEmail: string | null;
 }): Promise<void> {
-    const [requester, primaryName, secondaryName] = await Promise.all([
+    // The requester's choice: primary stays, secondary is absorbed (D31 names both owners and dates).
+    const [requester, sides] = await Promise.all([
         resolveDisplayName(input.requesterEmail),
-        adopterName(db, input.primaryId),
-        adopterName(db, input.secondaryId),
+        mergeSideParams(db, { survivorId: input.primaryId, absorbedId: input.secondaryId }),
     ]);
-    const title = `${requester} pidió combinar dos perfiles`;
-    const body = `Pidió combinar «${secondaryName}» con «${primaryName}» porque serían la misma persona. Podés aceptar o rechazar el pedido.`;
+    const content = notificationContent({ key: 'merge_request', params: { requesterName: requester, ...sides } });
     const metadata = { mergeRequestId: requestId, primaryId: input.primaryId, secondaryId: input.secondaryId };
 
     if (input.ownerEmail === null) {
-        await notifyAdmins({ actorEmail: input.requesterEmail, type: 'merge_request', title, body, url: '/admin/merge-requests', icon: ICON, metadata });
+        await notifyAdmins({ actorEmail: input.requesterEmail, type: 'merge_request', ...content, url: '/admin/merge-requests', icon: ICON, metadata });
         return;
     }
     const requesterKey = normEmail(input.requesterEmail);
@@ -183,7 +184,7 @@ async function notifyRequestFiled(db: Db, requestId: string, input: {
         return true;
     });
     await Promise.all(recipients.map(userId =>
-        createNotification({ userId, type: 'merge_request', title, body, url: '/my-adopters#pendientes', icon: ICON, metadata })));
+        createNotification({ userId, type: 'merge_request', ...content, url: '/my-adopters#pendientes', icon: ICON, metadata })));
 }
 
 /**
@@ -280,8 +281,8 @@ export async function answerMergeRequest(
 
     logger.info('answerMergeRequest: answered', { ...ctx, status: answer.nextStatus, swap: !!answer.swap });
     if (answer.nextStatus !== 'cancelled') {
-        await notifyAnswered(req, answer.nextStatus, actor, {
-            survivorId: keep.survivorId, survivor: keep.survivor.name, absorbed: keep.absorbed.name, flipped: !!answer.swap,
+        await notifyAnswered(db, req, answer.nextStatus, actor, {
+            survivorId: keep.survivorId, absorbedId: keep.absorbedId, survivor: keep.survivor.name, absorbed: keep.absorbed.name, flipped: !!answer.swap,
         });
     }
     return { ok: true, status: answer.nextStatus };
@@ -355,41 +356,38 @@ export async function settleRequestsAsHousehold(db: Db, a: string, b: string, ac
         }
         if (!await casRequest(db, req.id, 'pending', { status: 'declined', resolvedByEmail: actor, resolvedAt: new Date() })) continue;
         declined++;
-        const [primaryName, secondaryName] = await Promise.all([adopterName(db, req.primaryId), adopterName(db, req.secondaryId)]);
-        await notifyAnswered(req, 'declined', actor, { survivorId: req.primaryId, survivor: primaryName, absorbed: secondaryName, flipped: false });
+        await notifyAnswered(db, req, 'declined', actor, { survivorId: req.primaryId, absorbedId: req.secondaryId, flipped: false });
     }
     if (rows.length) logger.info('settleRequestsAsHousehold: settled', { primaryId: a, secondaryId: b, actor, declined, closed });
     return { declined, closed };
 }
 
 /**
- * Title, body and link of the notice an answer sends. The ONE place these
- * texts are built (they move to translatable templates later). «rechazó»,
- * never «mantuvo separados», and no promise of an admin review (D30).
+ * The template and link of the notice an answer sends. The ONE place these are
+ * chosen. «rechazó», never «mantuvo separados», and no promise of an admin
+ * review (D30). The owner's copy when a teammate answered reads as the
+ * teammate's answer to the requester (D26).
  */
 function answerNotice(input: {
     status: MergeRequestStatus;
-    who: string;
+    byAdmin: boolean;
+    actorName: string;
+    requesterName: string;
+    forOwnerTeammateAnswer: boolean;
     survivorId: string;
-    survivor: string;
-    absorbed: string;
     flipped: boolean;
-}): { title: string; body: string; url: string } {
-    const { status, who, survivorId, survivor, absorbed, flipped } = input;
-    if (status === 'accepted' || status === 'admin_approved') {
-        return {
-            title: `Se unieron dos perfiles: ${absorbed} → ${survivor}`,
-            body: flipped
-                ? `${who} aceptó combinar los perfiles conservando «${survivor}»: «${absorbed}» quedó en ese perfil.`
-                : `${who} aceptó combinar «${absorbed}» con «${survivor}». Todo quedó en un solo perfil.`,
-            url: `/adopter/${survivorId}`,
-        };
+    sides: MergeSides;
+}): { template: NotificationTemplate; url: string } {
+    const { status, byAdmin, actorName, requesterName, survivorId, flipped, sides } = input;
+    const merged = status === 'accepted' || status === 'admin_approved';
+    const url = merged ? `/adopter/${survivorId}` : '/my-adopters#pendientes';
+    if (input.forOwnerTeammateAnswer) {
+        const outcome = !merged ? 'declined' : flipped ? 'flipped' : 'accepted';
+        return { template: { key: 'merge_request_answered_by_teammate', params: { actorName, requesterName, outcome, ...sides } }, url };
     }
-    return {
-        title: `${who} rechazó combinar dos perfiles`,
-        body: `«${absorbed}» y «${survivor}» siguen como perfiles separados.`,
-        url: '/my-adopters#pendientes',
-    };
+    const who = byAdmin ? { byAdmin: '1' } : { actorName };
+    const key = !merged ? 'merge_request_declined' : flipped ? 'merge_request_flipped' : 'merge_request_accepted';
+    return { template: { key, params: { ...who, ...sides } }, url };
 }
 
 /**
@@ -397,10 +395,11 @@ function answerNotice(input: {
  * else on their side answered — a teammate (D26) or an admin. Never the actor.
  */
 async function notifyAnswered(
+    db: Db,
     req: RequestRow,
     status: MergeRequestStatus,
     actor: string,
-    merge: { survivorId: string; survivor: string; absorbed: string; flipped: boolean },
+    merge: { survivorId: string; absorbedId: string; survivor?: string; absorbed?: string; flipped: boolean },
 ): Promise<void> {
     const byAdmin = status === 'admin_approved' || status === 'admin_declined';
     const actorKey = normEmail(actor);
@@ -408,17 +407,27 @@ async function notifyAnswered(
         .filter((email, i, all) => normEmail(email) !== actorKey && all.findIndex(o => normEmail(o) === normEmail(email)) === i);
     if (recipients.length === 0) return;
 
-    const who = byAdmin ? 'Un administrador' : await resolveDisplayName(actor);
-    const { title, body, url } = answerNotice({ status, who, ...merge });
-    await Promise.all(recipients.map(userId => createNotification({
-        userId,
-        type: 'merge_request_resolved',
-        title,
-        body,
-        url,
-        icon: ICON,
-        metadata: { mergeRequestId: req.id, status, primaryId: req.primaryId, secondaryId: req.secondaryId, survivorId: merge.survivorId, flipped: merge.flipped },
-    })));
+    const [actorName, requesterName, sides] = await Promise.all([
+        byAdmin ? Promise.resolve('') : resolveDisplayName(actor),
+        resolveDisplayName(req.requesterEmail),
+        mergeSideParams(db, { survivorId: merge.survivorId, absorbedId: merge.absorbedId }, { survivorName: merge.survivor, absorbedName: merge.absorbed }),
+    ]);
+    const ownerKey = req.ownerEmail ? normEmail(req.ownerEmail) : null;
+    await Promise.all(recipients.map(userId => {
+        // Not an admin and not the requester (requesters only cancel, which notifies nobody): a teammate of the owner answered.
+        const forOwnerTeammateAnswer = !byAdmin && normEmail(userId) === ownerKey;
+        const { template, url } = answerNotice({
+            status, byAdmin, actorName, requesterName, forOwnerTeammateAnswer, survivorId: merge.survivorId, flipped: merge.flipped, sides,
+        });
+        return createNotification({
+            userId,
+            type: 'merge_request_resolved',
+            ...notificationContent(template),
+            url,
+            icon: ICON,
+            metadata: { mergeRequestId: req.id, status, primaryId: req.primaryId, secondaryId: req.secondaryId, survivorId: merge.survivorId, flipped: merge.flipped },
+        });
+    }));
 }
 
 /** Requests an admin can still act on: pending first, then declined, each oldest first. */

@@ -68,6 +68,7 @@ describe('sendPairMessage', () => {
             type: 'pair_message', body: 'Hola, es la misma persona', url: '/my-adopters#pendientes',
             title: 'stranger te escribió sobre «Carla Gómez»',
             metadata: { requestId: 'declined-1', replyTo: REQUESTER, fromName: 'stranger' },
+            template: { key: 'pair_message', params: { fromName: 'stranger', profileName: 'Carla Gómez', message: 'Hola, es la misma persona' } },
         });
     });
 

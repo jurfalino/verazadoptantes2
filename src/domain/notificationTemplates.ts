@@ -22,7 +22,7 @@ export type NotificationLocale = 'es' | 'en' | 'pt';
 export interface NotificationText { title: string; body: string }
 
 /** One side of a merge (D31): its name, its owner's display name and its creation date (ISO). */
-type ProfileSides = {
+export type MergeSides = {
     survivorName: string; survivorOwner?: string; survivorDate?: string;
     absorbedName: string; absorbedOwner?: string; absorbedDate?: string;
 };
@@ -54,15 +54,15 @@ export interface NotificationTemplateParams {
     api_record: { personName: string; context: string; keyName: string; outcome: string; contactsAdded?: string };
     /** Admin-only: keeps the requester's email, as today. */
     api_access_requested: { requesterEmail: string; tool: string };
-    merge_request: { requesterName: string } & ProfileSides;
+    merge_request: { requesterName: string } & MergeSides;
     /** `byAdmin`: '1' when an admin answered (then `actorName` is not shown). */
-    merge_request_accepted: { actorName?: string; byAdmin?: string } & ProfileSides;
-    merge_request_flipped: { actorName?: string; byAdmin?: string } & ProfileSides;
-    merge_request_declined: { actorName?: string; byAdmin?: string } & ProfileSides;
+    merge_request_accepted: { actorName?: string; byAdmin?: string } & MergeSides;
+    merge_request_flipped: { actorName?: string; byAdmin?: string } & MergeSides;
+    merge_request_declined: { actorName?: string; byAdmin?: string } & MergeSides;
     /** The owner's copy when a teammate answered (D26). `outcome`: accepted | flipped | declined. */
-    merge_request_answered_by_teammate: { actorName: string; requesterName: string; outcome: string } & ProfileSides;
-    adopter_merged_by_rescuer: { actorName: string } & ProfileSides;
-    adopter_merged_by_admin: ProfileSides;
+    merge_request_answered_by_teammate: { actorName: string; requesterName: string; outcome: string } & MergeSides;
+    adopter_merged_by_rescuer: { actorName: string } & MergeSides;
+    adopter_merged_by_admin: MergeSides;
     pair_message: { fromName: string; profileName?: string; message: string };
 }
 
@@ -94,22 +94,22 @@ function profileLabel(name: string | undefined, owner: string | undefined, date:
     const label = extra ? `${base} (${extra})` : base;
     return l === 'en' ? `“${label}”` : `«${label}»`;
 }
-const survivorLabel = (p: ProfileSides, l: NotificationLocale) => profileLabel(p.survivorName, p.survivorOwner, p.survivorDate, l);
-const absorbedLabel = (p: ProfileSides, l: NotificationLocale) => profileLabel(p.absorbedName, p.absorbedOwner, p.absorbedDate, l);
+const survivorLabel = (p: MergeSides, l: NotificationLocale) => profileLabel(p.survivorName, p.survivorOwner, p.survivorDate, l);
+const absorbedLabel = (p: MergeSides, l: NotificationLocale) => profileLabel(p.absorbedName, p.absorbedOwner, p.absorbedDate, l);
 const plainName = (name: string | undefined, l: NotificationLocale) => name?.trim() || NO_NAME[l];
 
-const MERGED_TITLE: Record<NotificationLocale, (p: ProfileSides) => string> = {
+const MERGED_TITLE: Record<NotificationLocale, (p: MergeSides) => string> = {
     es: p => `Se unieron dos perfiles: ${plainName(p.absorbedName, 'es')} → ${plainName(p.survivorName, 'es')}`,
     en: p => `Two profiles were merged: ${plainName(p.absorbedName, 'en')} → ${plainName(p.survivorName, 'en')}`,
     pt: p => `Dois perfis foram combinados: ${plainName(p.absorbedName, 'pt')} → ${plainName(p.survivorName, 'pt')}`,
 };
 /** «se conserva X y se absorbe Y» — which one stays (D31). */
-const KEEPS: Record<NotificationLocale, (p: ProfileSides) => string> = {
+const KEEPS: Record<NotificationLocale, (p: MergeSides) => string> = {
     es: p => `se conserva ${survivorLabel(p, 'es')} y se absorbe ${absorbedLabel(p, 'es')}`,
     en: p => `${survivorLabel(p, 'en')} stays and ${absorbedLabel(p, 'en')} is folded into it`,
     pt: p => `fica ${survivorLabel(p, 'pt')} e ${absorbedLabel(p, 'pt')} é incorporado a ele`,
 };
-const KEPT_APART: Record<NotificationLocale, (p: ProfileSides) => string> = {
+const KEPT_APART: Record<NotificationLocale, (p: MergeSides) => string> = {
     es: p => `${absorbedLabel(p, 'es')} y ${survivorLabel(p, 'es')} siguen como perfiles separados.`,
     en: p => `${absorbedLabel(p, 'en')} and ${survivorLabel(p, 'en')} remain separate profiles.`,
     pt: p => `${absorbedLabel(p, 'pt')} e ${survivorLabel(p, 'pt')} continuam como perfis separados.`,
