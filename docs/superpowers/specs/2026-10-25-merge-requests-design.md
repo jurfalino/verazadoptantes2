@@ -100,7 +100,7 @@ Rules:
 - Sending failures are logged and never block the action or the bell notification.
 - A new notification type must be assigned to a category; an unassigned type defaults to on/off-able "Otros" rather than silently never emailing *(Claude's call)*.
 
-**Prerequisite (Jon):** Resend must send from buenadoptante.org: domain verified in Resend (SPF + DKIM DNS records) and the key set as a Cloudflare Pages secret in staging and production. Email login (`ENABLE_EMAIL_OTP`) needs the same setup and is still off for that reason.
+**Sending is in place:** Jon confirmed 2026-10-25 that Resend email from the app works; email login (`ENABLE_EMAIL_OTP`) is on in production. Reuse the same key and sender.
 
 ## Admin list (D6, D9)
 
