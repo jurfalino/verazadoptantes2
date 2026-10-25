@@ -1,0 +1,85 @@
+/**
+ * Email notification categories and per-user switches. Pure — callers fetch
+ * the stored JSON prefs and ask here whether a notification type may be
+ * emailed.
+ *
+ * - A missing category means ENABLED (new categories default on).
+ * - ALWAYS_ON categories cannot be switched off (they need an answer).
+ * - The 'api' category is only offered to users who hold an API key.
+ */
+
+export type EmailCategory =
+    | 'requests'
+    | 'forms'
+    | 'merges'
+    | 'contact_access'
+    | 'profile_changes'
+    | 'api'
+    | 'other';
+
+/** Display order. */
+export const EMAIL_CATEGORIES: readonly EmailCategory[] = [
+    'requests',
+    'forms',
+    'merges',
+    'contact_access',
+    'profile_changes',
+    'api',
+    'other',
+];
+
+export const ALWAYS_ON_CATEGORIES: ReadonlySet<EmailCategory> = new Set<EmailCategory>(['requests']);
+
+const TYPE_TO_CATEGORY: Readonly<Record<string, EmailCategory>> = {
+    merge_request: 'requests',
+    pii_access_request: 'requests',
+    form_submission: 'forms',
+    form_result: 'forms',
+    contract_result: 'forms',
+    form_attached: 'forms',
+    contract_attached: 'forms',
+    adopter_merged: 'merges',
+    merge_request_resolved: 'merges',
+    duplicate_candidate: 'merges',
+    pii_access_approved: 'contact_access',
+    pii_access_denied: 'contact_access',
+    pii_access_revoked: 'contact_access',
+    ownership_transferred: 'profile_changes',
+    contact_entry_added: 'profile_changes',
+    api_record: 'api',
+    api_access: 'api',
+};
+
+export function categoryForType(type: string): EmailCategory {
+    return Object.prototype.hasOwnProperty.call(TYPE_TO_CATEGORY, type) ? TYPE_TO_CATEGORY[type] : 'other';
+}
+
+export type EmailPrefs = Partial<Record<EmailCategory, boolean>>;
+
+/** Parse stored prefs JSON. Malformed input, unknown keys and non-boolean values are dropped. */
+export function parseEmailPrefs(raw: string | null | undefined): EmailPrefs {
+    if (!raw) return {};
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        return {};
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+    const out: EmailPrefs = {};
+    for (const category of EMAIL_CATEGORIES) {
+        const value = (parsed as Record<string, unknown>)[category];
+        if (typeof value === 'boolean') out[category] = value;
+    }
+    return out;
+}
+
+export function isEmailEnabled(prefs: EmailPrefs, category: EmailCategory): boolean {
+    if (ALWAYS_ON_CATEGORIES.has(category)) return true;
+    return prefs[category] !== false;
+}
+
+/** Categories to show in settings; 'api' only for users with an API key. */
+export function visibleCategories(hasApiKey: boolean): EmailCategory[] {
+    return EMAIL_CATEGORIES.filter((c) => c !== 'api' || hasApiKey);
+}
