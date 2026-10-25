@@ -163,7 +163,11 @@ export function decideMergeRequestAnswer(input: {
     }
     // status === 'pending'
     if (decision === 'cancel') return actorIsRequester ? next('cancelled') : notAllowed;
-    if (decision === 'flip') return asOwner || actorIsAdmin ? flipped : notAllowed;
+    if (decision === 'flip') {
+        if (asOwner) return flipped;
+        if (actorIsAdmin) return { ok: true, nextStatus: 'admin_approved', merges: true, swap: true };
+        return notAllowed;
+    }
     if (asOwner) return decision === 'accept' ? next('accepted', true) : next('declined');
     if (actorIsAdmin) return decision === 'accept' ? next('admin_approved', true) : next('admin_declined');
     return notAllowed;

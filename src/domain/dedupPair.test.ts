@@ -183,10 +183,15 @@ describe('decideMergeRequestAnswer', () => {
         expect(decideMergeRequestAnswer({ ...base, status: 'declined', actorOnOwnerTeam: true, decision: 'flip' })).toEqual(no('not_open'));
         expect(decideMergeRequestAnswer({ ...base, status: 'declined', actorOnOwnerTeam: true, decision: 'cancel' })).toEqual(no('not_open'));
     });
-    it('flip («Conservar el mío») by the owner team or an admin while pending: accepted, merges swapped (D26)', () => {
+    it('flip («Conservar el mío») by the owner team while pending: accepted, merges swapped (D26)', () => {
         const flipped = { ok: true, nextStatus: 'accepted', merges: true, swap: true };
         expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorOnOwnerTeam: true, decision: 'flip' })).toEqual(flipped);
-        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsAdmin: true, decision: 'flip' })).toEqual(flipped);
+    });
+    it('an admin flips as admin: admin_approved, merges swapped; an admin on the owner team acts as owner', () => {
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsAdmin: true, decision: 'flip' }))
+            .toEqual({ ok: true, nextStatus: 'admin_approved', merges: true, swap: true });
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsAdmin: true, actorOnOwnerTeam: true, decision: 'flip' }))
+            .toEqual({ ok: true, nextStatus: 'accepted', merges: true, swap: true });
     });
     it('the requester (non-admin) or a stranger cannot flip', () => {
         expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsRequester: true, decision: 'flip' })).toEqual(no('not_allowed'));
