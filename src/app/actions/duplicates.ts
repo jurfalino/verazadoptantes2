@@ -4,14 +4,19 @@ import { adopters, adopterFlags, adopterStats, duplicateTokens, duplicateCandida
 import { eq, or, and, inArray, sql, isNull, asc } from 'drizzle-orm';
 import { logger, generateErrorId } from '@/lib/logger';
 import { getDb, getUser } from './_db';
-import { decideDedupAction, isOpenDuplicateFlag, pairKey, realOwner, type DedupSide } from '@/domain/dedupPair';
+import { decideDedupAction, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, pairKey, realOwner, type DedupSide } from '@/domain/dedupPair';
+import { needsIdentityChoice } from '@/domain/identityChoice';
 import { getTeamEmails, normEmail } from '@/lib/orgMembership';
 import { emailHandle } from '@/lib/userDisplay';
 import { normalizeText, extractPhones, extractEmails, extractSocials, normalizeSocialHandle, detectSocialPlatformFromValue } from '@/lib/tokenizer';
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, storedScoreToPercent, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 
-import { mergeAdopters } from '@/lib/adopterMerge';
-import { createMergeRequest } from '@/lib/mergeRequests';
+import { mergeAdopters, notifyMergeOwners } from '@/lib/adopterMerge';
+import { createMergeRequest, keepSeparate } from '@/lib/mergeRequests';
+import { closeRequestsForPair } from '@/lib/mergeRequestClose';
+import { grantAccessAfterFold } from '@/lib/mergeAccess';
+import { isAdminAsync } from '@/config/admins';
+import { addHouseholdMember } from './householdMembers';
 
 /**
  * Attach a just-signed contract's adoption to an existing matched adopter profile,
@@ -574,67 +579,108 @@ export interface PendingDedupSide {
  * must be one getPendingDuplicatesForUser lists for them (a pending
  * duplicate_candidates row, or a manual duplicate flag — the feed uses the
  * flag's id as the candidate id — where the caller created a live side).
- * decideDedupAction (src/domain/dedupPair.ts) then says merge or ask: the
- * pair merges straight away only when the absorbed record is the caller's own
- * or a teammate's (a flag: both sides) — the older record survives, as the
- * card shows, and a foreign survivor's owner is told (`adopter_merged`).
- * Otherwise a merge request goes to the other owner and their team, or to the
- * admins when there is no real owner (createMergeRequest,
- * src/lib/mergeRequests.ts). The merge itself is the shared mergeAdopters
- * (src/lib/adopterMerge.ts).
+ *
+ * v2 (spec 2026-10-25-pendientes-d): `opts.keepId` is the profile the rescuer
+ * chose to keep (D24; default: the older one). The server never trusts it:
+ * decideDedupAction (src/domain/dedupPair.ts) re-decides — a keepId outside
+ * the pair is `not_found`; keeping the other rescuer's profile merges now and
+ * tells them (`adopter_merged`); keeping yours while the other is someone
+ * else's files a merge request to them and their team, or to the admins when
+ * there is no real owner (createMergeRequest, src/lib/mergeRequests.ts) —
+ * unless that requester was already declined on this pair (`declined_before`,
+ * D43). An ownerless profile can't be kept (`keep_not_allowed`, D42). Admins
+ * choose freely: their choice merges straight away and the owners are told.
+ *
+ * Different names matched on a contact ask «¿Es la misma persona?» first
+ * (`identity_required`, D35). `identity: 'household'` merges nothing: the
+ * other person is added by name, linked, to each side the caller's team owns
+ * (never another rescuer's profile), and the pair is resolved as kept-separate.
+ *
+ * Every merge is the shared mergeAdopters (src/lib/adopterMerge.ts); after it
+ * the absorbed profile's owner team keeps access to the survivor (D40).
  */
-export async function mergePendingDedupPair(candidateId: string): Promise<
+export async function mergePendingDedupPair(candidateId: string, opts?: { keepId?: string; identity?: 'same' | 'household' }): Promise<
     | { success: true; outcome: 'merged' }
+    | { success: true; outcome: 'household' }
     | { success: true; outcome: 'requested'; toName: string | null; toAdmins: boolean }
     | { success: false; error: string; errorId?: string }
 > {
     let actorEmail: string | null = null;
+    // From the browser: only a string keepId and a known identity answer count.
+    const chosenKeepId = typeof opts?.keepId === 'string' && opts.keepId ? opts.keepId : undefined;
+    const identity = opts?.identity === 'same' || opts?.identity === 'household' ? opts.identity : undefined;
     try {
         try { actorEmail = await getUser(); } catch { actorEmail = null; }
         const db = await getDb();
         if (!db) return { success: false, error: 'Database not available', errorId: generateErrorId() };
+        const refuse = (reason: string) => {
+            const errorId = generateErrorId();
+            logger.warn('mergePendingDedupPair: refused', { candidateId, actorEmail, reason, keepId: chosenKeepId, identity, errorId });
+            return { success: false as const, error: reason, errorId };
+        };
 
-        let pair: { a: string; b: string; source: 'detected' | 'flag' } | null = null;
+        let pair: { a: string; b: string; source: 'detected' | 'flag'; matchTypes: string[] } | null = null;
         if (typeof candidateId === 'string' && candidateId.trim()) {
-            const cand = await db.select({ a: duplicateCandidates.adopter1Id, b: duplicateCandidates.adopter2Id, status: duplicateCandidates.status })
+            const cand = await db.select({ a: duplicateCandidates.adopter1Id, b: duplicateCandidates.adopter2Id, status: duplicateCandidates.status, matchTypes: duplicateCandidates.matchTypes })
                 .from(duplicateCandidates).where(eq(duplicateCandidates.id, candidateId)).get();
-            if (cand && cand.status === 'pending') pair = { a: cand.a, b: cand.b, source: 'detected' };
+            if (cand && cand.status === 'pending') pair = { a: cand.a, b: cand.b, source: 'detected', matchTypes: parseMatchTypes(cand.matchTypes, candidateId) };
             if (!cand) {
                 const flag = await db.select({ adopterId: adopterFlags.adopterId, targetAdopterId: adopterFlags.targetAdopterId, reason: adopterFlags.reason, details: adopterFlags.details })
                     .from(adopterFlags).where(eq(adopterFlags.id, candidateId)).get();
-                if (flag && isOpenDuplicateFlag(flag)) pair = { a: flag.adopterId, b: flag.targetAdopterId!, source: 'flag' };
+                if (flag && isOpenDuplicateFlag(flag)) pair = { a: flag.adopterId, b: flag.targetAdopterId!, source: 'flag', matchTypes: ['flagged_by_user'] };
             }
         }
         const { isOwnerOrOrgMate, normEmail } = await import('@/lib/orgMembership');
-        const load = async (id: string): Promise<DedupSide | null> => {
-            const r = await db.select({ id: adopters.id, addedBy: adopters.addedBy, createdAt: adopters.createdAt, deletedAt: adopters.deletedAt })
+        const load = async (id: string): Promise<(DedupSide & { name: string }) | null> => {
+            const r = await db.select({ id: adopters.id, name: adopters.name, addedBy: adopters.addedBy, createdAt: adopters.createdAt, deletedAt: adopters.deletedAt })
                 .from(adopters).where(eq(adopters.id, id)).get();
             if (!r) return null;
             return {
-                id: r.id, addedBy: r.addedBy, createdAt: r.createdAt ? r.createdAt.getTime() : null, deleted: !!r.deletedAt,
+                id: r.id, name: r.name ?? '', addedBy: r.addedBy, createdAt: r.createdAt ? r.createdAt.getTime() : null, deleted: !!r.deletedAt,
                 teamOwned: !!actorEmail && await isOwnerOrOrgMate(actorEmail, r.addedBy),
             };
         };
         const [a, b] = pair ? await Promise.all([load(pair.a), load(pair.b)]) : [null, null];
-        const action = decideDedupAction(actorEmail, a, b, pair?.source);
-        if (action.kind === 'refuse') {
-            const errorId = generateErrorId();
-            logger.warn('mergePendingDedupPair: refused', { candidateId, actorEmail, reason: action.reason, errorId });
-            return { success: false, error: action.reason, errorId };
+        // No choice sent: keep the older one (the card's default), so the
+        // chosen-survivor rules always apply. Ties keep `b`, as before.
+        const keepId = chosenKeepId ?? (a && b ? ((a.createdAt ?? 0) >= (b.createdAt ?? 0) ? b.id : a.id) : undefined);
+        const action = decideDedupAction(actorEmail, a, b, pair?.source, keepId);
+        // Who may touch this pair at all, whatever is kept.
+        if (action.kind === 'refuse' && action.reason !== 'keep_not_allowed') return refuse(action.reason);
+        const sideA = a!, sideB = b!, actor = actorEmail!;
+
+        // «¿Es la misma persona?» (D35): a detected pair matched on a contact
+        // but not on the (different) names. A flag is a person saying "same".
+        if (!identity && pair!.source === 'detected'
+            && needsIdentityChoice({ matchTypes: pair!.matchTypes, nameA: sideA.name, nameB: sideB.name })) {
+            return refuse('identity_required');
         }
-        const { primaryId, secondaryId } = action;
-        if (action.kind === 'request') {
+        if (identity === 'household') return await keepAsHousehold(db, candidateId, actor, sideA, sideB);
+
+        // Admins choose freely (D24): no consent needed, any side may be kept.
+        let viaAdmin = false;
+        let plan: { primaryId: string; secondaryId: string } | null = action.kind === 'refuse' ? null : action;
+        if ((action.kind === 'request' || action.kind === 'refuse') && await isAdminAsync(actor)) {
+            viaAdmin = true;
+            plan = { primaryId: keepId!, secondaryId: keepId === sideA.id ? sideB.id : sideA.id };
+        }
+        if (!plan) return refuse(action.kind === 'refuse' ? action.reason : 'not_found');
+        const { primaryId, secondaryId } = plan;
+
+        if (action.kind === 'request' && !viaAdmin) {
             const fromFlag = pair!.source === 'flag';
-            const { id: requestId, created, requesterEmail } = await createMergeRequest(db, {
+            const filed = await createMergeRequest(db, {
                 primaryId, secondaryId,
                 candidateId: fromFlag ? null : candidateId,
                 flagId: fromFlag ? candidateId : null,
-                requesterEmail: actorEmail!,
+                requesterEmail: actor,
                 ownerEmail: action.ownerEmail,
             });
+            if ('refused' in filed) return refuse(filed.refused);
+            const { id: requestId, created, requesterEmail } = filed;
             // Someone else already asked about this pair (possibly asking the
             // caller): not "your request was sent" — nothing was filed or sent.
-            if (!created && normEmail(requesterEmail) !== normEmail(actorEmail)) {
+            if (!created && normEmail(requesterEmail) !== normEmail(actor)) {
                 const errorId = generateErrorId();
                 logger.warn('mergePendingDedupPair: request already pending', { candidateId, actorEmail, requestId, errorId });
                 return { success: false, error: 'request_pending', errorId };
@@ -651,23 +697,31 @@ export async function mergePendingDedupPair(candidateId: string): Promise<
             }
             return { success: true, outcome: 'requested', toName, toAdmins };
         }
-        const result = await mergeAdopters(primaryId, secondaryId, actorEmail!);
+
+        const result = await mergeAdopters(primaryId, secondaryId, actor);
         if (!result.success) {
             const errorId = logger.error('mergePendingDedupPair: merge failed', new Error(result.error ?? 'merge failed'), {
                 candidateId, actorEmail, primaryId, secondaryId,
             });
             return { success: false, error: 'merge_failed', errorId };
         }
-        logger.info('mergePendingDedupPair: merged', { candidateId, actorEmail, primaryId, secondaryId, notifyOwner: !!action.notifyOwner });
-        if (action.notifyOwner) {
-            // Their older profile absorbed the caller's record: tell them.
+        const notifyOwner = action.kind === 'merge' ? action.notifyOwner : null;
+        logger.info('mergePendingDedupPair: merged', { candidateId, actorEmail, primaryId, secondaryId, viaAdmin, notifyOwner: !!notifyOwner });
+        // D40: the absorbed profile's owner team keeps seeing the survivor. Best-effort.
+        const absorbed = secondaryId === sideA.id ? sideA : sideB;
+        await grantAccessAfterFold(db, { survivorId: primaryId, absorbedOwnerEmail: realOwner(absorbed.addedBy), actor });
+        if (viaAdmin) {
+            // Whoever registered either profile hears that an admin joined them.
+            await notifyMergeOwners({ primaryId, ...result }, actor);
+        } else if (notifyOwner) {
+            // Their profile absorbed the caller's record: tell them.
             const { createNotification, resolveDisplayName } = await import('./notifications');
-            const requester = await resolveDisplayName(actorEmail!);
+            const requester = await resolveDisplayName(actor);
             await createNotification({
                 type: 'adopter_merged',
                 // Normalized: notifications are keyed (bell, email) by the
                 // lowercased email, and `added_by` keeps whatever case it had.
-                userId: normEmail(action.notifyOwner),
+                userId: normEmail(notifyOwner),
                 title: `Se unieron dos perfiles: ${result.secondaryName ?? ''} → ${result.primaryName ?? ''}`,
                 body: `${requester} combinó su perfil con el tuyo porque son la misma persona. Todo quedó en tu perfil.`,
                 url: `/adopter/${primaryId}`,
@@ -680,6 +734,53 @@ export async function mergePendingDedupPair(candidateId: string): Promise<
         const errorId = logger.error('mergePendingDedupPair failed', e, { candidateId, actorEmail });
         return { success: false, error: 'merge_failed', errorId };
     }
+}
+
+function parseMatchTypes(raw: string | null, candidateId: string): string[] {
+    try {
+        const v = JSON.parse(raw || '[]');
+        return Array.isArray(v) ? v.filter((t): t is string => typeof t === 'string') : [];
+    } catch (e) {
+        // Unreadable types read as "no name match" — the safer side: it asks.
+        logger.warn('mergePendingDedupPair: unreadable match types', { candidateId, error: e instanceof Error ? e.message : String(e) });
+        return [];
+    }
+}
+
+/**
+ * «No, es alguien de su hogar» (D35): nothing is merged. Each side the
+ * caller's team owns gets the other person as a household member — name only,
+ * relationship unknown, linked to their profile — through the same write as
+ * «Agregar persona» (addHouseholdMember: owner / org-mate / admin gate, CAS,
+ * history, audit). The other rescuer's profile is never touched. Then the pair
+ * leaves both lists: kept-separate, and any open request on it closed.
+ */
+async function keepAsHousehold(
+    db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+    candidateId: string,
+    actor: string,
+    a: DedupSide & { name: string },
+    b: DedupSide & { name: string },
+): Promise<{ success: true; outcome: 'household' } | { success: false; error: string; errorId: string }> {
+    const ctx = { candidateId, actorEmail: actor, primaryId: a.id, secondaryId: b.id };
+    for (const [own, other] of [[a, b], [b, a]] as const) {
+        if (!own.teamOwned) continue;
+        const res = await addHouseholdMember({ adopterId: own.id, name: other.name, relationship: 'unknown', profileId: other.id });
+        if (!res.ok) {
+            const errorId = 'errorId' in res && res.errorId
+                ? res.errorId
+                : logger.error('mergePendingDedupPair: household member not added', new Error(res.error), { ...ctx, adopterId: own.id });
+            return { success: false, error: 'household_failed', errorId };
+        }
+    }
+    await keepSeparate(db, { a: a.id, b: b.id }, actor, `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}household`, ctx);
+    try {
+        await closeRequestsForPair(db, a.id, b.id);
+    } catch (e) {
+        logger.warn('mergePendingDedupPair: open requests on a household pair left open', { ...ctx, error: e instanceof Error ? e.message : String(e) });
+    }
+    logger.info('mergePendingDedupPair: kept as household', ctx);
+    return { success: true, outcome: 'household' };
 }
 
 /**
@@ -957,7 +1058,7 @@ export async function getPendingDuplicatesForUser(
                 id: r.id, addedBy: r.addedBy, createdAt: r.createdAt ? r.createdAt.getTime() : null, deleted: false,
                 teamOwned: !!r.addedBy && teamKeys.has(normEmail(r.addedBy)),
             });
-            const action = decideDedupAction(viewer, dedupSide(a), dedupSide(b), source === 'flagged' ? 'flag' : 'detected');
+            const action = decideDedupAction(viewer, dedupSide(a), dedupSide(b), source === 'flagged' ? 'flag' : 'detected', oldOne.id);
 
             pairs.push({
                 candidateId: c.candidateId,

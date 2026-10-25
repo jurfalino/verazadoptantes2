@@ -189,6 +189,12 @@ export async function addHouseholdMember(
          * 2.56.213, item 5).
          */
         contactEntries?: Array<{ type: ContactEntry['type']; value: string; streetAndNumber?: string; locality?: string; platform?: SocialPlatform; apps?: MessagingApp[] }>;
+        /**
+         * The person's own adopter profile (D35 «alguien de su hogar»,
+         * mergePendingDedupPair): the row links to it. Must name an existing
+         * profile other than this one; anything else is ignored.
+         */
+        profileId?: string;
     },
 ): Promise<{ ok: true; memberId: string } | Busy | Err> {
     const actor = await authActor();
@@ -206,6 +212,11 @@ export async function addHouseholdMember(
             .map(e => buildEntry(actor, e.type, String(e.value || '').trim(), e));
         const member: HouseholdMember = { id: crypto.randomUUID(), name, relationship, contactEntries: entries, addedBy: actor };
         applyAge(member, input.age);
+        const profileId = typeof input.profileId === 'string' ? input.profileId.trim().slice(0, 64) : '';
+        if (profileId && profileId !== adopterId) {
+            const linked = await r.db.select({ id: adopters.id }).from(adopters).where(eq(adopters.id, profileId)).get();
+            if (linked) member.profileId = profileId;
+        }
         const out = await mutateHousehold(r.db, adopterId, (members) => ({ members: [...members, member], result: null }), { op: 'addHouseholdMember', actor });
         if (out.status === 'missing') return { ok: false, error: 'Adopter not found' };
         if (out.status === 'busy') return busy(out.errorId);

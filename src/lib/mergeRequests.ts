@@ -9,6 +9,13 @@
  *   - the admin list reads listMergeRequestsForAdmin.
  * Who may answer what is decideMergeRequestAnswer (src/domain/dedupPair.ts);
  * this module only builds its inputs, and the merge itself is mergeAdopters.
+ *
+ * v2 (spec 2026-10-25-pendientes-d): a request stores the requester's chosen
+ * survivor (`primaryId`) and the profile to absorb (`secondaryId`); the asked
+ * owner may accept, flip it (their own profile stays, D26) or decline. A
+ * declined pair stays on both lists (D27): the requester can't ask again
+ * (D43) but the owner team can still accept later. After every merge the
+ * absorbed profile's owner team keeps access to the survivor (D40).
  */
 
 import { and, asc, eq, or } from 'drizzle-orm';
@@ -20,7 +27,9 @@ import { getOrgMemberEmailsFor, isOwnerOrOrgMate, normEmail } from '@/lib/orgMem
 import { isAdminAsync } from '@/config/admins';
 import { createNotification, notifyAdmins, resolveDisplayName } from '@/app/actions/notifications';
 import { rowsAffected } from '@/lib/interviews/rowsAffected';
+import { grantAccessAfterFold } from '@/lib/mergeAccess';
 import {
+    canRequestAgain,
     decideMergeRequestAnswer,
     KEPT_SEPARATE_FLAG_DETAILS_PREFIX,
     type MergeRequestStatus,
@@ -29,7 +38,7 @@ import {
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type RequestRow = typeof mergeRequests.$inferSelect;
 
-export type MergeRequestDecision = 'accept' | 'decline' | 'cancel';
+export type MergeRequestDecision = 'accept' | 'decline' | 'cancel' | 'flip';
 
 export type MergeRequestAnswerResult =
     | { ok: true; status: MergeRequestStatus }
@@ -68,12 +77,23 @@ async function findPendingRequestForPair(db: Db, a: string, b: string): Promise<
     )).get();
 }
 
+/** Every request ever filed on this pair, in either orientation (for canRequestAgain). */
+async function requestsForPair(db: Db, a: string, b: string): Promise<Array<{ requesterEmail: string; status: MergeRequestStatus }>> {
+    const rows = await db.select({ requesterEmail: mergeRequests.requesterEmail, status: mergeRequests.status }).from(mergeRequests).where(or(
+        and(eq(mergeRequests.primaryId, a), eq(mergeRequests.secondaryId, b)),
+        and(eq(mergeRequests.primaryId, b), eq(mergeRequests.secondaryId, a)),
+    )).all() as Array<{ requesterEmail: string; status: string }>;
+    return rows.map(r => ({ requesterEmail: r.requesterEmail, status: r.status as MergeRequestStatus }));
+}
+
 /**
  * File a request asking the other profile's owner (and their team, D16) to let
- * the pair be merged; with no real owner it goes to the admins (D15). One
- * pending request per pair: if one exists it is returned (`created: false`,
- * with ITS requester — the caller decides whether that is "you already asked"
- * or someone else's request) and nobody is notified.
+ * the pair be merged, keeping `primaryId` (the requester's choice, D24); with
+ * no real owner it goes to the admins (D15). One pending request per pair: if
+ * one exists it is returned (`created: false`, with ITS requester — the caller
+ * decides whether that is "you already asked" or someone else's request) and
+ * nobody is notified. A requester whose earlier request on this pair was
+ * declined may not ask again (D43): `{ refused: 'declined_before' }`.
  */
 export async function createMergeRequest(db: Db, input: {
     primaryId: string;
@@ -82,7 +102,7 @@ export async function createMergeRequest(db: Db, input: {
     flagId: string | null;
     requesterEmail: string;
     ownerEmail: string | null;
-}): Promise<{ id: string; created: boolean; requesterEmail: string }> {
+}): Promise<{ id: string; created: boolean; requesterEmail: string } | { refused: 'declined_before' }> {
     // Stored normalized: the feed and the answer checks find a request by
     // these emails, and `added_by` (where ownerEmail comes from) keeps
     // whatever case it was written with.
@@ -93,6 +113,12 @@ export async function createMergeRequest(db: Db, input: {
     };
     const existing = await findPendingRequestForPair(db, input.primaryId, input.secondaryId);
     if (existing) return { id: existing.id, created: false, requesterEmail: existing.requesterEmail };
+    if (!canRequestAgain(await requestsForPair(db, input.primaryId, input.secondaryId), input.requesterEmail)) {
+        logger.info('createMergeRequest: declined before, not asking again', {
+            primaryId: input.primaryId, secondaryId: input.secondaryId, actor: input.requesterEmail,
+        });
+        return { refused: 'declined_before' };
+    }
 
     const id = crypto.randomUUID();
     await db.insert(mergeRequests).values({
@@ -167,8 +193,9 @@ async function casRequest(db: Db, id: string, from: string, to: { status: string
 }
 
 /**
- * Accept, decline or cancel a request as `actor` (already resolved from the
- * session by the caller).
+ * Accept, decline, cancel or flip a request as `actor` (already resolved from
+ * the session by the caller). `flip` merges the other way round: the request's
+ * secondary (the asked owner's profile) survives.
  */
 export async function answerMergeRequest(
     db: Db,
@@ -195,7 +222,7 @@ export async function answerMergeRequest(
     // removed elsewhere closes the request — but only while it is still open,
     // so a late click never overwrites a finished answer.
     const [primary, secondary] = await Promise.all([req.primaryId, req.secondaryId].map(id =>
-        db.select({ name: adopters.name, deletedAt: adopters.deletedAt }).from(adopters).where(eq(adopters.id, id)).get()));
+        db.select({ name: adopters.name, addedBy: adopters.addedBy, deletedAt: adopters.deletedAt }).from(adopters).where(eq(adopters.id, id)).get()));
     if (!primary || !secondary || primary.deletedAt || secondary.deletedAt) {
         const closed = await casRequest(db, requestId, status, { status: 'closed', resolvedByEmail: null, resolvedAt: new Date() });
         logger.info('answerMergeRequest: a profile changed, request closed', { ...ctx, closed });
@@ -209,8 +236,13 @@ export async function answerMergeRequest(
         return { ok: false, reason: 'not_open' };
     }
 
+    // Who survives: the requester's choice, or the asked owner's on a flip.
+    const keep = answer.swap
+        ? { survivorId: req.secondaryId, absorbedId: req.primaryId, survivor: secondary, absorbed: primary }
+        : { survivorId: req.primaryId, absorbedId: req.secondaryId, survivor: primary, absorbed: secondary };
+
     if (answer.merges) {
-        const result = await mergeAdopters(req.primaryId, req.secondaryId, actor);
+        const result = await mergeAdopters(keep.survivorId, keep.absorbedId, actor);
         if (!result.success) {
             // Put the request back as it was (keeping an owner's earlier
             // decline) — or closed, when the failure was a profile merged
@@ -224,24 +256,44 @@ export async function answerMergeRequest(
             logger.error('answerMergeRequest: merge failed', new Error(result.error ?? 'merge failed'), { ...ctx, restored, profileGone: gone });
             return { ok: false, reason: gone ? 'profiles_changed' : 'merge_failed' };
         }
-    } else if (answer.nextStatus === 'declined' || answer.nextStatus === 'admin_declined') {
-        await keepSeparate(db, req, actor);
+        // D40: the absorbed side's owner team keeps seeing the survivor. Best-effort.
+        await grantAccessAfterFold(db, { survivorId: keep.survivorId, absorbedOwnerEmail: keep.absorbed.addedBy ?? null, actor });
+    } else if (answer.nextStatus === 'admin_declined') {
+        // An admin's decline is final (no one may reopen it), so the pair is
+        // resolved as kept-separate. An owner's decline leaves the pair on
+        // both lists (D27): the owner may still accept, the requester may
+        // still keep the other's profile (D43).
+        await keepSeparate(db, { a: req.primaryId, b: req.secondaryId }, actor, `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}${req.id}`, {
+            requestId: req.id, candidateId: req.candidateId, flagId: req.flagId,
+        });
     }
 
-    logger.info('answerMergeRequest: answered', { ...ctx, status: answer.nextStatus });
+    logger.info('answerMergeRequest: answered', { ...ctx, status: answer.nextStatus, swap: !!answer.swap });
     if (answer.nextStatus !== 'cancelled') {
-        await notifyAnswered(req, answer.nextStatus, actor, { primary: primary.name, secondary: secondary.name });
+        await notifyAnswered(req, answer.nextStatus, actor, {
+            survivorId: keep.survivorId, survivor: keep.survivor.name, absorbed: keep.absorbed.name, flipped: !!answer.swap,
+        });
     }
     return { ok: true, status: answer.nextStatus };
 }
 
 /**
- * A declined pair is resolved as kept-separate, so it leaves both lists (D4b):
- * every pending detected candidate AND every duplicate flag between the two
- * profiles, in either orientation — not just the one the request came from.
+ * Resolve a pair as kept-separate, so it leaves both lists: every pending
+ * detected candidate AND every duplicate flag between the two profiles, in
+ * either orientation. Used by an admin's decline and by «No, es alguien de su
+ * hogar» (D35, mergePendingDedupPair). `flagMarker` is written into the flags'
+ * details and must start with KEPT_SEPARATE_FLAG_DETAILS_PREFIX; it must never
+ * carry an email (flag details render to every viewer of the profile).
+ * Best-effort: a failure is logged, the pair just keeps showing.
  */
-async function keepSeparate(db: Db, req: RequestRow, actor: string): Promise<void> {
-    const { primaryId: a, secondaryId: b } = req;
+export async function keepSeparate(
+    db: Db,
+    pair: { a: string; b: string },
+    actor: string,
+    flagMarker: string,
+    ctx: Record<string, unknown> = {},
+): Promise<void> {
+    const { a, b } = pair;
     try {
         await db.update(duplicateCandidates)
             .set({ status: 'dismissed', resolvedBy: actor, resolvedAt: new Date() })
@@ -253,9 +305,7 @@ async function keepSeparate(db: Db, req: RequestRow, actor: string): Promise<voi
                 ),
             ));
         await db.update(adopterFlags)
-            // The request id, not the actor: flag details are shown to
-            // every viewer of the profile, and identity is never an email.
-            .set({ details: `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}${req.id}` })
+            .set({ details: flagMarker })
             .where(and(
                 eq(adopterFlags.reason, 'duplicate'),
                 or(
@@ -264,40 +314,67 @@ async function keepSeparate(db: Db, req: RequestRow, actor: string): Promise<voi
                 ),
             ));
     } catch (e) {
-        // The decline stands; the pair just keeps showing until dismissed by hand.
-        logger.error('answerMergeRequest: pair not marked kept-separate', e, {
-            requestId: req.id, actor, primaryId: a, secondaryId: b, candidateId: req.candidateId, flagId: req.flagId,
-        });
+        // The answer stands; the pair just keeps showing until dismissed by hand.
+        logger.error('keepSeparate: pair not marked kept-separate', e, { ...ctx, actor, primaryId: a, secondaryId: b });
     }
 }
 
 /**
- * Tell the requester how it ended (D5), and the owner too when an admin
- * decided. Never the actor.
+ * Title, body and link of the notice an answer sends. The ONE place these
+ * texts are built (they move to translatable templates later). «rechazó»,
+ * never «mantuvo separados», and no promise of an admin review (D30).
  */
-async function notifyAnswered(req: RequestRow, status: MergeRequestStatus, actor: string, names: { primary: string; secondary: string }): Promise<void> {
+function answerNotice(input: {
+    status: MergeRequestStatus;
+    who: string;
+    survivorId: string;
+    survivor: string;
+    absorbed: string;
+    flipped: boolean;
+}): { title: string; body: string; url: string } {
+    const { status, who, survivorId, survivor, absorbed, flipped } = input;
+    if (status === 'accepted' || status === 'admin_approved') {
+        return {
+            title: `Se unieron dos perfiles: ${absorbed} → ${survivor}`,
+            body: flipped
+                ? `${who} aceptó combinar los perfiles conservando «${survivor}»: «${absorbed}» quedó en ese perfil.`
+                : `${who} aceptó combinar «${absorbed}» con «${survivor}». Todo quedó en un solo perfil.`,
+            url: `/adopter/${survivorId}`,
+        };
+    }
+    return {
+        title: `${who} rechazó combinar dos perfiles`,
+        body: `«${absorbed}» y «${survivor}» siguen como perfiles separados.`,
+        url: '/my-adopters#pendientes',
+    };
+}
+
+/**
+ * Tell the requester how it ended (D5), and the owner too whenever someone
+ * else on their side answered — a teammate (D26) or an admin. Never the actor.
+ */
+async function notifyAnswered(
+    req: RequestRow,
+    status: MergeRequestStatus,
+    actor: string,
+    merge: { survivorId: string; survivor: string; absorbed: string; flipped: boolean },
+): Promise<void> {
     const byAdmin = status === 'admin_approved' || status === 'admin_declined';
-    const merged = status === 'accepted' || status === 'admin_approved';
     const actorKey = normEmail(actor);
-    const recipients = [req.requesterEmail, ...(byAdmin && req.ownerEmail ? [req.ownerEmail] : [])]
+    const recipients = [req.requesterEmail, ...(req.ownerEmail ? [req.ownerEmail] : [])]
         .filter((email, i, all) => normEmail(email) !== actorKey && all.findIndex(o => normEmail(o) === normEmail(email)) === i);
     if (recipients.length === 0) return;
 
     const who = byAdmin ? 'Un administrador' : await resolveDisplayName(actor);
-    const title = merged
-        ? `Se unieron dos perfiles: ${names.secondary} → ${names.primary}`
-        : `${who} mantuvo separados dos perfiles`;
-    const body = merged
-        ? `${who} aceptó combinar «${names.secondary}» con «${names.primary}». Todo quedó en un solo perfil.`
-        : `«${names.secondary}» y «${names.primary}» siguen como perfiles separados.${byAdmin ? '' : ' Un administrador todavía puede revisarlo.'}`;
+    const { title, body, url } = answerNotice({ status, who, ...merge });
     await Promise.all(recipients.map(userId => createNotification({
         userId,
         type: 'merge_request_resolved',
         title,
         body,
-        url: merged ? `/adopter/${req.primaryId}` : '/my-adopters',
+        url,
         icon: ICON,
-        metadata: { mergeRequestId: req.id, status, primaryId: req.primaryId, secondaryId: req.secondaryId },
+        metadata: { mergeRequestId: req.id, status, primaryId: req.primaryId, secondaryId: req.secondaryId, survivorId: merge.survivorId, flipped: merge.flipped },
     })));
 }
 

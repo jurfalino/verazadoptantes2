@@ -42,9 +42,12 @@ async function answer(op: string, requestId: string, decision: unknown, allowed:
     }
 }
 
-/** Owner / teammate / admin: accept or decline a merge request. */
-export async function resolveMergeRequest(requestId: string, decision: 'accept' | 'decline'): Promise<ActionResult> {
-    return answer('resolveMergeRequest', requestId, decision, ['accept', 'decline']);
+/**
+ * Owner / teammate / admin: accept, decline, or flip a merge request — «Conservar
+ * el mío» (D26): the asked owner's profile stays and the requester's folds in.
+ */
+export async function resolveMergeRequest(requestId: string, decision: 'accept' | 'decline' | 'flip'): Promise<ActionResult> {
+    return answer('resolveMergeRequest', requestId, decision, ['accept', 'decline', 'flip']);
 }
 
 /** Requester: withdraw their own pending request. */

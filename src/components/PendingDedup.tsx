@@ -195,6 +195,10 @@ export default function PendingDedup() {
                 toast.success(t('myAdopters.pending_dedup_merged') || 'Profiles merged');
                 setPairs(prev => prev?.filter(p => p.candidateId !== pair.candidateId) || []);
                 setTotal(n => Math.max(0, n - 1));
+            } else if (result.success && result.outcome === 'household') {
+                // «Alguien de su hogar» (not offered by this card yet): the pair left the list.
+                setPairs(prev => prev?.filter(p => p.candidateId !== pair.candidateId) || []);
+                setTotal(n => Math.max(0, n - 1));
             } else if (result.success) {
                 // Not merged: it went to the other profile's owner (or the
                 // admins) as a request. Reload so the card shows its state.

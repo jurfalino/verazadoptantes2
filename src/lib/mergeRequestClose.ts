@@ -55,3 +55,23 @@ export async function closeRequestsForDeletedAdopter(db: Db, adopterId: string, 
         });
     }
 }
+
+/**
+ * Close every open request on this pair (either orientation): the pair was
+ * settled some other way — «No, es alguien de su hogar» (D35) — and nobody
+ * may approve a merge of two different people later. Returns how many were
+ * closed. Throws on a DB error — callers decide whether that is fatal.
+ */
+export async function closeRequestsForPair(db: Db, a: string, b: string): Promise<number> {
+    const closed = await db.update(mergeRequests)
+        .set({ status: 'closed', resolvedAt: new Date() })
+        .where(and(
+            or(
+                and(eq(mergeRequests.primaryId, a), eq(mergeRequests.secondaryId, b)),
+                and(eq(mergeRequests.primaryId, b), eq(mergeRequests.secondaryId, a)),
+            ),
+            openMergeRequestStatus(),
+        ))
+        .returning({ id: mergeRequests.id });
+    return closed.length;
+}

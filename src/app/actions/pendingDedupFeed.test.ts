@@ -133,19 +133,18 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
     });
 
     it('no real owner: the request goes to admins, no counterpart', async () => {
-        expect(await mergePendingDedupPair('cand-anon')).toMatchObject({ success: true, outcome: 'requested' });
+        expect(await mergePendingDedupPair('cand-anon', { identity: 'same' })).toMatchObject({ success: true, outcome: 'requested' });
         const p = pairOf((await feed(STRANGER)).pairs, 'cand-anon');
         expect(p.newAdopter.createdByAnonymous).toBe(true);
         expect(p.request).toMatchObject({ direction: 'sent', toAdmins: true, counterpartName: null });
     });
 
-    it('a declined request takes the pair out of every list', async () => {
+    it('a declined request leaves the pair on both rescuers\' lists (D27), no longer as an open request', async () => {
         await mergePendingDedupPair('cand-older-mine');
         expect(await as(OWNER, () => resolveMergeRequest(requestId(), 'decline'))).toEqual({ success: true });
-        for (const who of [STRANGER, OWNER, MATE]) {
-            expect((await feed(who)).pairs.map(p => p.candidateId)).not.toContain('cand-older-mine');
+        for (const who of [STRANGER, OWNER]) {
+            expect(pairOf((await feed(who)).pairs, 'cand-older-mine').request).toBeNull();
         }
-        expect(await feed(MATE)).toEqual({ pairs: [], total: 0, lowHidden: 0 });
     });
 
     it('pairs with an open request sort first, ahead of stronger matches', async () => {
@@ -227,7 +226,7 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         expect(sqlite.prepare(`SELECT status FROM merge_requests`).get()!.status).toBe('pending'); // the feed only reads
         sqlite.prepare('DELETE FROM merge_requests').run();
 
-        await mergePendingDedupPair('cand-anon'); // candidate stays pending; the side is soft-deleted
+        await mergePendingDedupPair('cand-anon', { identity: 'same' }); // candidate stays pending; the side is soft-deleted
         sqlite.prepare(`UPDATE adopters SET deleted_at = 9000 WHERE id = 'anon-new'`).run();
         const res = await feed(STRANGER);
         expect(res.pairs.map(p => p.candidateId)).toEqual(['cand-newer-mine']);
@@ -244,7 +243,7 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
 
     it('the feed never carries an email address', async () => {
         await mergePendingDedupPair('cand-older-mine');
-        await mergePendingDedupPair('cand-anon');
+        await mergePendingDedupPair('cand-anon', { identity: 'same' });
         for (const who of [STRANGER, OWNER, MATE]) {
             expect(JSON.stringify(await feed(who, true))).not.toContain('@');
         }
@@ -280,16 +279,16 @@ describe('getPendingDuplicatesForUser — what «Combinar» will do (mergeAction
         expect(await as(OWNER, () => mergePendingDedupPair('cand-team'))).toEqual({ success: true, outcome: 'merged' });
     });
 
-    it("a hand-filed flag across owners → 'request', even when the viewer's side is newer", async () => {
-        // OWNER's fx-o (200) is newer than STRANGER's fx-s (100): a detected
-        // pair would merge, a flag asks.
+    it("a hand-filed flag across owners, keeping the other's older profile → 'merge' (D41)", async () => {
+        // OWNER's fx-o (200) is newer than STRANGER's fx-s (100). The default
+        // keeps the older (STRANGER's), which needs no consent, flag or not.
         sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
             ('fx-s', 'Eva Sol', '5', ?, 100, 100), ('fx-o', 'Eva Sól', '5', ?, 200, 200)`).run(STRANGER, OWNER);
         sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at)
             VALUES ('flag-cross', 'fx-o', ?, 'duplicate', 'fx-s', NULL, 1)`).run(OWNER);
         const p = pairOf((await feed(OWNER)).pairs, 'flag-cross');
         expect(p.source).toBe('flagged');
-        expect(p.mergeAction).toBe('request');
-        expect(await as(OWNER, () => mergePendingDedupPair('flag-cross'))).toMatchObject({ success: true, outcome: 'requested' });
+        expect(p.mergeAction).toBe('merge');
+        expect(await as(OWNER, () => mergePendingDedupPair('flag-cross'))).toEqual({ success: true, outcome: 'merged' });
     });
 });

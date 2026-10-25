@@ -36,6 +36,11 @@ export interface HouseholdMember {
     ageAsOf?: string;
     /** The person a gift is for — the one who will live with the animal (spec Part 2 §9). */
     giftRecipient?: boolean;
+    /**
+     * This person has their own adopter profile (D35 «alguien de su hogar»):
+     * the household row links to it; the profile page follows merge redirects.
+     */
+    profileId?: string;
 }
 
 const AGE_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -45,6 +50,9 @@ function validAge(v: unknown): number | undefined {
 
 export const MAX_MEMBERS = 30;
 const MAX_NAME_LEN = 200;
+const MAX_PROFILE_ID_LEN = 64;
+const validProfileId = (v: unknown): string | undefined =>
+    typeof v === 'string' && v.trim() && v.length <= MAX_PROFILE_ID_LEN ? v.trim() : undefined;
 
 /**
  * Deterministic fallback id for a member that lacks one (legacy/backfill). Both
@@ -105,6 +113,8 @@ export function deserializeHouseholdMembers(json: string | null | undefined): Ho
         const member: HouseholdMember = { id, name: name.trim(), relationship, contactEntries };
         if (typeof m.addedBy === 'string' && m.addedBy.trim()) member.addedBy = m.addedBy.slice(0, 256);
         if (m.giftRecipient === true) member.giftRecipient = true;
+        const profileId = validProfileId(m.profileId);
+        if (profileId) member.profileId = profileId;
         const age = validAge(m.age);
         if (age !== undefined) {
             member.age = age;
@@ -130,6 +140,7 @@ export function serializeHouseholdMembers(members: HouseholdMember[] | null | un
             ...(validAge(m.age) !== undefined ? { age: m.age } : {}),
             ...(validAge(m.age) !== undefined && m.ageAsOf && AGE_DAY.test(m.ageAsOf) ? { ageAsOf: m.ageAsOf } : {}),
             ...(m.giftRecipient === true ? { giftRecipient: true } : {}),
+            ...(validProfileId(m.profileId) ? { profileId: validProfileId(m.profileId) } : {}),
         }));
     return JSON.stringify(clean);
 }

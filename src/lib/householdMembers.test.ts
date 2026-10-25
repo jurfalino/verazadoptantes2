@@ -170,3 +170,21 @@ describe('combining profiles keeps what only the absorbed copy knows (#4, 2026-1
         expect(undoHouseholdMerge(members, added).map(m => m.id)).toEqual(['s1']);
     });
 });
+
+describe('profileId — a household member with their own profile (D35)', () => {
+    const linked: HouseholdMember = { id: 'hm-l', name: 'Lucía Pérez', relationship: 'unknown', contactEntries: [], profileId: 'adopter-2' };
+    it('serialize → deserialize keeps the link', () => {
+        expect(deserializeHouseholdMembers(serializeHouseholdMembers([linked]))[0].profileId).toBe('adopter-2');
+    });
+    it('a missing, blank, non-string or oversized profileId is dropped', () => {
+        const json = JSON.stringify([
+            { id: 'a', name: 'A', profileId: '' }, { id: 'b', name: 'B', profileId: 42 }, { id: 'c', name: 'C', profileId: 'x'.repeat(65) }, { id: 'd', name: 'D' },
+        ]);
+        expect(deserializeHouseholdMembers(json).map(m => 'profileId' in m)).toEqual([false, false, false, false]);
+        expect(serializeHouseholdMembers([{ ...linked, profileId: '  ' }])).not.toContain('profileId');
+    });
+    it('a merge carries an absorbed linked member over with its link', () => {
+        const out = mergeHouseholdMembers([{ id: 's', name: 'Tomás', relationship: 'child', contactEntries: [] }], [linked]);
+        expect(out[1]).toMatchObject({ id: 'hm-l', profileId: 'adopter-2' });
+    });
+});

@@ -118,7 +118,8 @@ describe('mergePendingDedupPair — merge or request', () => {
     });
 
     it('the owner being asked clicks the same cross-owner flag: request_pending, not a request of their own', async () => {
-        await mergePendingDedupPair('flag-cross');
+        // STRANGER keeps their own (newer) profile, so it is a request (D24).
+        await mergePendingDedupPair('flag-cross', { keepId: 's-new' });
         notify.create.length = 0;
         expect(await as(OWNER, () => mergePendingDedupPair('flag-cross'))).toEqual({ success: false, error: 'request_pending', errorId: 'gen12345' });
         expect(requests()).toEqual([expect.objectContaining({ requester_email: STRANGER, status: 'pending' })]);
@@ -126,16 +127,17 @@ describe('mergePendingDedupPair — merge or request', () => {
         expect(mergeSpy).not.toHaveBeenCalled();
     });
 
-    it('declined, then the pair resurfaces (rescan): asking again files a NEW request and notifies', async () => {
+    it('declined, then asked again (even from a rescanned row): declined_before, nothing filed or sent (D43)', async () => {
         await mergePendingDedupPair('cand-older-mine');
         const first = requests()[0].id as string;
         await as(OWNER, () => resolveMergeRequest(first, 'decline'));
         sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
             VALUES ('cand-rescan', 's-old', 'o-new', '["phone"]', 90, 'high', 'pending', 2)`).run();
         notify.create.length = 0;
-        expect(await mergePendingDedupPair('cand-rescan')).toEqual({ success: true, outcome: 'requested', toName: 'owner', toAdmins: false });
-        expect(requests().map(r => r.status).sort()).toEqual(['declined', 'pending']);
-        expect(recipients()).toEqual([MATE, OWNER].sort());
+        expect(await mergePendingDedupPair('cand-older-mine')).toEqual({ success: false, error: 'declined_before', errorId: 'gen12345' });
+        expect(await mergePendingDedupPair('cand-rescan')).toEqual({ success: false, error: 'declined_before', errorId: 'gen12345' });
+        expect(requests().map(r => r.status)).toEqual(['declined']);
+        expect(notify.create).toEqual([]);
     });
 
     it('the owner accepts from their session: merged for real, requester notified', async () => {
@@ -168,22 +170,29 @@ describe('mergePendingDedupPair — merge or request', () => {
     });
 
     it('the other profile has no real owner: request with a null owner, admins notified', async () => {
-        expect(await mergePendingDedupPair('cand-anon')).toEqual({ success: true, outcome: 'requested', toName: null, toAdmins: true });
+        // Laura Paz vs Carla Gómez on a phone: «¿Es la misma persona?» first (D35).
+        expect(await mergePendingDedupPair('cand-anon')).toMatchObject({ success: false, error: 'identity_required' });
+        expect(await mergePendingDedupPair('cand-anon', { identity: 'same' })).toEqual({ success: true, outcome: 'requested', toName: null, toAdmins: true });
         expect(requests()).toEqual([expect.objectContaining({ primary_id: 's-old', secondary_id: 'anon-new', owner_email: null })]);
         expect(notify.create).toEqual([]);
         expect(notify.admins).toEqual([expect.objectContaining({ type: 'merge_request', actorEmail: STRANGER })]);
     });
 
-    it('a cross-rescuer flag becomes a request; declined, the flag is closed and no longer mergeable', async () => {
-        expect(await mergePendingDedupPair('flag-cross')).toEqual({ success: true, outcome: 'requested', toName: 'owner', toAdmins: false });
+    it("a cross-rescuer flag keeping the other's profile merges now (D41)", async () => {
+        expect(await mergePendingDedupPair('flag-cross')).toEqual({ success: true, outcome: 'merged' });
+        expect(mergeSpy).toHaveBeenCalledWith('o-old', 's-new', STRANGER);
+        expect(requests()).toEqual([]);
+    });
+
+    it('a cross-rescuer flag keeping mine is a request; declined, the flag stays open (D27) and I can still keep theirs (D43)', async () => {
+        expect(await mergePendingDedupPair('flag-cross', { keepId: 's-new' })).toEqual({ success: true, outcome: 'requested', toName: 'owner', toAdmins: false });
         const [req] = requests();
-        expect(req).toMatchObject({ primary_id: 'o-old', secondary_id: 's-new', candidate_id: null, flag_id: 'flag-cross', owner_email: OWNER });
+        expect(req).toMatchObject({ primary_id: 's-new', secondary_id: 'o-old', candidate_id: null, flag_id: 'flag-cross', owner_email: OWNER });
         expect(await as(OWNER, () => resolveMergeRequest(req.id as string, 'decline'))).toEqual({ success: true });
-        const details = sqlite.prepare(`SELECT details FROM adopter_flags WHERE id = 'flag-cross'`).get()!.details as string;
-        expect(details).toBe(`Kept separate: ${req.id}`);
-        expect(details).not.toContain('@');
-        expect(await mergePendingDedupPair('flag-cross')).toMatchObject({ success: false, error: 'not_found' });
+        expect(sqlite.prepare(`SELECT details FROM adopter_flags WHERE id = 'flag-cross'`).get()!.details).toBeNull();
+        expect(await mergePendingDedupPair('flag-cross', { keepId: 's-new' })).toMatchObject({ success: false, error: 'declined_before' });
         expect(mergeSpy).not.toHaveBeenCalled();
+        expect(await mergePendingDedupPair('flag-cross', { keepId: 'o-old' })).toEqual({ success: true, outcome: 'merged' });
     });
 });
 

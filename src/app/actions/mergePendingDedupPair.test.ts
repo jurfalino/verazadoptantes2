@@ -7,19 +7,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 
-const { state, mergeSpy, requestSpy, notifySpy } = vi.hoisted(() => ({
+const { state, mergeSpy, requestSpy, notifySpy, grantSpy } = vi.hoisted(() => ({
     state: { db: null as unknown, user: null as string | null },
     mergeSpy: vi.fn(),
     requestSpy: vi.fn(),
     notifySpy: vi.fn(),
+    grantSpy: vi.fn(async () => 0),
 }));
 
 vi.mock('./_db', () => ({
     getDb: async () => state.db,
     getUser: async () => { if (!state.user) throw new Error('Authentication required'); return state.user; },
 }));
-vi.mock('@/lib/adopterMerge', () => ({ mergeAdopters: mergeSpy }));
-vi.mock('@/lib/mergeRequests', () => ({ createMergeRequest: requestSpy }));
+vi.mock('@/lib/adopterMerge', () => ({ mergeAdopters: mergeSpy, notifyMergeOwners: vi.fn() }));
+vi.mock('@/lib/mergeRequests', () => ({ createMergeRequest: requestSpy, keepSeparate: vi.fn() }));
+vi.mock('@/lib/mergeAccess', () => ({ grantAccessAfterFold: grantSpy }));
+vi.mock('@/config/admins', () => ({ isAdminAsync: async () => false }));
+vi.mock('./householdMembers', () => ({ addHouseholdMember: vi.fn() }));
 vi.mock('./notifications', () => ({ createNotification: notifySpy, resolveDisplayName: async (e: string) => e.split('@')[0] }));
 vi.mock('@/lib/adopterTokenize', () => ({ tokenizeAdopter: vi.fn() }));
 // Team rule: the owner plus one teammate.
@@ -39,17 +43,17 @@ const OWNER = 'me@example.com';
 function seed() {
     const sqlite = new Database(':memory:');
     sqlite.exec(`
-        CREATE TABLE adopters (id TEXT, added_by TEXT, created_at INTEGER, deleted_at INTEGER);
-        CREATE TABLE duplicate_candidates (id TEXT, adopter1_id TEXT, adopter2_id TEXT, status TEXT);
+        CREATE TABLE adopters (id TEXT, name TEXT, added_by TEXT, created_at INTEGER, deleted_at INTEGER);
+        CREATE TABLE duplicate_candidates (id TEXT, adopter1_id TEXT, adopter2_id TEXT, status TEXT, match_types TEXT);
         CREATE TABLE adopter_flags (id TEXT, adopter_id TEXT, target_adopter_id TEXT, reason TEXT, details TEXT);
-        INSERT INTO adopters VALUES ('mine-new', '${OWNER}', 2000, NULL), ('other-old', 'other@example.com', 1000, NULL),
-                                    ('mine-old', '${OWNER}', 100, NULL), ('other-new', 'other@example.com', 5000, NULL),
-                                    ('mate-new', 'mate@example.com', 3000, NULL),
-                                    ('x', 'a@example.com', 1, NULL), ('y', 'b@example.com', 2, NULL);
-        INSERT INTO duplicate_candidates VALUES ('cand-mine', 'mine-new', 'other-old', 'pending'),
-                                                ('cand-absorb-foreign', 'mine-old', 'other-new', 'pending'),
-                                                ('cand-foreign', 'x', 'y', 'pending'),
-                                                ('cand-done', 'mine-new', 'other-old', 'merged');
+        INSERT INTO adopters VALUES ('mine-new', 'Eva', '${OWNER}', 2000, NULL), ('other-old', 'Eva', 'other@example.com', 1000, NULL),
+                                    ('mine-old', 'Eva', '${OWNER}', 100, NULL), ('other-new', 'Eva', 'other@example.com', 5000, NULL),
+                                    ('mate-new', 'Eva', 'mate@example.com', 3000, NULL),
+                                    ('x', 'Eva', 'a@example.com', 1, NULL), ('y', 'Eva', 'b@example.com', 2, NULL);
+        INSERT INTO duplicate_candidates VALUES ('cand-mine', 'mine-new', 'other-old', 'pending', '["phone"]'),
+                                                ('cand-absorb-foreign', 'mine-old', 'other-new', 'pending', '["phone"]'),
+                                                ('cand-foreign', 'x', 'y', 'pending', '["phone"]'),
+                                                ('cand-done', 'mine-new', 'other-old', 'merged', '["phone"]');
         INSERT INTO adopter_flags VALUES ('flag-cross', 'other-old', 'mine-new', 'duplicate', NULL),
                                          ('flag-team', 'mine-old', 'mate-new', 'duplicate', NULL);
     `);
@@ -62,6 +66,7 @@ describe('mergePendingDedupPair', () => {
         mergeSpy.mockReset().mockResolvedValue({ success: true, primaryName: 'Vieja', secondaryName: 'Nueva' });
         requestSpy.mockReset().mockResolvedValue({ id: 'req-1', created: true });
         notifySpy.mockReset();
+        grantSpy.mockClear();
         state.user = OWNER;
     });
 
@@ -83,6 +88,8 @@ describe('mergePendingDedupPair', () => {
         expect(mergeSpy).toHaveBeenCalledWith('other-old', 'mine-new', OWNER);
         expect(notifySpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'adopter_merged', userId: 'other@example.com', url: '/adopter/other-old' }));
         expect(requestSpy).not.toHaveBeenCalled();
+        // D40: the absorbed side's owner keeps seeing the survivor.
+        expect(grantSpy).toHaveBeenCalledWith(state.db, { survivorId: 'other-old', absorbedOwnerEmail: OWNER, actor: OWNER });
     });
 
     // Since merge requests (spec D2/D10/D14) these two ask the other owner
@@ -96,13 +103,19 @@ describe('mergePendingDedupPair', () => {
         expect(mergeSpy).not.toHaveBeenCalled();
     });
 
-    it('a self-filed flag across owners: a merge request (carrying the flag id), never a merge', async () => {
-        expect(await mergePendingDedupPair('flag-cross')).toMatchObject({ success: true, outcome: 'requested' });
+    it('a self-filed flag across owners, keeping mine: a merge request (carrying the flag id), never a merge', async () => {
+        expect(await mergePendingDedupPair('flag-cross', { keepId: 'mine-new' })).toMatchObject({ success: true, outcome: 'requested' });
         expect(requestSpy).toHaveBeenCalledWith(state.db, {
-            primaryId: 'other-old', secondaryId: 'mine-new', candidateId: null, flagId: 'flag-cross',
+            primaryId: 'mine-new', secondaryId: 'other-old', candidateId: null, flagId: 'flag-cross',
             requesterEmail: OWNER, ownerEmail: 'other@example.com',
         });
         expect(mergeSpy).not.toHaveBeenCalled();
+    });
+
+    it("a self-filed flag across owners, keeping the other's (the default, older): merged now (D41)", async () => {
+        expect(await mergePendingDedupPair('flag-cross')).toEqual({ success: true, outcome: 'merged' });
+        expect(mergeSpy).toHaveBeenCalledWith('other-old', 'mine-new', OWNER);
+        expect(requestSpy).not.toHaveBeenCalled();
     });
 
     it('a flag inside her team: merged, her older record survives, nobody to notify', async () => {

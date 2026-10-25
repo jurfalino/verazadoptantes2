@@ -31,7 +31,10 @@ vi.mock('@/config/admins', () => {
 });
 vi.mock('@/lib/orgMembership', async (orig) => {
     team.isOwnerOrOrgMate = vi.fn(mocks.isOwnerOrOrgMate);
-    return { ...(await orig()), isOrgMate: mocks.isOrgMate, isOwnerOrOrgMate: team.isOwnerOrOrgMate, getOrgMemberEmailsFor: mocks.getOrgMemberEmailsFor };
+    return {
+        ...(await orig()), isOrgMate: mocks.isOrgMate, isOwnerOrOrgMate: team.isOwnerOrOrgMate, getOrgMemberEmailsFor: mocks.getOrgMemberEmailsFor,
+        getTeamEmails: async (email: string) => mocks.getOrgMemberEmailsFor((email ?? '').trim().toLowerCase()),
+    };
 });
 vi.mock('@/lib/adopterTokenize', () => ({ tokenizeAdopter: vi.fn() }));
 vi.mock('@/lib/background', () => ({ runAfterResponse: vi.fn(async () => undefined) }));
@@ -68,6 +71,9 @@ const requestCount = () => sqlite.prepare('SELECT COUNT(*) AS n FROM merge_reque
 const adopter = (id: string) => sqlite.prepare('SELECT deleted_at, token_hash FROM adopters WHERE id = ?').get(id)!;
 const candidate = (id: string) => sqlite.prepare('SELECT status, resolved_by FROM duplicate_candidates WHERE id = ?').get(id)!;
 const recipients = () => notify.create.map(n => n.userId);
+const idOf = (res: Awaited<ReturnType<typeof createMergeRequest>>) => { if (!('id' in res)) throw new Error(`refused: ${res.refused}`); return res.id; };
+const grantees = (adopterId: string) => sqlite.prepare(`SELECT grantee_email FROM pii_access_grants WHERE adopter_id = ? AND origin = 'merge' ORDER BY grantee_email`)
+    .all(adopterId).map(r => r.grantee_email);
 
 /** The requester's OLDER profile vs OWNER's newer one: OWNER is asked. */
 const detectedInput: Parameters<typeof createMergeRequest>[1] = { primaryId: 'r-old', secondaryId: 'o-new', candidateId: 'cand-1', flagId: null, requesterEmail: REQUESTER, ownerEmail: OWNER };
@@ -92,7 +98,9 @@ beforeEach(() => {
 });
 
 async function pending(input: Partial<typeof detectedInput> = {}) {
-    const { id } = await createMergeRequest(db(), { ...detectedInput, ...input });
+    const res = await createMergeRequest(db(), { ...detectedInput, ...input });
+    if (!('id' in res)) throw new Error(`request refused: ${res.refused}`);
+    const { id } = res;
     notify.create.length = 0;
     notify.admins.length = 0;
     return id;
@@ -101,6 +109,7 @@ async function pending(input: Partial<typeof detectedInput> = {}) {
 describe('createMergeRequest', () => {
     it('one pending row; the owner and their teammate are notified, the requester is not', async () => {
         const res = await createMergeRequest(db(), detectedInput);
+        if (!('id' in res)) throw new Error('refused');
         expect(res.created).toBe(true);
         expect(request(res.id)).toMatchObject({
             primary_id: 'r-old', secondary_id: 'o-new', candidate_id: 'cand-1', flag_id: null,
@@ -122,21 +131,33 @@ describe('createMergeRequest', () => {
         notify.create.length = 0;
         const again = await createMergeRequest(db(), detectedInput);
         const flipped = await createMergeRequest(db(), { ...detectedInput, primaryId: 'o-new', secondaryId: 'r-old', requesterEmail: OWNER });
-        expect(again).toEqual({ id: first.id, created: false, requesterEmail: REQUESTER });
-        expect(flipped).toEqual({ id: first.id, created: false, requesterEmail: REQUESTER });
+        expect(again).toEqual({ id: idOf(first), created: false, requesterEmail: REQUESTER });
+        expect(flipped).toEqual({ id: idOf(first), created: false, requesterEmail: REQUESTER });
         expect(requestCount()).toBe(1);
         expect(notify.create).toEqual([]);
     });
 
-    it('a declined request is not "already asked": filing again makes a new pending request and notifies', async () => {
+    it('declined (D43): the same requester cannot ask again, in either orientation; nothing filed or sent', async () => {
         const first = await createMergeRequest(db(), detectedInput);
-        await answerMergeRequest(db(), first.id, OWNER, 'decline');
+        await answerMergeRequest(db(), idOf(first), OWNER, 'decline');
         notify.create.length = 0;
+        expect(await createMergeRequest(db(), detectedInput)).toEqual({ refused: 'declined_before' });
+        expect(await createMergeRequest(db(), { ...detectedInput, primaryId: 'o-new', secondaryId: 'r-old', requesterEmail: 'Stranger@Example.com' }))
+            .toEqual({ refused: 'declined_before' });
+        expect(requestCount()).toBe(1);
+        expect(notify.create).toEqual([]);
+    });
+
+    it("someone else's declined request does not stop a new requester", async () => {
+        const first = await createMergeRequest(db(), { ...detectedInput, requesterEmail: 'other@example.com' });
+        await answerMergeRequest(db(), idOf(first), OWNER, 'decline');
         const again = await createMergeRequest(db(), detectedInput);
-        expect(again.created).toBe(true);
-        expect(again.id).not.toBe(first.id);
-        expect([request(first.id).status, request(again.id).status]).toEqual(['declined', 'pending']);
-        expect(recipients().sort()).toEqual([MATE, OWNER].sort());
+        expect(again).toMatchObject({ created: true, requesterEmail: REQUESTER });
+    });
+
+    it('stores the chosen survivor as primary, whichever profile is older', async () => {
+        const res = await createMergeRequest(db(), { ...detectedInput, primaryId: 'third', secondaryId: 'r-old', candidateId: null });
+        expect(request(idOf(res))).toMatchObject({ primary_id: 'third', secondary_id: 'r-old' });
     });
 
     it('the requester is left out of the asked team, whatever the case of their email', async () => {
@@ -145,13 +166,13 @@ describe('createMergeRequest', () => {
     });
 
     it('requester and owner are stored normalized, whatever case they arrive in', async () => {
-        const { id } = await createMergeRequest(db(), { ...detectedInput, requesterEmail: ' Stranger@Example.COM ', ownerEmail: 'Owner@Example.com' });
-        expect(request(id)).toMatchObject({ requester_email: STRANGER, owner_email: OWNER });
+        const res = await createMergeRequest(db(), { ...detectedInput, requesterEmail: ' Stranger@Example.COM ', ownerEmail: 'Owner@Example.com' });
+        expect(request(idOf(res))).toMatchObject({ requester_email: STRANGER, owner_email: OWNER });
     });
 
     it('no real owner: the row has a null owner and the admins are notified instead', async () => {
         const res = await createMergeRequest(db(), { ...detectedInput, secondaryId: 'anon-new', candidateId: null, ownerEmail: null });
-        expect(request(res.id).owner_email).toBeNull();
+        expect(request(idOf(res)).owner_email).toBeNull();
         expect(notify.create).toEqual([]);
         expect(notify.admins).toHaveLength(1);
         expect(notify.admins[0]).toMatchObject({ actorEmail: REQUESTER, type: 'merge_request', title: 'stranger pidió combinar dos perfiles' });
@@ -224,13 +245,22 @@ describe('answerMergeRequest — who may answer', () => {
 });
 
 describe('answerMergeRequest — decline and admin decisions', () => {
-    it('the owner declines: candidate dismissed by them, requester notified, nothing merged', async () => {
+    it('the owner declines: the pair stays on both lists (D27), requester told «rechazó» with a link to the row (D30)', async () => {
         const id = await pending();
         expect(await answerMergeRequest(db(), id, OWNER, 'decline')).toEqual({ ok: true, status: 'declined' });
-        expect(candidate('cand-1')).toEqual({ status: 'dismissed', resolved_by: OWNER });
+        expect(candidate('cand-1')).toEqual({ status: 'pending', resolved_by: null });
         expect(recipients()).toEqual([REQUESTER]);
-        expect(notify.create[0]).toMatchObject({ type: 'merge_request_resolved', url: '/my-adopters' });
+        expect(notify.create[0]).toMatchObject({
+            type: 'merge_request_resolved', url: '/my-adopters#pendientes', title: 'owner rechazó combinar dos perfiles',
+        });
+        expect(notify.create[0].body).not.toContain('administrador');
         expect(mergeSpy).not.toHaveBeenCalled();
+    });
+
+    it("a teammate declines for the owner: the requester AND the owner are told (D26)", async () => {
+        const id = await pending();
+        expect(await answerMergeRequest(db(), id, MATE, 'decline')).toEqual({ ok: true, status: 'declined' });
+        expect(recipients().sort()).toEqual([OWNER, REQUESTER].sort());
     });
 
     it('an admin approves after the owner declined: merged, requester and owner notified', async () => {
@@ -265,9 +295,18 @@ describe('answerMergeRequest — decline and admin decisions', () => {
         expect(recipients()).toEqual([OWNER]);
     });
 
-    it('a declined FLAG request annotates the flag, which then stops being an open duplicate', async () => {
+    it("an owner's decline of a FLAG request leaves the flag open (D27)", async () => {
         const id = await pending({ candidateId: null, flagId: 'flag-1' });
         expect(await answerMergeRequest(db(), id, OWNER, 'decline')).toEqual({ ok: true, status: 'declined' });
+        const flag = sqlite.prepare('SELECT adopter_id AS adopterId, target_adopter_id AS targetAdopterId, reason, details FROM adopter_flags WHERE id = ?')
+            .get('flag-1') as { adopterId: string; targetAdopterId: string; reason: string; details: string | null };
+        expect(flag.details).toBeNull();
+        expect(isOpenDuplicateFlag(flag)).toBe(true);
+    });
+
+    it('an ADMIN decline of a FLAG request annotates the flag, which then stops being an open duplicate', async () => {
+        const id = await pending({ candidateId: null, flagId: 'flag-1' });
+        expect(await answerMergeRequest(db(), id, ADMIN, 'decline')).toEqual({ ok: true, status: 'admin_declined' });
         const flag = sqlite.prepare('SELECT adopter_id AS adopterId, target_adopter_id AS targetAdopterId, reason, details FROM adopter_flags WHERE id = ?')
             .get('flag-1') as { adopterId: string; targetAdopterId: string; reason: string; details: string };
         // The request id, never who declined: flag details render to every viewer.
@@ -275,21 +314,93 @@ describe('answerMergeRequest — decline and admin decisions', () => {
         expect(flag.details).not.toContain('@');
         expect(isOpenDuplicateFlag(flag)).toBe(false);
         // The same pair's detected candidate leaves the lists too.
-        expect(candidate('cand-1')).toEqual({ status: 'dismissed', resolved_by: OWNER });
+        expect(candidate('cand-1')).toEqual({ status: 'dismissed', resolved_by: ADMIN });
     });
 
-    it('a declined CANDIDATE request also closes a flag on the same pair, and leaves other pairs alone', async () => {
+    it('an admin-declined CANDIDATE request also closes a flag on the same pair, and leaves other pairs alone', async () => {
         sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
             VALUES ('cand-other', 'o-new', 'third', '["phone"]', 90, 'high', 'pending', 1)`).run();
         sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at)
             VALUES ('flag-other', 'third', ?, 'duplicate', 'o-new', NULL, 1)`).run(OWNER);
         const id = await pending();
-        expect(await answerMergeRequest(db(), id, OWNER, 'decline')).toEqual({ ok: true, status: 'declined' });
+        expect(await answerMergeRequest(db(), id, ADMIN, 'decline')).toEqual({ ok: true, status: 'admin_declined' });
         const details = (fid: string) => sqlite.prepare('SELECT details FROM adopter_flags WHERE id = ?').get(fid)!.details;
         expect(details('flag-1')).toBe(`${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}${id}`);
         expect(details('flag-1')).not.toContain('@');
         expect(details('flag-other')).toBeNull();
         expect(candidate('cand-other').status).toBe('pending');
+    });
+});
+
+describe('answerMergeRequest — flip and access after a fold (D26, D40)', () => {
+    it("the owner flips: their profile survives, the requester's folds in, requester told and given access", async () => {
+        const id = await pending();
+        expect(await answerMergeRequest(db(), id, OWNER, 'flip')).toEqual({ ok: true, status: 'accepted' });
+        expect(mergeSpy).toHaveBeenCalledTimes(1);
+        expect(mergeSpy).toHaveBeenCalledWith('o-new', 'r-old', OWNER);
+        expect(adopter('r-old').deleted_at).not.toBeNull();
+        expect(adopter('o-new').deleted_at).toBeNull();
+        expect(grantees('o-new')).toEqual([REQUESTER]);
+        expect(recipients()).toEqual([REQUESTER]);
+        expect(notify.create[0]).toMatchObject({
+            type: 'merge_request_resolved', url: '/adopter/o-new',
+            title: 'Se unieron dos perfiles: Carla Gómez → Carla Gomez',
+        });
+        expect(notify.create[0].body).toContain('owner');
+    });
+
+    it('a teammate flips for the owner: the owner is told too', async () => {
+        const id = await pending();
+        expect(await answerMergeRequest(db(), id, MATE, 'flip')).toEqual({ ok: true, status: 'accepted' });
+        expect(mergeSpy).toHaveBeenCalledWith('o-new', 'r-old', MATE);
+        expect(recipients().sort()).toEqual([OWNER, REQUESTER].sort());
+    });
+
+    it('an admin flips: admin_approved, swapped', async () => {
+        const id = await pending();
+        expect(await answerMergeRequest(db(), id, ADMIN, 'flip')).toEqual({ ok: true, status: 'admin_approved' });
+        expect(mergeSpy).toHaveBeenCalledWith('o-new', 'r-old', ADMIN);
+        expect(request(id).status).toBe('admin_approved');
+    });
+
+    it('the requester cannot flip; a declined request cannot be flipped', async () => {
+        const id = await pending();
+        expect(await answerMergeRequest(db(), id, REQUESTER, 'flip')).toEqual({ ok: false, reason: 'not_allowed' });
+        await answerMergeRequest(db(), id, OWNER, 'decline');
+        expect(await answerMergeRequest(db(), id, OWNER, 'flip')).toEqual({ ok: false, reason: 'not_open' });
+        expect(mergeSpy).not.toHaveBeenCalled();
+    });
+
+    it("the owner accepts: the owner's team keeps seeing the surviving (requester's) profile", async () => {
+        const id = await pending();
+        await answerMergeRequest(db(), id, OWNER, 'accept');
+        expect(grantees('r-old')).toEqual([MATE, OWNER].sort());
+    });
+
+    it('the owner team changes its mind after declining (D43): merged, re-checking both profiles are live', async () => {
+        const id = await pending();
+        await answerMergeRequest(db(), id, OWNER, 'decline');
+        sqlite.prepare('UPDATE adopters SET deleted_at = 5000 WHERE id = ?').run('o-new');
+        expect(await answerMergeRequest(db(), id, OWNER, 'accept')).toEqual({ ok: false, reason: 'profiles_changed' });
+        expect(mergeSpy).not.toHaveBeenCalled();
+        expect(request(id).status).toBe('closed');
+    });
+
+    it('the owner accepts after declining: merged, the requester notified', async () => {
+        const id = await pending();
+        await answerMergeRequest(db(), id, OWNER, 'decline');
+        notify.create.length = 0;
+        expect(await answerMergeRequest(db(), id, OWNER, 'accept')).toEqual({ ok: true, status: 'accepted' });
+        expect(adopter('o-new')).toMatchObject({ token_hash: 'MERGED' });
+        expect(recipients()).toEqual([REQUESTER]);
+    });
+
+    it('a failed flip merge restores the request to pending', async () => {
+        const id = await pending();
+        mergeSpy.mockResolvedValueOnce({ success: false, error: 'SQLITE_BUSY' });
+        expect(await answerMergeRequest(db(), id, OWNER, 'flip')).toEqual({ ok: false, reason: 'merge_failed' });
+        expect(request(id)).toMatchObject({ status: 'pending', resolved_by_email: null });
+        expect(grantees('o-new')).toEqual([]);
     });
 });
 
@@ -402,7 +513,7 @@ describe('closeRequestsForAdopter', () => {
 
 describe('closeRequestsForDeletedAdopter', () => {
     it("closes the deleted profile's open requests", async () => {
-        const { id } = await createMergeRequest(db(), detectedInput);
+        const id = await pending();
         await closeRequestsForDeletedAdopter(db(), 'o-new', ADMIN);
         expect(request(id).status).toBe('closed');
     });
