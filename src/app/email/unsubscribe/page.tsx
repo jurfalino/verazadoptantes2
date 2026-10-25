@@ -4,16 +4,10 @@ import { EMAIL_CATEGORIES, type EmailCategory } from '@/domain/emailCategories';
 import { resolveAuthSecret } from '@/lib/otp';
 import { logger } from '@/lib/logger';
 import { verifyUnsubscribe } from '@/lib/emailUnsubscribe';
+import { es } from '@/i18n/locales/es';
 
-const LABELS: Record<EmailCategory, string> = {
-    requests: 'Solicitudes',
-    forms: 'Formularios',
-    merges: 'Fusiones de perfiles',
-    contact_access: 'Acceso a contactos',
-    profile_changes: 'Cambios en perfiles',
-    api: 'API',
-    other: 'Otras notificaciones',
-};
+/** The same names Configuración → «Avisos por email» shows (Spanish, like the emails). */
+const label = (category: EmailCategory): string => es.settings[`email_cat_${category}`];
 
 function first(v: string | string[] | undefined): string {
     return (Array.isArray(v) ? v[0] : v) ?? '';
@@ -70,7 +64,7 @@ export default async function UnsubscribePage({ searchParams }: { searchParams: 
 
     return (
         <Card>
-            <p className="text-stone-900 font-medium">¿Dejar de recibir «{LABELS[category]}» por email?</p>
+            <p className="text-stone-900 font-medium">¿Dejar de recibir «{label(category)}» por email?</p>
             <form method="POST" action="/api/email/unsubscribe">
                 <input type="hidden" name="e" value={e} />
                 <input type="hidden" name="c" value={c} />
