@@ -88,7 +88,7 @@ describe('mergePendingDedupPair', () => {
     // Since merge requests (spec D2/D10/D14) these two ask the other owner
     // instead of refusing — still never absorbing another rescuer's profile.
     it('her record is older and the other is foreign: a merge request, never a merge', async () => {
-        expect(await mergePendingDedupPair('cand-absorb-foreign')).toEqual({ success: true, outcome: 'requested' });
+        expect(await mergePendingDedupPair('cand-absorb-foreign')).toMatchObject({ success: true, outcome: 'requested' });
         expect(requestSpy).toHaveBeenCalledWith(state.db, {
             primaryId: 'mine-old', secondaryId: 'other-new', candidateId: 'cand-absorb-foreign', flagId: null,
             requesterEmail: OWNER, ownerEmail: 'other@example.com',
@@ -97,7 +97,7 @@ describe('mergePendingDedupPair', () => {
     });
 
     it('a self-filed flag across owners: a merge request (carrying the flag id), never a merge', async () => {
-        expect(await mergePendingDedupPair('flag-cross')).toEqual({ success: true, outcome: 'requested' });
+        expect(await mergePendingDedupPair('flag-cross')).toMatchObject({ success: true, outcome: 'requested' });
         expect(requestSpy).toHaveBeenCalledWith(state.db, {
             primaryId: 'other-old', secondaryId: 'mine-new', candidateId: null, flagId: 'flag-cross',
             requesterEmail: OWNER, ownerEmail: 'other@example.com',

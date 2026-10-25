@@ -104,7 +104,7 @@ describe('getPendingDuplicatesForUser — who created the other profile', () => 
 describe('getPendingDuplicatesForUser — open merge requests', () => {
     it("the viewer's own request: direction 'sent', waiting on the other owner by name", async () => {
         // OWNER's o-old is older than STRANGER's s-new → a request to STRANGER.
-        expect(await as(OWNER, () => mergePendingDedupPair('cand-newer-mine'))).toEqual({ success: true, outcome: 'requested' });
+        expect(await as(OWNER, () => mergePendingDedupPair('cand-newer-mine'))).toMatchObject({ success: true, outcome: 'requested' });
         const p = pairOf((await feed(OWNER)).pairs, 'cand-newer-mine');
         expect(p.request).toEqual({
             id: requestId(), direction: 'sent', createdAt: expect.any(Number), counterpartName: 'stranger', toAdmins: false,
@@ -133,7 +133,7 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
     });
 
     it('no real owner: the request goes to admins, no counterpart', async () => {
-        expect(await mergePendingDedupPair('cand-anon')).toEqual({ success: true, outcome: 'requested' });
+        expect(await mergePendingDedupPair('cand-anon')).toMatchObject({ success: true, outcome: 'requested' });
         const p = pairOf((await feed(STRANGER)).pairs, 'cand-anon');
         expect(p.newAdopter.createdByAnonymous).toBe(true);
         expect(p.request).toMatchObject({ direction: 'sent', toAdmins: true, counterpartName: null });
@@ -193,7 +193,7 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         const filler = sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at) VALUES (?, ?, 'z@example.com', 'duplicate', ?, NULL, 1)`);
         for (let i = 0; i < 100; i++) filler.run(`filler-${i}`, `z-a-${i}`, `z-b-${i}`);
         sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at) VALUES ('flag-x', 'f-o', ?, 'duplicate', 'f-s', NULL, 1)`).run(STRANGER);
-        expect(await mergePendingDedupPair('flag-x')).toEqual({ success: true, outcome: 'requested' });
+        expect(await mergePendingDedupPair('flag-x')).toMatchObject({ success: true, outcome: 'requested' });
         expect((await feed(STRANGER, true)).pairs.map(p => p.candidateId)).toContain('flag-x');
         expect((await feed(MATE)).pairs).toEqual([expect.objectContaining({ candidateId: 'flag-x', source: 'flagged', request: expect.objectContaining({ direction: 'received' }) })]);
         sqlite.prepare(`UPDATE adopter_flags SET details = 'Merged into f-s by x' WHERE id = 'flag-x'`).run();
@@ -236,7 +236,7 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
 
     it("an owner whose added_by has capitals still sees the request addressed to them", async () => {
         sqlite.prepare(`UPDATE adopters SET added_by = 'Owner@Example.com' WHERE id = 'o-new'`).run();
-        expect(await mergePendingDedupPair('cand-older-mine')).toEqual({ success: true, outcome: 'requested' });
+        expect(await mergePendingDedupPair('cand-older-mine')).toMatchObject({ success: true, outcome: 'requested' });
         expect(sqlite.prepare('SELECT requester_email, owner_email FROM merge_requests').get()).toEqual({ requester_email: STRANGER, owner_email: OWNER });
         expect(pairOf((await feed(OWNER)).pairs, 'cand-older-mine').request).toMatchObject({ direction: 'received', counterpartName: 'stranger' });
         expect(pairOf((await feed(MATE)).pairs, 'cand-older-mine').request).toMatchObject({ direction: 'received' });

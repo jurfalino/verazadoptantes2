@@ -567,7 +567,8 @@ export interface PendingDedupSide {
  * (src/lib/adopterMerge.ts).
  */
 export async function mergePendingDedupPair(candidateId: string): Promise<
-    | { success: true; outcome: 'merged' | 'requested' }
+    | { success: true; outcome: 'merged' }
+    | { success: true; outcome: 'requested'; toName: string | null; toAdmins: boolean }
     | { success: false; error: string; errorId?: string }
 > {
     let actorEmail: string | null = null;
@@ -622,7 +623,16 @@ export async function mergePendingDedupPair(candidateId: string): Promise<
                 return { success: false, error: 'request_pending', errorId };
             }
             logger.info('mergePendingDedupPair: requested', { candidateId, actorEmail, requestId, created, primaryId, secondaryId });
-            return { success: true, outcome: 'requested' };
+            // Who was asked, so the toast names the right person. Display name
+            // or email handle, never the address; null when the admins decide.
+            const toAdmins = action.ownerEmail === null;
+            let toName: string | null = null;
+            if (action.ownerEmail) {
+                const { resolveDisplayName } = await import('./notifications');
+                toName = await resolveDisplayName(action.ownerEmail).catch(() => action.ownerEmail!.split('@')[0]);
+                if (toName.includes('@')) toName = toName.split('@')[0];
+            }
+            return { success: true, outcome: 'requested', toName, toAdmins };
         }
         const result = await mergeAdopters(primaryId, secondaryId, actorEmail!);
         if (!result.success) {

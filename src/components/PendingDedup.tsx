@@ -227,9 +227,8 @@ export default function PendingDedup() {
             } else if (result.success) {
                 // Not merged: it went to the other profile's owner (or the
                 // admins) as a request. Reload so the card shows its state.
-                const target = otherOwnerName(pair);
-                toast.success(target
-                    ? (t('myAdopters.pending_dedup_request_sent_to') || 'Pedido enviado a {name}').replace('{name}', target)
+                toast.success(!result.toAdmins && result.toName
+                    ? (t('myAdopters.pending_dedup_request_sent_to') || 'Pedido enviado a {name}').replace('{name}', result.toName)
                     : (t('myAdopters.pending_dedup_request_sent_admins') || 'Pedido enviado a un administrador'));
                 await load();
             } else if (result.error === 'request_pending') {
@@ -246,11 +245,6 @@ export default function PendingDedup() {
             setBusyCandidateId(null);
         }
     };
-
-    /** Name of the profile owner a request would go to: the side the viewer
-     *  did not create. null when it goes to the admins. */
-    const otherOwnerName = (pair: PendingDedupPair): string | null =>
-        pair.newAdopter.createdByName ?? pair.existingAdopter.createdByName;
 
     const handleRequest = async (pair: PendingDedupPair, run: () => ReturnType<typeof cancelMergeRequest>, okKey: string, okFallback: string) => {
         if (busyCandidateId) return;
@@ -274,6 +268,7 @@ export default function PendingDedup() {
     };
 
     const requestAge = (createdAt: number): string => {
+        if (!createdAt) return '';
         const lang = locale === 'en' ? 'en' : 'es';
         return (locale !== 'pt' && formatRelativeTime(createdAt * 1000, lang)) || formatShortDate(createdAt * 1000);
     };
