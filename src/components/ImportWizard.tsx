@@ -2381,7 +2381,6 @@ export default function ImportWizard() {
                                                     <div className="min-w-0">
                                                         <p className="font-semibold text-stone-900 line-clamp-2 break-words" title={match.name}>{match.name?.trim() || t('import.unnamed_profile')}</p>
                                                         <p className="text-xs text-stone-600 mt-1">{humanMatchSentence(match.matchTypes || [], t)}</p>
-                                                        <MatchWhy adopterId={match.id} matchTypes={match.matchTypes || []} t={t} />
                                                     </div>
                                                 </div>
                                                 <div className="flex flex-col items-end gap-1 shrink-0">
@@ -2397,6 +2396,18 @@ export default function ImportWizard() {
                                                     </a>
                                                 </div>
                                             </div>
+                                            {/* What matches and what doesn't, field by field (Jon, 2026-10-25).
+                                                Full card width so the rows stay readable at 390px; open by
+                                                default when it is the only possible match. */}
+                                            <MatchWhy
+                                                adopterId={match.id}
+                                                matchTypes={match.matchTypes || []}
+                                                profileName={match.name}
+                                                postName={extractedData?.name}
+                                                postEntries={contactEntries}
+                                                defaultOpen={personMatches.length === 1}
+                                                t={t}
+                                            />
                                         </div>
                                     );
                                 })}
