@@ -10,7 +10,7 @@ import { session, getUser, isAdmin, isOrgMate, isOwnerOrOrgMate, OWNER, MATE, ST
 const { state, engine } = vi.hoisted(() => ({ state: { db: null as unknown }, engine: vi.fn() }));
 vi.mock('./_db', () => ({ getDb: async () => state.db, getUser }));
 vi.mock('@/config/admins', () => ({ isAdminAsync: isAdmin, isModeratorOrAdminAsync: isAdmin }));
-vi.mock('@/lib/orgMembership', () => ({ isOrgMate, isOwnerOrOrgMate }));
+vi.mock('@/lib/orgMembership', () => ({ isOrgMate, isOwnerOrOrgMate, normEmail: (e: string | null | undefined) => (e ?? '').trim().toLowerCase() }));
 vi.mock('@/lib/adopterTokenize', () => ({ tokenizeAdopter: vi.fn() }));
 vi.mock('@/lib/adopterMerge', () => ({ mergeAdopters: vi.fn() }));
 vi.mock('@/auth', () => ({ auth: async () => (session.user ? { user: { email: session.user } } : null) }));

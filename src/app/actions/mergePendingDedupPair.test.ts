@@ -26,6 +26,7 @@ vi.mock('@/lib/adopterTokenize', () => ({ tokenizeAdopter: vi.fn() }));
 vi.mock('@/lib/orgMembership', () => ({
     isOwnerOrOrgMate: async (viewer: string, owner: string | null) =>
         viewer === owner || (viewer === 'me@example.com' && owner === 'mate@example.com'),
+    normEmail: (e: string | null | undefined) => (e ?? '').trim().toLowerCase(),
 }));
 vi.mock('@/lib/logger', () => ({
     logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(() => 'err12345'), debug: vi.fn() },

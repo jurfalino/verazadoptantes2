@@ -100,6 +100,41 @@ describe('mergePendingDedupPair — merge or request', () => {
         expect(notify.create).toEqual([]);
     });
 
+    it('someone else already asked about the pair (either orientation): request_pending, nothing filed or sent', async () => {
+        const other = 'other@example.com';
+        const ins = sqlite.prepare(`INSERT INTO merge_requests (id, primary_id, secondary_id, requester_email, owner_email, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', 1)`);
+        for (const [pId, sId] of [['s-old', 'o-new'], ['o-new', 's-old']]) {
+            sqlite.prepare('DELETE FROM merge_requests').run();
+            ins.run('theirs', pId, sId, other, OWNER);
+            expect(await mergePendingDedupPair('cand-older-mine')).toEqual({ success: false, error: 'request_pending', errorId: 'gen12345' });
+            expect(requests()).toHaveLength(1);
+            expect(notify.create).toEqual([]);
+            expect(logs.warn).toContainEqual(['mergePendingDedupPair: request already pending',
+                expect.objectContaining({ candidateId: 'cand-older-mine', actorEmail: STRANGER, requestId: 'theirs' })]);
+        }
+    });
+
+    it('the owner being asked clicks the same cross-owner flag: request_pending, not a request of their own', async () => {
+        await mergePendingDedupPair('flag-cross');
+        notify.create.length = 0;
+        expect(await as(OWNER, () => mergePendingDedupPair('flag-cross'))).toEqual({ success: false, error: 'request_pending', errorId: 'gen12345' });
+        expect(requests()).toEqual([expect.objectContaining({ requester_email: STRANGER, status: 'pending' })]);
+        expect(notify.create).toEqual([]);
+        expect(mergeSpy).not.toHaveBeenCalled();
+    });
+
+    it('declined, then the pair resurfaces (rescan): asking again files a NEW request and notifies', async () => {
+        await mergePendingDedupPair('cand-older-mine');
+        const first = requests()[0].id as string;
+        await as(OWNER, () => resolveMergeRequest(first, 'decline'));
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
+            VALUES ('cand-rescan', 's-old', 'o-new', '["phone"]', 90, 'high', 'pending', 2)`).run();
+        notify.create.length = 0;
+        expect(await mergePendingDedupPair('cand-rescan')).toEqual({ success: true, outcome: 'requested' });
+        expect(requests().map(r => r.status).sort()).toEqual(['declined', 'pending']);
+        expect(recipients()).toEqual([MATE, OWNER].sort());
+    });
+
     it('the owner accepts from their session: merged for real, requester notified', async () => {
         await mergePendingDedupPair('cand-older-mine');
         const id = requests()[0].id as string;

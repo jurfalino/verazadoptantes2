@@ -342,10 +342,12 @@ export async function mergeAdopters(
         // null tokenHash set above means the next scan retries it anyway.
         await tokenizeAdopter(primaryId);
 
-        // 13. Any open merge request naming either profile is now stale: the
-        // pair it asked about is gone. Best-effort — the merge already
-        // happened; a request left open is refused later (profiles_changed).
-        await Promise.all([closeRequestsForAdopter(db, primaryId), closeRequestsForAdopter(db, secondaryId)])
+        // 13. Any open merge request naming the ABSORBED profile is now stale:
+        // the pair it asked about is gone. The survivor's requests with other
+        // profiles stay valid — it is still live. Best-effort — the merge
+        // already happened; a request left open is refused later
+        // (profiles_changed).
+        await closeRequestsForAdopter(db, secondaryId)
             .catch((e: unknown) => {
                 logger.warn('mergeAdopters: open merge requests not closed', { primaryId, secondaryId, actor: actorEmail, error: e instanceof Error ? e.message : String(e) });
             });

@@ -13,14 +13,16 @@ type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
 /**
  * A request that can still be answered: pending, or declined (an admin may
- * still approve it, spec D6). Never `IN (…)` — D1 binds one value.
+ * still approve it, spec D6). What a merge closes. (Filing a new request
+ * dedupes against `pending` only — a declined one is not "already asked".)
+ * Never `IN (…)` — D1 binds one value.
  */
 export const openMergeRequestStatus = () =>
     or(eq(mergeRequests.status, 'pending'), eq(mergeRequests.status, 'declined'));
 
 /**
  * Close every open request naming this profile on either side: once a profile
- * is merged (either way) the pair a request asked about no longer exists, and
+ * is absorbed by a merge the pair a request asked about no longer exists, and
  * nobody may accept it. Returns how many were closed. Throws on a DB error —
  * callers decide whether that is fatal.
  */

@@ -116,15 +116,27 @@ describe('createMergeRequest', () => {
         expect(notify.admins).toEqual([]);
     });
 
-    it('asking twice (either orientation) returns the same request: still one row, nobody re-notified', async () => {
+    it('asking twice (either orientation) returns the same request with its requester: still one row, nobody re-notified', async () => {
         const first = await createMergeRequest(db(), detectedInput);
+        expect(first).toMatchObject({ created: true, requesterEmail: REQUESTER });
         notify.create.length = 0;
         const again = await createMergeRequest(db(), detectedInput);
-        const flipped = await createMergeRequest(db(), { ...detectedInput, primaryId: 'o-new', secondaryId: 'r-old' });
-        expect(again).toEqual({ id: first.id, created: false });
-        expect(flipped).toEqual({ id: first.id, created: false });
+        const flipped = await createMergeRequest(db(), { ...detectedInput, primaryId: 'o-new', secondaryId: 'r-old', requesterEmail: OWNER });
+        expect(again).toEqual({ id: first.id, created: false, requesterEmail: REQUESTER });
+        expect(flipped).toEqual({ id: first.id, created: false, requesterEmail: REQUESTER });
         expect(requestCount()).toBe(1);
         expect(notify.create).toEqual([]);
+    });
+
+    it('a declined request is not "already asked": filing again makes a new pending request and notifies', async () => {
+        const first = await createMergeRequest(db(), detectedInput);
+        await answerMergeRequest(db(), first.id, OWNER, 'decline');
+        notify.create.length = 0;
+        const again = await createMergeRequest(db(), detectedInput);
+        expect(again.created).toBe(true);
+        expect(again.id).not.toBe(first.id);
+        expect([request(first.id).status, request(again.id).status]).toEqual(['declined', 'pending']);
+        expect(recipients().sort()).toEqual([MATE, OWNER].sort());
     });
 
     it('the requester is left out of the asked team, whatever the case of their email', async () => {
@@ -365,12 +377,16 @@ describe('closeRequestsForAdopter', () => {
         expect(request('p1').resolved_at).not.toBeNull();
     });
 
-    it('any merge of a profile closes its open requests (mergeAdopters calls it for both ids)', async () => {
+    it("a merge closes the ABSORBED profile's open requests; the survivor's requests with other profiles stay open", async () => {
         const id = await pending();
-        const other = await pending({ primaryId: 'third', secondaryId: 'anon-new', candidateId: null, ownerEmail: null });
+        const absorbedElsewhere = await pending({ primaryId: 'third', secondaryId: 'o-new', candidateId: null });
+        const survivorElsewhere = await pending({ primaryId: 'r-old', secondaryId: 'third', candidateId: null });
+        const unrelated = await pending({ primaryId: 'third', secondaryId: 'anon-new', candidateId: null, ownerEmail: null });
         expect((await mergeAdopters('r-old', 'o-new', ADMIN)).success).toBe(true);
         expect(request(id).status).toBe('closed');
-        expect(request(other).status).toBe('pending');
+        expect(request(absorbedElsewhere).status).toBe('closed');
+        expect(request(survivorElsewhere).status).toBe('pending');
+        expect(request(unrelated).status).toBe('pending');
         expect(await answerMergeRequest(db(), id, OWNER, 'accept')).toEqual({ ok: false, reason: 'not_open' });
     });
 });

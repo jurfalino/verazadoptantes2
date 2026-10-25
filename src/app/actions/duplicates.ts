@@ -481,7 +481,7 @@ export async function mergePendingDedupPair(candidateId: string): Promise<
                 if (flag && isOpenDuplicateFlag(flag)) pair = { a: flag.adopterId, b: flag.targetAdopterId!, source: 'flag' };
             }
         }
-        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+        const { isOwnerOrOrgMate, normEmail } = await import('@/lib/orgMembership');
         const load = async (id: string): Promise<DedupSide | null> => {
             const r = await db.select({ id: adopters.id, addedBy: adopters.addedBy, createdAt: adopters.createdAt, deletedAt: adopters.deletedAt })
                 .from(adopters).where(eq(adopters.id, id)).get();
@@ -501,13 +501,20 @@ export async function mergePendingDedupPair(candidateId: string): Promise<
         const { primaryId, secondaryId } = action;
         if (action.kind === 'request') {
             const fromFlag = pair!.source === 'flag';
-            const { id: requestId, created } = await createMergeRequest(db, {
+            const { id: requestId, created, requesterEmail } = await createMergeRequest(db, {
                 primaryId, secondaryId,
                 candidateId: fromFlag ? null : candidateId,
                 flagId: fromFlag ? candidateId : null,
                 requesterEmail: actorEmail!,
                 ownerEmail: action.ownerEmail,
             });
+            // Someone else already asked about this pair (possibly asking the
+            // caller): not "your request was sent" — nothing was filed or sent.
+            if (!created && normEmail(requesterEmail) !== normEmail(actorEmail)) {
+                const errorId = generateErrorId();
+                logger.warn('mergePendingDedupPair: request already pending', { candidateId, actorEmail, requestId, errorId });
+                return { success: false, error: 'request_pending', errorId };
+            }
             logger.info('mergePendingDedupPair: requested', { candidateId, actorEmail, requestId, created, primaryId, secondaryId });
             return { success: true, outcome: 'requested' };
         }

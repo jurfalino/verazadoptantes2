@@ -20,7 +20,6 @@ import { getOrgMemberEmailsFor, isOwnerOrOrgMate, normEmail } from '@/lib/orgMem
 import { isAdminAsync } from '@/config/admins';
 import { createNotification, notifyAdmins, resolveDisplayName } from '@/app/actions/notifications';
 import { rowsAffected } from '@/lib/interviews/rowsAffected';
-import { openMergeRequestStatus } from '@/lib/mergeRequestClose';
 import {
     decideMergeRequestAnswer,
     KEPT_SEPARATE_FLAG_DETAILS_PREFIX,
@@ -54,21 +53,27 @@ async function adopterName(db: Db, id: string): Promise<string> {
     return row?.name ?? '';
 }
 
-/** Open request for this pair, in either orientation. */
-async function findOpenRequestForPair(db: Db, a: string, b: string): Promise<{ id: string } | undefined> {
-    return db.select({ id: mergeRequests.id }).from(mergeRequests).where(and(
+/**
+ * The PENDING request for this pair, in either orientation. A declined one
+ * does not count: if the pair resurfaces (a rescan) and someone asks again,
+ * that is a new question for the owner.
+ */
+async function findPendingRequestForPair(db: Db, a: string, b: string): Promise<{ id: string; requesterEmail: string } | undefined> {
+    return db.select({ id: mergeRequests.id, requesterEmail: mergeRequests.requesterEmail }).from(mergeRequests).where(and(
         or(
             and(eq(mergeRequests.primaryId, a), eq(mergeRequests.secondaryId, b)),
             and(eq(mergeRequests.primaryId, b), eq(mergeRequests.secondaryId, a)),
         ),
-        openMergeRequestStatus(),
+        eq(mergeRequests.status, 'pending'),
     )).get();
 }
 
 /**
  * File a request asking the other profile's owner (and their team, D16) to let
- * the pair be merged; with no real owner it goes to the admins (D15). One open
- * request per pair: asking again returns the existing one and notifies nobody.
+ * the pair be merged; with no real owner it goes to the admins (D15). One
+ * pending request per pair: if one exists it is returned (`created: false`,
+ * with ITS requester — the caller decides whether that is "you already asked"
+ * or someone else's request) and nobody is notified.
  */
 export async function createMergeRequest(db: Db, input: {
     primaryId: string;
@@ -77,9 +82,9 @@ export async function createMergeRequest(db: Db, input: {
     flagId: string | null;
     requesterEmail: string;
     ownerEmail: string | null;
-}): Promise<{ id: string; created: boolean }> {
-    const existing = await findOpenRequestForPair(db, input.primaryId, input.secondaryId);
-    if (existing) return { id: existing.id, created: false };
+}): Promise<{ id: string; created: boolean; requesterEmail: string }> {
+    const existing = await findPendingRequestForPair(db, input.primaryId, input.secondaryId);
+    if (existing) return { id: existing.id, created: false, requesterEmail: existing.requesterEmail };
 
     const id = crypto.randomUUID();
     await db.insert(mergeRequests).values({
@@ -106,7 +111,7 @@ export async function createMergeRequest(db: Db, input: {
             requestId: id, actor: input.requesterEmail, error: e instanceof Error ? e.message : String(e),
         });
     }
-    return { id, created: true };
+    return { id, created: true, requesterEmail: input.requesterEmail };
 }
 
 async function notifyRequestFiled(db: Db, requestId: string, input: {
