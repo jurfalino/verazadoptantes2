@@ -20,16 +20,19 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { DiscoveryMatch } from '@/app/actions';
-import { buildMatchChips, hasStrongMatch, type MatchChip } from '@/lib/matchChips';
+import { hasStrongMatch } from '@/lib/matchChips';
 import { highlightMatches } from '@/lib/matchHighlight';
 import { useLanguage } from '@/context/LanguageContext';
 import { AdopterName } from '@/components/AdopterName';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
+import MatchCompare, { type MatchSourceKind } from '@/components/MatchCompare';
 
 const NAME_HL_TYPES = ['name_full', 'name_word'];
 const CONTACT_HL_TYPES = ['phone', 'phone_suffix', 'email', 'social', 'id_number', 'address_word', 'source_url'];
 
 interface Props {
+    /** What the rescuer has typed — their side of «Qué coincide y qué no». */
+    compareSource: { kind: MatchSourceKind; name: string; entries: Array<{ type: string; value: string }> };
     results: DiscoveryMatch[] | null;
     searching: boolean;
     onContinueWith?: (adopterId: string) => Promise<void> | void;
@@ -38,29 +41,8 @@ interface Props {
     busyAdopterId?: string | null;
 }
 
-function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
-    if (chips.length === 0) return null;
-    return (
-        <div className="flex flex-wrap gap-1 mt-1.5">
-            {chips.map(chip => (
-                <span
-                    key={chip.key}
-                    className={
-                        chip.isStrong
-                            ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-100 text-amber-900 border border-amber-200'
-                            : 'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-stone-100 text-stone-700 border border-stone-200'
-                    }
-                    title={chip.label}
-                >
-                    <span aria-hidden="true">{chip.icon}</span>
-                    <span className="truncate max-w-[180px]">{chip.label}</span>
-                </span>
-            ))}
-        </div>
-    );
-}
 
-export default function DuplicatePeek({ results, searching, onContinueWith, busyAdopterId }: Props) {
+export default function DuplicatePeek({ results, searching, onContinueWith, busyAdopterId, compareSource }: Props) {
     const { t } = useLanguage();
     const [expanded, setExpanded] = useState(false);
     const [pulse, setPulse] = useState(false);
@@ -186,7 +168,6 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
 
                         <ul className="divide-y divide-stone-100">
                             {(results ?? []).map(result => {
-                                const chips = buildMatchChips(result.matchValues, t);
                                 const strong = hasStrongMatch(result.matchValues);
                                 return (
                                     <li key={result.adopter.id} className={`px-5 py-3 ${strong ? 'bg-amber-50/40' : ''}`}>
@@ -211,7 +192,14 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
                                                         {highlightMatches(result.adopter.contactInfo, result.matchValues, CONTACT_HL_TYPES)}
                                                     </p>
                                                 )}
-                                                <MatchChipsRow chips={chips} />
+                                                <MatchCompare
+                                                    adopterId={result.adopter.id}
+                                                    matchTypes={result.matchTypes}
+                                                    profileName={result.adopter.name ?? ''}
+                                                    source={compareSource}
+                                                    defaultOpen={(results ?? []).length === 1}
+                                                    t={t}
+                                                />
                                                 <div className="flex gap-2 mt-2.5">
                                                     <a
                                                         href={`/adopter/${result.adopter.id}`}

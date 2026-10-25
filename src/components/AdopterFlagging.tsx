@@ -8,7 +8,8 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { resolveErrorId, reportClientError } from '@/lib/clientErrorReporter';
+import MatchCompare, { type MatchSourceKind } from '@/components/MatchCompare';
 import { zarazTrack } from '@/lib/zaraz';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
@@ -65,7 +66,7 @@ function ShowLowConfidenceSuggestions({ suppressed, targetAdopter, setTargetAdop
     );
 }
 
-export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, hasDuplicateBanner?: boolean }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress: _hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests, hasDuplicateBanner = false }, ref) {
+export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, hasDuplicateBanner?: boolean, compareSource?: { kind: MatchSourceKind; name: string; entries: Array<{ type: string; value: string }> } }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, compareSource, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress: _hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests, hasDuplicateBanner = false }, ref) {
     const router = useRouter();
     const { t } = useLanguage();
     const { formatShortDate } = useDateFormat();
@@ -96,7 +97,10 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
 
     // Fetch system-detected duplicate candidates on mount
     useEffect(() => {
-        getDuplicateCandidates(adopterId).then(setSystemSuggestions).catch(() => { });
+        getDuplicateCandidates(adopterId).then(setSystemSuggestions).catch(e => {
+            // Degraded: the search box still works. Logged, not swallowed.
+            void reportClientError({ message: 'flagging: system duplicate suggestions could not load', source: 'AdopterFlagging', level: 'warn', extra: { adopterId, error: e instanceof Error ? e.message : String(e) } });
+        });
     }, [adopterId]);
 
     const duplicateFlags = existingFlags.filter(f => f.reason === 'duplicate');
@@ -522,11 +526,23 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                                                         'bg-blue-100 text-blue-600'
                                                                     }`}>{sug.confidencePercent}% match</span>
                                                                 </div>
-                                                                <div className="flex flex-wrap gap-1 mt-1">
-                                                                    {sug.matchTypes.map(type => (
-                                                                        <span key={type} className="text-xs px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600">{matchTypeLabel(type, t)}</span>
-                                                                    ))}
-                                                                </div>
+                                                                {compareSource ? (
+                                                                    <MatchCompare
+                                                                        adopterId={sug.otherAdopterId}
+                                                                        matchTypes={sug.matchTypes}
+                                                                        profileName={sug.otherAdopterName}
+                                                                        source={compareSource}
+                                                                        target="other"
+                                                                        defaultOpen={visible.length === 1}
+                                                                        t={t}
+                                                                    />
+                                                                ) : (
+                                                                    <div className="flex flex-wrap gap-1 mt-1">
+                                                                        {sug.matchTypes.map(type => (
+                                                                            <span key={type} className="text-xs px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600">{matchTypeLabel(type, t)}</span>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         ))}
                                                         {suppressed.length > 0 && (

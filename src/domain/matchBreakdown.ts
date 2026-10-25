@@ -1,6 +1,8 @@
 /**
- * Field by field: what a possible duplicate shares with the post being
- * imported, and what it doesn't (Jon, 2026-10-25: "we don't explain why").
+ * Field by field: what a possible duplicate shares with the data the rescuer is
+ * deciding about — a post, a form, a contract, what they typed, a spreadsheet
+ * row, or another profile — and what it doesn't (Jon, 2026-10-25: "we don't
+ * explain why"). One rule for every screen that asks "same person?".
  *
  * Privacy: the existing profile's values are NEVER part of the result except
  * its name (names are not PII-gated). For each field we only know, from the
@@ -12,13 +14,13 @@
  */
 
 export type BreakdownField = 'name' | 'phone' | 'email' | 'social' | 'id' | 'address';
-export type BreakdownStatus = 'match' | 'partial' | 'different' | 'only_post' | 'only_profile';
+export type BreakdownStatus = 'match' | 'partial' | 'different' | 'only_source' | 'only_profile';
 
 export interface BreakdownRow {
     field: BreakdownField;
     status: BreakdownStatus;
-    /** What the post has for this field (the rescuer's own data), when it has it. */
-    post?: string;
+    /** What the source has for this field (the rescuer's own data), when it has it. */
+    source?: string;
     /** Only for `name`: the existing profile's name. Never set for contact fields. */
     profile?: string;
 }
@@ -34,17 +36,19 @@ const FIELD_OF: Record<string, BreakdownField> = {
 /** Match types that mean the whole value matched, not a part of it. */
 const EXACT = new Set(['name_full', 'phone', 'email', 'social', 'social_handle', 'id_number']);
 const ENTRY_FIELD: Record<string, BreakdownField> = { phone: 'phone', email: 'email', social: 'social', id: 'id', address: 'address' };
-const ORDER: BreakdownStatus[] = ['match', 'partial', 'different', 'only_post', 'only_profile'];
+const ORDER: BreakdownStatus[] = ['match', 'partial', 'different', 'only_source', 'only_profile'];
 const FIELD_ORDER: BreakdownField[] = ['name', 'phone', 'email', 'social', 'id', 'address'];
 
 export function matchBreakdown(input: {
     matchTypes: string[];
-    post: { name?: string; entries: Array<{ type: string; value: string }> };
+    source: { name?: string; entries: Array<{ type: string; value: string }> };
     profile: { name?: string | null; has: { phone: boolean; email: boolean; id: boolean; social: boolean; address: boolean } | null };
 }): BreakdownRow[] {
     // Which fields matched, and whether fully.
     const matched = new Map<BreakdownField, 'match' | 'partial'>();
-    for (const t of input.matchTypes) {
+    for (const raw of input.matchTypes) {
+        // Form notifications store the legacy prefixed taxonomy ("token:phone").
+        const t = raw.replace(/^token:/, '');
         // A LIKE hit on the contact blob: we can't tell which contact, so it
         // does not claim a field (the engine's other signals usually do).
         const f = FIELD_OF[t];
@@ -53,13 +57,13 @@ export function matchBreakdown(input: {
         if (matched.get(f) !== 'match') matched.set(f, kind);
     }
 
-    const postValues = new Map<BreakdownField, string[]>();
-    for (const e of input.post.entries) {
+    const sourceValues = new Map<BreakdownField, string[]>();
+    for (const e of input.source.entries) {
         const f = ENTRY_FIELD[e.type];
         if (!f || !e.value.trim()) continue;
-        postValues.set(f, [...(postValues.get(f) ?? []), e.value.trim()]);
+        sourceValues.set(f, [...(sourceValues.get(f) ?? []), e.value.trim()]);
     }
-    const postName = input.post.name?.trim() || '';
+    const sourceName = input.source.name?.trim() || '';
     const profileName = input.profile.name?.trim() || '';
     const has = input.profile.has;
 
@@ -67,17 +71,17 @@ export function matchBreakdown(input: {
     for (const field of FIELD_ORDER) {
         if (field === 'name') {
             const m = matched.get('name');
-            if (m) rows.push({ field, status: m, post: postName || undefined, profile: profileName || undefined });
-            else if (postName && profileName) rows.push({ field, status: 'different', post: postName, profile: profileName });
-            else if (postName) rows.push({ field, status: 'only_post', post: postName });
+            if (m) rows.push({ field, status: m, source: sourceName || undefined, profile: profileName || undefined });
+            else if (sourceName && profileName) rows.push({ field, status: 'different', source: sourceName, profile: profileName });
+            else if (sourceName) rows.push({ field, status: 'only_source', source: sourceName });
             continue;
         }
-        const mine = postValues.get(field) ?? [];
+        const mine = sourceValues.get(field) ?? [];
         const theirs = has ? has[field] : false;
         const m = matched.get(field);
-        if (m) rows.push({ field, status: m, post: mine.join(' · ') || undefined });
-        else if (mine.length && theirs) rows.push({ field, status: 'different', post: mine.join(' · ') });
-        else if (mine.length) rows.push({ field, status: 'only_post', post: mine.join(' · ') });
+        if (m) rows.push({ field, status: m, source: mine.join(' · ') || undefined });
+        else if (mine.length && theirs) rows.push({ field, status: 'different', source: mine.join(' · ') });
+        else if (mine.length) rows.push({ field, status: 'only_source', source: mine.join(' · ') });
         else if (theirs) rows.push({ field, status: 'only_profile' });
     }
     return rows.sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status));

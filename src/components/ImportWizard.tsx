@@ -46,7 +46,7 @@ import { handledAsStale } from '@/lib/errorMessage';
 import { resolveErrorId, reportClientError } from '@/lib/clientErrorReporter';
 import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, recordDateFrom, aliasForMerge, cleanOtherPeople, matchedOnName, extractionQuality, type PostPerson, type ExtractionIssue } from '@/domain/importInput';
 import DatePicker from '@/components/ui/DatePicker';
-import MatchWhy from '@/components/import/MatchWhy';
+import MatchCompare from '@/components/MatchCompare';
 import { buttonClasses } from '@/components/ui/Button';
 import StickyActions from '@/components/import/StickyActions';
 import MediaPicker from '@/components/import/MediaPicker';
@@ -2399,12 +2399,11 @@ export default function ImportWizard() {
                                             {/* What matches and what doesn't, field by field (Jon, 2026-10-25).
                                                 Full card width so the rows stay readable at 390px; open by
                                                 default when it is the only possible match. */}
-                                            <MatchWhy
+                                            <MatchCompare
                                                 adopterId={match.id}
                                                 matchTypes={match.matchTypes || []}
                                                 profileName={match.name}
-                                                postName={extractedData?.name}
-                                                postEntries={contactEntries}
+                                                source={{ kind: 'post', name: extractedData?.name, entries: contactEntries }}
                                                 defaultOpen={personMatches.length === 1}
                                                 t={t}
                                             />

@@ -28,8 +28,8 @@ import {
 } from '@/app/actions/duplicates';
 import { AdopterName } from '@/components/AdopterName';
 import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
-import { collapseNameEvidence } from '@/domain/matchEvidence';
-import { matchTypeLabel } from '@/lib/matchTypeLabels';
+import MatchCompare from '@/components/MatchCompare';
+import { parseBlobToContactEntries } from '@/lib/contactEntries';
 
 /** Opens-in-new-tab affordance. Inline SVG with currentColor per the icon
  *  convention — an emoji would not inherit the link's hover colour. */
@@ -39,64 +39,6 @@ function ExternalLinkIcon({ className = 'w-3 h-3' }: { className?: string }) {
             strokeWidth="1.8" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4h4v4M16 4l-7 7M14 12v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h3" />
         </svg>
-    );
-}
-
-/**
- * The evidence row: which fields actually matched, and their values.
- *
- * Was a bare `matchTypes.join(', ')`, so the user read "name_full, name_word" —
- * internal token names, and no indication of WHICH phone or name matched. The
- * values come from `duplicate_candidates.match_values`; the per-save path stores
- * null, so fall back to the labels alone rather than showing nothing.
- */
-function MatchedOn({ pair, t }: { pair: PendingDedupPair; t: (k: string) => string }) {
-    if (pair.matchTypes.length === 0) return null;
-
-    const values = collapseNameEvidence(pair.matchValues);
-    // A type whose values were entirely absorbed above no longer earns a chip.
-    // Types with no stored values at all (the per-save path writes none) still
-    // show, since their label is the only evidence available.
-    const types = pair.matchTypes.filter(ty =>
-        !(ty in pair.matchValues) || (values[ty]?.length ?? 0) > 0);
-
-    const LABEL: Record<string, string> = {
-        phone: t('duplicates.match_phone') || 'Teléfono',
-        phone_suffix: t('duplicates.match_phone_suffix') || 'Teléfono (final)',
-        email: t('duplicates.match_email') || 'Email',
-        social: t('duplicates.match_social') || 'Red social',
-        social_handle: t('duplicates.match_social') || 'Red social',
-        name_full: t('duplicates.match_name_full') || 'Nombre completo',
-        name_word: t('duplicates.match_name_word') || 'Nombre',
-        address_word: t('duplicates.match_address') || 'Dirección',
-        source_url: t('duplicates.match_source_url') || 'URL de origen',
-        id_number: t('duplicates.match_id_number') || 'Documento',
-        flagged_by_user: t('duplicates.match_flagged') || 'Marcado manualmente',
-    };
-
-    return (
-        <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[11px] text-stone-500">
-                {t('myAdopters.pending_dedup_matched_on') || 'Coincide en'}:
-            </span>
-            {types.map(type => {
-                const vals = values[type] || [];
-                // Types without a local label (like_fallback_*, name_word_fuzzy, …)
-                // go through the shared map instead of showing the raw code.
-                const label = LABEL[type] || matchTypeLabel(type, t);
-                return (
-                    <span key={type}
-                        className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-100">
-                        <span className="font-semibold">{label}</span>
-                        {vals.length > 0 && (
-                            <span className="font-mono text-amber-800/90 truncate max-w-[14rem]">
-                                {vals.slice(0, 2).join(', ')}{vals.length > 2 ? '…' : ''}
-                            </span>
-                        )}
-                    </span>
-                );
-            })}
-        </div>
     );
 }
 
@@ -310,10 +252,24 @@ export default function PendingDedup() {
                                 <span>{pair.confidencePercent}% {t('myAdopters.pending_dedup_match') || 'coincidencia'}</span>
                             </div>
 
-                            {/* Why this pair was proposed — replaces the raw
-                                "name_full, name_word" token dump. */}
+                            {/* What the two share and what they don't, field by field
+                                (Jon, 2026-10-25) — the same card as every "same person?"
+                                screen. The new side's own contact list only when this
+                                viewer may see it, as on its card below. */}
                             <div className="mb-3">
-                                <MatchedOn pair={pair} t={t} />
+                                <MatchCompare
+                                    adopterId={pair.existingAdopter.id}
+                                    matchTypes={pair.matchTypes}
+                                    profileName={pair.existingAdopter.name}
+                                    source={{
+                                        kind: 'new',
+                                        name: pair.newAdopter.name,
+                                        entries: pair.newAdopter.canSeeContact ? parseBlobToContactEntries(pair.newAdopter.contactInfo) : [],
+                                    }}
+                                    target="existing"
+                                    defaultOpen={pairs.length === 1}
+                                    t={t}
+                                />
                             </div>
 
                             <div className="flex flex-col md:flex-row gap-3">

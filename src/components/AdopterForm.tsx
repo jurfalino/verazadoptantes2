@@ -7,7 +7,8 @@ import { useSetEditActions } from "@/context/EditActionsContext";
 import { InlineEditField } from "@/components/InlineEditField";
 import { useRouter, useSearchParams } from "next/navigation";
 import { saveAdopter, saveImage, findFormDuplicates, appendToExistingAdopter } from "@/app/actions";
-import { buildMatchChips, hasStrongMatch, type MatchChip } from "@/lib/matchChips";
+import { hasStrongMatch } from "@/lib/matchChips";
+import MatchCompare from '@/components/MatchCompare';
 import DuplicatePeek from "@/components/DuplicatePeek";
 import StrongMatchStrip from "@/components/StrongMatchStrip";
 import { zarazTrack } from "@/lib/zaraz";
@@ -105,27 +106,6 @@ interface AdopterFormProps {
     onBadgeClick?: () => void;
 }
 
-function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
-    if (chips.length === 0) return null;
-    return (
-        <div className="flex flex-wrap gap-1 mt-1.5">
-            {chips.map(chip => (
-                <span
-                    key={chip.key}
-                    className={
-                        chip.isStrong
-                            ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-100 text-amber-900 border border-amber-200"
-                            : "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-stone-100 text-stone-700 border border-stone-200"
-                    }
-                    title={chip.label}
-                >
-                    <span aria-hidden="true">{chip.icon}</span>
-                    <span className="truncate max-w-[160px]">{chip.label}</span>
-                </span>
-            ))}
-        </div>
-    );
-}
 
 export function AdopterForm({ origin = null, interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick }: AdopterFormProps) {
     const router = useRouter();
@@ -452,6 +432,12 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
             socials: pick('social'),
         };
     }, [data.name, contactEntries]);
+    // The rescuer's side of «Qué coincide y qué no» on every duplicate surface of this form.
+    const compareSource = useMemo(() => ({
+        kind: 'typed' as const,
+        name: data.name,
+        entries: contactEntries.map(e => ({ type: e.type, value: e.value })),
+    }), [data.name, contactEntries]);
 
     // "Continuar con este perfil" — open the confirmation modal first so the
     // user knows their in-progress data will be merged into the existing record.
@@ -953,12 +939,14 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                 {isNew && isEditing && (
                     <>
                         <DuplicatePeek
+                            compareSource={compareSource}
                             results={duplicateResults}
                             searching={duplicateSearching}
                             onContinueWith={handleContinueWith}
                             busyAdopterId={continueBusyId}
                         />
                         <StrongMatchStrip
+                            compareSource={compareSource}
                             results={duplicateResults}
                             dismissedIds={dismissedStrongIds}
                             onDismiss={(id) => setDismissedStrongIds(prev => {
@@ -1438,6 +1426,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                             tooManyAdoptions={adoptionsDensity.count >= threshold ? { count: adoptionsDensity.count, actualSpanDays: adoptionsDensity.timeSpanDays, periodDays, startDate: adoptionsDensity.startDate, endDate: adoptionsDensity.endDate } : undefined}
                             tooManyRequests={requestsDensity.count >= requestsThreshold ? { count: requestsDensity.count, actualSpanDays: requestsDensity.timeSpanDays, periodDays: requestsPeriodDays, startDate: requestsDensity.startDate, endDate: requestsDensity.endDate } : undefined}
                             hasDuplicateBanner={hasDuplicateBanner}
+                            compareSource={{ ...compareSource, kind: 'profile' }}
                         />
                     </div>
                 )}
@@ -1575,7 +1564,14 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                             {result.adopter.contactInfo && (
                                                 <p className="text-xs text-stone-500 truncate">{result.adopter.contactInfo}</p>
                                             )}
-                                            <MatchChipsRow chips={buildMatchChips(result.matchValues, t)} />
+                                            <MatchCompare
+                                                adopterId={result.adopter.id}
+                                                matchTypes={result.matchTypes}
+                                                profileName={result.adopter.name ?? ''}
+                                                source={compareSource}
+                                                defaultOpen={saveDuplicateModal.matches.length === 1}
+                                                t={t}
+                                            />
                                         </div>
                                     </div>
                                     <a

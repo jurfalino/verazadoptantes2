@@ -11,7 +11,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { useState } from 'react';
 import { CheckCircle2, ArrowRight } from 'lucide-react';
 import { en } from '@/i18n/locales/en';
-import { matchTypeLabel } from '@/lib/matchTypeLabels';
+import MatchCompare from '@/components/MatchCompare';
 
 // Single source of truth: fallbacks from English locale
 const formResultsFallbacks = en.formResults as Record<string, string>;
@@ -33,6 +33,8 @@ export interface FormResultMatchCardProps {
     /** Linking folds the profile auto-created from the form into this one. */
     willMerge: boolean;
     onDismiss?: () => void;
+    /** Open the comparison by itself — when this is the only possible match. */
+    compareOpen?: boolean;
 }
 
 function DataRow({ label, value }: { label: string; value: string | null | undefined }) {
@@ -62,6 +64,7 @@ export default function FormResultMatchCard({
     linked = false,
     willMerge,
     onDismiss,
+    compareOpen = false,
 }: FormResultMatchCardProps) {
     const { t } = useLanguage();
     const router = useRouter();
@@ -70,9 +73,11 @@ export default function FormResultMatchCard({
     const [linking, setLinking] = useState(false);
     const L = (key: string) => (t(`formResults.${key}`) || '').trim() || formResultsFallbacks[key] || key;
 
-    const matchLabels = matchTypes
-        .map((mt) => matchTypeLabel(mt, t))
-        .filter(Boolean);
+    const applicantEntries = [
+        { type: 'phone', value: applicant.phone ?? '' },
+        { type: 'email', value: applicant.email ?? '' },
+        { type: 'address', value: applicant.address ?? '' },
+    ].filter(e => e.value.trim());
     const strongMatch = isStrongMatch(matchTypes);
 
     const fail = (errorId: string, message: string) => {
@@ -163,25 +168,22 @@ export default function FormResultMatchCard({
                     </div>
                 </div>
             )}
-            {/* Match strength + reasons */}
-            <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 flex flex-wrap items-center gap-1.5">
+            {/* Match strength, then what matches and what doesn't, field by field
+                (Jon, 2026-10-25) — the same card as every "same person?" screen. */}
+            <div className="px-4 pt-2 pb-1 bg-amber-50 border-b border-amber-100">
                 <span className="text-xs font-semibold text-amber-800">
                     {strongMatch ? L('strong_match') : L('possible_match')}
                 </span>
-                {matchLabels.length > 0 && (
-                    <>
-                        <span className="text-amber-600">·</span>
-                        <span className="text-xs font-medium text-amber-800">{L('matched_on')}:</span>
-                        {matchLabels.map((label) => (
-                            <span
-                                key={label}
-                                className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800"
-                            >
-                                {label}
-                            </span>
-                        ))}
-                    </>
-                )}
+            </div>
+            <div className="px-4 pb-2 border-b border-stone-200">
+                <MatchCompare
+                    adopterId={profile.id}
+                    matchTypes={matchTypes}
+                    profileName={profile.name}
+                    source={{ kind: 'form', name: applicant.name, entries: applicantEntries }}
+                    defaultOpen={compareOpen}
+                    t={t}
+                />
             </div>
 
             {/* Two-block comparison */}
