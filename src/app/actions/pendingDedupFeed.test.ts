@@ -495,3 +495,66 @@ describe('getPendingDuplicatesForUser — layout D (groups, summary, admin score
         expect(logs.warn.some(([m]) => m === 'hidePendingPair: refused')).toBe(true);
     });
 });
+
+describe('getPendingDuplicatesForUser — the row and the click agree (pairChoices)', () => {
+    const outcome = { merge: 'merged', request: 'requested' } as const;
+    /** The row's prediction, then the click with no keepId does exactly that. */
+    const agree = async (who: string, candidateId: string, expected: { actionByKeep: PendingDedupPair['actionByKeep']; defaultKeep: PendingDedupPair['defaultKeep'] }) => {
+        const p = pairOf((await feed(who, true)).pairs, candidateId);
+        expect({ actionByKeep: p.actionByKeep, defaultKeep: p.defaultKeep }).toEqual(expected);
+        expect(p.mergeAction).toBe(p.actionByKeep[p.defaultKeep]);
+        expect(p.keepOptions).toEqual({ new: p.actionByKeep.new !== null, existing: p.actionByKeep.existing !== null });
+        const act = p.actionByKeep[p.defaultKeep]!;
+        expect(await as(who, () => mergePendingDedupPair(candidateId))).toMatchObject({ success: true, outcome: outcome[act] });
+    };
+
+    it("same team: either side merges; default the older", async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
+            ('t-own', 'Inés Mora', '5', ?, 300, 300), ('t-mate', 'Ines Mora', '5', ?, 400, 400)`).run(OWNER, MATE);
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
+            VALUES ('cand-team', 't-mate', 't-own', '["phone"]', 95, 'high', 'pending', 1)`).run();
+        await agree(OWNER, 'cand-team', { actionByKeep: { new: 'merge', existing: 'merge' }, defaultKeep: 'existing' });
+    });
+
+    it("another rescuer's older profile: keeping theirs merges (default), keeping mine asks", async () => {
+        await agree(OWNER, 'cand-older-mine', { actionByKeep: { new: 'request', existing: 'merge' }, defaultKeep: 'existing' });
+    });
+
+    it('my older profile vs theirs: the default asks', async () => {
+        await agree(OWNER, 'cand-newer-mine', { actionByKeep: { new: 'merge', existing: 'request' }, defaultKeep: 'existing' });
+    });
+
+    it('admin: both sides merge', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
+            ('ad-a', 'Inés Mora', '5', ?, 100, 100), ('ad-o', 'Ines Mora', '5', ?, 200, 200)`).run(ADMIN, OWNER);
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
+            VALUES ('cand-admin', 'ad-o', 'ad-a', '["phone"]', 75, 'high', 'pending', 1)`).run();
+        await agree(ADMIN, 'cand-admin', { actionByKeep: { new: 'merge', existing: 'merge' }, defaultKeep: 'existing' });
+    });
+
+    it('ownerless older side: mine is the default, and it asks the admins (D42)', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
+            ('an-old', 'Lía Gil', '5', 'anonymous', 10, 10), ('s-x', 'Lía Gil', '5', ?, 5000, 5000)`).run(STRANGER);
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
+            VALUES ('cand-anon-old', 's-x', 'an-old', '["phone"]', 70, 'high', 'pending', 1)`).run();
+        await agree(STRANGER, 'cand-anon-old', { actionByKeep: { new: 'request', existing: null }, defaultKeep: 'new' });
+    });
+
+    it('D43, even when the row shows a newer pending request the other way: the requester may only keep theirs', async () => {
+        await mergePendingDedupPair('cand-older-mine'); // STRANGER keeps s-old, asks OWNER
+        expect(await as(OWNER, () => resolveMergeRequest(requestId(), 'decline'))).toEqual({ success: true });
+        // OWNER now asks the other way round: keep o-new, absorb STRANGER's s-old.
+        expect(await as(OWNER, () => mergePendingDedupPair('cand-older-mine', { keepId: 'o-new' }))).toMatchObject({ outcome: 'requested' });
+        const p = pairOf((await feed(STRANGER)).pairs, 'cand-older-mine');
+        expect(p.request).toMatchObject({ status: 'pending', direction: 'received' });
+        await agree(STRANGER, 'cand-older-mine', { actionByKeep: { new: 'merge', existing: null }, defaultKeep: 'new' });
+    });
+
+    it('a pair rebuilt from a request: nothing to choose, and the click can\'t act on it either', async () => {
+        await mergePendingDedupPair('cand-older-mine');
+        sqlite.prepare(`DELETE FROM duplicate_candidates WHERE id = 'cand-older-mine'`).run();
+        const p = pairOf((await feed(MATE)).pairs, 'cand-older-mine');
+        expect(p).toMatchObject({ actionByKeep: { new: null, existing: null }, keepOptions: { new: false, existing: false }, defaultKeep: 'existing' });
+        expect(await as(OWNER, () => mergePendingDedupPair('cand-older-mine'))).toMatchObject({ success: false, error: 'not_found' });
+    });
+});

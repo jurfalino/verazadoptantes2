@@ -20,7 +20,7 @@ vi.mock('./_db', () => ({
     getUser: async () => { if (!state.user) throw new Error('Authentication required'); return state.user; },
 }));
 vi.mock('@/lib/adopterMerge', () => ({ mergeAdopters: mergeSpy, notifyMergeOwners: vi.fn() }));
-vi.mock('@/lib/mergeRequests', () => ({ createMergeRequest: requestSpy, keepSeparate: vi.fn() }));
+vi.mock('@/lib/mergeRequests', () => ({ createMergeRequest: requestSpy, keepSeparate: vi.fn(), declinedForViewer: async () => false }));
 vi.mock('@/lib/mergeAccess', () => ({ grantAccessAfterFold: grantSpy }));
 vi.mock('@/config/admins', () => ({ isAdminAsync: async () => false }));
 vi.mock('./householdMembers', () => ({ addHouseholdMember: vi.fn() }));

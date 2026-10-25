@@ -134,10 +134,18 @@ describe('mergePendingDedupPair — merge or request', () => {
         sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
             VALUES ('cand-rescan', 's-old', 'o-new', '["phone"]', 90, 'high', 'pending', 2)`).run();
         notify.create.length = 0;
-        expect(await mergePendingDedupPair('cand-older-mine')).toEqual({ success: false, error: 'declined_before', errorId: 'gen12345' });
-        expect(await mergePendingDedupPair('cand-rescan')).toEqual({ success: false, error: 'declined_before', errorId: 'gen12345' });
+        expect(await mergePendingDedupPair('cand-older-mine', { keepId: 's-old' })).toEqual({ success: false, error: 'declined_before', errorId: 'gen12345' });
+        expect(await mergePendingDedupPair('cand-rescan', { keepId: 's-old' })).toEqual({ success: false, error: 'declined_before', errorId: 'gen12345' });
         expect(requests().map(r => r.status)).toEqual(['declined']);
         expect(notify.create).toEqual([]);
+        expect(mergeSpy).not.toHaveBeenCalled();
+    });
+
+    it("declined, then a click with no choice: the row's default — keeping the other's profile, merged now (D43)", async () => {
+        await mergePendingDedupPair('cand-older-mine');
+        await as(OWNER, () => resolveMergeRequest(requests()[0].id as string, 'decline'));
+        expect(await mergePendingDedupPair('cand-older-mine')).toEqual({ success: true, outcome: 'merged' });
+        expect(mergeSpy).toHaveBeenLastCalledWith('o-new', 's-old', STRANGER);
     });
 
     it('the owner accepts from their session: merged for real, requester notified', async () => {

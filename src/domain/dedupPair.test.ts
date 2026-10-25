@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pairKey, decideDedupMerge, decideDedupAction, decideMergeRequestAnswer, canRequestAgain, keepOptions, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, realOwner, type DedupSide } from './dedupPair';
+import { pairKey, decideDedupMerge, decideDedupAction, decideMergeRequestAnswer, canRequestAgain, keepOptions, pairChoices, orderPair, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, realOwner, type DedupSide } from './dedupPair';
 
 const ME = 'me@example.com';
 const side = (id: string, addedBy: string | null, createdAt: number, teamOwned: boolean, deleted = false): DedupSide =>
@@ -303,5 +303,67 @@ describe('pairKey', () => {
     it('is order-independent and joined with |', () => {
         expect(pairKey('b', 'a')).toBe('a|b');
         expect(pairKey('a', 'b')).toBe(pairKey('b', 'a'));
+    });
+});
+
+describe('pairChoices — the «¿Cuál se conserva?» switch, for the row and the click alike', () => {
+    const NONE = { isAdmin: false, declinedByViewer: false, rebuilt: false };
+    const ANON_OLD = side('anon-old', 'anonymous', 100, false);
+    const ANON_NEW = side('anon-new', null, 9_000, false);
+
+    it('orderPair: newer is "new", ties keep a as the new one', () => {
+        expect(orderPair(MINE_OLD, MINE_NEW)).toEqual({ newer: MINE_NEW, older: MINE_OLD });
+        const tie = side('tie', ME, 1_000, true);
+        expect(orderPair(tie, MINE_OLD)).toEqual({ newer: tie, older: MINE_OLD });
+    });
+
+    it('same team: either side, merged straight away; default the older', () => {
+        expect(pairChoices(ME, MATE_NEW, MINE_OLD, 'detected', NONE)).toEqual({
+            keepOptions: { new: true, existing: true }, actionByKeep: { new: 'merge', existing: 'merge' }, defaultKeep: 'existing',
+        });
+    });
+
+    it("another rescuer's profile: keeping theirs merges, keeping mine asks", () => {
+        expect(pairChoices(ME, MINE_NEW, FOREIGN_OLD, 'detected', NONE)).toEqual({
+            keepOptions: { new: true, existing: true }, actionByKeep: { new: 'request', existing: 'merge' }, defaultKeep: 'existing',
+        });
+        // A flag: the same with a chosen side (D41).
+        expect(pairChoices(ME, MINE_NEW, FOREIGN_OLD, 'flag', NONE).actionByKeep).toEqual({ new: 'request', existing: 'merge' });
+    });
+
+    it('an ownerless side cannot stay (D42); an ownerless OLDER side makes mine the default', () => {
+        expect(pairChoices(ME, ANON_NEW, MINE_OLD, 'detected', NONE)).toEqual({
+            keepOptions: { new: false, existing: true }, actionByKeep: { new: null, existing: 'request' }, defaultKeep: 'existing',
+        });
+        expect(pairChoices(ME, MINE_NEW, ANON_OLD, 'detected', NONE)).toEqual({
+            keepOptions: { new: true, existing: false }, actionByKeep: { new: 'request', existing: null }, defaultKeep: 'new',
+        });
+    });
+
+    it('after the owner declined my request, asking again is not offered (D43); keeping theirs still is', () => {
+        expect(pairChoices(ME, FOREIGN_NEW, MINE_OLD, 'detected', { ...NONE, declinedByViewer: true })).toEqual({
+            keepOptions: { new: true, existing: false }, actionByKeep: { new: 'merge', existing: null }, defaultKeep: 'new',
+        });
+    });
+
+    it('admins choose freely: both sides, both merge — ownerless and declined included', () => {
+        const admin = { isAdmin: true, declinedByViewer: true, rebuilt: false };
+        expect(pairChoices(ME, MINE_NEW, ANON_OLD, 'detected', admin)).toEqual({
+            keepOptions: { new: true, existing: true }, actionByKeep: { new: 'merge', existing: 'merge' }, defaultKeep: 'existing',
+        });
+        // …but not on a pair they created neither side of.
+        expect(pairChoices('admin@example.com', FOREIGN_NEW, MINE_OLD, 'detected', admin).keepOptions).toEqual({ new: false, existing: false });
+    });
+
+    it('a pair rebuilt from a request: nothing the click could honour', () => {
+        for (const isAdmin of [false, true]) {
+            expect(pairChoices(ME, MINE_NEW, MINE_OLD, 'detected', { isAdmin, declinedByViewer: false, rebuilt: true })).toEqual({
+                keepOptions: { new: false, existing: false }, actionByKeep: { new: null, existing: null }, defaultKeep: 'existing',
+            });
+        }
+    });
+
+    it('a viewer who created neither side: nothing allowed', () => {
+        expect(pairChoices('stranger@example.com', FOREIGN_NEW, MINE_OLD, 'detected', NONE).actionByKeep).toEqual({ new: null, existing: null });
     });
 });

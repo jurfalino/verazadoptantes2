@@ -4,7 +4,7 @@ import { adopters, adopterFlags, adopterStats, duplicateTokens, duplicateCandida
 import { eq, or, and, inArray, sql, isNull, asc, desc } from 'drizzle-orm';
 import { logger, generateErrorId } from '@/lib/logger';
 import { getDb, getUser } from './_db';
-import { decideDedupAction, isOpenDuplicateFlag, keepOptions, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, pairKey, realOwner, type DedupSide } from '@/domain/dedupPair';
+import { decideDedupAction, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, orderPair, pairChoices, pairKey, realOwner, type DedupSide, type KeepAction, type KeepSide } from '@/domain/dedupPair';
 import { needsIdentityChoice } from '@/domain/identityChoice';
 import { matchBreakdown, summarizeBreakdown, type BreakdownField } from '@/domain/matchBreakdown';
 import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
@@ -14,7 +14,7 @@ import { normalizeText, extractPhones, extractEmails, extractSocials, normalizeS
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, storedScoreToPercent, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 
 import { mergeAdopters, notifyMergeOwners } from '@/lib/adopterMerge';
-import { createMergeRequest, keepSeparate, settleRequestsAsHousehold } from '@/lib/mergeRequests';
+import { createMergeRequest, declinedForViewer, keepSeparate, settleRequestsAsHousehold } from '@/lib/mergeRequests';
 import { grantAccessAfterFold } from '@/lib/mergeAccess';
 import { isAdminAsync } from '@/config/admins';
 import { addHouseholdMember } from './householdMembers';
@@ -610,17 +610,20 @@ export interface PendingDedupPair {
      */
     summary: { same: BreakdownField[]; diff: BreakdownField[]; flagged: boolean };
     /**
-     * What «Combinar» does for this viewer with the default survivor (the
-     * older side when `keepOptions` allows it, else the one it allows), so the
-     * button says so: 'merge' merges now («Combinar perfiles»); 'request' asks
-     * the other profile's owner («Pedir combinar»). The same decideDedupAction
-     * mergePendingDedupPair runs on click; admins' choices merge straight away
-     * (D24). A refusal (the viewer created neither side — only listed for a
-     * request, whose card shows no button) reads 'merge'.
+     * What «Combinar» does with the default survivor: `actionByKeep[defaultKeep]`
+     * (kept for the current card until the layout-D UI reads actionByKeep).
+     * 'merge' merges now («Combinar perfiles»); 'request' asks the other
+     * profile's owner («Pedir combinar»). Nothing allowed (the viewer created
+     * neither side — only listed for a request, whose card shows no button)
+     * reads 'merge'.
      */
     mergeAction: 'merge' | 'request';
-    /** Which side the viewer may keep («¿Cuál se conserva?», D24, D42). Admins: either. */
+    /** Which side the viewer may keep («¿Cuál se conserva?», D24, D42, D43). Admins: either. From pairChoices. */
     keepOptions: { new: boolean; existing: boolean };
+    /** What keeping each side does («Combinar perfiles» / «Pedir combinar»); null = not offered. From pairChoices. */
+    actionByKeep: { new: KeepAction | null; existing: KeepAction | null };
+    /** The survivor selected by default, and the one mergePendingDedupPair keeps when sent no keepId. */
+    defaultKeep: KeepSide;
     /** Combining asks «¿Es la misma persona?» first (D35): the same test mergePendingDedupPair applies. */
     identityChoice: boolean;
     /**
@@ -734,13 +737,24 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
             };
         };
         const [a, b] = pair ? await Promise.all([load(pair.a), load(pair.b)]) : [null, null];
-        // No choice sent: keep the older one (the card's default), so the
-        // chosen-survivor rules always apply. Ties keep `b`, as before.
-        const keepId = chosenKeepId ?? (a && b ? ((a.createdAt ?? 0) >= (b.createdAt ?? 0) ? b.id : a.id) : undefined);
-        const action = decideDedupAction(actorEmail, a, b, pair?.source, keepId);
-        // Who may touch this pair at all, whatever is kept.
-        if (action.kind === 'refuse' && action.reason !== 'keep_not_allowed') return refuse(action.reason);
+        // Who may touch this pair at all, whatever is kept (any side will do:
+        // these refusals don't depend on the choice).
+        const gate = decideDedupAction(actorEmail, a, b, pair?.source, a?.id);
+        if (gate.kind === 'refuse' && gate.reason !== 'keep_not_allowed') return refuse(gate.reason);
         const sideA = a!, sideB = b!, actor = actorEmail!;
+        // The same choices the row offers (pairChoices, also used by the feed):
+        // no keepId → the row's default survivor; a keepId outside the pair → not_found.
+        const [isAdmin, declinedByViewer] = await Promise.all([
+            isAdminAsync(actor),
+            declinedForViewer(db, sideA.id, sideB.id, actor),
+        ]);
+        const choices = pairChoices(actor, sideA, sideB, pair!.source, { isAdmin, declinedByViewer, rebuilt: false });
+        const { newer, older } = orderPair(sideA, sideB);
+        const keepSide: KeepSide | null = chosenKeepId === undefined ? choices.defaultKeep
+            : chosenKeepId === newer.id ? 'new' : chosenKeepId === older.id ? 'existing' : null;
+        if (!keepSide) return refuse('not_found');
+        const keepId = keepSide === 'new' ? newer.id : older.id;
+        const action = decideDedupAction(actor, sideA, sideB, pair!.source, keepId);
 
         // «¿Es la misma persona?» (D35): a detected pair matched on a contact
         // but not on the (different) names. A flag is a person saying "same".
@@ -753,15 +767,15 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
             return await keepAsHousehold(db, candidateId, actor, sideA, sideB);
         }
 
+        // A keep the row would not offer: the reason it isn't offered. Asking
+        // again after a decline is declined_before (D43); an ownerless side,
+        // keep_not_allowed (D42).
+        const chosen: KeepAction | null = choices.actionByKeep[keepSide];
+        if (!chosen) return refuse(action.kind === 'refuse' ? action.reason : 'declined_before');
         // Admins choose freely (D24): no consent needed, any side may be kept.
-        let viaAdmin = false;
-        let plan: { primaryId: string; secondaryId: string } | null = action.kind === 'refuse' ? null : action;
-        if ((action.kind === 'request' || action.kind === 'refuse') && await isAdminAsync(actor)) {
-            viaAdmin = true;
-            plan = { primaryId: keepId!, secondaryId: keepId === sideA.id ? sideB.id : sideA.id };
-        }
-        if (!plan) return refuse(action.kind === 'refuse' ? action.reason : 'not_found');
-        const { primaryId, secondaryId } = plan;
+        const viaAdmin = isAdmin && action.kind !== 'merge';
+        const primaryId = keepId;
+        const secondaryId = keepId === sideA.id ? sideB.id : sideA.id;
 
         if (action.kind === 'request' && !viaAdmin) {
             const fromFlag = pair!.source === 'flag';
@@ -1054,14 +1068,23 @@ export async function getPendingDuplicatesForUser(
         //   set aside with «Mantener separados» — and the pair stays out. A
         //   flag may be open yet unlisted (the flag fetch is capped).
         // Adopter rows come from the page fan-out below.
+        //
+        // Declined requests skip the liveness lookup: they never leave the
+        // table, so checking each would grow the fan-out with every decline.
+        // A merge or delete closes them (closeRequestsForAdopter), and the page
+        // fan-out skips a deleted side anyway; the cost is that `total` may
+        // count a declined pair whose profile went away by a path that did not
+        // close its requests. A listed declined pair needs no lookup at all.
         const listedKeys = new Set(mine.map(c => pairKey(c.adopter1Id, c.adopter2Id)));
         const checked = await Promise.all([...requests].map(async ([key, r]) => {
             try {
-                const live = await db.select({ n: sql<number>`COUNT(*)` }).from(adopters).where(and(
-                    or(eq(adopters.id, r.primaryId), eq(adopters.id, r.secondaryId)),
-                    isNull(adopters.deletedAt),
-                )).get();
-                if (Number(live?.n ?? 0) < 2) return { key, r, keep: false, synthesize: false };
+                if (r.status === 'pending') {
+                    const live = await db.select({ n: sql<number>`COUNT(*)` }).from(adopters).where(and(
+                        or(eq(adopters.id, r.primaryId), eq(adopters.id, r.secondaryId)),
+                        isNull(adopters.deletedAt),
+                    )).get();
+                    if (Number(live?.n ?? 0) < 2) return { key, r, keep: false, synthesize: false };
+                }
                 if (listedKeys.has(key)) return { key, r, keep: true, synthesize: false };
                 if (r.flagId) {
                     const flag = await db.select({ adopterId: adopterFlags.adopterId, targetAdopterId: adopterFlags.targetAdopterId, reason: adopterFlags.reason, details: adopterFlags.details })
@@ -1111,8 +1134,9 @@ export async function getPendingDuplicatesForUser(
 
         if (mine.length === 0) return EMPTY;
 
-        // A pair someone must answer is never hidden as low-confidence: the
-        // bell notification points here.
+        // A pair with a request on it is never hidden as low-confidence: a
+        // pending one needs an answer (the bell points here), a declined one
+        // stays on both lists until the viewer removes it (D27).
         const lowHidden = mine.filter(c => c.confidence === 'low' && !hasRequest(c)).length;
         const eligible = includeLow ? mine : mine.filter(c => c.confidence !== 'low' || hasRequest(c));
 
@@ -1182,6 +1206,24 @@ export async function getPendingDuplicatesForUser(
             return built;
         };
 
+        // D43, the same check the click makes: did an owner decline one of the
+        // viewer's requests on the pair? Every request on it, not just the one
+        // the map holds — one query per pair on THIS page (≤ pageSize), none
+        // for admins (who choose freely) or rebuilt pairs (nothing to choose).
+        const declinedOnPage = new Map<string, boolean>();
+        if (!isAdmin) {
+            await Promise.all(pageCandidates.filter(c => !c.rebuilt).map(async (c) => {
+                try {
+                    declinedOnPage.set(c.candidateId, await declinedForViewer(db, c.adopter1Id, c.adopter2Id, viewer));
+                } catch (e) {
+                    // Offered anyway; the click re-checks (createMergeRequest refuses declined_before).
+                    logger.warn('getPendingDuplicatesForUser: declined-before check failed', {
+                        actorEmail: viewer, candidateId: c.candidateId, error: e instanceof Error ? e.message : String(e),
+                    });
+                }
+            }));
+        }
+
         const pairs: PendingDedupPair[] = [];
         for (const c of pageCandidates) {
             const a = byId.get(c.adopter1Id);
@@ -1202,23 +1244,12 @@ export async function getPendingDuplicatesForUser(
                 id: r.id, addedBy: r.addedBy, createdAt: r.createdAt ? r.createdAt.getTime() : null, deleted: false,
                 teamOwned: !!r.addedBy && teamKeys.has(normEmail(r.addedBy)),
             });
-            const sides = { a: dedupSide(a), b: dedupSide(b) };
-            const decide = (keepId: string) => decideDedupAction(viewer, sides.a, sides.b, source === 'flagged' ? 'flag' : 'detected', keepId);
-            // Which side may stay: whatever the domain allows; an admin's
-            // choice merges straight away (D24) — refused only when the admin
-            // created neither side, as mergePendingDedupPair refuses it.
-            const may = keepOptions(viewer, sides.a, sides.b);
-            const adminMay = (id: string) => { const d = decide(id); return d.kind !== 'refuse' || d.reason === 'keep_not_allowed'; };
-            // After the owner declined the viewer's request, the viewer may not
-            // ask again (D43): only keeping the other's profile is left.
-            const declinedMine = request?.status === 'declined' && normEmail(request.requesterEmail) === normEmail(viewer);
-            const rescuerMay = (row: PairRow) => (row.id === a.id ? may.a : may.b) && !(declinedMine && decide(row.id).kind === 'request');
-            const keep = isAdmin
-                ? { new: adminMay(newOne.id), existing: adminMay(oldOne.id) }
-                : { new: rescuerMay(newOne), existing: rescuerMay(oldOne) };
-            // The default survivor: the older one, unless it may not stay (D42).
-            const defaultKeep = keep.existing || !keep.new ? oldOne : newOne;
-            const action = decide(defaultKeep.id);
+            // The switch's choices, by the same function the click runs
+            // (pairChoices): admin bypass (D24), ownerless (D42), no asking
+            // again after a decline (D43), nothing on a rebuilt pair.
+            const choices = pairChoices(viewer, dedupSide(a), dedupSide(b), source === 'flagged' ? 'flag' : 'detected', {
+                isAdmin, declinedByViewer: declinedOnPage.get(c.candidateId) ?? false, rebuilt: !!c.rebuilt,
+            });
             const [newSide, existingSide] = [await side(newOne), await side(oldOne)];
             const { same, diff } = summarizeBreakdown(matchBreakdown({
                 matchTypes,
@@ -1241,8 +1272,11 @@ export async function getPendingDuplicatesForUser(
                 adminScore: isAdmin && source === 'detected' && !c.rebuilt ? storedScoreToPercent(c.score) : null,
                 group: groupOf(c),
                 summary: { same, diff, flagged: source === 'flagged' },
-                mergeAction: !isAdmin && action.kind === 'request' ? 'request' : 'merge',
-                keepOptions: keep,
+                // With no survivor allowed (a pair the viewer only answers) it reads 'merge'.
+                mergeAction: choices.actionByKeep[choices.defaultKeep] ?? 'merge',
+                keepOptions: choices.keepOptions,
+                actionByKeep: choices.actionByKeep,
+                defaultKeep: choices.defaultKeep,
                 // As mergePendingDedupPair asks it: a detected pair it can load
                 // (a pair rebuilt from a request has no candidate row to load).
                 identityChoice: source === 'detected' && !c.rebuilt
@@ -1274,10 +1308,11 @@ const PAIR_KEY_MAX = 200;
 export async function hidePendingPair(key: string): Promise<{ success: boolean; errorId?: string }> {
     let actorEmail: string | null = null;
     try {
-        try { actorEmail = await getUser(); } catch { actorEmail = null; }
+        let authError: string | undefined;
+        try { actorEmail = await getUser(); } catch (e) { actorEmail = null; authError = e instanceof Error ? e.message : String(e); }
         const refuse = (reason: string) => {
             const errorId = generateErrorId();
-            logger.warn('hidePendingPair: refused', { actorEmail, reason, errorId });
+            logger.warn('hidePendingPair: refused', { actorEmail, reason, errorId, ...(authError ? { authError } : {}) });
             return { success: false, errorId };
         };
         if (!actorEmail) return refuse('unauthenticated');

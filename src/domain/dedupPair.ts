@@ -114,6 +114,62 @@ export function keepOptions(
     return { a: allowed(a), b: allowed(b) };
 }
 
+/**
+ * The card's order: the NEWER record is "the new submission", the older is
+ * "the existing profile". Ties keep `a` as the new one (the same tie rule as
+ * decideDedupAction's no-keepId path).
+ */
+export function orderPair<T extends Pick<DedupSide, 'createdAt'>>(a: T, b: T): { newer: T; older: T } {
+    return (a.createdAt ?? 0) >= (b.createdAt ?? 0) ? { newer: a, older: b } : { newer: b, older: a };
+}
+
+export type KeepSide = 'new' | 'existing';
+export type KeepAction = 'merge' | 'request';
+
+export interface PairChoices {
+    /** Which side the viewer may keep («¿Cuál se conserva?»). */
+    keepOptions: { new: boolean; existing: boolean };
+    /** What keeping that side does: merge now, ask the other owner, or null (not allowed). */
+    actionByKeep: { new: KeepAction | null; existing: KeepAction | null };
+    /** The survivor when the viewer chooses none: the older side if allowed, else the newer. */
+    defaultKeep: KeepSide;
+}
+
+/**
+ * Everything the «¿Cuál se conserva?» switch needs, decided once for the feed
+ * (getPendingDuplicatesForUser) AND the click (mergePendingDedupPair), so the
+ * row and the server can't disagree. On top of decideDedupAction with the
+ * chosen side:
+ * - Admins choose freely (D24): either side, merged straight away — unless
+ *   the admin created neither side (`not_yours`), which nobody may merge here.
+ * - A side with no real owner can't be kept by a rescuer (D42, `keep_not_allowed`).
+ * - `declinedByViewer` (an owner declined the viewer's own request on this
+ *   pair: canRequestAgain is false): a keep that would ask again is not allowed (D43).
+ * - `rebuilt` (the pair exists only as a merge request — no candidate or flag
+ *   row for the click to load): nothing is allowed.
+ */
+export function pairChoices(
+    viewer: string | null | undefined,
+    a: DedupSide,
+    b: DedupSide,
+    source: 'detected' | 'flag',
+    ctx: { isAdmin: boolean; declinedByViewer: boolean; rebuilt: boolean },
+): PairChoices {
+    const { newer, older } = orderPair(a, b);
+    const actionFor = (keep: DedupSide): KeepAction | null => {
+        if (ctx.rebuilt) return null;
+        const d = decideDedupAction(viewer, a, b, source, keep.id);
+        if (ctx.isAdmin) return d.kind !== 'refuse' || d.reason === 'keep_not_allowed' ? 'merge' : null;
+        if (d.kind === 'refuse') return null;
+        if (d.kind === 'request' && ctx.declinedByViewer) return null;
+        return d.kind;
+    };
+    const actionByKeep = { new: actionFor(newer), existing: actionFor(older) };
+    const keepOptions = { new: actionByKeep.new !== null, existing: actionByKeep.existing !== null };
+    const defaultKeep: KeepSide = keepOptions.existing || !keepOptions.new ? 'existing' : 'new';
+    return { keepOptions, actionByKeep, defaultKeep };
+}
+
 export function decideDedupMerge(
     actor: string | null | undefined,
     a: DedupSide | null | undefined,

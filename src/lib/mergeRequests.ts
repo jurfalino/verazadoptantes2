@@ -87,6 +87,16 @@ async function requestsForPair(db: Db, a: string, b: string): Promise<Array<{ re
 }
 
 /**
+ * Did an owner decline one of `viewer`'s requests on this pair (D43)? Then the
+ * viewer may not ask again. Every request on the pair, either orientation —
+ * the one rule createMergeRequest enforces, for pairChoices in the feed and the
+ * click. One query.
+ */
+export async function declinedForViewer(db: Db, a: string, b: string, viewer: string): Promise<boolean> {
+    return !canRequestAgain(await requestsForPair(db, a, b), viewer);
+}
+
+/**
  * File a request asking the other profile's owner (and their team, D16) to let
  * the pair be merged, keeping `primaryId` (the requester's choice, D24); with
  * no real owner it goes to the admins (D15). One pending request per pair: if
