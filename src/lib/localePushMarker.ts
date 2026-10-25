@@ -7,7 +7,7 @@
  * unchanged value anyway.
  */
 
-type MarkerStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+type MarkerStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>;
 
 const PREFIX = 'app-locale-pushed:';
 
@@ -50,6 +50,26 @@ export function forgetPushedLocale(email: string, s?: MarkerStorage | null): voi
     if (!st || !email) return;
     try {
         st.removeItem(keyFor(email));
+    } catch {
+        // Blocked storage: nothing was remembered either.
+    }
+}
+
+/**
+ * Forget every person's marker. Signed out (sign-out redirects, so the
+ * provider never sees the email change; and a shared machine should not keep
+ * the email in a key): whoever signs in next pushes once.
+ */
+export function forgetAllPushedLocales(s?: MarkerStorage | null): void {
+    const st = storage(s);
+    if (!st) return;
+    try {
+        const keys: string[] = [];
+        for (let i = 0; i < st.length; i++) {
+            const k = st.key(i);
+            if (k && k.startsWith(PREFIX)) keys.push(k);
+        }
+        for (const k of keys) st.removeItem(k);
     } catch {
         // Blocked storage: nothing was remembered either.
     }

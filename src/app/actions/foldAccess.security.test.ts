@@ -48,6 +48,8 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { flagAdopter } from './flags';
+import { flagAdopterAsDuplicate } from './flagAdopterAsDuplicate';
+import { logger } from '@/lib/logger';
 import { mergePendingDedupPair } from './duplicates';
 import { resolveMergeRequest } from './mergeRequests';
 import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
@@ -185,6 +187,14 @@ describe('C1c: flagging someone else\'s profile as a duplicate', () => {
         expect(logs.warn).toContainEqual(['flagAdopter: duplicate flag refused', expect.objectContaining({
             adopterId: 'victim', targetAdopterId: 'throwaway', flaggedBy: STRANGER, errorId: 'gen12345',
         })]);
+    });
+
+    it('through «Marcar como duplicados» (flagAdopterAsDuplicate): not_allowed with the errorId, not logged again as an error', async () => {
+        vi.mocked(logger.error).mockClear();
+        expect(await flagAdopterAsDuplicate({ currentAdopterId: 'victim', matchedAdopterId: 'throwaway', matchedAdopterName: 'Carla' }))
+            .toEqual({ ok: false, error: 'not_allowed:gen12345' });
+        expect(flagIds()).toEqual([]);
+        expect(logger.error).not.toHaveBeenCalled();
     });
 
     it('the owner, a teammate and an admin may', async () => {

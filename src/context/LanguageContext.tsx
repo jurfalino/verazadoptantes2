@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import { useSession } from 'next-auth/react';
 import { saveMyLocale } from '@/app/actions/settings';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-import { forgetPushedLocale, rememberPushedLocale, shouldPushLocale } from '@/lib/localePushMarker';
+import { forgetAllPushedLocales, forgetPushedLocale, rememberPushedLocale, shouldPushLocale } from '@/lib/localePushMarker';
 import { en } from '@/i18n/locales/en';
 import { es } from '@/i18n/locales/es';
 import { pt } from '@/i18n/locales/pt';
@@ -56,10 +56,12 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     const lastPushed = useRef<{ email: string; locale: Locale } | null>(null);
     const prevEmail = useRef<string | null>(null);
 
-    // Sign-out or another person signing in: forget what was pushed for the
-    // previous one, so their next session pushes once.
+    // Signed out (sign-out redirects, so this runs on the next page): forget
+    // every marker. Another person signing in without a reload: forget the
+    // previous one's. Either way their next session pushes once.
     useEffect(() => {
         if (status === 'loading') return;
+        if (status === 'unauthenticated') forgetAllPushedLocales();
         const prev = prevEmail.current;
         if (prev && prev !== email) {
             forgetPushedLocale(prev);
