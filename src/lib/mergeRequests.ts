@@ -222,23 +222,36 @@ export async function answerMergeRequest(
     return { ok: true, status: answer.nextStatus };
 }
 
-/** A declined pair is resolved as kept-separate, so it leaves both lists (D4b). */
+/**
+ * A declined pair is resolved as kept-separate, so it leaves both lists (D4b):
+ * every pending detected candidate AND every duplicate flag between the two
+ * profiles, in either orientation — not just the one the request came from.
+ */
 async function keepSeparate(db: Db, req: RequestRow, actor: string): Promise<void> {
+    const { primaryId: a, secondaryId: b } = req;
     try {
-        if (req.candidateId) {
-            await db.update(duplicateCandidates)
-                .set({ status: 'dismissed', resolvedBy: actor, resolvedAt: new Date() })
-                .where(eq(duplicateCandidates.id, req.candidateId));
-        }
-        if (req.flagId) {
-            await db.update(adopterFlags)
-                .set({ details: `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}${actor}` })
-                .where(eq(adopterFlags.id, req.flagId));
-        }
+        await db.update(duplicateCandidates)
+            .set({ status: 'dismissed', resolvedBy: actor, resolvedAt: new Date() })
+            .where(and(
+                eq(duplicateCandidates.status, 'pending'),
+                or(
+                    and(eq(duplicateCandidates.adopter1Id, a), eq(duplicateCandidates.adopter2Id, b)),
+                    and(eq(duplicateCandidates.adopter1Id, b), eq(duplicateCandidates.adopter2Id, a)),
+                ),
+            ));
+        await db.update(adopterFlags)
+            .set({ details: `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}${actor}` })
+            .where(and(
+                eq(adopterFlags.reason, 'duplicate'),
+                or(
+                    and(eq(adopterFlags.adopterId, a), eq(adopterFlags.targetAdopterId, b)),
+                    and(eq(adopterFlags.adopterId, b), eq(adopterFlags.targetAdopterId, a)),
+                ),
+            ));
     } catch (e) {
         // The decline stands; the pair just keeps showing until dismissed by hand.
         logger.error('answerMergeRequest: pair not marked kept-separate', e, {
-            requestId: req.id, actor, candidateId: req.candidateId, flagId: req.flagId,
+            requestId: req.id, actor, primaryId: a, secondaryId: b, candidateId: req.candidateId, flagId: req.flagId,
         });
     }
 }

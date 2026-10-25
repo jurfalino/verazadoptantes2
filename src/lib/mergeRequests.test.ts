@@ -254,7 +254,21 @@ describe('answerMergeRequest — decline and admin decisions', () => {
             .get('flag-1') as { adopterId: string; targetAdopterId: string; reason: string; details: string };
         expect(flag.details).toBe(`${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}${OWNER}`);
         expect(isOpenDuplicateFlag(flag)).toBe(false);
-        expect(candidate('cand-1').status).toBe('pending');
+        // The same pair's detected candidate leaves the lists too.
+        expect(candidate('cand-1')).toEqual({ status: 'dismissed', resolved_by: OWNER });
+    });
+
+    it('a declined CANDIDATE request also closes a flag on the same pair, and leaves other pairs alone', async () => {
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
+            VALUES ('cand-other', 'o-new', 'third', '["phone"]', 90, 'high', 'pending', 1)`).run();
+        sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at)
+            VALUES ('flag-other', 'third', ?, 'duplicate', 'o-new', NULL, 1)`).run(OWNER);
+        const id = await pending();
+        expect(await answerMergeRequest(db(), id, OWNER, 'decline')).toEqual({ ok: true, status: 'declined' });
+        const details = (fid: string) => sqlite.prepare('SELECT details FROM adopter_flags WHERE id = ?').get(fid)!.details;
+        expect(details('flag-1')).toBe(`${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}${OWNER}`);
+        expect(details('flag-other')).toBeNull();
+        expect(candidate('cand-other').status).toBe('pending');
     });
 });
 
