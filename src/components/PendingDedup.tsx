@@ -20,6 +20,9 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { handledAsStale } from '@/lib/errorMessage';
+import { formatRelativeTime } from '@/lib/dates';
+import { resolveMergeRequest, cancelMergeRequest } from '@/app/actions/mergeRequests';
 import {
     getPendingDuplicatesForUser,
     dismissDuplicateCandidate,
@@ -127,6 +130,11 @@ function AdopterCard({
     // Explicit zone, like every other date in the app — a bare
     // toLocaleDateString reads the host timezone (see src/lib/dates.ts).
     const dateStr = adopter.createdAt ? formatShortDate(adopter.createdAt) : null;
+    const createdByLine = adopter.createdByName
+        ? (t('myAdopters.pending_dedup_created_by') || 'Cargado por {name}').replace('{name}', adopter.createdByName)
+        : adopter.createdByAnonymous
+            ? (t('myAdopters.pending_dedup_created_by_anonymous') || 'Cargado por un usuario anónimo')
+            : null;
 
     return (
         <div className="flex-1 min-w-0 rounded-xl border border-stone-200 bg-white p-3">
@@ -163,12 +171,15 @@ function AdopterCard({
                 </button>
             )}
             {dateStr && <p className="mt-1 text-[11px] text-stone-400">{dateStr}</p>}
+            {createdByLine && (
+                <p data-testid="dedup-created-by" className="mt-1 text-[11px] text-stone-500">{createdByLine}</p>
+            )}
         </div>
     );
 }
 
 export default function PendingDedup() {
-    const { t } = useLanguage();
+    const { t, locale } = useLanguage();
     const { formatShortDate } = useDateFormat();
     const toast = useShowToast();
     const [pairs, setPairs] = useState<PendingDedupPair[] | null>(null);
@@ -209,24 +220,62 @@ export default function PendingDedup() {
             // one this feed shows the caller, and keeps the EXISTING (older)
             // record as primary so its id, URLs and references stay valid.
             const result = await mergePendingDedupPair(pair.candidateId);
-            if (result.success) {
+            if (result.success && result.outcome === 'merged') {
                 toast.success(t('myAdopters.pending_dedup_merged') || 'Profiles merged');
                 setPairs(prev => prev?.filter(p => p.candidateId !== pair.candidateId) || []);
                 setTotal(n => Math.max(0, n - 1));
+            } else if (result.success) {
+                // Not merged: it went to the other profile's owner (or the
+                // admins) as a request. Reload so the card shows its state.
+                const target = otherOwnerName(pair);
+                toast.success(target
+                    ? (t('myAdopters.pending_dedup_request_sent_to') || 'Pedido enviado a {name}').replace('{name}', target)
+                    : (t('myAdopters.pending_dedup_request_sent_admins') || 'Pedido enviado a un administrador'));
+                await load();
+            } else if (result.error === 'request_pending') {
+                // Someone else already asked about this pair: the reload shows
+                // it as sent or received.
+                await load();
             } else {
-                const message = result.error === 'other_owner'
-                    ? (t('errors.merge_other_owner') || 'Este perfil lo cargó otro rescatista: no se puede absorber en el tuyo.')
-                    : result.error === 'flag_cross_owner'
-                        ? (t('errors.merge_flag_cross_owner') || 'Este par lo revisa un administrador.')
-                        : (t('errors.merge_failed') || 'No se pudieron combinar los perfiles.');
-                toast.error(t('errors.generic') || 'Error', message,
+                toast.error(t('errors.generic') || 'Error', t('errors.merge_failed') || 'No se pudieron combinar los perfiles.',
                     result.errorId ?? resolveErrorId(new Error(`mergePendingDedupPair: ${result.error}`), 'PendingDedup'));
             }
         } catch (e) {
-            toast.error(t('errors.generic') || 'Error', t('errors.merge_failed') || undefined, resolveErrorId(e, 'PendingDedup'));
+            if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', t('errors.merge_failed') || undefined, resolveErrorId(e, 'PendingDedup'));
         } finally {
             setBusyCandidateId(null);
         }
+    };
+
+    /** Name of the profile owner a request would go to: the side the viewer
+     *  did not create. null when it goes to the admins. */
+    const otherOwnerName = (pair: PendingDedupPair): string | null =>
+        pair.newAdopter.createdByName ?? pair.existingAdopter.createdByName;
+
+    const handleRequest = async (pair: PendingDedupPair, run: () => ReturnType<typeof cancelMergeRequest>, okKey: string, okFallback: string) => {
+        if (busyCandidateId) return;
+        setBusyCandidateId(pair.candidateId);
+        try {
+            const result = await run();
+            if (result.success) {
+                toast.success(t(okKey) || okFallback);
+            } else {
+                toast.error(t('errors.generic') || 'Error', t('myAdopters.pending_dedup_request_failed') || 'No se pudo completar la acción.',
+                    result.errorId ?? resolveErrorId(new Error(`mergeRequest: ${result.error}`), 'PendingDedup'));
+            }
+            // Success or not, the card on screen may be stale (the request was
+            // already answered, say): reload is the honest state.
+            await load();
+        } catch (e) {
+            if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', t('myAdopters.pending_dedup_request_failed') || undefined, resolveErrorId(e, 'PendingDedup'));
+        } finally {
+            setBusyCandidateId(null);
+        }
+    };
+
+    const requestAge = (createdAt: number): string => {
+        const lang = locale === 'en' ? 'en' : 'es';
+        return (locale !== 'pt' && formatRelativeTime(createdAt * 1000, lang)) || formatShortDate(createdAt * 1000);
     };
 
     const handleDismiss = async (pair: PendingDedupPair) => {
@@ -321,12 +370,29 @@ export default function PendingDedup() {
                                 <div className="flex md:flex-col items-center justify-center text-stone-400 text-xs">↔</div>
                                 <AdopterCard side="existing" adopter={pair.existingAdopter} t={t} formatShortDate={formatShortDate} onRequestAccess={setAccessTarget} />
                             </div>
+                            {pair.request && (
+                                <p data-testid="dedup-request-status"
+                                    className="mt-3 text-xs px-3 py-2 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">
+                                    {pair.request.direction === 'sent'
+                                        ? (t('myAdopters.pending_dedup_request_sent_line') || 'Pedido enviado {when} · esperando a {name}')
+                                            .replace('{when}', requestAge(pair.request.createdAt))
+                                            .replace('{name}', pair.request.toAdmins || !pair.request.counterpartName
+                                                ? (t('myAdopters.pending_dedup_an_admin') || 'un administrador')
+                                                : pair.request.counterpartName)
+                                        : (t('myAdopters.pending_dedup_request_received_line') || '{name} pidió combinar estos perfiles · {when}')
+                                            .replace('{name}', pair.request.counterpartName
+                                                || (t('myAdopters.pending_dedup_a_user') || 'Un usuario'))
+                                            .replace('{when}', requestAge(pair.request.createdAt))}
+                                </p>
+                            )}
                             <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                                 {/* Dismiss writes to duplicate_candidates; a
                                     manually flagged pair has no row there, so
                                     the action is offered only for detected
-                                    pairs rather than failing on click. */}
-                                {pair.source === 'detected' && (
+                                    pairs rather than failing on click. While a
+                                    request is open the requester cancels it
+                                    and the asked side declines it instead. */}
+                                {pair.source === 'detected' && !pair.request && (
                                     <button
                                         type="button"
                                         onClick={() => handleDismiss(pair)}
@@ -336,14 +402,50 @@ export default function PendingDedup() {
                                         {t('myAdopters.pending_dedup_action_keep') || 'Mantener separados'}
                                     </button>
                                 )}
-                                <button
-                                    type="button"
-                                    onClick={() => handleMerge(pair)}
-                                    disabled={busy}
-                                    className="px-3 py-2 text-[12px] font-semibold text-white bg-teal-700 hover:bg-teal-600 rounded-xl transition-colors disabled:opacity-50"
-                                >
-                                    {busy ? (t('common.processing') || 'Processing...') : (t('myAdopters.pending_dedup_action_merge') || 'Combinar perfiles')}
-                                </button>
+                                {!pair.request && (
+                                    <button
+                                        type="button"
+                                        data-testid="dedup-merge"
+                                        onClick={() => handleMerge(pair)}
+                                        disabled={busy}
+                                        className="px-3 py-2 text-[12px] font-semibold text-white bg-teal-700 hover:bg-teal-600 rounded-xl transition-colors disabled:opacity-50"
+                                    >
+                                        {busy ? (t('common.processing') || 'Processing...') : (t('myAdopters.pending_dedup_action_merge') || 'Combinar perfiles')}
+                                    </button>
+                                )}
+                                {pair.request?.direction === 'sent' && (
+                                    <button
+                                        type="button"
+                                        data-testid="dedup-cancel-request"
+                                        onClick={() => handleRequest(pair, () => cancelMergeRequest(pair.request!.id), 'myAdopters.pending_dedup_request_cancelled', 'Pedido cancelado')}
+                                        disabled={busy}
+                                        className="px-3 py-2 text-[12px] font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-xl transition-colors disabled:opacity-50"
+                                    >
+                                        {t('myAdopters.pending_dedup_action_cancel_request') || 'Cancelar pedido'}
+                                    </button>
+                                )}
+                                {pair.request?.direction === 'received' && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            data-testid="dedup-decline-request"
+                                            onClick={() => handleRequest(pair, () => resolveMergeRequest(pair.request!.id, 'decline'), 'myAdopters.pending_dedup_request_declined', 'Pedido rechazado')}
+                                            disabled={busy}
+                                            className="px-3 py-2 text-[12px] font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-xl transition-colors disabled:opacity-50"
+                                        >
+                                            {t('myAdopters.pending_dedup_action_decline') || 'Rechazar'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            data-testid="dedup-accept-request"
+                                            onClick={() => handleRequest(pair, () => resolveMergeRequest(pair.request!.id, 'accept'), 'myAdopters.pending_dedup_merged', 'Perfiles combinados')}
+                                            disabled={busy}
+                                            className="px-3 py-2 text-[12px] font-semibold text-white bg-teal-700 hover:bg-teal-600 rounded-xl transition-colors disabled:opacity-50"
+                                        >
+                                            {t('myAdopters.pending_dedup_action_accept') || 'Aceptar'}
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         </div>
                     );
