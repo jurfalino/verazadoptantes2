@@ -145,6 +145,8 @@ export default async function AdopterPage({
                 if (Array.isArray(v)) v.forEach(x => qs.append(k, x));
                 else if (v !== undefined) qs.append(k, v);
             }
+            // D32: the survivor shows «Este perfil se combinó con otro» when it is reached through an absorbed id.
+            qs.set('merged', id);
             const query = qs.toString();
             logger.info('adopter page: redirecting merged profile to its survivor', { adopterId: id, survivorId, userEmail: currentUser });
             redirect(`/adopter/${encodeURIComponent(survivorId)}${query ? `?${query}` : ''}`);
@@ -260,6 +262,7 @@ export default async function AdopterPage({
             showDeletionRequested={showDeletionRequested}
             pinnedVisitIntent={pinnedVisitIntent}
             originLabels={originLabels}
+            mergedFrom={typeof allSearchParams.merged === 'string' && allSearchParams.merged ? allSearchParams.merged : null}
             interviewEnabled={interviewEnabled}
         />
     );

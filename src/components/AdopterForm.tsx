@@ -188,6 +188,9 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     // Duplicate detection (create only): while-typing results + save confirmation modal
     const [duplicateResults, setDuplicateResults] = useState<DiscoveryMatch[] | null>(null);
     const [duplicateSearching, setDuplicateSearching] = useState(false);
+    // D36: the duplicate search failed (errorId for support); saving is never blocked by it.
+    const [duplicateSearchErrorId, setDuplicateSearchErrorId] = useState<string | null>(null);
+    const [duplicateRetry, setDuplicateRetry] = useState(0);
     const [saveDuplicateModal, setSaveDuplicateModal] = useState<{ matches: DiscoveryMatch[] } | null>(null);
     // v2.19.65: gate the create-flow duplicate-detection on whether the
     // search-relevant content has actually changed from what the rescuer
@@ -501,6 +504,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         duplicateDebounceRef.current = setTimeout(async () => {
             duplicateDebounceRef.current = null;
             setDuplicateSearching(true);
+            setDuplicateSearchErrorId(null);
             try {
                 const response = await findFormDuplicates(getDuplicateInput(), { minRelevance: 15 });
                 const confident = (response.results as DiscoveryMatch[]);
@@ -509,8 +513,10 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                 } else {
                     setDuplicateResults(confident.slice(0, MAX_DUPLICATE_CARD_RESULTS));
                 }
-            } catch {
+            } catch (e) {
                 setDuplicateResults(null);
+                // A tab older than the deployment gets its own «new version» notice; nothing to retry.
+                if (!handledAsStale(e)) setDuplicateSearchErrorId(resolveErrorId(e, 'AdopterForm.duplicateSearch'));
             } finally {
                 setDuplicateSearching(false);
             }
@@ -518,7 +524,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         return () => {
             if (duplicateDebounceRef.current) clearTimeout(duplicateDebounceRef.current);
         };
-    }, [isNew, data.name, data.contactInfo, getDuplicateSearchQuery, getDuplicateInput, normalizeDetectionQuery]);
+    }, [isNew, data.name, data.contactInfo, getDuplicateSearchQuery, getDuplicateInput, normalizeDetectionQuery, duplicateRetry]);
 
     // Perform the actual save (used after "Create new anyway" or when no duplicates)
     const performActualSave = useCallback(async () => {
@@ -938,6 +944,21 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                     keeps its inline header buttons below. */}
                 {isNew && isEditing && (
                     <>
+                        {duplicateSearchErrorId && (
+                            <div role="status" data-testid="dup-search-failed" className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                                <span>{t('adopter.dup_search_failed')}</span>
+                                <span aria-hidden>·</span>
+                                <button
+                                    type="button"
+                                    data-testid="dup-search-retry"
+                                    onClick={() => { setDuplicateSearchErrorId(null); setDuplicateRetry(n => n + 1); }}
+                                    className="min-h-[44px] px-2 font-semibold underline underline-offset-2"
+                                >
+                                    {t('adopter.dup_search_retry')}
+                                </button>
+                                <span className="text-xs text-amber-800">#{duplicateSearchErrorId}</span>
+                            </div>
+                        )}
                         <DuplicatePeek
                             compareSource={compareSource}
                             results={duplicateResults}

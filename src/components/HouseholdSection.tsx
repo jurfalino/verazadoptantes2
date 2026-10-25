@@ -282,7 +282,14 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                                 <div className="w-9 h-9 rounded-lg bg-teal-600 text-white font-bold text-sm flex items-center justify-center shrink-0">{(m.name.trim()[0] || '?').toUpperCase()}</div>
                                 <div className="min-w-0 flex-1">
                                     <div className="font-semibold text-[15px] text-stone-900 break-words">
-                                        {m.name || <span className="italic text-stone-400">{t('adopter.hh_name')}</span>}
+                                        {m.profileId ? (
+                                            // D35: a member with their own profile links to it; a later merge redirects there.
+                                            <a href={`/adopter/${encodeURIComponent(m.profileId)}`} data-testid="household-member-profile-link" className="text-teal-700 hover:underline">
+                                                {m.name || t('adopter.hh_name')}
+                                            </a>
+                                        ) : (
+                                            m.name || <span className="italic text-stone-400">{t('adopter.hh_name')}</span>
+                                        )}
                                         {m.giftRecipient && <span className="ml-1.5 inline-block whitespace-nowrap align-middle text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-700">{t('adopter.hh_gift_recipient')}</span>}
                                     </div>
                                     <div className={`text-xs ${m.relationship ? 'text-stone-500' : 'text-stone-400 italic'}`}>

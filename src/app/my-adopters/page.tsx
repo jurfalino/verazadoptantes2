@@ -433,10 +433,9 @@ export default function MyAdoptersPage() {
 
                 {/* Pending-dedup pairs (replaces the old "Unlinked Forms" section
                     that existed before Phase 1 auto-created adopters at submit time).
-                    Anchor target for the per-row "🔍 Posible duplicado" pill (v38). */}
-                <div id="pending-dedup" className="scroll-mt-20">
-                    <PendingDedup />
-                </div>
+                    The section carries its own #pendientes anchor (the per-row
+                    "🔍 Posible duplicado" pill and the notifications link there). */}
+                <PendingDedup />
 
                 {adopters.length > 0 && (
                     <div role="group" aria-label={t('myAdopters.filter_label') || 'Filtrar'} className="flex flex-wrap gap-2 mb-4">
@@ -533,7 +532,7 @@ export default function MyAdoptersPage() {
                                                         request in the right history. */}
                                                     {adopter.hasPendingDuplicate && !adopter.formNeedsReview && (
                                                         <a
-                                                            href="#pending-dedup"
+                                                            href="#pendientes"
                                                             onClick={(e) => e.stopPropagation()}
                                                             title={t('myAdopters.row_pending_dup_tooltip') || 'Hay un posible duplicado pendiente de revisar arriba'}
                                                             className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap hover:bg-amber-100 flex-shrink-0"
@@ -646,7 +645,7 @@ export default function MyAdoptersPage() {
                                                 <AdopterName adopter={adopter} className="font-semibold text-stone-900 truncate" title />
                                                 {adopter.hasPendingDuplicate && !adopter.formNeedsReview && (
                                                     <a
-                                                        href="#pending-dedup"
+                                                        href="#pendientes"
                                                         onClick={(e) => e.stopPropagation()}
                                                         title={t('myAdopters.row_pending_dup_tooltip') || 'Hay un posible duplicado pendiente de revisar arriba'}
                                                         className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap hover:bg-amber-100"

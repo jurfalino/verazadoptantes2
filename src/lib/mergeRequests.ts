@@ -51,18 +51,25 @@ export interface MergeRequestAdminRow {
     status: MergeRequestStatus;
     /** epoch ms */
     createdAt: number | null;
-    primary: { id: string; name: string };
-    secondary: { id: string; name: string };
+    /** The side that stays («se conserva»): the request's primaryId. */
+    primary: MergeRequestAdminSide;
+    /** The side that is absorbed («se absorbe»). */
+    secondary: MergeRequestAdminSide;
     requesterEmail: string;
     ownerEmail: string | null;
 }
 
-const ICON = '🔗';
-
-async function adopterName(db: Db, id: string): Promise<string> {
-    const row = await db.select({ name: adopters.name }).from(adopters).where(eq(adopters.id, id)).get();
-    return row?.name ?? '';
+/** One profile of a request, as the admin list shows it (D31). Admin page, so the owner email is shown whole. */
+export interface MergeRequestAdminSide {
+    id: string;
+    name: string;
+    /** Who added the profile; null for an anonymous one. */
+    ownerEmail: string | null;
+    /** epoch ms the profile was created */
+    createdAt: number | null;
 }
+
+const ICON = '🔗';
 
 /**
  * The PENDING request for this pair, in either orientation. A declined one
@@ -450,17 +457,26 @@ export async function listMergeRequestsForAdmin(db: Db): Promise<MergeRequestAdm
     const rows = [...pendingRows, ...declinedRows];
 
     const ids = [...new Set(rows.flatMap(r => [r.primaryId, r.secondaryId]))];
-    const names = new Map(await Promise.all(ids.map(async id => [id, await adopterName(db, id).catch((e: unknown) => {
-        logger.warn('listMergeRequestsForAdmin: D1 fallback hit', { adopterId: id, error: e instanceof Error ? e.message : String(e) });
-        return '';
-    })] as const)));
+    const sides = new Map(await Promise.all(ids.map(async id => {
+        let row: { name: string | null; addedBy: string | null; createdAt: Date | null } | undefined;
+        try {
+            row = await db.select({ name: adopters.name, addedBy: adopters.addedBy, createdAt: adopters.createdAt })
+                .from(adopters).where(eq(adopters.id, id)).get();
+        } catch (e) {
+            logger.warn('listMergeRequestsForAdmin: D1 fallback hit', { adopterId: id, error: e instanceof Error ? e.message : String(e) });
+        }
+        const owner = row?.addedBy && row.addedBy !== 'anonymous' ? row.addedBy : null;
+        const side: MergeRequestAdminSide = { id, name: row?.name ?? '', ownerEmail: owner, createdAt: row?.createdAt ? row.createdAt.getTime() : null };
+        return [id, side] as const;
+    })));
+    const side = (id: string): MergeRequestAdminSide => sides.get(id) ?? { id, name: '', ownerEmail: null, createdAt: null };
 
     return rows.map(r => ({
         id: r.id,
         status: r.status as MergeRequestStatus,
         createdAt: r.createdAt ? r.createdAt.getTime() : null,
-        primary: { id: r.primaryId, name: names.get(r.primaryId) ?? '' },
-        secondary: { id: r.secondaryId, name: names.get(r.secondaryId) ?? '' },
+        primary: side(r.primaryId),
+        secondary: side(r.secondaryId),
         requesterEmail: r.requesterEmail,
         ownerEmail: r.ownerEmail ?? null,
     }));

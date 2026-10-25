@@ -7,7 +7,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { resolveMergeRequest } from '@/app/actions/mergeRequests';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { userFacingMessage } from '@/lib/errorMessage';
-import type { MergeRequestAdminRow } from '@/lib/mergeRequests';
+import type { MergeRequestAdminRow, MergeRequestAdminSide } from '@/lib/mergeRequests';
 
 const DAY_MS = 86_400_000;
 /** An adopter with no name still needs a visible, clickable link. */
@@ -19,6 +19,24 @@ function waited(createdAt: number | null, now: number | null): string {
     const days = Math.max(0, Math.floor((now - createdAt) / DAY_MS));
     if (days === 0) return 'hoy';
     return days === 1 ? 'hace 1 día' : `hace ${days} días`;
+}
+
+/** One profile of a request: name, who owns it, when it was created, and whether it stays or is absorbed (D31). */
+function SideCard({ side, role, formatShortDate }: { side: MergeRequestAdminSide; role: 'keep' | 'absorb'; formatShortDate: (ms: number) => string }) {
+    const keep = role === 'keep';
+    return (
+        <div data-testid={keep ? 'merge-request-keep' : 'merge-request-absorb'} className="rounded-lg border border-stone-200 bg-stone-50 p-3 space-y-0.5 min-w-0">
+            <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold border ${keep ? 'bg-teal-50 border-teal-200 text-teal-700' : 'bg-stone-100 border-stone-300 text-stone-600'}`}>
+                {keep ? 'se conserva' : 'se absorbe'}
+            </span>
+            <div><a href={`/adopter/${side.id}`} className="font-semibold text-teal-700 hover:underline break-words">{side.name || NO_NAME}</a></div>
+            <div className="text-stone-600 break-all">
+                <span className="font-medium">Dueño: </span>
+                {side.ownerEmail ?? <span className="italic text-stone-500">sin dueño</span>}
+            </div>
+            {side.createdAt != null && <div className="text-xs text-stone-500">Creado el {formatShortDate(side.createdAt)}</div>}
+        </div>
+    );
 }
 
 /**
@@ -68,20 +86,17 @@ export default function MergeRequestsPanel({ requests }: { requests: MergeReques
                 const busy = busyId === r.id;
                 return (
                     <li key={r.id} data-testid="merge-request-row" className="rounded-xl border border-stone-200 bg-white p-4 text-sm space-y-2">
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold">
-                            <a href={`/adopter/${r.primary.id}`} className="text-teal-700 hover:underline break-words min-w-0">{r.primary.name || NO_NAME}</a>
-                            <span aria-hidden className="text-stone-400">+</span>
-                            <a href={`/adopter/${r.secondary.id}`} className="text-teal-700 hover:underline break-words min-w-0">{r.secondary.name || NO_NAME}</a>
-                            <span className={`ml-auto px-2 py-0.5 rounded-full text-xs font-semibold border ${declined ? 'bg-rose-50 border-rose-200 text-rose-700' : 'bg-amber-50 border-amber-300 text-amber-800'}`}>
-                                {declined ? 'Rechazado por el dueño' : 'Pendiente'}
+                        <div className="flex flex-wrap items-center gap-2 font-semibold">
+                            <span className={`ml-auto order-last px-2 py-0.5 rounded-full text-xs font-semibold border ${declined ? 'bg-rose-50 border-rose-200 text-rose-700' : 'bg-amber-50 border-amber-300 text-amber-800'}`}>
+                                {declined ? 'Rechazado' : 'Pendiente'}
                             </span>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                            <SideCard side={r.primary} role="keep" formatShortDate={formatShortDate} />
+                            <SideCard side={r.secondary} role="absorb" formatShortDate={formatShortDate} />
                         </div>
                         <div className="text-stone-600 break-all">
                             <span className="font-medium">Pidió: </span>{r.requesterEmail}
-                        </div>
-                        <div className="text-stone-600 break-all">
-                            <span className="font-medium">Dueño: </span>
-                            {r.ownerEmail ?? <span className="italic text-stone-500">sin dueño</span>}
                         </div>
                         {r.createdAt != null && (
                             <div className="text-xs text-stone-500">

@@ -76,11 +76,13 @@ interface AdopterProfileV2Props {
     pinnedVisitIntent?: boolean;
     /** ENABLE_ORIGIN_LABELS: tag where the profile and each activity came from. */
     originLabels?: boolean;
+    /** D32: the id of an absorbed profile whose link led here (`?merged=`); shows a one-line note. */
+    mergedFrom?: string | null;
     /** ENABLE_INTERVIEW_GUIDE — «Entrevistar» in the profile's ⋯ menu. */
     interviewEnabled?: boolean;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null }: AdopterProfileV2Props) {
     const { formatDateTime, formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const searchParams = useSearchParams();
@@ -364,14 +366,20 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     an always-on banner — see VisibilityBadgeModal's public branch,
                     which renders <PublicProfileSourceNotice> with the same copy. */}
 
+                {!isNew && mergedFrom && (
+                    <p data-testid="merged-profile-note" role="status" className="rounded-lg px-3 py-2 text-sm" style={{ background: 'var(--accent-subtle-bg)', color: 'var(--text-primary)' }}>
+                        {t('adopter.merged_note')}
+                    </p>
+                )}
+
                 {/* v39: pending-duplicate signal. Owner / admin gets the clickable
-                    "Revisar" affordance straight to /my-adopters#pending-dedup
+                    "Revisar" affordance straight to /my-adopters#pendientes
                     where the merge UI lives. Everyone else sees the same flag
                     informationally — non-owners can't act on someone else's record. */}
                 {!isNew && adopter && reviewableDups.length > 0 && (
                     (isOwner || isAdmin) ? (
                         <a
-                            href="/my-adopters#pending-dedup"
+                            href="/my-adopters#pendientes"
                             className="block rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 transition-colors p-3 text-sm text-amber-900 flex items-center justify-between gap-3"
                         >
                             <span className="flex items-center gap-2 min-w-0">

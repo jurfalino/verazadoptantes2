@@ -142,7 +142,8 @@ test.describe('Duplicate mass-merge and undo', () => {
         // ── An absorbed profile's old link lands on the survivor, query kept.
         const redirected = await page.goto(`/adopter/${B}?q=merge-redirect-check`);
         expect(redirected?.status(), 'the survivor page renders, not a 404').toBe(200);
-        await expect(page).toHaveURL(new RegExp(`/adopter/${A}\\?q=merge-redirect-check$`));
+        await expect(page).toHaveURL(new RegExp(`/adopter/${A}\\?q=merge-redirect-check&merged=${B}$`));
+        await expect(page.getByTestId('merged-profile-note')).toBeVisible();
 
         // ── Undo, newest-first (server refuses older-first for same survivor).
         const undoRes = await page.request.post('/api/admin/duplicates/unmerge', {
