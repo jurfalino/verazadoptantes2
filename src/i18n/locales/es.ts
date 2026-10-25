@@ -170,6 +170,7 @@ export const es = {
         nav_data_requests: 'Solicitudes de datos',
         nav_deleted: 'Eliminados',
         nav_pii_requests: 'Acceso a contacto',
+        nav_merge_requests: 'Pedidos de combinación',
         nav_communications: 'Comunicaciones',
         nav_users: 'Usuarios',
         nav_organizations: 'Organizaciones',
