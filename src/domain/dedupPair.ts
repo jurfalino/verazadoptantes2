@@ -39,7 +39,7 @@ export type DedupAction =
     | { kind: 'refuse'; reason: DedupRefusal };
 
 /** null / '' / 'anonymous' creators have no real owner to notify or ask. */
-function realOwner(addedBy: string | null | undefined): string | null {
+export function realOwner(addedBy: string | null | undefined): string | null {
     return !addedBy || addedBy === 'anonymous' ? null : addedBy;
 }
 
