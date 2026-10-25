@@ -73,8 +73,16 @@ test('a request goes to the other owner, can be cancelled, and an admin approval
         `SELECT id FROM merge_requests WHERE primary_id = '${A}' AND secondary_id = '${B}' AND status = 'pending'`,
     ).map(r => String(r.id));
 
+    // ── The request notification's link (#pendientes) opens the section by itself.
+    await page.goto('/my-adopters#pendientes');
+    await dismissCountryBanner(page);
+    await expect(page.locator('button[aria-controls="pending-dedup-list"]')).toHaveAttribute('aria-expanded', 'true', { timeout: 30_000 });
+    await expect(page.locator('#pendientes')).toBeVisible();
+
     // ── The other owner's (newer) card names its creator; ours does not.
     let card = await openPendingCard(page, NAME);
+    // Combinar here would ask testuser, and the button says so.
+    await expect(card.getByTestId('dedup-merge')).toHaveText(/^(Request merge|Pedir combinar|Pedir para combinar)$/);
     await expect(card.getByTestId('dedup-created-by')).toHaveCount(1);
     await expect(card.getByTestId('dedup-created-by')).toContainText(/Test User|testuser/);
 

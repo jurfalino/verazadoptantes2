@@ -38,9 +38,12 @@ export type DedupAction =
     | { kind: 'request'; primaryId: string; secondaryId: string; ownerEmail: string | null }
     | { kind: 'refuse'; reason: DedupRefusal };
 
-/** null / '' / 'anonymous' creators have no real owner to notify or ask. */
+/**
+ * Only an email is a real owner to notify or ask. null / '' / 'anonymous' and
+ * system markers such as 'system-demo' (in production `added_by`) have none.
+ */
 export function realOwner(addedBy: string | null | undefined): string | null {
-    return !addedBy || addedBy === 'anonymous' ? null : addedBy;
+    return addedBy && addedBy.includes('@') ? addedBy : null;
 }
 
 /**
@@ -121,17 +124,18 @@ export function decideMergeRequestAnswer(input: {
 /** A duplicate flag row, as far as the merge feed cares. */
 export interface DuplicateFlagRow {
     adopterId: string;
-    targetAdopterId: string | null;
-    reason: string | null;
-    details: string | null;
+    targetAdopterId?: string | null;
+    reason?: string | null;
+    details?: string | null;
 }
 
 /** Marker mergeAdopters writes into a flag's details once its pair is merged. */
 export const MERGED_FLAG_DETAILS_PREFIX = 'Merged into ';
 
 /**
- * Marker a declined merge request writes into its flag's details (followed by
- * who declined): the pair was resolved as kept-separate (spec D4b).
+ * Marker a declined merge request writes into its flag's details, followed by
+ * the request id — never who declined: flag details render to every viewer of
+ * the profile. The pair was resolved as kept-separate (spec D4b).
  */
 export const KEPT_SEPARATE_FLAG_DETAILS_PREFIX = 'Kept separate: ';
 

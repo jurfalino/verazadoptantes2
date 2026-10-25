@@ -14,7 +14,7 @@
  * feedback_themed_colors_only.
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '@/context/LanguageContext';
 import { useDateFormat } from '@/context/TimezoneContext';
@@ -178,6 +178,9 @@ function AdopterCard({
     );
 }
 
+/** The section's anchor: request notifications link to /my-adopters#pendientes. */
+const SECTION_ID = 'pendientes';
+
 export default function PendingDedup() {
     const { t, locale } = useLanguage();
     const { formatShortDate } = useDateFormat();
@@ -186,8 +189,14 @@ export default function PendingDedup() {
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(1);
     // Collapsed by default: production carries hundreds of pending pairs, and a
-    // wall of them above the actual adopter list buries the page.
+    // wall of them above the actual adopter list buries the page. It opens
+    // itself once, after the first load (never at render — the server HTML is
+    // closed), when the link says #pendientes or someone is waiting on the
+    // viewer's answer to a merge request.
     const [open, setOpen] = useState(false);
+    const autoOpened = useRef(false);
+    const scrollToSection = useRef(false);
+    const sectionRef = useRef<HTMLElement | null>(null);
     const [busyCandidateId, setBusyCandidateId] = useState<string | null>(null);
     // `low` pairs are ~80% of the queue and mostly weak name overlap, so the
     // server leaves them out. There is no opt-in: the "show weak matches"
@@ -201,6 +210,17 @@ export default function PendingDedup() {
             const data = await getPendingDuplicatesForUser(page, PAGE_SIZE);
             setPairs(data.pairs);
             setTotal(data.total);
+            // Decided here, batched with the pairs, so the section never
+            // renders closed first; and only once, so a reload after an
+            // action never reopens a section the user closed.
+            if (!autoOpened.current) {
+                autoOpened.current = true;
+                const linked = window.location.hash === `#${SECTION_ID}`;
+                if (linked || data.pairs.some(p => p.request?.direction === 'received')) {
+                    setOpen(true);
+                    scrollToSection.current = linked;
+                }
+            }
         } catch (e) {
             toast.error(t('errors.generic') || 'Error', t('errors.load_duplicates_failed') || undefined, resolveErrorId(e, 'PendingDedup'));
             setPairs([]);
@@ -209,6 +229,25 @@ export default function PendingDedup() {
     }, [t, toast, page]);
 
     useEffect(() => { load(); }, [load]);
+
+    // The section renders only once loaded, so the browser's own #pendientes
+    // scroll has nothing to land on: scroll once it is there and open.
+    useEffect(() => {
+        if (!open || !scrollToSection.current || !sectionRef.current) return;
+        scrollToSection.current = false;
+        sectionRef.current.scrollIntoView({ block: 'start' });
+    }, [open, pairs]);
+
+    // A #pendientes link followed while already on the page.
+    useEffect(() => {
+        const onHash = () => {
+            if (window.location.hash !== `#${SECTION_ID}`) return;
+            scrollToSection.current = true;
+            setOpen(true);
+        };
+        window.addEventListener('hashchange', onHash);
+        return () => window.removeEventListener('hashchange', onHash);
+    }, []);
 
     const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -314,7 +353,7 @@ export default function PendingDedup() {
     if (total === 0) return null;
 
     return (
-        <section className="mb-8">
+        <section id={SECTION_ID} ref={sectionRef} className="mb-8 scroll-mt-20">
             <button
                 type="button"
                 onClick={() => setOpen(o => !o)}
@@ -405,7 +444,11 @@ export default function PendingDedup() {
                                         disabled={busy}
                                         className="px-3 py-2 text-[12px] font-semibold text-white bg-teal-700 hover:bg-teal-600 rounded-xl transition-colors disabled:opacity-50"
                                     >
-                                        {busy ? (t('common.processing') || 'Processing...') : (t('myAdopters.pending_dedup_action_merge') || 'Combinar perfiles')}
+                                        {busy ? (t('common.processing') || 'Processing...')
+                                            : pair.mergeAction === 'request'
+                                                // The click asks the other owner instead of merging.
+                                                ? (t('myAdopters.pending_dedup_action_request') || 'Pedir combinar')
+                                                : (t('myAdopters.pending_dedup_action_merge') || 'Combinar perfiles')}
                                     </button>
                                 )}
                                 {pair.request?.direction === 'sent' && (

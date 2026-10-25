@@ -419,8 +419,8 @@ const pairKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 async function loadOpenRequestsByPair(
     db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
     actorEmail: string,
+    team: readonly string[],
 ): Promise<Map<string, OpenRequestRow>> {
-    const team = await getTeamEmails(actorEmail);
     const rows = await db.select({
         id: mergeRequests.id,
         primaryId: mergeRequests.primaryId,
@@ -433,7 +433,7 @@ async function loadOpenRequestsByPair(
     }).from(mergeRequests).where(and(
         eq(mergeRequests.status, 'pending'),
         // Both columns are stored normalized (createMergeRequest); so are these.
-        or(eq(mergeRequests.requesterEmail, normEmail(actorEmail)), ...team.map(e => eq(mergeRequests.ownerEmail, e))),
+        or(eq(mergeRequests.requesterEmail, normEmail(actorEmail)), ...team.map(e => eq(mergeRequests.ownerEmail, normEmail(e)))),
     )).orderBy(asc(mergeRequests.createdAt)).limit(OPEN_REQUESTS_CAP).all() as OpenRequestRow[];
     const byPair = new Map<string, OpenRequestRow>();
     for (const r of rows) {
@@ -526,6 +526,15 @@ export interface PendingDedupPair {
      * filed ('sent', D8) or one asking the viewer or a teammate ('received',
      * D7, D16). A declined request resolves the pair, so it drops out.
      */
+    /**
+     * What «Combinar» does for this viewer, so the button says so (spec "Who
+     * sees what"): 'merge' merges now («Combinar perfiles»); 'request' asks
+     * the other profile's owner («Pedir combinar»). The same decideDedupAction
+     * mergePendingDedupPair runs on click. A refusal (the viewer created
+     * neither side — only listed for a request, whose card shows no button)
+     * reads 'merge'.
+     */
+    mergeAction: 'merge' | 'request';
     request: null | {
         id: string;
         direction: 'sent' | 'received';
@@ -648,7 +657,9 @@ export async function mergePendingDedupPair(candidateId: string): Promise<
             const requester = await resolveDisplayName(actorEmail!);
             await createNotification({
                 type: 'adopter_merged',
-                userId: action.notifyOwner,
+                // Normalized: notifications are keyed (bell, email) by the
+                // lowercased email, and `added_by` keeps whatever case it had.
+                userId: normEmail(action.notifyOwner),
                 title: `Se unieron dos perfiles: ${result.secondaryName ?? ''} → ${result.primaryName ?? ''}`,
                 body: `${requester} combinó su perfil con el tuyo porque son la misma persona. Todo quedó en tu perfil.`,
                 url: `/adopter/${primaryId}`,
@@ -691,12 +702,18 @@ export async function getPendingDuplicatesForUser(
         const db = await getDb();
         if (!db) return EMPTY;
 
+        // The viewer and their org-mates (fails open to the viewer alone):
+        // whose open requests concern them, and whose profiles they may
+        // absorb (mergeAction).
+        const team = await getTeamEmails(viewer);
+        const teamKeys = new Set(team.map(normEmail));
+
         // Open merge requests the viewer is part of, by pair. A failed lookup
         // must not take out the list: the pairs still render, without the
         // request line.
         let requests = new Map<string, OpenRequestRow>();
         try {
-            requests = await loadOpenRequestsByPair(db, viewer);
+            requests = await loadOpenRequestsByPair(db, viewer, team);
         } catch (e) {
             logger.warn('getPendingDuplicatesForUser: merge-request fetch failed', {
                 actorEmail: viewer, error: e instanceof Error ? e.message : String(e),
@@ -926,10 +943,17 @@ export async function getPendingDuplicatesForUser(
             const newOne = aMs >= bMs ? a : b;
             const oldOne = aMs >= bMs ? b : a;
             const openRequest = requests.get(pairKey(c.adopter1Id, c.adopter2Id));
+            const source = c.matchTypes.includes('flagged_by_user') ? 'flagged' : 'detected';
+            // Same inputs, same order as mergePendingDedupPair's decision.
+            const dedupSide = (r: PairRow): DedupSide => ({
+                id: r.id, addedBy: r.addedBy, createdAt: r.createdAt ? r.createdAt.getTime() : null, deleted: false,
+                teamOwned: !!r.addedBy && teamKeys.has(normEmail(r.addedBy)),
+            });
+            const action = decideDedupAction(viewer, dedupSide(a), dedupSide(b), source === 'flagged' ? 'flag' : 'detected');
 
             pairs.push({
                 candidateId: c.candidateId,
-                source: c.matchTypes.includes('flagged_by_user') ? 'flagged' : 'detected',
+                source,
                 newAdopter: await side(newOne),
                 existingAdopter: await side(oldOne),
                 matchTypes: JSON.parse(c.matchTypes || '[]') as string[],
@@ -939,6 +963,7 @@ export async function getPendingDuplicatesForUser(
                 ),
                 confidence: c.confidence,
                 confidencePercent: storedScoreToPercent(c.score),
+                mergeAction: action.kind === 'request' ? 'request' : 'merge',
                 request: openRequest ? requestView(openRequest, viewer, names) : null,
             });
         }

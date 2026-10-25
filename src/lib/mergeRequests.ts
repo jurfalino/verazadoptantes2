@@ -147,7 +147,7 @@ async function notifyRequestFiled(db: Db, requestId: string, input: {
         return true;
     });
     await Promise.all(recipients.map(userId =>
-        createNotification({ userId, type: 'merge_request', title, body, url: '/my-adopters', icon: ICON, metadata })));
+        createNotification({ userId, type: 'merge_request', title, body, url: '/my-adopters#pendientes', icon: ICON, metadata })));
 }
 
 /**
@@ -253,7 +253,9 @@ async function keepSeparate(db: Db, req: RequestRow, actor: string): Promise<voi
                 ),
             ));
         await db.update(adopterFlags)
-            .set({ details: `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}${actor}` })
+            // The request id, not the actor: flag details are shown to
+            // every viewer of the profile, and identity is never an email.
+            .set({ details: `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}${req.id}` })
             .where(and(
                 eq(adopterFlags.reason, 'duplicate'),
                 or(

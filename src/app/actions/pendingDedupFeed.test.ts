@@ -258,3 +258,38 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         expect(logs.warn).toContainEqual(['getPendingDuplicatesForUser: merge-request fetch failed', expect.objectContaining({ actorEmail: STRANGER })]);
     });
 });
+
+describe('getPendingDuplicatesForUser — what «Combinar» will do (mergeAction)', () => {
+    // Each case: the card's prediction, then the click itself agrees.
+    it("viewer's older profile vs a stranger's newer → 'request' («Pedir combinar»)", async () => {
+        expect(pairOf((await feed(OWNER)).pairs, 'cand-newer-mine').mergeAction).toBe('request');
+        expect(await as(OWNER, () => mergePendingDedupPair('cand-newer-mine'))).toMatchObject({ success: true, outcome: 'requested' });
+    });
+
+    it("viewer's newer profile vs a stranger's older → 'merge'", async () => {
+        expect(pairOf((await feed(OWNER)).pairs, 'cand-older-mine').mergeAction).toBe('merge');
+        expect(await as(OWNER, () => mergePendingDedupPair('cand-older-mine'))).toEqual({ success: true, outcome: 'merged' });
+    });
+
+    it("both profiles in the viewer's team → 'merge'", async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
+            ('t-own', 'Inés Mora', '5', ?, 300, 300), ('t-mate', 'Ines Mora', '5', ?, 400, 400)`).run(OWNER, MATE);
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
+            VALUES ('cand-team', 't-mate', 't-own', '["phone"]', 95, 'high', 'pending', 1)`).run();
+        expect(pairOf((await feed(OWNER)).pairs, 'cand-team').mergeAction).toBe('merge');
+        expect(await as(OWNER, () => mergePendingDedupPair('cand-team'))).toEqual({ success: true, outcome: 'merged' });
+    });
+
+    it("a hand-filed flag across owners → 'request', even when the viewer's side is newer", async () => {
+        // OWNER's fx-o (200) is newer than STRANGER's fx-s (100): a detected
+        // pair would merge, a flag asks.
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
+            ('fx-s', 'Eva Sol', '5', ?, 100, 100), ('fx-o', 'Eva Sól', '5', ?, 200, 200)`).run(STRANGER, OWNER);
+        sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at)
+            VALUES ('flag-cross', 'fx-o', ?, 'duplicate', 'fx-s', NULL, 1)`).run(OWNER);
+        const p = pairOf((await feed(OWNER)).pairs, 'flag-cross');
+        expect(p.source).toBe('flagged');
+        expect(p.mergeAction).toBe('request');
+        expect(await as(OWNER, () => mergePendingDedupPair('flag-cross'))).toMatchObject({ success: true, outcome: 'requested' });
+    });
+});

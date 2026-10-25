@@ -12,6 +12,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { zarazTrack } from '@/lib/zaraz';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
+import { isOpenDuplicateFlag } from '@/domain/dedupPair';
 
 export interface AdopterFlaggingHandle {
     openAction: (action: string) => void;
@@ -99,7 +100,10 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
         getDuplicateCandidates(adopterId).then(setSystemSuggestions).catch(() => { });
     }, [adopterId]);
 
-    const duplicateFlags = existingFlags.filter(f => f.reason === 'duplicate');
+    // Only an OPEN duplicate question: a merged flag ("Merged into … by …") or
+    // a declined merge request ("Kept separate: …") is settled, and its
+    // details are bookkeeping, not something to show every viewer.
+    const duplicateFlags = existingFlags.filter(f => isOpenDuplicateFlag(f));
     const isFlaggedAsDuplicate = duplicateFlags.length > 0;
 
     const inaccurateFlags = existingFlags.filter(f => f.reason === 'inaccurate_information' || f.reason === 'inaccurate');

@@ -1556,6 +1556,7 @@ export const es = {
         pending_dedup_side_existing: 'Existente',
         pending_dedup_match: 'coincidencia',
         pending_dedup_action_merge: 'Combinar perfiles',
+        pending_dedup_action_request: 'Pedir combinar',
         pending_dedup_action_keep: 'Mantener separados',
         pending_dedup_merged: 'Perfiles combinados',
         pending_dedup_created_by: 'Cargado por {name}',

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decideDedupMerge, decideDedupAction, decideMergeRequestAnswer, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, type DedupSide } from './dedupPair';
+import { decideDedupMerge, decideDedupAction, decideMergeRequestAnswer, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, realOwner, type DedupSide } from './dedupPair';
 
 const ME = 'me@example.com';
 const side = (id: string, addedBy: string | null, createdAt: number, teamOwned: boolean, deleted = false): DedupSide =>
@@ -63,11 +63,30 @@ describe('isOpenDuplicateFlag', () => {
         ({ adopterId: 'a', targetAdopterId: 'b', reason: 'duplicate', details: null, ...o });
     it('an open duplicate flag', () => expect(isOpenDuplicateFlag(f({}))).toBe(true));
     it('merged (annotated by mergeAdopters)', () => expect(isOpenDuplicateFlag(f({ details: 'Merged into b by x@example.com' }))).toBe(false));
-    it('kept separate (a declined merge request)', () => expect(isOpenDuplicateFlag(f({ details: `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}owner@example.com` }))).toBe(false));
+    it('kept separate (a declined merge request)', () => expect(isOpenDuplicateFlag(f({ details: `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}3f2b9c1e-request-id` }))).toBe(false));
     it('self-pointing after a merge re-pointed it', () => expect(isOpenDuplicateFlag(f({ targetAdopterId: 'a' }))).toBe(false));
     it('no target, or another reason', () => {
         expect(isOpenDuplicateFlag(f({ targetAdopterId: null }))).toBe(false);
         expect(isOpenDuplicateFlag(f({ reason: 'inaccurate_information' }))).toBe(false);
+    });    it("a profile page's flag rows (optional fields, as AdopterFlagging gets them)", () => {
+        expect(isOpenDuplicateFlag({ adopterId: 'a', reason: 'duplicate', targetAdopterId: 'b' })).toBe(true);
+        expect(isOpenDuplicateFlag({ adopterId: 'a', reason: 'duplicate', targetAdopterId: 'b', details: 'Merged into b by x@example.com' })).toBe(false);
+        expect(isOpenDuplicateFlag({ adopterId: 'a', reason: 'duplicate', targetAdopterId: 'b', details: `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}req-1` })).toBe(false);
+        expect(isOpenDuplicateFlag({ adopterId: 'a', reason: 'duplicate' })).toBe(false);
+    });
+});
+
+describe('realOwner', () => {
+    it('a real email is the owner', () => expect(realOwner('owner@example.com')).toBe('owner@example.com'));
+    it('null, empty and anonymous have no owner', () => {
+        expect(realOwner(null)).toBeNull();
+        expect(realOwner(undefined)).toBeNull();
+        expect(realOwner('')).toBeNull();
+        expect(realOwner('anonymous')).toBeNull();
+    });
+    it('a system marker without @ (prod has system-demo) has no owner', () => {
+        expect(realOwner('system-demo')).toBeNull();
+        expect(realOwner('system')).toBeNull();
     });
 });
 

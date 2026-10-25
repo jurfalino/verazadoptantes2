@@ -5,7 +5,9 @@ import { dismissCountryBanner } from './helpers';
 /**
  * «Combinar perfiles» on /my-adopters goes through mergePendingDedupPair: the
  * server takes the actor from the session and only merges a pair the feed
- * shows the caller (they created one side). Before, the page called the bare
+ * shows the caller (they created one side). When the absorbed side is someone
+ * else's, the button reads «Pedir combinar» and the click files a merge
+ * request to its owner instead. Before, the page called the bare
  * mergeAdopters action with ids and an actor email of its own choosing — an
  * endpoint anyone could hit for any two profiles.
  *
@@ -53,7 +55,7 @@ test('the owner merges a pending pair from /my-adopters; the older profile survi
     expect(isNull(rows(`SELECT deleted_at FROM adopters WHERE id = '${OLD}'`)[0]?.deleted_at), 'the older profile survives').toBe(true);
 });
 
-test('a foreign profile is never absorbed into hers: the merge is refused and both records stay', async ({ page }) => {
+test('a foreign profile is never absorbed into hers: the button asks its owner instead, and both records stay', async ({ page }) => {
     test.setTimeout(120_000);
     const stamp = Date.now();
     const MINE = `test-pdmerge-fixture-mine-${stamp}`;
@@ -72,9 +74,15 @@ test('a foreign profile is never absorbed into hers: the merge is refused and bo
     if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
     const card = page.locator('#pending-dedup-list > div').filter({ hasText: NAME });
     await expect(card).toHaveCount(1, { timeout: 30_000 });
-    await card.getByRole('button', { name: /^(Merge profiles|Combinar perfiles|Mesclar perfis|Combinar perfis)$/ }).click();
-    await expect(page.getByText(/created by another rescuer|lo cargó otro rescatista|cadastrado por outro resgatista/).first()).toBeVisible({ timeout: 30_000 });
+    // The click would ask the other rescuer, and the button says so.
+    const button = card.getByTestId('dedup-merge');
+    await expect(button).toHaveText(/^(Request merge|Pedir combinar|Pedir para combinar)$/);
+    await button.click();
+    await expect(page.getByText(/Request sent to|Pedido enviado a|Pedido enviado para/).first()).toBeVisible({ timeout: 30_000 });
+    await expect(card.getByTestId('dedup-request-status')).toBeVisible({ timeout: 30_000 });
     await expect(card).toHaveCount(1);
+    await expect.poll(() => rows(`SELECT owner_email FROM merge_requests WHERE secondary_id = '${FOREIGN}' AND status = 'pending'`)[0]?.owner_email, { timeout: 30_000 })
+        .toBe('someone-else@example.com');
     for (const id of [MINE, FOREIGN]) {
         expect(isNull(rows(`SELECT deleted_at FROM adopters WHERE id = '${id}'`)[0]?.deleted_at), `${id} untouched`).toBe(true);
     }

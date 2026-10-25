@@ -161,6 +161,12 @@ describe('mergePendingDedupPair — merge or request', () => {
         })]);
     });
 
+    it("the other owner's added_by has capitals: adopter_merged goes to the normalized email (the bell and email key)", async () => {
+        sqlite.prepare(`UPDATE adopters SET added_by = 'Owner@Example.com' WHERE id = 'o-old'`).run();
+        expect(await mergePendingDedupPair('cand-newer-mine')).toEqual({ success: true, outcome: 'merged' });
+        expect(notify.create).toEqual([expect.objectContaining({ type: 'adopter_merged', userId: OWNER })]);
+    });
+
     it('the other profile has no real owner: request with a null owner, admins notified', async () => {
         expect(await mergePendingDedupPair('cand-anon')).toEqual({ success: true, outcome: 'requested', toName: null, toAdmins: true });
         expect(requests()).toEqual([expect.objectContaining({ primary_id: 's-old', secondary_id: 'anon-new', owner_email: null })]);
@@ -173,7 +179,9 @@ describe('mergePendingDedupPair — merge or request', () => {
         const [req] = requests();
         expect(req).toMatchObject({ primary_id: 'o-old', secondary_id: 's-new', candidate_id: null, flag_id: 'flag-cross', owner_email: OWNER });
         expect(await as(OWNER, () => resolveMergeRequest(req.id as string, 'decline'))).toEqual({ success: true });
-        expect((sqlite.prepare(`SELECT details FROM adopter_flags WHERE id = 'flag-cross'`).get()!.details as string)).toBe(`Kept separate: ${OWNER}`);
+        const details = sqlite.prepare(`SELECT details FROM adopter_flags WHERE id = 'flag-cross'`).get()!.details as string;
+        expect(details).toBe(`Kept separate: ${req.id}`);
+        expect(details).not.toContain('@');
         expect(await mergePendingDedupPair('flag-cross')).toMatchObject({ success: false, error: 'not_found' });
         expect(mergeSpy).not.toHaveBeenCalled();
     });

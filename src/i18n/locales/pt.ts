@@ -1556,6 +1556,7 @@ export const pt = {
         pending_dedup_side_existing: 'Existente',
         pending_dedup_match: 'coincidência',
         pending_dedup_action_merge: 'Combinar perfis',
+        pending_dedup_action_request: 'Pedir para combinar',
         pending_dedup_action_keep: 'Manter separados',
         pending_dedup_merged: 'Perfis combinados',
         pending_dedup_created_by: 'Cadastrado por {name}',

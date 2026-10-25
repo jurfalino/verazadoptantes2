@@ -108,7 +108,7 @@ describe('createMergeRequest', () => {
         });
         expect(recipients().sort()).toEqual([MATE, OWNER].sort());
         for (const n of notify.create) {
-            expect(n).toMatchObject({ type: 'merge_request', url: '/my-adopters', title: 'stranger pidió combinar dos perfiles' });
+            expect(n).toMatchObject({ type: 'merge_request', url: '/my-adopters#pendientes', title: 'stranger pidió combinar dos perfiles' });
             expect(n.body).toContain('Carla Gómez');
             expect(n.body).toContain('Carla Gomez');
             expect(JSON.stringify(n)).not.toContain(REQUESTER);
@@ -269,7 +269,9 @@ describe('answerMergeRequest — decline and admin decisions', () => {
         expect(await answerMergeRequest(db(), id, OWNER, 'decline')).toEqual({ ok: true, status: 'declined' });
         const flag = sqlite.prepare('SELECT adopter_id AS adopterId, target_adopter_id AS targetAdopterId, reason, details FROM adopter_flags WHERE id = ?')
             .get('flag-1') as { adopterId: string; targetAdopterId: string; reason: string; details: string };
-        expect(flag.details).toBe(`${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}${OWNER}`);
+        // The request id, never who declined: flag details render to every viewer.
+        expect(flag.details).toBe(`${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}${id}`);
+        expect(flag.details).not.toContain('@');
         expect(isOpenDuplicateFlag(flag)).toBe(false);
         // The same pair's detected candidate leaves the lists too.
         expect(candidate('cand-1')).toEqual({ status: 'dismissed', resolved_by: OWNER });
@@ -283,7 +285,8 @@ describe('answerMergeRequest — decline and admin decisions', () => {
         const id = await pending();
         expect(await answerMergeRequest(db(), id, OWNER, 'decline')).toEqual({ ok: true, status: 'declined' });
         const details = (fid: string) => sqlite.prepare('SELECT details FROM adopter_flags WHERE id = ?').get(fid)!.details;
-        expect(details('flag-1')).toBe(`${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}${OWNER}`);
+        expect(details('flag-1')).toBe(`${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}${id}`);
+        expect(details('flag-1')).not.toContain('@');
         expect(details('flag-other')).toBeNull();
         expect(candidate('cand-other').status).toBe('pending');
     });

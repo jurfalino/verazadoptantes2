@@ -1551,6 +1551,7 @@ export const en = {
         pending_dedup_side_existing: 'Existing',
         pending_dedup_match: 'match',
         pending_dedup_action_merge: 'Merge profiles',
+        pending_dedup_action_request: 'Request merge',
         pending_dedup_action_keep: 'Keep separate',
         pending_dedup_merged: 'Profiles merged',
         pending_dedup_created_by: 'Added by {name}',
