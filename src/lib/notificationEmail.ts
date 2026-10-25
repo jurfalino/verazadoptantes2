@@ -24,8 +24,16 @@ export type NotificationEmailResult =
 const THROTTLE_MS = 10 * 60_000;
 const THROTTLE_SCAN_LIMIT = 50;
 
+const EMAIL_SHAPE = /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/;
+
+function replyToFor(type: string, metadata: Record<string, unknown> | null | undefined): string | undefined {
+    if (type !== 'pair_message') return undefined;
+    const v = metadata?.replyTo;
+    return typeof v === 'string' && EMAIL_SHAPE.test(v) ? v : undefined;
+}
+
 export async function sendNotificationEmail(n: {
-    id: string; userId: string; type: string; title: string; body: string; url?: string | null;
+    id: string; userId: string; type: string; title: string; body: string; url?: string | null; metadata?: Record<string, unknown> | null;
 }): Promise<NotificationEmailResult> {
     // 0. Emergency off switch (Admin → config). Shares Resend with OTP login,
     //    so a runaway sender can be stopped without taking login down.
@@ -74,7 +82,9 @@ export async function sendNotificationEmail(n: {
         : await unsubscribeUrl(base, n.userId, category, resolveAuthSecret());
     const message = buildNotificationEmail({ title: n.title, body: n.body, url: n.url ?? null }, { appBaseUrl: base, unsubscribeUrl: unsub },
         { locale: await getLocaleForEmail(db, n.userId), staging: isStagingEnvironment() });
-    const sent = await sendEmailViaResend({ apiKey, from, to: n.userId, ...message });
+    // Only «Escribirle» messages carry a reply-to: the sender chose to be reachable.
+    const replyTo = replyToFor(n.type, n.metadata);
+    const sent = await sendEmailViaResend({ apiKey, from, to: n.userId, ...message, ...(replyTo ? { replyTo } : {}) });
     if (!sent.ok) {
         logger.warn('sendNotificationEmail: send failed', { notificationId: n.id, type: n.type, errorId: sent.errorId, to: maskEmail(n.userId) });
         return 'failed';

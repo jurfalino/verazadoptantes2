@@ -223,7 +223,11 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // Pendientes D, Task 2: +1 = saveMyLocale (settings.ts), imported by LanguageContext's
 // setLocale, so it is wired. 160 = 159 + 1. Session-checked; the only argument is
 // validated against es|en|pt and writes the caller's own profile row.
-const EXPECTED_ACTIONS = 160;
+// Pendientes D, Task 4: +1 = sendPairMessage (pairMessages.ts, «Escribirle»). COMPUTED, not
+// measured: nothing imports it until the PendingDedup UI task wires it, and Next only records
+// referenced actions. Session-checked; team/requester-only; never returns recipient emails.
+// 161 = 160 + 1.
+const EXPECTED_ACTIONS = 161;
 
 let manifest;
 try {

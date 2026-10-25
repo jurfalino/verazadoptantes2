@@ -83,7 +83,7 @@ export async function createNotification(data: {
 
         // Email twin (per-category switches apply). Never affects the bell's result.
         await runAfterResponse('notification.email', () => sendNotificationEmail({
-            id, userId: data.userId, type, title: data.title, body: data.body, url: data.url ?? null,
+            id, userId: data.userId, type, title: data.title, body: data.body, url: data.url ?? null, metadata: data.metadata ?? null,
         }), { type, notificationId: id });
 
         return id;

@@ -125,6 +125,28 @@ describe('sendNotificationEmail', () => {
     });
 });
 
+describe('pair_message reply-to', () => {
+    const callWith = (type: string, metadata: Record<string, unknown> | undefined) =>
+        sendNotificationEmail({ id: addNotif(type), userId: EMAIL, type, title: 'T', body: 'B', url: '/x', metadata });
+    it('pair_message: reply_to is the sender (metadata.replyTo), category merges', async () => {
+        seedUser(JSON.stringify({ merges: false }));
+        expect(await callWith('pair_message', { replyTo: 'sender@example.com' })).toBe('skipped_pref');
+        sqlite.prepare('DELETE FROM user_profiles').run();
+        expect(await callWith('pair_message', { requestId: 'r', replyTo: 'sender@example.com' })).toBe('sent');
+        expect(send.mock.calls[0][0]).toMatchObject({ to: EMAIL, replyTo: 'sender@example.com' });
+    });
+    it('pair_message with a missing or malformed replyTo: sent without one', async () => {
+        await callWith('pair_message', { replyTo: 'not an email' });
+        await callWith('pair_message', undefined);
+        expect(send.mock.calls[0][0].replyTo).toBeUndefined();
+        expect(send.mock.calls[1][0].replyTo).toBeUndefined();
+    });
+    it('other types never get a reply-to even if metadata carries one', async () => {
+        await callWith('merge_request', { replyTo: 'sender@example.com' });
+        expect(send.mock.calls[0][0].replyTo).toBeUndefined();
+    });
+});
+
 describe('buildNotificationEmail', () => {
     const links = { appBaseUrl: 'https://staging.buenadoptante.org', unsubscribeUrl: null as string | null };
     const prod = { locale: 'es' as const, staging: false };

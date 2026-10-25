@@ -41,6 +41,7 @@ const TYPE_TO_CATEGORY: Readonly<Record<string, EmailCategory>> = {
     adopter_merged: 'merges',
     merge_request_resolved: 'merges',
     duplicate_candidate: 'merges',
+    pair_message: 'merges',
     pii_access_approved: 'contact_access',
     pii_access_denied: 'contact_access',
     pii_access_revoked: 'contact_access',
@@ -54,8 +55,8 @@ export function categoryForType(type: string): EmailCategory {
     return Object.prototype.hasOwnProperty.call(TYPE_TO_CATEGORY, type) ? TYPE_TO_CATEGORY[type] : 'other';
 }
 
-/** Each one is its own question for the owner: every one is emailed. */
-const NEVER_THROTTLED_TYPES: ReadonlySet<string> = new Set(['merge_request']);
+/** Each one is its own question (merge_request) or a person writing to a person (pair_message): every one is emailed. */
+const NEVER_THROTTLED_TYPES: ReadonlySet<string> = new Set(['merge_request', 'pair_message']);
 
 /**
  * What a recently emailed notification must share for this one to be

@@ -22,12 +22,14 @@ export interface SendEmailOptions {
     subject: string;
     html: string;
     text: string;
+    /** Where a reply goes (Resend `reply_to`). */
+    replyTo?: string;
 }
 
 export type SendEmailResult = { ok: true } | { ok: false; errorId: string };
 
 export async function sendEmailViaResend(opts: SendEmailOptions): Promise<SendEmailResult> {
-    const { apiKey, from, to, subject, html, text } = opts;
+    const { apiKey, from, to, subject, html, text, replyTo } = opts;
     try {
         const res = await fetch('https://api.resend.com/emails', {
             method: 'POST',
@@ -35,7 +37,7 @@ export async function sendEmailViaResend(opts: SendEmailOptions): Promise<SendEm
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ from, to, subject, html, text }),
+            body: JSON.stringify({ from, to, subject, html, text, ...(replyTo ? { reply_to: replyTo } : {}) }),
         });
         if (!res.ok) {
             const body = await res.text().catch(() => '');
