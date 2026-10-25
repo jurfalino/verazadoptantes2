@@ -2188,6 +2188,7 @@ export const pt = {
         status_different: 'diferente',
         elsewhere: 'em outro campo',
         also: 'Também:',
+        score_title: 'Pontuação da busca (só admins)',
         privacy_locked: 'Com cadeado: dado protegido de outra equipe. Aparece só uma parte, ou só que existe.',
         has_one: 'tem um',
         col_post: 'Post',

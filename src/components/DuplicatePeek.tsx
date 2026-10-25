@@ -192,6 +192,7 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
                                                     profileName={result.adopter.name ?? ''}
                                                     source={compareSource}
                                                     profileEntries={entriesAsShown(result.adopter)}
+                                                    score={result.relevancePercent}
                                                     defaultOpen={(results ?? []).length === 1}
                                                     t={t}
                                                 />

@@ -2183,6 +2183,7 @@ export const en = {
         status_different: 'different',
         elsewhere: 'in another field',
         also: 'Also:',
+        score_title: 'Search score (admins only)',
         privacy_locked: 'Locked: protected by another team. Only part of it shows, or only that it exists.',
         has_one: 'has one',
         col_post: 'Post',

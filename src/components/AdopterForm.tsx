@@ -1578,6 +1578,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                         profileName={result.adopter.name ?? ''}
                                         source={compareSource}
                                         profileEntries={entriesAsShown(result.adopter)}
+                                        score={result.relevancePercent}
                                         defaultOpen={saveDuplicateModal.matches.length === 1}
                                         t={t}
                                     />

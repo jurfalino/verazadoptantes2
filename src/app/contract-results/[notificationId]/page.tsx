@@ -19,6 +19,8 @@ interface MatchedAdopter {
     id: string;
     name: string;
     matchTypes: string[];
+    /** Search score; stored on notifications since 2026-10-25, admins only. */
+    score?: number;
 }
 
 interface NotificationMetadata {
@@ -187,6 +189,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                                 notificationId={notificationId}
                                 profile={profile}
                                 matchTypes={match.matchTypes}
+                                score={match.score}
                                 signer={signer}
                                 compareOpen={metadata.matchedAdopters!.length === 1}
                             />

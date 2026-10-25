@@ -58,6 +58,8 @@ interface PersonMatch {
     sourceUrl?: string | null;
     thumbnail?: string | null;
     confidence: 'high' | 'medium' | 'low';
+    /** Search score — shown to admins only. */
+    score?: number;
     /**
      * Raw token-type signals from the duplicate-detection backend (e.g.
      * 'phone_suffix', 'name_word', 'source_url'). The wizard converts these
@@ -1016,6 +1018,7 @@ export default function ImportWizard() {
                         id: r.adopterId,
                         name: r.adopterName,
                         confidence: confidenceBand(r.relevancePercent) as 'high' | 'medium' | 'low',
+                        score: r.relevancePercent,
                         matchTypes: r.matchTypes,
                     }));
                     foundMatches = true;
@@ -1429,6 +1432,7 @@ export default function ImportWizard() {
             id: hint.adopterId,
             name: hint.adopterName,
             confidence: confidenceBand(hint.relevancePercent) as 'high' | 'medium' | 'low',
+            score: hint.relevancePercent,
             matchTypes: hint.matchTypes,
         });
     };
@@ -2383,6 +2387,7 @@ export default function ImportWizard() {
                                                 matchTypes={match.matchTypes || []}
                                                 profileName={match.name}
                                                 source={{ kind: 'post', name: extractedData?.name, entries: contactEntries }}
+                                                score={match.score}
                                                 defaultOpen={personMatches.length === 1}
                                                 t={t}
                                             />

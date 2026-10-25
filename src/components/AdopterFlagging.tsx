@@ -527,6 +527,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                                                         profileName={sug.otherAdopterName}
                                                                         source={compareSource}
                                                                         target="other"
+                                                                        score={sug.confidencePercent}
                                                                         defaultOpen={visible.length === 1}
                                                                         t={t}
                                                                     />

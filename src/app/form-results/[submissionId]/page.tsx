@@ -21,6 +21,8 @@ interface MatchedAdopter {
     id: string;
     name: string;
     matchTypes: string[];
+    /** Search score; stored on notifications since 2026-10-25, admins only. */
+    score?: number;
 }
 
 interface NotificationMetadata {

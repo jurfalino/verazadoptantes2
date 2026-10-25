@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
+import { useSession } from 'next-auth/react';
 import { getMatchContext, type MatchContext } from '@/app/actions';
 import { reportClientError } from '@/lib/clientErrorReporter';
 import { matchBreakdown, otherSignals, type BreakdownField, type BreakdownRow } from '@/domain/matchBreakdown';
@@ -40,7 +41,7 @@ type Mark = 'match' | 'partial' | 'different' | null;
  * (the same value, so nothing new) and otherwise only that the profile has one.
  * Its name is shown: names are not PII-gated.
  */
-export default function MatchCompare({ adopterId, matchTypes, profileName, source, target = 'profile', t, defaultOpen = false, bare = false, profileEntries, sourceHead, targetHead }: {
+export default function MatchCompare({ adopterId, matchTypes, profileName, source, target = 'profile', t, defaultOpen = false, bare = false, profileEntries, sourceHead, targetHead, score }: {
     /** The possibly-duplicate profile. */
     adopterId: string;
     matchTypes: string[];
@@ -58,7 +59,11 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
     /** Replace a block's title — e.g. Pendientes puts each profile's name link, source and date there. */
     sourceHead?: ReactNode;
     targetHead?: ReactNode;
+    /** The search engine's score (0–100). Admins only, behind an icon (Jon, 2026-10-25). */
+    score?: number | null;
 }) {
+    const { data: session } = useSession();
+    const isAdmin = !!(session?.user as { isAdmin?: boolean } | undefined)?.isAdmin;
     // One candidate (defaultOpen) or a page made for the comparison (bare): the
     // blocks show directly — no toggle, no summary line repeating their labels.
     // Only a list of several candidates collapses each to a one-line summary (Jon, 2026-10-25).
@@ -139,7 +144,8 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
                         <Block head={sourceHead ?? t(`matchCompare.col_${source.kind}`)} side="source">
                             {rows.map(r => <Cell key={r.field} label={t(`matchCompare.field_${r.field}`)} {...sourceCell(r)} t={t} />)}
                         </Block>
-                        <Block head={targetHead ?? t(`matchCompare.col_target_${target}`)} side="target">
+                        <Block head={targetHead ?? t(`matchCompare.col_target_${target}`)} side="target"
+                            aside={isAdmin && typeof score === 'number' ? <AdminScore score={score} t={t} /> : null}>
                             {rows.map(r => <Cell key={r.field} label={t(`matchCompare.field_${r.field}`)} {...targetCell(r, !!profileEntries)} t={t} />)}
                         </Block>
                     </div>
@@ -185,11 +191,14 @@ function targetCell(r: BreakdownRow, valuesShown: boolean): CellData {
     return { mark, locked: true };
 }
 
-function Block({ head, side, children }: { head: ReactNode; side: 'source' | 'target'; children: ReactNode }) {
+function Block({ head, side, aside, children }: { head: ReactNode; side: 'source' | 'target'; aside?: ReactNode; children: ReactNode }) {
     return (
         // Themed colours only (globals.css remaps them for dark mode; opacity variants aren't).
         <div className={`min-w-0 rounded-xl border border-stone-200 p-3 ${side === 'source' ? 'bg-stone-50' : 'bg-white'}`}>
-            <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-stone-500">{head}</div>
+            <div className="mb-1.5 flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1 text-[11px] font-bold uppercase tracking-wider text-stone-500">{head}</div>
+                {aside}
+            </div>
             <dl className="space-y-1.5">{children}</dl>
         </div>
     );
@@ -226,5 +235,29 @@ function LockIcon() {
         <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
         </svg>
+    );
+}
+
+/**
+ * The search score, for admins only: an unobtrusive gauge icon. Hover shows it
+ * (title); a tap reveals it inline, since a phone has no hover.
+ */
+function AdminScore({ score, t }: { score: number; t: (key: string) => string }) {
+    const [shown, setShown] = useState(false);
+    const label = `${t('matchCompare.score_title')}: ${Math.round(score)}%`;
+    return (
+        <button
+            type="button"
+            title={label}
+            aria-label={label}
+            aria-pressed={shown}
+            onClick={e => { e.stopPropagation(); setShown(v => !v); }}
+            className="-my-1 inline-flex min-h-[32px] min-w-[32px] shrink-0 items-center justify-center gap-1 rounded-md px-1 text-[11px] font-semibold text-stone-400 hover:text-stone-600"
+        >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 15a8 8 0 1 1 16 0" /><path d="M12 15l4-5" />
+            </svg>
+            {shown && <span data-testid="admin-score">{Math.round(score)}%</span>}
+        </button>
     );
 }

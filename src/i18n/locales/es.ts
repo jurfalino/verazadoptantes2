@@ -2188,6 +2188,7 @@ export const es = {
         status_different: 'distinto',
         elsewhere: 'en otro campo',
         also: 'También:',
+        score_title: 'Puntaje del buscador (solo admins)',
         privacy_locked: 'Con candado: dato protegido de otro equipo. Se ve solo una parte, o solo que existe.',
         has_one: 'tiene uno',
         col_post: 'Post',

@@ -25,6 +25,8 @@ export interface FormResultMatchCardProps {
     profile: { id: string; name: string; contactInfo: string | null; contactEntries?: string | null; addressInfo: string | null; status: string | null; profileImageUrl?: string | null };
     applicantSelfieUrl?: string | null;
     matchTypes: string[];
+    /** Search score — admins only. */
+    score?: number;
     submissionId: string;
     /** Offer "Es la misma persona" (and "No es esta persona"). Off once the form is linked. */
     canLink: boolean;
@@ -40,6 +42,7 @@ export default function FormResultMatchCard({
     profile,
     applicantSelfieUrl,
     matchTypes,
+    score,
     submissionId,
     canLink,
     linked = false,
@@ -161,6 +164,7 @@ export default function FormResultMatchCard({
                     profileName={profile.name}
                     source={{ kind: 'form', name: applicant.name, entries: applicantEntries }}
                     profileEntries={profileEntries}
+                    score={score}
                     bare
                     t={t}
                 />

@@ -245,6 +245,7 @@ export default function PendingDedup() {
                                 source={{ kind: 'new', name: pair.newAdopter.name, entries: entriesAsShown(pair.newAdopter) }}
                                 profileEntries={entriesAsShown(pair.existingAdopter)}
                                 target="existing"
+                                score={pair.confidencePercent}
                                 sourceHead={<AdopterCard side="new" adopter={pair.newAdopter} t={t} formatShortDate={formatShortDate} onRequestAccess={setAccessTarget} />}
                                 targetHead={<AdopterCard side="existing" adopter={pair.existingAdopter} t={t} formatShortDate={formatShortDate} onRequestAccess={setAccessTarget} />}
                                 t={t}

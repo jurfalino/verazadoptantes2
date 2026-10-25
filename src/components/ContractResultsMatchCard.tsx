@@ -21,6 +21,7 @@ interface ContractResultsMatchCardProps {
         status: string | null;
     };
     matchTypes: string[];
+    score?: number;
     /** What the adopter wrote in the contract — the rescuer's side of the comparison. */
     signer: { name: string; entries: Array<{ type: string; value: string }> };
     /** Open the comparison by itself — when this is the only possible match. */
@@ -32,6 +33,7 @@ export default function ContractResultsMatchCard({
     notificationId,
     profile,
     matchTypes,
+    score,
     signer,
     compareOpen = false,
 }: ContractResultsMatchCardProps) {
@@ -79,6 +81,7 @@ export default function ContractResultsMatchCard({
                             // The profile's contact as this page already shows it (masked
                             // where it must be) goes into its block, not a separate line.
                             profileEntries={entriesAsShown(profile)}
+                            score={score}
                             defaultOpen={compareOpen}
                             t={t}
                         />

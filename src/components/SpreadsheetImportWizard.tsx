@@ -1994,6 +1994,7 @@ function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onCha
                                         adopterId={match.adopterId}
                                         matchTypes={match.matchTypes}
                                         profileName={match.adopterName ?? ''}
+                                        score={match.relevancePercent}
                                         source={{ kind: 'sheet', name: eff.name, entries: [
                                             ...eff.phones.map(value => ({ type: 'phone', value })),
                                             ...eff.emails.map(value => ({ type: 'email', value })),

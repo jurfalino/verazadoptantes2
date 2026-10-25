@@ -99,6 +99,7 @@ export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onC
                                     profileName={result.adopter.name ?? ''}
                                     source={compareSource}
                                     profileEntries={entriesAsShown(result.adopter)}
+                                    score={result.relevancePercent}
                                     defaultOpen={strong.length === 1}
                                     t={t}
                                 />

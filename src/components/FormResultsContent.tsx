@@ -63,6 +63,8 @@ interface MatchedAdopter {
     id: string;
     name: string;
     matchTypes: string[];
+    /** Search score; stored on notifications since 2026-10-25, admins only. */
+    score?: number;
 }
 
 interface MatchedProfile {
@@ -369,6 +371,7 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                     profile={profile}
                                     applicantSelfieUrl={submission.selfieUrl}
                                     matchTypes={match.matchTypes ?? []}
+                                    score={match.score}
                                     submissionId={submission.id}
                                     canLink={view.canLinkMatches}
                                     linked={linkKind === 'linked_existing' && match.id === linkedId}

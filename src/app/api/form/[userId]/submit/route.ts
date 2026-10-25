@@ -231,7 +231,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         // manually links them" workflow. The matches returned here feed the
         // notification below.
         let adopterId: string | null = null;
-        let matches: Array<{ adopterId: string; adopterName: string; matchTypes: string[] }> = [];
+        let matches: Array<{ adopterId: string; adopterName: string; matchTypes: string[]; relevancePercent?: number }> = [];
         try {
             const { createAdopterFromSubmission } = await import('@/app/actions/_adopterFactory');
             const result = await createAdopterFromSubmission({
@@ -269,6 +269,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                 adopterId: c.adopterId,
                 adopterName: c.adopterName,
                 matchTypes: c.matchTypes,
+                relevancePercent: c.relevancePercent,
             }));
 
             // Link form submission to the new adopter and mark it linked
@@ -326,6 +327,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                             id: m.adopterId,
                             name: m.adopterName,
                             matchTypes: m.matchTypes,
+                            // The search score, shown to admins only (Jon, 2026-10-25).
+                            score: m.relevancePercent,
                         })),
                         selectedAnimalId,
                         selectedAnimalName,
