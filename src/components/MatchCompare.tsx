@@ -29,9 +29,9 @@ type Mark = 'match' | 'partial' | 'different' | null;
  * revisar, the create form, «Reportar duplicado» and the spreadsheet import.
  *
  * Two blocks, never mixed: the rescuer's data (post, form, …) and the existing
- * profile, each listing only its own values. Each value says whether it
- * matches — ✓ coincide, ≈ parecido (the shared words of a name highlighted),
- * ≠ distinto — and the header names the fields. A value with no counterpart
+ * profile, each listing only its own values. Each value carries a label saying whether it
+ * matches — ✓ coincide, ≈ parecido, ≠ distinto (the value itself is not
+ * highlighted, Jon 2026-10-25) — and the header names the fields. A value with no counterpart
  * stays plain.
  *
  * Privacy: the existing profile's values appear only where the screen passes
@@ -133,10 +133,10 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
                 <div data-testid="match-compare-rows" className="mt-1 space-y-2">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <Block head={sourceHead ?? t(`matchCompare.col_${source.kind}`)} side="source">
-                            {rows.map(r => <Cell key={r.field} label={t(`matchCompare.field_${r.field}`)} {...sourceCell(r)} other={r.field === 'name' ? r.profile : undefined} t={t} />)}
+                            {rows.map(r => <Cell key={r.field} label={t(`matchCompare.field_${r.field}`)} {...sourceCell(r)} t={t} />)}
                         </Block>
                         <Block head={targetHead ?? t(`matchCompare.col_target_${target}`)} side="target">
-                            {rows.map(r => <Cell key={r.field} label={t(`matchCompare.field_${r.field}`)} {...targetCell(r, !!profileEntries)} other={r.field === 'name' ? r.source : undefined} t={t} />)}
+                            {rows.map(r => <Cell key={r.field} label={t(`matchCompare.field_${r.field}`)} {...targetCell(r, !!profileEntries)} t={t} />)}
                         </Block>
                     </div>
                     {nameOnly && <p className="rounded-lg px-3 py-2 text-xs font-medium text-amber-800 bg-amber-50">{t('matchCompare.name_only_warning')}</p>}
@@ -184,25 +184,17 @@ function Block({ head, side, children }: { head: ReactNode; side: 'source' | 'ta
     );
 }
 
-const MARK_CLS: Record<Exclude<Mark, null>, string> = {
-    match: 'bg-teal-100 text-teal-900 border border-teal-200',
-    partial: 'bg-teal-50 text-teal-900 border border-teal-200',
-    different: 'bg-amber-50 text-amber-800 border border-amber-200',
-};
-
-function Cell({ label, value, mark, locked, empty, other, t }: CellData & { label: string; other?: string; t: (key: string) => string }) {
+function Cell({ label, value, mark, locked, empty, t }: CellData & { label: string; t: (key: string) => string }) {
     const shown = empty ? <span className="text-stone-400">—</span>
         : locked ? <span className="inline-flex items-center gap-1 text-stone-500"><LockIcon />{value ?? t('matchCompare.has_one')}</span>
-            // A similar name: highlight the words the two share.
-            : mark === 'partial' && other && value ? <SharedWords value={value} other={other} />
-                : value ? <span className="break-words">{value}</span>
+            : value ? <span className="break-words">{value}</span>
                     // Matched on a value outside this side's contact list (a handle in a form comment).
                     : <span className="font-normal italic">{t('matchCompare.elsewhere')}</span>;
     return (
         <div className="min-w-0" data-mark={mark ?? 'none'}>
             <dt className="text-xs text-stone-500">{label}</dt>
             <dd className="mt-0.5 flex flex-wrap items-center gap-1.5 text-sm font-semibold text-stone-900">
-                {mark && !empty ? <span className={`inline-flex max-w-full items-center rounded-md px-1.5 py-0.5 ${MARK_CLS[mark]}`}>{shown}</span> : shown}
+                {shown}
                 {mark && !empty && (
                     <span className={`inline-flex items-center gap-0.5 text-[11px] font-semibold ${mark === 'different' ? 'text-amber-800' : 'text-teal-800'}`}>
                         <MarkIcon mark={mark} />{t(`matchCompare.status_${mark}`)}
@@ -210,19 +202,6 @@ function Cell({ label, value, mark, locked, empty, other, t }: CellData & { labe
                 )}
             </dd>
         </div>
-    );
-}
-
-const norm = (w: string) => w.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-
-function SharedWords({ value, other }: { value: string; other: string }) {
-    const theirs = new Set(other.split(/\s+/).map(norm));
-    return (
-        <span className="break-words">
-            {value.split(/(\s+)/).map((w, i) => /\s+/.test(w) || !theirs.has(norm(w))
-                ? <span key={i} className="font-normal">{w}</span>
-                : <mark key={i} className="bg-teal-200 text-teal-950 rounded-sm px-0.5">{w}</mark>)}
-        </span>
     );
 }
 
