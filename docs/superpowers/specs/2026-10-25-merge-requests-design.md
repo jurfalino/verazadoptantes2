@@ -27,7 +27,7 @@ So the rescuer is offered a button that can never work for them, with no way for
 | D9 | Admins get a "Pedidos de combinación" list in the admin panel, next to "Acceso a contacto" (/admin/pii-requests) | Claude (agreed) |
 | D10 | Duplicates **flagged by hand** across two rescuers use the same request flow (instead of admin-only) | Claude (agreed) |
 | D11 | Teammates' profiles count as the viewer's own, as today: no request, the merge just happens | Claude (agreed) |
-| D12 | Notifications are in-app only (the bell). No email | Claude (agreed) |
+| D12 | Every notification also goes out **by email**, governed by per-category switches in Configuración (see *Email notifications*). Supersedes the earlier "bell only" | Jon |
 | D13 | A merge done through a request can be undone by an admin like any other merge | Claude (agreed) |
 | D14 | A hand-flagged pair across two rescuers **always** becomes a request to the other profile's owner, whichever profile is newer: a flag never merges someone else's profile without consent. The older profile still survives | Jon |
 | D15 | When the other profile has no real creator (`added_by` null or `'anonymous'`), the request goes **straight to the admin list**; the card says "Pedido enviado a un administrador" | Jon |
@@ -61,7 +61,7 @@ States: **pending → accepted | declined | cancelled**, plus **admin_approved /
 - If either profile is merged or deleted by some other path while a request is pending, the request closes on its own and nobody can accept it. The merge function already refuses deleted profiles.
 - Accept and approve re-check that both profiles are still live and the request is still open (pending, or declined for an admin) before merging, so two people acting at once can't merge twice. They do **not** require the duplicate pair to still be pending, since a decline resolves it (D4b) and an admin may approve afterwards (D6). *(Claude's call.)*
 
-## Notifications (bell, D12)
+## Notifications (bell + email, D12)
 
 | Event | Recipient | Opens |
 |---|---|---|
@@ -70,7 +70,37 @@ States: **pending → accepted | declined | cancelled**, plus **admin_approved /
 | Accepted / admin approved | requester (and the owner, when an admin approved) | the surviving profile |
 | Declined / admin declined | requester | /my-adopters |
 
-The D2 notice reuses the wording style of `notifyMergeOwners` ("Se unieron dos perfiles: … → …").
+The D2 notice reuses the wording style of `notifyMergeOwners` ("Se unieron dos perfiles: … → …"). Each row also sends an email (see below); the request rows are in the always-on group.
+
+## Email notifications (D12, D17–D20)
+
+| # | Decision | By |
+|---|---|---|
+| D17 | Configuración gets an **"Avisos por email"** section with one switch per notification category | Jon |
+| D18 | Anything that **asks the person to act** always emails and has no switch, shown as "Siempre activo": merge requests to you (and your teammates, D16) and contact-data access requests | Jon |
+| D19 | The **API** category only appears for people who have an API key | Jon |
+| D20 | Every switch starts **on** | Jon |
+
+Categories, grouping the existing notification `type`s (my grouping, agreed with Jon):
+
+| Category | Types | Switch |
+|---|---|---|
+| Pedidos que necesitan tu respuesta | merge request to you; `pii_access_request` | always on (D18) |
+| Formularios y contratos | `form_submission`, `contract_result`, `form_attached`, `contract_attached` | on/off |
+| Duplicados y combinaciones | `adopter_merged`, merge request accepted / declined / approved by admin | on/off |
+| Acceso a datos de contacto | `pii_access_revoked` | on/off |
+| Cambios en tus perfiles | `ownership_transferred`, `contact_entry_added` | on/off |
+| API | `api_record`, `api_access` | on/off, only with an API key (D19) |
+
+Rules:
+- The bell is unaffected by the switches; they only govern email.
+- Email goes out where notifications are created (`createNotification`, `src/app/actions/notifications.ts` already has the commented hook), sent with the existing Resend helper (`src/lib/email.ts`), in the recipient's language (es / en / pt), with a link to the item and to the settings section.
+- Every email carries a **one-click link to turn that category off without logging in** (signed token). Not offered for the always-on group.
+- **No flood from bulk work** *(Claude's call)*: imports and API batches create many notifications at once (one API import created 5,740 records). Email must never go out one-per-record in those cases; the builder adds a cap/grouping per recipient and category (e.g. one summary email for a batch).
+- Sending failures are logged and never block the action or the bell notification.
+- A new notification type must be assigned to a category; an unassigned type defaults to on/off-able "Otros" rather than silently never emailing *(Claude's call)*.
+
+**Prerequisite (Jon):** Resend must send from buenadoptante.org: domain verified in Resend (SPF + DKIM DNS records) and the key set as a Cloudflare Pages secret in staging and production. Email login (`ENABLE_EMAIL_OTP`) needs the same setup and is still off for that reason.
 
 ## Admin list (D6, D9)
 
@@ -88,10 +118,10 @@ The D2 notice reuses the wording style of `notifyMergeOwners` ("Se unieron dos p
 
 ## Non-goals
 
-- No email notifications (D12).
 - No change to how duplicates are detected or scored.
 - No change to same-team merges or to admin merges from the duplicates panel.
 - No reminders or automatic escalation; admins see the waiting time and decide (D6).
+- No digest/scheduling preferences (daily summaries, quiet hours); only on/off per category.
 
 ## Left to the builder
 
