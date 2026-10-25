@@ -24,12 +24,13 @@ export async function POST(req: NextRequest) {
         const sig = String(form.get('s') ?? '');
         const cat = unsubscribableCategory(category);
         if (!cat || !(await verifyUnsubscribe(email, category, sig, resolveAuthSecret()))) {
+            logger.warn('email.unsubscribe: invalid signature', { category });
             return back(req, { invalid: '1' });
         }
         await setEmailPrefForEmail(await getDb(), email.toLowerCase(), cat, false);
         return back(req, { done: '1', c: cat });
     } catch (e) {
-        logger.error('emailUnsubscribe: failed', { category, error: e instanceof Error ? e.message : String(e) });
-        return back(req, { invalid: '1' });
+        const errorId = logger.error('email.unsubscribe: failed', e, { category, email });
+        return back(req, { error: errorId });
     }
 }

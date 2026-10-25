@@ -2,6 +2,7 @@ export const runtime = 'edge';
 
 import { EMAIL_CATEGORIES, type EmailCategory } from '@/domain/emailCategories';
 import { resolveAuthSecret } from '@/lib/otp';
+import { logger } from '@/lib/logger';
 import { verifyUnsubscribe } from '@/lib/emailUnsubscribe';
 
 const LABELS: Record<EmailCategory, string> = {
@@ -33,6 +34,15 @@ export default async function UnsubscribePage({ searchParams }: { searchParams: 
     const s = first(sp.s);
     const category = EMAIL_CATEGORIES.find((x) => x === c);
 
+    const errorId = first(sp.error);
+    if (errorId) {
+        return (
+            <Card>
+                <p className="text-stone-900 font-medium">No pudimos procesarlo. Intentá de nuevo en un rato. (código {errorId.slice(0, 16)})</p>
+            </Card>
+        );
+    }
+
     if (first(sp.done) === '1' && category) {
         return (
             <Card>
@@ -45,7 +55,8 @@ export default async function UnsubscribePage({ searchParams }: { searchParams: 
     if (!first(sp.invalid) && e && s && category) {
         try {
             valid = await verifyUnsubscribe(e, c, s, resolveAuthSecret());
-        } catch {
+        } catch (err) {
+            logger.warn('email.unsubscribe: page verify failed', { category: c, error: err instanceof Error ? err.message : String(err) });
             valid = false;
         }
     }
