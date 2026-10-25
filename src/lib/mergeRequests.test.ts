@@ -243,12 +243,13 @@ describe('answerMergeRequest — decline and admin decisions', () => {
         expect(recipients().sort()).toEqual([OWNER, REQUESTER].sort());
     });
 
-    it('after a decline only an admin approval is still possible', async () => {
+    it('after a decline only an accept is still possible: the owner team changing its mind (D43) or an admin', async () => {
         const id = await pending();
         await answerMergeRequest(db(), id, OWNER, 'decline');
-        expect(await answerMergeRequest(db(), id, MATE, 'accept')).toEqual({ ok: false, reason: 'not_open' });
         expect(await answerMergeRequest(db(), id, REQUESTER, 'cancel')).toEqual({ ok: false, reason: 'not_open' });
+        expect(await answerMergeRequest(db(), id, REQUESTER, 'accept')).toEqual({ ok: false, reason: 'not_open' });
         expect(await answerMergeRequest(db(), id, ADMIN, 'decline')).toEqual({ ok: false, reason: 'not_open' });
+        expect(await answerMergeRequest(db(), id, MATE, 'accept')).toEqual({ ok: true, status: 'accepted' });
     });
 
     it('an admin declines a pending request: kept separate, requester and owner notified', async () => {
