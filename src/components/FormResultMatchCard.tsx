@@ -47,13 +47,6 @@ function DataRow({ label, value }: { label: string; value: string | null | undef
     );
 }
 
-function isStrongMatch(matchTypes: string[]): boolean {
-    // Accept both prefixed legacy taxonomy and unprefixed taxonomy emitted by findAdopters.
-    const hasEmail = matchTypes.includes('token:email') || matchTypes.includes('email');
-    const hasFullName = matchTypes.includes('token:name_full') || matchTypes.includes('name_full');
-    return matchTypes.length >= 3 || (hasEmail && hasFullName);
-}
-
 export default function FormResultMatchCard({
     applicant,
     profile,
@@ -71,6 +64,8 @@ export default function FormResultMatchCard({
     const toast = useShowToast();
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [linking, setLinking] = useState(false);
+    // Option B (Jon to choose, 2026-10-25): the card explains; the raw data waits behind a tap.
+    const [showDetails, setShowDetails] = useState(false);
     const L = (key: string) => (t(`formResults.${key}`) || '').trim() || formResultsFallbacks[key] || key;
 
     const applicantEntries = [
@@ -78,7 +73,6 @@ export default function FormResultMatchCard({
         { type: 'email', value: applicant.email ?? '' },
         { type: 'address', value: applicant.address ?? '' },
     ].filter(e => e.value.trim());
-    const strongMatch = isStrongMatch(matchTypes);
 
     const fail = (errorId: string, message: string) => {
         toast.error(t('errors.generic'), message, errorId);
@@ -168,14 +162,10 @@ export default function FormResultMatchCard({
                     </div>
                 </div>
             )}
-            {/* Match strength, then what matches and what doesn't, field by field
-                (Jon, 2026-10-25) — the same card as every "same person?" screen. */}
-            <div className="px-4 pt-2 pb-1 bg-amber-50 border-b border-amber-100">
-                <span className="text-xs font-semibold text-amber-800">
-                    {strongMatch ? L('strong_match') : L('possible_match')}
-                </span>
-            </div>
-            <div className="px-4 pb-2 border-b border-stone-200">
+            {/* What matches and what doesn't, field by field — the same card as every
+                "same person?" screen. No strength label: it came from the search score
+                and could contradict the rows (Jon, 2026-10-25). */}
+            <div id={`comparison-${profile.id}`} className="px-4 pb-2 border-b border-stone-200">
                 <MatchCompare
                     adopterId={profile.id}
                     matchTypes={matchTypes}
@@ -186,8 +176,18 @@ export default function FormResultMatchCard({
                 />
             </div>
 
+            {/* Both sides in full — the profile's contact only when this viewer may see it. */}
+            <button
+                type="button"
+                aria-expanded={showDetails}
+                onClick={() => setShowDetails(v => !v)}
+                className="w-full flex items-center gap-1 min-h-[44px] px-4 text-sm font-semibold text-teal-700 hover:text-teal-800 border-b border-stone-200"
+            >
+                <svg className={`w-4 h-4 shrink-0 transition-transform ${showDetails ? 'rotate-90' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                {showDetails ? L('hide_full_details') : L('show_full_details')}
+            </button>
             {/* Two-block comparison */}
-            <div id={`comparison-${profile.id}`} className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-stone-200">
+            {showDetails && <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-stone-200">
                 {/* Form applicant */}
                 <div className="p-4 bg-teal-50">
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-teal-800 mb-2">
@@ -208,7 +208,7 @@ export default function FormResultMatchCard({
                     <DataRow label={L('contact_section')} value={profile.contactInfo} />
                     <DataRow label={L('address_label')} value={profile.addressInfo} />
                 </div>
-            </div>
+            </div>}
 
             {/* Actions. The decision pair sits together — "Es la misma persona"
                 first, "No es esta persona" last — with navigation between. */}

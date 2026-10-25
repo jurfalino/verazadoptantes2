@@ -68,25 +68,6 @@ interface PersonMatch {
     matchTypes: string[];
 }
 
-/** Render the confidence-band pill — themed colours only (theme-safe). */
-function MatchBandPill({ band, t }: { band: 'high' | 'medium' | 'low'; t: (key: string) => string }) {
-    const styles = band === 'high'
-        ? 'bg-rose-100 text-rose-900 border-rose-200'
-        : band === 'medium'
-            ? 'bg-amber-100 text-amber-900 border-amber-200'
-            : 'bg-stone-100 text-stone-700 border-stone-200';
-    const label = band === 'high'
-        ? t('import.match_band_high')
-        : band === 'medium'
-            ? t('import.match_band_medium')
-            : t('import.match_band_low');
-    return (
-        <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${styles}`}>
-            {label}
-        </span>
-    );
-}
-
 export default function ImportWizard() {
 
     const { t, locale } = useLanguage();
@@ -2384,7 +2365,6 @@ export default function ImportWizard() {
                                                     </div>
                                                 </div>
                                                 <div className="flex flex-col items-end gap-1 shrink-0">
-                                                    <MatchBandPill band={match.confidence} t={t} />
                                                     <a
                                                         href={`/adopter/${match.id}`}
                                                         target="_blank"

@@ -2084,6 +2084,8 @@ export const en = {
         hide_map: 'Hide map',
     },
     formResults: {
+        show_full_details: 'See full details',
+        hide_full_details: 'Hide full details',
         back_to_animals: 'Back to My Animals',
         title: 'Form responses',
         completed_by: 'Completed by',

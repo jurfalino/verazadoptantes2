@@ -2090,6 +2090,8 @@ export const pt = {
         hide_map: 'Ocultar mapa',
     },
     formResults: {
+        show_full_details: 'Ver dados completos',
+        hide_full_details: 'Ocultar dados completos',
         back_to_animals: 'Meus animais',
         title: 'Respostas do formulário',
         completed_by: 'Preenchido por',

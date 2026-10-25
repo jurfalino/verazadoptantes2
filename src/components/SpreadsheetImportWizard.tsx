@@ -1661,7 +1661,7 @@ function MatchBadge({ match, isExact }: { match: DuplicateMatch; isExact: boolea
     return (
         <span className={strong ? 'text-sky-800' : 'text-stone-600'}>
             {identical ? '● Idéntico a' : isExact ? '● Duplicado de' : '○ Posible duplicado de'} <span className="font-semibold">{match.adopterName?.trim() || 'Sin nombre'}</span>
-            <span className="text-stone-500"> · {identical ? 'mismos datos' : `${match.relevancePercent}% · coincide en ${matchTypeLabels(match.matchTypes)}`}</span>
+            <span className="text-stone-500"> · {identical ? 'mismos datos' : `coincide en ${matchTypeLabels(match.matchTypes)}`}</span>
         </span>
     );
 }

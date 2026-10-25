@@ -51,7 +51,6 @@ function ShowLowConfidenceSuggestions({ suppressed, targetAdopter, setTargetAdop
                         >
                             <div className="flex items-center justify-between">
                                 <span className="font-semibold text-stone-700">{sug.otherAdopterName}</span>
-                                <span className="text-xs px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">{sug.confidencePercent}% match</span>
                             </div>
                             <div className="flex flex-wrap gap-1 mt-1">
                                 {sug.matchTypes.map(type => (
@@ -520,11 +519,6 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                                             >
                                                                 <div className="flex items-center justify-between">
                                                                     <span className="font-semibold text-stone-900">{sug.otherAdopterName}</span>
-                                                                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                                                                        sug.confidencePercent >= 75 ? 'bg-red-100 text-red-700' :
-                                                                        sug.confidencePercent >= 40 ? 'bg-amber-100 text-amber-700' :
-                                                                        'bg-blue-100 text-blue-600'
-                                                                    }`}>{sug.confidencePercent}% match</span>
                                                                 </div>
                                                                 {compareSource ? (
                                                                     <MatchCompare

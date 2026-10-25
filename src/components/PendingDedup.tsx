@@ -244,14 +244,6 @@ export default function PendingDedup() {
                     const busy = busyCandidateId === pair.candidateId;
                     return (
                         <div key={pair.candidateId} className="bg-white rounded-2xl border border-stone-200 shadow-sm p-4">
-                            <div className="flex items-center gap-2 mb-3 text-xs text-stone-500">
-                                <span className="font-semibold uppercase tracking-wider">
-                                    {pair.confidence === 'high' ? '🔴' : pair.confidence === 'medium' ? '🟡' : '⚪'} {pair.confidence}
-                                </span>
-                                <span>·</span>
-                                <span>{pair.confidencePercent}% {t('myAdopters.pending_dedup_match') || 'coincidencia'}</span>
-                            </div>
-
                             {/* What the two share and what they don't, field by field
                                 (Jon, 2026-10-25) — the same card as every "same person?"
                                 screen. The new side's own contact list only when this
