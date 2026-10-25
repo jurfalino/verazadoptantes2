@@ -138,6 +138,12 @@ export const FEATURE_FLAGS = {
     // call answers 404 api_disabled. Client-visible (Settings) → also in
     // PUBLIC_FLAG_KEYS. Default off.
     ENABLE_PUBLIC_API: false,
+    // Email twin of every bell notification (src/lib/notificationEmail.ts),
+    // governed per user by the «Avisos por email» switches. Defaults ON (spec
+    // D20): this flag is only an emergency off switch — notification email
+    // shares Resend with OTP login, so it can be stopped without touching
+    // login. Server-side only, deliberately NOT in PUBLIC_FLAG_KEYS.
+    ENABLE_NOTIFICATION_EMAIL: true,
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
@@ -236,6 +242,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_ORIGIN_LABELS: false,
         ENABLE_INTERVIEW_GUIDE: false,
         ENABLE_PUBLIC_API: false,
+        ENABLE_NOTIFICATION_EMAIL: true,
         ENABLE_SEARCH_CARD_METADATA: true,
         ENABLE_CHAT_WIDGET: false,
         ENABLE_POSTHOG: false,

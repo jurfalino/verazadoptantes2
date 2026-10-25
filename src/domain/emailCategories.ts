@@ -54,6 +54,23 @@ export function categoryForType(type: string): EmailCategory {
     return Object.prototype.hasOwnProperty.call(TYPE_TO_CATEGORY, type) ? TYPE_TO_CATEGORY[type] : 'other';
 }
 
+/** Each one is its own question for the owner: every one is emailed. */
+const NEVER_THROTTLED_TYPES: ReadonlySet<string> = new Set(['merge_request']);
+
+/**
+ * What a recently emailed notification must share for this one to be
+ * throttled (one email per recipient per key per 10 minutes), or null when
+ * the type is never throttled. Switchable categories throttle per category.
+ * The always-on category throttles per type: `pii_access_request` comes in
+ * bursts from bulk imports (one per contact entry), while `merge_request`
+ * is exempt and never throttles anything else.
+ */
+export function emailThrottleKey(type: string): string | null {
+    if (NEVER_THROTTLED_TYPES.has(type)) return null;
+    const category = categoryForType(type);
+    return ALWAYS_ON_CATEGORIES.has(category) ? `type:${type}` : `category:${category}`;
+}
+
 export type EmailPrefs = Partial<Record<EmailCategory, boolean>>;
 
 /** Parse stored prefs JSON. Malformed input, unknown keys and non-boolean values are dropped. */

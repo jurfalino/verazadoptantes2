@@ -261,6 +261,8 @@ export const pt = {
         flag_desc_interview_guide: 'Mostra «Entrevista» no menu e «Entrevistar» nos perfis: um guia para entrevistar adotantes por telefone e salvar o que foi dito.',
         flag_label_public_api: 'API para ferramentas externas',
         flag_desc_public_api: 'Permite que as ferramentas de cada resgate (formulários, planilhas, sistemas) busquem e registrem adotantes com uma chave. Habilita /api/v1, a página Admin → API e a seção API em Configurações.',
+        flag_label_notification_email: 'Avisos por email',
+        flag_desc_notification_email: 'Envia por email cada aviso do sininho, segundo as chaves de «Avisos por email» de cada usuário. Desligue apenas em uma emergência: interrompe todos esses emails sem afetar o login com código por email.',
         flag_label_email_otp: 'Acesso com código por e-mail',
         flag_desc_email_otp: 'Adiciona uma opção de "entrar com e-mail" ao modal de acesso: um código de 6 dígitos é enviado por e-mail e digitado, sem necessidade de conta Google. Requer Resend configurado (API key + domínio verificado). Desligado por padrão.',
         flag_label_pwa_install_prompt: 'Barra "Instalar o app"',

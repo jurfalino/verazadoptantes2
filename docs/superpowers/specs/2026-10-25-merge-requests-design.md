@@ -98,6 +98,9 @@ Rules:
 - Every email carries a **one-click link to turn that category off without logging in** (signed token). Not offered for the always-on group.
 - **No flood from bulk work** *(Claude's call)*: imports and API batches create many notifications at once (one API import created 5,740 records). Email must never go out one-per-record in those cases; the builder adds a cap/grouping per recipient and category (e.g. one summary email for a batch).
 - Sending failures are logged and never block the action or the bell notification.
+- Only people with an account (a `user` row for the recipient email) are emailed; a notification addressed to an email that never signed in stays bell-only. They could not manage the switches, and the unsubscribe link would fail *(final review, F4)*.
+- Throttle: one email per recipient per category per 10 minutes. `merge_request` is never throttled; `pii_access_request` stays always on but is throttled per type, since bulk imports file one per contact entry *(final review, F1)*.
+- Admin kill switch `ENABLE_NOTIFICATION_EMAIL` (default on, D20) stops every notification email without touching OTP login, which shares Resend *(final review, F5)*.
 - A new notification type must be assigned to a category; an unassigned type defaults to on/off-able "Otros" rather than silently never emailing *(Claude's call)*.
 
 **Sending is in place:** Jon confirmed 2026-10-25 that Resend email from the app works; email login (`ENABLE_EMAIL_OTP`) is on in production. Reuse the same key and sender.

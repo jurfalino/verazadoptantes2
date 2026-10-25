@@ -1,6 +1,8 @@
 /**
- * Email twin of every in-app notification, governed by the per-category
- * switches in user_profiles.email_prefs. NOT a 'use server' module.
+ * Email twin of every in-app notification, governed by the
+ * ENABLE_NOTIFICATION_EMAIL kill switch and the per-category switches in
+ * user_profiles.email_prefs. Only registered recipients (a `user` row) are
+ * emailed. NOT a 'use server' module.
  * `notifications.user_id` is the recipient EMAIL.
  */
 import { and, desc, eq, gte, isNotNull } from 'drizzle-orm';
@@ -8,14 +10,16 @@ import { getDb } from '@/lib/db';
 import { notifications } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { maskEmail } from '@/lib/dates';
-import { ALWAYS_ON_CATEGORIES, categoryForType, isEmailEnabled } from '@/domain/emailCategories';
-import { getEmailPrefsForEmail } from '@/lib/emailPrefs';
+import { ALWAYS_ON_CATEGORIES, categoryForType, emailThrottleKey, isEmailEnabled } from '@/domain/emailCategories';
+import { getEmailRecipient } from '@/lib/emailPrefs';
+import { getFeatureFlag } from '@/config/features';
 import { appBaseUrl, resolveEmailConfig } from '@/lib/emailConfig';
 import { buildNotificationEmail, sendEmailViaResend } from '@/lib/email';
 import { unsubscribeUrl } from '@/lib/emailUnsubscribe';
 import { resolveAuthSecret } from '@/lib/otp';
 
-export type NotificationEmailResult = 'sent' | 'skipped_pref' | 'skipped_throttle' | 'skipped_config' | 'failed';
+export type NotificationEmailResult =
+    | 'sent' | 'skipped_disabled' | 'skipped_no_account' | 'skipped_pref' | 'skipped_throttle' | 'skipped_config' | 'failed';
 
 const THROTTLE_MS = 10 * 60_000;
 const THROTTLE_SCAN_LIMIT = 50;
@@ -23,26 +27,39 @@ const THROTTLE_SCAN_LIMIT = 50;
 export async function sendNotificationEmail(n: {
     id: string; userId: string; type: string; title: string; body: string; url?: string | null;
 }): Promise<NotificationEmailResult> {
+    // 0. Emergency off switch (Admin → config). Shares Resend with OTP login,
+    //    so a runaway sender can be stopped without taking login down.
+    if (!(await getFeatureFlag('ENABLE_NOTIFICATION_EMAIL'))) return 'skipped_disabled';
+
     const category = categoryForType(n.type);
     const db = await getDb();
 
-    // 1. Preference switch.
-    const prefs = await getEmailPrefsForEmail(db, n.userId);
-    if (!isEmailEnabled(prefs, category)) return 'skipped_pref';
+    // 1. Only registered people: without a `user` row nobody can manage the
+    //    switches, and the unsubscribe link would always fail.
+    const recipient = await getEmailRecipient(db, n.userId);
+    if (!recipient) {
+        logger.info('sendNotificationEmail: no account for the recipient, send skipped', { notificationId: n.id, type: n.type, to: maskEmail(n.userId) });
+        return 'skipped_no_account';
+    }
 
-    // 2. One email per category per 10 minutes (always-on category exempt).
-    //    D1-safe: bounded scan of recent emailed rows, categories mapped in JS.
-    if (!ALWAYS_ON_CATEGORIES.has(category)) {
+    // 2. Preference switch.
+    if (!isEmailEnabled(recipient.prefs, category)) return 'skipped_pref';
+
+    // 3. One email per throttle key per 10 minutes (merge_request exempt;
+    //    see emailThrottleKey). D1-safe: bounded scan of recent emailed rows,
+    //    keys mapped in JS.
+    const throttleKey = emailThrottleKey(n.type);
+    if (throttleKey) {
         const since = new Date(Date.now() - THROTTLE_MS);
         const recent = await db.select({ type: notifications.type })
             .from(notifications)
             .where(and(eq(notifications.userId, n.userId), isNotNull(notifications.emailedAt), gte(notifications.emailedAt, since)))
             .orderBy(desc(notifications.emailedAt))
             .limit(THROTTLE_SCAN_LIMIT);
-        if (recent.some((r: { type: string }) => categoryForType(r.type) === category)) return 'skipped_throttle';
+        if (recent.some((r: { type: string }) => emailThrottleKey(r.type) === throttleKey)) return 'skipped_throttle';
     }
 
-    // 3. Resend config.
+    // 4. Resend config.
     const { apiKey, from } = await resolveEmailConfig(db);
     if (!apiKey) {
         const log = process.env.NODE_ENV === 'production' ? logger.warn : logger.info;
@@ -50,7 +67,7 @@ export async function sendNotificationEmail(n: {
         return 'skipped_config';
     }
 
-    // 4. Send.
+    // 5. Send.
     const base = appBaseUrl();
     const unsub = ALWAYS_ON_CATEGORIES.has(category)
         ? null

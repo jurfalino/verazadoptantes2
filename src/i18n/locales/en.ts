@@ -261,6 +261,8 @@ export const en = {
         flag_desc_interview_guide: 'Shows «Interview» in the menu and «Interview» on profiles: a guide for interviewing adopters by phone and saving what was said.',
         flag_label_public_api: 'API for external tools',
         flag_desc_public_api: 'Lets each rescue\'s own tools (forms, spreadsheets, systems) search and record adopters with a key. Enables /api/v1, the Admin → API page and the API section in Settings.',
+        flag_label_notification_email: 'Notification emails',
+        flag_desc_notification_email: 'Emails every bell notification, following each user\'s «Avisos por email» switches. Turn it off only in an emergency: it stops all of those emails without affecting email-code login.',
         flag_label_email_otp: 'Email code login',
         flag_desc_email_otp: 'Adds a "sign in with email" option to the login modal: a 6-digit code is emailed and typed in, no Google account needed. Requires Resend (API key + verified domain) to be configured. Off by default.',
         flag_label_pwa_install_prompt: '"Install the app" bar',

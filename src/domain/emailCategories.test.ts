@@ -3,6 +3,7 @@ import {
     EMAIL_CATEGORIES,
     ALWAYS_ON_CATEGORIES,
     categoryForType,
+    emailThrottleKey,
     parseEmailPrefs,
     isEmailEnabled,
     visibleCategories,
@@ -59,5 +60,18 @@ describe('visibleCategories', () => {
     });
     it('shows api with a key', () => {
         expect(visibleCategories(true)).toContain('api');
+    });
+});
+
+describe('emailThrottleKey', () => {
+    it('merge_request is never throttled', () => expect(emailThrottleKey('merge_request')).toBeNull());
+    it('pii_access_request throttles against itself only, not the rest of its always-on category', () => {
+        expect(emailThrottleKey('pii_access_request')).not.toBeNull();
+        expect(emailThrottleKey('pii_access_request')).not.toBe(emailThrottleKey('merge_request'));
+    });
+    it('other types throttle per category', () => {
+        expect(emailThrottleKey('form_submission')).toBe(emailThrottleKey('contract_result'));
+        expect(emailThrottleKey('form_submission')).not.toBe(emailThrottleKey('adopter_merged'));
+        expect(emailThrottleKey('some_unknown_type')).toBe(emailThrottleKey('another_unknown'));
     });
 });

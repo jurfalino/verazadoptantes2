@@ -261,6 +261,8 @@ export const es = {
         flag_desc_interview_guide: 'Muestra «Entrevista» en el menú y «Entrevistar» en los perfiles: una guía para entrevistar adoptantes por teléfono y guardar lo que se habló.',
         flag_label_public_api: 'API para herramientas externas',
         flag_desc_public_api: 'Permite que las herramientas de cada rescate (formularios, planillas, sistemas) busquen y registren adoptantes con una clave. Habilita /api/v1, la página Admin → API y la sección API en Configuración.',
+        flag_label_notification_email: 'Avisos por email',
+        flag_desc_notification_email: 'Envía por correo cada aviso de la campanita, según los interruptores de «Avisos por email» de cada usuario. Apagalo solo en una emergencia: corta todos esos correos sin afectar el ingreso con código por email.',
         flag_label_email_otp: 'Acceso con código por email',
         flag_desc_email_otp: 'Agrega una opción de "iniciar sesión con email" al modal de acceso: se envía un código de 6 dígitos por correo y se ingresa, sin necesidad de cuenta de Google. Requiere Resend configurado (API key + dominio verificado). Por defecto apagado.',
         flag_label_pwa_install_prompt: 'Barra "Instalar la app"',

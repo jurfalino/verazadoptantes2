@@ -3,6 +3,7 @@ export const runtime = 'edge';
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { maskEmail } from '@/lib/dates';
 import { resolveAuthSecret } from '@/lib/otp';
 import { setEmailPrefForEmail } from '@/lib/emailPrefs';
 import { unsubscribableCategory, verifyUnsubscribe } from '@/lib/emailUnsubscribe';
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
         await setEmailPrefForEmail(await getDb(), email.toLowerCase(), cat, false);
         return back(req, { done: '1', c: cat });
     } catch (e) {
-        const errorId = logger.error('email.unsubscribe: failed', e, { category, email });
+        const errorId = logger.error('email.unsubscribe: failed', e, { category, email: maskEmail(email) });
         return back(req, { error: errorId });
     }
 }

@@ -32,11 +32,12 @@ beforeEach(() => {
     send.mockResolvedValue({ ok: true });
     vi.stubEnv('RESEND_API_KEY', 'key');
     vi.stubEnv('AUTH_SECRET', 'test-secret');
+    // A registered recipient (no user_profiles row yet: every switch on).
+    sqlite.prepare(`INSERT INTO user (id, email) VALUES ('u1', ?)`).run(EMAIL);
 });
 afterEach(() => vi.unstubAllEnvs());
 
 function seedUser(prefs: string | null) {
-    sqlite.prepare(`INSERT INTO user (id, email) VALUES ('u1', ?)`).run(EMAIL);
     sqlite.prepare(`INSERT INTO user_profiles (user_id, email_prefs) VALUES ('u1', ?)`).run(prefs);
 }
 
@@ -65,8 +66,47 @@ describe('sendNotificationEmail', () => {
         expect(await call(addNotif('adopter_merged'), 'adopter_merged')).toBe('sent');
         expect(send).toHaveBeenCalledTimes(2);
     });
-    it('no user/profile row -> sent', async () => {
+    it('a user row but no user_profiles row -> sent', async () => {
         expect(await call(addNotif('form_submission'), 'form_submission')).toBe('sent');
+    });
+    it('no user row -> skipped_no_account, nothing sent (no way to manage or unsubscribe)', async () => {
+        sqlite.prepare(`DELETE FROM user WHERE id = 'u1'`).run();
+        expect(await call(addNotif('form_submission'), 'form_submission')).toBe('skipped_no_account');
+        expect(await call(addNotif('merge_request'), 'merge_request')).toBe('skipped_no_account');
+        expect(send).not.toHaveBeenCalled();
+    });
+    it('the user row has capitals: prefs still apply (matched case-insensitively)', async () => {
+        sqlite.prepare(`UPDATE user SET email = 'Rescuer@Example.com' WHERE id = 'u1'`).run();
+        seedUser(JSON.stringify({ forms: false }));
+        expect(await call(addNotif('form_submission'), 'form_submission')).toBe('skipped_pref');
+        expect(await call(addNotif('adopter_merged'), 'adopter_merged')).toBe('sent');
+    });
+    it('two pii_access_request emails back to back: the second is throttled; merge_request never is', async () => {
+        expect(await call(addNotif('pii_access_request'), 'pii_access_request')).toBe('sent');
+        expect(await call(addNotif('pii_access_request'), 'pii_access_request')).toBe('skipped_throttle');
+        expect(await call(addNotif('merge_request'), 'merge_request')).toBe('sent');
+        expect(await call(addNotif('merge_request'), 'merge_request')).toBe('sent');
+        expect(send).toHaveBeenCalledTimes(3);
+    });
+    it('a just-sent merge_request does not throttle a pii_access_request', async () => {
+        expect(await call(addNotif('merge_request'), 'merge_request')).toBe('sent');
+        expect(await call(addNotif('pii_access_request'), 'pii_access_request')).toBe('sent');
+        expect(send).toHaveBeenCalledTimes(2);
+        // Still always-on: no unsubscribe link.
+        expect(send.mock.calls[1][0].html).not.toContain('Dejar de recibir');
+    });
+    it('ENABLE_NOTIFICATION_EMAIL off (app_config) -> skipped_disabled, checked before anything else', async () => {
+        sqlite.prepare(`INSERT INTO app_config (key, value) VALUES ('ENABLE_NOTIFICATION_EMAIL', 'false')`).run();
+        sqlite.prepare(`DELETE FROM user WHERE id = 'u1'`).run();
+        expect(await call(addNotif('merge_request'), 'merge_request')).toBe('skipped_disabled');
+        expect(await call(addNotif('form_submission'), 'form_submission')).toBe('skipped_disabled');
+        expect(send).not.toHaveBeenCalled();
+    });
+    it('ENABLE_NOTIFICATION_EMAIL on by default (no row) and when set true', async () => {
+        expect(await call(addNotif('merge_request'), 'merge_request')).toBe('sent');
+        sqlite.prepare(`INSERT INTO app_config (key, value) VALUES ('ENABLE_NOTIFICATION_EMAIL', 'true')`).run();
+        expect(await call(addNotif('merge_request'), 'merge_request')).toBe('sent');
+        expect(send).toHaveBeenCalledTimes(2);
     });
     it('malformed email_prefs -> sent', async () => {
         seedUser('{not json');

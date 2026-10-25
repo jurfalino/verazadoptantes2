@@ -59,6 +59,7 @@ interface ConfigData {
         ENABLE_ORIGIN_LABELS?: string;
         ENABLE_INTERVIEW_GUIDE?: string;
         ENABLE_PUBLIC_API?: string;
+        ENABLE_NOTIFICATION_EMAIL?: string;
         TELEGRAM_ADMIN_CHAT_ID?: string;
         TELEGRAM_BOT_TOKEN_SET?: string;
         TELEGRAM_WEBHOOK_SECRET_SET?: string;
@@ -106,6 +107,7 @@ const FEATURE_FLAGS = [
     { key: 'ENABLE_ORIGIN_LABELS', labelKey: 'flag_label_origin_labels', descKey: 'flag_desc_origin_labels' },
     { key: 'ENABLE_INTERVIEW_GUIDE', labelKey: 'flag_label_interview_guide', descKey: 'flag_desc_interview_guide' },
     { key: 'ENABLE_PUBLIC_API', labelKey: 'flag_label_public_api', descKey: 'flag_desc_public_api' },
+    { key: 'ENABLE_NOTIFICATION_EMAIL', labelKey: 'flag_label_notification_email', descKey: 'flag_desc_notification_email' },
 ];
 
 export default function AdminConfigPage() {
@@ -149,6 +151,7 @@ export default function AdminConfigPage() {
         ENABLE_ORIGIN_LABELS: false,
         ENABLE_INTERVIEW_GUIDE: false,
         ENABLE_PUBLIC_API: false,
+        ENABLE_NOTIFICATION_EMAIL: true,
     });
     const [instagramUrl, setInstagramUrl] = useState('');
     const [savingInstagram, setSavingInstagram] = useState(false);
@@ -223,6 +226,8 @@ export default function AdminConfigPage() {
                         ENABLE_ORIGIN_LABELS: data.config?.ENABLE_ORIGIN_LABELS === 'true',
                         ENABLE_INTERVIEW_GUIDE: data.config?.ENABLE_INTERVIEW_GUIDE === 'true',
                         ENABLE_PUBLIC_API: data.config?.ENABLE_PUBLIC_API === 'true',
+                        // default ON: an absent row means enabled (features.ts default)
+                        ENABLE_NOTIFICATION_EMAIL: data.config?.ENABLE_NOTIFICATION_EMAIL !== 'false',
                     });
                     setInstagramUrl(data.config?.INSTAGRAM_URL || '');
                     setGeminiDefaultModel(data.config?.GEMINI_DEFAULT_MODEL || '');

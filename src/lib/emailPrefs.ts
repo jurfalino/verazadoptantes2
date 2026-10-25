@@ -6,26 +6,43 @@
  * `user_profiles.user_id` is the NextAuth `user.id`, not the email, so every
  * entry point resolves the id from the email first.
  */
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { getDb } from '@/lib/db';
 import { userProfiles, users } from '@/db/schema';
 import { parseEmailPrefs, type EmailCategory, type EmailPrefs } from '@/domain/emailCategories';
 
 type Db = Awaited<ReturnType<typeof getDb>>;
 
+/**
+ * `user.email` keeps whatever case the sign-in provider gave it, while
+ * notification recipients and unsubscribe links carry normalized emails:
+ * match case-insensitively on both sides.
+ */
+const emailMatches = (email: string) => sql`lower(${users.email}) = ${email.toLowerCase().trim()}`;
+
 async function userIdForEmail(db: Db, email: string): Promise<string | null> {
-    const [row] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+    const [row] = await db.select({ id: users.id }).from(users).where(emailMatches(email)).limit(1);
     return row?.id ?? null;
 }
 
-/** The user's stored switches ({} when none, no profile row, or malformed JSON). */
-export async function getEmailPrefsForEmail(db: Db, email: string): Promise<EmailPrefs> {
-    const [row] = await db.select({ prefs: userProfiles.emailPrefs })
-        .from(userProfiles)
-        .innerJoin(users, eq(users.id, userProfiles.userId))
-        .where(eq(users.email, email))
+/**
+ * The recipient's account and switches: null when no `user` row has this
+ * email (nobody to manage the switches or follow an unsubscribe link); prefs
+ * are {} with no profile row or malformed JSON. One query.
+ */
+export async function getEmailRecipient(db: Db, email: string): Promise<{ prefs: EmailPrefs } | null> {
+    const [row] = await db.select({ id: users.id, prefs: userProfiles.emailPrefs })
+        .from(users)
+        .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
+        .where(emailMatches(email))
         .limit(1);
-    return parseEmailPrefs(row?.prefs ?? null);
+    if (!row) return null;
+    return { prefs: parseEmailPrefs(row.prefs ?? null) };
+}
+
+/** The user's stored switches ({} when none, no profile row, no user row, or malformed JSON). */
+export async function getEmailPrefsForEmail(db: Db, email: string): Promise<EmailPrefs> {
+    return (await getEmailRecipient(db, email))?.prefs ?? {};
 }
 
 /** Set one switch, keeping the others. Throws when the user row does not exist. */
