@@ -21,7 +21,7 @@ export type MatchSourceKind = 'post' | 'form' | 'contract' | 'typed' | 'sheet' |
  * for the other profile, only whether it has that kind of contact. Its name is shown: names are not PII-gated. Screens that are
  * already allowed to show more keep doing so next to this card.
  */
-export default function MatchCompare({ adopterId, matchTypes, profileName, source, target = 'profile', t, defaultOpen = false, bare = false }: {
+export default function MatchCompare({ adopterId, matchTypes, profileName, source, target = 'profile', t, defaultOpen = false, bare = false, profileEntries }: {
     /** The possibly-duplicate profile. */
     adopterId: string;
     matchTypes: string[];
@@ -34,6 +34,10 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
     defaultOpen?: boolean;
     /** Already inside an expandable row of its own: rows always shown, no toggle. */
     bare?: boolean;
+    /** The other profile's contact AS THIS SCREEN ALREADY SHOWS IT to the viewer
+     *  (masked values keep their «•»). Given → one row per field with both values
+     *  side by side, replacing a separate two-column view (Jon, 2026-10-25). */
+    profileEntries?: Array<{ type: string; value: string }>;
 }) {
     const [open, setOpen] = useState(defaultOpen || bare);
     const [ctx, setCtx] = useState<MatchContext | 'loading' | 'error' | null>(null);
@@ -54,7 +58,7 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
     }, [ctx, adopterId, source.kind]);
 
     const has = ctx && ctx !== 'loading' && ctx !== 'error' ? ctx.has : null;
-    const all = matchBreakdown({ matchTypes, source: { name: source.name ?? undefined, entries: source.entries }, profile: { name: profileName, has } });
+    const all = matchBreakdown({ matchTypes, source: { name: source.name ?? undefined, entries: source.entries }, profile: { name: profileName, has, entries: profileEntries } });
     // Until we know what the profile has, a contact that didn't match could be
     // "distinto" or "solo en …": show only what we know.
     const rows = has === null ? all.filter(r => r.field === 'name' || r.status === 'match' || r.status === 'partial') : all;
@@ -90,7 +94,9 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
 
             {open && (
                 <div data-testid="match-compare-rows" className="mt-1 rounded-xl border border-stone-200 bg-white divide-y divide-stone-100">
-                    {rows.map(row => <Row key={row.field} row={row} kind={source.kind} target={target} t={t} />)}
+                    {rows.map(row => profileEntries
+                        ? <TableRow key={row.field} row={row} kind={source.kind} target={target} t={t} />
+                        : <Row key={row.field} row={row} kind={source.kind} target={target} t={t} />)}
                     {others.length > 0 && (
                         <p className="px-3 py-2.5 text-sm text-stone-700">
                             <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">{t('matchCompare.also')}</span>{' '}
@@ -100,7 +106,13 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
                     {nameOnly && <p className="px-3 py-2 text-xs font-medium text-amber-800 bg-amber-50">{t('matchCompare.name_only_warning')}</p>}
                     {ctx === 'loading' && <p className="px-3 py-2 text-xs text-stone-500">{t('matchCompare.loading')}</p>}
                     {ctx === 'error' && <p className="px-3 py-2 text-xs text-stone-500">{t('matchCompare.unavailable')}</p>}
-                    <p className="px-3 py-2 text-xs text-stone-500">{t('matchCompare.privacy')}</p>
+                    {/* The table shows what this viewer may see; say so only where something is held back. */}
+                    {(!profileEntries || rows.some(r => isHidden(r) || !!r.source?.includes('•'))) && (
+                        <p className="px-3 py-2 text-xs text-stone-500 flex items-center gap-1.5">
+                            {profileEntries && <LockIcon />}
+                            {t(profileEntries ? 'matchCompare.privacy_locked' : 'matchCompare.privacy')}
+                        </p>
+                    )}
                 </div>
             )}
         </div>
@@ -145,6 +157,55 @@ function Row({ row, kind, target, t }: { row: BreakdownRow; kind: MatchSourceKin
                     {t(`matchCompare.field_${row.field}`)} · <span className={row.status === 'different' ? 'text-amber-800' : row.status === 'match' || row.status === 'partial' ? 'text-teal-800' : ''}>{statusLabel}</span>
                 </span>
                 {detail && <span className="block mt-0.5">{detail}</span>}
+            </div>
+        </div>
+    );
+}
+
+/** A contact the other profile has but this viewer can't see (masked, or known only to exist). */
+function isHidden(r: BreakdownRow): boolean {
+    if (r.field === 'name') return false;
+    const theirs = r.status === 'different' || r.status === 'only_profile' || r.status === 'match' || r.status === 'partial';
+    return theirs && (!r.profile || r.profile.includes('•'));
+}
+
+function LockIcon() {
+    return (
+        <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
+        </svg>
+    );
+}
+
+/** One field, both values side by side (stacked on a phone), and the verdict. */
+function TableRow({ row, kind, target, t }: { row: BreakdownRow; kind: MatchSourceKind; target: 'profile' | 'other' | 'existing'; t: (key: string) => string }) {
+    const icon = ICON[row.status];
+    const statusLabel = row.status === 'only_source'
+        ? t(kind === 'profile' ? 'matchCompare.only_profile_src' : `matchCompare.only_${kind}`).toLocaleLowerCase()
+        : row.status === 'only_profile' ? t(`matchCompare.only_profile_${target}`)
+            : t(`matchCompare.status_${row.status}`);
+    const hasTheirs = row.status !== 'only_source';
+    const theirs = !hasTheirs ? <span className="text-stone-400">—</span>
+        : isHidden(row)
+            ? <span className="inline-flex items-center gap-1 text-stone-500"><LockIcon />{row.profile ?? t('matchCompare.has_one')}</span>
+            : <b className="text-stone-900 break-words">{row.profile}</b>;
+    const mine = !row.source ? <span className="text-stone-400">—</span>
+        : row.source.includes('•')
+            ? <span className="inline-flex items-center gap-1 text-stone-500"><LockIcon />{row.source}</span>
+            : <b className="text-stone-900 break-words">{row.source}</b>;
+    return (
+        <div className="flex items-start gap-3 px-3 py-2.5" data-field={row.field} data-status={row.status}>
+            <span className={`mt-0.5 w-6 h-6 rounded-full shrink-0 flex items-center justify-center ${icon.cls}`} aria-hidden="true">
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><path d={icon.path} /></svg>
+            </span>
+            <div className="min-w-0 flex-1 text-sm text-stone-700">
+                <span className="block text-xs font-semibold uppercase tracking-wide text-stone-500">
+                    {t(`matchCompare.field_${row.field}`)} · <span className={row.status === 'different' ? 'text-amber-800' : row.status === 'match' || row.status === 'partial' ? 'text-teal-800' : ''}>{statusLabel}</span>
+                </span>
+                <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5">
+                    <div className="min-w-0"><span className="text-xs text-stone-500">{t(`matchCompare.col_${kind}`)}: </span>{mine}</div>
+                    <div className="min-w-0"><span className="text-xs text-stone-500">{t(`matchCompare.col_target_${target}`)}: </span>{theirs}</div>
+                </div>
             </div>
         </div>
     );

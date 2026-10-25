@@ -29,7 +29,13 @@ import {
 import { AdopterName } from '@/components/AdopterName';
 import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
 import MatchCompare from '@/components/MatchCompare';
-import { parseBlobToContactEntries } from '@/lib/contactEntries';
+import { parseBlobToContactEntries, deserializeContactEntries } from '@/lib/contactEntries';
+
+/** A side's contact as typed entries: the server's masked list when it masked anything. */
+function sideEntries(a: { contactInfo: string | null; contactEntries: string | null }) {
+    return (a.contactEntries ? deserializeContactEntries(a.contactEntries) : parseBlobToContactEntries(a.contactInfo))
+        .map(e => ({ type: e.type, value: e.value }));
+}
 
 /** Opens-in-new-tab affordance. Inline SVG with currentColor per the icon
  *  convention — an emoji would not inherit the link's hover colour. */
@@ -85,16 +91,12 @@ function AdopterCard({
                 rel="noopener noreferrer"
                 className="group flex items-center gap-1.5 min-w-0"
             >
-                <AdopterName adopter={adopter} className="font-semibold text-stone-900 text-sm truncate group-hover:text-teal-700" title />
+                <AdopterName adopter={adopter} className="font-semibold text-stone-900 text-sm break-words group-hover:text-teal-700" title />
                 <ExternalLinkIcon className="w-3 h-3 shrink-0 text-stone-400 group-hover:text-teal-700" />
                 <span className="sr-only">{t('common.opens_new_tab') || '(abre en una pestaña nueva)'}</span>
             </Link>
-            {adopter.contactInfo && (
-                <p className="mt-1 text-xs text-stone-500 line-clamp-2 whitespace-pre-line">{adopter.contactInfo}</p>
-            )}
-            {/* The matched values are shown above regardless — they are already
-                in the viewer's own record. This is about the REST of the
-                contact blob, which belongs to whoever added this profile. */}
+            {/* Contact lives in the comparison table below. Locked values there
+                belong to whoever added this profile. */}
             {!adopter.canSeeContact && (
                 <button
                     type="button"
@@ -244,31 +246,27 @@ export default function PendingDedup() {
                     const busy = busyCandidateId === pair.candidateId;
                     return (
                         <div key={pair.candidateId} className="bg-white rounded-2xl border border-stone-200 shadow-sm p-4">
-                            {/* What the two share and what they don't, field by field
-                                (Jon, 2026-10-25) — the same card as every "same person?"
-                                screen. The new side's own contact list only when this
-                                viewer may see it, as on its card below. */}
-                            <div className="mb-3">
-                                <MatchCompare
-                                    adopterId={pair.existingAdopter.id}
-                                    matchTypes={pair.matchTypes}
-                                    profileName={pair.existingAdopter.name}
-                                    source={{
-                                        kind: 'new',
-                                        name: pair.newAdopter.name,
-                                        entries: pair.newAdopter.canSeeContact ? parseBlobToContactEntries(pair.newAdopter.contactInfo) : [],
-                                    }}
-                                    target="existing"
-                                    defaultOpen={pairs.length === 1}
-                                    t={t}
-                                />
-                            </div>
-
-                            <div className="flex flex-col md:flex-row gap-3">
+                            {/* Who: the two profiles. Then one table — each field with both
+                                values (as this viewer may see them) and whether they match.
+                                Replaces the card + two contact boxes (Jon, 2026-10-25). */}
+                            <div className="grid grid-cols-2 gap-2">
                                 <AdopterCard side="new" adopter={pair.newAdopter} t={t} formatShortDate={formatShortDate} onRequestAccess={setAccessTarget} />
-                                <div className="flex md:flex-col items-center justify-center text-stone-400 text-xs">↔</div>
                                 <AdopterCard side="existing" adopter={pair.existingAdopter} t={t} formatShortDate={formatShortDate} onRequestAccess={setAccessTarget} />
                             </div>
+                            <MatchCompare
+                                adopterId={pair.existingAdopter.id}
+                                matchTypes={pair.matchTypes}
+                                profileName={pair.existingAdopter.name}
+                                source={{
+                                    kind: 'new',
+                                    name: pair.newAdopter.name,
+                                    entries: sideEntries(pair.newAdopter),
+                                }}
+                                profileEntries={sideEntries(pair.existingAdopter)}
+                                target="existing"
+                                defaultOpen={pairs.length === 1}
+                                t={t}
+                            />
                             <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                                 {/* Dismiss writes to duplicate_candidates; a
                                     manually flagged pair has no row there, so

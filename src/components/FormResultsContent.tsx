@@ -69,6 +69,7 @@ interface MatchedProfile {
     id: string;
     name: string;
     contactInfo: string | null;
+    contactEntries?: string | null;
     addressInfo: string | null;
     status: string | null;
     profileImageUrl?: string | null;

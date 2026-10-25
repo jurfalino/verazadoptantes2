@@ -171,7 +171,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
     const matchIds = (metadata.matchedAdopters ?? []).map(a => a.id);
     const profileIds = [...new Set([...matchIds, ...(linkedId ? [linkedId] : [])])];
 
-    type ProfileRow = { id: string; name: string; contactInfo: string | null; addressInfo: string | null; status: string | null; profileImageUrl: string | null };
+    type ProfileRow = { id: string; name: string; contactInfo: string | null; contactEntries: string | null; addressInfo: string | null; status: string | null; profileImageUrl: string | null };
     let matchedProfiles: ProfileRow[] = [];
     let linkedProfile: { id: string; name: string; profileImageUrl: string | null; avgRating: number | null } | null = null;
     if (profileIds.length > 0) {
@@ -237,6 +237,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
             id: r.id,
             name: r.name,
             contactInfo: masked.get(r.id)?.contactInfo ?? null,
+            contactEntries: masked.get(r.id)?.contactEntries ?? null,
             addressInfo: masked.get(r.id)?.addressInfo ?? null,
             status: r.status,
             profileImageUrl: imageByAdopter.get(r.id) ?? null,

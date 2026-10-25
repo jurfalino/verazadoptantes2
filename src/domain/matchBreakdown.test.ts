@@ -100,3 +100,29 @@ describe('matchBreakdown: pairs the engine did not match on name', () => {
         expect(otherSignals(['flagged_by_user', 'phone', 'token:source_url', 'like_fallback'])).toEqual(['flagged_by_user', 'source_url', 'like_fallback']);
     });
 });
+
+describe('matchBreakdown: the profile\'s values, where the screen shows them', () => {
+    it('puts both values on each row; equal values match even without an engine signal', () => {
+        const rows = matchBreakdown({
+            matchTypes: ['phone'],
+            source: { name: 'Ana', entries: [{ type: 'phone', value: '4555 0377' }, { type: 'email', value: 'ana@x.com' }] },
+            profile: { name: 'Ana', has: has({ phone: true, email: true, address: true }), entries: [
+                { type: 'phone', value: '4555-0377' }, { type: 'email', value: 'ANA@x.com' }, { type: 'address', value: 'Calle 1' },
+            ] },
+        });
+        expect(rows).toEqual([
+            { field: 'name', status: 'match', source: 'Ana', profile: 'Ana' },
+            { field: 'phone', status: 'match', source: '4555 0377', profile: '4555-0377' },
+            { field: 'email', status: 'match', source: 'ana@x.com', profile: 'ANA@x.com' },
+            { field: 'address', status: 'only_profile', profile: 'Calle 1' },
+        ]);
+    });
+    it('a masked value is shown as masked and never counts as equal', () => {
+        const rows = matchBreakdown({
+            matchTypes: [],
+            source: { name: 'A', entries: [{ type: 'email', value: 'a@b.c' }] },
+            profile: { name: 'B', has: has({ email: true }), entries: [{ type: 'email', value: '•••••@•••' }] },
+        });
+        expect(rows.find(r => r.field === 'email')).toEqual({ field: 'email', status: 'different', source: 'a@b.c', profile: '•••••@•••' });
+    });
+});

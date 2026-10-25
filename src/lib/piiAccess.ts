@@ -918,6 +918,9 @@ export function submissionUnlockHashes(
 /** What a match card may render for an existing profile's contact. */
 export interface MatchCardContact {
     contactInfo: string | null;
+    /** The same contact as typed entries (JSON), masked exactly like contactInfo —
+     *  lets a match card compare field by field without re-parsing masked text. */
+    contactEntries: string | null;
     addressInfo: string | null;
 }
 
@@ -938,16 +941,18 @@ export function maskMatchCardContact(
 ): MatchCardContact {
     const contactInfo = profile.contactInfo ?? null;
     const addressInfo = profile.addressInfo ?? null;
-    if (!visibility || visibility.nothingMasked || options.adopterIsPublic) return { contactInfo, addressInfo };
+    if (!visibility || visibility.nothingMasked || options.adopterIsPublic) return { contactInfo, contactEntries: profile.contactEntries ?? null, addressInfo };
     const parsed = deserializeContactEntries(profile.contactEntries ?? null);
     const source = parsed.length > 0 ? parsed : parseBlobToContactEntries(contactInfo);
     const unlockedEntryHashes = new Set([...visibility.unlockedEntryHashes, ...submissionUnlockHashes(source, submitted)]);
+    // A blob-only profile gets typed entries too (parsed above), so the masked
+    // result carries a typed list — a match card must never re-parse masked text.
     const masked = maskAdopterContact(
-        { contactInfo, contactEntries: profile.contactEntries ?? null, addressInfo, householdMembers: null },
+        { contactInfo, contactEntries: parsed.length > 0 ? (profile.contactEntries ?? null) : (source.length > 0 ? JSON.stringify(source) : null), addressInfo, householdMembers: null },
         { ...visibility, unlockedEntryHashes },
         options,
     );
-    return { contactInfo: masked.contactInfo, addressInfo: masked.addressInfo };
+    return { contactInfo: masked.contactInfo, contactEntries: masked.contactEntries, addressInfo: masked.addressInfo };
 }
 
 /**

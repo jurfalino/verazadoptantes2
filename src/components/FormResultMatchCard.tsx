@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { CheckCircle2, ArrowRight } from 'lucide-react';
 import { en } from '@/i18n/locales/en';
 import MatchCompare from '@/components/MatchCompare';
+import { parseBlobToContactEntries, deserializeContactEntries } from '@/lib/contactEntries';
 
 // Single source of truth: fallbacks from English locale
 const formResultsFallbacks = en.formResults as Record<string, string>;
@@ -22,7 +23,7 @@ function proxyImageUrl(url: string): string {
 
 export interface FormResultMatchCardProps {
     applicant: { name: string; email?: string; phone?: string; address?: string };
-    profile: { id: string; name: string; contactInfo: string | null; addressInfo: string | null; status: string | null; profileImageUrl?: string | null };
+    profile: { id: string; name: string; contactInfo: string | null; contactEntries?: string | null; addressInfo: string | null; status: string | null; profileImageUrl?: string | null };
     applicantSelfieUrl?: string | null;
     matchTypes: string[];
     submissionId: string;
@@ -35,16 +36,6 @@ export interface FormResultMatchCardProps {
     onDismiss?: () => void;
     /** Open the comparison by itself — when this is the only possible match. */
     compareOpen?: boolean;
-}
-
-function DataRow({ label, value }: { label: string; value: string | null | undefined }) {
-    if (value == null || value === '') return null;
-    return (
-        <div className="flex flex-col gap-0.5 py-1">
-            <span className="text-xs font-medium text-stone-500">{label}</span>
-            <span className="text-sm text-stone-800 break-words">{value}</span>
-        </div>
-    );
 }
 
 export default function FormResultMatchCard({
@@ -64,8 +55,6 @@ export default function FormResultMatchCard({
     const toast = useShowToast();
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [linking, setLinking] = useState(false);
-    // Option B (Jon to choose, 2026-10-25): the card explains; the raw data waits behind a tap.
-    const [showDetails, setShowDetails] = useState(false);
     const L = (key: string) => (t(`formResults.${key}`) || '').trim() || formResultsFallbacks[key] || key;
 
     const applicantEntries = [
@@ -73,6 +62,14 @@ export default function FormResultMatchCard({
         { type: 'email', value: applicant.email ?? '' },
         { type: 'address', value: applicant.address ?? '' },
     ].filter(e => e.value.trim());
+    const profileEntries = [
+        // Typed entries (masked server-side) when we have them: re-parsing the
+        // masked text mislabels «•••@example.com» as a social handle.
+        ...(profile.contactEntries ? deserializeContactEntries(profile.contactEntries) : parseBlobToContactEntries(profile.contactInfo))
+            .filter(e => e.type !== 'address' || !profile.addressInfo)
+            .map(e => ({ type: e.type, value: e.value })),
+        ...(profile.addressInfo ? [{ type: 'address', value: profile.addressInfo }] : []),
+    ];
 
     const fail = (errorId: string, message: string) => {
         toast.error(t('errors.generic'), message, errorId);
@@ -162,53 +159,20 @@ export default function FormResultMatchCard({
                     </div>
                 </div>
             )}
-            {/* What matches and what doesn't, field by field — the same card as every
-                "same person?" screen. No strength label: it came from the search score
-                and could contradict the rows (Jon, 2026-10-25). */}
+            {/* One table: each field with the applicant's value, the profile's value
+                (as this viewer may see it — masked stays masked) and whether they match.
+                Replaces the separate two-column view (Jon, 2026-10-25). */}
             <div id={`comparison-${profile.id}`} className="px-4 pb-2 border-b border-stone-200">
                 <MatchCompare
                     adopterId={profile.id}
                     matchTypes={matchTypes}
                     profileName={profile.name}
                     source={{ kind: 'form', name: applicant.name, entries: applicantEntries }}
+                    profileEntries={profileEntries}
                     defaultOpen={compareOpen}
                     t={t}
                 />
             </div>
-
-            {/* Both sides in full — the profile's contact only when this viewer may see it. */}
-            <button
-                type="button"
-                aria-expanded={showDetails}
-                onClick={() => setShowDetails(v => !v)}
-                className="w-full flex items-center gap-1 min-h-[44px] px-4 text-sm font-semibold text-teal-700 hover:text-teal-800 border-b border-stone-200"
-            >
-                <svg className={`w-4 h-4 shrink-0 transition-transform ${showDetails ? 'rotate-90' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-                {showDetails ? L('hide_full_details') : L('show_full_details')}
-            </button>
-            {/* Two-block comparison */}
-            {showDetails && <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-stone-200">
-                {/* Form applicant */}
-                <div className="p-4 bg-teal-50">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-teal-800 mb-2">
-                        {L('form_applicant')}
-                    </h3>
-                    <DataRow label={L('name_label')} value={applicant.name} />
-                    <DataRow label={L('email_label')} value={applicant.email} />
-                    <DataRow label={L('phone_label')} value={applicant.phone} />
-                    <DataRow label={L('address_label')} value={applicant.address} />
-                </div>
-
-                {/* Existing profile */}
-                <div className="p-4 bg-stone-50">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-stone-600 mb-2">
-                        {L('existing_profile')}
-                    </h3>
-                    <DataRow label={L('name_label')} value={profile.name} />
-                    <DataRow label={L('contact_section')} value={profile.contactInfo} />
-                    <DataRow label={L('address_label')} value={profile.addressInfo} />
-                </div>
-            </div>}
 
             {/* Actions. The decision pair sits together — "Es la misma persona"
                 first, "No es esta persona" last — with navigation between. */}
