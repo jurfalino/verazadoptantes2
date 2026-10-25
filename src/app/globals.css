@@ -532,6 +532,10 @@ button {
   border-color: var(--status-error-border) !important;
 }
 
+[data-theme="dark"] .border-rose-300 {
+  border-color: rgba(251, 113, 133, 0.4) !important;
+}
+
 [data-theme="dark"] .border-rose-400 {
   border-color: #fb7185 !important;
 }
@@ -617,6 +621,14 @@ button {
 
 [data-theme="dark"] .bg-red-200 {
   background-color: rgba(239, 68, 68, 0.2) !important;
+}
+
+[data-theme="dark"] .border-red-200 {
+  border-color: rgba(239, 68, 68, 0.3) !important;
+}
+
+[data-theme="dark"] .border-red-300 {
+  border-color: rgba(239, 68, 68, 0.4) !important;
 }
 
 /* ── Blue / Info Colors ── */
@@ -745,6 +757,15 @@ button {
 }
 
 [data-theme="dark"] .border-amber-200 {
+  border-color: var(--status-warning-border) !important;
+}
+
+[data-theme="dark"] .border-amber-300 {
+  border-color: rgba(251, 191, 36, 0.4) !important;
+}
+
+/* Same first-child reach as the divide-stone remap (Tailwind 4 divide-y). */
+[data-theme="dark"] .divide-amber-200>* {
   border-color: var(--status-warning-border) !important;
 }
 
@@ -1157,7 +1178,8 @@ button {
   background-color: rgba(10, 22, 40, 0.4) !important; /* surface-base @ 40% */
 }
 
-[data-theme="dark"] .bg-stone-50\/50 {
+[data-theme="dark"] .bg-stone-50\/50,
+[data-theme="dark"] .hover\:bg-stone-50\/50:hover {
   background-color: rgba(10, 22, 40, 0.5) !important; /* surface-base @ 50% */
 }
 
