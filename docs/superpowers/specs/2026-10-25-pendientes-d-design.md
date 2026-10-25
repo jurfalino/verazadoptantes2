@@ -17,13 +17,17 @@ The UX audit found that accepting a request silently moves your adopter to anoth
 | D25 | **Confirmation** whenever your adopter will move to another rescuer's list (immediate merge or accepting a request): «Este adoptante pasará a la lista de {María}. ¿Combinar?» naming which profile stays, with Combinar / Cancelar | Jon |
 | D26 | **The asked owner** (or a teammate, D16) can **Aceptar** (requester's choice of survivor), **flip it** («Conservar el mío» → their own profile stays and the requester's folds in), or **Rechazar**. The owner is notified when a teammate answers | Jon (flip), Claude (owner notice, per audit) |
 | D27 | **Declined pairs stay** on both rescuers' lists as «Rechazado por María» (supersedes D4b), with **«Quitar de la lista»** (hides it for that person only) and **«Escribirle a María»**. Either side can still combine from the row later | Jon |
-| D28 | **«Escribirle a María»**: a short message box; María gets it in the bell and by email; replying to the email reaches the sender (reply-to = sender's address). The box warns «María verá tu email para responderte». The sender never sees María's address. **Scope (any cross-rescuer pair vs. only after a decline): OPEN — Jon** | Jon |
+| D28 | **«Escribirle a María»**: a short message box; María gets it in the bell and by email; replying to the email reaches the sender (reply-to = sender's address). The box warns «María verá tu email para responderte». The sender never sees María's address. Offered on **rejected pairs and on open requests** (sent or received), not on plain possible duplicates. **No rate limit** | Jon |
 | D29 | **Visuals**: rows that need your answer are visually distinct (warning tone + «Te piden combinar»); sent rows are quiet grey; secondary buttons (Rechazar, Cancelar pedido, Quitar de la lista, Mantener separados) have a visible outline in both themes and ≥44px tap height | Jon |
 | D30 | **One word for declining**: «rechazó» / «Rechazado» on the button, toast, bell, email, admin page and row. The decline notice drops the promise of an admin review and links to the row (`/my-adopters#pendientes`) | Jon |
 | D31 | **Same-name pairs are distinguishable everywhere**: emails and the admin list name each profile's owner and date and which one stays («se conserva / se absorbe») | Jon |
 | D32 | **Merged-profile redirect** shows a one-line note on arrival: «Este perfil se combinó con otro» | Jon |
 | D33 | Kept from today's card: «Ver perfil» (new tab) per profile, «Pedir acceso a quien lo cargó» for hidden contacts, paging (10 pairs per page) | Claude (audit) |
 | D35 | **Different name, same contact (B6 consistency with the post import)**: when a pair matches on phone / email / address but the names differ (the import's `needsIdentityChoice` test), combining first asks **«¿Es la misma persona?»** — **«Sí, la misma persona»** → merge as today (the absorbed name is kept as an alias); **«No, es alguien de su hogar»** → the profiles stay **separate** (different people keep their own history and ratings), each is added as a conviviente of the other, and the pair leaves the list. *Proposed by Claude — Jon to confirm the «alguien de su hogar» outcome* | Jon (B6), Claude (Pendientes outcome) |
+| D36 | **Duplicate search failure on the new-adopter form** shows «No pudimos buscar duplicados ahora · Reintentar» and is logged with an errorId (Jon's rule: every issue affecting a user is logged) | Jon |
+| D37 | **Emails sent from staging are labelled**: subject prefixed «[Staging]» and a visible banner at the top of the email body, so a real rescuer with a staging account can tell it's a test. No allowlist | Jon |
+| D38 | **Emails go out in each recipient's selected language** (es / en / pt). The language a person picks in the app (today only in the browser, `localStorage['app-locale']`) is also saved to their account, and emails use it; anyone who never picked one gets Spanish (the app default). Because an email's subject and body are the notification's text, notification texts become translatable: each notification type renders its title/body from es/en/pt templates using the notification's data, instead of a Spanish string fixed when it was created. The bell uses the same templates in the viewer's language (one wording per concept, Nielsen #4) | Jon (emails), Claude (bell follows) |
+| D39 | **Privacy**: nothing is hidden from PostHog; the unsubscribe link stays as built. Names stay in emails | Jon |
 | D34 | Fixes carried in: the profile banner's «Revisar →» and the list's «Posible duplicado» pill point to `#pendientes` (today a dead `#pending-dedup`); the admin gauge hides the made-up 100% for flagged pairs and pairs rebuilt from a request | Claude |
 
 ## Request & merge rules after D24/D26
@@ -39,6 +43,13 @@ Same as the earlier spec's Global Constraints (layering, D1 no-IN, logging with 
 - The «Qué coincide y qué no» card's decisions from the other branch stay binding (two blocks, label+icon only, admin-only gauge inside the card, «También:» line, privacy masking).
 - «Escribirle» must not expose the recipient's email to the sender; the sender's email reaches the recipient only through reply-to, after the warning.
 
+## Release decisions (not code)
+
+- Version **2.57.0** for this release.
+- **Release staging → production first** (production is 28 versions behind), so this work ships and can be rolled back on its own.
+- Before building and again before pushing: check `prototype/import-match-explain` for new commits and merge them in; tell that session its branch was merged here.
+- Not in this release: contract-results page translation (separate small fix). Admins on the built-in list not seeing the gauge: **not an issue** (Jon).
+
 ## Non-goals
 
 - No rescuer-to-rescuer chat thread (one-off messages only).
@@ -49,4 +60,3 @@ Same as the earlier spec's Global Constraints (layering, D1 no-IN, logging with 
 
 - How «Quitar de la lista» is stored per viewer.
 - Exact copy beyond the phrases above (Spanish first, voseo).
-- Rate limit for «Escribirle» (suggest ≤ 3 messages per pair per day per sender).
