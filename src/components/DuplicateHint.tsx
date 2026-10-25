@@ -31,10 +31,10 @@
  * confirm identity before flagging. Grant rows are still only written on
  * the explicit "Ver perfil" click — display ≠ navigation intent.
  *
- * Theming: text-amber-800 (NOT 900) on the dark-tinted background. amber-900
- * has no [data-theme="dark"] remap and renders as near-black on the amber
- * tint (the v2.14.9-4 contrast bug, documented in RecordTypeGuidance.tsx).
- * amber-50/100/200 backgrounds and amber-700 icon ARE remapped.
+ * Theming: text-amber-800 on the dark-tinted background. amber-900 used to
+ * have no [data-theme="dark"] remap and rendered near-black on the amber tint
+ * (the v2.14.9-4 contrast bug, documented in RecordTypeGuidance.tsx); it is
+ * remapped now. amber-50/100/200 backgrounds and amber-700 icon are remapped.
  */
 
 import { useEffect, useRef, useState } from 'react';

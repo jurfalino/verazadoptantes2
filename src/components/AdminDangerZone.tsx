@@ -76,11 +76,11 @@ export default function AdminDangerZone() {
                         <>
                             <div className="bg-red-100 p-4 rounded-lg border border-red-300">
                                 <p className="text-red-800 font-semibold mb-2">⚠️ First Confirmation</p>
-                                <p className="text-red-700 text-sm">
+                                <p className="text-red-800 text-sm">
                                     Are you absolutely sure you want to delete ALL data?
                                     This will permanently remove:
                                 </p>
-                                <ul className="text-red-700 text-sm mt-2 ml-4 list-disc">
+                                <ul className="text-red-800 text-sm mt-2 ml-4 list-disc">
                                     <li>All adopters and their profiles</li>
                                     <li>All adoption records</li>
                                     <li>All images</li>
@@ -110,7 +110,7 @@ export default function AdminDangerZone() {
                         <>
                             <div className="bg-red-100 p-4 rounded-lg border border-red-300">
                                 <p className="text-red-800 font-semibold mb-2">🚨 Final Confirmation</p>
-                                <p className="text-red-700 text-sm mb-4">
+                                <p className="text-red-800 text-sm mb-4">
                                     Type <code className="bg-red-200 px-2 py-0.5 rounded font-mono">{CONFIRMATION_CODE}</code> to confirm permanent deletion:
                                 </p>
                                 <input
@@ -122,7 +122,7 @@ export default function AdminDangerZone() {
                                     autoFocus
                                 />
                                 {error && (
-                                    <p className="text-red-600 text-sm mt-2 font-medium">{error}</p>
+                                    <p className="text-red-800 text-sm mt-2 font-medium">{error}</p>
                                 )}
                             </div>
                             <div className="flex gap-3">

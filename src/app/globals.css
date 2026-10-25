@@ -358,6 +358,24 @@ button {
 [data-theme="dark"] .bg-white\/20 {
   background-color: rgba(30, 41, 59, 0.4) !important; /* slightly lifted overlay */
 }
+/* /60 and /50 were raw white: StrongMatchStrip rows and AdopterFlagging's
+   "no matching profiles" box rendered as light-grey slabs under light text. */
+[data-theme="dark"] .bg-white\/60 {
+  background-color: rgba(30, 41, 59, 0.6) !important; /* surface-card @ 60% */
+}
+[data-theme="dark"] .bg-white\/50 {
+  background-color: rgba(30, 41, 59, 0.5) !important; /* surface-card @ 50% */
+}
+
+/* ── Placeholders ──
+   The unlayered input/textarea/select rule above already pins typed text to
+   --text-primary (a text-* utility on a control never wins), but it does not
+   reach ::placeholder, so placeholder-* utilities render raw. */
+[data-theme="dark"] .placeholder-blue-800\/40::placeholder,
+[data-theme="dark"] .placeholder-stone-500::placeholder,
+[data-theme="dark"] .placeholder\:text-stone-500::placeholder {
+  color: var(--text-muted) !important;
+}
 
 /* ── Accent (Teal → theme-aware) ── */
 [data-theme="dark"] .bg-teal-50,
@@ -518,6 +536,11 @@ button {
   border-color: #fb7185 !important;
 }
 
+/* Pointer triangle on AdopterFlagging's rose hint card. */
+[data-theme="dark"] .border-b-rose-100 {
+  border-bottom-color: rgba(251, 113, 133, 0.15) !important;
+}
+
 [data-theme="light"] .bg-rose-50 {
   background-color: var(--status-error-bg) !important;
 }
@@ -581,6 +604,21 @@ button {
   color: #f87171 !important;
 }
 
+/* red-800 text and the red-100/200 slabs it sits on (AdminDangerZone,
+   DuplicatesPanel and AdopterFlagging confidence pills) were raw: dark red
+   on the dark red-50 tint, and the remapped red-700 on a raw light slab. */
+[data-theme="dark"] .text-red-800 {
+  color: #fca5a5 !important;
+}
+
+[data-theme="dark"] .bg-red-100 {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+}
+
+[data-theme="dark"] .bg-red-200 {
+  background-color: rgba(239, 68, 68, 0.2) !important;
+}
+
 /* ── Blue / Info Colors ── */
 [data-theme="dark"] .bg-blue-50 {
   background-color: var(--status-info-bg) !important;
@@ -623,6 +661,7 @@ button {
   background-color: rgba(129, 140, 248, 0.15) !important;
 }
 
+[data-theme="dark"] .text-indigo-500,
 [data-theme="dark"] .text-indigo-600,
 [data-theme="dark"] .text-indigo-700 {
   color: #a5b4fc !important;
@@ -733,6 +772,37 @@ button {
   border-color: var(--status-warning-border) !important;
 }
 
+/* amber-900 (headings/chips on amber cards) rendered near-black on the dark
+   amber tint. It must only ever sit on amber surfaces that are dark here too,
+   so bg-amber-200 (avatar, match <mark>) and the amber hovers come with it. */
+[data-theme="dark"] .text-amber-900 {
+  color: #fde68a !important;
+}
+
+[data-theme="dark"] .bg-amber-200 {
+  background-color: rgba(251, 191, 36, 0.25) !important;
+}
+
+[data-theme="dark"] .border-amber-100 {
+  border-color: rgba(251, 191, 36, 0.2) !important;
+}
+
+[data-theme="dark"] .border-b-amber-100 {
+  border-bottom-color: rgba(251, 191, 36, 0.2) !important;
+}
+
+[data-theme="dark"] .hover\:bg-amber-50:hover {
+  background-color: var(--status-warning-bg) !important;
+}
+
+[data-theme="dark"] .hover\:bg-amber-100:hover {
+  background-color: rgba(251, 191, 36, 0.2) !important;
+}
+
+[data-theme="dark"] .hover\:bg-amber-200:hover {
+  background-color: rgba(251, 191, 36, 0.25) !important;
+}
+
 /* ── Orange Colors ── */
 [data-theme="dark"] .bg-orange-50 {
   background-color: rgba(251, 146, 60, 0.1) !important;
@@ -757,6 +827,23 @@ button {
 
 [data-theme="light"] .text-orange-600 {
   color: #ff9500 !important;
+}
+
+/* AdopterFlagging "too many adoptions" hint (orange-50 card). */
+[data-theme="dark"] .text-orange-800 {
+  color: #fdba74 !important;
+}
+
+[data-theme="dark"] .text-orange-900 {
+  color: #fed7aa !important;
+}
+
+[data-theme="dark"] .border-orange-100 {
+  border-color: rgba(251, 146, 60, 0.2) !important;
+}
+
+[data-theme="dark"] .border-b-orange-100 {
+  border-bottom-color: rgba(251, 146, 60, 0.2) !important;
 }
 
 /* ── Purple Colors ── */
@@ -789,6 +876,19 @@ button {
   color: var(--status-purple-text) !important;
 }
 
+/* AdopterFlagging "too many requests" hint title (purple-50 card). */
+[data-theme="dark"] .text-purple-900 {
+  color: #e9d5ff !important;
+}
+
+[data-theme="dark"] .border-purple-100 {
+  border-color: rgba(168, 85, 247, 0.2) !important;
+}
+
+[data-theme="dark"] .border-b-purple-100 {
+  border-bottom-color: rgba(168, 85, 247, 0.2) !important;
+}
+
 /* ── Green Colors ── */
 [data-theme="dark"] .bg-green-50 {
   background-color: var(--status-success-bg) !important;
@@ -813,6 +913,52 @@ button {
 
 [data-theme="light"] .text-green-600 {
   color: var(--status-success-text) !important;
+}
+
+/* "resolved" pills on /admin/data-requests (green-100 tint). */
+[data-theme="dark"] .text-green-800 {
+  color: #86efac !important;
+}
+
+/* ── Emerald Colors (success notices, verified badges, Button success) ──
+   Previously unremapped as a whole family: emerald text was dark green on the
+   card, and emerald-50/100 slabs stayed light. Remapped together so no emerald
+   text can land on a light slab (or vice versa). */
+[data-theme="dark"] .bg-emerald-50 {
+  background-color: var(--status-emerald-bg) !important;
+}
+
+[data-theme="dark"] .bg-emerald-100 {
+  background-color: rgba(52, 211, 153, 0.18) !important;
+}
+
+[data-theme="dark"] .hover\:bg-emerald-100:hover {
+  background-color: rgba(52, 211, 153, 0.2) !important;
+}
+
+[data-theme="dark"] .hover\:bg-emerald-200:hover {
+  background-color: rgba(52, 211, 153, 0.24) !important;
+}
+
+[data-theme="dark"] .text-emerald-600,
+[data-theme="dark"] .text-emerald-700 {
+  color: var(--status-emerald-text) !important;
+}
+
+[data-theme="dark"] .text-emerald-800 {
+  color: #6ee7b7 !important;
+}
+
+[data-theme="dark"] .text-emerald-900 {
+  color: #a7f3d0 !important;
+}
+
+[data-theme="dark"] .border-emerald-100 {
+  border-color: rgba(52, 211, 153, 0.2) !important;
+}
+
+[data-theme="dark"] .border-emerald-200 {
+  border-color: rgba(52, 211, 153, 0.3) !important;
 }
 
 /* ── Lime Colors (rating-4 badges) — previously unremapped, so the rating-4
@@ -983,6 +1129,36 @@ button {
 
 [data-theme="dark"] .bg-teal-50\/50 {
   background-color: rgba(94, 234, 212, 0.08) !important;
+}
+
+[data-theme="dark"] .bg-teal-50\/60 {
+  background-color: rgba(94, 234, 212, 0.1) !important;
+}
+
+[data-theme="dark"] .bg-teal-50\/70 {
+  background-color: rgba(94, 234, 212, 0.12) !important;
+}
+
+/* Translucent light tints composite to mid-grey over the dark card, which
+   no text colour reads on. Map each to its family's dark tint instead. */
+[data-theme="dark"] .bg-amber-50\/40 {
+  background-color: rgba(251, 191, 36, 0.05) !important;
+}
+
+[data-theme="dark"] .bg-amber-200\/70 {
+  background-color: rgba(251, 191, 36, 0.3) !important; /* search-result <mark> */
+}
+
+[data-theme="dark"] .bg-indigo-50\/40 {
+  background-color: rgba(129, 140, 248, 0.06) !important;
+}
+
+[data-theme="dark"] .bg-stone-50\/40 {
+  background-color: rgba(10, 22, 40, 0.4) !important; /* surface-base @ 40% */
+}
+
+[data-theme="dark"] .bg-stone-50\/50 {
+  background-color: rgba(10, 22, 40, 0.5) !important; /* surface-base @ 50% */
 }
 
 [data-theme="dark"] .bg-rose-50\/30 {
