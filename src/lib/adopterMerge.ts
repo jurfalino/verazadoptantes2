@@ -705,17 +705,18 @@ export async function notifyMergeOwners(
     if (!owners.length) return 0;
     const { createNotification } = await import('@/app/actions/notifications');
     // D31: each side's owner and date, when the absorbed profile is known.
-    const known = { survivorName: merge.primaryName, absorbedName: merge.secondaryName };
-    const db = merge.secondaryId
-        ? await getDb().catch((e: unknown) => {
-            logger.warn('notifyMergeOwners: no DB for owners/dates, notice by names only', { primaryId: merge.primaryId, actor: actorEmail, error: e instanceof Error ? e.message : String(e) });
-            return null;
-        })
-        : null;
-    const sides = db && merge.secondaryId
-        ? await mergeSideParams(db, { survivorId: merge.primaryId, absorbedId: merge.secondaryId }, known)
-        : { survivorName: merge.primaryName ?? '', absorbedName: merge.secondaryName ?? '' };
-    const content = notificationContent({ key: 'adopter_merged_by_admin', params: sides });
+    let content: ReturnType<typeof notificationContent>;
+    try {
+        const known = { survivorName: merge.primaryName, absorbedName: merge.secondaryName };
+        const db = merge.secondaryId ? await getDb() : null;
+        const sides = db && merge.secondaryId
+            ? await mergeSideParams(db, { survivorId: merge.primaryId, absorbedId: merge.secondaryId }, known)
+            : { survivorName: merge.primaryName ?? '', absorbedName: merge.secondaryName ?? '' };
+        content = notificationContent({ key: 'adopter_merged_by_admin', params: sides });
+    } catch (e) {
+        logger.warn('notifyMergeOwners: notice not built, nobody notified', { primaryId: merge.primaryId, actor: actorEmail, error: e instanceof Error ? e.message : String(e) });
+        return 0;
+    }
     let sent = 0;
     for (const owner of owners) {
         try {

@@ -826,22 +826,29 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
             // Whoever registered either profile hears that an admin joined them.
             await notifyMergeOwners({ primaryId, secondaryId, ...result }, actor);
         } else if (notifyOwner) {
-            // Their profile absorbed the caller's record: tell them.
-            const { createNotification, resolveDisplayName } = await import('./notifications');
-            const [requester, sides] = await Promise.all([
-                resolveDisplayName(actor),
-                mergeSideParams(db, { survivorId: primaryId, absorbedId: secondaryId }, { survivorName: result.primaryName, absorbedName: result.secondaryName }),
-            ]);
-            await createNotification({
-                type: 'adopter_merged',
-                // Normalized: notifications are keyed (bell, email) by the
-                // lowercased email, and `added_by` keeps whatever case it had.
-                userId: normEmail(notifyOwner),
-                ...notificationContent({ key: 'adopter_merged_by_rescuer', params: { actorName: requester, ...sides } }),
-                url: `/adopter/${primaryId}`,
-                icon: '🔗',
-                metadata: { primaryId, secondaryId, auditId: result.auditId ?? null },
-            });
+            // Their profile absorbed the caller's record: tell them. The merge
+            // stands even if the notice fails.
+            try {
+                const { createNotification, resolveDisplayName } = await import('./notifications');
+                const [requester, sides] = await Promise.all([
+                    resolveDisplayName(actor),
+                    mergeSideParams(db, { survivorId: primaryId, absorbedId: secondaryId }, { survivorName: result.primaryName, absorbedName: result.secondaryName }),
+                ]);
+                await createNotification({
+                    type: 'adopter_merged',
+                    // Normalized: notifications are keyed (bell, email) by the
+                    // lowercased email, and `added_by` keeps whatever case it had.
+                    userId: normEmail(notifyOwner),
+                    ...notificationContent({ key: 'adopter_merged_by_rescuer', params: { actorName: requester, ...sides } }),
+                    url: `/adopter/${primaryId}`,
+                    icon: '🔗',
+                    metadata: { primaryId, secondaryId, auditId: result.auditId ?? null },
+                });
+            } catch (e) {
+                logger.warn('mergePendingDedupPair: owner notice not sent', {
+                    candidateId, actorEmail, primaryId, secondaryId, error: e instanceof Error ? e.message : String(e),
+                });
+            }
         }
         return { success: true, outcome: 'merged' };
     } catch (e) {

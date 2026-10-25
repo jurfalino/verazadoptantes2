@@ -281,9 +281,14 @@ export async function answerMergeRequest(
 
     logger.info('answerMergeRequest: answered', { ...ctx, status: answer.nextStatus, swap: !!answer.swap });
     if (answer.nextStatus !== 'cancelled') {
-        await notifyAnswered(db, req, answer.nextStatus, actor, {
-            survivorId: keep.survivorId, absorbedId: keep.absorbedId, survivor: keep.survivor.name, absorbed: keep.absorbed.name, flipped: !!answer.swap,
-        });
+        // The answer stands even if telling people about it fails.
+        try {
+            await notifyAnswered(db, req, answer.nextStatus, actor, {
+                survivorId: keep.survivorId, absorbedId: keep.absorbedId, survivor: keep.survivor.name, absorbed: keep.absorbed.name, flipped: !!answer.swap,
+            });
+        } catch (e) {
+            logger.warn('answerMergeRequest: notifications not sent', { ...ctx, status: answer.nextStatus, error: e instanceof Error ? e.message : String(e) });
+        }
     }
     return { ok: true, status: answer.nextStatus };
 }
@@ -356,7 +361,14 @@ export async function settleRequestsAsHousehold(db: Db, a: string, b: string, ac
         }
         if (!await casRequest(db, req.id, 'pending', { status: 'declined', resolvedByEmail: actor, resolvedAt: new Date() })) continue;
         declined++;
-        await notifyAnswered(db, req, 'declined', actor, { survivorId: req.primaryId, absorbedId: req.secondaryId, flipped: false });
+        // The decline stands (and the loop goes on) even if telling the requester fails.
+        try {
+            await notifyAnswered(db, req, 'declined', actor, { survivorId: req.primaryId, absorbedId: req.secondaryId, flipped: false });
+        } catch (e) {
+            logger.warn('settleRequestsAsHousehold: decline notice not sent', {
+                requestId: req.id, primaryId: req.primaryId, secondaryId: req.secondaryId, actor, error: e instanceof Error ? e.message : String(e),
+            });
+        }
     }
     if (rows.length) logger.info('settleRequestsAsHousehold: settled', { primaryId: a, secondaryId: b, actor, declined, closed });
     return { declined, closed };
