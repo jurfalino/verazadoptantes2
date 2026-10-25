@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { matchBreakdown } from './matchBreakdown';
+import { matchBreakdown, otherSignals } from './matchBreakdown';
 
 const has = (o: Partial<Record<'phone' | 'email' | 'id' | 'social' | 'address', boolean>> = {}) =>
     ({ phone: false, email: false, id: false, social: false, address: false, ...o });
@@ -84,5 +84,19 @@ describe('matchBreakdown: names on screen', () => {
             profile: { name: 'María García', has: has() },
         });
         expect(rows[0].status).toBe('match');
+    });
+});
+
+describe('matchBreakdown: pairs the engine did not match on name', () => {
+    it('equal names are «coincide» even with no name signal (phone-only or flagged pair)', () => {
+        const rows = matchBreakdown({
+            matchTypes: ['flagged_by_user'],
+            source: { name: 'Lucía Fernández', entries: [] },
+            profile: { name: 'Lucia Fernandez', has: has() },
+        });
+        expect(rows).toEqual([{ field: 'name', status: 'match', source: 'Lucía Fernández', profile: 'Lucia Fernandez' }]);
+    });
+    it('lists the signals no field row can show', () => {
+        expect(otherSignals(['flagged_by_user', 'phone', 'token:source_url', 'like_fallback'])).toEqual(['flagged_by_user', 'source_url', 'like_fallback']);
     });
 });

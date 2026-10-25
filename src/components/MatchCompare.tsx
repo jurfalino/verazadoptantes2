@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { getMatchContext, type MatchContext } from '@/app/actions';
 import { reportClientError } from '@/lib/clientErrorReporter';
-import { matchBreakdown, type BreakdownRow, type BreakdownStatus } from '@/domain/matchBreakdown';
+import { matchBreakdown, otherSignals, type BreakdownRow, type BreakdownStatus } from '@/domain/matchBreakdown';
+import { matchTypeLabel } from '@/lib/matchTypeLabels';
 
 /** Where the rescuer's side of the comparison came from — names the left column. */
 export type MatchSourceKind = 'post' | 'form' | 'contract' | 'typed' | 'sheet' | 'profile' | 'new';
@@ -57,7 +58,10 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
     // Until we know what the profile has, a contact that didn't match could be
     // "distinto" or "solo en …": show only what we know.
     const rows = has === null ? all.filter(r => r.field === 'name' || r.status === 'match' || r.status === 'partial') : all;
-    const matchedCount = rows.filter(r => r.status === 'match' || r.status === 'partial').length;
+    // A flag, a shared source URL, a general text hit: why the pair exists, even
+    // when no field lines up — never a bare «Coinciden: 0».
+    const others = otherSignals(matchTypes).map(ty => matchTypeLabel(ty, t)).filter(Boolean);
+    const matchedCount = rows.filter(r => r.status === 'match' || r.status === 'partial').length + others.length;
     const differentCount = rows.filter(r => r.status === 'different').length;
     // Only the name lines up and the profile has no phone or email to check it
     // against: the commonest false merge, so say so.
@@ -65,11 +69,13 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
         && rows.every(r => r.field === 'name' || (r.status !== 'match' && r.status !== 'partial'));
 
     return (
-        <div className="mt-2" data-testid="match-compare" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+        <div className="mt-2" data-testid="match-compare">
             {!bare && <button
                 type="button"
                 aria-expanded={open}
-                onClick={() => setOpen(o => !o)}
+                // Inside a selectable card: opening the comparison must not pick the profile.
+                onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+                onKeyDown={e => e.stopPropagation()}
                 className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 min-h-[44px] text-left text-sm font-semibold text-teal-700 hover:text-teal-800"
             >
                 <span className="inline-flex items-center gap-1">
@@ -85,6 +91,12 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
             {open && (
                 <div data-testid="match-compare-rows" className="mt-1 rounded-xl border border-stone-200 bg-white divide-y divide-stone-100">
                     {rows.map(row => <Row key={row.field} row={row} kind={source.kind} target={target} t={t} />)}
+                    {others.length > 0 && (
+                        <p className="px-3 py-2.5 text-sm text-stone-700">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">{t('matchCompare.also')}</span>{' '}
+                            {others.join(' · ')}
+                        </p>
+                    )}
                     {nameOnly && <p className="px-3 py-2 text-xs font-medium text-amber-800 bg-amber-50">{t('matchCompare.name_only_warning')}</p>}
                     {ctx === 'loading' && <p className="px-3 py-2 text-xs text-stone-500">{t('matchCompare.loading')}</p>}
                     {ctx === 'error' && <p className="px-3 py-2 text-xs text-stone-500">{t('matchCompare.unavailable')}</p>}

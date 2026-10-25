@@ -2202,6 +2202,7 @@ export const pt = {
         has_other_existing: 'O existente tem um diferente',
         only_profile_existing: 'só no existente',
         only_profile_detail_existing: 'O existente tem um.',
+        also: 'Também:',
         src_post: 'No post',
         only_post: 'Só no post',
         src_form: 'No formulário',

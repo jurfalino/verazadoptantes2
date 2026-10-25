@@ -2197,6 +2197,7 @@ export const en = {
         has_other_existing: 'The existing one has a different one',
         only_profile_existing: 'only on the existing one',
         only_profile_detail_existing: 'The existing one has one.',
+        also: 'Also:',
         src_post: 'In the post',
         only_post: 'Only in the post',
         src_form: 'In the form',

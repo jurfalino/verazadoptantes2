@@ -48,7 +48,7 @@ export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onC
             <ul className="divide-y divide-amber-200">
                 {strong.map(result => {
                     return (
-                        <li key={result.adopter.id} className="px-4 py-3 flex items-start gap-3 bg-white/60">
+                        <li key={result.adopter.id} className="px-4 py-3 flex flex-wrap items-start gap-3 bg-white/60">
                             {result.thumbnail ? (
                                 <img src={result.thumbnail} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
                             ) : (
@@ -58,13 +58,6 @@ export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onC
                             )}
                             <div className="min-w-0 flex-1">
                                 <AdopterName adopter={result.adopter} className="font-semibold text-stone-900 text-sm truncate block" title />
-                                <MatchCompare
-                                    adopterId={result.adopter.id}
-                                    matchTypes={result.matchTypes}
-                                    profileName={result.adopter.name ?? ''}
-                                    source={compareSource}
-                                    t={t}
-                                />
                                 <div className="flex gap-2 mt-2.5">
                                     <a
                                         href={`/adopter/${result.adopter.id}`}
@@ -98,6 +91,16 @@ export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onC
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                 </svg>
                             </button>
+                            {/* Full row width, under the avatar row. */}
+                            <div className="basis-full -mt-2">
+                                <MatchCompare
+                                    adopterId={result.adopter.id}
+                                    matchTypes={result.matchTypes}
+                                    profileName={result.adopter.name ?? ''}
+                                    source={compareSource}
+                                    t={t}
+                                />
+                            </div>
                         </li>
                     );
                 })}

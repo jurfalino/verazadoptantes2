@@ -1548,38 +1548,41 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                         <p id="save-duplicate-modal-desc" className="text-sm text-stone-600 px-5 pb-4">
                             {t('import.saveModal_body') || 'Creating a new profile may create a duplicate. You can link to an existing profile instead.'}
                         </p>
-                        <ul className="px-5 space-y-2 max-h-48 overflow-y-auto">
+                        <ul className="px-5 space-y-2 max-h-[50svh] overflow-y-auto">
                             {saveDuplicateModal.matches.map((result) => (
-                                <li key={result.adopter.id} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-stone-50 border border-stone-200">
-                                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                                        {result.thumbnail ? (
-                                            <img src={result.thumbnail} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
-                                        ) : (
-                                            <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-semibold flex-shrink-0">
-                                                {result.adopter.name?.charAt(0)?.toUpperCase() || '?'}
-                                            </div>
-                                        )}
-                                        <div className="min-w-0">
-                                            <p className="font-semibold text-stone-800 truncate">{result.adopter.name}</p>
-                                            {result.adopter.contactInfo && (
-                                                <p className="text-xs text-stone-500 truncate">{result.adopter.contactInfo}</p>
+                                <li key={result.adopter.id} className="p-3 rounded-xl bg-stone-50 border border-stone-200">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                                            {result.thumbnail ? (
+                                                <img src={result.thumbnail} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-semibold flex-shrink-0">
+                                                    {result.adopter.name?.charAt(0)?.toUpperCase() || '?'}
+                                                </div>
                                             )}
-                                            <MatchCompare
-                                                adopterId={result.adopter.id}
-                                                matchTypes={result.matchTypes}
-                                                profileName={result.adopter.name ?? ''}
-                                                source={compareSource}
-                                                defaultOpen={saveDuplicateModal.matches.length === 1}
-                                                t={t}
-                                            />
+                                            <div className="min-w-0">
+                                                <p className="font-semibold text-stone-800 truncate">{result.adopter.name}</p>
+                                                {result.adopter.contactInfo && (
+                                                    <p className="text-xs text-stone-500 truncate">{result.adopter.contactInfo}</p>
+                                                )}
+                                            </div>
                                         </div>
+                                        <a
+                                            href={`/adopter/${result.adopter.id}`}
+                                            className="px-3 py-1.5 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors flex-shrink-0"
+                                        >
+                                            {t('import.saveModal_use_existing') || 'Use existing profile'}
+                                        </a>
                                     </div>
-                                    <a
-                                        href={`/adopter/${result.adopter.id}`}
-                                        className="px-3 py-1.5 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors flex-shrink-0"
-                                    >
-                                        {t('import.saveModal_use_existing') || 'Use existing profile'}
-                                    </a>
+                                    {/* Full row width: beside the button it squeezes to a sliver on a phone. */}
+                                    <MatchCompare
+                                        adopterId={result.adopter.id}
+                                        matchTypes={result.matchTypes}
+                                        profileName={result.adopter.name ?? ''}
+                                        source={compareSource}
+                                        defaultOpen={saveDuplicateModal.matches.length === 1}
+                                        t={t}
+                                    />
                                 </li>
                             ))}
                         </ul>

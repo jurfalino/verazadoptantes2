@@ -77,6 +77,8 @@ export function matchBreakdown(input: {
             // López"; both names are on screen, so only call them the same when
             // they are.
             if (m === 'match' && sourceName && profileName && normName(sourceName) !== normName(profileName)) m = 'partial';
+            // And the other way: a phone-only or flagged pair whose names are the same.
+            if (!m && sourceName && profileName && normName(sourceName) === normName(profileName)) m = 'match';
             if (m) rows.push({ field, status: m, source: sourceName || undefined, profile: profileName || undefined });
             else if (sourceName && profileName) rows.push({ field, status: 'different', source: sourceName, profile: profileName });
             else if (sourceName) rows.push({ field, status: 'only_source', source: sourceName });
@@ -91,4 +93,13 @@ export function matchBreakdown(input: {
         else if (theirs) rows.push({ field, status: 'only_profile' });
     }
     return rows.sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status));
+}
+
+/**
+ * Signals the field rows can't place: a flag raised by a rescuer, the same
+ * source URL, a general text hit. They still explain why the pair is here, so
+ * the card lists them («También: …») rather than dropping them.
+ */
+export function otherSignals(matchTypes: string[]): string[] {
+    return [...new Set(matchTypes.map(t => t.replace(/^token:/, '')).filter(t => !(t in FIELD_OF)))];
 }

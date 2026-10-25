@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import MatchCompare from '@/components/MatchCompare';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
-import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, getMatchContext, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun, type MatchContext } from '@/app/actions';
+import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
 import { computeContentFingerprint } from '@/domain/contentFingerprint';
 import { groupSamePerson, groupName, unionValues, phoneDigitsKey, type GroupReason } from '@/domain/importGrouping';
@@ -246,10 +246,8 @@ export default function SpreadsheetImportWizard() {
     const [matches, setMatches] = useState<Record<number, DuplicateMatch | null>>({});
     const [rowAction, setRowAction] = useState<Record<number, RowAction>>({});
     // "Por qué" expansion on the Duplicados triage row: which row (by index) is
-    // expanded, and a per-adopterId cache of the presence-only match context so
-    // re-expanding a row (or two rows matching the same adopter) never refetches.
+    // expanded. The comparison card loads the profile's details itself.
     const [expandedMatchRow, setExpandedMatchRow] = useState<number | null>(null);
-    const [matchContexts, setMatchContexts] = useState<Record<string, MatchContext | 'loading' | 'error'>>({});
     // Which row's "detalles / más campos" expand (Motivo + secondary animal/adoption
     // fields) is open — same one-row-at-a-time pattern as expandedMatchRow above.
     const [expandedFieldsRow, setExpandedFieldsRow] = useState<number | null>(null);
@@ -1032,7 +1030,7 @@ export default function SpreadsheetImportWizard() {
     const etaMs = (importDone || cancelling) ? null : etaMsFrom(progress.done, progress.total, importStartRef.current, importStartDoneRef.current);
     const interpretEtaMs = etaMsFrom(interpretProgress.done, interpretProgress.total, interpretStartRef.current);
     const detectEtaMs = etaMsFrom(detectProgress.done, detectProgress.total, detectStartRef.current);
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); setDetectFailedRows(new Set()); setFoldSummary(null); setSplitGroups(new Set()); };
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); setDetectFailedRows(new Set()); setFoldSummary(null); setSplitGroups(new Set()); };
 
     // Duplicados step (Step 3): the focused triage is ONLY the selected rows that
     // actually matched something — everything else auto-creates, so it never
@@ -1085,14 +1083,8 @@ export default function SpreadsheetImportWizard() {
     // Expand/collapse a triage row's "por qué" panel; fetch the presence-only
     // match context lazily on first expand, cached per adopterId.
     const toggleFieldsExpand = (rowIndex: number) => setExpandedFieldsRow(prev => prev === rowIndex ? null : rowIndex);
-    const toggleMatchExpand = (rowIndex: number, adopterId: string) => {
+    const toggleMatchExpand = (rowIndex: number) => {
         setExpandedMatchRow(prev => prev === rowIndex ? null : rowIndex);
-        if (!(adopterId in matchContexts)) {
-            setMatchContexts(prev => ({ ...prev, [adopterId]: 'loading' }));
-            getMatchContext(adopterId)
-                .then(ctx => setMatchContexts(prev => ({ ...prev, [adopterId]: ctx })))
-                .catch(() => setMatchContexts(prev => ({ ...prev, [adopterId]: 'error' })));
-        }
     };
 
     return (
@@ -1399,7 +1391,7 @@ export default function SpreadsheetImportWizard() {
                         editingCell={editingCell} onEditCell={(index, field) => setEditingCell(field ? { index, field } : null)}
                         matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
                         failureByIndex={failureByIndex} onSetSelected={setGroupSelected} onChange={setOverride}
-                        expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
+                        expandedMatchRow={expandedMatchRow} onToggleWhy={toggleMatchExpand}
                         expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
                         onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} onRecordTypeAll={setRecordTypeAll} />
 
@@ -1507,7 +1499,7 @@ export default function SpreadsheetImportWizard() {
                                         editingCell={editingCell} onEditCell={(index, field) => setEditingCell(field ? { index, field } : null)}
                                         matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
                                         failureByIndex={failureByIndex} onSetSelected={setGroupSelected} onChange={setOverride}
-                                        expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
+                                        expandedMatchRow={expandedMatchRow} onToggleWhy={toggleMatchExpand}
                                         expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
                                         onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} onRecordTypeAll={setRecordTypeAll} />
                                 </>
@@ -1852,7 +1844,7 @@ function ActivityBlock({ r, editingField, onEditCell, onChange, fieldsExpanded, 
     );
 }
 
-function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onChange, match, action, onAction, failureByIndex, onToggleGroup, expanded, onToggleWhy, matchContext: _matchContext, expandedFieldsRow, onToggleFields }: {
+function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onChange, match, action, onAction, failureByIndex, onToggleGroup, expanded, onToggleWhy, expandedFieldsRow, onToggleFields }: {
     members: Array<{ index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean }>;
     // Why these rows are one person, and how to undo it (Revisar only).
     groupReason?: GroupReason | null; onSplit?: () => void;
@@ -1861,7 +1853,7 @@ function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onCha
     match?: DuplicateMatch | null; action: RowAction; onAction: (a: RowAction) => void;
     failureByIndex: Record<number, string>; onToggleGroup: () => void;
     // "Por qué" expansion on the match sub-row below (group-level, keyed to primary).
-    expanded?: boolean; onToggleWhy?: () => void; matchContext?: MatchContext | 'loading' | 'error';
+    expanded?: boolean; onToggleWhy?: () => void;
     // "Motivo / más campos" expand — per activity (keyed by each member's index).
     expandedFieldsRow: number | null; onToggleFields: (index: number) => void;
 }) {
@@ -2051,7 +2043,7 @@ function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onCha
  *  underneath, dropping in-progress edits. */
 function RecordGrid({
     rows, editingCell, onEditCell, matches, rowAction, onAction,
-    failureByIndex, onSetSelected, onChange, expandedMatchRow, matchContexts, onToggleWhy,
+    failureByIndex, onSetSelected, onChange, expandedMatchRow, onToggleWhy,
     expandedFieldsRow, onToggleFields,
     onRatingAll, onVisibilityAll, onRecordTypeAll, groupOf, onSplitGroup,
 }: {
@@ -2065,8 +2057,7 @@ function RecordGrid({
     onSetSelected: (indices: number[], selected: boolean) => void;
     onChange: (index: number, p: Partial<MappedRow>) => void;
     expandedMatchRow: number | null;
-    matchContexts: Record<string, MatchContext | 'loading' | 'error'>;
-    onToggleWhy: (index: number, adopterId: string) => void;
+    onToggleWhy: (index: number) => void;
     // "Motivo / más campos" expand — same one-row-at-a-time pattern as the match
     // "por qué" expand above (expandedMatchRow/onToggleWhy).
     expandedFieldsRow: number | null;
@@ -2151,8 +2142,7 @@ function RecordGrid({
                                     failureByIndex={failureByIndex}
                                     onToggleGroup={() => onSetSelected(members.map(m => m.index), !primary.selected)}
                                     expanded={expandedMatchRow === primary.index}
-                                    onToggleWhy={match ? () => onToggleWhy(primary.index, match.adopterId) : undefined}
-                                    matchContext={match ? matchContexts[match.adopterId] : undefined}
+                                    onToggleWhy={match ? () => onToggleWhy(primary.index) : undefined}
                                     expandedFieldsRow={expandedFieldsRow}
                                     onToggleFields={onToggleFields}
                                 />
