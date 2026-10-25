@@ -118,3 +118,28 @@ export function buildOtpEmail(code: string, locale: EmailLocale, ttlMinutes: num
     const text = `${copy.greeting}\n\n${code}\n\n${expires}\n${copy.ignore}\n`;
     return { subject: copy.subject, html, text };
 }
+
+function escapeHtml(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/**
+ * Email twin of an in-app (bell) notification. Spanish-only like the bell
+ * copy it mirrors; title/body are escaped, links are built by the caller.
+ */
+export function buildNotificationEmail(
+    n: { title: string; body: string; url: string | null },
+    links: { appBaseUrl: string; unsubscribeUrl: string | null },
+): { subject: string; html: string; text: string } {
+    const target = n.url ? `${links.appBaseUrl}${n.url}` : links.appBaseUrl;
+    const settings = `${links.appBaseUrl}/settings`;
+    const unsub = links.unsubscribeUrl;
+    const html = `<div style="font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1c1917;">
+  <h2 style="color:#134e4a;margin:0 0 16px;">${escapeHtml(n.title)}</h2>
+  <p style="margin:0 0 20px;white-space:pre-line;">${escapeHtml(n.body)}</p>
+  <p style="margin:0 0 24px;"><a href="${escapeHtml(target)}" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;">Ver en BuenAdoptante</a></p>
+  <p style="margin:0;font-size:12px;color:#78716c;"><a href="${escapeHtml(settings)}" style="color:#78716c;">Configurar avisos por email</a>${unsub ? ` · <a href="${escapeHtml(unsub)}" style="color:#78716c;">Dejar de recibir estos avisos</a>` : ''}</p>
+</div>`;
+    const text = `${n.title}\n\n${n.body}\n\nVer en BuenAdoptante: ${target}\n\nConfigurar avisos por email: ${settings}\n${unsub ? `Dejar de recibir estos avisos: ${unsub}\n` : ''}`;
+    return { subject: n.title, html, text };
+}

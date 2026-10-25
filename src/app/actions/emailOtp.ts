@@ -14,13 +14,11 @@
  */
 
 import { headers } from 'next/headers';
-import { getRequestContext } from '@/lib/requestContext';
-import { eq } from 'drizzle-orm';
 import { getDb } from './_db';
-import { appConfig } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { maskEmail } from '@/lib/dates';
 import { getFeatureFlag } from '@/config/features';
+import { resolveEmailConfig } from '@/lib/emailConfig';
 import { sendEmailViaResend, buildOtpEmail, type EmailLocale } from '@/lib/email';
 import {
     normalizeOtpEmail, generateOtpCode, hashOtpCode, resolveAuthSecret,
@@ -39,22 +37,8 @@ export type RequestEmailOtpResult =
         errorId?: string;
     };
 
-// "Name <address>" so inboxes show the brand rather than a bare address, which
-// reads as automated spam. Mirrored in wrangler.toml [vars] and the
-// followup-cron worker's own default — all three must agree.
-const DEFAULT_EMAIL_FROM = 'BuenAdoptante <noreply@buenadoptante.org>';
 const HOUR_MS = 60 * 60_000;
 const PURGE_AFTER_MS = 24 * HOUR_MS;
-
-function readEnv(name: string): string {
-    try {
-        const ctx = getRequestContext();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const env = (ctx?.env ?? {}) as Record<string, any>;
-        if (typeof env[name] === 'string' && env[name]) return env[name] as string;
-    } catch { /* not in Cloudflare context */ }
-    return process.env[name] || '';
-}
 
 export async function requestEmailOtp(emailRaw: string, locale: string): Promise<RequestEmailOtpResult> {
     if (!(await getFeatureFlag('ENABLE_EMAIL_OTP'))) {
@@ -109,17 +93,8 @@ export async function requestEmailOtp(emailRaw: string, locale: string): Promise
             requestIp,
         });
 
-        // Resolve Resend config: appConfig row first (admin-settable without a
-        // deploy), Cloudflare secret / process.env fallback — telegram.ts pattern.
-        let apiKey = readEnv('RESEND_API_KEY');
-        let from = readEnv('EMAIL_FROM') || DEFAULT_EMAIL_FROM;
-        try {
-            const rows = await Promise.all(['RESEND_API_KEY', 'EMAIL_FROM'].map(k =>
-                db.select().from(appConfig).where(eq(appConfig.key, k)).get()
-            ));
-            apiKey = rows[0]?.value || apiKey;
-            from = rows[1]?.value || from;
-        } catch { /* appConfig read is best-effort; env fallback stands */ }
+        // appConfig row first (admin-settable without a deploy), env fallback.
+        const { apiKey, from } = await resolveEmailConfig(db);
 
         if (!apiKey) {
             if (process.env.NODE_ENV !== 'production') {

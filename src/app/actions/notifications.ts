@@ -23,11 +23,13 @@ import { getDb } from '@/lib/db';
 import { notifications } from '@/db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
+import { runAfterResponse } from '@/lib/background';
+import { sendNotificationEmail } from '@/lib/notificationEmail';
 
 /**
  * Create a notification for a user.
  * This is the single entry point for all notification creation — 
- * future escalation (Web Push, email) hooks go here.
+ * the email twin (and future Web Push) hooks go here.
  */
 export async function createNotification(data: {
     id?: string;
@@ -79,9 +81,10 @@ export async function createNotification(data: {
 
         logger.info('Notification created', { id, userId: data.userId, type });
 
-        // ── Escalation hooks (Phase 2) ──
-        // await sendPushNotification(data.userId, { title: data.title, body: data.body, url: data.url });
-        // await sendEmailNotification(data.userId, { title: data.title, body: data.body, url: data.url });
+        // Email twin (per-category switches apply). Never affects the bell's result.
+        await runAfterResponse('notification.email', () => sendNotificationEmail({
+            id, userId: data.userId, type, title: data.title, body: data.body, url: data.url ?? null,
+        }), { type, notificationId: id });
 
         return id;
     } catch (error) {
