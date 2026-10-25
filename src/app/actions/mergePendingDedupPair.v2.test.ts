@@ -48,6 +48,7 @@ import { mergePendingDedupPair } from './duplicates';
 import { resolveMergeRequest } from './mergeRequests';
 import { answerMergeRequest, createMergeRequest } from '@/lib/mergeRequests';
 import { mergeAdopters } from '@/lib/adopterMerge';
+import { hashEntryValue } from '@/lib/piiAccess';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -93,8 +94,11 @@ const as = async <T>(user: string | null, fn: () => Promise<T>): Promise<T> => {
 };
 
 describe('chosen survivor (D24)', () => {
-    it("keeping the other rescuer's profile: merged now into theirs, they get adopter_merged, I and my teammate keep access", async () => {
+    it("keeping the other rescuer's profile: merged now into theirs, they get adopter_merged, I and my teammate keep seeing what our profile brought", async () => {
         // OWNER is the one choosing here, so the grant covers a teammate (MATE).
+        // Their profile brought one phone; STRANGER's own email stays theirs (C1).
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'theirs-new'`).run(JSON.stringify([{ id: 'p1', type: 'phone', value: '+54 11 5555 0001' }]));
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'mine-old'`).run(JSON.stringify([{ id: 'e1', type: 'email', value: 'carla@example.org' }]));
         const res = await as(OWNER, () => mergePendingDedupPair('cand-a', { keepId: 'mine-old' }));
         expect(res).toEqual({ success: true, outcome: 'merged' });
         expect(mergeSpy).toHaveBeenCalledWith('mine-old', 'theirs-new', OWNER);
@@ -102,9 +106,11 @@ describe('chosen survivor (D24)', () => {
         expect(requests()).toEqual([]);
         expect(notify.create).toEqual([expect.objectContaining({ type: 'adopter_merged', userId: STRANGER, url: '/adopter/mine-old' })]);
         expect(grantsOn('mine-old')).toEqual([
-            { email: MATE, scope: 'all_contact', origin: 'merge' },
-            { email: OWNER, scope: 'all_contact', origin: 'merge' },
+            { email: MATE, scope: 'entry', origin: 'merge' },
+            { email: OWNER, scope: 'entry', origin: 'merge' },
         ]);
+        expect(new Set(sqlite.prepare(`SELECT entry_ref FROM pii_access_grants WHERE adopter_id = 'mine-old'`).all().map(r => r.entry_ref)))
+            .toEqual(new Set([hashEntryValue('phone', '+54 11 5555 0001')]));
     });
 
     it('keeping mine (even the NEWER one) vs a foreign profile: a request storing my choice, no merge', async () => {
@@ -114,9 +120,10 @@ describe('chosen survivor (D24)', () => {
     });
 
     it("no keepId: the older side is kept (here the other rescuer's), so it merges", async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'mine-new'`).run(JSON.stringify([{ id: 'p1', type: 'phone', value: '+54 11 5555 0002' }]));
         expect(await mergePendingDedupPair('cand-b')).toEqual({ success: true, outcome: 'merged' });
         expect(mergeSpy).toHaveBeenCalledWith('theirs-old', 'mine-new', STRANGER);
-        expect(grantsOn('theirs-old')).toEqual([{ email: STRANGER, scope: 'all_contact', origin: 'merge' }]);
+        expect(grantsOn('theirs-old')).toEqual([{ email: STRANGER, scope: 'entry', origin: 'merge' }]);
     });
 
     it('a crafted keepId (a real foreign profile, not in the pair): not_found, nothing merged or filed', async () => {
@@ -185,9 +192,11 @@ describe('after «Rechazado» (D27, D43)', () => {
         expect(notify.create).toEqual([]);
     });
 
-    it("the requester can still combine keeping the other's profile (no consent needed)", async () => {
+    it("the requester can still combine keeping the other's profile (no consent needed) — and gets back only what theirs brought", async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'mine-old'`).run(JSON.stringify([{ id: 'p1', type: 'phone', value: '+54 11 5555 0003' }]));
         expect(await mergePendingDedupPair('cand-a', { keepId: 'theirs-new' })).toEqual({ success: true, outcome: 'merged' });
         expect(mergeSpy).toHaveBeenCalledWith('theirs-new', 'mine-old', STRANGER);
+        expect(grantsOn('theirs-new')).toEqual([{ email: STRANGER, scope: 'entry', origin: 'merge' }]);
     });
 
     it('the owner changes their mind and accepts later: merged with the requester\'s survivor', async () => {

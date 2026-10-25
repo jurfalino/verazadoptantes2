@@ -92,8 +92,12 @@ describe('mergePendingDedupPair', () => {
         expect(mergeSpy).toHaveBeenCalledWith('other-old', 'mine-new', OWNER);
         expect(notifySpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'adopter_merged', userId: 'other@example.com', url: '/adopter/other-old' }));
         expect(requestSpy).not.toHaveBeenCalled();
-        // D40: the absorbed side's owner keeps seeing the survivor.
-        expect(grantSpy).toHaveBeenCalledWith(state.db, { survivorId: 'other-old', absorbedOwnerEmail: OWNER, actor: OWNER, mergeAuditId: 'audit-1' });
+        // D40: the absorbed side's owner keeps seeing what their profile brought
+        // (not the whole survivor: the other rescuer never agreed — final review C1).
+        expect(grantSpy).toHaveBeenCalledWith(state.db, {
+            survivorId: 'other-old', absorbedOwnerEmail: OWNER, actor: OWNER, mergeAuditId: 'audit-1',
+            access: { scope: 'absorbed_entries', absorbedId: 'mine-new' },
+        });
     });
 
     // Since merge requests (spec D2/D10/D14) these two ask the other owner

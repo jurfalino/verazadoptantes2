@@ -221,9 +221,12 @@ export default function DuplicateHint({ type, value, excludeAdopterId, onMatch, 
                     return next;
                 });
             } else {
+                // `not_allowed:<errorId>` / `internal_error:<errorId>`: the id was logged server-side.
+                const errorId = res.error.includes(':') ? res.error.split(':')[1] : undefined;
                 toast.error(
                     t('errors.generic') || 'Error',
                     t('adopter.dup_hint_flag_failed') || 'No se pudo marcar',
+                    errorId,
                 );
             }
         } catch (e) {

@@ -45,6 +45,11 @@ export async function flagAdopterAsDuplicate(input: {
         const res = await flagAdopter(currentAdopterId, FLAG_REASONS.DUPLICATE, details, matchedAdopterId);
         return { ok: true, flagId: res.id };
     } catch (e) {
+        // Refused by flagAdopter (not the flagged profile's owner team, final
+        // review C1): already logged there at warn, with its errorId.
+        const msg = e instanceof Error ? e.message : String(e);
+        const refused = msg.match(/^Not allowed to flag this profile as a duplicate \(Error ID: (\w+)\)/);
+        if (refused) return { ok: false, error: `not_allowed:${refused[1]}` };
         const errorId = logger.error('flagAdopterAsDuplicate failed', e instanceof Error ? e : new Error(String(e)), {
             currentAdopterId, matchedAdopterId, user,
         });

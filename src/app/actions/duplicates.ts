@@ -700,7 +700,9 @@ export interface PendingDedupSide {
  * (never another rescuer's profile), and the pair is resolved as kept-separate.
  *
  * Every merge is the shared mergeAdopters (src/lib/adopterMerge.ts); after it
- * the absorbed profile's owner team keeps access to the survivor (D40).
+ * the absorbed profile's owner team keeps access to the survivor (D40): full
+ * contact after an admin's merge, otherwise only the contact values their
+ * profile brought (grantAccessAfterFold, src/lib/mergeAccess.ts).
  */
 export async function mergePendingDedupPair(candidateId: string, opts?: { keepId?: string; identity?: 'same' | 'household' }): Promise<
     | { success: true; outcome: 'merged' }
@@ -824,9 +826,16 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
         }
         const notifyOwner = action.kind === 'merge' ? action.notifyOwner : null;
         logger.info('mergePendingDedupPair: merged', { candidateId, actorEmail, primaryId, secondaryId, viaAdmin, notifyOwner: !!notifyOwner });
-        // D40: the absorbed profile's owner team keeps seeing the survivor. Best-effort.
+        // D40: the absorbed profile's owner team keeps seeing what it had. Best-effort.
+        // An admin's merge is a consented fold: full contact. A rescuer merging
+        // here without asking either kept a profile of their own team (nothing
+        // to grant) or kept the OTHER rescuer's, who never agreed: then only
+        // the contact values the absorbed profile brought (final review C1).
         const absorbed = secondaryId === sideA.id ? sideA : sideB;
-        await grantAccessAfterFold(db, { survivorId: primaryId, absorbedOwnerEmail: realOwner(absorbed.addedBy), actor, mergeAuditId: result.auditId ?? null });
+        await grantAccessAfterFold(db, {
+            survivorId: primaryId, absorbedOwnerEmail: realOwner(absorbed.addedBy), actor, mergeAuditId: result.auditId ?? null,
+            access: isAdmin ? { scope: 'all_contact' } : { scope: 'absorbed_entries', absorbedId: secondaryId },
+        });
         if (viaAdmin) {
             // Whoever registered either profile hears that an admin joined them.
             await notifyMergeOwners({ primaryId, secondaryId, ...result }, actor);

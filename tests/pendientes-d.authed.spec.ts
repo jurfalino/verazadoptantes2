@@ -7,7 +7,8 @@ import { dismissCountryBanner } from './helpers';
  * docs/superpowers/specs/2026-10-25-pendientes-d-design.md):
  *
  *   - keeping the other rescuer's profile asks for confirmation, merges at
- *     once and leaves the absorbed side's owner an access grant (D25, D40, D41);
+ *     once and leaves the absorbed side's owner access to the contact values
+ *     their profile brought (D25, D40, D41, final review C1);
  *     the absorbed profile's old link lands on the survivor with a note (D32);
  *   - keeping your own asks the other owner («Pedir combinar») for the
  *     survivor you chose (D24); the owner declines, the requester sees
@@ -134,10 +135,11 @@ test.describe('Pendientes de revisar (layout D)', () => {
                 .toBe('MERGED');
             expect(isDbNull(rows(`SELECT deleted_at FROM adopters WHERE id = '${MINE}'`)[0]?.deleted_at), 'hers is absorbed').toBe(false);
             expect(isDbNull(rows(`SELECT deleted_at FROM adopters WHERE id = '${THEIRS}'`)[0]?.deleted_at), 'theirs survives').toBe(true);
-            // D40: she keeps seeing the survivor's contact details.
+            // D40: she keeps seeing what her profile brought (its one phone) —
+            // not the whole survivor: the other rescuer never agreed (final review C1).
             const grants = rows(`SELECT scope, origin, revoked_at FROM pii_access_grants WHERE adopter_id = '${THEIRS}' AND grantee_email = '${me.email}'`);
             expect(grants).toHaveLength(1);
-            expect(grants[0]).toMatchObject({ scope: 'all_contact', origin: 'merge' });
+            expect(grants[0]).toMatchObject({ scope: 'entry', origin: 'merge' });
             expect(isDbNull(grants[0].revoked_at)).toBe(true);
             // …and the other owner hears their profile absorbed hers.
             await expect.poll(() => Number(rows(

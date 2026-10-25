@@ -275,7 +275,12 @@ export async function answerMergeRequest(
             return { ok: false, reason: gone ? 'profiles_changed' : 'merge_failed' };
         }
         // D40: the absorbed side's owner team keeps seeing the survivor. Best-effort.
-        await grantAccessAfterFold(db, { survivorId: keep.survivorId, absorbedOwnerEmail: keep.absorbed.addedBy ?? null, actor, mergeAuditId: result.auditId ?? null });
+        // Accepted or flipped by the owner team, or approved by an admin: a
+        // consented fold, so full contact (D40).
+        await grantAccessAfterFold(db, {
+            survivorId: keep.survivorId, absorbedOwnerEmail: keep.absorbed.addedBy ?? null, actor, mergeAuditId: result.auditId ?? null,
+            access: { scope: 'all_contact' },
+        });
     } else if (answer.nextStatus === 'admin_declined') {
         // An admin's decline is final (no one may reopen it), so the pair is
         // resolved as kept-separate. An owner's decline leaves the pair on
