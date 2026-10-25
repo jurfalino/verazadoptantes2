@@ -33,25 +33,89 @@ export type DedupMergeDecision =
     | { ok: true; primaryId: string; secondaryId: string }
     | { ok: false; reason: DedupRefusal };
 
+export type DedupAction =
+    | { kind: 'merge'; primaryId: string; secondaryId: string; notifyOwner: string | null }
+    | { kind: 'request'; primaryId: string; secondaryId: string; ownerEmail: string | null }
+    | { kind: 'refuse'; reason: DedupRefusal };
+
+/** null / '' / 'anonymous' creators have no real owner to notify or ask. */
+function realOwner(addedBy: string | null | undefined): string | null {
+    return !addedBy || addedBy === 'anonymous' ? null : addedBy;
+}
+
+/**
+ * Merge directly or ask? The older record always survives. The viewer merges
+ * straight away only when the absorbed (newer) side is team-owned and, for a
+ * hand-filed flag, only when BOTH sides are; otherwise the owner of the
+ * foreign side is asked (request).
+ */
+export function decideDedupAction(
+    actor: string | null | undefined,
+    a: DedupSide | null | undefined,
+    b: DedupSide | null | undefined,
+    source: 'detected' | 'flag' = 'detected',
+): DedupAction {
+    if (!actor) return { kind: 'refuse', reason: 'unauthenticated' };
+    if (!a || !b || a.deleted || b.deleted || a.id === b.id) return { kind: 'refuse', reason: 'not_found' };
+    const created = (s: DedupSide) => !!s.addedBy && s.addedBy === actor;
+    if (!created(a) && !created(b)) return { kind: 'refuse', reason: 'not_yours' };
+    // The card's order: the NEWER record is "the new submission", the older is
+    // "the existing profile" and survives; ties keep `a` as the new one.
+    const newer = (a.createdAt ?? 0) >= (b.createdAt ?? 0) ? a : b;
+    const older = newer === a ? b : a;
+    const ids = { primaryId: older.id, secondaryId: newer.id };
+    if (newer.teamOwned && older.teamOwned) return { kind: 'merge', ...ids, notifyOwner: null };
+    if (source === 'flag') {
+        const foreign = newer.teamOwned ? older : newer;
+        return { kind: 'request', ...ids, ownerEmail: realOwner(foreign.addedBy) };
+    }
+    if (newer.teamOwned) return { kind: 'merge', ...ids, notifyOwner: realOwner(older.addedBy) };
+    return { kind: 'request', ...ids, ownerEmail: realOwner(newer.addedBy) };
+}
+
 export function decideDedupMerge(
     actor: string | null | undefined,
     a: DedupSide | null | undefined,
     b: DedupSide | null | undefined,
     source: 'detected' | 'flag' = 'detected',
 ): DedupMergeDecision {
-    if (!actor) return { ok: false, reason: 'unauthenticated' };
-    if (!a || !b || a.deleted || b.deleted || a.id === b.id) return { ok: false, reason: 'not_found' };
-    const created = (s: DedupSide) => !!s.addedBy && s.addedBy === actor;
-    if (!created(a) && !created(b)) return { ok: false, reason: 'not_yours' };
-    if (source === 'flag' && !(a.teamOwned && b.teamOwned)) return { ok: false, reason: 'flag_cross_owner' };
-    // The card's order: the NEWER record is "the new submission", the older is
-    // "the existing profile" and survives; ties keep `a` as the new one.
-    const aMs = a.createdAt ?? 0;
-    const bMs = b.createdAt ?? 0;
-    const newer = aMs >= bMs ? a : b;
-    const older = newer === a ? b : a;
-    if (!newer.teamOwned) return { ok: false, reason: 'other_owner' };
-    return { ok: true, primaryId: older.id, secondaryId: newer.id };
+    const d = decideDedupAction(actor, a, b, source);
+    if (d.kind === 'refuse') return { ok: false, reason: d.reason };
+    if (d.kind === 'request') return { ok: false, reason: source === 'flag' ? 'flag_cross_owner' : 'other_owner' };
+    return { ok: true, primaryId: d.primaryId, secondaryId: d.secondaryId };
+}
+
+export type MergeRequestStatus =
+    | 'pending' | 'accepted' | 'declined' | 'cancelled' | 'admin_approved' | 'admin_declined' | 'closed';
+
+export type MergeRequestAnswer =
+    | { ok: true; nextStatus: MergeRequestStatus; merges: boolean }
+    | { ok: false; reason: 'not_allowed' | 'not_open' };
+
+/** Who may accept / decline / cancel a merge request, and what status results. */
+export function decideMergeRequestAnswer(input: {
+    status: MergeRequestStatus;
+    actorIsRequester: boolean;
+    actorOnOwnerTeam: boolean;
+    actorIsAdmin: boolean;
+    decision: 'accept' | 'decline' | 'cancel';
+}): MergeRequestAnswer {
+    const { status, actorIsRequester, actorOnOwnerTeam, actorIsAdmin, decision } = input;
+    const next = (nextStatus: MergeRequestStatus, merges = false): MergeRequestAnswer => ({ ok: true, nextStatus, merges });
+    const notAllowed: MergeRequestAnswer = { ok: false, reason: 'not_allowed' };
+    const notOpen: MergeRequestAnswer = { ok: false, reason: 'not_open' };
+
+    if (status !== 'pending' && status !== 'declined') return notOpen;
+    if (status === 'declined') {
+        // Only an admin can still approve a declined request.
+        return actorIsAdmin && decision === 'accept' ? next('admin_approved', true) : notOpen;
+    }
+    // status === 'pending'
+    if (decision === 'cancel') return actorIsRequester ? next('cancelled') : notAllowed;
+    const asOwner = actorOnOwnerTeam && !actorIsRequester;
+    if (asOwner) return decision === 'accept' ? next('accepted', true) : next('declined');
+    if (actorIsAdmin) return decision === 'accept' ? next('admin_approved', true) : next('admin_declined');
+    return notAllowed;
 }
 
 /** A duplicate flag row, as far as the merge feed cares. */
