@@ -64,7 +64,8 @@ async function loadEditable(adopterId: string, actor: string): Promise<Loaded | 
     const target = await db.select().from(adopters).where(eq(adopters.id, adopterId)).get();
     if (!target) return { ok: false, error: 'Adopter not found' };
     if (target.deletedAt) return { ok: false, error: 'Cannot edit a deleted adopter' };
-    const isOwner = target.addedBy === actor;
+    // Case-insensitive: `added_by` keeps whatever case it was written with.
+    const isOwner = !!target.addedBy && target.addedBy.trim().toLowerCase() === actor.trim().toLowerCase();
     const [actorIsAdmin, actorIsOrgMate] = await Promise.all([
         isAdminAsync(actor),
         (await import('@/lib/orgMembership')).isOrgMate(actor, target.addedBy),

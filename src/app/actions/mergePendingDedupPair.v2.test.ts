@@ -21,7 +21,9 @@ vi.mock('./_db', () => ({ getDb: async () => state.db, getUser: mocks.getUser })
 vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
 vi.mock('@/config/admins', () => ({ isAdminAsync: mocks.isAdmin, isModeratorOrAdminAsync: mocks.isAdmin }));
 vi.mock('@/lib/orgMembership', async (orig) => ({
-    ...(await orig()), isOrgMate: mocks.isOrgMate, isOwnerOrOrgMate: mocks.isOwnerOrOrgMate, getOrgMemberEmailsFor: mocks.getOrgMemberEmailsFor,
+    // Normalized, like the real isOwnerOrOrgMate (`added_by` keeps any case).
+    ...(await orig()), isOrgMate: mocks.isOrgMate, getOrgMemberEmailsFor: mocks.getOrgMemberEmailsFor,
+    isOwnerOrOrgMate: (v: string | null | undefined, o: string | null | undefined) => mocks.isOwnerOrOrgMate(v?.trim().toLowerCase(), o?.trim().toLowerCase()),
     getTeamEmails: async (email: string) => mocks.getOrgMemberEmailsFor((email ?? '').trim().toLowerCase()),
 }));
 vi.mock('@/lib/adopterTokenize', () => ({ tokenizeAdopter: vi.fn(async () => undefined) }));
@@ -227,6 +229,15 @@ describe('«¿Es la misma persona?» (D35)', () => {
         expect(await as(OWNER, () => mergePendingDedupPair('cand-hh-team', { identity: 'household' }))).toEqual({ success: true, outcome: 'household' });
         expect(household('hh-owner')).toEqual([expect.objectContaining({ name: 'Lucía Pérez', profileId: 'hh-mate' })]);
         expect(household('hh-mate')).toEqual([expect.objectContaining({ name: 'Ana Pérez', profileId: 'hh-owner' })]);
+    });
+
+    it("«alguien de su hogar» on two of my profiles, one whose added_by has capitals: both get the other", async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('hh-caps', 'Lucía Pérez', '5', 'Stranger@Example.com', 3000, 3000)`).run();
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
+            VALUES ('cand-hh-caps', 'hh-caps', 'hh-mine', '["phone"]', 90, 'high', 'pending', 1)`).run();
+        expect(await mergePendingDedupPair('cand-hh-caps', { identity: 'household' })).toEqual({ success: true, outcome: 'household' });
+        expect(household('hh-mine')).toEqual([expect.objectContaining({ name: 'Lucía Pérez', profileId: 'hh-caps' })]);
+        expect(household('hh-caps')).toEqual([expect.objectContaining({ name: 'Ana Pérez', profileId: 'hh-mine' })]);
     });
 
     it('a stranger to both sides cannot use the household path either', async () => {
