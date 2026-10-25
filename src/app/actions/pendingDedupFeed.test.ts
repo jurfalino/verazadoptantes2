@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { migratedDb } from '@/test-utils/migratedDb';
 import * as mocks from '@/test-utils/actionMocks';
 
-const { session, OWNER, MATE, STRANGER } = mocks;
+const { session, OWNER, MATE, STRANGER, ADMIN } = mocks;
 
 const { state, logs } = vi.hoisted(() => ({
     state: { db: null as unknown },
@@ -40,7 +40,8 @@ vi.mock('@/lib/logger', () => ({
     generateErrorId: () => 'gen12345',
 }));
 
-import { getPendingDuplicatesForUser, mergePendingDedupPair, dismissDuplicateCandidate, type PendingDedupPair } from './duplicates';
+import { getPendingDuplicatesForUser, mergePendingDedupPair, dismissDuplicateCandidate, hidePendingPair, type PendingDedupPair } from './duplicates';
+import { pairKey } from '@/domain/dedupPair';
 import { resolveMergeRequest } from './mergeRequests';
 import { deleteOwnAdopter } from './adopters';
 
@@ -107,7 +108,8 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         expect(await as(OWNER, () => mergePendingDedupPair('cand-newer-mine'))).toMatchObject({ success: true, outcome: 'requested' });
         const p = pairOf((await feed(OWNER)).pairs, 'cand-newer-mine');
         expect(p.request).toEqual({
-            id: requestId(), direction: 'sent', createdAt: expect.any(Number), counterpartName: 'stranger', toAdmins: false,
+            id: requestId(), status: 'pending', direction: 'sent', createdAt: expect.any(Number), counterpartName: 'stranger', toAdmins: false,
+            canMessage: true, declinedAt: null, declinedByName: null,
         });
         expect(p.request!.createdAt).toBeLessThan(Date.now() / 1000 + 5); // epoch seconds, not ms
         expect(p.request!.createdAt).toBeGreaterThan(Date.now() / 1000 - 60);
@@ -139,12 +141,36 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         expect(p.request).toMatchObject({ direction: 'sent', toAdmins: true, counterpartName: null });
     });
 
-    it('a declined request leaves the pair on both rescuers\' lists (D27), no longer as an open request', async () => {
+    it("a declined request leaves the pair on both rescuers' lists (D27) as «Rechazado»", async () => {
+        await mergePendingDedupPair('cand-older-mine');
+        const id = requestId();
+        expect(await as(MATE, () => resolveMergeRequest(id, 'decline'))).toEqual({ success: true });
+        const sent = pairOf((await feed(STRANGER)).pairs, 'cand-older-mine');
+        expect(sent.group).toBe('declined');
+        // The requester reads who declined (MATE, by handle) — never an email.
+        expect(sent.request).toMatchObject({ id, status: 'declined', direction: 'sent', canMessage: true, declinedByName: 'mate', declinedAt: expect.any(Number) });
+        for (const who of [OWNER, MATE]) {
+            const p = pairOf((await feed(who)).pairs, 'cand-older-mine');
+            expect(p.group).toBe('declined');
+            expect(p.request).toMatchObject({ id, status: 'declined', direction: 'received', canMessage: true, counterpartName: 'stranger' });
+        }
+        // Whoever declined reads no name of their own.
+        expect(pairOf((await feed(MATE)).pairs, 'cand-older-mine').request!.declinedByName).toBeNull();
+    });
+
+    it('after a decline the requester may only keep the other profile (D43); the owner may still keep either', async () => {
+        // STRANGER kept their older s-old and asked OWNER; OWNER declined.
         await mergePendingDedupPair('cand-older-mine');
         expect(await as(OWNER, () => resolveMergeRequest(requestId(), 'decline'))).toEqual({ success: true });
-        for (const who of [STRANGER, OWNER]) {
-            expect(pairOf((await feed(who)).pairs, 'cand-older-mine').request).toBeNull();
-        }
+        const mine = pairOf((await feed(STRANGER)).pairs, 'cand-older-mine');
+        expect(mine.keepOptions).toEqual({ new: true, existing: false }); // o-new is OWNER's
+        expect(mine.mergeAction).toBe('merge');
+        expect(await mergePendingDedupPair('cand-older-mine', { keepId: 's-old' })).toMatchObject({ success: false, error: 'declined_before' });
+        const theirs = pairOf((await feed(OWNER)).pairs, 'cand-older-mine');
+        expect(theirs.keepOptions).toEqual({ new: true, existing: true });
+        expect(theirs.mergeAction).toBe('merge'); // keeping STRANGER's older profile needs no consent
+        // The click agrees with the row: keeping OWNER's merges straight away.
+        expect(await mergePendingDedupPair('cand-older-mine', { keepId: 'o-new' })).toEqual({ success: true, outcome: 'merged' });
     });
 
     it('pairs with an open request sort first, ahead of stronger matches', async () => {
@@ -290,5 +316,182 @@ describe('getPendingDuplicatesForUser — what «Combinar» will do (mergeAction
         expect(p.source).toBe('flagged');
         expect(p.mergeAction).toBe('merge');
         expect(await as(OWNER, () => mergePendingDedupPair('flag-cross'))).toEqual({ success: true, outcome: 'merged' });
+    });
+});
+
+describe('getPendingDuplicatesForUser — layout D (groups, summary, admin score, keep, identity, hide)', () => {
+    /** A third pair for STRANGER (older, theirs) and OWNER: STRANGER asks, OWNER declines. */
+    const declinedPair = async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
+            ('d-s', 'Marta Ríos', '5', ?, 300, 300), ('d-o', 'Marta Ríos', '5', ?, 3000, 3000)`).run(STRANGER, OWNER);
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
+            VALUES ('cand-decl', 'd-o', 'd-s', '["phone"]', 70, 'high', 'pending', 1)`).run();
+        expect(await as(STRANGER, () => mergePendingDedupPair('cand-decl'))).toMatchObject({ success: true, outcome: 'requested' });
+        const id = requestId();
+        expect(await as(OWNER, () => resolveMergeRequest(id, 'decline'))).toEqual({ success: true });
+        return id;
+    };
+
+    it('groups and order: received → sent → declined → possible duplicates (D21)', async () => {
+        await declinedPair();
+        expect(await as(STRANGER, () => mergePendingDedupPair('cand-older-mine'))).toMatchObject({ outcome: 'requested' }); // STRANGER → OWNER
+        expect(await as(OWNER, () => mergePendingDedupPair('cand-newer-mine'))).toMatchObject({ outcome: 'requested' }); // OWNER → STRANGER
+        const { pairs, total } = await feed(STRANGER);
+        expect(pairs.map(p => [p.candidateId, p.group])).toEqual([
+            ['cand-newer-mine', 'received'],
+            ['cand-older-mine', 'sent'],
+            ['cand-decl', 'declined'],
+            ['cand-anon', 'pair'],
+        ]);
+        expect(total).toBe(4);
+    });
+
+    it('within the possible duplicates, the stronger match first, then detection time', async () => {
+        sqlite.prepare(`UPDATE duplicate_candidates SET detected_at = 50 WHERE id = 'cand-anon'`).run();
+        sqlite.prepare(`UPDATE duplicate_candidates SET score = 85 WHERE id = 'cand-older-mine'`).run();
+        // cand-newer-mine 90; cand-anon and cand-older-mine 85, cand-anon detected later.
+        expect((await feed(STRANGER)).pairs.map(p => p.candidateId)).toEqual(['cand-newer-mine', 'cand-anon', 'cand-older-mine']);
+    });
+
+    it('rescuers never get a score; an admin gets adminScore (D22)', async () => {
+        for (const p of (await feed(STRANGER, true)).pairs) {
+            expect(p.adminScore).toBeNull();
+            expect(p.confidencePercent).toBeNull();
+        }
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
+            ('ad-a', 'Inés Mora', '5', ?, 100, 100), ('ad-o', 'Ines Mora', '5', ?, 200, 200)`).run(ADMIN, OWNER);
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
+            VALUES ('cand-admin', 'ad-o', 'ad-a', '["phone"]', 75, 'high', 'pending', 1)`).run();
+        const p = pairOf((await feed(ADMIN)).pairs, 'cand-admin');
+        expect(p.adminScore).toBe(75);
+        expect(p.confidencePercent).toBe(75);
+        expect(pairOf((await feed(OWNER)).pairs, 'cand-admin').adminScore).toBeNull();
+    });
+
+    it("an admin's choice merges straight away: both sides may be kept, «Combinar perfiles» (D24)", async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
+            ('ad-a', 'Inés Mora', '5', ?, 100, 100), ('ad-o', 'Ines Mora', '5', ?, 200, 200)`).run(ADMIN, OWNER);
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
+            VALUES ('cand-admin', 'ad-o', 'ad-a', '["phone"]', 75, 'high', 'pending', 1)`).run();
+        // A rescuer in the admin's place would have to ask OWNER.
+        const p = pairOf((await feed(ADMIN)).pairs, 'cand-admin');
+        expect(p.keepOptions).toEqual({ new: true, existing: true });
+        expect(p.mergeAction).toBe('merge');
+        expect(await as(ADMIN, () => mergePendingDedupPair('cand-admin'))).toEqual({ success: true, outcome: 'merged' });
+    });
+
+    it('a flagged pair: no admin score (no made-up 100%), summary says flagged (D22, D34)', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
+            ('fa-a', 'Eva Sol', '5', ?, 100, 100), ('fa-o', 'Eva Sól', '5', ?, 200, 200)`).run(ADMIN, OWNER);
+        sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at)
+            VALUES ('flag-adm', 'fa-o', ?, 'duplicate', 'fa-a', NULL, 1)`).run(ADMIN);
+        const p = pairOf((await feed(ADMIN)).pairs, 'flag-adm');
+        expect(p.source).toBe('flagged');
+        expect(p.adminScore).toBeNull();
+        expect(p.summary.flagged).toBe(true);
+        expect(p.identityChoice).toBe(false);
+        expect(pairOf((await feed(OWNER)).pairs, 'flag-adm').summary.flagged).toBe(true);
+        expect(pairOf((await feed(STRANGER)).pairs, 'cand-older-mine').summary.flagged).toBe(false);
+    });
+
+    it('a pair rebuilt from a request has no admin score (D34)', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
+            ('ra-s', 'Iris Paz', '5', ?, 50, 50), ('ra-a', 'Iris Paz', '5', ?, 60, 60)`).run(STRANGER, ADMIN);
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
+            VALUES ('cand-ra', 'ra-a', 'ra-s', '["phone"]', 60, 'high', 'pending', 1)`).run();
+        expect(await as(STRANGER, () => mergePendingDedupPair('cand-ra'))).toMatchObject({ outcome: 'requested' }); // asks ADMIN, as owner
+        expect(pairOf((await feed(ADMIN)).pairs, 'cand-ra').adminScore).toBe(60);
+        sqlite.prepare(`DELETE FROM duplicate_candidates WHERE id = 'cand-ra'`).run();
+        const p = pairOf((await feed(ADMIN)).pairs, 'cand-ra');
+        expect(p.request).toMatchObject({ direction: 'received', status: 'pending' });
+        expect(p.adminScore).toBeNull();
+    });
+
+    it('summary: which fields line up and which differ, from what the viewer sees', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
+            ('h-s', 'Juan Pérez', '5', ?, 100, 100), ('h-o', 'María López', '5', ?, 200, 200)`).run(STRANGER, OWNER);
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
+            VALUES ('cand-house', 'h-o', 'h-s', '["phone"]', 70, 'high', 'pending', 1)`).run();
+        const { pairs } = await feed(STRANGER);
+        expect(pairOf(pairs, 'cand-older-mine').summary).toEqual({ same: ['name', 'phone'], diff: [], flagged: false });
+        expect(pairOf(pairs, 'cand-house').summary).toEqual({ same: ['phone'], diff: ['name'], flagged: false });
+    });
+
+    it('different names, same phone → «¿Es la misma persona?» (D35); same names do not ask', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
+            ('h-s', 'Juan Pérez', '5', ?, 100, 100), ('h-o', 'María López', '5', ?, 200, 200)`).run(STRANGER, OWNER);
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
+            VALUES ('cand-house', 'h-o', 'h-s', '["phone"]', 70, 'high', 'pending', 1)`).run();
+        const { pairs } = await feed(STRANGER);
+        expect(pairOf(pairs, 'cand-house').identityChoice).toBe(true);
+        expect(pairOf(pairs, 'cand-older-mine').identityChoice).toBe(false);
+        // The click agrees: it asks first.
+        expect(await as(STRANGER, () => mergePendingDedupPair('cand-house'))).toMatchObject({ success: false, error: 'identity_required' });
+    });
+
+    it('isMine marks the side the viewer created', async () => {
+        const p = pairOf((await feed(STRANGER)).pairs, 'cand-anon');
+        expect(p.newAdopter.isMine).toBe(false);
+        expect(p.existingAdopter.isMine).toBe(true);
+        const q = pairOf((await feed(MATE)).pairs.concat((await feed(OWNER)).pairs), 'cand-older-mine');
+        expect([q.newAdopter.isMine, q.existingAdopter.isMine]).toEqual([true, false]);
+    });
+
+    it('an anonymous other side can only lose: keepOptions offers only mine (D42)', async () => {
+        const p = pairOf((await feed(STRANGER)).pairs, 'cand-anon'); // anon-new is the newer side
+        expect(p.keepOptions).toEqual({ new: false, existing: true });
+        expect(p.mergeAction).toBe('request'); // keeping mine absorbs an ownerless profile → the admins decide
+    });
+
+    it('an anonymous OLDER side: the default keep is mine, and the button says so', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
+            ('an-old', 'Lía Gil', '5', 'anonymous', 10, 10), ('s-x', 'Lía Gil', '5', ?, 5000, 5000)`).run(STRANGER);
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
+            VALUES ('cand-anon-old', 's-x', 'an-old', '["phone"]', 70, 'high', 'pending', 1)`).run();
+        const p = pairOf((await feed(STRANGER)).pairs, 'cand-anon-old');
+        expect(p.existingAdopter.id).toBe('an-old');
+        expect(p.keepOptions).toEqual({ new: true, existing: false });
+        expect(p.mergeAction).toBe('request');
+        expect(await as(STRANGER, () => mergePendingDedupPair('cand-anon-old', { keepId: 's-x' }))).toMatchObject({ success: true, outcome: 'requested', toAdmins: true });
+    });
+
+    it('canMessage: a request to another rescuer, not one to the admins (D28)', async () => {
+        await mergePendingDedupPair('cand-older-mine');
+        await mergePendingDedupPair('cand-anon', { identity: 'same' });
+        const { pairs } = await feed(STRANGER);
+        expect(pairOf(pairs, 'cand-older-mine').request).toMatchObject({ canMessage: true, toAdmins: false });
+        expect(pairOf(pairs, 'cand-anon').request).toMatchObject({ canMessage: false, toAdmins: true });
+    });
+
+    it('«Quitar de la lista» hides a declined pair for that viewer only (D27)', async () => {
+        await declinedPair();
+        const key = pairKey('d-s', 'd-o');
+        expect(await as(OWNER, () => hidePendingPair(key))).toEqual({ success: true });
+        expect(await as(OWNER, () => hidePendingPair(key))).toEqual({ success: true }); // twice is fine
+        expect((await feed(OWNER)).pairs.map(p => p.candidateId)).not.toContain('cand-decl');
+        expect((await feed(MATE)).pairs.map(p => p.candidateId)).toContain('cand-decl');
+        expect((await feed(STRANGER)).pairs.map(p => p.candidateId)).toContain('cand-decl');
+        // Not counted either.
+        const owner = await feed(OWNER);
+        expect(owner.total).toBe(owner.pairs.length);
+        // Either id order names the same pair.
+        expect(await as(STRANGER, () => hidePendingPair('d-s|d-o'))).toEqual({ success: true });
+        expect((await feed(STRANGER)).pairs.map(p => p.candidateId)).not.toContain('cand-decl');
+    });
+
+    it('a hidden pair comes back while someone must answer a request on it', async () => {
+        expect(await as(OWNER, () => hidePendingPair(pairKey('o-new', 's-old')))).toEqual({ success: true });
+        expect((await feed(OWNER)).pairs.map(p => p.candidateId)).not.toContain('cand-older-mine');
+        await mergePendingDedupPair('cand-older-mine'); // STRANGER asks OWNER
+        expect(pairOf((await feed(OWNER)).pairs, 'cand-older-mine').group).toBe('received');
+    });
+
+    it('hidePendingPair: a session and a well-formed pair key, or a logged refusal with an errorId', async () => {
+        expect(await as(null, () => hidePendingPair('a|b'))).toMatchObject({ success: false, errorId: expect.any(String) });
+        for (const bad of ['', 'nopipe', 'a|a', 'a|b|c', `${'x'.repeat(300)}|y`, 42 as unknown as string]) {
+            expect(await as(STRANGER, () => hidePendingPair(bad))).toMatchObject({ success: false, errorId: expect.any(String) });
+        }
+        expect(sqlite.prepare('SELECT COUNT(*) AS n FROM pending_pair_hidden').get()!.n).toBe(0);
+        expect(logs.warn.some(([m]) => m === 'hidePendingPair: refused')).toBe(true);
     });
 });

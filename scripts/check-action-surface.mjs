@@ -227,7 +227,13 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // measured: nothing imports it until the PendingDedup UI task wires it, and Next only records
 // referenced actions. Session-checked; team/requester-only; never returns recipient emails.
 // 161 = 160 + 1.
-const EXPECTED_ACTIONS = 161;
+// Pendientes D, Task 5: +1 = hidePendingPair(pairKey) (duplicates.ts, «Quitar de la lista», D27).
+// COMPUTED, not measured: nothing imports it until the PendingDedup UI task (Task 7) wires it,
+// and Next only records referenced actions. Session-checked; the key is shape-checked (two
+// distinct ids, ≤ 200 chars) and the only write is the caller's own pending_pair_hidden row —
+// a stranger's key can only hide rows from their own list. Refusals logged with an errorId.
+// 162 = 161 + 1.
+const EXPECTED_ACTIONS = 162;
 
 let manifest;
 try {
