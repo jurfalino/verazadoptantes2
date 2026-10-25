@@ -311,6 +311,27 @@ test.describe('Duplicate mass-merge and undo', () => {
         // ... and the card explains WHY: family-circle match, relative visible.
         await expect(page.getByText(/RelativeFixture Ondina/).first()).toBeVisible({ timeout: 30000 });
     });
+    test("a record added to a merged-away profile (import wizard) lands on the profile it was merged into", async ({ page }) => {
+        const P = 'test-addrec-fixture-survivor';
+        const S = 'test-addrec-fixture-absorbed';
+        seedAdopter(P, 'AddRecFixture Survivor', 'ar-contact 2222-0001');
+        seedAdopter(S, 'AddRecFixture Absorbed', 'ar-contact 2222-0002');
+        const mergeRes = await page.request.post('/api/admin/duplicates/merge', { data: { primaryId: P, secondaryIds: [S] } });
+        expect(mergeRes.ok()).toBeTruthy();
+
+        const res = await page.request.post(`/api/adopters/${S}/add-record`, {
+            data: { adoption: { recordType: 'observation', animalName: 'AddRecFixture Pet' } },
+        });
+        expect(res.ok()).toBeTruthy();
+        const body = await res.json() as { adoptionId: string; adopterId: string; adopterName: string };
+        expect(body.adopterId, 'the response names the survivor, so the wizard follows up there').toBe(P);
+        expect(body.adopterName).toBe('AddRecFixture Survivor');
+        const owner = parseD1Rows(execD1(
+            `SELECT adopter_id FROM adopter_events WHERE id = '${body.adoptionId}' UNION ALL SELECT adopter_id FROM placements WHERE id = '${body.adoptionId}'`,
+        ));
+        expect(owner.map(r => r.adopter_id)).toEqual([P]);
+    });
+
     test('admin merge: the panel shows who registered each profile; owners are told only when asked; both histories record it', async ({ page }) => {
         const M1 = 'test-mergeowner-fixture-1';
         const M2 = 'test-mergeowner-fixture-2';

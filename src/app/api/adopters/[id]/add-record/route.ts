@@ -7,13 +7,15 @@ import { eq } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
 import { processImageForStorage, uploadToR2 } from '@/lib/r2';
+import { resolveMergedAdopterId } from '@/lib/mergedAdopterRedirect';
 
 export async function POST(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
     const errorId = generateErrorId();
-    const { id: adopterId } = await params;
+    const { id: requestedAdopterId } = await params;
+    let adopterId = requestedAdopterId;
 
     const session = await auth();
     if (!session?.user) {
@@ -60,11 +62,23 @@ export async function POST(
         const db = await getDb();
         if (!db) throw new Error('Database not available');
 
-        // Verify adopter exists
-        const existingAdopter = await db.select({ id: adopters.id, name: adopters.name })
+        // Verify adopter exists and is live. A profile merged away mid-import
+        // (a teammate merged it while the rescuer reviewed the post) would
+        // otherwise take the record onto a hidden row; it goes to the profile
+        // it was merged into instead, and the response names that profile.
+        let existingAdopter = await db.select({ id: adopters.id, name: adopters.name, deletedAt: adopters.deletedAt })
             .from(adopters)
             .where(eq(adopters.id, adopterId))
             .get();
+        if (existingAdopter?.deletedAt) {
+            const survivorId = await resolveMergedAdopterId(adopterId);
+            logger.info('add-record: target profile is deleted', { adopterId, survivorId, user: session.user.email });
+            existingAdopter = survivorId
+                ? await db.select({ id: adopters.id, name: adopters.name, deletedAt: adopters.deletedAt })
+                    .from(adopters).where(eq(adopters.id, survivorId)).get()
+                : undefined;
+            if (existingAdopter) adopterId = existingAdopter.id;
+        }
 
         if (!existingAdopter) {
             return NextResponse.json({ error: 'Adopter not found', errorId }, { status: 404 });

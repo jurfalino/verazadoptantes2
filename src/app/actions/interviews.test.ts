@@ -5,6 +5,7 @@ import type { CandidateSummary } from '@/domain/interview/types';
 
 const { state } = vi.hoisted(() => ({ state: { db: null as unknown, flag: true, matches: [] as CandidateSummary[] } }));
 vi.mock('./_db', () => ({ getDb: async () => state.db, getUser }));
+vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
 vi.mock('@/config/admins', () => ({ isAdminAsync: isAdmin, isModeratorOrAdminAsync: isAdmin }));
 vi.mock('@/lib/orgMembership', () => ({ isOrgMate, isOwnerOrOrgMate }));
 vi.mock('@/config/features', () => ({ getFeatureFlag: async () => state.flag }));
@@ -79,6 +80,16 @@ describe('startInterview / drafts', () => {
         const r = await startInterview({ adopterId: 'a1' });
         expect(r.ok && r.view.confirmedAdopterId).toBe('a1');
         expect(r.ok && r.view.sourceKind).toBe('profile');
+    });
+
+    it("from a merged-away profile's link: starts on the profile it was merged into", async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, deleted_at, token_hash, is_demo)
+            VALUES ('a0', 'Juan P.', '5', ?, 900, 900, 2000, 'MERGED', 0)`).run(STRANGER);
+        sqlite.prepare(`INSERT INTO audit_log (id, action, target, details, created_at) VALUES ('m1', 'adopter_merge', 'a1', ?, 2000)`)
+            .run(JSON.stringify({ primaryId: 'a1', secondaryId: 'a0' }));
+        state.matches = [cand('a1')];
+        const r = await startInterview({ adopterId: 'a0' });
+        expect(r.ok && r.view.confirmedAdopterId).toBe('a1');
     });
 
     it('starting from the same profile twice resumes the open draft', async () => {

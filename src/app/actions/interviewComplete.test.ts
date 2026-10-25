@@ -7,6 +7,7 @@ const { state, calls } = vi.hoisted(() => ({
     calls: { saveAdopter: [] as unknown[], append: [] as unknown[], household: [] as unknown[], saveAdoption: [] as unknown[] },
 }));
 vi.mock('./_db', () => ({ getDb: async () => state.db, getUser }));
+vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
 vi.mock('@/config/admins', () => ({ isAdminAsync: isAdmin, isModeratorOrAdminAsync: isAdmin }));
 vi.mock('@/lib/orgMembership', () => ({ isOrgMate, isOwnerOrOrgMate }));
 vi.mock('@/config/features', () => ({ getFeatureFlag: async () => state.flag }));
@@ -183,6 +184,18 @@ describe('completeInterview', () => {
         expect(calls.append).toEqual([]);
         expect(calls.household).toEqual([]);
         expect(sqlite.prepare(`SELECT status, adopter_id, event_id FROM interviews WHERE id = 'i1'`).get()).toEqual({ status: 'draft', adopter_id: null, event_id: null });
+    });
+
+    it('a candidate merged into another profile mid-interview: saves onto the profile that absorbed it', async () => {
+        seedDraft();
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, deleted_at, is_demo) VALUES ('a-survivor', 'Juan', '5', ?, 1, 1, NULL, 0)`).run(OWNER);
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 2000, token_hash = 'MERGED' WHERE id = 'a-owned'`).run();
+        sqlite.prepare(`INSERT INTO audit_log (id, action, target, details, created_at) VALUES ('m1', 'adopter_merge', 'a-survivor', ?, 2000)`)
+            .run(JSON.stringify({ primaryId: 'a-survivor', secondaryId: 'a-owned' }));
+        const r = await completeInterview('i1', { adopterId: 'a-owned', additions: ADD, rating: 4, summary: 'x' });
+        expect(r).toEqual({ ok: true, adopterId: 'a-survivor' });
+        expect(calls.saveAdoption[0]).toMatchObject({ recordType: 'observation', adopterId: 'a-survivor' });
+        expect(sqlite.prepare(`SELECT status, adopter_id FROM interviews WHERE id = 'i1'`).get()).toEqual({ status: 'completed', adopter_id: 'a-survivor' });
     });
 
     it('never flips a draft discarded mid-completion to completed', async () => {

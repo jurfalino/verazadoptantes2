@@ -11,6 +11,7 @@ import { and, eq } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
+import { resolveMergedAdopterId } from '@/lib/mergedAdopterRedirect';
 import { safeError } from '@/lib/interviews/safeError';
 import { rowsAffected } from '@/lib/interviews/rowsAffected';
 import { adopterEvents, adopters, interviews } from '@/db/schema';
@@ -39,8 +40,21 @@ export async function completeInterview(interviewId: string, input: CompleteInpu
         if (s.conductedBy !== actor) return { ok: false, error: 'forbidden' };
         if (s.status === 'completed' && s.adopterId) return { ok: true, adopterId: s.adopterId };
 
-        const { adopterId: target, rating, summary } = parsed.data;
+        const { rating, summary } = parsed.data;
+        let target = parsed.data.adopterId;
         if (target !== 'new' && !s.candidateIds.includes(target)) return { ok: false, error: 'forbidden' };
+        // A candidate merged into another profile while the interview was open: save onto
+        // the profile that absorbed it (it already holds that candidate's data).
+        if (target !== 'new' && !s.adopterId) {
+            const survivorId = await resolveMergedAdopterId(target).catch((e) => {
+                logger.warn('interviews.complete: merge lookup failed', { interviewId: id, adopterId: target, error: e instanceof Error ? e.message : String(e) });
+                return null;
+            });
+            if (survivorId) {
+                logger.info('interviews.complete: target was merged, saving to its survivor', { interviewId: id, adopterId: target, survivorId });
+                target = survivorId;
+            }
+        }
 
         // An existing target must still be a live profile: a merged (soft-deleted) one would
         // receive contacts and an observation nobody sees. Checked before any write.
