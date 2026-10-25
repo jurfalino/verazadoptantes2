@@ -352,24 +352,24 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                         
                         {/* Context hints revealed on tap */}
                         {showInaccurateHint && isFlaggedAsInaccurate && (
-                            <div className="w-full mt-1 p-3 bg-rose-50 dark:bg-stone-800/80 border border-rose-100 dark:border-rose-900/50 rounded-lg text-xs leading-relaxed text-rose-800 dark:text-rose-200 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
-                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-rose-100 dark:border-b-stone-700"></div>
-                                <span className="font-semibold text-rose-900 dark:text-rose-300 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
+                            <div className="w-full mt-1 p-3 bg-rose-50 border border-rose-100 rounded-lg text-xs leading-relaxed text-rose-800 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
+                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-rose-100"></div>
+                                <span className="font-semibold text-rose-900 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
                                 {inaccurateFlags[0]?.details || t('flags.inaccurate_desc') || 'Este perfil fue reportado como inexacto.'}
                             </div>
                         )}
                         {showDuplicateHint && isFlaggedAsDuplicate && !hasDuplicateBanner && (
-                            <div className="w-full mt-1 p-3 bg-amber-50 dark:bg-stone-800/80 border border-amber-100 dark:border-amber-900/50 rounded-lg text-xs leading-relaxed text-amber-800 dark:text-amber-200 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
-                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-amber-100 dark:border-b-stone-700"></div>
-                                <span className="font-semibold text-amber-900 dark:text-amber-300 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
+                            <div className="w-full mt-1 p-3 bg-amber-50 border border-amber-100 rounded-lg text-xs leading-relaxed text-amber-800 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
+                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-amber-100"></div>
+                                <span className="font-semibold text-amber-900 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
                                 {t('flags.duplicate_desc') || 'Este perfil podría ser un duplicado de otro adoptante.'}
                                 {duplicateFlags[0]?.details && (
-                                    <span className="block mt-1 font-medium italic text-amber-700 dark:text-amber-400">"{duplicateFlags[0].details}"</span>
+                                    <span className="block mt-1 font-medium italic text-amber-700">"{duplicateFlags[0].details}"</span>
                                 )}
                                 {duplicateFlags[0]?.targetAdopterId && (
                                     <a
                                         href={`/adopter/${duplicateFlags[0].targetAdopterId}`}
-                                        className="inline-flex items-center gap-1 mt-2 text-amber-700 dark:text-amber-300 font-semibold hover:text-amber-900 dark:hover:text-amber-100 hover:underline transition-colors"
+                                        className="inline-flex items-center gap-1 mt-2 text-amber-700 font-semibold hover:text-amber-900 hover:underline transition-colors"
                                     >
                                         {t('flags.view_original') || 'View Original'}
                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -380,9 +380,9 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                             </div>
                         )}
                         {showAdoptionsHint && tooManyAdoptions && (
-                            <div className="w-full mt-1 p-3 bg-orange-50 dark:bg-stone-800/80 border border-orange-100 dark:border-orange-900/50 rounded-lg text-xs leading-relaxed text-orange-800 dark:text-orange-200 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
-                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-orange-100 dark:border-b-stone-700"></div>
-                                <span className="font-semibold text-orange-900 dark:text-orange-300 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
+                            <div className="w-full mt-1 p-3 bg-orange-50 border border-orange-100 rounded-lg text-xs leading-relaxed text-orange-800 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
+                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-orange-100"></div>
+                                <span className="font-semibold text-orange-900 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
                                 {t('flags.adoptions_warning_p1') || 'Registró '}{tooManyAdoptions.count}{t('flags.adoptions_warning_p2') || ' adopciones en '}{Math.max(1, Math.round(tooManyAdoptions.actualSpanDays || 0))}{t('flags.adoptions_warning_p3') || ' días'}
                                 {tooManyAdoptions.startDate && tooManyAdoptions.endDate && (
                                     <> {t('flags.warning_dates') || '(ocurrido entre'} {formatShortDate(tooManyAdoptions.startDate)} {t('flags.and') || 'y'} {formatShortDate(tooManyAdoptions.endDate)})</>
@@ -390,9 +390,9 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                             </div>
                         )}
                         {showRequestsHint && tooManyRequests && (
-                            <div className="w-full mt-1 p-3 bg-purple-50 dark:bg-stone-800/80 border border-purple-100 dark:border-purple-900/50 rounded-lg text-xs leading-relaxed text-purple-800 dark:text-purple-200 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
-                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-purple-100 dark:border-b-stone-700"></div>
-                                <span className="font-semibold text-purple-900 dark:text-purple-300 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
+                            <div className="w-full mt-1 p-3 bg-purple-50 border border-purple-100 rounded-lg text-xs leading-relaxed text-purple-800 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
+                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-purple-100"></div>
+                                <span className="font-semibold text-purple-900 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
                                 {t('flags.requests_warning_p1') || 'Registró '}{tooManyRequests.count}{t('flags.requests_warning_p2') || ' solicitudes en '}{Math.max(1, Math.round(tooManyRequests.actualSpanDays || 0))}{t('flags.requests_warning_p3') || ' días'}
                                 {tooManyRequests.startDate && tooManyRequests.endDate && (
                                     <> {t('flags.warning_dates') || '(ocurrido entre'} {formatShortDate(tooManyRequests.startDate)} {t('flags.and') || 'y'} {formatShortDate(tooManyRequests.endDate)})</>
