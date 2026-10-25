@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import { useSession } from 'next-auth/react';
 import { saveMyLocale } from '@/app/actions/settings';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { forgetPushedLocale, rememberPushedLocale, shouldPushLocale } from '@/lib/localePushMarker';
 import { en } from '@/i18n/locales/en';
 import { es } from '@/i18n/locales/es';
 import { pt } from '@/i18n/locales/pt';
@@ -49,19 +50,40 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
         setIsHydrated(true);
     }, []);
 
-    const { status } = useSession();
+    const { data: sessionData, status } = useSession();
     const signedIn = status === 'authenticated';
-    const lastPushed = useRef<Locale | null>(null);
+    const email = signedIn ? sessionData?.user?.email ?? null : null;
+    const lastPushed = useRef<{ email: string; locale: Locale } | null>(null);
+    const prevEmail = useRef<string | null>(null);
+
+    // Sign-out or another person signing in: forget what was pushed for the
+    // previous one, so their next session pushes once.
+    useEffect(() => {
+        if (status === 'loading') return;
+        const prev = prevEmail.current;
+        if (prev && prev !== email) {
+            forgetPushedLocale(prev);
+            lastPushed.current = null;
+        }
+        prevEmail.current = email;
+    }, [email, status]);
 
     // Emails to this person go out in the language they chose, so the server
-    // must know it. Fire-and-forget: a failed save is reported, never shown.
+    // must know it. Only when it changed (this tab, or this browser's marker
+    // — not on every page load). Fire-and-forget: a failed save is reported,
+    // never shown.
     const pushLocale = useCallback((l: Locale) => {
-        if (lastPushed.current === l) return;
-        lastPushed.current = l;
+        if (!email) return;
+        if (lastPushed.current?.email === email && lastPushed.current.locale === l) return;
+        lastPushed.current = { email, locale: l };
+        if (!shouldPushLocale(email, l)) return;
         saveMyLocale(l)
-            .then(r => { if (!r.success) lastPushed.current = null; })
+            .then(r => {
+                if (r.success) rememberPushedLocale(email, l);
+                else lastPushed.current = null;
+            })
             .catch((e) => { lastPushed.current = null; resolveErrorId(e, 'LanguageContext.saveMyLocale'); });
-    }, []);
+    }, [email]);
 
     const setLocale = useCallback((newLocale: Locale) => {
         setLocaleState(newLocale);
@@ -69,8 +91,9 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
         if (signedIn) pushLocale(newLocale);
     }, [signedIn, pushLocale]);
 
-    // On sign-in (once per session) push the stored locale, so people who
-    // chose a language before this existed are covered too.
+    // On sign-in push the stored locale (when it differs from what this
+    // browser last pushed), so people who chose a language before this
+    // existed are covered too.
     useEffect(() => {
         if (signedIn && _isHydrated) pushLocale(locale);
     }, [signedIn, _isHydrated, locale, pushLocale]);

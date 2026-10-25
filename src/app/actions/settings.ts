@@ -1,7 +1,7 @@
 'use server';
 
 import { getDb, getUser } from './_db';
-import { logger } from '@/lib/logger';
+import { generateErrorId, logger } from '@/lib/logger';
 import { acceptTermsAndCountrySchema } from './validation';
 import { logAudit } from '@/lib/audit';
 import { isValidTimezone } from '@/domain/timezones';
@@ -454,7 +454,8 @@ export async function saveFollowupSettings(input: FollowupSettings | null): Prom
 import { and, eq, isNull } from 'drizzle-orm';
 import { apiKeys } from '@/db/schema';
 import { ALWAYS_ON_CATEGORIES, EMAIL_CATEGORIES, type EmailCategory, type EmailPrefs } from '@/domain/emailCategories';
-import { getEmailPrefsForEmail, setEmailPrefForEmail, setLocaleForEmail } from '@/lib/emailPrefs';
+import { getEmailPrefsForEmail, getLocaleForEmail, setEmailPrefForEmail, setLocaleForEmail } from '@/lib/emailPrefs';
+import { READ_ONLY_ERROR_NAME } from '@/lib/readOnlyGuard';
 
 /** The viewer's email switches + whether they hold a live API key (null = no session). */
 export async function getEmailPrefs(): Promise<{ prefs: EmailPrefs; hasApiKey: boolean } | null> {
@@ -497,15 +498,26 @@ export async function saveEmailPref(category: EmailCategory, enabled: boolean): 
     }
 }
 
-/** Remember the language the viewer picked, so emails to them go out in it. */
+/**
+ * Remember the language the viewer picked, so emails to them go out in it.
+ * Unchanged → no write (the app pushes it on sign-in). A "view as" session is
+ * read-only by design: that refusal is expected, so it logs at warn.
+ */
 export async function saveMyLocale(locale: 'es' | 'en' | 'pt'): Promise<{ success: boolean; errorId?: string }> {
     let userEmail: string | undefined;
     try {
         userEmail = await getUser();
         if (!userEmail || userEmail === 'unknown') throw new Error('No authenticated user');
-        await setLocaleForEmail(await getDb(), userEmail, locale);
+        const db = await getDb();
+        if (await getLocaleForEmail(db, userEmail) === locale) return { success: true };
+        await setLocaleForEmail(db, userEmail, locale);
         return { success: true };
     } catch (error) {
+        if (error instanceof Error && error.name === READ_ONLY_ERROR_NAME) {
+            const errorId = generateErrorId();
+            logger.warn('saveMyLocale: read-only ("view as") session, not saved', { userEmail, locale: String(locale), errorId });
+            return { success: false, errorId };
+        }
         const errorId = logger.error('saveMyLocale failed', error, { userEmail, locale: String(locale) });
         return { success: false, errorId };
     }
