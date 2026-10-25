@@ -17,6 +17,8 @@ import { appBaseUrl, isStagingEnvironment, resolveEmailConfig } from '@/lib/emai
 import { buildNotificationEmail, sendEmailViaResend } from '@/lib/email';
 import { unsubscribeUrl } from '@/lib/emailUnsubscribe';
 import { resolveAuthSecret } from '@/lib/otp';
+import { localizedNotification } from '@/domain/notificationTemplates';
+import type { EmailLocale } from '@/lib/email';
 
 export type NotificationEmailResult =
     | 'sent' | 'skipped_disabled' | 'skipped_no_account' | 'skipped_pref' | 'skipped_throttle' | 'skipped_config' | 'failed';
@@ -80,8 +82,19 @@ export async function sendNotificationEmail(n: {
     const unsub = ALWAYS_ON_CATEGORIES.has(category)
         ? null
         : await unsubscribeUrl(base, n.userId, category, resolveAuthSecret());
-    const message = buildNotificationEmail({ title: n.title, body: n.body, url: n.url ?? null }, { appBaseUrl: base, unsubscribeUrl: unsub },
-        { locale: await getLocaleForEmail(db, n.userId), staging: isStagingEnvironment() });
+    // The recipient's language (D38). A failed lookup must not cost the email: Spanish, logged.
+    let locale: EmailLocale = 'es';
+    try {
+        locale = await getLocaleForEmail(db, n.userId);
+    } catch (e) {
+        logger.warn('sendNotificationEmail: locale lookup failed, sending in Spanish', {
+            notificationId: n.id, type: n.type, error: e instanceof Error ? e.message : String(e),
+        });
+    }
+    // Subject and body from the template in that language; the stored Spanish text otherwise.
+    const text = localizedNotification({ title: n.title, body: n.body, metadata: n.metadata }, locale);
+    const message = buildNotificationEmail({ title: text.title, body: text.body, url: n.url ?? null }, { appBaseUrl: base, unsubscribeUrl: unsub },
+        { locale, staging: isStagingEnvironment() });
     // Only «Escribirle» messages carry a reply-to: the sender chose to be reachable.
     const replyTo = replyToFor(n.type, n.metadata);
     const sent = await sendEmailViaResend({ apiKey, from, to: n.userId, ...message, ...(replyTo ? { replyTo } : {}) });

@@ -2,10 +2,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { migratedDb } from '@/test-utils/migratedDb';
 
 const { state, send } = vi.hoisted(() => ({
-    state: { db: null as unknown },
+    state: { db: null as unknown, localeFails: false },
     send: vi.fn(),
 }));
 vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
+vi.mock('@/lib/emailPrefs', async (orig) => {
+    const real = await orig<typeof import('@/lib/emailPrefs')>();
+    return {
+        ...real,
+        getLocaleForEmail: (...a: Parameters<typeof real.getLocaleForEmail>) =>
+            state.localeFails ? Promise.reject(new Error('D1 down')) : real.getLocaleForEmail(...a),
+    };
+});
 vi.mock('@/lib/email', async (orig) => ({ ...(await orig<typeof import('@/lib/email')>()), sendEmailViaResend: send }));
 
 import { sendNotificationEmail } from './notificationEmail';
@@ -30,6 +38,7 @@ beforeEach(() => {
     sqlite = m.sqlite as unknown as Sqlite;
     send.mockReset();
     send.mockResolvedValue({ ok: true });
+    state.localeFails = false;
     vi.stubEnv('RESEND_API_KEY', 'key');
     vi.stubEnv('AUTH_SECRET', 'test-secret');
     // A registered recipient (no user_profiles row yet: every switch on).
@@ -144,6 +153,44 @@ describe('pair_message reply-to', () => {
     it('other types never get a reply-to even if metadata carries one', async () => {
         await callWith('merge_request', { replyTo: 'sender@example.com' });
         expect(send.mock.calls[0][0].replyTo).toBeUndefined();
+    });
+});
+
+describe('recipient language (D38)', () => {
+    const template = { key: 'contact_entry_added', params: { actorName: 'Ana', adopterName: 'Carla', entryType: 'phone' } };
+    const stored = { title: 'Nuevo dato de contacto', body: 'Ana agregó un teléfono a Carla.' };
+    const callWith = (metadata: Record<string, unknown> | null) =>
+        sendNotificationEmail({ id: addNotif('contact_entry_added'), userId: EMAIL, type: 'contact_entry_added', ...stored, url: '/x', metadata });
+
+    it('a pt recipient gets the pt subject and body', async () => {
+        sqlite.prepare(`INSERT INTO user_profiles (user_id, locale) VALUES ('u1', 'pt')`).run();
+        expect(await callWith({ adopterId: 'a1', template })).toBe('sent');
+        const sent = send.mock.calls[0][0];
+        expect(sent.subject).toContain('Novo dado de contato');
+        expect(sent.text).toContain('Ana adicionou um telefone a Carla.');
+        expect(sent.text).toContain('Ver no BuenAdoptante');
+    });
+    it('a notification without a template still emails its stored Spanish text', async () => {
+        sqlite.prepare(`INSERT INTO user_profiles (user_id, locale) VALUES ('u1', 'en')`).run();
+        expect(await callWith({ adopterId: 'a1' })).toBe('sent');
+        expect(send.mock.calls[0][0].subject).toContain(stored.title);
+        expect(send.mock.calls[0][0].text).toContain(stored.body);
+    });
+    it('an unknown template key falls back to the stored text, never the key', async () => {
+        sqlite.prepare(`INSERT INTO user_profiles (user_id, locale) VALUES ('u1', 'en')`).run();
+        await callWith({ template: { key: 'gone', params: {} } });
+        expect(send.mock.calls[0][0].subject).toContain(stored.title);
+        expect(send.mock.calls[0][0].subject).not.toContain('gone');
+    });
+    it('a failed locale lookup still sends, in Spanish, and logs a warn', async () => {
+        const { logger } = await import('@/lib/logger');
+        const warn = vi.spyOn(logger, 'warn');
+        state.localeFails = true;
+        const id = addNotif('contact_entry_added');
+        expect(await sendNotificationEmail({ id, userId: EMAIL, type: 'contact_entry_added', ...stored, url: '/x', metadata: { template } })).toBe('sent');
+        expect(send.mock.calls[0][0].subject).toContain(stored.title);
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('locale lookup failed'), expect.objectContaining({ notificationId: id, type: 'contact_entry_added' }));
+        warn.mockRestore();
     });
 });
 

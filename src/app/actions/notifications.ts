@@ -25,11 +25,17 @@ import { eq, and, desc, sql } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
 import { sendNotificationEmail } from '@/lib/notificationEmail';
+import { renderNotification, type NotificationTemplate } from '@/domain/notificationTemplates';
 
 /**
  * Create a notification for a user.
  * This is the single entry point for all notification creation — 
  * the email twin (and future Web Push) hooks go here.
+ *
+ * `template` (D38) is stored in `metadata.template` so the bell and the email
+ * render the text in the reader's language; the row's title/body are its
+ * Spanish render (callers build all three with `notificationContent`). A
+ * template that does not render keeps the passed title/body and logs a warn.
  */
 export async function createNotification(data: {
     id?: string;
@@ -40,6 +46,7 @@ export async function createNotification(data: {
     url?: string;
     icon?: string;
     metadata?: Record<string, unknown>;
+    template?: NotificationTemplate;
 }): Promise<string | null> {
     try {
         const db = await getDb();
@@ -67,15 +74,22 @@ export async function createNotification(data: {
         }
 
         const id = data.id || crypto.randomUUID();
+        let { title, body } = data;
+        if (data.template) {
+            const es = renderNotification(data.template, 'es');
+            if (es) ({ title, body } = es);
+            else logger.warn('createNotification: template did not render, stored text kept', { id, type, key: data.template.key });
+        }
+        const metadata = data.template ? { ...data.metadata, template: data.template } : data.metadata;
         await db.insert(notifications).values({
             id,
             userId: data.userId,
             type,
-            title: data.title,
-            body: data.body,
+            title,
+            body,
             url: data.url || null,
             icon: data.icon || '📋',
-            metadata: data.metadata ? JSON.stringify(data.metadata) : null,
+            metadata: metadata ? JSON.stringify(metadata) : null,
             createdAt: new Date(),
         });
 
@@ -83,7 +97,7 @@ export async function createNotification(data: {
 
         // Email twin (per-category switches apply). Never affects the bell's result.
         await runAfterResponse('notification.email', () => sendNotificationEmail({
-            id, userId: data.userId, type, title: data.title, body: data.body, url: data.url ?? null, metadata: data.metadata ?? null,
+            id, userId: data.userId, type, title, body, url: data.url ?? null, metadata: metadata ?? null,
         }), { type, notificationId: id });
 
         return id;
@@ -392,6 +406,7 @@ export async function notifyAdmins(opts: {
     url?: string;
     icon?: string;
     metadata?: Record<string, unknown>;
+    template?: NotificationTemplate;
 }): Promise<void> {
     try {
         const adminEmails = new Set<string>();
@@ -438,6 +453,7 @@ export async function notifyAdmins(opts: {
                 url: opts.url,
                 icon: opts.icon,
                 metadata: opts.metadata,
+                template: opts.template,
             })
         ));
 
@@ -459,6 +475,7 @@ export async function notifyOrgMembers(opts: {
     url?: string;
     icon?: string;
     metadata?: Record<string, unknown>;
+    template?: NotificationTemplate;
 }): Promise<void> {
     try {
         const { getOrgMemberEmailsFor } = await import('@/lib/orgMembership');
@@ -477,6 +494,7 @@ export async function notifyOrgMembers(opts: {
                 url: opts.url,
                 icon: opts.icon,
                 metadata: opts.metadata,
+                template: opts.template,
             })
         ));
 

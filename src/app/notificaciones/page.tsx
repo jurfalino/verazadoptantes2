@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
+import { localizedNotification } from '@/domain/notificationTemplates';
 
 interface NotificationItem {
     id: string;
@@ -12,6 +13,8 @@ interface NotificationItem {
     body: string;
     url: string | null;
     icon: string;
+    /** JSON string as stored; may carry `template` (D38). */
+    metadata?: string | null;
     read: number;
     dismissed: number;
     createdAt: number | string | Date;
@@ -402,6 +405,8 @@ export default function NotificacionesPage() {
                     overflow: 'hidden',
                 }}>
                     {items.map((item, idx) => {
+                        // The reader's language when the row carries a template (D38).
+                        const text = localizedNotification(item, locale);
                         const createdDate = typeof item.createdAt === 'number'
                             ? new Date(item.createdAt * 1000)
                             : new Date(item.createdAt);
@@ -441,7 +446,7 @@ export default function NotificacionesPage() {
                                             color: 'var(--text-primary)',
                                             lineHeight: 1.3,
                                         }}>
-                                            {stripLeadingEmoji(item.title)}
+                                            {stripLeadingEmoji(text.title)}
                                         </p>
                                         {!item.read && (
                                             <span style={{
@@ -462,7 +467,7 @@ export default function NotificacionesPage() {
                                         WebkitBoxOrient: 'vertical',
                                         overflow: 'hidden',
                                     }}>
-                                        {item.body}
+                                        {text.body}
                                     </p>
                                     <div style={{
                                         display: 'flex',

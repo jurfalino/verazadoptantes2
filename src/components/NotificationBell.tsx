@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
+import { localizedNotification } from '@/domain/notificationTemplates';
 
 interface NotificationItem {
     id: string;
@@ -13,6 +14,8 @@ interface NotificationItem {
     body: string;
     url: string | null;
     icon: string;
+    /** JSON string as stored; may carry `template` (D38). */
+    metadata?: string | null;
     read: number;
     createdAt: number | string | Date;
 }
@@ -332,6 +335,8 @@ export default function NotificationBell() {
                             </div>
                         ) : (
                             items.map((item) => {
+                                // The reader's language when the row carries a template (D38).
+                                const text = localizedNotification(item, locale);
                                 const createdDate = typeof item.createdAt === 'number'
                                     ? new Date(item.createdAt * 1000)
                                     : new Date(item.createdAt);
@@ -366,10 +371,10 @@ export default function NotificationBell() {
                                                 <span className="text-lg flex-shrink-0 mt-0.5">{item.icon}</span>
                                                 <div className="flex-1 min-w-0">
                                                     <p className={`text-sm leading-snug break-words ${!item.read ? 'font-semibold' : 'font-medium'}`} style={{ color: 'var(--text-primary)' }}>
-                                                        {stripLeadingEmoji(item.title)}
+                                                        {stripLeadingEmoji(text.title)}
                                                     </p>
                                                     <p className="text-xs leading-relaxed mt-0.5 line-clamp-2 break-words" style={{ color: 'var(--text-muted)' }}>
-                                                        {item.body}
+                                                        {text.body}
                                                     </p>
                                                     <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>
                                                         {timeAgo(createdDate, locale)}
