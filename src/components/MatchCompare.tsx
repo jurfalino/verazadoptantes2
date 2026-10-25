@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useSession } from 'next-auth/react';
 import { getMatchContext, type MatchContext } from '@/app/actions';
 import { reportClientError } from '@/lib/clientErrorReporter';
-import { matchBreakdown, otherSignals, type BreakdownField, type BreakdownRow } from '@/domain/matchBreakdown';
+import { matchBreakdown, otherSignals, summarizeBreakdown, type BreakdownField, type BreakdownRow } from '@/domain/matchBreakdown';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
 import { parseBlobToContactEntries, deserializeContactEntries } from '@/lib/contactEntries';
 
@@ -96,8 +96,9 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
     // when no field lines up.
     const others = otherSignals(matchTypes).map(ty => matchTypeLabel(ty, t)).filter(Boolean);
     const fieldName = (f: BreakdownField) => t(`matchCompare.field_${f}`).toLocaleLowerCase();
-    const same = rows.filter(r => r.status === 'match' || r.status === 'partial').map(r => fieldName(r.field));
-    const diff = rows.filter(r => r.status === 'different').map(r => fieldName(r.field));
+    const summed = summarizeBreakdown(rows);
+    const same = summed.same.map(fieldName);
+    const diff = summed.diff.map(fieldName);
     // Only the name lines up and the profile has no phone or email to check it
     // against: the commonest false merge, so say so.
     const nameOnly = has !== null && !has.phone && !has.email

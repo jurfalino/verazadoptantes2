@@ -124,6 +124,18 @@ export function matchBreakdown(input: {
 }
 
 /**
+ * The card's one-line summary («Coinciden: … · Distinto: …»): which fields line
+ * up (fully or in part) and which differ, in the rows' order. Fields on only
+ * one side are neither.
+ */
+export function summarizeBreakdown(rows: BreakdownRow[]): { same: BreakdownField[]; diff: BreakdownField[] } {
+    return {
+        same: rows.filter(r => r.status === 'match' || r.status === 'partial').map(r => r.field),
+        diff: rows.filter(r => r.status === 'different').map(r => r.field),
+    };
+}
+
+/**
  * Signals the field rows can't place: a flag raised by a rescuer, the same
  * source URL, a general text hit. They still explain why the pair is here, so
  * the card lists them («También: …») rather than dropping them.

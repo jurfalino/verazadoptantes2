@@ -44,7 +44,8 @@ import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
 import { handledAsStale } from '@/lib/errorMessage';
 import { resolveErrorId, reportClientError } from '@/lib/clientErrorReporter';
-import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, recordDateFrom, aliasForMerge, cleanOtherPeople, matchedOnName, extractionQuality, type PostPerson, type ExtractionIssue } from '@/domain/importInput';
+import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, recordDateFrom, aliasForMerge, cleanOtherPeople, extractionQuality, type PostPerson, type ExtractionIssue } from '@/domain/importInput';
+import { needsIdentityChoice as needsIdentityChoiceFor } from '@/domain/identityChoice';
 import DatePicker from '@/components/ui/DatePicker';
 import MatchCompare from '@/components/MatchCompare';
 import { buttonClasses } from '@/components/ui/Button';
@@ -1227,7 +1228,7 @@ export default function ImportWizard() {
      * one (alias) or someone in that household (relative) — Jon, 2026-10-22.
      */
     const needsIdentityChoice = (match: PersonMatch | null) =>
-        !!match && !duplicateAdopter && !matchedOnName(match.matchTypes) && !!aliasForMerge(extractedData?.name, match.name);
+        !!match && !duplicateAdopter && needsIdentityChoiceFor({ matchTypes: match.matchTypes, nameA: extractedData?.name ?? '', nameB: match.name });
 
     const handleMerge = async (target?: { id: string; name: string }) => {
         const mergeTarget = target || selectedMatch;

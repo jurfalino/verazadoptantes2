@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { matchBreakdown, otherSignals } from './matchBreakdown';
+import { matchBreakdown, otherSignals, summarizeBreakdown } from './matchBreakdown';
 
 const has = (o: Partial<Record<'phone' | 'email' | 'id' | 'social' | 'address', boolean>> = {}) =>
     ({ phone: false, email: false, id: false, social: false, address: false, ...o });
@@ -125,4 +125,18 @@ describe('matchBreakdown: the profile\'s values, where the screen shows them', (
         });
         expect(rows.find(r => r.field === 'email')).toEqual({ field: 'email', status: 'different', source: 'a@b.c', profile: '•••••@•••' });
     });
+});
+
+describe('summarizeBreakdown («Coinciden: … · Distinto: …»)', () => {
+    it('match and partial count as the same, different as distinct, one-sided rows as neither — in row order', () => {
+        expect(summarizeBreakdown([
+            { field: 'name', status: 'partial', source: 'María López', profile: 'María García López' },
+            { field: 'phone', status: 'different', source: '11 1111-1111' },
+            { field: 'email', status: 'match', source: 'm@x.com' },
+            { field: 'social', status: 'only_source', source: '@maria' },
+            { field: 'id', status: 'different', source: '123' },
+            { field: 'address', status: 'only_profile' },
+        ])).toEqual({ same: ['name', 'email'], diff: ['phone', 'id'] });
+    });
+    it('no rows: both empty', () => expect(summarizeBreakdown([])).toEqual({ same: [], diff: [] }));
 });
