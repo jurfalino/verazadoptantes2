@@ -26,16 +26,9 @@ import {
     mergePendingDedupPair,
     type PendingDedupPair,
 } from '@/app/actions/duplicates';
-import { AdopterName } from '@/components/AdopterName';
 import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
-import MatchCompare from '@/components/MatchCompare';
-import { parseBlobToContactEntries, deserializeContactEntries } from '@/lib/contactEntries';
+import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
 
-/** A side's contact as typed entries: the server's masked list when it masked anything. */
-function sideEntries(a: { contactInfo: string | null; contactEntries: string | null }) {
-    return (a.contactEntries ? deserializeContactEntries(a.contactEntries) : parseBlobToContactEntries(a.contactInfo))
-        .map(e => ({ type: e.type, value: e.value }));
-}
 
 /** Opens-in-new-tab affordance. Inline SVG with currentColor per the icon
  *  convention — an emoji would not inherit the link's hover colour. */
@@ -77,36 +70,31 @@ function AdopterCard({
     const dateStr = adopter.createdAt ? formatShortDate(adopter.createdAt) : null;
 
     return (
-        <div className="flex-1 min-w-0 rounded-xl border border-stone-200 bg-white p-3">
-            <div className="flex items-center justify-between gap-2 mb-2">
+        // A comparison block's title: who this side is (source, date) and a way to
+        // open it. The name is the block's marked «Nombre» row, not repeated here.
+        <div className="min-w-0 normal-case tracking-normal font-normal space-y-1">
+            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">{sideLabel}</span>
                 <SourceBadge source={adopter.source} t={t} />
             </div>
-            {/* Opens in a new tab so the comparison you are mid-way through
-                stays on screen — losing it to a navigation is the whole reason
-                this decision gets abandoned. */}
-            <Link
-                href={`/adopter/${adopter.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group flex items-center gap-1.5 min-w-0"
-            >
-                <AdopterName adopter={adopter} className="font-semibold text-stone-900 text-sm break-words group-hover:text-teal-700" title />
-                <ExternalLinkIcon className="w-3 h-3 shrink-0 text-stone-400 group-hover:text-teal-700" />
-                <span className="sr-only">{t('common.opens_new_tab') || '(abre en una pestaña nueva)'}</span>
-            </Link>
-            {/* Contact lives in the comparison table below. Locked values there
-                belong to whoever added this profile. */}
-            {!adopter.canSeeContact && (
-                <button
-                    type="button"
-                    onClick={() => onRequestAccess(adopter)}
-                    className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-800 underline underline-offset-2"
-                >
-                    🔒 {t('myAdopters.pending_dedup_request_access') || 'Pedir acceso a quien lo cargó'}
-                </button>
-            )}
-            {dateStr && <p className="mt-1 text-[11px] text-stone-400">{dateStr}</p>}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                {dateStr && <span className="text-stone-500">{dateStr}</span>}
+                {/* New tab: the comparison you are mid-way through stays on screen —
+                    losing it to a navigation is why this decision gets abandoned. */}
+                <Link href={`/adopter/${adopter.id}`} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 font-semibold text-teal-700 hover:text-teal-800">
+                    {t('adopter.dup_action_view') || 'Ver perfil'}
+                    <ExternalLinkIcon className="w-3 h-3 shrink-0" />
+                    <span className="sr-only">{t('common.opens_new_tab') || '(abre en una pestaña nueva)'}</span>
+                </Link>
+                {/* Locked values in this block belong to whoever added this profile. */}
+                {!adopter.canSeeContact && (
+                    <button type="button" onClick={() => onRequestAccess(adopter)}
+                        className="inline-flex items-center gap-1 font-semibold text-teal-700 hover:text-teal-800 underline underline-offset-2">
+                        {t('myAdopters.pending_dedup_request_access') || 'Pedir acceso a quien lo cargó'}
+                    </button>
+                )}
+            </div>
         </div>
     );
 }
@@ -246,25 +234,19 @@ export default function PendingDedup() {
                     const busy = busyCandidateId === pair.candidateId;
                     return (
                         <div key={pair.candidateId} className="bg-white rounded-2xl border border-stone-200 shadow-sm p-4">
-                            {/* Who: the two profiles. Then one table — each field with both
-                                values (as this viewer may see them) and whether they match.
-                                Replaces the card + two contact boxes (Jon, 2026-10-25). */}
-                            <div className="grid grid-cols-2 gap-2">
-                                <AdopterCard side="new" adopter={pair.newAdopter} t={t} formatShortDate={formatShortDate} onRequestAccess={setAccessTarget} />
-                                <AdopterCard side="existing" adopter={pair.existingAdopter} t={t} formatShortDate={formatShortDate} onRequestAccess={setAccessTarget} />
-                            </div>
+                            {/* The two profiles side by side, each block headed by who it is
+                                (name, source, date) and listing its own values, each marked
+                                by whether it matches (Jon, 2026-10-25). */}
                             <MatchCompare
+                                bare
                                 adopterId={pair.existingAdopter.id}
                                 matchTypes={pair.matchTypes}
                                 profileName={pair.existingAdopter.name}
-                                source={{
-                                    kind: 'new',
-                                    name: pair.newAdopter.name,
-                                    entries: sideEntries(pair.newAdopter),
-                                }}
-                                profileEntries={sideEntries(pair.existingAdopter)}
+                                source={{ kind: 'new', name: pair.newAdopter.name, entries: entriesAsShown(pair.newAdopter) }}
+                                profileEntries={entriesAsShown(pair.existingAdopter)}
                                 target="existing"
-                                defaultOpen={pairs.length === 1}
+                                sourceHead={<AdopterCard side="new" adopter={pair.newAdopter} t={t} formatShortDate={formatShortDate} onRequestAccess={setAccessTarget} />}
+                                targetHead={<AdopterCard side="existing" adopter={pair.existingAdopter} t={t} formatShortDate={formatShortDate} onRequestAccess={setAccessTarget} />}
                                 t={t}
                             />
                             <div className="mt-3 flex flex-wrap items-center justify-end gap-2">

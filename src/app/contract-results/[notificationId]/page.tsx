@@ -74,7 +74,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
     const metadata: NotificationMetadata = notification.metadata ? JSON.parse(notification.metadata) : {};
 
     // Fetch full adopter profiles for matches
-    let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; status: string | null }> = [];
+    let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; contactEntries: string | null; status: string | null }> = [];
     if (metadata.matchedAdopters && metadata.matchedAdopters.length > 0) {
         const adopterIds = metadata.matchedAdopters.map(a => a.id);
         // Filter soft-deleted (merged-duplicate) adopters at read time so even legacy
@@ -108,6 +108,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
             id: r.id,
             name: r.name,
             contactInfo: masked.get(r.id)?.contactInfo ?? null,
+            contactEntries: masked.get(r.id)?.contactEntries ?? null,
             status: r.status,
         }));
     }

@@ -11,8 +11,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { useState } from 'react';
 import { CheckCircle2, ArrowRight } from 'lucide-react';
 import { en } from '@/i18n/locales/en';
-import MatchCompare from '@/components/MatchCompare';
-import { parseBlobToContactEntries, deserializeContactEntries } from '@/lib/contactEntries';
+import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
 
 // Single source of truth: fallbacks from English locale
 const formResultsFallbacks = en.formResults as Record<string, string>;
@@ -34,8 +33,6 @@ export interface FormResultMatchCardProps {
     /** Linking folds the profile auto-created from the form into this one. */
     willMerge: boolean;
     onDismiss?: () => void;
-    /** Open the comparison by itself — when this is the only possible match. */
-    compareOpen?: boolean;
 }
 
 export default function FormResultMatchCard({
@@ -48,7 +45,6 @@ export default function FormResultMatchCard({
     linked = false,
     willMerge,
     onDismiss,
-    compareOpen = false,
 }: FormResultMatchCardProps) {
     const { t } = useLanguage();
     const router = useRouter();
@@ -63,11 +59,7 @@ export default function FormResultMatchCard({
         { type: 'address', value: applicant.address ?? '' },
     ].filter(e => e.value.trim());
     const profileEntries = [
-        // Typed entries (masked server-side) when we have them: re-parsing the
-        // masked text mislabels «•••@example.com» as a social handle.
-        ...(profile.contactEntries ? deserializeContactEntries(profile.contactEntries) : parseBlobToContactEntries(profile.contactInfo))
-            .filter(e => e.type !== 'address' || !profile.addressInfo)
-            .map(e => ({ type: e.type, value: e.value })),
+        ...entriesAsShown(profile).filter(e => e.type !== 'address' || !profile.addressInfo),
         ...(profile.addressInfo ? [{ type: 'address', value: profile.addressInfo }] : []),
     ];
 
@@ -159,9 +151,9 @@ export default function FormResultMatchCard({
                     </div>
                 </div>
             )}
-            {/* One table: each field with the applicant's value, the profile's value
-                (as this viewer may see it — masked stays masked) and whether they match.
-                Replaces the separate two-column view (Jon, 2026-10-25). */}
+            {/* The applicant and the existing profile in two blocks, each value marked
+                by whether it matches (Jon, 2026-10-25). The profile's values as this
+                viewer may see them — masked stays masked. */}
             <div id={`comparison-${profile.id}`} className="px-4 pb-2 border-b border-stone-200">
                 <MatchCompare
                     adopterId={profile.id}
@@ -169,7 +161,7 @@ export default function FormResultMatchCard({
                     profileName={profile.name}
                     source={{ kind: 'form', name: applicant.name, entries: applicantEntries }}
                     profileEntries={profileEntries}
-                    defaultOpen={compareOpen}
+                    bare
                     t={t}
                 />
             </div>

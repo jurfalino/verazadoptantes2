@@ -8,7 +8,7 @@ import { InlineEditField } from "@/components/InlineEditField";
 import { useRouter, useSearchParams } from "next/navigation";
 import { saveAdopter, saveImage, findFormDuplicates, appendToExistingAdopter } from "@/app/actions";
 import { hasStrongMatch } from "@/lib/matchChips";
-import MatchCompare from '@/components/MatchCompare';
+import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
 import DuplicatePeek from "@/components/DuplicatePeek";
 import StrongMatchStrip from "@/components/StrongMatchStrip";
 import { zarazTrack } from "@/lib/zaraz";
@@ -1562,9 +1562,6 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                             )}
                                             <div className="min-w-0">
                                                 <p className="font-semibold text-stone-800 truncate">{result.adopter.name}</p>
-                                                {result.adopter.contactInfo && (
-                                                    <p className="text-xs text-stone-500 truncate">{result.adopter.contactInfo}</p>
-                                                )}
                                             </div>
                                         </div>
                                         <a
@@ -1580,6 +1577,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                         matchTypes={result.matchTypes}
                                         profileName={result.adopter.name ?? ''}
                                         source={compareSource}
+                                        profileEntries={entriesAsShown(result.adopter)}
                                         defaultOpen={saveDuplicateModal.matches.length === 1}
                                         t={t}
                                     />

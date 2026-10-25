@@ -15,7 +15,7 @@ import type { DiscoveryMatch } from '@/app/actions';
 import { hasStrongMatch } from '@/lib/matchChips';
 import { useLanguage } from '@/context/LanguageContext';
 import { AdopterName } from '@/components/AdopterName';
-import MatchCompare, { type MatchSourceKind } from '@/components/MatchCompare';
+import MatchCompare, { entriesAsShown, type MatchSourceKind } from '@/components/MatchCompare';
 
 interface Props {
     /** What the rescuer has typed — their side of «Qué coincide y qué no». */
@@ -98,6 +98,7 @@ export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onC
                                     matchTypes={result.matchTypes}
                                     profileName={result.adopter.name ?? ''}
                                     source={compareSource}
+                                    profileEntries={entriesAsShown(result.adopter)}
                                     t={t}
                                 />
                             </div>

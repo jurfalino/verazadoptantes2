@@ -2361,7 +2361,6 @@ export default function ImportWizard() {
                                                     </span>
                                                     <div className="min-w-0">
                                                         <p className="font-semibold text-stone-900 line-clamp-2 break-words" title={match.name}>{match.name?.trim() || t('import.unnamed_profile')}</p>
-                                                        <p className="text-xs text-stone-600 mt-1">{humanMatchSentence(match.matchTypes || [], t)}</p>
                                                     </div>
                                                 </div>
                                                 <div className="flex flex-col items-end gap-1 shrink-0">

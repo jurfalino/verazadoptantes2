@@ -374,7 +374,6 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                     linked={linkKind === 'linked_existing' && match.id === linkedId}
                                     willMerge={linkKind === 'new_profile' && !!linkedProfile}
                                     onDismiss={() => setDismissedMatchIds((ids) => [...ids, match.id])}
-                                    compareOpen={visibleMatches.length === 1}
                                 />
                             );
                         })}

@@ -7,7 +7,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { attachContractToExistingAdopter } from '@/app/actions/duplicates';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-import MatchCompare from '@/components/MatchCompare';
+import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
 
 interface ContractResultsMatchCardProps {
     matchId: string;
@@ -16,6 +16,8 @@ interface ContractResultsMatchCardProps {
         id: string;
         name: string;
         contactInfo: string | null;
+        /** Masked like contactInfo, as typed entries. */
+        contactEntries?: string | null;
         status: string | null;
     };
     matchTypes: string[];
@@ -67,9 +69,6 @@ export default function ContractResultsMatchCard({
                 <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-stone-800 line-clamp-2 break-words" title={profile.name}>{profile.name}</p>
-                        {profile.contactInfo && (
-                            <p className="text-xs text-stone-500 mt-0.5 line-clamp-2 break-words">{profile.contactInfo}</p>
-                        )}
                         {/* What matches and what doesn't, field by field (Jon, 2026-10-25).
                             Replaces the match chips, which were always in Spanish. */}
                         <MatchCompare
@@ -77,6 +76,9 @@ export default function ContractResultsMatchCard({
                             matchTypes={matchTypes}
                             profileName={profile.name}
                             source={{ kind: 'contract', name: signer.name, entries: signer.entries }}
+                            // The profile's contact as this page already shows it (masked
+                            // where it must be) goes into its block, not a separate line.
+                            profileEntries={entriesAsShown(profile)}
                             defaultOpen={compareOpen}
                             t={t}
                         />

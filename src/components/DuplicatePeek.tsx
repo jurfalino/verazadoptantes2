@@ -25,10 +25,9 @@ import { highlightMatches } from '@/lib/matchHighlight';
 import { useLanguage } from '@/context/LanguageContext';
 import { AdopterName } from '@/components/AdopterName';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
-import MatchCompare, { type MatchSourceKind } from '@/components/MatchCompare';
+import MatchCompare, { entriesAsShown, type MatchSourceKind } from '@/components/MatchCompare';
 
 const NAME_HL_TYPES = ['name_full', 'name_word'];
-const CONTACT_HL_TYPES = ['phone', 'phone_suffix', 'email', 'social', 'id_number', 'address_word', 'source_url'];
 
 interface Props {
     /** What the rescuer has typed — their side of «Qué coincide y qué no». */
@@ -187,16 +186,12 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
                                                             {highlightMatches(result.adopter.name, result.matchValues, NAME_HL_TYPES)}
                                                         </p>
                                                     )}
-                                                {result.adopter.contactInfo && (
-                                                    <p className="text-xs text-stone-600 mt-0.5 break-words whitespace-pre-wrap">
-                                                        {highlightMatches(result.adopter.contactInfo, result.matchValues, CONTACT_HL_TYPES)}
-                                                    </p>
-                                                )}
                                                 <MatchCompare
                                                     adopterId={result.adopter.id}
                                                     matchTypes={result.matchTypes}
                                                     profileName={result.adopter.name ?? ''}
                                                     source={compareSource}
+                                                    profileEntries={entriesAsShown(result.adopter)}
                                                     defaultOpen={(results ?? []).length === 1}
                                                     t={t}
                                                 />
