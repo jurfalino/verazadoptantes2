@@ -39,6 +39,8 @@ const ENTRY_FIELD: Record<string, BreakdownField> = { phone: 'phone', email: 'em
 const ORDER: BreakdownStatus[] = ['match', 'partial', 'different', 'only_source', 'only_profile'];
 const FIELD_ORDER: BreakdownField[] = ['name', 'phone', 'email', 'social', 'id', 'address'];
 
+const normName = (v: string) => v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
 export function matchBreakdown(input: {
     matchTypes: string[];
     source: { name?: string; entries: Array<{ type: string; value: string }> };
@@ -70,7 +72,11 @@ export function matchBreakdown(input: {
     const rows: BreakdownRow[] = [];
     for (const field of FIELD_ORDER) {
         if (field === 'name') {
-            const m = matched.get('name');
+            let m = matched.get('name');
+            // The engine calls "María García" a full-name hit on "María García
+            // López"; both names are on screen, so only call them the same when
+            // they are.
+            if (m === 'match' && sourceName && profileName && normName(sourceName) !== normName(profileName)) m = 'partial';
             if (m) rows.push({ field, status: m, source: sourceName || undefined, profile: profileName || undefined });
             else if (sourceName && profileName) rows.push({ field, status: 'different', source: sourceName, profile: profileName });
             else if (sourceName) rows.push({ field, status: 'only_source', source: sourceName });

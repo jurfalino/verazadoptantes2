@@ -67,3 +67,22 @@ describe('matchBreakdown: form notifications', () => {
         expect(rows.map(r => [r.field, r.status])).toEqual([['phone', 'match'], ['name', 'partial']]);
     });
 });
+
+describe('matchBreakdown: names on screen', () => {
+    it('a "full name" hit on a longer name is shown as similar, with both names', () => {
+        const rows = matchBreakdown({
+            matchTypes: ['name_full', 'phone'],
+            source: { name: 'María García', entries: [{ type: 'phone', value: '555-1234' }] },
+            profile: { name: 'María García López', has: has({ phone: true }) },
+        });
+        expect(rows.find(r => r.field === 'name')).toEqual({ field: 'name', status: 'partial', source: 'María García', profile: 'María García López' });
+    });
+    it('accents and case alone do not make names different', () => {
+        const rows = matchBreakdown({
+            matchTypes: ['name_full'],
+            source: { name: 'maria garcia', entries: [] },
+            profile: { name: 'María García', has: has() },
+        });
+        expect(rows[0].status).toBe('match');
+    });
+});

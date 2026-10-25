@@ -53,7 +53,10 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
     }, [ctx, adopterId, source.kind]);
 
     const has = ctx && ctx !== 'loading' && ctx !== 'error' ? ctx.has : null;
-    const rows = matchBreakdown({ matchTypes, source: { name: source.name ?? undefined, entries: source.entries }, profile: { name: profileName, has } });
+    const all = matchBreakdown({ matchTypes, source: { name: source.name ?? undefined, entries: source.entries }, profile: { name: profileName, has } });
+    // Until we know what the profile has, a contact that didn't match could be
+    // "distinto" or "solo en …": show only what we know.
+    const rows = has === null ? all.filter(r => r.field === 'name' || r.status === 'match' || r.status === 'partial') : all;
     const matchedCount = rows.filter(r => r.status === 'match' || r.status === 'partial').length;
     const differentCount = rows.filter(r => r.status === 'different').length;
     // Only the name lines up and the profile has no phone or email to check it
