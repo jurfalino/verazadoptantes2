@@ -38,7 +38,7 @@ export async function sendNotificationEmail(n: {
             .from(notifications)
             .where(and(eq(notifications.userId, n.userId), isNotNull(notifications.emailedAt), gte(notifications.emailedAt, since)))
             .limit(THROTTLE_SCAN_LIMIT);
-        if (recent.some(r => categoryForType(r.type) === category)) return 'skipped_throttle';
+        if (recent.some((r: { type: string }) => categoryForType(r.type) === category)) return 'skipped_throttle';
     }
 
     // 3. Resend config.
