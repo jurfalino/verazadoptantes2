@@ -331,7 +331,7 @@ export async function maskMatchCardsForViewer(
             error: e instanceof Error ? e.message : String(e),
         });
         out.clear();
-        for (const r of rows) out.set(r.id, { contactInfo: null, addressInfo: null });
+        for (const r of rows) out.set(r.id, { contactInfo: null, contactEntries: null, addressInfo: null });
         return out;
     }
 }

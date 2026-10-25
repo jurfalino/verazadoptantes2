@@ -12,11 +12,14 @@
  */
 
 import type { DiscoveryMatch } from '@/app/actions';
-import { buildMatchChips, hasStrongMatch } from '@/lib/matchChips';
+import { hasStrongMatch } from '@/lib/matchChips';
 import { useLanguage } from '@/context/LanguageContext';
 import { AdopterName } from '@/components/AdopterName';
+import MatchCompare, { entriesAsShown, type MatchSourceKind } from '@/components/MatchCompare';
 
 interface Props {
+    /** What the rescuer has typed — their side of «Qué coincide y qué no». */
+    compareSource: { kind: MatchSourceKind; name: string; entries: Array<{ type: string; value: string }> };
     results: DiscoveryMatch[] | null;
     dismissedIds: Set<string>;
     onDismiss: (adopterId: string) => void;
@@ -24,7 +27,7 @@ interface Props {
     busyAdopterId?: string | null;
 }
 
-export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onContinueWith, busyAdopterId }: Props) {
+export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onContinueWith, busyAdopterId, compareSource }: Props) {
     const { t } = useLanguage();
 
     const strong = (results ?? [])
@@ -44,9 +47,8 @@ export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onC
             </div>
             <ul className="divide-y divide-amber-200">
                 {strong.map(result => {
-                    const chips = buildMatchChips(result.matchValues, t).filter(c => c.isStrong).slice(0, 2);
                     return (
-                        <li key={result.adopter.id} className="px-4 py-3 flex items-start gap-3 bg-white/60">
+                        <li key={result.adopter.id} className="px-4 py-3 flex flex-wrap items-start gap-3 bg-white/60">
                             {result.thumbnail ? (
                                 <img src={result.thumbnail} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
                             ) : (
@@ -56,18 +58,6 @@ export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onC
                             )}
                             <div className="min-w-0 flex-1">
                                 <AdopterName adopter={result.adopter} className="font-semibold text-stone-900 text-sm truncate block" title />
-                                <div className="flex flex-wrap gap-1 mt-1">
-                                    {chips.map(c => (
-                                        <span
-                                            key={c.key}
-                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-100 text-amber-900 border border-amber-200"
-                                            title={c.label}
-                                        >
-                                            <span aria-hidden>{c.icon}</span>
-                                            <span className="truncate max-w-[180px]">{c.label}</span>
-                                        </span>
-                                    ))}
-                                </div>
                                 <div className="flex gap-2 mt-2.5">
                                     <a
                                         href={`/adopter/${result.adopter.id}`}
@@ -101,6 +91,19 @@ export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onC
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                 </svg>
                             </button>
+                            {/* Full row width, under the avatar row. */}
+                            <div className="basis-full -mt-2">
+                                <MatchCompare
+                                    adopterId={result.adopter.id}
+                                    matchTypes={result.matchTypes}
+                                    profileName={result.adopter.name ?? ''}
+                                    source={compareSource}
+                                    profileEntries={entriesAsShown(result.adopter)}
+                                    score={result.relevancePercent}
+                                    defaultOpen={strong.length === 1}
+                                    t={t}
+                                />
+                            </div>
                         </li>
                     );
                 })}

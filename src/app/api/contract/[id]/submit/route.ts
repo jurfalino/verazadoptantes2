@@ -165,7 +165,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         //    (Phase 1) to create a fresh row with source='contract' and run
         //    dedup detection.
         let adopterId: string;
-        let matches: Array<{ adopterId: string; adopterName: string; matchTypes: string[] }> = [];
+        let matches: Array<{ adopterId: string; adopterName: string; matchTypes: string[]; relevancePercent?: number }> = [];
         if (invitation) {
             // The profile is written back AFTER the adoption lands (below), so a
             // signature that loses the animal to a concurrent adoption changes
@@ -195,6 +195,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 adopterId: c.adopterId,
                 adopterName: c.adopterName,
                 matchTypes: c.matchTypes,
+                relevancePercent: c.relevancePercent,
             }));
         }
 
@@ -361,6 +362,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                                 id: m.adopterId,
                                 name: m.adopterName,
                                 matchTypes: m.matchTypes,
+                                // The search score, shown to admins only (Jon, 2026-10-25).
+                                score: m.relevancePercent,
                             })),
                             submittedData: { name: fullName, phone, email, dni, address, socialNetworks },
                         },

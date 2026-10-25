@@ -7,7 +7,8 @@ import { useSetEditActions } from "@/context/EditActionsContext";
 import { InlineEditField } from "@/components/InlineEditField";
 import { useRouter, useSearchParams } from "next/navigation";
 import { saveAdopter, saveImage, findFormDuplicates, appendToExistingAdopter } from "@/app/actions";
-import { buildMatchChips, hasStrongMatch, type MatchChip } from "@/lib/matchChips";
+import { hasStrongMatch } from "@/lib/matchChips";
+import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
 import DuplicatePeek from "@/components/DuplicatePeek";
 import StrongMatchStrip from "@/components/StrongMatchStrip";
 import { zarazTrack } from "@/lib/zaraz";
@@ -105,27 +106,6 @@ interface AdopterFormProps {
     onBadgeClick?: () => void;
 }
 
-function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
-    if (chips.length === 0) return null;
-    return (
-        <div className="flex flex-wrap gap-1 mt-1.5">
-            {chips.map(chip => (
-                <span
-                    key={chip.key}
-                    className={
-                        chip.isStrong
-                            ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-100 text-amber-900 border border-amber-200"
-                            : "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-stone-100 text-stone-700 border border-stone-200"
-                    }
-                    title={chip.label}
-                >
-                    <span aria-hidden="true">{chip.icon}</span>
-                    <span className="truncate max-w-[160px]">{chip.label}</span>
-                </span>
-            ))}
-        </div>
-    );
-}
 
 export function AdopterForm({ origin = null, interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick }: AdopterFormProps) {
     const router = useRouter();
@@ -452,6 +432,12 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
             socials: pick('social'),
         };
     }, [data.name, contactEntries]);
+    // The rescuer's side of «Qué coincide y qué no» on every duplicate surface of this form.
+    const compareSource = useMemo(() => ({
+        kind: 'typed' as const,
+        name: data.name,
+        entries: contactEntries.map(e => ({ type: e.type, value: e.value })),
+    }), [data.name, contactEntries]);
 
     // "Continuar con este perfil" — open the confirmation modal first so the
     // user knows their in-progress data will be merged into the existing record.
@@ -953,12 +939,14 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                 {isNew && isEditing && (
                     <>
                         <DuplicatePeek
+                            compareSource={compareSource}
                             results={duplicateResults}
                             searching={duplicateSearching}
                             onContinueWith={handleContinueWith}
                             busyAdopterId={continueBusyId}
                         />
                         <StrongMatchStrip
+                            compareSource={compareSource}
                             results={duplicateResults}
                             dismissedIds={dismissedStrongIds}
                             onDismiss={(id) => setDismissedStrongIds(prev => {
@@ -1438,6 +1426,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                             tooManyAdoptions={adoptionsDensity.count >= threshold ? { count: adoptionsDensity.count, actualSpanDays: adoptionsDensity.timeSpanDays, periodDays, startDate: adoptionsDensity.startDate, endDate: adoptionsDensity.endDate } : undefined}
                             tooManyRequests={requestsDensity.count >= requestsThreshold ? { count: requestsDensity.count, actualSpanDays: requestsDensity.timeSpanDays, periodDays: requestsPeriodDays, startDate: requestsDensity.startDate, endDate: requestsDensity.endDate } : undefined}
                             hasDuplicateBanner={hasDuplicateBanner}
+                            compareSource={{ ...compareSource, kind: 'profile' }}
                         />
                     </div>
                 )}
@@ -1559,31 +1548,40 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                         <p id="save-duplicate-modal-desc" className="text-sm text-stone-600 px-5 pb-4">
                             {t('import.saveModal_body') || 'Creating a new profile may create a duplicate. You can link to an existing profile instead.'}
                         </p>
-                        <ul className="px-5 space-y-2 max-h-48 overflow-y-auto">
+                        <ul className="px-5 space-y-2 max-h-[50svh] overflow-y-auto">
                             {saveDuplicateModal.matches.map((result) => (
-                                <li key={result.adopter.id} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-stone-50 border border-stone-200">
-                                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                                        {result.thumbnail ? (
-                                            <img src={result.thumbnail} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
-                                        ) : (
-                                            <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-semibold flex-shrink-0">
-                                                {result.adopter.name?.charAt(0)?.toUpperCase() || '?'}
-                                            </div>
-                                        )}
-                                        <div className="min-w-0">
-                                            <p className="font-semibold text-stone-800 truncate">{result.adopter.name}</p>
-                                            {result.adopter.contactInfo && (
-                                                <p className="text-xs text-stone-500 truncate">{result.adopter.contactInfo}</p>
+                                <li key={result.adopter.id} className="p-3 rounded-xl bg-stone-50 border border-stone-200">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                                            {result.thumbnail ? (
+                                                <img src={result.thumbnail} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-semibold flex-shrink-0">
+                                                    {result.adopter.name?.charAt(0)?.toUpperCase() || '?'}
+                                                </div>
                                             )}
-                                            <MatchChipsRow chips={buildMatchChips(result.matchValues, t)} />
+                                            <div className="min-w-0">
+                                                <p className="font-semibold text-stone-800 truncate">{result.adopter.name}</p>
+                                            </div>
                                         </div>
+                                        <a
+                                            href={`/adopter/${result.adopter.id}`}
+                                            className="px-3 py-1.5 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors flex-shrink-0"
+                                        >
+                                            {t('import.saveModal_use_existing') || 'Use existing profile'}
+                                        </a>
                                     </div>
-                                    <a
-                                        href={`/adopter/${result.adopter.id}`}
-                                        className="px-3 py-1.5 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors flex-shrink-0"
-                                    >
-                                        {t('import.saveModal_use_existing') || 'Use existing profile'}
-                                    </a>
+                                    {/* Full row width: beside the button it squeezes to a sliver on a phone. */}
+                                    <MatchCompare
+                                        adopterId={result.adopter.id}
+                                        matchTypes={result.matchTypes}
+                                        profileName={result.adopter.name ?? ''}
+                                        source={compareSource}
+                                        profileEntries={entriesAsShown(result.adopter)}
+                                        score={result.relevancePercent}
+                                        defaultOpen={saveDuplicateModal.matches.length === 1}
+                                        t={t}
+                                    />
                                 </li>
                             ))}
                         </ul>

@@ -19,6 +19,8 @@ interface MatchedAdopter {
     id: string;
     name: string;
     matchTypes: string[];
+    /** Search score; stored on notifications since 2026-10-25, admins only. */
+    score?: number;
 }
 
 interface NotificationMetadata {
@@ -39,31 +41,6 @@ interface NotificationMetadata {
     };
 }
 
-const MATCH_TYPE_LABELS: Record<string, { icon: string; es: string; en: string }> = {
-    // Token-based matches
-    'token:name_full': { icon: '👤', es: 'Nombre completo', en: 'Full name' },
-    'token:name_word': { icon: '📝', es: 'Nombre parcial', en: 'Partial name' },
-    'token:phone': { icon: '📱', es: 'Teléfono', en: 'Phone' },
-    'token:phone_suffix': { icon: '📞', es: 'Teléfono (sufijo)', en: 'Phone (suffix)' },
-    'token:email': { icon: '📧', es: 'Email', en: 'Email' },
-    'token:social': { icon: '🌐', es: 'Red social', en: 'Social network' },
-    'token:address_word': { icon: '📍', es: 'Dirección', en: 'Address' },
-    // LIKE-based matches
-    'like:name': { icon: '👤', es: 'Nombre', en: 'Name' },
-    'like:contact': { icon: '📱', es: 'Contacto', en: 'Contact' },
-    // Unprefixed taxonomy (emitted by findAdopters duplicate-mode)
-    name_full: { icon: '👤', es: 'Nombre completo', en: 'Full name' },
-    name_word: { icon: '📝', es: 'Nombre parcial', en: 'Partial name' },
-    name_word_fuzzy: { icon: '✨', es: 'Nombre similar', en: 'Similar name' },
-    phone: { icon: '📱', es: 'Teléfono', en: 'Phone' },
-    phone_suffix: { icon: '📞', es: 'Teléfono (sufijo)', en: 'Phone (suffix)' },
-    email: { icon: '📧', es: 'Email', en: 'Email' },
-    social: { icon: '🌐', es: 'Red social', en: 'Social network' },
-    address_word: { icon: '📍', es: 'Dirección', en: 'Address' },
-    like_fallback: { icon: '🔍', es: 'Coincidencia general', en: 'General match' },
-    like_fallback_name: { icon: '🔍', es: 'Nombre (coincidencia general)', en: 'Name (general match)' },
-    like_fallback_contact: { icon: '🔍', es: 'Contacto (coincidencia general)', en: 'Contact (general match)' },
-};
 
 export default async function ContractResultsPage({ params }: { params: Promise<{ notificationId: string }> }) {
     const { notificationId } = await params;
@@ -99,7 +76,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
     const metadata: NotificationMetadata = notification.metadata ? JSON.parse(notification.metadata) : {};
 
     // Fetch full adopter profiles for matches
-    let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; status: string | null }> = [];
+    let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; contactEntries: string | null; status: string | null }> = [];
     if (metadata.matchedAdopters && metadata.matchedAdopters.length > 0) {
         const adopterIds = metadata.matchedAdopters.map(a => a.id);
         // Filter soft-deleted (merged-duplicate) adopters at read time so even legacy
@@ -133,11 +110,22 @@ export default async function ContractResultsPage({ params }: { params: Promise<
             id: r.id,
             name: r.name,
             contactInfo: masked.get(r.id)?.contactInfo ?? null,
+            contactEntries: masked.get(r.id)?.contactEntries ?? null,
             status: r.status,
         }));
     }
 
     const hasMatches = metadata.matchCount > 0;
+    const signer = {
+        name: metadata.submittedData?.name ?? metadata.adopterName ?? '',
+        entries: [
+            { type: 'phone', value: metadata.submittedData?.phone ?? '' },
+            { type: 'email', value: metadata.submittedData?.email ?? '' },
+            { type: 'id', value: metadata.submittedData?.dni ?? '' },
+            { type: 'address', value: metadata.submittedData?.address ?? '' },
+            { type: 'social', value: metadata.submittedData?.socialNetworks ?? '' },
+        ].filter(e => e.value.trim()),
+    };
     const submitted = metadata.submittedData;
 
     return (
@@ -201,7 +189,9 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                                 notificationId={notificationId}
                                 profile={profile}
                                 matchTypes={match.matchTypes}
-                                matchTypeLabels={MATCH_TYPE_LABELS}
+                                score={match.score}
+                                signer={signer}
+                                compareOpen={metadata.matchedAdopters!.length === 1}
                             />
                         );
                     })}

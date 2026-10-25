@@ -357,14 +357,20 @@ async function buildPairSide(
     names: ReadonlyMap<string, string>,
 ): Promise<PendingDedupSide> {
     let contactInfo = row.contactInfo;
+    let contactEntries: string | null = null;
     let canSeeContact = true;
     try {
         const { resolveAdopterVisibility } = await import('@/lib/piiAccessServer');
         const { maskAdopterContact } = await import('@/lib/piiAccess');
         const visibility = await resolveAdopterVisibility(viewerEmail, { id: row.id, addedBy: row.addedBy });
         if (!visibility.nothingMasked) {
-            const masked = maskAdopterContact({ contactInfo: row.contactInfo, contactEntries: null, addressInfo: null }, visibility);
+            // Typed entries from the blob, so the masked result carries a typed list
+            // the comparison table can read (re-parsing masked text mislabels it).
+            const { parseBlobToContactEntries } = await import('@/lib/contactEntries');
+            const typed = parseBlobToContactEntries(row.contactInfo);
+            const masked = maskAdopterContact({ contactInfo: row.contactInfo, contactEntries: typed.length ? JSON.stringify(typed) : null, addressInfo: null }, visibility);
             contactInfo = masked.contactInfo;
+            contactEntries = masked.contactEntries;
             canSeeContact = masked.maskedFieldCount === 0;
         }
     } catch (e) {
@@ -380,6 +386,7 @@ async function buildPairSide(
         id: row.id,
         name: row.name,
         contactInfo,
+        contactEntries,
         source: row.source,
         createdAt: row.createdAt ? Math.floor(row.createdAt.getTime() / 1000) : null,
         canSeeContact,
@@ -550,6 +557,8 @@ export interface PendingDedupSide {
     id: string;
     name: string;
     contactInfo: string | null;
+    /** Masked typed entries (JSON) when this viewer can't see everything; null = read contactInfo. */
+    contactEntries: string | null;
     source: string;
     createdAt: number | null;
     /** False ⇒ contactInfo is masked and the card offers "ask the owner". */

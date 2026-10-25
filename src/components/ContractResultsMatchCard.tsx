@@ -7,12 +7,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { attachContractToExistingAdopter } from '@/app/actions/duplicates';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-
-interface MatchType {
-    icon: string;
-    es: string;
-    en: string;
-}
+import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
 
 interface ContractResultsMatchCardProps {
     matchId: string;
@@ -21,10 +16,16 @@ interface ContractResultsMatchCardProps {
         id: string;
         name: string;
         contactInfo: string | null;
+        /** Masked like contactInfo, as typed entries. */
+        contactEntries?: string | null;
         status: string | null;
     };
     matchTypes: string[];
-    matchTypeLabels: Record<string, MatchType>;
+    score?: number;
+    /** What the adopter wrote in the contract — the rescuer's side of the comparison. */
+    signer: { name: string; entries: Array<{ type: string; value: string }> };
+    /** Open the comparison by itself — when this is the only possible match. */
+    compareOpen?: boolean;
 }
 
 export default function ContractResultsMatchCard({
@@ -32,7 +33,9 @@ export default function ContractResultsMatchCard({
     notificationId,
     profile,
     matchTypes,
-    matchTypeLabels,
+    score,
+    signer,
+    compareOpen = false,
 }: ContractResultsMatchCardProps) {
     const { t } = useLanguage();
     const router = useRouter();
@@ -64,26 +67,24 @@ export default function ContractResultsMatchCard({
 
     return (
         <>
-            <div className="block bg-white rounded-xl border border-stone-200 p-4 shadow-sm">
+            <div data-testid="contract-match-card" className="block bg-white rounded-xl border border-stone-200 p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-stone-800 line-clamp-2 break-words" title={profile.name}>{profile.name}</p>
-                        {profile.contactInfo && (
-                            <p className="text-xs text-stone-500 mt-0.5 line-clamp-2 break-words">{profile.contactInfo}</p>
-                        )}
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                            {matchTypes.map((type) => {
-                                const label = matchTypeLabels[type];
-                                return (
-                                    <span
-                                        key={type}
-                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700"
-                                    >
-                                        {label?.icon || '🔗'} {label?.es || type}
-                                    </span>
-                                );
-                            })}
-                        </div>
+                        {/* What matches and what doesn't, field by field (Jon, 2026-10-25).
+                            Replaces the match chips, which were always in Spanish. */}
+                        <MatchCompare
+                            adopterId={profile.id}
+                            matchTypes={matchTypes}
+                            profileName={profile.name}
+                            source={{ kind: 'contract', name: signer.name, entries: signer.entries }}
+                            // The profile's contact as this page already shows it (masked
+                            // where it must be) goes into its block, not a separate line.
+                            profileEntries={entriesAsShown(profile)}
+                            score={score}
+                            defaultOpen={compareOpen}
+                            t={t}
+                        />
                     </div>
                 </div>
 

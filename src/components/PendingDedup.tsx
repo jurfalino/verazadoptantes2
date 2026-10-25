@@ -29,10 +29,9 @@ import {
     mergePendingDedupPair,
     type PendingDedupPair,
 } from '@/app/actions/duplicates';
-import { AdopterName } from '@/components/AdopterName';
 import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
-import { collapseNameEvidence } from '@/domain/matchEvidence';
-import { matchTypeLabel } from '@/lib/matchTypeLabels';
+import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
+
 
 /** Opens-in-new-tab affordance. Inline SVG with currentColor per the icon
  *  convention — an emoji would not inherit the link's hover colour. */
@@ -42,64 +41,6 @@ function ExternalLinkIcon({ className = 'w-3 h-3' }: { className?: string }) {
             strokeWidth="1.8" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4h4v4M16 4l-7 7M14 12v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h3" />
         </svg>
-    );
-}
-
-/**
- * The evidence row: which fields actually matched, and their values.
- *
- * Was a bare `matchTypes.join(', ')`, so the user read "name_full, name_word" —
- * internal token names, and no indication of WHICH phone or name matched. The
- * values come from `duplicate_candidates.match_values`; the per-save path stores
- * null, so fall back to the labels alone rather than showing nothing.
- */
-function MatchedOn({ pair, t }: { pair: PendingDedupPair; t: (k: string) => string }) {
-    if (pair.matchTypes.length === 0) return null;
-
-    const values = collapseNameEvidence(pair.matchValues);
-    // A type whose values were entirely absorbed above no longer earns a chip.
-    // Types with no stored values at all (the per-save path writes none) still
-    // show, since their label is the only evidence available.
-    const types = pair.matchTypes.filter(ty =>
-        !(ty in pair.matchValues) || (values[ty]?.length ?? 0) > 0);
-
-    const LABEL: Record<string, string> = {
-        phone: t('duplicates.match_phone') || 'Teléfono',
-        phone_suffix: t('duplicates.match_phone_suffix') || 'Teléfono (final)',
-        email: t('duplicates.match_email') || 'Email',
-        social: t('duplicates.match_social') || 'Red social',
-        social_handle: t('duplicates.match_social') || 'Red social',
-        name_full: t('duplicates.match_name_full') || 'Nombre completo',
-        name_word: t('duplicates.match_name_word') || 'Nombre',
-        address_word: t('duplicates.match_address') || 'Dirección',
-        source_url: t('duplicates.match_source_url') || 'URL de origen',
-        id_number: t('duplicates.match_id_number') || 'Documento',
-        flagged_by_user: t('duplicates.match_flagged') || 'Marcado manualmente',
-    };
-
-    return (
-        <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[11px] text-stone-500">
-                {t('myAdopters.pending_dedup_matched_on') || 'Coincide en'}:
-            </span>
-            {types.map(type => {
-                const vals = values[type] || [];
-                // Types without a local label (like_fallback_*, name_word_fuzzy, …)
-                // go through the shared map instead of showing the raw code.
-                const label = LABEL[type] || matchTypeLabel(type, t);
-                return (
-                    <span key={type}
-                        className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
-                        <span className="font-semibold">{label}</span>
-                        {vals.length > 0 && (
-                            <span className="font-mono text-amber-800 truncate max-w-[14rem]">
-                                {vals.slice(0, 2).join(', ')}{vals.length > 2 ? '…' : ''}
-                            </span>
-                        )}
-                    </span>
-                );
-            })}
-        </div>
     );
 }
 
@@ -137,40 +78,31 @@ function AdopterCard({
             : null;
 
     return (
-        <div className="flex-1 min-w-0 rounded-xl border border-stone-200 bg-white p-3">
-            <div className="flex items-center justify-between gap-2 mb-2">
+        // A comparison block's title: who this side is (source, date) and a way to
+        // open it. The name is the block's marked «Nombre» row, not repeated here.
+        <div className="min-w-0 normal-case tracking-normal font-normal space-y-1">
+            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">{sideLabel}</span>
                 <SourceBadge source={adopter.source} t={t} />
             </div>
-            {/* Opens in a new tab so the comparison you are mid-way through
-                stays on screen — losing it to a navigation is the whole reason
-                this decision gets abandoned. */}
-            <Link
-                href={`/adopter/${adopter.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group flex items-center gap-1.5 min-w-0"
-            >
-                <AdopterName adopter={adopter} className="font-semibold text-stone-900 text-sm truncate group-hover:text-teal-700" title />
-                <ExternalLinkIcon className="w-3 h-3 shrink-0 text-stone-400 group-hover:text-teal-700" />
-                <span className="sr-only">{t('common.opens_new_tab') || '(abre en una pestaña nueva)'}</span>
-            </Link>
-            {adopter.contactInfo && (
-                <p className="mt-1 text-xs text-stone-500 line-clamp-2 whitespace-pre-line">{adopter.contactInfo}</p>
-            )}
-            {/* The matched values are shown above regardless — they are already
-                in the viewer's own record. This is about the REST of the
-                contact blob, which belongs to whoever added this profile. */}
-            {!adopter.canSeeContact && (
-                <button
-                    type="button"
-                    onClick={() => onRequestAccess(adopter)}
-                    className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-800 underline underline-offset-2"
-                >
-                    🔒 {t('myAdopters.pending_dedup_request_access') || 'Pedir acceso a quien lo cargó'}
-                </button>
-            )}
-            {dateStr && <p className="mt-1 text-[11px] text-stone-400">{dateStr}</p>}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                {dateStr && <span className="text-stone-500">{dateStr}</span>}
+                {/* New tab: the comparison you are mid-way through stays on screen —
+                    losing it to a navigation is why this decision gets abandoned. */}
+                <Link href={`/adopter/${adopter.id}`} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 font-semibold text-teal-700 hover:text-teal-800">
+                    {t('adopter.dup_action_view') || 'Ver perfil'}
+                    <ExternalLinkIcon className="w-3 h-3 shrink-0" />
+                    <span className="sr-only">{t('common.opens_new_tab') || '(abre en una pestaña nueva)'}</span>
+                </Link>
+                {/* Locked values in this block belong to whoever added this profile. */}
+                {!adopter.canSeeContact && (
+                    <button type="button" onClick={() => onRequestAccess(adopter)}
+                        className="inline-flex items-center gap-1 font-semibold text-teal-700 hover:text-teal-800 underline underline-offset-2">
+                        {t('myAdopters.pending_dedup_request_access') || 'Pedir acceso a quien lo cargó'}
+                    </button>
+                )}
+            </div>
             {createdByLine && (
                 <p data-testid="dedup-created-by" className="mt-1 text-[11px] text-stone-500">{createdByLine}</p>
             )}
@@ -385,25 +317,22 @@ export default function PendingDedup() {
                     const busy = busyCandidateId === pair.candidateId;
                     return (
                         <div key={pair.candidateId} className="bg-white rounded-2xl border border-stone-200 shadow-sm p-4">
-                            <div className="flex items-center gap-2 mb-3 text-xs text-stone-500">
-                                <span className="font-semibold uppercase tracking-wider">
-                                    {pair.confidence === 'high' ? '🔴' : pair.confidence === 'medium' ? '🟡' : '⚪'} {pair.confidence}
-                                </span>
-                                <span>·</span>
-                                <span>{pair.confidencePercent}% {t('myAdopters.pending_dedup_match') || 'coincidencia'}</span>
-                            </div>
-
-                            {/* Why this pair was proposed — replaces the raw
-                                "name_full, name_word" token dump. */}
-                            <div className="mb-3">
-                                <MatchedOn pair={pair} t={t} />
-                            </div>
-
-                            <div className="flex flex-col md:flex-row gap-3">
-                                <AdopterCard side="new" adopter={pair.newAdopter} t={t} formatShortDate={formatShortDate} onRequestAccess={setAccessTarget} />
-                                <div className="flex md:flex-col items-center justify-center text-stone-400 text-xs">↔</div>
-                                <AdopterCard side="existing" adopter={pair.existingAdopter} t={t} formatShortDate={formatShortDate} onRequestAccess={setAccessTarget} />
-                            </div>
+                            {/* The two profiles side by side, each block headed by who it is
+                                (name, source, date) and listing its own values, each marked
+                                by whether it matches (Jon, 2026-10-25). */}
+                            <MatchCompare
+                                bare
+                                adopterId={pair.existingAdopter.id}
+                                matchTypes={pair.matchTypes}
+                                profileName={pair.existingAdopter.name}
+                                source={{ kind: 'new', name: pair.newAdopter.name, entries: entriesAsShown(pair.newAdopter) }}
+                                profileEntries={entriesAsShown(pair.existingAdopter)}
+                                target="existing"
+                                score={pair.confidencePercent}
+                                sourceHead={<AdopterCard side="new" adopter={pair.newAdopter} t={t} formatShortDate={formatShortDate} onRequestAccess={setAccessTarget} />}
+                                targetHead={<AdopterCard side="existing" adopter={pair.existingAdopter} t={t} formatShortDate={formatShortDate} onRequestAccess={setAccessTarget} />}
+                                t={t}
+                            />
                             {pair.request && (
                                 <p data-testid="dedup-request-status"
                                     className="mt-3 text-xs px-3 py-2 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">

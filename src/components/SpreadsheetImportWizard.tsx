@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
+import MatchCompare from '@/components/MatchCompare';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
-import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, getMatchContext, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun, type MatchContext } from '@/app/actions';
+import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
 import { computeContentFingerprint } from '@/domain/contentFingerprint';
 import { groupSamePerson, groupName, unionValues, phoneDigitsKey, type GroupReason } from '@/domain/importGrouping';
@@ -245,10 +246,8 @@ export default function SpreadsheetImportWizard() {
     const [matches, setMatches] = useState<Record<number, DuplicateMatch | null>>({});
     const [rowAction, setRowAction] = useState<Record<number, RowAction>>({});
     // "Por qué" expansion on the Duplicados triage row: which row (by index) is
-    // expanded, and a per-adopterId cache of the presence-only match context so
-    // re-expanding a row (or two rows matching the same adopter) never refetches.
+    // expanded. The comparison card loads the profile's details itself.
     const [expandedMatchRow, setExpandedMatchRow] = useState<number | null>(null);
-    const [matchContexts, setMatchContexts] = useState<Record<string, MatchContext | 'loading' | 'error'>>({});
     // Which row's "detalles / más campos" expand (Motivo + secondary animal/adoption
     // fields) is open — same one-row-at-a-time pattern as expandedMatchRow above.
     const [expandedFieldsRow, setExpandedFieldsRow] = useState<number | null>(null);
@@ -1031,7 +1030,7 @@ export default function SpreadsheetImportWizard() {
     const etaMs = (importDone || cancelling) ? null : etaMsFrom(progress.done, progress.total, importStartRef.current, importStartDoneRef.current);
     const interpretEtaMs = etaMsFrom(interpretProgress.done, interpretProgress.total, interpretStartRef.current);
     const detectEtaMs = etaMsFrom(detectProgress.done, detectProgress.total, detectStartRef.current);
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); setDetectFailedRows(new Set()); setFoldSummary(null); setSplitGroups(new Set()); };
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); setDetectFailedRows(new Set()); setFoldSummary(null); setSplitGroups(new Set()); };
 
     // Duplicados step (Step 3): the focused triage is ONLY the selected rows that
     // actually matched something — everything else auto-creates, so it never
@@ -1084,14 +1083,8 @@ export default function SpreadsheetImportWizard() {
     // Expand/collapse a triage row's "por qué" panel; fetch the presence-only
     // match context lazily on first expand, cached per adopterId.
     const toggleFieldsExpand = (rowIndex: number) => setExpandedFieldsRow(prev => prev === rowIndex ? null : rowIndex);
-    const toggleMatchExpand = (rowIndex: number, adopterId: string) => {
+    const toggleMatchExpand = (rowIndex: number) => {
         setExpandedMatchRow(prev => prev === rowIndex ? null : rowIndex);
-        if (!(adopterId in matchContexts)) {
-            setMatchContexts(prev => ({ ...prev, [adopterId]: 'loading' }));
-            getMatchContext(adopterId)
-                .then(ctx => setMatchContexts(prev => ({ ...prev, [adopterId]: ctx })))
-                .catch(() => setMatchContexts(prev => ({ ...prev, [adopterId]: 'error' })));
-        }
     };
 
     return (
@@ -1398,7 +1391,7 @@ export default function SpreadsheetImportWizard() {
                         editingCell={editingCell} onEditCell={(index, field) => setEditingCell(field ? { index, field } : null)}
                         matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
                         failureByIndex={failureByIndex} onSetSelected={setGroupSelected} onChange={setOverride}
-                        expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
+                        expandedMatchRow={expandedMatchRow} onToggleWhy={toggleMatchExpand}
                         expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
                         onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} onRecordTypeAll={setRecordTypeAll} />
 
@@ -1506,7 +1499,7 @@ export default function SpreadsheetImportWizard() {
                                         editingCell={editingCell} onEditCell={(index, field) => setEditingCell(field ? { index, field } : null)}
                                         matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
                                         failureByIndex={failureByIndex} onSetSelected={setGroupSelected} onChange={setOverride}
-                                        expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
+                                        expandedMatchRow={expandedMatchRow} onToggleWhy={toggleMatchExpand}
                                         expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
                                         onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} onRecordTypeAll={setRecordTypeAll} />
                                 </>
@@ -1657,50 +1650,8 @@ function matchTypeLabels(types: string[]): string {
     const labels = [...new Set(types.map(t => MATCH_TYPE_LABELS[t]).filter(Boolean))];
     return labels.length ? labels.join(', ') : 'datos';
 }
-// Signal-type groups used by explainMatchOneLiner below (same token vocabulary
-// isExactIdentifierMatch checks, plus the name-ish family it's compared against).
-const NAME_SIGNAL_TYPES = new Set(['name_full', 'name_word', 'name_phonetic', 'name_word_fuzzy', 'like_fallback_name']);
-const STRONG_SIGNAL_TYPES = new Set(['phone', 'phone_suffix', 'like_fallback_contact', 'email', 'id_number', 'social', 'social_handle']);
 
-// One-line, derived explanation of WHY a row matched — composed from the matched
-// signal types plus the existing record's presence-only context (never its values).
-function explainMatchOneLiner(match: DuplicateMatch, ctx: MatchContext | undefined): string {
-    const pct = match.relevancePercent;
-    if (match.matchTypes?.includes('identical')) return 'Coincide en todos los datos — prácticamente seguro que es la misma persona.';
-    const nameOnly = match.matchTypes.length > 0 && match.matchTypes.every(t => NAME_SIGNAL_TYPES.has(t));
-    if (nameOnly) {
-        if (ctx?.ok && !ctx.has.phone && !ctx.has.email) {
-            return `Coincide solo en el nombre (${pct}%). El registro existente no tiene teléfono ni email para comparar — podría ser otra persona con el mismo nombre.`;
-        }
-        return `Coincide solo en el nombre (${pct}%) — revisá el contacto antes de decidir.`;
-    }
-    const strongLabels = [...new Set(match.matchTypes.filter(t => STRONG_SIGNAL_TYPES.has(t)).map(t => MATCH_TYPE_LABELS[t]).filter(Boolean))];
-    if (strongLabels.length) {
-        const hasName = match.matchTypes.some(t => NAME_SIGNAL_TYPES.has(t));
-        return hasName
-            ? `Coincide en nombre y ${strongLabels.join(', ')} (${pct}%).`
-            : `Coincide en ${strongLabels.join(', ')} (${pct}%).`;
-    }
-    return `Coincide en ${matchTypeLabels(match.matchTypes)} (${pct}%).`;
-}
 
-// Presence-only badges for the EXISTING record — never renders the actual value,
-// only whether that contact TYPE is present (the record may be protected/another
-// org's). Themed colors only: sky = present, stone = absent.
-function PresenceBadges({ has }: { has: MatchContext['has'] }) {
-    const items: Array<[boolean, string]> = [
-        [has.phone, 'teléfono'], [has.email, 'email'], [has.id, 'DNI'], [has.social, 'red'], [has.address, 'dirección'],
-    ];
-    return (
-        <div className="flex flex-wrap gap-1">
-            {items.map(([present, label]) => (
-                <span key={label} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${present ? 'bg-sky-50 text-sky-700' : 'bg-stone-100 text-stone-400'}`}>
-                    {present ? '✓' : '·'} {label}
-                </span>
-            ))}
-        </div>
-    );
-}
 
 // Shared match badge — used both in the confirm grid's inline sub-row (RowView)
 // and the Duplicados triage list, so the ● Idéntico/○ Posible copy never drifts.
@@ -1710,7 +1661,7 @@ function MatchBadge({ match, isExact }: { match: DuplicateMatch; isExact: boolea
     return (
         <span className={strong ? 'text-sky-800' : 'text-stone-600'}>
             {identical ? '● Idéntico a' : isExact ? '● Duplicado de' : '○ Posible duplicado de'} <span className="font-semibold">{match.adopterName?.trim() || 'Sin nombre'}</span>
-            <span className="text-stone-500"> · {identical ? 'mismos datos' : `${match.relevancePercent}% · coincide en ${matchTypeLabels(match.matchTypes)}`}</span>
+            <span className="text-stone-500"> · {identical ? 'mismos datos' : `coincide en ${matchTypeLabels(match.matchTypes)}`}</span>
         </span>
     );
 }
@@ -1893,7 +1844,7 @@ function ActivityBlock({ r, editingField, onEditCell, onChange, fieldsExpanded, 
     );
 }
 
-function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onChange, match, action, onAction, failureByIndex, onToggleGroup, expanded, onToggleWhy, matchContext, expandedFieldsRow, onToggleFields }: {
+function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onChange, match, action, onAction, failureByIndex, onToggleGroup, expanded, onToggleWhy, expandedFieldsRow, onToggleFields }: {
     members: Array<{ index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean }>;
     // Why these rows are one person, and how to undo it (Revisar only).
     groupReason?: GroupReason | null; onSplit?: () => void;
@@ -1902,10 +1853,11 @@ function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onCha
     match?: DuplicateMatch | null; action: RowAction; onAction: (a: RowAction) => void;
     failureByIndex: Record<number, string>; onToggleGroup: () => void;
     // "Por qué" expansion on the match sub-row below (group-level, keyed to primary).
-    expanded?: boolean; onToggleWhy?: () => void; matchContext?: MatchContext | 'loading' | 'error';
+    expanded?: boolean; onToggleWhy?: () => void;
     // "Motivo / más campos" expand — per activity (keyed by each member's index).
     expandedFieldsRow: number | null; onToggleFields: (index: number) => void;
 }) {
+    const { t } = useLanguage();
     const primary = members[0];
     const grouped = members.length > 1;
     const { built, selected } = primary;
@@ -2034,41 +1986,24 @@ function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onCha
                         <tr className={!selected ? 'opacity-40' : ''}>
                             <td></td>
                             <td colSpan={4} className="px-3 pb-2">
-                                <div className="rounded-lg border border-stone-200 p-3 text-xs space-y-2.5" style={{ backgroundColor: 'var(--surface-muted)' }}>
-                                    <div>
-                                        <span className="text-stone-500">Coincidió en: </span>
-                                        <span className="font-medium text-stone-700">{matchTypeLabels(match.matchTypes)}</span>
-                                    </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <div>
-                                            <div className="text-stone-400 uppercase tracking-wider text-[10px] mb-1">Tu registro (importado)</div>
-                                            <div className="font-medium text-stone-800 mb-1">{eff.name || <span className="italic text-stone-400">Sin nombre</span>}</div>
-                                            {contactChips.length > 0 ? (
-                                                <div className="flex flex-wrap gap-1">
-                                                    {contactChips.map((c, i) => (
-                                                        <span key={i} className="inline-flex items-center gap-1 text-[10px] bg-stone-100 rounded px-1.5 py-0.5 max-w-full">
-                                                            <span className="uppercase font-semibold text-stone-400 flex-shrink-0">{c.t}</span>
-                                                            <span className="text-stone-700 truncate">{c.v}</span>
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            ) : <span className="text-stone-400">Sin contacto</span>}
-                                        </div>
-                                        <div>
-                                            <div className="text-stone-400 uppercase tracking-wider text-[10px] mb-1">Registro existente</div>
-                                            <div className="font-medium text-stone-800 mb-1">{match.adopterName?.trim() || 'Sin nombre'}</div>
-                                            {matchContext === undefined || matchContext === 'loading' ? (
-                                                <span className="text-stone-400">Cargando…</span>
-                                            ) : matchContext === 'error' || !matchContext.ok ? (
-                                                <button type="button" onClick={() => window.open(`/adopter/${match.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
-                                            ) : (
-                                                <PresenceBadges has={matchContext.has} />
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="pt-1 border-t border-stone-200 text-stone-600">
-                                        {explainMatchOneLiner(match, matchContext === 'loading' || matchContext === 'error' ? undefined : matchContext)}
-                                    </div>
+                                {/* What matches and what doesn't, field by field (Jon,
+                                    2026-10-25) — the same card as every "same person?" screen. */}
+                                <div className="max-w-xl">
+                                    <MatchCompare
+                                        bare
+                                        adopterId={match.adopterId}
+                                        matchTypes={match.matchTypes}
+                                        profileName={match.adopterName ?? ''}
+                                        score={match.relevancePercent}
+                                        source={{ kind: 'sheet', name: eff.name, entries: [
+                                            ...eff.phones.map(value => ({ type: 'phone', value })),
+                                            ...eff.emails.map(value => ({ type: 'email', value })),
+                                            ...eff.socials.map(value => ({ type: 'social', value })),
+                                            ...eff.dnis.map(value => ({ type: 'id', value })),
+                                            ...eff.addresses.map(value => ({ type: 'address', value })),
+                                        ] }}
+                                        t={t}
+                                    />
                                 </div>
                             </td>
                         </tr>
@@ -2109,7 +2044,7 @@ function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onCha
  *  underneath, dropping in-progress edits. */
 function RecordGrid({
     rows, editingCell, onEditCell, matches, rowAction, onAction,
-    failureByIndex, onSetSelected, onChange, expandedMatchRow, matchContexts, onToggleWhy,
+    failureByIndex, onSetSelected, onChange, expandedMatchRow, onToggleWhy,
     expandedFieldsRow, onToggleFields,
     onRatingAll, onVisibilityAll, onRecordTypeAll, groupOf, onSplitGroup,
 }: {
@@ -2123,8 +2058,7 @@ function RecordGrid({
     onSetSelected: (indices: number[], selected: boolean) => void;
     onChange: (index: number, p: Partial<MappedRow>) => void;
     expandedMatchRow: number | null;
-    matchContexts: Record<string, MatchContext | 'loading' | 'error'>;
-    onToggleWhy: (index: number, adopterId: string) => void;
+    onToggleWhy: (index: number) => void;
     // "Motivo / más campos" expand — same one-row-at-a-time pattern as the match
     // "por qué" expand above (expandedMatchRow/onToggleWhy).
     expandedFieldsRow: number | null;
@@ -2209,8 +2143,7 @@ function RecordGrid({
                                     failureByIndex={failureByIndex}
                                     onToggleGroup={() => onSetSelected(members.map(m => m.index), !primary.selected)}
                                     expanded={expandedMatchRow === primary.index}
-                                    onToggleWhy={match ? () => onToggleWhy(primary.index, match.adopterId) : undefined}
-                                    matchContext={match ? matchContexts[match.adopterId] : undefined}
+                                    onToggleWhy={match ? () => onToggleWhy(primary.index) : undefined}
                                     expandedFieldsRow={expandedFieldsRow}
                                     onToggleFields={onToggleFields}
                                 />
