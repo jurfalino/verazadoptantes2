@@ -66,8 +66,8 @@ const SOURCE_KEYS: Record<string, string> = {
     imported: 'myAdopters.source_imported', api: 'myAdopters.source_api',
 };
 
-const sameName = (a: string, b: string) =>
-    a.trim().localeCompare(b.trim(), undefined, { sensitivity: 'base' }) === 0;
+/** «A ×2» only when the names are written the same: «Lucia» vs «Lucía» is worth seeing. */
+const sameName = (a: string, b: string) => a.trim() === b.trim();
 
 /** The side that isn't the viewer's or their team's — whose owner the row talks about. */
 function foreignSide(pair: PendingDedupPair): PendingDedupSide | null {
