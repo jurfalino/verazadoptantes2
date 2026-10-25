@@ -139,6 +139,11 @@ test.describe('Duplicate mass-merge and undo', () => {
         withLaura.push({ id: 'hm-laura', name: 'Laura Ruiz', relationship: 'partner', contactEntries: [] });
         execD1(`UPDATE adopters SET household_members = '${JSON.stringify(withLaura)}' WHERE id = '${A}'`);
 
+        // ── An absorbed profile's old link lands on the survivor, query kept.
+        const redirected = await page.goto(`/adopter/${B}?q=merge-redirect-check`);
+        expect(redirected?.status(), 'the survivor page renders, not a 404').toBe(200);
+        await expect(page).toHaveURL(new RegExp(`/adopter/${A}\\?q=merge-redirect-check$`));
+
         // ── Undo, newest-first (server refuses older-first for same survivor).
         const undoRes = await page.request.post('/api/admin/duplicates/unmerge', {
             data: { auditIds: [...auditIds].reverse() },
@@ -156,6 +161,11 @@ test.describe('Duplicate mass-merge and undo', () => {
         for (const row of revived) {
             expect(isDbNull(row.deleted_at), `${row.id} should be revived by undo`).toBe(true);
         }
+
+        // Undone: B's own link opens B again (the redirect was temporary).
+        const revivedPage = await page.goto(`/adopter/${B}`);
+        expect(revivedPage?.status(), 'the revived profile renders, not a 404').toBe(200);
+        await expect(page).toHaveURL(new RegExp(`/adopter/${B}$`));
 
         const restored = parseD1Rows(execD1(
             `SELECT contact_info, contact_entries, is_public, household_members FROM adopters WHERE id = '${A}'`,

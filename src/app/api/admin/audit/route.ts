@@ -233,7 +233,10 @@ export async function DELETE(request: Request) {
         const retentionDays = body.retentionDays || 1095; // Default 3 years
 
         const result = await env.DB.prepare(
-            `DELETE FROM audit_log WHERE created_at < strftime('%s','now') - ?`
+            // Merge rows are kept regardless of age: undoing a merge and the
+            // merged profile's redirect to its survivor both read them
+            // (src/lib/adopterMerge.ts, src/lib/mergedAdopterRedirect.ts).
+            `DELETE FROM audit_log WHERE created_at < strftime('%s','now') - ? AND action != 'adopter_merge'`
         ).bind(retentionDays * 86400).run();
 
         return NextResponse.json({

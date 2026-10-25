@@ -7,6 +7,7 @@ import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
 import { getAdopterPiiContext } from '@/app/actions/piiAccess';
 import { replaySearchMatchGrants } from '@/lib/piiAccessServer';
 import { logger } from '@/lib/logger';
+import { resolveMergedAdopterId } from '@/lib/mergedAdopterRedirect';
 import { getFeatureFlag } from '@/config/features';
 import { AdopterProfileV2 } from '@/components/AdopterProfileV2';
 import type { AdopterPiiContext } from '@/lib/piiAccess';
@@ -16,10 +17,11 @@ export default async function AdopterPage({
     searchParams,
 }: {
     params: Promise<{ id: string }>;
-    searchParams: Promise<{ fromForm?: string; q?: string }>;
+    searchParams: Promise<{ fromForm?: string; q?: string; [key: string]: string | string[] | undefined }>;
 }) {
     const { id } = await params;
-    const { fromForm, q } = await searchParams;
+    const allSearchParams = await searchParams;
+    const { fromForm, q } = allSearchParams;
     const isNew = id === 'create';
 
     // Batch 1a: Auth (mandatory — failure means redirect to login)
@@ -121,6 +123,32 @@ export default async function AdopterPage({
     // failure; a 404 is the correct, safe response for both (far better than
     // silently rendering a blank "create" page for a bogus URL).
     if (!isNew && !adopter) {
+        // A profile merged into another one sends its old link to the survivor
+        // (following chains, ignoring undone merges — src/domain/mergeRedirect.ts).
+        // A temporary redirect on purpose: a merge can be undone, and a cached
+        // permanent one would keep sending people away from the restored profile.
+        let survivorId: string | null = null;
+        try {
+            survivorId = await resolveMergedAdopterId(id);
+        } catch (e) {
+            logger.warn('adopter page: merge redirect lookup failed, serving 404', {
+                adopterId: id, userEmail: currentUser,
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+        if (survivorId) {
+            const qs = new URLSearchParams();
+            for (const [k, v] of Object.entries(allSearchParams)) {
+                // The edge runtime folds the route param into searchParams;
+                // carrying it over would append the OLD id as `?id=` to the survivor's URL.
+                if (k === 'id' && v === id) continue;
+                if (Array.isArray(v)) v.forEach(x => qs.append(k, x));
+                else if (v !== undefined) qs.append(k, v);
+            }
+            const query = qs.toString();
+            logger.info('adopter page: redirecting merged profile to its survivor', { adopterId: id, survivorId, userEmail: currentUser });
+            redirect(`/adopter/${encodeURIComponent(survivorId)}${query ? `?${query}` : ''}`);
+        }
         notFound();
     }
 
