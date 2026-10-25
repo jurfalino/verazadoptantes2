@@ -86,10 +86,10 @@ function MatchedOn({ pair, t }: { pair: PendingDedupPair; t: (k: string) => stri
                 const label = LABEL[type] || matchTypeLabel(type, t);
                 return (
                     <span key={type}
-                        className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-100">
+                        className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
                         <span className="font-semibold">{label}</span>
                         {vals.length > 0 && (
-                            <span className="font-mono text-amber-800/90 truncate max-w-[14rem]">
+                            <span className="font-mono text-amber-800 truncate max-w-[14rem]">
                                 {vals.slice(0, 2).join(', ')}{vals.length > 2 ? '…' : ''}
                             </span>
                         )}
