@@ -454,6 +454,28 @@ export const piiAccessRequests = sqliteTable("pii_access_requests", {
     requesterStatusIdx: index("idx_pii_req_requester_status").on(table.requesterEmail, table.status),
 }));
 
+// merge_requests — a rescuer asks the owner of a duplicate profile to merge two
+// adopters. `primaryId` (older) survives; `secondaryId` (newer) is absorbed.
+// `ownerEmail` NULL = no real owner, so admins decide.
+export const mergeRequests = sqliteTable("merge_requests", {
+    id: text("id").primaryKey(),
+    primaryId: text("primary_id").notNull(),
+    secondaryId: text("secondary_id").notNull(),
+    candidateId: text("candidate_id"),
+    flagId: text("flag_id"),
+    requesterEmail: text("requester_email").notNull(),
+    ownerEmail: text("owner_email"),
+    status: text("status").notNull().default("pending"), // pending, accepted, declined, cancelled, admin_approved, admin_declined, closed
+    resolvedByEmail: text("resolved_by_email"),
+    resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    statusCreatedIdx: index("idx_merge_req_status_created").on(table.status, table.createdAt),
+    requesterIdx: index("idx_merge_req_requester").on(table.requesterEmail, table.status),
+    ownerIdx: index("idx_merge_req_owner").on(table.ownerEmail, table.status),
+    pairIdx: index("idx_merge_req_pair").on(table.primaryId, table.secondaryId, table.status),
+}));
+
 // pii_access_grants — the access facts. A live (non-revoked) row means
 // `grantee_email` can see some/all of `adopter_id`'s contact info.
 //   scope='entry'       — one entry, unlocked by a search match.
@@ -589,6 +611,8 @@ export const userProfiles = sqliteTable("user_profiles", {
     // FollowupSettings JSON (src/domain/followups.ts), NULL = defaults. Read
     // whole, never queried by field (the reminder Worker joins user→profile).
     followupSettings: text("followup_settings"),
+    // Email notification preferences — EmailPrefs JSON, NULL = defaults.
+    emailPrefs: text("email_prefs"),
     // Legal
     termsAcceptedAt: integer("terms_accepted_at", { mode: "timestamp" }), // Unix timestamp when T&C were accepted
     termsVersion: integer("terms_version"), // Version of T&C accepted (matches CURRENT_TERMS_VERSION)
@@ -671,6 +695,7 @@ export const notifications = sqliteTable("notifications", {
     metadata: text("metadata"), // JSON blob (match count, animal name, etc.)
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     expiresAt: integer("expires_at", { mode: "timestamp" }),
+    emailedAt: integer("emailed_at", { mode: "timestamp" }), // NULL = not (yet) emailed
 }, (table) => ({
     userIdx: index("idx_notif_user").on(table.userId, table.read, table.createdAt),
     typeIdx: index("idx_notif_type").on(table.type, table.createdAt),
