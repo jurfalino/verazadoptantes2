@@ -4,7 +4,7 @@ import { adopters, adopterFlags, adopterStats, duplicateTokens, duplicateCandida
 import { eq, or, and, inArray, sql, isNull, asc } from 'drizzle-orm';
 import { logger, generateErrorId } from '@/lib/logger';
 import { getDb, getUser } from './_db';
-import { decideDedupAction, isOpenDuplicateFlag, realOwner, type DedupSide } from '@/domain/dedupPair';
+import { decideDedupAction, isOpenDuplicateFlag, pairKey, realOwner, type DedupSide } from '@/domain/dedupPair';
 import { getTeamEmails, normEmail } from '@/lib/orgMembership';
 import { emailHandle } from '@/lib/userDisplay';
 import { normalizeText, extractPhones, extractEmails, extractSocials, normalizeSocialHandle, detectSocialPlatformFromValue } from '@/lib/tokenizer';
@@ -413,7 +413,6 @@ type OpenRequestRow = {
 };
 /** Per query: no one has anywhere near this many open requests. */
 const OPEN_REQUESTS_CAP = 100;
-const pairKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
 /**
  * The pending merge requests the viewer filed, or that ask the viewer or a

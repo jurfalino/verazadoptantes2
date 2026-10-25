@@ -41,9 +41,14 @@ export async function resolveEmailConfig(db: Db): Promise<{ apiKey: string | nul
     return { apiKey: apiKey || null, from };
 }
 
+/** Anything that is not production (staging, preview, local) labels its emails. */
+export function isStagingEnvironment(): boolean {
+    return process.env.APP_ENVIRONMENT !== 'production';
+}
+
 /** Public base URL for links that go out in emails. */
 export function appBaseUrl(): string {
-    return process.env.APP_ENVIRONMENT === 'production'
+    return !isStagingEnvironment()
         ? 'https://buenadoptante.org'
         : 'https://staging.buenadoptante.org';
 }

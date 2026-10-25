@@ -7,6 +7,7 @@
  * entry point resolves the id from the email first.
  */
 import { eq, sql } from 'drizzle-orm';
+import type { EmailLocale } from '@/lib/email';
 import type { getDb } from '@/lib/db';
 import { userProfiles, users } from '@/db/schema';
 import { parseEmailPrefs, type EmailCategory, type EmailPrefs } from '@/domain/emailCategories';
@@ -54,4 +55,26 @@ export async function setEmailPrefForEmail(db: Db, email: string, category: Emai
     await db.insert(userProfiles)
         .values({ userId, emailPrefs: value })
         .onConflictDoUpdate({ target: userProfiles.userId, set: { emailPrefs: value } });
+}
+
+const LOCALES: readonly EmailLocale[] = ['es', 'en', 'pt'];
+
+/** The language the person chose in the app; es when unknown (no user, no profile, no value). */
+export async function getLocaleForEmail(db: Db, email: string): Promise<EmailLocale> {
+    const [row] = await db.select({ locale: userProfiles.locale })
+        .from(users)
+        .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
+        .where(emailMatches(email))
+        .limit(1);
+    return LOCALES.find(l => l === row?.locale) ?? 'es';
+}
+
+/** Store the person's chosen language. Throws on an unknown value or when the user row does not exist. */
+export async function setLocaleForEmail(db: Db, email: string, locale: EmailLocale): Promise<void> {
+    if (!LOCALES.includes(locale)) throw new Error(`Invalid locale: ${String(locale)}`);
+    const userId = await userIdForEmail(db, email);
+    if (!userId) throw new Error('No user row for the email');
+    await db.insert(userProfiles)
+        .values({ userId, locale })
+        .onConflictDoUpdate({ target: userProfiles.userId, set: { locale } });
 }

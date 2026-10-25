@@ -454,7 +454,7 @@ export async function saveFollowupSettings(input: FollowupSettings | null): Prom
 import { and, eq, isNull } from 'drizzle-orm';
 import { apiKeys } from '@/db/schema';
 import { ALWAYS_ON_CATEGORIES, EMAIL_CATEGORIES, type EmailCategory, type EmailPrefs } from '@/domain/emailCategories';
-import { getEmailPrefsForEmail, setEmailPrefForEmail } from '@/lib/emailPrefs';
+import { getEmailPrefsForEmail, setEmailPrefForEmail, setLocaleForEmail } from '@/lib/emailPrefs';
 
 /** The viewer's email switches + whether they hold a live API key (null = no session). */
 export async function getEmailPrefs(): Promise<{ prefs: EmailPrefs; hasApiKey: boolean } | null> {
@@ -493,6 +493,20 @@ export async function saveEmailPref(category: EmailCategory, enabled: boolean): 
         return { success: true };
     } catch (error) {
         const errorId = logger.error('saveEmailPref failed', error, { userEmail, category });
+        return { success: false, errorId };
+    }
+}
+
+/** Remember the language the viewer picked, so emails to them go out in it. */
+export async function saveMyLocale(locale: 'es' | 'en' | 'pt'): Promise<{ success: boolean; errorId?: string }> {
+    let userEmail: string | undefined;
+    try {
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') throw new Error('No authenticated user');
+        await setLocaleForEmail(await getDb(), userEmail, locale);
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('saveMyLocale failed', error, { userEmail, locale: String(locale) });
         return { success: false, errorId };
     }
 }

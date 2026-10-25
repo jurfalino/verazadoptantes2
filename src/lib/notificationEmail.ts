@@ -11,9 +11,9 @@ import { notifications } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { maskEmail } from '@/lib/dates';
 import { ALWAYS_ON_CATEGORIES, categoryForType, emailThrottleKey, isEmailEnabled } from '@/domain/emailCategories';
-import { getEmailRecipient } from '@/lib/emailPrefs';
+import { getEmailRecipient, getLocaleForEmail } from '@/lib/emailPrefs';
 import { getFeatureFlag } from '@/config/features';
-import { appBaseUrl, resolveEmailConfig } from '@/lib/emailConfig';
+import { appBaseUrl, isStagingEnvironment, resolveEmailConfig } from '@/lib/emailConfig';
 import { buildNotificationEmail, sendEmailViaResend } from '@/lib/email';
 import { unsubscribeUrl } from '@/lib/emailUnsubscribe';
 import { resolveAuthSecret } from '@/lib/otp';
@@ -72,7 +72,8 @@ export async function sendNotificationEmail(n: {
     const unsub = ALWAYS_ON_CATEGORIES.has(category)
         ? null
         : await unsubscribeUrl(base, n.userId, category, resolveAuthSecret());
-    const message = buildNotificationEmail({ title: n.title, body: n.body, url: n.url ?? null }, { appBaseUrl: base, unsubscribeUrl: unsub });
+    const message = buildNotificationEmail({ title: n.title, body: n.body, url: n.url ?? null }, { appBaseUrl: base, unsubscribeUrl: unsub },
+        { locale: await getLocaleForEmail(db, n.userId), staging: isStagingEnvironment() });
     const sent = await sendEmailViaResend({ apiKey, from, to: n.userId, ...message });
     if (!sent.ok) {
         logger.warn('sendNotificationEmail: send failed', { notificationId: n.id, type: n.type, errorId: sent.errorId, to: maskEmail(n.userId) });

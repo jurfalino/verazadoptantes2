@@ -476,6 +476,16 @@ export const mergeRequests = sqliteTable("merge_requests", {
     pairIdx: index("idx_merge_req_pair").on(table.primaryId, table.secondaryId, table.status),
 }));
 
+// pending_pair_hidden — a viewer hid a duplicate pair from their «Pendientes de revisar»
+// list (D27). `pair_key` is pairKey(aId, bId) from src/domain/dedupPair.ts.
+export const pendingPairHidden = sqliteTable("pending_pair_hidden", {
+    viewerEmail: text("viewer_email").notNull(),
+    pairKey: text("pair_key").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    pk: primaryKey({ columns: [table.viewerEmail, table.pairKey] }),
+}));
+
 // pii_access_grants — the access facts. A live (non-revoked) row means
 // `grantee_email` can see some/all of `adopter_id`'s contact info.
 //   scope='entry'       — one entry, unlocked by a search match.
@@ -613,6 +623,8 @@ export const userProfiles = sqliteTable("user_profiles", {
     followupSettings: text("followup_settings"),
     // Email notification preferences — EmailPrefs JSON, NULL = defaults.
     emailPrefs: text("email_prefs"),
+    // UI language the person chose (es | en | pt); NULL = unknown -> emails go out in es.
+    locale: text("locale"),
     // Legal
     termsAcceptedAt: integer("terms_accepted_at", { mode: "timestamp" }), // Unix timestamp when T&C were accepted
     termsVersion: integer("terms_version"), // Version of T&C accepted (matches CURRENT_TERMS_VERSION)

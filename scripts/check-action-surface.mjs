@@ -220,7 +220,10 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // tasks, and Next only records referenced actions. 159 = 157 + 2.
 // MEASURED 159 once wired (Task 11 build): EmailNotificationsSection imports getEmailPrefs /
 // saveEmailPref; PendingDedup and MergeRequestsPanel import resolveMergeRequest / cancelMergeRequest.
-const EXPECTED_ACTIONS = 159;
+// Pendientes D, Task 2: +1 = saveMyLocale (settings.ts), imported by LanguageContext's
+// setLocale, so it is wired. 160 = 159 + 1. Session-checked; the only argument is
+// validated against es|en|pt and writes the caller's own profile row.
+const EXPECTED_ACTIONS = 160;
 
 let manifest;
 try {

@@ -1,6 +1,9 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useSession } from 'next-auth/react';
+import { saveMyLocale } from '@/app/actions/settings';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { en } from '@/i18n/locales/en';
 import { es } from '@/i18n/locales/es';
 import { pt } from '@/i18n/locales/pt';
@@ -46,10 +49,31 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
         setIsHydrated(true);
     }, []);
 
+    const { status } = useSession();
+    const signedIn = status === 'authenticated';
+    const lastPushed = useRef<Locale | null>(null);
+
+    // Emails to this person go out in the language they chose, so the server
+    // must know it. Fire-and-forget: a failed save is reported, never shown.
+    const pushLocale = useCallback((l: Locale) => {
+        if (lastPushed.current === l) return;
+        lastPushed.current = l;
+        saveMyLocale(l)
+            .then(r => { if (!r.success) lastPushed.current = null; })
+            .catch((e) => { lastPushed.current = null; resolveErrorId(e, 'LanguageContext.saveMyLocale'); });
+    }, []);
+
     const setLocale = useCallback((newLocale: Locale) => {
         setLocaleState(newLocale);
         localStorage.setItem('app-locale', newLocale);
-    }, []);
+        if (signedIn) pushLocale(newLocale);
+    }, [signedIn, pushLocale]);
+
+    // On sign-in (once per session) push the stored locale, so people who
+    // chose a language before this existed are covered too.
+    useEffect(() => {
+        if (signedIn && _isHydrated) pushLocale(locale);
+    }, [signedIn, _isHydrated, locale, pushLocale]);
 
     // Memoize the t function. Always returns a non-empty string so labels never render blank (production-safe).
     const t = useMemo(() => {

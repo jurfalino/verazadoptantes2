@@ -127,16 +127,37 @@ describe('sendNotificationEmail', () => {
 
 describe('buildNotificationEmail', () => {
     const links = { appBaseUrl: 'https://staging.buenadoptante.org', unsubscribeUrl: null as string | null };
+    const prod = { locale: 'es' as const, staging: false };
     it('escapes html in title and body', () => {
-        const m = buildNotificationEmail({ title: '<b>t</b>', body: '<script>alert(1)</script>', url: '/a' }, links);
+        const m = buildNotificationEmail({ title: '<b>t</b>', body: '<script>alert(1)</script>', url: '/a' }, links, prod);
         expect(m.html).not.toContain('<script>');
         expect(m.html).toContain('&lt;script&gt;');
         expect(m.html).toContain('https://staging.buenadoptante.org/a');
     });
     it('omits the unsubscribe line when unsubscribeUrl is null, includes it otherwise', () => {
-        expect(buildNotificationEmail({ title: 't', body: 'b', url: null }, links).html).not.toContain('Dejar de recibir');
-        const m = buildNotificationEmail({ title: 't', body: 'b', url: null }, { ...links, unsubscribeUrl: 'https://u/x' });
+        expect(buildNotificationEmail({ title: 't', body: 'b', url: null }, links, prod).html).not.toContain('Dejar de recibir');
+        const m = buildNotificationEmail({ title: 't', body: 'b', url: null }, { ...links, unsubscribeUrl: 'https://u/x' }, prod);
         expect(m.html).toContain('Dejar de recibir estos avisos');
         expect(m.text).toContain('https://u/x');
+    });
+    it('staging: subject prefix and banner, in the recipient language', () => {
+        const m = buildNotificationEmail({ title: 'Hola', body: 'b', url: null }, links, { locale: 'es', staging: true });
+        expect(m.subject).toBe('[Staging] Hola');
+        expect(m.html).toContain('Staging');
+        expect(m.html).toContain('entorno de pruebas');
+        expect(m.text).toContain('entorno de pruebas');
+    });
+    it('production: no prefix, no banner', () => {
+        const m = buildNotificationEmail({ title: 'Hola', body: 'b', url: null }, links, prod);
+        expect(m.subject).toBe('Hola');
+        expect(m.html).not.toContain('Staging');
+    });
+    it('en and pt chrome', () => {
+        const en = buildNotificationEmail({ title: 't', body: 'b', url: null }, { ...links, unsubscribeUrl: 'https://u/x' }, { locale: 'en', staging: false });
+        expect(en.html).toContain('View on BuenAdoptante');
+        expect(en.text).toContain('View on BuenAdoptante');
+        const pt = buildNotificationEmail({ title: 't', body: 'b', url: null }, links, { locale: 'pt', staging: true });
+        expect(pt.html).toContain('Ver no BuenAdoptante');
+        expect(pt.html).toContain('ambiente de testes');
     });
 });

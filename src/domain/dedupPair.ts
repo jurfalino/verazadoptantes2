@@ -126,6 +126,11 @@ export function decideDedupMerge(
     return { ok: true, primaryId: d.primaryId, secondaryId: d.secondaryId };
 }
 
+/** Order-independent key of an adopter pair (`a|b`, ids sorted). */
+export function pairKey(aId: string, bId: string): string {
+    return aId < bId ? `${aId}|${bId}` : `${bId}|${aId}`;
+}
+
 export type MergeRequestStatus =
     | 'pending' | 'accepted' | 'declined' | 'cancelled' | 'admin_approved' | 'admin_declined' | 'closed';
 

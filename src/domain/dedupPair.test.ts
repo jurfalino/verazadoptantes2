@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decideDedupMerge, decideDedupAction, decideMergeRequestAnswer, canRequestAgain, keepOptions, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, realOwner, type DedupSide } from './dedupPair';
+import { pairKey, decideDedupMerge, decideDedupAction, decideMergeRequestAnswer, canRequestAgain, keepOptions, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, realOwner, type DedupSide } from './dedupPair';
 
 const ME = 'me@example.com';
 const side = (id: string, addedBy: string | null, createdAt: number, teamOwned: boolean, deleted = false): DedupSide =>
@@ -296,5 +296,12 @@ describe('canRequestAgain (D43)', () => {
             { requesterEmail: ME, status: 'closed' },
             { requesterEmail: ME, status: 'admin_declined' },
         ], ME)).toBe(true);
+    });
+});
+
+describe('pairKey', () => {
+    it('is order-independent and joined with |', () => {
+        expect(pairKey('b', 'a')).toBe('a|b');
+        expect(pairKey('a', 'b')).toBe(pairKey('b', 'a'));
     });
 });
