@@ -22,7 +22,7 @@ import MatchCompare, { AdminScore, entriesAsShown } from '@/components/MatchComp
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
 import {
     AbsorbedBadge, ACCENT_SECONDARY, KeptBadge, PRIMARY, SECONDARY, T_MUTED, T_PRIMARY,
-    fill, otherSide, ownerName, sideById, sideOf, movesToOtherList, type KeepSide, type T,
+    combineTheirsSide, fill, otherSide, ownerName, sideById, sideOf, movesToOtherList, type KeepSide, type T,
 } from './ui';
 
 export type RowAction =
@@ -147,20 +147,6 @@ function explanation(pair: PendingDedupPair, keep: KeepSide, t: T): string | nul
         return fill(t('myAdopters.pending_d_explain_moves') || 'Tu perfil pasa a la lista de {name}. Vas a seguir viendo sus datos.', { name: ownerName(sideOf(pair, keep), t) });
     }
     return t('myAdopters.pending_d_explain_merge') || 'Los datos del otro perfil se suman al que se conserva.';
-}
-
-/**
- * Declined, requester side: the asked owner's profile, when the feed allows
- * keeping it right away (D43). Null otherwise (also on a pair rebuilt from the
- * request, where nothing is allowed).
- */
-export function combineTheirsSide(pair: PendingDedupPair): KeepSide | null {
-    const r = pair.request;
-    if (pair.group !== 'declined' || !r || r.direction !== 'sent') return null;
-    const requesterKeep = sideById(pair, r.keepId);
-    if (!requesterKeep) return null;
-    const theirs = otherSide(requesterKeep);
-    return pair.actionByKeep[theirs] === 'merge' ? theirs : null;
 }
 
 /** A comparison block's title: what happens to it, whose it is, source, date, and the ways out (D23, D33). */

@@ -26,26 +26,15 @@ export const T_MUTED = 'text-[var(--text-muted)]';
 export const fill = (template: string, params: Record<string, string>) =>
     Object.entries(params).reduce((s, [k, v]) => s.split(`{${k}}`).join(v), template);
 
-export const otherSide = (s: KeepSide): KeepSide => (s === 'new' ? 'existing' : 'new');
+// The row rules (pure, unit-tested) live in the domain layer.
+export { otherSide, sideById, movesToOtherList, combineTheirsSide } from '@/domain/pendingRowRules';
 export const sideOf = (pair: PendingDedupPair, s: KeepSide): PendingDedupSide => (s === 'new' ? pair.newAdopter : pair.existingAdopter);
-export const sideById = (pair: PendingDedupPair, id: string): KeepSide | null =>
-    pair.newAdopter.id === id ? 'new' : pair.existingAdopter.id === id ? 'existing' : null;
 
 /** Who a profile belongs to, by name, for a sentence («la lista de María»). Never an email. */
 export function ownerName(side: PendingDedupSide, t: T): string {
     if (side.createdByName) return side.createdByName;
     if (side.createdByAnonymous) return t('myAdopters.pending_d_anonymous') || 'un usuario anónimo';
     return (t('myAdopters.pending_dedup_a_user') || 'Un usuario').toLocaleLowerCase();
-}
-
-/**
- * Keeping `keep` folds the viewer's (or their team's) adopter into another
- * rescuer's profile: the case D25 confirms («pasará a la lista de …»).
- */
-export function movesToOtherList(pair: PendingDedupPair, keep: KeepSide): boolean {
-    const kept = sideOf(pair, keep);
-    const absorbed = sideOf(pair, otherSide(keep));
-    return pair.actionByKeep[keep] === 'merge' && absorbed.teamOwned && !kept.teamOwned;
 }
 
 export function KeptBadge({ t }: { t: T }) {
