@@ -40,7 +40,7 @@ vi.mock('@/lib/logger', () => ({
     generateErrorId: () => 'gen12345',
 }));
 
-import { getPendingDuplicatesForUser, mergePendingDedupPair, type PendingDedupPair } from './duplicates';
+import { getPendingDuplicatesForUser, mergePendingDedupPair, dismissDuplicateCandidate, type PendingDedupPair } from './duplicates';
 import { resolveMergeRequest } from './mergeRequests';
 
 type Row = Record<string, unknown>;
@@ -174,6 +174,29 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
             newAdopter: { id: 'o-new' }, existingAdopter: { id: 's-old' },
             request: { direction: 'received' },
         });
+    });
+
+    it('set aside with «Mantener separados» while a request is open: the pair stays out of every list', async () => {
+        await mergePendingDedupPair('cand-older-mine');
+        expect(await as(OWNER, () => dismissDuplicateCandidate('cand-older-mine'))).toEqual({ success: true });
+        for (const who of [STRANGER, OWNER, MATE]) {
+            expect((await feed(who)).pairs.map(p => p.candidateId)).not.toContain('cand-older-mine');
+        }
+        expect(await feed(MATE)).toEqual({ pairs: [], total: 0, lowHidden: 0 });
+    });
+
+    it('a request on a flag outside the listed flags: shown while the flag is open, not once it is settled', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('f-s', 'Eva Sol', '5', ?, 100, 100), ('f-o', 'Eva Sól', '5', ?, 200, 200)`).run(STRANGER, OWNER);
+        // 100 earlier duplicate flags between other people's profiles push
+        // flag-x past the feed's capped flag fetch.
+        const filler = sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at) VALUES (?, ?, 'z@example.com', 'duplicate', ?, NULL, 1)`);
+        for (let i = 0; i < 100; i++) filler.run(`filler-${i}`, `z-a-${i}`, `z-b-${i}`);
+        sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at) VALUES ('flag-x', 'f-o', ?, 'duplicate', 'f-s', NULL, 1)`).run(STRANGER);
+        expect(await mergePendingDedupPair('flag-x')).toEqual({ success: true, outcome: 'requested' });
+        expect((await feed(STRANGER, true)).pairs.map(p => p.candidateId)).toContain('flag-x');
+        expect((await feed(MATE)).pairs).toEqual([expect.objectContaining({ candidateId: 'flag-x', source: 'flagged', request: expect.objectContaining({ direction: 'received' }) })]);
+        sqlite.prepare(`UPDATE adopter_flags SET details = 'Merged into f-s by x' WHERE id = 'flag-x'`).run();
+        expect(await feed(MATE)).toEqual({ pairs: [], total: 0, lowHidden: 0 });
     });
 
     it('a rescan replaced the candidate: the request attaches to the pair, whatever its id', async () => {

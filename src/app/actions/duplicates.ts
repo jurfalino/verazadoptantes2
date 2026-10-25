@@ -773,14 +773,44 @@ export async function getPendingDuplicatesForUser(
             });
         }
 
-        // A request whose pair has no pending candidate or open flag left (a
-        // rescan replaced the candidate row, or it was removed) still needs
-        // answering: list the pair from the request itself. Bounded by the
-        // request cap; its adopters come from the page fan-out below.
+        // A request whose pair has no pending candidate or open flag listed.
+        // If the row it came from is GONE (the admin rescan deletes every
+        // pending candidate and re-detects; a pair it no longer finds has no
+        // row), the request still needs answering: list the pair from the
+        // request itself. If the row is still there it was settled — a
+        // candidate is non-pending (every pending one is loaded above), e.g.
+        // set aside with «Mantener separados» — and the pair stays out. A flag
+        // may be open yet unlisted (the flag fetch is capped). Normally no
+        // request is unmatched, so this costs nothing; otherwise one lookup
+        // per unmatched request (≤ the request cap). Adopter rows come from
+        // the page fan-out below.
         const listedKeys = new Set(mine.map(c => pairKey(c.adopter1Id, c.adopter2Id)));
-        for (const [key, r] of requests) {
-            if (listedKeys.has(key)) continue;
-            listedKeys.add(key);
+        const unmatched = [...requests].filter(([key]) => !listedKeys.has(key));
+        const stillOpen = await Promise.all(unmatched.map(async ([key, r]) => {
+            try {
+                if (r.flagId) {
+                    const flag = await db.select({ adopterId: adopterFlags.adopterId, targetAdopterId: adopterFlags.targetAdopterId, reason: adopterFlags.reason, details: adopterFlags.details })
+                        .from(adopterFlags).where(eq(adopterFlags.id, r.flagId)).get();
+                    return !flag || isOpenDuplicateFlag(flag);
+                }
+                if (r.candidateId) {
+                    const cand = await db.select({ id: duplicateCandidates.id })
+                        .from(duplicateCandidates).where(eq(duplicateCandidates.id, r.candidateId)).get();
+                    return !cand;
+                }
+                return true;
+            } catch (e) {
+                logger.warn('getPendingDuplicatesForUser: request pair lookup failed, listing it', {
+                    actorEmail: viewer, requestId: r.id, pair: key, error: e instanceof Error ? e.message : String(e),
+                });
+                return true;
+            }
+        }));
+        for (const [i, [key, r]] of unmatched.entries()) {
+            if (!stillOpen[i]) {
+                requests.delete(key); // settled: no request line, no "request first" ranking
+                continue;
+            }
             mine.push({
                 candidateId: r.candidateId ?? r.flagId ?? r.id,
                 adopter1Id: r.primaryId,
