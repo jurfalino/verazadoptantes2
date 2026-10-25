@@ -83,6 +83,14 @@ export async function createMergeRequest(db: Db, input: {
     requesterEmail: string;
     ownerEmail: string | null;
 }): Promise<{ id: string; created: boolean; requesterEmail: string }> {
+    // Stored normalized: the feed and the answer checks find a request by
+    // these emails, and `added_by` (where ownerEmail comes from) keeps
+    // whatever case it was written with.
+    input = {
+        ...input,
+        requesterEmail: normEmail(input.requesterEmail),
+        ownerEmail: input.ownerEmail ? normEmail(input.ownerEmail) : null,
+    };
     const existing = await findPendingRequestForPair(db, input.primaryId, input.secondaryId);
     if (existing) return { id: existing.id, created: false, requesterEmail: existing.requesterEmail };
 

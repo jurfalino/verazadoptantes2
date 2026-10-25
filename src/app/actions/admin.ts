@@ -10,6 +10,7 @@ import { logAudit } from '@/lib/audit';
 import { getDb, checkIsAdmin, checkIsAdminAsync } from './_db';
 import { deleteAdopterRecords } from './_recordWrite';
 import { runAfterResponse } from '@/lib/background';
+import { closeRequestsForDeletedAdopter } from '@/lib/mergeRequestClose';
 
 export interface AdminQueryResult {
     rows?: unknown[];
@@ -137,7 +138,7 @@ export async function resolveDataRequest(id: string, action: 'resolved' | 'rejec
             // record is hidden from search, dedup and its profile, and can be
             // restored or permanently purged from /admin/deleted. (Was a hard
             // delete in v2.19.72.)
-            await softDeleteAdopter(db, reqRow.adopterId);
+            await softDeleteAdopter(db, reqRow.adopterId, session.user.email);
             deletedAdopter = true;
         }
 
@@ -197,6 +198,7 @@ export async function deleteAdopter(adopterId: string) {
 
         // 8. Delete Adopter
         await db.delete(adopters).where(eq(adopters.id, adopterId));
+        await closeRequestsForDeletedAdopter(db, adopterId, session.user.email);
 
         logger.info('Adopter deleted', { adopterId, deletedBy: session.user.email });
         logAudit({ userEmail: session.user.email || undefined, action: 'adopter_deleted', target: adopterId });
@@ -216,10 +218,12 @@ export async function deleteAdopter(adopterId: string) {
  * keeping the row for restore. Mirrors the merge soft-delete (duplicates.ts:180):
  * set deletedAt + a tokenHash marker and drop the dedup tokens.
  */
-async function softDeleteAdopter(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, adopterId: string) {
+async function softDeleteAdopter(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, adopterId: string, actor: string) {
     const { duplicateTokens } = await import('@/db/schema');
     await db.update(adopters).set({ deletedAt: new Date(), tokenHash: 'DELETED' }).where(eq(adopters.id, adopterId));
     await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopterId));
+    // A restore does not reopen them: whoever still wants the merge asks again.
+    await closeRequestsForDeletedAdopter(db, adopterId, actor);
 }
 
 /** List all soft-deleted adopters (merges + deletion-requests) for /admin/deleted. */
@@ -451,8 +455,10 @@ export async function purgeAllData(confirmationCode: string) {
         // 6. Delete searches
         await db.delete(searches);
 
-        // 7. Delete adopters
+        // 7. Delete adopters, and the merge requests between them
         await db.delete(adopters);
+        const { mergeRequests } = await import('@/db/schema');
+        await db.delete(mergeRequests);
 
         revalidatePath('/admin');
         revalidatePath('/');

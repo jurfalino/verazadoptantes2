@@ -432,7 +432,8 @@ async function loadOpenRequestsByPair(
         createdAt: mergeRequests.createdAt,
     }).from(mergeRequests).where(and(
         eq(mergeRequests.status, 'pending'),
-        or(eq(mergeRequests.requesterEmail, actorEmail), ...team.map(e => eq(mergeRequests.ownerEmail, e))),
+        // Both columns are stored normalized (createMergeRequest); so are these.
+        or(eq(mergeRequests.requesterEmail, normEmail(actorEmail)), ...team.map(e => eq(mergeRequests.ownerEmail, e))),
     )).orderBy(asc(mergeRequests.createdAt)).limit(OPEN_REQUESTS_CAP).all() as OpenRequestRow[];
     const byPair = new Map<string, OpenRequestRow>();
     for (const r of rows) {
@@ -769,48 +770,61 @@ export async function getPendingDuplicatesForUser(
         } catch (e) {
             // A flag-fetch failure must not take out the detected list.
             logger.warn('getPendingDuplicatesForUser: flagged-pair fetch failed', {
-                error: e instanceof Error ? e.message : String(e),
+                actorEmail: viewer, error: e instanceof Error ? e.message : String(e),
             });
         }
 
-        // A request whose pair has no pending candidate or open flag listed.
-        // If the row it came from is GONE (the admin rescan deletes every
-        // pending candidate and re-detects; a pair it no longer finds has no
-        // row), the request still needs answering: list the pair from the
-        // request itself. If the row is still there it was settled — a
-        // candidate is non-pending (every pending one is loaded above), e.g.
-        // set aside with «Mantener separados» — and the pair stays out. A flag
-        // may be open yet unlisted (the flag fetch is capped). Normally no
-        // request is unmatched, so this costs nothing; otherwise one lookup
-        // per unmatched request (≤ the request cap). Adopter rows come from
-        // the page fan-out below.
+        // Every request pair is checked, one bounded lookup per open request
+        // (normally a handful; ≤ the request cap), before it may rank first:
+        // - Both profiles must be live. A request on a deleted profile closes
+        //   with the delete (closeRequestsForDeletedAdopter); this guards
+        //   against one that did not, which would otherwise rank first, count
+        //   in `total` and then vanish at render, eating page-1 slots.
+        // - A request whose pair has no pending candidate or open flag listed:
+        //   if the row it came from is GONE (the admin rescan deletes every
+        //   pending candidate and re-detects; a pair it no longer finds has no
+        //   row) it still needs answering, so the pair is listed from the
+        //   request itself. If the row is still there it was settled — a
+        //   candidate is non-pending (every pending one is loaded above), e.g.
+        //   set aside with «Mantener separados» — and the pair stays out. A
+        //   flag may be open yet unlisted (the flag fetch is capped).
+        // Adopter rows come from the page fan-out below.
         const listedKeys = new Set(mine.map(c => pairKey(c.adopter1Id, c.adopter2Id)));
-        const unmatched = [...requests].filter(([key]) => !listedKeys.has(key));
-        const stillOpen = await Promise.all(unmatched.map(async ([key, r]) => {
+        const checked = await Promise.all([...requests].map(async ([key, r]) => {
             try {
+                const live = await db.select({ n: sql<number>`COUNT(*)` }).from(adopters).where(and(
+                    or(eq(adopters.id, r.primaryId), eq(adopters.id, r.secondaryId)),
+                    isNull(adopters.deletedAt),
+                )).get();
+                if (Number(live?.n ?? 0) < 2) return { key, r, keep: false, synthesize: false };
+                if (listedKeys.has(key)) return { key, r, keep: true, synthesize: false };
                 if (r.flagId) {
                     const flag = await db.select({ adopterId: adopterFlags.adopterId, targetAdopterId: adopterFlags.targetAdopterId, reason: adopterFlags.reason, details: adopterFlags.details })
                         .from(adopterFlags).where(eq(adopterFlags.id, r.flagId)).get();
-                    return !flag || isOpenDuplicateFlag(flag);
+                    const open = !flag || isOpenDuplicateFlag(flag);
+                    return { key, r, keep: open, synthesize: open };
                 }
                 if (r.candidateId) {
                     const cand = await db.select({ id: duplicateCandidates.id })
                         .from(duplicateCandidates).where(eq(duplicateCandidates.id, r.candidateId)).get();
-                    return !cand;
+                    return { key, r, keep: !cand, synthesize: !cand };
                 }
-                return true;
+                return { key, r, keep: true, synthesize: true };
             } catch (e) {
                 logger.warn('getPendingDuplicatesForUser: request pair lookup failed, listing it', {
                     actorEmail: viewer, requestId: r.id, pair: key, error: e instanceof Error ? e.message : String(e),
                 });
-                return true;
+                return { key, r, keep: true, synthesize: !listedKeys.has(key) };
             }
         }));
-        for (const [i, [key, r]] of unmatched.entries()) {
-            if (!stillOpen[i]) {
-                requests.delete(key); // settled: no request line, no "request first" ranking
+        const dropped = new Set<string>();
+        for (const { key, r, keep, synthesize } of checked) {
+            if (!keep) {
+                requests.delete(key); // settled or dead: no request line, no "request first" ranking
+                if (listedKeys.has(key)) dropped.add(key);
                 continue;
             }
+            if (!synthesize) continue;
             mine.push({
                 candidateId: r.candidateId ?? r.flagId ?? r.id,
                 adopter1Id: r.primaryId,
@@ -821,6 +835,13 @@ export async function getPendingDuplicatesForUser(
                 confidence: 'high',
                 detectedAt: r.createdAt,
             });
+        }
+        // A listed pair whose request found a profile gone: it would only
+        // vanish at render after being counted.
+        if (dropped.size) {
+            for (let i = mine.length - 1; i >= 0; i--) {
+                if (dropped.has(pairKey(mine[i].adopter1Id, mine[i].adopter2Id))) mine.splice(i, 1);
+            }
         }
 
         if (mine.length === 0) return EMPTY;

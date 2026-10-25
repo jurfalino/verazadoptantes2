@@ -18,6 +18,7 @@ import { buildContactEntries, contactEntriesToBlob } from '@/lib/contactEntries'
 import { insertRecord } from '@/app/actions/_recordWrite';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { logger } from '@/lib/logger';
+import { closeRequestsForDeletedAdopter } from '@/lib/mergeRequestClose';
 import { DEFAULT_RESCUE, demoCreatedAt, demoCreatedNames, demoProfiles, type Registered } from './docScenarios';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -37,6 +38,7 @@ async function removeProfile(db: Db, id: string): Promise<void> {
     await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, id));
     await db.delete(adopterHistory).where(eq(adopterHistory.adopterId, id));
     await db.delete(adopters).where(eq(adopters.id, id));
+    await closeRequestsForDeletedAdopter(db, id, 'demo-seed');
 }
 
 async function createProfile(db: Db, p: Pick<Registered, 'id' | 'name' | 'email' | 'phone' | 'documentId'>, createdAt: Date = new Date()): Promise<void> {

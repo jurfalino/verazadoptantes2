@@ -11,6 +11,7 @@ import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
+import { closeRequestsForDeletedAdopter } from '@/lib/mergeRequestClose';
 import { saveAdopterSchema } from './validation';
 import { z } from 'zod';
 import { hasMinimumIdentifier } from '@/domain/adopterIdentity';
@@ -745,6 +746,7 @@ export async function deleteOwnAdopter(adopterId: string) {
         ]);
 
         await db.delete(adopters).where(eq(adopters.id, adopterId));
+        await closeRequestsForDeletedAdopter(db, adopterId, user);
 
         logger.info('Adopter deleted by owner', { adopterId, deletedBy: user });
         logAudit({ userEmail: user, action: 'adopter_deleted', target: adopterId });

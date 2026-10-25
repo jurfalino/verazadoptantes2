@@ -42,6 +42,7 @@ vi.mock('@/lib/logger', () => ({
 
 import { getPendingDuplicatesForUser, mergePendingDedupPair, dismissDuplicateCandidate, type PendingDedupPair } from './duplicates';
 import { resolveMergeRequest } from './mergeRequests';
+import { deleteOwnAdopter } from './adopters';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -205,6 +206,40 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         const { pairs } = await feed(MATE);
         expect(pairs.map(p => p.candidateId)).toEqual(['cand-rescan']);
         expect(pairs[0].request).toMatchObject({ direction: 'received' });
+    });
+
+    it('a requested profile is deleted by its owner: the request closes and the pair leaves every list', async () => {
+        await mergePendingDedupPair('cand-older-mine');
+        const id = requestId();
+        expect(await as(OWNER, () => deleteOwnAdopter('o-new'))).toEqual({ success: true });
+        expect(sqlite.prepare('SELECT status FROM merge_requests WHERE id = ?').get(id)!.status).toBe('closed');
+        expect(await feed(MATE)).toEqual({ pairs: [], total: 0, lowHidden: 0 });
+        const mine = await feed(STRANGER);
+        expect(mine.pairs.map(p => p.candidateId)).not.toContain('cand-older-mine');
+        expect(mine.total).toBe(mine.pairs.length);
+    });
+
+    it('a request left open on a gone profile (hard or soft delete that skipped the close): total and pairs agree', async () => {
+        await mergePendingDedupPair('cand-older-mine');
+        sqlite.prepare(`DELETE FROM duplicate_candidates WHERE adopter1_id = 'o-new' OR adopter2_id = 'o-new'`).run();
+        sqlite.prepare(`DELETE FROM adopters WHERE id = 'o-new'`).run();
+        expect(await feed(MATE)).toEqual({ pairs: [], total: 0, lowHidden: 0 });
+        expect(sqlite.prepare(`SELECT status FROM merge_requests`).get()!.status).toBe('pending'); // the feed only reads
+        sqlite.prepare('DELETE FROM merge_requests').run();
+
+        await mergePendingDedupPair('cand-anon'); // candidate stays pending; the side is soft-deleted
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 9000 WHERE id = 'anon-new'`).run();
+        const res = await feed(STRANGER);
+        expect(res.pairs.map(p => p.candidateId)).toEqual(['cand-newer-mine']);
+        expect(res.total).toBe(1);
+    });
+
+    it("an owner whose added_by has capitals still sees the request addressed to them", async () => {
+        sqlite.prepare(`UPDATE adopters SET added_by = 'Owner@Example.com' WHERE id = 'o-new'`).run();
+        expect(await mergePendingDedupPair('cand-older-mine')).toEqual({ success: true, outcome: 'requested' });
+        expect(sqlite.prepare('SELECT requester_email, owner_email FROM merge_requests').get()).toEqual({ requester_email: STRANGER, owner_email: OWNER });
+        expect(pairOf((await feed(OWNER)).pairs, 'cand-older-mine').request).toMatchObject({ direction: 'received', counterpartName: 'stranger' });
+        expect(pairOf((await feed(MATE)).pairs, 'cand-older-mine').request).toMatchObject({ direction: 'received' });
     });
 
     it('the feed never carries an email address', async () => {

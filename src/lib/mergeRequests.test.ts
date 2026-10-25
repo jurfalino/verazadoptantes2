@@ -53,7 +53,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { createMergeRequest, answerMergeRequest, listMergeRequestsForAdmin } from './mergeRequests';
-import { closeRequestsForAdopter } from './mergeRequestClose';
+import { closeRequestsForAdopter, closeRequestsForDeletedAdopter } from './mergeRequestClose';
 import { mergeAdopters } from '@/lib/adopterMerge';
 import { isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX } from '@/domain/dedupPair';
 
@@ -142,6 +142,11 @@ describe('createMergeRequest', () => {
     it('the requester is left out of the asked team, whatever the case of their email', async () => {
         await createMergeRequest(db(), { ...detectedInput, requesterEmail: 'Mate@Example.com' });
         expect(recipients()).toEqual([OWNER]);
+    });
+
+    it('requester and owner are stored normalized, whatever case they arrive in', async () => {
+        const { id } = await createMergeRequest(db(), { ...detectedInput, requesterEmail: ' Stranger@Example.COM ', ownerEmail: 'Owner@Example.com' });
+        expect(request(id)).toMatchObject({ requester_email: STRANGER, owner_email: OWNER });
     });
 
     it('no real owner: the row has a null owner and the admins are notified instead', async () => {
@@ -388,6 +393,20 @@ describe('closeRequestsForAdopter', () => {
         expect(request(survivorElsewhere).status).toBe('pending');
         expect(request(unrelated).status).toBe('pending');
         expect(await answerMergeRequest(db(), id, OWNER, 'accept')).toEqual({ ok: false, reason: 'not_open' });
+    });
+});
+
+describe('closeRequestsForDeletedAdopter', () => {
+    it("closes the deleted profile's open requests", async () => {
+        const { id } = await createMergeRequest(db(), detectedInput);
+        await closeRequestsForDeletedAdopter(db(), 'o-new', ADMIN);
+        expect(request(id).status).toBe('closed');
+    });
+
+    it('a DB failure is logged with the profile and actor, never thrown (the delete stands)', async () => {
+        sqlite.prepare('DROP TABLE merge_requests').run();
+        await expect(closeRequestsForDeletedAdopter(db(), 'o-new', ADMIN)).resolves.toBeUndefined();
+        expect(logs.warn).toContainEqual(['closeRequestsForDeletedAdopter: open requests left open', expect.objectContaining({ adopterId: 'o-new', actor: ADMIN })]);
     });
 });
 

@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { isAdminAsync } from "@/config/admins";
 import { deleteAdopterRecords } from "@/app/actions/_recordWrite";
+import { closeRequestsForDeletedAdopter } from "@/lib/mergeRequestClose";
 
 export async function POST(request: NextRequest) {
     let adopterId: string | undefined;
@@ -63,6 +64,7 @@ export async function POST(request: NextRequest) {
         await db.delete(duplicateCandidates).where(sql`${duplicateCandidates.adopter1Id} = ${adopterId} OR ${duplicateCandidates.adopter2Id} = ${adopterId}`);
         await db.update(formSubmissions).set({ linkedAdopterId: null }).where(eq(formSubmissions.linkedAdopterId, adopterId));
         await db.delete(adopters).where(eq(adopters.id, adopterId));
+        await closeRequestsForDeletedAdopter(db, adopterId, session.user.email);
 
         logger.info('Adopter deleted successfully', { adopterId, deletedBy: session.user.email });
 

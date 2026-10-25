@@ -15,6 +15,7 @@ import { and, count, eq, gte, isNotNull, isNull, ne, notLike, or } from 'drizzle
 import { activityForms, adopterEvents, adopterHistory, adopterImages, adopters, adoptions, apiRequests, formSubmissions, placements } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
+import { closeRequestsForDeletedAdopter } from '@/lib/mergeRequestClose';
 import { socialUrl, type SocialPlatform } from '@/lib/contactEntries';
 import { pickBestMatch, type ExactOutcome } from '@/domain/apiExactMatch';
 import { normalizeSpecies } from '@/domain/importRow';
@@ -319,6 +320,7 @@ export async function voidApiRecord(db: Db, recordId: string, opts: { keyId: str
                 .where(and(eq(adopters.id, currentProfileId), isNull(adopters.deletedAt)))
                 .returning({ id: adopters.id });
             profileVoided = gone.length > 0;
+            if (profileVoided) await closeRequestsForDeletedAdopter(db, currentProfileId, opts.actor);
         }
     }
 

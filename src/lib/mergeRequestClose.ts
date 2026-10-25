@@ -8,6 +8,7 @@
 import { and, eq, or } from 'drizzle-orm';
 import { mergeRequests } from '@/db/schema';
 import type { getDb } from '@/lib/db';
+import { logger } from '@/lib/logger';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -35,4 +36,22 @@ export async function closeRequestsForAdopter(db: Db, adopterId: string): Promis
         ))
         .returning({ id: mergeRequests.id });
     return closed.length;
+}
+
+/**
+ * A profile was deleted (hard, or soft outside a merge): its open requests
+ * close on their own (spec: "If either profile is merged or deleted by some
+ * other path while a request is pending, the request closes on its own").
+ * Best-effort — the delete stands either way; a failure is logged, and the
+ * feed drops a request whose profiles are not both live regardless.
+ */
+export async function closeRequestsForDeletedAdopter(db: Db, adopterId: string, actor: string | null | undefined): Promise<void> {
+    try {
+        const closed = await closeRequestsForAdopter(db, adopterId);
+        if (closed > 0) logger.info('closeRequestsForDeletedAdopter: closed', { adopterId, actor, closed });
+    } catch (e) {
+        logger.warn('closeRequestsForDeletedAdopter: open requests left open', {
+            adopterId, actor, error: e instanceof Error ? e.message : String(e),
+        });
+    }
 }
