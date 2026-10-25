@@ -1633,7 +1633,7 @@ export const pt = {
         pending_d_write_title: 'Escrever para {name}',
         pending_d_write_about: 'Sobre {name}',
         pending_d_write_label: 'Mensagem',
-        pending_d_write_warning: '{name} verá seu email para responder.',
+        pending_d_write_warning: '{name} e sua equipe verão seu email para responder.',
         pending_d_write_send: 'Enviar',
         pending_d_write_sent: 'Mensagem enviada para {name}',
         pending_d_write_failed: 'Não foi possível enviar a mensagem.',

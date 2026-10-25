@@ -1628,7 +1628,7 @@ export const en = {
         pending_d_write_title: 'Write to {name}',
         pending_d_write_about: 'About {name}',
         pending_d_write_label: 'Message',
-        pending_d_write_warning: '{name} will see your email to reply to you.',
+        pending_d_write_warning: '{name} and their team will see your email to reply to you.',
         pending_d_write_send: 'Send',
         pending_d_write_sent: 'Message sent to {name}',
         pending_d_write_failed: 'The message could not be sent.',

@@ -2,9 +2,10 @@
 
 /**
  * «Escribirle a María» (D28): a short note to the other side of a merge
- * request. She gets it in the bell and by email, and replying to the email
- * reaches the sender — so the box says she will see the sender's email. The
- * sender never sees hers.
+ * request. She and her team get it in the bell and by email (it goes to the
+ * whole owner team), and replying to the email reaches the sender — so the
+ * box says she AND her team will see the sender's email. The sender never
+ * sees theirs.
  */
 
 import { useState } from 'react';
@@ -40,7 +41,7 @@ export default function WriteMessage({ toName, aboutName, busy, onSend, onCancel
             <div className="mt-2 flex items-start gap-2 rounded-xl px-3 py-2 bg-[var(--status-info-bg)] border border-[var(--status-info-border)] text-[var(--status-info-text)]">
                 <Info className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
                 <p className="text-[13px] font-semibold">
-                    {fill(t('myAdopters.pending_d_write_warning') || '{name} verá tu email para responderte.', { name: toName })}
+                    {fill(t('myAdopters.pending_d_write_warning') || '{name} y su equipo verán tu email para responderte.', { name: toName })}
                 </p>
             </div>
             <div className="mt-6 grid grid-cols-2 gap-2">
