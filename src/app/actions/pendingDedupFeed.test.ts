@@ -109,7 +109,7 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         const p = pairOf((await feed(OWNER)).pairs, 'cand-newer-mine');
         expect(p.request).toEqual({
             id: requestId(), status: 'pending', direction: 'sent', createdAt: expect.any(Number), counterpartName: 'stranger', toAdmins: false,
-            canMessage: true, declinedAt: null, declinedByName: null,
+            canMessage: true, declinedAt: null, declinedByName: null, keepId: 'o-old',
         });
         expect(p.request!.createdAt).toBeLessThan(Date.now() / 1000 + 5); // epoch seconds, not ms
         expect(p.request!.createdAt).toBeGreaterThan(Date.now() / 1000 - 60);
@@ -130,6 +130,10 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         // Neither side is MATE's, so both name their creator.
         expect(p.newAdopter.createdByName).toBe('Olga Dueña');
         expect(p.existingAdopter.createdByName).toBe('stranger');
+        // …but the teammate's side counts as the team's: keeping the other moves it (D25).
+        expect([p.newAdopter.teamOwned, p.existingAdopter.teamOwned]).toEqual([true, false]);
+        // The request's survivor is the requester's choice (the older default here).
+        expect(p.request!.keepId).toBe('s-old');
         expect(pairOf((await feed(OWNER)).pairs, 'cand-older-mine').request).toMatchObject({ direction: 'received' });
         expect(pairOf((await feed(STRANGER)).pairs, 'cand-older-mine').request).toMatchObject({ direction: 'sent', counterpartName: 'Olga Dueña' });
     });

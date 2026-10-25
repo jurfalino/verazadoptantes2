@@ -363,7 +363,7 @@ async function buildPairSide(
     viewerEmail: string | null | undefined,
     row: PairRow,
     names: ReadonlyMap<string, string>,
-): Promise<PendingDedupSide> {
+): Promise<Omit<PendingDedupSide, 'teamOwned'>> {
     let contactInfo = row.contactInfo;
     let contactEntries: string | null = null;
     let canSeeContact = true;
@@ -529,6 +529,7 @@ function requestView(
         id: r.id,
         status: r.status,
         direction,
+        keepId: r.primaryId,
         createdAt: r.createdAt ? Math.floor(r.createdAt.getTime() / 1000) : 0,
         counterpartName: counterpart ? nameOf(counterpart) : null,
         toAdmins: r.ownerEmail === null,
@@ -649,6 +650,8 @@ export interface PendingDedupPair {
         declinedAt: number | null;
         /** Who declined («Rechazado por María»), name or handle; null while pending and when the viewer declined it. */
         declinedByName: string | null;
+        /** The profile the requester chose to keep (the request's survivor, D24): «Se conserva» on the row. */
+        keepId: string;
     };
 }
 
@@ -668,6 +671,8 @@ export interface PendingDedupSide {
     createdByAnonymous: boolean;
     /** The viewer created this profile («Tuyo», D22–D23). */
     isMine: boolean;
+    /** The viewer or a teammate created it: keeping the other side moves nothing to another rescuer's list (D25). */
+    teamOwned: boolean;
 }
 
 /**
@@ -1212,7 +1217,10 @@ export async function getPendingDuplicatesForUser(
         const side = async (row: PairRow) => {
             const hit = sideCache.get(row.id);
             if (hit) return hit;
-            const built = await buildPairSide(viewer, row, names);
+            const built: PendingDedupSide = {
+                ...await buildPairSide(viewer, row, names),
+                teamOwned: !!realOwner(row.addedBy) && teamKeys.has(normEmail(row.addedBy!)),
+            };
             sideCache.set(row.id, built);
             return built;
         };

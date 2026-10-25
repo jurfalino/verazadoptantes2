@@ -41,7 +41,7 @@ type Mark = 'match' | 'partial' | 'different' | null;
  * (the same value, so nothing new) and otherwise only that the profile has one.
  * Its name is shown: names are not PII-gated.
  */
-export default function MatchCompare({ adopterId, matchTypes, profileName, source, target = 'profile', t, defaultOpen = false, bare = false, profileEntries, sourceHead, targetHead, score }: {
+export default function MatchCompare({ adopterId, matchTypes, profileName, source, target = 'profile', t, defaultOpen = false, bare = false, profileEntries, sourceHead, targetHead, score, kept = null }: {
     /** The possibly-duplicate profile. */
     adopterId: string;
     matchTypes: string[];
@@ -61,6 +61,8 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
     targetHead?: ReactNode;
     /** The search engine's score (0–100). Admins only, behind an icon (Jon, 2026-10-25). */
     score?: number | null;
+    /** The block whose profile stays after a merge: outlined in teal (Pendientes, D23). */
+    kept?: 'source' | 'target' | null;
 }) {
     const { data: session } = useSession();
     const isAdmin = !!(session?.user as { isAdmin?: boolean } | undefined)?.isAdmin;
@@ -142,10 +144,10 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
             {open && (
                 <div data-testid="match-compare-rows" className="mt-1 space-y-2">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <Block head={sourceHead ?? t(`matchCompare.col_${source.kind}`)} side="source">
+                        <Block head={sourceHead ?? t(`matchCompare.col_${source.kind}`)} side="source" kept={kept === 'source'}>
                             {rows.map(r => <Cell key={r.field} label={t(`matchCompare.field_${r.field}`)} {...sourceCell(r)} t={t} />)}
                         </Block>
-                        <Block head={targetHead ?? t(`matchCompare.col_target_${target}`)} side="target"
+                        <Block head={targetHead ?? t(`matchCompare.col_target_${target}`)} side="target" kept={kept === 'target'}
                             aside={isAdmin && typeof score === 'number' ? <AdminScore score={score} t={t} /> : null}>
                             {rows.map(r => <Cell key={r.field} label={t(`matchCompare.field_${r.field}`)} {...targetCell(r, !!profileEntries)} t={t} />)}
                         </Block>
@@ -192,10 +194,12 @@ function targetCell(r: BreakdownRow, valuesShown: boolean): CellData {
     return { mark, locked: true };
 }
 
-function Block({ head, side, aside, children }: { head: ReactNode; side: 'source' | 'target'; aside?: ReactNode; children: ReactNode }) {
+function Block({ head, side, aside, kept = false, children }: { head: ReactNode; side: 'source' | 'target'; aside?: ReactNode; kept?: boolean; children: ReactNode }) {
     return (
         // Themed colours only (globals.css remaps them for dark mode; opacity variants aren't).
-        <div className={`min-w-0 rounded-xl border border-stone-200 p-3 ${side === 'source' ? 'bg-stone-50' : 'bg-white'}`}>
+        <div data-kept={kept || undefined} className={`min-w-0 rounded-xl p-3 ${kept
+            ? 'border-2 border-[var(--accent)] bg-[var(--accent-subtle-bg)]'
+            : `border border-stone-200 ${side === 'source' ? 'bg-stone-50' : 'bg-white'}`}`}>
             <div className="mb-1.5 flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1 text-[11px] font-bold uppercase tracking-wider text-stone-500">{head}</div>
                 {aside}
@@ -243,7 +247,7 @@ function LockIcon() {
  * The search score, for admins only: an unobtrusive gauge icon. Hover shows it
  * (title); a tap reveals it inline, since a phone has no hover.
  */
-function AdminScore({ score, t }: { score: number; t: (key: string) => string }) {
+export function AdminScore({ score, t }: { score: number; t: (key: string) => string }) {
     const [shown, setShown] = useState(false);
     const label = `${t('matchCompare.score_title')}: ${Math.round(score)}%`;
     return (

@@ -49,8 +49,12 @@ async function openPendingCard(page: Page, name: string) {
     const toggle = page.locator('button[aria-controls="pending-dedup-list"]');
     await expect(toggle).toBeVisible({ timeout: 30_000 });
     if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
-    const card = page.locator('#pending-dedup-list > div').filter({ hasText: name });
+    const card = page.getByTestId('dedup-row').filter({ hasText: name });
     await expect(card).toHaveCount(1, { timeout: 30_000 });
+    // Layout D: rows open one at a time; the header is the first expandable button.
+    const header = card.locator('button[aria-expanded]').first();
+    if ((await header.getAttribute('aria-expanded')) !== 'true') await header.click();
+    await expect(header).toHaveAttribute('aria-expanded', 'true');
     return card;
 }
 

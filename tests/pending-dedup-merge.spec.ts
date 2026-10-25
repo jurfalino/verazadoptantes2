@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Locator } from '@playwright/test';
 import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
 
@@ -29,6 +29,13 @@ const rows = (sql: string) => {
 };
 const isNull = (v: unknown) => v === null || v === undefined || v === 'null';
 
+/** Layout D: rows open one at a time — open this one (its header is the first expandable button). */
+async function openRow(row: Locator) {
+    const header = row.locator('button[aria-expanded]').first();
+    if ((await header.getAttribute('aria-expanded')) !== 'true') await header.click();
+    await expect(header).toHaveAttribute('aria-expanded', 'true');
+}
+
 test('the owner merges a pending pair from /my-adopters; the older profile survives', async ({ page }) => {
     test.setTimeout(120_000);
     const stamp = Date.now();
@@ -45,9 +52,11 @@ test('the owner merges a pending pair from /my-adopters; the older profile survi
     const toggle = page.getByRole('button', { name: /Pending review|Pendientes de revisar|Pendentes de revisão/ });
     await expect(toggle).toBeVisible({ timeout: 30_000 });
     if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
-    const card = page.locator('#pending-dedup-list > div').filter({ hasText: NAME });
+    const card = page.getByTestId('dedup-row').filter({ hasText: NAME });
     await expect(card).toHaveCount(1, { timeout: 30_000 });
-    await card.getByRole('button', { name: /^(Merge profiles|Combinar perfiles|Mesclar perfis|Combinar perfis)$/ }).click();
+    await openRow(card);
+    // Both profiles are hers: nothing moves to another list, so no confirmation.
+    await card.getByTestId('dedup-merge').filter({ hasText: /^(Merge profiles|Combinar perfiles|Mesclar perfis|Combinar perfis)$/ }).click();
     await expect(card).toHaveCount(0, { timeout: 30_000 });
 
     await expect.poll(() => isNull(rows(`SELECT deleted_at FROM adopters WHERE id = '${NEW}'`)[0]?.deleted_at), { timeout: 30_000 })
@@ -72,9 +81,10 @@ test('a foreign profile is never absorbed into hers: the button asks its owner i
     const toggle = page.getByRole('button', { name: /Pending review|Pendientes de revisar|Pendentes de revisão/ });
     await expect(toggle).toBeVisible({ timeout: 30_000 });
     if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
-    const card = page.locator('#pending-dedup-list > div').filter({ hasText: NAME });
+    const card = page.getByTestId('dedup-row').filter({ hasText: NAME });
     await expect(card).toHaveCount(1, { timeout: 30_000 });
-    // The click would ask the other rescuer, and the button says so.
+    await openRow(card);
+    // Hers stays by default (the older one), so the click asks the other rescuer, and the button says so.
     const button = card.getByTestId('dedup-merge');
     await expect(button).toHaveText(/^(Request merge|Pedir combinar|Pedir para combinar)$/);
     await button.click();
