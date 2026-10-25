@@ -522,11 +522,6 @@ export interface PendingDedupPair {
     confidence: string;
     confidencePercent: number;
     /**
-     * The open (pending) merge request on this pair, if any: one the viewer
-     * filed ('sent', D8) or one asking the viewer or a teammate ('received',
-     * D7, D16). A declined request resolves the pair, so it drops out.
-     */
-    /**
      * What «Combinar» does for this viewer, so the button says so (spec "Who
      * sees what"): 'merge' merges now («Combinar perfiles»); 'request' asks
      * the other profile's owner («Pedir combinar»). The same decideDedupAction
@@ -535,6 +530,11 @@ export interface PendingDedupPair {
      * reads 'merge'.
      */
     mergeAction: 'merge' | 'request';
+    /**
+     * The open (pending) merge request on this pair, if any: one the viewer
+     * filed ('sent', D8) or one asking the viewer or a teammate ('received',
+     * D7, D16). A declined request resolves the pair, so it drops out.
+     */
     request: null | {
         id: string;
         direction: 'sent' | 'received';
