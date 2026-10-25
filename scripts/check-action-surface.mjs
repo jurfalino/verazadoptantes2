@@ -218,6 +218,8 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // is the shared, audited, undoable mergeAdopters. Refusals logged with an errorId.
 // COMPUTED, not measured: nothing imports them until the PendingDedup / admin-list UI
 // tasks, and Next only records referenced actions. 159 = 157 + 2.
+// MEASURED 159 once wired (Task 11 build): EmailNotificationsSection imports getEmailPrefs /
+// saveEmailPref; PendingDedup and MergeRequestsPanel import resolveMergeRequest / cancelMergeRequest.
 const EXPECTED_ACTIONS = 159;
 
 let manifest;
