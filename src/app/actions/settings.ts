@@ -1,6 +1,6 @@
 'use server';
 
-import { getUser } from './_db';
+import { getDb, getUser } from './_db';
 import { logger } from '@/lib/logger';
 import { acceptTermsAndCountrySchema } from './validation';
 import { logAudit } from '@/lib/audit';
@@ -445,6 +445,54 @@ export async function saveFollowupSettings(input: FollowupSettings | null): Prom
         return { success: true };
     } catch (error) {
         const errorId = logger.error('saveFollowupSettings failed', error, { userEmail });
+        return { success: false, errorId };
+    }
+}
+
+// ── Email notification switches (per category) ──────────────────────────────
+
+import { and, eq, isNull } from 'drizzle-orm';
+import { apiKeys } from '@/db/schema';
+import { ALWAYS_ON_CATEGORIES, EMAIL_CATEGORIES, type EmailCategory, type EmailPrefs } from '@/domain/emailCategories';
+import { getEmailPrefsForEmail, setEmailPrefForEmail } from '@/lib/emailPrefs';
+
+/** The viewer's email switches + whether they hold a live API key (null = no session). */
+export async function getEmailPrefs(): Promise<{ prefs: EmailPrefs; hasApiKey: boolean } | null> {
+    let userEmail: string | undefined;
+    try {
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') return null;
+
+        const db = await getDb();
+        const [prefs, keys] = await Promise.all([
+            getEmailPrefsForEmail(db, userEmail),
+            db.select({ id: apiKeys.id }).from(apiKeys)
+                .where(and(eq(apiKeys.ownerEmail, userEmail), isNull(apiKeys.revokedAt))).limit(1),
+        ]);
+        return { prefs, hasApiKey: keys.length > 0 };
+    } catch (error) {
+        logger.error('getEmailPrefs failed', error, { userEmail });
+        return null;
+    }
+}
+
+/** Switch one email category on or off. Always-on categories and unknown values are refused. */
+export async function saveEmailPref(category: EmailCategory, enabled: boolean): Promise<{ success: boolean; errorId?: string }> {
+    let userEmail: string | undefined;
+    try {
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') throw new Error('No authenticated user');
+        if (!EMAIL_CATEGORIES.includes(category) || typeof enabled !== 'boolean') {
+            throw new Error(`Invalid email preference: ${String(category)}`);
+        }
+        if (ALWAYS_ON_CATEGORIES.has(category)) throw new Error(`Email category cannot be switched off: ${category}`);
+
+        await setEmailPrefForEmail(await getDb(), userEmail, category, enabled);
+
+        logAudit({ userEmail, action: 'email_pref_saved', details: { category, enabled } });
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('saveEmailPref failed', error, { userEmail, category });
         return { success: false, errorId };
     }
 }

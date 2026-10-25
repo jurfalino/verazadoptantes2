@@ -10,6 +10,7 @@ import { timezoneOptionsFor } from '@/domain/timezones';
 import { DEFAULT_TIMEZONE } from '@/lib/dates';
 import { useShowToast } from '@/components/ui/Toast';
 import FollowupSettingsSection from '@/components/FollowupSettingsSection';
+import EmailNotificationsSection from '@/components/EmailNotificationsSection';
 import AdoptionDocsSettingsSection from '@/components/AdoptionDocsSettingsSection';
 import ApiSettingsSection from '@/components/api/ApiSettingsSection';
 
@@ -245,6 +246,9 @@ export default function SettingsPage() {
                 {/* v2.55.16: follow-up schedule + message templates (renders only
                     when the public ENABLE_FOLLOWUPS flag is on). */}
                 <FollowupSettingsSection />
+
+                {/* Per-category email switches. */}
+                <EmailNotificationsSection />
 
                 {/* Custom adoption form + contract (renders only when the public
                     ENABLE_CUSTOM_ADOPTION_DOCS flag is on). */}

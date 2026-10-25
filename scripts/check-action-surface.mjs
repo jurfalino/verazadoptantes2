@@ -207,7 +207,9 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // v2.56.171: getLinkedFormSubmissions(adopterId) REMOVED — an unauthenticated action
 // that returned every linked form's answers (PII) for any profile id; nothing on
 // screen used it, but Next still published it with the adopters module. 155 = 156 − 1.
-const EXPECTED_ACTIONS = 155;
+// Email prefs (merge requests + email notifications, Task 3): getEmailPrefs() and
+// saveEmailPref(category, enabled) in settings.ts — both session-gated, own row only. 157 = 155 + 2.
+const EXPECTED_ACTIONS = 157;
 
 let manifest;
 try {
