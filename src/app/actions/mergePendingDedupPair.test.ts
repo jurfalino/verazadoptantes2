@@ -1,14 +1,17 @@
 /**
  * The only browser door to a merge. Real SQL (in-memory SQLite) for the
- * candidate / flag / adopter lookups; the merge itself is a spy.
+ * candidate / flag / adopter lookups; the merge and the merge request are
+ * spies (the request flow end to end: mergePendingDedupPair.request.test.ts).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 
-const { state, mergeSpy } = vi.hoisted(() => ({
+const { state, mergeSpy, requestSpy, notifySpy } = vi.hoisted(() => ({
     state: { db: null as unknown, user: null as string | null },
     mergeSpy: vi.fn(),
+    requestSpy: vi.fn(),
+    notifySpy: vi.fn(),
 }));
 
 vi.mock('./_db', () => ({
@@ -16,6 +19,8 @@ vi.mock('./_db', () => ({
     getUser: async () => { if (!state.user) throw new Error('Authentication required'); return state.user; },
 }));
 vi.mock('@/lib/adopterMerge', () => ({ mergeAdopters: mergeSpy }));
+vi.mock('@/lib/mergeRequests', () => ({ createMergeRequest: requestSpy }));
+vi.mock('./notifications', () => ({ createNotification: notifySpy, resolveDisplayName: async (e: string) => e.split('@')[0] }));
 vi.mock('@/lib/adopterTokenize', () => ({ tokenizeAdopter: vi.fn() }));
 // Team rule: the owner plus one teammate.
 vi.mock('@/lib/orgMembership', () => ({
@@ -53,7 +58,9 @@ function seed() {
 describe('mergePendingDedupPair', () => {
     beforeEach(() => {
         seed();
-        mergeSpy.mockReset().mockResolvedValue({ success: true });
+        mergeSpy.mockReset().mockResolvedValue({ success: true, primaryName: 'Vieja', secondaryName: 'Nueva' });
+        requestSpy.mockReset().mockResolvedValue({ id: 'req-1', created: true });
+        notifySpy.mockReset();
         state.user = OWNER;
     });
 
@@ -71,23 +78,36 @@ describe('mergePendingDedupPair', () => {
     });
 
     it('her newer record folds into a foreign older one: merged, the foreign record survives, actor from the session', async () => {
-        expect(await mergePendingDedupPair('cand-mine')).toEqual({ success: true });
+        expect(await mergePendingDedupPair('cand-mine')).toEqual({ success: true, outcome: 'merged' });
         expect(mergeSpy).toHaveBeenCalledWith('other-old', 'mine-new', OWNER);
+        expect(notifySpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'adopter_merged', userId: 'other@example.com', url: '/adopter/other-old' }));
+        expect(requestSpy).not.toHaveBeenCalled();
     });
 
-    it('her record is older and the other is foreign: refused — never absorbs another rescuer\'s profile', async () => {
-        expect(await mergePendingDedupPair('cand-absorb-foreign')).toMatchObject({ success: false, error: 'other_owner' });
+    // Since merge requests (spec D2/D10/D14) these two ask the other owner
+    // instead of refusing — still never absorbing another rescuer's profile.
+    it('her record is older and the other is foreign: a merge request, never a merge', async () => {
+        expect(await mergePendingDedupPair('cand-absorb-foreign')).toEqual({ success: true, outcome: 'requested' });
+        expect(requestSpy).toHaveBeenCalledWith(state.db, {
+            primaryId: 'mine-old', secondaryId: 'other-new', candidateId: 'cand-absorb-foreign', flagId: null,
+            requesterEmail: OWNER, ownerEmail: 'other@example.com',
+        });
         expect(mergeSpy).not.toHaveBeenCalled();
     });
 
-    it('a self-filed flag across owners: refused', async () => {
-        expect(await mergePendingDedupPair('flag-cross')).toMatchObject({ success: false, error: 'flag_cross_owner' });
+    it('a self-filed flag across owners: a merge request (carrying the flag id), never a merge', async () => {
+        expect(await mergePendingDedupPair('flag-cross')).toEqual({ success: true, outcome: 'requested' });
+        expect(requestSpy).toHaveBeenCalledWith(state.db, {
+            primaryId: 'other-old', secondaryId: 'mine-new', candidateId: null, flagId: 'flag-cross',
+            requesterEmail: OWNER, ownerEmail: 'other@example.com',
+        });
         expect(mergeSpy).not.toHaveBeenCalled();
     });
 
-    it('a flag inside her team: merged, her older record survives', async () => {
-        expect(await mergePendingDedupPair('flag-team')).toEqual({ success: true });
+    it('a flag inside her team: merged, her older record survives, nobody to notify', async () => {
+        expect(await mergePendingDedupPair('flag-team')).toEqual({ success: true, outcome: 'merged' });
         expect(mergeSpy).toHaveBeenCalledWith('mine-old', 'mate-new', OWNER);
+        expect(notifySpy).not.toHaveBeenCalled();
     });
 
     it('unknown or already-resolved candidate: refused', async () => {

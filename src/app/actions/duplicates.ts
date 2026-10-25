@@ -4,11 +4,12 @@ import { adopters, adopterFlags, adopterStats, duplicateTokens, duplicateCandida
 import { eq, or, and, inArray, sql, isNull } from 'drizzle-orm';
 import { logger, generateErrorId } from '@/lib/logger';
 import { getDb, getUser } from './_db';
-import { decideDedupMerge, isOpenDuplicateFlag, type DedupSide } from '@/domain/dedupPair';
+import { decideDedupAction, isOpenDuplicateFlag, type DedupSide } from '@/domain/dedupPair';
 import { normalizeText, extractPhones, extractEmails, extractSocials, normalizeSocialHandle, detectSocialPlatformFromValue } from '@/lib/tokenizer';
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, storedScoreToPercent, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 
 import { mergeAdopters } from '@/lib/adopterMerge';
+import { createMergeRequest } from '@/lib/mergeRequests';
 
 /**
  * Attach a just-signed contract's adoption to an existing matched adopter profile,
@@ -449,13 +450,20 @@ export interface PendingDedupPair {
  * a merge: the actor comes from the session, never from the caller. The pair
  * must be one getPendingDuplicatesForUser lists for them (a pending
  * duplicate_candidates row, or a manual duplicate flag — the feed uses the
- * flag's id as the candidate id — where the caller created a live side), AND
- * the absorbed record must be the caller's own or a teammate's; a flag needs
- * both sides in the team (decideDedupMerge, src/domain/dedupPair.ts). The
- * older record survives, as the card shows. The merge itself is the shared
- * mergeAdopters (src/lib/adopterMerge.ts).
+ * flag's id as the candidate id — where the caller created a live side).
+ * decideDedupAction (src/domain/dedupPair.ts) then says merge or ask: the
+ * pair merges straight away only when the absorbed record is the caller's own
+ * or a teammate's (a flag: both sides) — the older record survives, as the
+ * card shows, and a foreign survivor's owner is told (`adopter_merged`).
+ * Otherwise a merge request goes to the other owner and their team, or to the
+ * admins when there is no real owner (createMergeRequest,
+ * src/lib/mergeRequests.ts). The merge itself is the shared mergeAdopters
+ * (src/lib/adopterMerge.ts).
  */
-export async function mergePendingDedupPair(candidateId: string): Promise<{ success: boolean; error?: string; errorId?: string }> {
+export async function mergePendingDedupPair(candidateId: string): Promise<
+    | { success: true; outcome: 'merged' | 'requested' }
+    | { success: false; error: string; errorId?: string }
+> {
     let actorEmail: string | null = null;
     try {
         try { actorEmail = await getUser(); } catch { actorEmail = null; }
@@ -484,21 +492,48 @@ export async function mergePendingDedupPair(candidateId: string): Promise<{ succ
             };
         };
         const [a, b] = pair ? await Promise.all([load(pair.a), load(pair.b)]) : [null, null];
-        const decision = decideDedupMerge(actorEmail, a, b, pair?.source);
-        if (!decision.ok) {
+        const action = decideDedupAction(actorEmail, a, b, pair?.source);
+        if (action.kind === 'refuse') {
             const errorId = generateErrorId();
-            logger.warn('mergePendingDedupPair: refused', { candidateId, actorEmail, reason: decision.reason, errorId });
-            return { success: false, error: decision.reason, errorId };
+            logger.warn('mergePendingDedupPair: refused', { candidateId, actorEmail, reason: action.reason, errorId });
+            return { success: false, error: action.reason, errorId };
         }
-        const result = await mergeAdopters(decision.primaryId, decision.secondaryId, actorEmail!);
+        const { primaryId, secondaryId } = action;
+        if (action.kind === 'request') {
+            const fromFlag = pair!.source === 'flag';
+            const { id: requestId, created } = await createMergeRequest(db, {
+                primaryId, secondaryId,
+                candidateId: fromFlag ? null : candidateId,
+                flagId: fromFlag ? candidateId : null,
+                requesterEmail: actorEmail!,
+                ownerEmail: action.ownerEmail,
+            });
+            logger.info('mergePendingDedupPair: requested', { candidateId, actorEmail, requestId, created, primaryId, secondaryId });
+            return { success: true, outcome: 'requested' };
+        }
+        const result = await mergeAdopters(primaryId, secondaryId, actorEmail!);
         if (!result.success) {
             const errorId = logger.error('mergePendingDedupPair: merge failed', new Error(result.error ?? 'merge failed'), {
-                candidateId, actorEmail, primaryId: decision.primaryId, secondaryId: decision.secondaryId,
+                candidateId, actorEmail, primaryId, secondaryId,
             });
             return { success: false, error: 'merge_failed', errorId };
         }
-        logger.info('mergePendingDedupPair: merged', { candidateId, actorEmail, primaryId: decision.primaryId, secondaryId: decision.secondaryId });
-        return { success: true };
+        logger.info('mergePendingDedupPair: merged', { candidateId, actorEmail, primaryId, secondaryId, notifyOwner: !!action.notifyOwner });
+        if (action.notifyOwner) {
+            // Their older profile absorbed the caller's record: tell them.
+            const { createNotification, resolveDisplayName } = await import('./notifications');
+            const requester = await resolveDisplayName(actorEmail!);
+            await createNotification({
+                type: 'adopter_merged',
+                userId: action.notifyOwner,
+                title: `Se unieron dos perfiles: ${result.secondaryName ?? ''} → ${result.primaryName ?? ''}`,
+                body: `${requester} combinó su perfil con el tuyo porque son la misma persona. Todo quedó en tu perfil.`,
+                url: `/adopter/${primaryId}`,
+                icon: '🔗',
+                metadata: { primaryId, secondaryId, auditId: result.auditId ?? null },
+            });
+        }
+        return { success: true, outcome: 'merged' };
     } catch (e) {
         const errorId = logger.error('mergePendingDedupPair failed', e, { candidateId, actorEmail });
         return { success: false, error: 'merge_failed', errorId };

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decideDedupMerge, decideDedupAction, decideMergeRequestAnswer, isOpenDuplicateFlag, type DedupSide } from './dedupPair';
+import { decideDedupMerge, decideDedupAction, decideMergeRequestAnswer, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, type DedupSide } from './dedupPair';
 
 const ME = 'me@example.com';
 const side = (id: string, addedBy: string | null, createdAt: number, teamOwned: boolean, deleted = false): DedupSide =>
@@ -63,6 +63,7 @@ describe('isOpenDuplicateFlag', () => {
         ({ adopterId: 'a', targetAdopterId: 'b', reason: 'duplicate', details: null, ...o });
     it('an open duplicate flag', () => expect(isOpenDuplicateFlag(f({}))).toBe(true));
     it('merged (annotated by mergeAdopters)', () => expect(isOpenDuplicateFlag(f({ details: 'Merged into b by x@example.com' }))).toBe(false));
+    it('kept separate (a declined merge request)', () => expect(isOpenDuplicateFlag(f({ details: `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}owner@example.com` }))).toBe(false));
     it('self-pointing after a merge re-pointed it', () => expect(isOpenDuplicateFlag(f({ targetAdopterId: 'a' }))).toBe(false));
     it('no target, or another reason', () => {
         expect(isOpenDuplicateFlag(f({ targetAdopterId: null }))).toBe(false);

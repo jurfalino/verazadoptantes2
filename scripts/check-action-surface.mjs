@@ -209,7 +209,16 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // screen used it, but Next still published it with the adopters module. 155 = 156 − 1.
 // Email prefs (merge requests + email notifications, Task 3): getEmailPrefs() and
 // saveEmailPref(category, enabled) in settings.ts — both session-gated, own row only. 157 = 155 + 2.
-const EXPECTED_ACTIONS = 157;
+// Merge requests (Task 7): resolveMergeRequest(requestId, 'accept' | 'decline') and
+// cancelMergeRequest(requestId) in src/app/actions/mergeRequests.ts. Safe with a request id
+// a stranger chooses: the actor is the session (anonymous → refused); answerMergeRequest
+// (src/lib/mergeRequests.ts) lets only the requester cancel, only the other owner's team
+// (never the requester) or an admin accept/decline (decideMergeRequestAnswer, unit +
+// integration tested); status moves by compare-and-set so the merge runs once; the merge
+// is the shared, audited, undoable mergeAdopters. Refusals logged with an errorId.
+// COMPUTED, not measured: nothing imports them until the PendingDedup / admin-list UI
+// tasks, and Next only records referenced actions. 159 = 157 + 2.
+const EXPECTED_ACTIONS = 159;
 
 let manifest;
 try {

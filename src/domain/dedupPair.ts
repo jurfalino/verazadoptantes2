@@ -130,14 +130,22 @@ export interface DuplicateFlagRow {
 export const MERGED_FLAG_DETAILS_PREFIX = 'Merged into ';
 
 /**
+ * Marker a declined merge request writes into its flag's details (followed by
+ * who declined): the pair was resolved as kept-separate (spec D4b).
+ */
+export const KEPT_SEPARATE_FLAG_DETAILS_PREFIX = 'Kept separate: ';
+
+/**
  * Whether a manual duplicate flag is still an open question. Flags carry no
- * status column: dismissing one deletes the row (dismissFlag), and merging
+ * status column: dismissing one deletes the row (dismissFlag), merging
  * annotates it (`details` = "Merged into …") and re-points the absorbed side's
- * flags onto the survivor — which can leave a flag pointing at itself. None of
- * those are pairs to show or merge.
+ * flags onto the survivor — which can leave a flag pointing at itself — and a
+ * declined merge request annotates it "Kept separate: …". None of those are
+ * pairs to show or merge.
  */
 export function isOpenDuplicateFlag(f: DuplicateFlagRow): boolean {
     if (f.reason !== 'duplicate' || !f.targetAdopterId) return false;
     if (f.adopterId === f.targetAdopterId) return false;
-    return !(f.details ?? '').startsWith(MERGED_FLAG_DETAILS_PREFIX);
+    const details = f.details ?? '';
+    return !details.startsWith(MERGED_FLAG_DETAILS_PREFIX) && !details.startsWith(KEPT_SEPARATE_FLAG_DETAILS_PREFIX);
 }

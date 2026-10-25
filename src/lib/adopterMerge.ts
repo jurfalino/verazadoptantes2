@@ -21,6 +21,7 @@ import { deserializeHouseholdMembers, serializeHouseholdMembers, mergeHouseholdM
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { casAdopterLists } from '@/lib/adopterListCas';
 import { MERGED_FLAG_DETAILS_PREFIX } from '@/domain/dedupPair';
+import { closeRequestsForAdopter } from '@/lib/mergeRequestClose';
 
 export interface MergeAdoptersResult {
     success: boolean;
@@ -340,6 +341,14 @@ export async function mergeAdopters(
         // failure and never throws, so a hiccup here can't fail the merge; the
         // null tokenHash set above means the next scan retries it anyway.
         await tokenizeAdopter(primaryId);
+
+        // 13. Any open merge request naming either profile is now stale: the
+        // pair it asked about is gone. Best-effort — the merge already
+        // happened; a request left open is refused later (profiles_changed).
+        await Promise.all([closeRequestsForAdopter(db, primaryId), closeRequestsForAdopter(db, secondaryId)])
+            .catch((e: unknown) => {
+                logger.warn('mergeAdopters: open merge requests not closed', { primaryId, secondaryId, actor: actorEmail, error: e instanceof Error ? e.message : String(e) });
+            });
 
         logger.info('Adopter merge complete', {
             primaryId,

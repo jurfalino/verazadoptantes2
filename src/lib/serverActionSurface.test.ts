@@ -72,6 +72,11 @@ const MUST_NOT_BE_ACTIONS = [
     'resolveDisplayNames',
     // Takes the requester as an argument: reachable means forging one.
     'fileAccessRequestFor',
+    // Same for merge requests: the requester / answering actor is an argument
+    // (src/lib/mergeRequests.ts); the browser goes through resolveMergeRequest
+    // and cancelMergeRequest, which take the actor from the session.
+    'createMergeRequest',
+    'answerMergeRequest',
 ];
 
 const files = walk(SRC);
