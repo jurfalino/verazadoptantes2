@@ -63,7 +63,7 @@ function seed() {
 describe('mergePendingDedupPair', () => {
     beforeEach(() => {
         seed();
-        mergeSpy.mockReset().mockResolvedValue({ success: true, primaryName: 'Vieja', secondaryName: 'Nueva' });
+        mergeSpy.mockReset().mockResolvedValue({ success: true, primaryName: 'Vieja', secondaryName: 'Nueva', auditId: 'audit-1' });
         requestSpy.mockReset().mockResolvedValue({ id: 'req-1', created: true });
         notifySpy.mockReset();
         grantSpy.mockClear();
@@ -89,7 +89,7 @@ describe('mergePendingDedupPair', () => {
         expect(notifySpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'adopter_merged', userId: 'other@example.com', url: '/adopter/other-old' }));
         expect(requestSpy).not.toHaveBeenCalled();
         // D40: the absorbed side's owner keeps seeing the survivor.
-        expect(grantSpy).toHaveBeenCalledWith(state.db, { survivorId: 'other-old', absorbedOwnerEmail: OWNER, actor: OWNER });
+        expect(grantSpy).toHaveBeenCalledWith(state.db, { survivorId: 'other-old', absorbedOwnerEmail: OWNER, actor: OWNER, mergeAuditId: 'audit-1' });
     });
 
     // Since merge requests (spec D2/D10/D14) these two ask the other owner

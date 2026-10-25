@@ -12,8 +12,7 @@ import { normalizeText, extractPhones, extractEmails, extractSocials, normalizeS
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, storedScoreToPercent, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 
 import { mergeAdopters, notifyMergeOwners } from '@/lib/adopterMerge';
-import { createMergeRequest, keepSeparate } from '@/lib/mergeRequests';
-import { closeRequestsForPair } from '@/lib/mergeRequestClose';
+import { createMergeRequest, keepSeparate, settleRequestsAsHousehold } from '@/lib/mergeRequests';
 import { grantAccessAfterFold } from '@/lib/mergeAccess';
 import { isAdminAsync } from '@/config/admins';
 import { addHouseholdMember } from './householdMembers';
@@ -592,7 +591,8 @@ export interface PendingDedupSide {
  * choose freely: their choice merges straight away and the owners are told.
  *
  * Different names matched on a contact ask «¿Es la misma persona?» first
- * (`identity_required`, D35). `identity: 'household'` merges nothing: the
+ * (`identity_required`, D35); `identity: 'household'` is accepted only there
+ * (`identity_not_applicable` otherwise) and merges nothing: the
  * other person is added by name, linked, to each side the caller's team owns
  * (never another rescuer's profile), and the pair is resolved as kept-separate.
  *
@@ -651,11 +651,14 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
 
         // «¿Es la misma persona?» (D35): a detected pair matched on a contact
         // but not on the (different) names. A flag is a person saying "same".
-        if (!identity && pair!.source === 'detected'
-            && needsIdentityChoice({ matchTypes: pair!.matchTypes, nameA: sideA.name, nameB: sideB.name })) {
-            return refuse('identity_required');
+        const asksIdentity = pair!.source === 'detected'
+            && needsIdentityChoice({ matchTypes: pair!.matchTypes, nameA: sideA.name, nameB: sideB.name });
+        if (!identity && asksIdentity) return refuse('identity_required');
+        if (identity === 'household') {
+            // Only offered where the question is asked (D35).
+            if (!asksIdentity) return refuse('identity_not_applicable');
+            return await keepAsHousehold(db, candidateId, actor, sideA, sideB);
         }
-        if (identity === 'household') return await keepAsHousehold(db, candidateId, actor, sideA, sideB);
 
         // Admins choose freely (D24): no consent needed, any side may be kept.
         let viaAdmin = false;
@@ -709,7 +712,7 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
         logger.info('mergePendingDedupPair: merged', { candidateId, actorEmail, primaryId, secondaryId, viaAdmin, notifyOwner: !!notifyOwner });
         // D40: the absorbed profile's owner team keeps seeing the survivor. Best-effort.
         const absorbed = secondaryId === sideA.id ? sideA : sideB;
-        await grantAccessAfterFold(db, { survivorId: primaryId, absorbedOwnerEmail: realOwner(absorbed.addedBy), actor });
+        await grantAccessAfterFold(db, { survivorId: primaryId, absorbedOwnerEmail: realOwner(absorbed.addedBy), actor, mergeAuditId: result.auditId ?? null });
         if (viaAdmin) {
             // Whoever registered either profile hears that an admin joined them.
             await notifyMergeOwners({ primaryId, ...result }, actor);
@@ -753,7 +756,9 @@ function parseMatchTypes(raw: string | null, candidateId: string): string[] {
  * relationship unknown, linked to their profile — through the same write as
  * «Agregar persona» (addHouseholdMember: owner / org-mate / admin gate, CAS,
  * history, audit). The other rescuer's profile is never touched. Then the pair
- * leaves both lists: kept-separate, and any open request on it closed.
+ * leaves both lists: kept-separate; a pending request asking the caller's team
+ * counts as their decline, any other pending one closes
+ * (settleRequestsAsHousehold).
  */
 async function keepAsHousehold(
     db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
@@ -775,7 +780,7 @@ async function keepAsHousehold(
     }
     await keepSeparate(db, { a: a.id, b: b.id }, actor, `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}household`, ctx);
     try {
-        await closeRequestsForPair(db, a.id, b.id);
+        await settleRequestsAsHousehold(db, a.id, b.id, actor);
     } catch (e) {
         logger.warn('mergePendingDedupPair: open requests on a household pair left open', { ...ctx, error: e instanceof Error ? e.message : String(e) });
     }

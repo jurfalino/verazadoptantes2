@@ -10,8 +10,8 @@
  *   - mergePendingDedupPair — the session-checked action PendingDedup uses.
  */
 
-import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, duplicateTokens, duplicateCandidates, auditLog, placements, adopterEvents, formSubmissions } from '@/db/schema';
-import { eq, or, and, gt, ne, sql } from 'drizzle-orm';
+import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, duplicateTokens, duplicateCandidates, auditLog, placements, adopterEvents, formSubmissions, piiAccessGrants } from '@/db/schema';
+import { eq, or, and, gt, ne, sql, isNull } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { getDb } from '@/lib/db';
 import { reassignAdopterRecords } from '@/app/actions/_recordWrite';
@@ -499,7 +499,7 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
         if (!auditRow || auditRow.action !== 'adopter_merge') {
             return { success: false, error: 'Merge record not found' };
         }
-        let details: { primaryId?: string; secondaryId?: string; secondaryName?: string; undo?: MergeUndoPayload; undoneAt?: number; undoStartedAt?: number };
+        let details: { primaryId?: string; secondaryId?: string; secondaryName?: string; undo?: MergeUndoPayload; undoneAt?: number; undoStartedAt?: number; grantIds?: string[] };
         try {
             details = JSON.parse(auditRow.details || '{}');
         } catch {
@@ -634,6 +634,17 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
             db.update(adopterFlags).set({ details: f.details }).where(eq(adopterFlags.id, f.id)),
         ));
 
+        // 5b. Revoke the contact-access grants THIS merge gave the absorbed
+        //     profile's owner team (D40, grantAccessAfterFold) — only those:
+        //     a grant someone held before the merge stays.
+        const grantIds = Array.isArray(details.grantIds) ? details.grantIds.filter((id): id is string => typeof id === 'string') : [];
+        for (let i = 0; i < grantIds.length; i += UNDO_CHUNK) {
+            const chunk = grantIds.slice(i, i + UNDO_CHUNK);
+            await db.update(piiAccessGrants)
+                .set({ revokedAt: new Date(), revokedByEmail: actorEmail })
+                .where(and(or(...chunk.map(id => eq(piiAccessGrants.id, id))), isNull(piiAccessGrants.revokedAt)));
+        }
+
         // 6. Mark the merge as undone (so a second undo is refused) + audit.
         await db.update(auditLog)
             .set({ details: JSON.stringify({ ...details, undoneAt: Date.now() }) })
@@ -681,8 +692,14 @@ export async function notifyMergeOwners(
     merge: { primaryId: string; primaryName?: string; secondaryName?: string; primaryAddedBy?: string | null; secondaryAddedBy?: string | null },
     actorEmail: string,
 ): Promise<number> {
-    const owners = [...new Set([merge.primaryAddedBy, merge.secondaryAddedBy])]
-        .filter((e): e is string => !!e && e.includes('@') && e !== actorEmail);
+    // Normalized: notifications are keyed (bell, email) by the lowercased
+    // email, and `added_by` keeps whatever case it was written with.
+    const norm = (e: string) => e.trim().toLowerCase();
+    const actorKey = norm(actorEmail ?? '');
+    const owners = [...new Set([merge.primaryAddedBy, merge.secondaryAddedBy]
+        .filter((e): e is string => !!e && e.includes('@'))
+        .map(norm))]
+        .filter(e => e !== actorKey);
     if (!owners.length) return 0;
     const { createNotification } = await import('@/app/actions/notifications');
     let sent = 0;

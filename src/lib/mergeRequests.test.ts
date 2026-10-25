@@ -57,7 +57,7 @@ vi.mock('@/lib/logger', () => ({
 
 import { createMergeRequest, answerMergeRequest, listMergeRequestsForAdmin } from './mergeRequests';
 import { closeRequestsForAdopter, closeRequestsForDeletedAdopter } from './mergeRequestClose';
-import { mergeAdopters } from '@/lib/adopterMerge';
+import { mergeAdopters, notifyMergeOwners, unmergeAdopters } from '@/lib/adopterMerge';
 import { isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX } from '@/domain/dedupPair';
 
 type Row = Record<string, unknown>;
@@ -395,6 +395,20 @@ describe('answerMergeRequest — flip and access after a fold (D26, D40)', () =>
         expect(recipients()).toEqual([REQUESTER]);
     });
 
+    it('undoing the merge revokes the grants it gave; a grant held before the merge stays', async () => {
+        sqlite.prepare(`INSERT INTO pii_access_grants (id, adopter_id, grantee_email, scope, origin, granted_by_email, created_at)
+            VALUES ('before', 'r-old', ?, 'all_contact', 'request', ?, 1)`).run(OWNER, REQUESTER);
+        const id = await pending();
+        await answerMergeRequest(db(), id, OWNER, 'accept');
+        // OWNER already had access; only MATE gets a new grant.
+        expect(grantees('r-old')).toEqual([MATE]);
+        const auditId = sqlite.prepare(`SELECT id FROM audit_log WHERE action = 'adopter_merge'`).get()!.id as string;
+        expect((await unmergeAdopters(auditId, ADMIN)).success).toBe(true);
+        const live = sqlite.prepare(`SELECT id, grantee_email FROM pii_access_grants WHERE adopter_id = 'r-old' AND revoked_at IS NULL`).all();
+        expect(live).toEqual([{ id: 'before', grantee_email: OWNER }]);
+        expect(sqlite.prepare(`SELECT revoked_by_email FROM pii_access_grants WHERE origin = 'merge'`).all()).toEqual([{ revoked_by_email: ADMIN }]);
+    });
+
     it('a failed flip merge restores the request to pending', async () => {
         const id = await pending();
         mergeSpy.mockResolvedValueOnce({ success: false, error: 'SQLITE_BUSY' });
@@ -482,6 +496,16 @@ describe('answerMergeRequest — races and stale profiles', () => {
         mergeSpy.mockResolvedValueOnce({ success: false, error: 'boom' });
         expect(await answerMergeRequest(db(), id, ADMIN, 'accept')).toEqual({ ok: false, reason: 'merge_failed' });
         expect(request(id)).toMatchObject({ status: 'declined', resolved_by_email: OWNER, resolved_at: declinedAt });
+    });
+});
+
+describe('notifyMergeOwners', () => {
+    it('owners are notified at their normalized email, once each, never the actor in any case', async () => {
+        expect(await notifyMergeOwners({ primaryId: 'r-old', primaryAddedBy: 'Owner@Example.com', secondaryAddedBy: ' owner@example.com' }, ADMIN)).toBe(1);
+        expect(recipients()).toEqual([OWNER]);
+        notify.create.length = 0;
+        expect(await notifyMergeOwners({ primaryId: 'r-old', primaryAddedBy: 'Admin@Example.com', secondaryAddedBy: 'anonymous' }, ADMIN)).toBe(0);
+        expect(notify.create).toEqual([]);
     });
 });
 

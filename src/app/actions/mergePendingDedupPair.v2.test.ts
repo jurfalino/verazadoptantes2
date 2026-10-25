@@ -45,7 +45,7 @@ vi.mock('@/lib/logger', () => ({
 
 import { mergePendingDedupPair } from './duplicates';
 import { resolveMergeRequest } from './mergeRequests';
-import { answerMergeRequest } from '@/lib/mergeRequests';
+import { answerMergeRequest, createMergeRequest } from '@/lib/mergeRequests';
 import { mergeAdopters } from '@/lib/adopterMerge';
 
 type Row = Record<string, unknown>;
@@ -245,6 +245,42 @@ describe('«¿Es la misma persona?» (D35)', () => {
         expect(household('hh-mine')).toEqual([]);
     });
 
+    it('«alguien de su hogar» is only accepted where the question is asked (D35)', async () => {
+        expect(await mergePendingDedupPair('cand-a', { identity: 'household' })).toEqual({ success: false, error: 'identity_not_applicable', errorId: 'gen12345' });
+        expect(household('mine-old')).toEqual([]);
+        expect(candidate('cand-a')).toBe('pending');
+    });
+
+    it("«alguien de su hogar» on a pair someone asked me about: their request becomes my decline, they are told, and can't re-ask", async () => {
+        // OWNER keeps their own profile → a request asking STRANGER.
+        expect(await as(OWNER, () => mergePendingDedupPair('cand-hh', { keepId: 'hh-theirs', identity: 'same' }))).toMatchObject({ outcome: 'requested' });
+        notify.create.length = 0;
+        expect(await mergePendingDedupPair('cand-hh', { identity: 'household' })).toEqual({ success: true, outcome: 'household' });
+        expect(requests()).toEqual([expect.objectContaining({ status: 'declined', resolved_by_email: STRANGER, requester_email: OWNER })]);
+        expect(notify.create).toEqual([expect.objectContaining({
+            type: 'merge_request_resolved', userId: OWNER, title: 'stranger rechazó combinar dos perfiles', url: '/my-adopters#pendientes',
+        })]);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the drizzle handle under test
+        expect(await createMergeRequest(state.db as any, {
+            primaryId: 'hh-theirs', secondaryId: 'hh-mine', candidateId: null, flagId: null, requesterEmail: OWNER, ownerEmail: STRANGER,
+        })).toEqual({ refused: 'declined_before' });
+    });
+
+    it('«alguien de su hogar»: my own pending request closes; an earlier decline stays a decline', async () => {
+        await mergePendingDedupPair('cand-hh', { keepId: 'hh-mine', identity: 'same' });
+        const first = requests()[0].id as string;
+        await as(OWNER, () => resolveMergeRequest(first, 'decline'));
+        // A second, still-pending request on the pair, filed by me before the decline (seeded).
+        sqlite.prepare(`INSERT INTO merge_requests (id, primary_id, secondary_id, requester_email, owner_email, status, created_at)
+            VALUES ('mine-pending', 'hh-mine', 'hh-theirs', ?, ?, 'pending', 1)`).run(STRANGER, OWNER);
+        notify.create.length = 0;
+        expect(await mergePendingDedupPair('cand-hh', { identity: 'household' })).toEqual({ success: true, outcome: 'household' });
+        const status = (id: string) => sqlite.prepare('SELECT status FROM merge_requests WHERE id = ?').get(id)!.status;
+        expect(status(first)).toBe('declined');
+        expect(status('mine-pending')).toBe('closed');
+        expect(notify.create).toEqual([]);
+    });
+
     it('a bogus identity value is ignored (still asks)', async () => {
         expect(await mergePendingDedupPair('cand-hh', { identity: 'yes' as 'same' })).toMatchObject({ success: false, error: 'identity_required' });
     });
@@ -257,6 +293,15 @@ describe('admins choose freely (D24)', () => {
         expect(requests()).toEqual([]);
         expect(notify.create).toEqual([expect.objectContaining({ type: 'adopter_merged', userId: OWNER, url: '/adopter/adm-mine' })]);
         expect(grantsOn('adm-mine').map(g => g.email)).toEqual([MATE, OWNER]);
+    });
+
+    it("the owner's added_by has capitals: the admin-merge notice goes to the normalized email, and never to the admin", async () => {
+        sqlite.prepare(`UPDATE adopters SET added_by = 'Owner@Example.com' WHERE id = 'adm-theirs'`).run();
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('adm-exact', 'Juan Ruiz', '5', ?, 900, 900)`).run(ADMIN);
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
+            VALUES ('cand-adm-caps', 'adm-theirs', 'adm-exact', '["phone","name_full"]', 90, 'high', 'pending', 1)`).run();
+        expect(await as(ADMIN, () => mergePendingDedupPair('cand-adm-caps', { keepId: 'adm-exact' }))).toEqual({ success: true, outcome: 'merged' });
+        expect(notify.create.map(n => n.userId)).toEqual([OWNER]);
     });
 
     it('an admin may keep a profile with no real owner', async () => {

@@ -78,6 +78,18 @@ describe('grantAccessAfterFold', () => {
         expect(rows).toEqual([{ grantee_email: MATE, origin: 'merge' }, { grantee_email: OWNER, origin: 'request' }]);
     });
 
+    it("with the merge's audit id, the grant ids are recorded on that row (for undo), after any already there", async () => {
+        sqlite.prepare(`INSERT INTO audit_log (id, user_id, user_email, action, target, details, created_at) VALUES ('audit-1', ?, ?, 'adopter_merge', 's-stranger', ?, 1)`)
+            .run(STRANGER, STRANGER, JSON.stringify({ primaryId: 's-stranger', grantIds: ['older'] }));
+        expect(await grantAccessAfterFold(db, { survivorId: 's-stranger', absorbedOwnerEmail: OWNER, actor: STRANGER, mergeAuditId: 'audit-1' })).toBe(2);
+        const details = JSON.parse(sqlite.prepare(`SELECT details FROM audit_log WHERE id = 'audit-1'`).get()!.details as string);
+        const ids = sqlite.prepare(`SELECT id FROM pii_access_grants WHERE origin = 'merge'`).all().map(r => r.id);
+        expect(details.primaryId).toBe('s-stranger');
+        expect(details.grantIds).toHaveLength(3);
+        expect(details.grantIds[0]).toBe('older');
+        expect(new Set(details.grantIds.slice(1))).toEqual(new Set(ids));
+    });
+
     it('best-effort: a DB failure is logged with context and returns 0, never throws', async () => {
         sqlite.prepare('DROP TABLE pii_access_grants').run();
         await expect(grantAccessAfterFold(db, { survivorId: 's-stranger', absorbedOwnerEmail: OWNER, actor: STRANGER })).resolves.toBe(0);

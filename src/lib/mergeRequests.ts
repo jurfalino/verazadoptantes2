@@ -257,7 +257,7 @@ export async function answerMergeRequest(
             return { ok: false, reason: gone ? 'profiles_changed' : 'merge_failed' };
         }
         // D40: the absorbed side's owner team keeps seeing the survivor. Best-effort.
-        await grantAccessAfterFold(db, { survivorId: keep.survivorId, absorbedOwnerEmail: keep.absorbed.addedBy ?? null, actor });
+        await grantAccessAfterFold(db, { survivorId: keep.survivorId, absorbedOwnerEmail: keep.absorbed.addedBy ?? null, actor, mergeAuditId: result.auditId ?? null });
     } else if (answer.nextStatus === 'admin_declined') {
         // An admin's decline is final (no one may reopen it), so the pair is
         // resolved as kept-separate. An owner's decline leaves the pair on
@@ -317,6 +317,39 @@ export async function keepSeparate(
         // The answer stands; the pair just keeps showing until dismissed by hand.
         logger.error('keepSeparate: pair not marked kept-separate', e, { ...ctx, actor, primaryId: a, secondaryId: b });
     }
+}
+
+/**
+ * «No, es alguien de su hogar» (D35) settled the pair as two people, so no
+ * merge request on it may stay answerable. A PENDING request asking the actor
+ * (or their team) is recorded as their decline — compare-and-set, the
+ * requester gets the usual «rechazó» notice, and the D43 re-ask block applies.
+ * Any other pending request (the actor's own, or one for the admins) closes.
+ * Declined requests stay declined. Never `IN (…)`.
+ */
+export async function settleRequestsAsHousehold(db: Db, a: string, b: string, actor: string): Promise<{ declined: number; closed: number }> {
+    const rows = await db.select().from(mergeRequests).where(and(
+        or(
+            and(eq(mergeRequests.primaryId, a), eq(mergeRequests.secondaryId, b)),
+            and(eq(mergeRequests.primaryId, b), eq(mergeRequests.secondaryId, a)),
+        ),
+        eq(mergeRequests.status, 'pending'),
+    )).all() as RequestRow[];
+    let declined = 0, closed = 0;
+    for (const req of rows) {
+        const askedActor = !!req.ownerEmail && normEmail(req.requesterEmail) !== normEmail(actor)
+            && await isOwnerOrOrgMate(actor, req.ownerEmail);
+        if (!askedActor) {
+            if (await casRequest(db, req.id, 'pending', { status: 'closed', resolvedByEmail: null, resolvedAt: new Date() })) closed++;
+            continue;
+        }
+        if (!await casRequest(db, req.id, 'pending', { status: 'declined', resolvedByEmail: actor, resolvedAt: new Date() })) continue;
+        declined++;
+        const [primaryName, secondaryName] = await Promise.all([adopterName(db, req.primaryId), adopterName(db, req.secondaryId)]);
+        await notifyAnswered(req, 'declined', actor, { survivorId: req.primaryId, survivor: primaryName, absorbed: secondaryName, flipped: false });
+    }
+    if (rows.length) logger.info('settleRequestsAsHousehold: settled', { primaryId: a, secondaryId: b, actor, declined, closed });
+    return { declined, closed };
 }
 
 /**

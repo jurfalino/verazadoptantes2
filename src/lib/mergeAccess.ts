@@ -8,7 +8,7 @@
  */
 
 import { and, eq, isNull } from 'drizzle-orm';
-import { adopters, piiAccessGrants } from '@/db/schema';
+import { adopters, auditLog, piiAccessGrants } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { getTeamEmails, normEmail } from '@/lib/orgMembership';
@@ -22,16 +22,23 @@ type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
  * second live `all_contact` grant for the same person. Best-effort: the merge
  * already happened, so a failure is logged and never thrown. Returns how many
  * grants were written (also after a failure part-way).
+ *
+ * `mergeAuditId` (the merge's audit_log row, MergeAdoptersResult.auditId):
+ * the ids written are appended to that row's details as `grantIds`, so
+ * undoing the merge (unmergeAdopters) revokes exactly these grants — never one
+ * that existed before the merge.
  */
 export async function grantAccessAfterFold(db: Db, input: {
     survivorId: string;
     absorbedOwnerEmail: string | null;
     actor: string;
+    mergeAuditId?: string | null;
 }): Promise<number> {
-    const { survivorId, actor } = input;
+    const { survivorId, actor, mergeAuditId } = input;
     const absorbedOwner = realOwner(input.absorbedOwnerEmail) ? normEmail(input.absorbedOwnerEmail) : null;
     if (!absorbedOwner) return 0;
     let written = 0;
+    const grantIds: string[] = [];
     try {
         const survivor = await db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, survivorId)).get();
         const survivorOwner = realOwner(survivor?.addedBy) ? normEmail(survivor!.addedBy) : null;
@@ -52,8 +59,9 @@ export async function grantAccessAfterFold(db: Db, input: {
                 isNull(piiAccessGrants.revokedAt),
             )).get();
             if (live) continue;
+            const id = crypto.randomUUID();
             await db.insert(piiAccessGrants).values({
-                id: crypto.randomUUID(),
+                id,
                 adopterId: survivorId,
                 granteeEmail,
                 scope: 'all_contact',
@@ -64,13 +72,24 @@ export async function grantAccessAfterFold(db: Db, input: {
                 createdAt: new Date(),
             });
             written++;
+            grantIds.push(id);
         }
-        if (written) logger.info('grantAccessAfterFold: granted', { survivorId, actor, grants: written });
+        if (written) logger.info('grantAccessAfterFold: granted', { survivorId, actor, mergeAuditId, grants: written });
+        if (mergeAuditId && grantIds.length) await recordGrantsOnMerge(db, mergeAuditId, grantIds);
         return written;
     } catch (e) {
         logger.warn('grantAccessAfterFold: access not granted', {
-            survivorId, absorbedOwnerEmail: absorbedOwner, actor, grantsWritten: written, error: e instanceof Error ? e.message : String(e),
+            survivorId, absorbedOwnerEmail: absorbedOwner, actor, mergeAuditId, grantsWritten: written, grantIds, error: e instanceof Error ? e.message : String(e),
         });
         return written;
     }
+}
+
+/** Append the grant ids to the merge's audit details (`grantIds`), for its undo. Throws on a DB error. */
+async function recordGrantsOnMerge(db: Db, mergeAuditId: string, grantIds: string[]): Promise<void> {
+    const row = await db.select({ details: auditLog.details }).from(auditLog).where(eq(auditLog.id, mergeAuditId)).get();
+    if (!row) throw new Error('merge audit row not found');
+    const details = JSON.parse(row.details || '{}') as { grantIds?: string[] };
+    const next = { ...details, grantIds: [...(details.grantIds ?? []), ...grantIds] };
+    await db.update(auditLog).set({ details: JSON.stringify(next) }).where(eq(auditLog.id, mergeAuditId));
 }
