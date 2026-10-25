@@ -159,3 +159,21 @@ describe('templateFromMetadata / localizedNotification', () => {
         expect(localizedNotification({ ...stored, metadata: JSON.stringify({ template: { key: 'contact_entry_added', params: {} } }) }, 'en')).toEqual(stored);
     });
 });
+
+describe('Spanish without a name (final review M2)', () => {
+    it.each(NOTIFICATION_TEMPLATE_KEYS)('%s: never «a el» / «de el» when any one param is left out', (key) => {
+        const sample = SAMPLES[key] as Record<string, string | undefined>;
+        for (const drop of Object.keys(sample)) {
+            const params = { ...sample, [drop]: undefined };
+            const out = renderNotification({ key, params }, 'es');
+            if (!out) continue; // a required param: nothing renders
+            expect(`${out.title} ${out.body}`).not.toMatch(/\b(a|de) el\b/);
+        }
+    });
+
+    it('the two that had it read «al / del adoptante»', () => {
+        expect(renderNotification({ key: 'contact_entry_added', params: { actorName: 'Ana', entryType: 'phone' } }, 'es')!.body).toMatch(/ al adoptante\.$/);
+        expect(renderNotification({ key: 'pii_access_request', params: { requesterName: 'Ana', kind: 'contribution' } }, 'es')!.body).toContain('un dato al adoptante y');
+        expect(renderNotification({ key: 'pii_access_request', params: { requesterName: 'Ana', kind: 'direct' } }, 'es')!.body).toMatch(/de contacto del adoptante\.$/);
+    });
+});

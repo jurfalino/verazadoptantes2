@@ -152,7 +152,7 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
     },
     contact_entry_added: {
         required: ['actorName', 'entryType'],
-        es: p => ({ title: 'Nuevo dato de contacto', body: `${p.actorName} agregó ${entryTypeLabel(p.entryType, 'es')} a ${p.adopterName || 'el adoptante'}.` }),
+        es: p => ({ title: 'Nuevo dato de contacto', body: `${p.actorName} agregó ${entryTypeLabel(p.entryType, 'es')} ${p.adopterName ? `a ${p.adopterName}` : 'al adoptante'}.` }),
         en: p => ({ title: 'New contact detail', body: `${p.actorName} added ${entryTypeLabel(p.entryType, 'en')} to ${p.adopterName || 'the adopter'}.` }),
         pt: p => ({ title: 'Novo dado de contato', body: `${p.actorName} adicionou ${entryTypeLabel(p.entryType, 'pt')} ${p.adopterName ? `a ${p.adopterName}` : 'ao adotante'}.` }),
     },
@@ -198,12 +198,12 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
     pii_access_request: {
         required: ['requesterName', 'kind'],
         es: p => {
-            const a = p.adopterName || 'el adoptante';
+            // «al / del adoptante» without a name, never «a el / de el».
             return {
                 title: 'Solicitud de acceso a contacto',
                 body: p.kind === 'contribution'
-                    ? `${p.requesterName} agregó un dato a ${a} y solicita acceso a los datos de contacto.`
-                    : `${p.requesterName} solicitó acceso a los datos de contacto de ${a}.`,
+                    ? `${p.requesterName} agregó un dato ${p.adopterName ? `a ${p.adopterName}` : 'al adoptante'} y solicita acceso a los datos de contacto.`
+                    : `${p.requesterName} solicitó acceso a los datos de contacto ${p.adopterName ? `de ${p.adopterName}` : 'del adoptante'}.`,
             };
         },
         en: p => {
