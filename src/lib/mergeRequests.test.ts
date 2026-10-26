@@ -293,6 +293,25 @@ describe('answerMergeRequest — decline and admin decisions', () => {
         expect(recipients().sort()).toEqual([OWNER, REQUESTER].sort());
     });
 
+    it("an admin declining a dispute resolves the pair's other open requests too: the admin list has nothing left on it (D49)", async () => {
+        const declined = await pending();
+        await answerMergeRequest(db(), declined, OWNER, 'decline');
+        const dispute = await pending({ primaryId: 'o-new', secondaryId: 'r-old', ownerEmail: null, dispute: true });
+        expect((await listMergeRequestsForAdmin(db())).map(r => r.id)).toEqual([dispute]);
+        expect(await answerMergeRequest(db(), dispute, ADMIN, 'decline')).toEqual({ ok: true, status: 'admin_declined' });
+        expect(await listMergeRequestsForAdmin(db())).toEqual([]);
+        // The admin's ruling covers the old decline; it is not reopened as «Aprobar igual».
+        expect(sqlite.prepare('SELECT status, resolved_by_email FROM merge_requests WHERE id = ?').get(declined))
+            .toEqual({ status: 'admin_declined', resolved_by_email: ADMIN });
+    });
+
+    it("an admin's decline leaves other pairs' requests alone", async () => {
+        const other = await pending({ primaryId: 'third', secondaryId: 'r-old', candidateId: null });
+        const id = await pending();
+        expect(await answerMergeRequest(db(), id, ADMIN, 'decline')).toEqual({ ok: true, status: 'admin_declined' });
+        expect(sqlite.prepare('SELECT status FROM merge_requests WHERE id = ?').get(other)).toEqual({ status: 'pending' });
+    });
+
     it('an admin may approve a request they filed themselves; they are not notified about it', async () => {
         const id = await pending({ requesterEmail: ADMIN });
         expect(await answerMergeRequest(db(), id, ADMIN, 'accept')).toEqual({ ok: true, status: 'admin_approved' });

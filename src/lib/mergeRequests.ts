@@ -24,7 +24,7 @@
  * already happened (D50) live in src/lib/mergeDisputes.ts.
  */
 
-import { and, asc, eq, or } from 'drizzle-orm';
+import { and, asc, eq, ne, or } from 'drizzle-orm';
 import { adopterFlags, adopters, duplicateCandidates, mergeRequests } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -33,6 +33,7 @@ import { getOrgMemberEmailsFor, isOwnerOrOrgMate, normEmail } from '@/lib/orgMem
 import { isAdminAsync } from '@/config/admins';
 import { createNotification, notifyAdmins, resolveDisplayName } from '@/app/actions/notifications';
 import { rowsAffected } from '@/lib/interviews/rowsAffected';
+import { openMergeRequestStatus } from '@/lib/mergeRequestClose';
 import { grantAccessAfterFold } from '@/lib/mergeAccess';
 import { mergeSideParams } from '@/lib/mergeNotificationSides';
 import { teamOf } from '@/lib/pairVerdict';
@@ -314,6 +315,10 @@ export async function answerMergeRequest(
         await keepSeparate(db, { a: req.primaryId, b: req.secondaryId }, actor, `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}${req.id}`, {
             requestId: req.id, candidateId: req.candidateId, flagId: req.flagId,
         });
+        // The ruling is about the pair, not this one request: the pair's other
+        // open requests (e.g. the owner's decline a dispute came from) are
+        // answered by it too, so none comes back as «Aprobar igual».
+        await settleOtherRequestsOnPair(db, req, actor, ctx);
     }
 
     logger.info('answerMergeRequest: answered', { ...ctx, status: answer.nextStatus, swap: !!answer.swap });
@@ -328,6 +333,32 @@ export async function answerMergeRequest(
         }
     }
     return { ok: true, status: answer.nextStatus };
+}
+
+/**
+ * An admin declined `req`: every other open (pending or declined) request on
+ * the same pair, either orientation, becomes `admin_declined` by that admin.
+ * Compare-and-set on the open status, so an answer that landed meanwhile is
+ * kept. Nobody is notified again — the decline's own notices name the outcome.
+ * Best-effort: the ruling stands; a failure is logged and the old row stays listed.
+ */
+async function settleOtherRequestsOnPair(db: Db, req: RequestRow, actor: string, ctx: Record<string, unknown>): Promise<void> {
+    try {
+        const settled = await db.update(mergeRequests)
+            .set({ status: 'admin_declined', resolvedByEmail: actor, resolvedAt: new Date() })
+            .where(and(
+                or(
+                    and(eq(mergeRequests.primaryId, req.primaryId), eq(mergeRequests.secondaryId, req.secondaryId)),
+                    and(eq(mergeRequests.primaryId, req.secondaryId), eq(mergeRequests.secondaryId, req.primaryId)),
+                ),
+                openMergeRequestStatus(),
+                ne(mergeRequests.id, req.id),
+            ))
+            .returning({ id: mergeRequests.id });
+        if (settled.length > 0) logger.info('answerMergeRequest: other requests on the pair settled by the admin decline', { ...ctx, settled: settled.length });
+    } catch (e) {
+        logger.warn('answerMergeRequest: other requests on the pair left open', { ...ctx, error: e instanceof Error ? e.message : String(e) });
+    }
 }
 
 /**

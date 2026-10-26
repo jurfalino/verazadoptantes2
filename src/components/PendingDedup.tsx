@@ -24,7 +24,7 @@ import { useSession } from 'next-auth/react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
 import { formatRelativeTime } from '@/lib/dates';
 import { pairKey } from '@/domain/dedupPair';
@@ -246,7 +246,18 @@ export default function PendingDedup() {
         run(pair, 'myAdopters.pending_dedup_request_failed', 'No se pudo completar la acción.', async () => {
             const r = pair.request;
             const requesterKeep = r ? sideById(pair, r.keepId) : null;
-            if (!r || !requesterKeep) return;
+            if (!r || !requesterKeep) {
+                // The row no longer carries the request it shows (or names a
+                // survivor outside the pair): don't guess — log, say so, reload.
+                setConfirm(null);
+                void reportClientError({
+                    level: 'warn', source: 'PendingDedup', message: `answerMerge: row without a usable request (${decision})`,
+                    extra: { candidateId: pair.candidateId, requestId: r?.id ?? null, hasKeep: !!requesterKeep },
+                });
+                toast.success(t('common.updated') || 'Actualizado', t('myAdopters.pending_d_err_identity_not_applicable') || 'Estos perfiles cambiaron. Actualizamos la lista.');
+                await load();
+                return;
+            }
             const result = await resolveMergeRequest(r.id, decision);
             setConfirm(null);
             if (result.success) {
@@ -340,9 +351,8 @@ export default function PendingDedup() {
     };
 
     const runConfirmed = (c: Pending) => {
-        const r = c.pair.request;
         if (c.kind === 'combine') return void merge(c.pair, c.keep, c.identity);
-        if (!r) return;
+        // answerMerge reports and reloads a row whose request is gone.
         return void answerMerge(c.pair, c.kind);
     };
 
