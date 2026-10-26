@@ -88,3 +88,12 @@ Principle (Jon): BuenAdoptante records **one reality for everyone** — a fact (
 | D51 | **Links follow merges**: when a profile with «Convive con» links is merged, its links move to the surviving profile (and move back on undo) | Jon |
 | D52 | **After combining in Pendientes**, the row stays until reload as «✓ Combinados — se conservó {nombre} (de {dueño}) · Ver perfil ↗», and the success toast has «Ver perfil» | Jon |
 | D53 | **Local runs never send email** (only staging/production builds stamped by CI do), unless explicitly allowed for a test | Claude (Jon ok) |
+
+## Addendum 2026-10-26 — anyone can add to a household (Jon, after staging review of 2.57.1)
+
+Jon on staging: on Jonathan's profile (owned by another rescuer) he could add contact details but not a household member; and inside Pedro's household, Jonathan's linked card showed his data read-only with no way to add to it. Two data about the same person had two different rules.
+
+| # | Decision | By |
+|---|---|---|
+| D54 | **Household follows the contact-details model: anyone signed in can add a member, or a contact to a member, on any profile**, credited to them («agregado por X»). They can edit or remove only what they added; the owner's team and admins can change everything (members/contacts with no `addedBy` stay team/admin-only). Same side effects as `addContactEntry`: history `kind='contribution'` (doesn't make them an editor), an entry-level grant per contact they typed (so they see it unmasked; everyone else sees it with the profile's normal protection), the owner's team notified, and the access request auto-filed exactly when `addContactEntry` does. A member they added shows its name unmasked to them. | Jon |
+| D55 | **A linked member's card adds contacts to that person's own profile**: «Agregar dato de contacto» on a linked conviviente (host's household card and the «Convive con» row) saves through `addContactEntry` on the linked profile — stored once, same rules, with the hint «Se agrega al perfil de {nombre}». The summary refreshes in place. | Jon |
