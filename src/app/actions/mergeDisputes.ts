@@ -14,7 +14,7 @@ import { getDb, getUser } from './_db';
 import { logger, generateErrorId } from '@/lib/logger';
 import { answerMergeDispute, fileMergeDispute, mergeDisputeOption, type MergeDisputeOption } from '@/lib/mergeDisputes';
 
-type ActionResult = { success: boolean; error?: string; errorId?: string };
+type ActionResult = { success: boolean; error?: string; errorId?: string; status?: 'kept' | 'undone' | 'closed' };
 
 /** Longest id accepted from the browser. */
 const ID_MAX = 200;
@@ -94,6 +94,7 @@ export async function resolveMergeDispute(disputeId: string, decision: 'undo' | 
             if (result.reason === 'undo_failed') return { success: false, error: result.error, errorId: result.errorId };
             return refused('resolveMergeDispute', ctx, result.reason);
         }
-        return { success: true };
+        // 'closed': moot — the merge was already undone or superseded; nobody was told.
+        return { success: true, status: result.status };
     });
 }

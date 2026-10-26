@@ -283,6 +283,28 @@ describe('after «Rechazado» (D27, D43, D49)', () => {
     });
 });
 
+describe('the pair verdict holds for the team and after an admin ruling (D43, D49, D50)', () => {
+    it("my teammate can't merge a pair whose owner rejected my request: keeping theirs is a dispute, asking again is declined_before", async () => {
+        // OWNER keeps their own theirs-new and asks STRANGER, who rejects it.
+        expect(await as(OWNER, () => mergePendingDedupPair('cand-a', { keepId: 'theirs-new' }))).toMatchObject({ outcome: 'requested' });
+        expect(await resolveMergeRequest(requests()[0].id as string, 'decline')).toEqual({ success: true });
+        // The profile moves to OWNER's teammate (ownership transfer): MATE now created a side.
+        sqlite.prepare(`UPDATE adopters SET added_by = ? WHERE id = 'theirs-new'`).run(MATE);
+        expect(await as(MATE, () => mergePendingDedupPair('cand-a', { keepId: 'mine-old' }))).toEqual({ success: true, outcome: 'disputed' });
+        expect(await as(MATE, () => mergePendingDedupPair('cand-a', { keepId: 'theirs-new' }))).toMatchObject({ success: false, error: 'declined_before' });
+        expect(mergeSpy).not.toHaveBeenCalled();
+        expect(deleted('mine-old') || deleted('theirs-new')).toBe(false);
+    });
+
+    it('after an admin declined a request on the pair, no rescuer merges it one-sidedly: keeping theirs is a dispute', async () => {
+        sqlite.prepare(`INSERT INTO merge_requests (id, primary_id, secondary_id, requester_email, owner_email, status, created_at)
+            VALUES ('adm-no', 'mine-old', 'theirs-new', ?, NULL, 'admin_declined', 1)`).run(MATE);
+        expect(await mergePendingDedupPair('cand-a', { keepId: 'theirs-new' })).toEqual({ success: true, outcome: 'disputed' });
+        expect(await as(OWNER, () => mergePendingDedupPair('cand-a', { keepId: 'mine-old' }))).toMatchObject({ success: false, error: 'request_pending' });
+        expect(mergeSpy).not.toHaveBeenCalled();
+    });
+});
+
 describe('one merge per pair at a time (mergeAdopters claims the pair)', () => {
     // The same race without any dispute: OWNER declines, then asks the other way round;
     // OWNER accepting the old request and STRANGER accepting the new one at once.
@@ -422,6 +444,8 @@ describe('admins choose freely (D24)', () => {
         expect(mergeSpy).toHaveBeenCalledWith('adm-mine', 'adm-theirs', ADMIN);
         expect(requests()).toEqual([]);
         expect(notify.create).toEqual([expect.objectContaining({ type: 'adopter_merged', userId: OWNER, url: expect.stringMatching(/^\/adopter\/adm-mine\?dispute=[\w-]+$/) })]);
+        // The owner's bell never carries the admin's email.
+        expect(JSON.stringify(notify.create[0].metadata)).not.toContain('@');
         expect(grantsOn('adm-mine').map(g => g.email)).toEqual([MATE, OWNER]);
     });
 

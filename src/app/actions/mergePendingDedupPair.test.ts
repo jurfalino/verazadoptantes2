@@ -20,7 +20,12 @@ vi.mock('./_db', () => ({
     getUser: async () => { if (!state.user) throw new Error('Authentication required'); return state.user; },
 }));
 vi.mock('@/lib/adopterMerge', () => ({ mergeAdopters: mergeSpy, notifyMergeOwners: vi.fn() }));
-vi.mock('@/lib/mergeRequests', () => ({ createMergeRequest: requestSpy, keepSeparate: vi.fn(), declinedForViewer: async () => false }));
+vi.mock('@/lib/mergeRequests', () => ({ createMergeRequest: requestSpy, keepSeparate: vi.fn() }));
+vi.mock('@/lib/pairVerdict', () => ({
+    teamOf: async (email: string) => [email],
+    loadPairVerdict: async () => ({ declinedForTeam: false, adminRuledSeparate: false }),
+    refuseDisputedMerge: async () => false,
+}));
 vi.mock('@/lib/mergeAccess', () => ({ grantAccessAfterFold: grantSpy }));
 vi.mock('@/config/admins', () => ({ isAdminAsync: async () => false }));
 vi.mock('./householdMembers', () => ({ addHouseholdMember: vi.fn() }));
@@ -106,7 +111,7 @@ describe('mergePendingDedupPair', () => {
         expect(await mergePendingDedupPair('cand-absorb-foreign')).toMatchObject({ success: true, outcome: 'requested' });
         expect(requestSpy).toHaveBeenCalledWith(state.db, {
             primaryId: 'mine-old', secondaryId: 'other-new', candidateId: 'cand-absorb-foreign', flagId: null,
-            requesterEmail: OWNER, ownerEmail: 'other@example.com',
+            requesterEmail: OWNER, ownerEmail: 'other@example.com', dispute: false,
         });
         expect(mergeSpy).not.toHaveBeenCalled();
     });
@@ -115,7 +120,7 @@ describe('mergePendingDedupPair', () => {
         expect(await mergePendingDedupPair('flag-cross', { keepId: 'mine-new' })).toMatchObject({ success: true, outcome: 'requested' });
         expect(requestSpy).toHaveBeenCalledWith(state.db, {
             primaryId: 'mine-new', secondaryId: 'other-old', candidateId: null, flagId: 'flag-cross',
-            requesterEmail: OWNER, ownerEmail: 'other@example.com',
+            requesterEmail: OWNER, ownerEmail: 'other@example.com', dispute: false,
         });
         expect(mergeSpy).not.toHaveBeenCalled();
     });

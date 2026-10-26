@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pairKey, decideDedupMerge, decideDedupAction, decideMergeRequestAnswer, canRequestAgain, keepOptions, pairChoices, orderPair, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, realOwner, decideMergeDisputeRaise, decideMergeDisputeResolution, type DedupSide } from './dedupPair';
+import { pairKey, pairVerdict, mergeNeedsAdmins, decideDedupMerge, decideDedupAction, decideMergeRequestAnswer, canRequestAgain, keepOptions, pairChoices, orderPair, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, realOwner, decideMergeDisputeRaise, decideMergeDisputeResolution, type DedupSide } from './dedupPair';
 
 const ME = 'me@example.com';
 const side = (id: string, addedBy: string | null, createdAt: number, teamOwned: boolean, deleted = false): DedupSide =>
@@ -307,7 +307,7 @@ describe('pairKey', () => {
 });
 
 describe('pairChoices — the «¿Cuál se conserva?» switch, for the row and the click alike', () => {
-    const NONE = { isAdmin: false, declinedByViewer: false, rebuilt: false };
+    const NONE = { isAdmin: false, declinedByViewer: false, adminRuledSeparate: false, rebuilt: false };
     const ANON_OLD = side('anon-old', 'anonymous', 100, false);
     const ANON_NEW = side('anon-new', null, 9_000, false);
 
@@ -348,12 +348,18 @@ describe('pairChoices — the «¿Cuál se conserva?» switch, for the row and t
         expect(pairChoices(ME, MINE_NEW, FOREIGN_OLD, 'flag', { ...NONE, declinedByViewer: true }).actionByKeep).toEqual({ new: null, existing: 'dispute' });
     });
 
+    it('after an admin ruled the pair separate (D50): every merge becomes a request to the admins, inside my team too', () => {
+        const ruled = { ...NONE, adminRuledSeparate: true };
+        expect(pairChoices(ME, MINE_NEW, FOREIGN_OLD, 'flag', ruled).actionByKeep).toEqual({ new: 'request', existing: 'dispute' });
+        expect(pairChoices(ME, MATE_NEW, MINE_OLD, 'detected', ruled).actionByKeep).toEqual({ new: 'dispute', existing: 'dispute' });
+    });
+
     it('a decline does not turn a merge inside my own team into a dispute', () => {
         expect(pairChoices(ME, MATE_NEW, MINE_OLD, 'detected', { ...NONE, declinedByViewer: true }).actionByKeep).toEqual({ new: 'merge', existing: 'merge' });
     });
 
     it('admins choose freely: both sides, both merge — ownerless and declined included', () => {
-        const admin = { isAdmin: true, declinedByViewer: true, rebuilt: false };
+        const admin = { isAdmin: true, declinedByViewer: true, adminRuledSeparate: true, rebuilt: false };
         expect(pairChoices(ME, MINE_NEW, ANON_OLD, 'detected', admin)).toEqual({
             keepOptions: { new: true, existing: true }, actionByKeep: { new: 'merge', existing: 'merge' }, defaultKeep: 'existing',
         });
@@ -363,7 +369,7 @@ describe('pairChoices — the «¿Cuál se conserva?» switch, for the row and t
 
     it('a pair rebuilt from a request: nothing the click could honour', () => {
         for (const isAdmin of [false, true]) {
-            expect(pairChoices(ME, MINE_NEW, MINE_OLD, 'detected', { isAdmin, declinedByViewer: false, rebuilt: true })).toEqual({
+            expect(pairChoices(ME, MINE_NEW, MINE_OLD, 'detected', { isAdmin, declinedByViewer: false, adminRuledSeparate: false, rebuilt: true })).toEqual({
                 keepOptions: { new: false, existing: false }, actionByKeep: { new: null, existing: null }, defaultKeep: 'existing',
             });
         }
@@ -404,5 +410,27 @@ describe('decideMergeDisputeResolution (D50)', () => {
         for (const status of ['kept', 'undone'] as const) {
             expect(decideMergeDisputeResolution({ status, actorIsAdmin: true, decision: 'undo' })).toEqual({ ok: false, reason: 'not_open' });
         }
+    });
+});
+
+describe('pairVerdict / mergeNeedsAdmins — one rule for every non-admin merge', () => {
+    const TEAM = ['me@example.com', 'mate@example.com'];
+    it("a decline of any teammate's request holds for the whole team; someone else's doesn't", () => {
+        expect(pairVerdict({ requests: [{ requesterEmail: 'Mate@Example.com', status: 'declined' }], disputes: [] }, TEAM))
+            .toEqual({ declinedForTeam: true, adminRuledSeparate: false });
+        expect(pairVerdict({ requests: [{ requesterEmail: 'other@example.com', status: 'declined' }], disputes: [] }, TEAM).declinedForTeam).toBe(false);
+    });
+
+    it('an admin-declined request or an undone dispute: ruled separate, for everyone; a kept dispute is not', () => {
+        expect(pairVerdict({ requests: [{ requesterEmail: 'other@example.com', status: 'admin_declined' }], disputes: [] }, TEAM).adminRuledSeparate).toBe(true);
+        expect(pairVerdict({ requests: [], disputes: [{ status: 'undone' }] }, TEAM).adminRuledSeparate).toBe(true);
+        expect(pairVerdict({ requests: [], disputes: [{ status: 'kept' }, { status: 'closed' }] }, TEAM).adminRuledSeparate).toBe(false);
+    });
+
+    it('needs the admins: ruled separate always; declined only when keeping the other team\'s profile', () => {
+        expect(mergeNeedsAdmins({ declinedForTeam: false, adminRuledSeparate: true }, true)).toBe(true);
+        expect(mergeNeedsAdmins({ declinedForTeam: true, adminRuledSeparate: false }, false)).toBe(true);
+        expect(mergeNeedsAdmins({ declinedForTeam: true, adminRuledSeparate: false }, true)).toBe(false);
+        expect(mergeNeedsAdmins({ declinedForTeam: false, adminRuledSeparate: false }, false)).toBe(false);
     });
 });

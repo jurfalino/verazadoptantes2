@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache';
 import { getDb, getUser } from './_db';
 import { addFormRequestRecord, SPECIES_LABELS, LIFE_STAGE_LABELS, INTENT_LABELS } from '@/lib/formRequest';
 import { mergeAdopters } from '@/lib/adopterMerge';
+import { refuseDisputedMerge } from '@/lib/pairVerdict';
 import { createNotification, resolveDisplayName } from './notifications';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdmin } from '@/config/admins';
@@ -303,6 +304,15 @@ export async function linkFormToExistingAdopter(
         if (!plan.ok) {
             logger.warn('linkFormToExistingAdopter: refused', { submissionId, adopterId, actorEmail, reason: plan.reason });
             return { success: false, error: plan.reason };
+        }
+
+        // The pair verdict every non-admin merge consults (D43, D49, D50): after
+        // a rejection or an admin's «separate» ruling, the admins decide — the
+        // rescuer asks them from the «Pendientes» row. Before the claim: nothing to release.
+        if (plan.op === 'merge' && await refuseDisputedMerge(db, { keepId: adopterId, absorbedId: plan.orphanId, actor: actorEmail })) {
+            const errorId = generateErrorId();
+            logger.warn('linkFormToExistingAdopter: refused, the admins decide this pair', { submissionId, adopterId, orphanId: plan.orphanId, actorEmail, errorId });
+            return { success: false, error: 'pair_disputed', errorId };
         }
 
         if (plan.op === 'noop') {

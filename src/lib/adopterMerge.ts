@@ -768,7 +768,8 @@ export async function notifyMergeOwners(
                 // «¿No es la misma persona?» opens from here when the merge can be found again (D50).
                 url: merge.auditId ? `/adopter/${merge.primaryId}?dispute=${encodeURIComponent(merge.auditId)}` : `/adopter/${merge.primaryId}`,
                 icon: '🔗',
-                metadata: { primaryId: merge.primaryId, mergedBy: actorEmail, auditId: merge.auditId ?? null },
+                // Never the admin's email: the bell (and its metadata) is the owner's.
+                metadata: { primaryId: merge.primaryId, secondaryId: merge.secondaryId ?? null, auditId: merge.auditId ?? null },
             });
             sent++;
         } catch (e) {

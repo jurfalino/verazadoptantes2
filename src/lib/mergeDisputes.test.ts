@@ -170,7 +170,7 @@ describe('resolveMergeDispute (D50)', () => {
 
     it('«Deshacer combinación»: both profiles back, the fold grants revoked, the pair kept separate, both rescuers told', async () => {
         expect(liveGrantsOn('mine-old')).toEqual([MATE, OWNER]);
-        expect(await as(ADMIN, () => resolveMergeDispute(disputeId, 'undo'))).toEqual({ success: true });
+        expect(await as(ADMIN, () => resolveMergeDispute(disputeId, 'undo'))).toEqual({ success: true, status: 'undone' });
         expect(unmergeSpy).toHaveBeenCalledWith(auditId, ADMIN);
         expect(deleted('mine-old')).toBe(false);
         expect(deleted('theirs-new')).toBe(false);
@@ -186,7 +186,7 @@ describe('resolveMergeDispute (D50)', () => {
     });
 
     it('«Mantener»: the merge stands, the dispute is closed, both told; nobody can reopen it', async () => {
-        expect(await as(ADMIN, () => resolveMergeDispute(disputeId, 'keep'))).toEqual({ success: true });
+        expect(await as(ADMIN, () => resolveMergeDispute(disputeId, 'keep'))).toEqual({ success: true, status: 'kept' });
         expect(unmergeSpy).not.toHaveBeenCalled();
         expect(deleted('theirs-new')).toBe(true);
         expect(disputes()[0]).toMatchObject({ status: 'kept', resolved_by: ADMIN });
@@ -232,11 +232,35 @@ describe('resolveMergeDispute (D50)', () => {
         expect(notify.create).toEqual([]);
     });
 
-    it('the merge was already undone elsewhere (admin duplicates page): «Deshacer» just closes the dispute', async () => {
+    it('the merge was already undone elsewhere (admin duplicates page): either answer closes it as moot, nobody told', async () => {
         expect((await unmergeAdopters(auditId, ADMIN)).success).toBe(true);
         unmergeSpy.mockClear();
-        expect(await as(ADMIN, () => resolveMergeDispute(disputeId, 'undo'))).toEqual({ success: true });
+        expect(await as(ADMIN, () => resolveMergeDispute(disputeId, 'keep'))).toEqual({ success: true, status: 'closed' });
         expect(unmergeSpy).not.toHaveBeenCalled();
-        expect(disputes()[0]).toMatchObject({ status: 'undone' });
+        expect(disputes()[0]).toMatchObject({ status: 'closed', resolved_by: ADMIN });
+        expect(notify.create).toEqual([]);
+        expect(await raiseMergeDispute(auditId)).toMatchObject({ success: false, error: 'already_undone' });
+    });
+
+    it('superseded: the kept profile was merged away since — closed as moot, no «mantuvo / separó»', async () => {
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 5000 WHERE id = 'mine-old'`).run();
+        expect(await as(ADMIN, () => resolveMergeDispute(disputeId, 'undo'))).toEqual({ success: true, status: 'closed' });
+        expect(unmergeSpy).not.toHaveBeenCalled();
+        expect(notify.create).toEqual([]);
+        expect(await raiseMergeDispute(auditId)).toMatchObject({ success: false, error: 'already_decided' });
+    });
+
+    it('after the admin undid it, the merging rescuer re-flags the pair: keeping the other profile is a dispute, never a merge', async () => {
+        expect(await as(ADMIN, () => resolveMergeDispute(disputeId, 'undo'))).toEqual({ success: true, status: 'undone' });
+        sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, target_adopter_id, reason, details, flagged_by, created_at)
+            VALUES ('flag-again', 'theirs-new', 'mine-old', 'duplicate', NULL, ?, 9)`).run(OWNER);
+        const merges = sqlite.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action = 'adopter_merge'`).get()!.n;
+        expect(await as(OWNER, () => mergePendingDedupPair('flag-again', { keepId: 'mine-old' }))).toEqual({ success: true, outcome: 'disputed' });
+        // A rescan alike.
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
+            VALUES ('cand-rescan', 'theirs-new', 'mine-old', '["phone","name_full"]', 90, 'high', 'pending', 9)`).run();
+        expect(await as(STRANGER, () => mergePendingDedupPair('cand-rescan', { keepId: 'theirs-new' }))).toMatchObject({ success: false, error: 'request_pending' });
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action = 'adopter_merge'`).get()!.n).toBe(merges);
+        expect(deleted('mine-old') || deleted('theirs-new')).toBe(false);
     });
 });

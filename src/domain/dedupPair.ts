@@ -148,12 +148,15 @@ export interface PairChoices {
  * - Admins choose freely (D24): either side, merged straight away — unless
  *   the admin created neither side (`not_yours`), which nobody may merge here.
  * - A side with no real owner can't be kept by a rescuer (D42, `keep_not_allowed`).
- * - `declinedByViewer` (an owner declined the viewer's own request on this
- *   pair: canRequestAgain is false): a keep that would ask again is not allowed
+ * - `declinedByViewer` (an owner declined a request on this pair by the
+ *   viewer or a teammate: PairVerdict.declinedForTeam): a keep that would ask again is not allowed
  *   (D43), and keeping the other rescuer's profile — which would fold the
  *   viewer's into it with no consent — becomes a request to the admins,
  *   'dispute' (D49, revising D43): after «no es la misma persona» only the
  *   rescuer who declined (changing their mind) or an admin can merge.
+ * - `adminRuledSeparate` (PairVerdict): an admin said they are two people, so
+ *   any merge here becomes 'dispute' too — even on a pair re-flagged or
+ *   rescanned later (mergeNeedsAdmins).
  * - `rebuilt` (the pair exists only as a merge request — no candidate or flag
  *   row for the click to load): nothing is allowed.
  */
@@ -162,7 +165,7 @@ export function pairChoices(
     a: DedupSide,
     b: DedupSide,
     source: 'detected' | 'flag',
-    ctx: { isAdmin: boolean; declinedByViewer: boolean; rebuilt: boolean },
+    ctx: { isAdmin: boolean; declinedByViewer: boolean; adminRuledSeparate: boolean; rebuilt: boolean },
 ): PairChoices {
     const { newer, older } = orderPair(a, b);
     const actionFor = (keep: DedupSide): KeepAction | null => {
@@ -171,7 +174,8 @@ export function pairChoices(
         if (ctx.isAdmin) return d.kind !== 'refuse' || d.reason === 'keep_not_allowed' ? 'merge' : null;
         if (d.kind === 'refuse') return null;
         if (d.kind === 'request' && ctx.declinedByViewer) return null;
-        if (d.kind === 'merge' && ctx.declinedByViewer && !keep.teamOwned) return 'dispute';
+        const verdict = { declinedForTeam: ctx.declinedByViewer, adminRuledSeparate: ctx.adminRuledSeparate };
+        if (d.kind === 'merge' && mergeNeedsAdmins(verdict, keep.teamOwned)) return 'dispute';
         return d.kind;
     };
     const actionByKeep = { new: actionFor(newer), existing: actionFor(older) };
@@ -246,18 +250,59 @@ export function decideMergeRequestAnswer(input: {
 
 /**
  * May this rescuer ask about the pair again? Not after the owner declined
- * their own request (D43) — they can still keep the other's profile, which
- * needs no consent, or write to them. Someone else's decline doesn't count.
+ * their own request (D43) — or a teammate's: pass the rescuer's whole team, so
+ * the decline holds for the team (one shared reality). They can still ask the
+ * admins (D49) or write to them. A decline of someone outside `requester` doesn't count.
  */
 export function canRequestAgain(
     previous: Array<{ requesterEmail: string; status: MergeRequestStatus }>,
-    requester: string,
+    requester: string | readonly string[],
 ): boolean {
     const norm = (e: string) => e.trim().toLowerCase();
-    return !previous.some(r => r.status === 'declined' && norm(r.requesterEmail) === norm(requester));
+    const who = new Set((typeof requester === 'string' ? [requester] : requester).map(norm));
+    return !previous.some(r => r.status === 'declined' && who.has(norm(r.requesterEmail)));
 }
 
-export type MergeDisputeStatus = 'open' | 'kept' | 'undone';
+/** 'closed': moot — the merge was undone elsewhere or its survivor merged away before an admin answered. */
+export type MergeDisputeStatus = 'open' | 'kept' | 'undone' | 'closed';
+
+/**
+ * What has been said about a pair, for everyone (one shared reality):
+ * - `declinedForTeam`: an owner rejected a request on the pair filed by the
+ *   viewer or a teammate (D43);
+ * - `adminRuledSeparate`: an admin ruled the two are different people — an
+ *   admin-declined request, or a disputed merge an admin undid (D50).
+ * Built from every request and dispute on the pair, either orientation.
+ */
+export interface PairVerdict {
+    declinedForTeam: boolean;
+    adminRuledSeparate: boolean;
+}
+
+export function pairVerdict(
+    facts: {
+        requests: Array<{ requesterEmail: string; status: MergeRequestStatus }>;
+        disputes: Array<{ status: MergeDisputeStatus }>;
+    },
+    viewerTeam: readonly string[],
+): PairVerdict {
+    return {
+        declinedForTeam: !canRequestAgain(facts.requests, viewerTeam),
+        adminRuledSeparate: facts.requests.some(r => r.status === 'admin_declined') || facts.disputes.some(d => d.status === 'undone'),
+    };
+}
+
+/**
+ * THE rule every non-admin merge entry point applies before merging a pair
+ * (the «Pendientes» feed and click via pairChoices, a contract or adoption
+ * form folded into a matched profile): after an admin ruled the pair separate,
+ * no rescuer merges it; after an owner rejected the team's request, keeping
+ * the OTHER rescuer's profile (folding ours in without consent) doesn't
+ * either. Either way the admins decide instead (D49, D50).
+ */
+export function mergeNeedsAdmins(verdict: PairVerdict, keepTeamOwned: boolean): boolean {
+    return verdict.adminRuledSeparate || (verdict.declinedForTeam && !keepTeamOwned);
+}
 
 /**
  * May this viewer ask the admins to review a merge that already happened
@@ -290,7 +335,7 @@ export function decideMergeDisputeResolution(input: {
     status: MergeDisputeStatus;
     actorIsAdmin: boolean;
     decision: 'undo' | 'keep';
-}): { ok: true; nextStatus: Exclude<MergeDisputeStatus, 'open'> } | { ok: false; reason: 'not_allowed' | 'not_open' } {
+}): { ok: true; nextStatus: 'undone' | 'kept' } | { ok: false; reason: 'not_allowed' | 'not_open' } {
     if (!input.actorIsAdmin) return { ok: false, reason: 'not_allowed' };
     if (input.status !== 'open') return { ok: false, reason: 'not_open' };
     return { ok: true, nextStatus: input.decision === 'undo' ? 'undone' : 'kept' };

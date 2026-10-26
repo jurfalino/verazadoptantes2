@@ -79,6 +79,8 @@ interface MergeFacts {
     mergedBy: string | null;
     mergedAt: Date | null;
     undone: boolean;
+    /** The survivor was itself merged away (or removed) since: this merge is superseded. */
+    survivorGone: boolean;
     survivorOwner: string | null;
     absorbedOwner: string | null;
 }
@@ -96,7 +98,7 @@ async function loadMerge(db: Db, auditId: string): Promise<MergeFacts | null> {
     }
     if (typeof details.primaryId !== 'string' || typeof details.secondaryId !== 'string') return null;
     const [survivor, absorbed] = await Promise.all([details.primaryId, details.secondaryId].map(id =>
-        db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, id)).get()));
+        db.select({ addedBy: adopters.addedBy, deletedAt: adopters.deletedAt }).from(adopters).where(eq(adopters.id, id)).get()));
     return {
         auditId,
         survivorId: details.primaryId,
@@ -104,6 +106,7 @@ async function loadMerge(db: Db, auditId: string): Promise<MergeFacts | null> {
         mergedBy: row.userEmail ?? null,
         mergedAt: row.createdAt ?? null,
         undone: !!details.undoneAt,
+        survivorGone: !survivor || !!survivor.deletedAt,
         survivorOwner: realOwner(survivor?.addedBy),
         absorbedOwner: realOwner(absorbed?.addedBy),
     };
@@ -133,7 +136,7 @@ async function raiseDecision(db: Db, merge: MergeFacts, viewer: string) {
         viewerOnAbsorbedTeam,
         soloMerge: actorTeamOwnsAll,
         undone: merge.undone || existing?.status === 'undone',
-        decided: existing?.status === 'kept',
+        decided: existing?.status === 'kept' || existing?.status === 'closed',
     });
     return { decision, existing };
 }
@@ -227,22 +230,31 @@ export async function answerMergeDispute(db: Db, disputeId: string, actor: strin
     if (!answer.ok) return answer;
     const ctx = { disputeId, auditId: dispute.auditId, actor, decision, primaryId: dispute.survivorId, secondaryId: dispute.absorbedId };
 
+    // Moot: the merge was undone elsewhere (the admin duplicates page) or its
+    // survivor was merged away since. Neither «separó» nor «mantuvo» would be
+    // true, so it just closes — no notice.
+    const merge = await loadMerge(db, dispute.auditId);
+    if (!merge || merge.undone || merge.survivorGone) {
+        if (!await casDispute(db, disputeId, 'open', { status: 'closed', resolvedBy: normEmail(actor), resolvedAt: new Date() })) {
+            logger.warn('answerMergeDispute: lost the race', ctx);
+            return { ok: false, reason: 'not_open' };
+        }
+        logger.info('answerMergeDispute: closed as moot', { ...ctx, undone: !!merge?.undone, survivorGone: merge?.survivorGone ?? true });
+        return { ok: true, status: 'closed' };
+    }
+
     if (!await casDispute(db, disputeId, 'open', { status: answer.nextStatus, resolvedBy: normEmail(actor), resolvedAt: new Date() })) {
         logger.warn('answerMergeDispute: lost the race', ctx);
         return { ok: false, reason: 'not_open' };
     }
 
     if (answer.nextStatus === 'undone') {
-        // Undone elsewhere meanwhile (the admin duplicates page): nothing left to reverse.
-        const merge = await loadMerge(db, dispute.auditId);
-        if (!merge?.undone) {
-            const result = await unmergeAdopters(dispute.auditId, actor);
-            if (!result.success) {
-                const reopened = await casDispute(db, disputeId, 'undone', { status: 'open', resolvedBy: null, resolvedAt: null });
-                const error = result.error ?? 'undo failed';
-                const errorId = logger.error('answerMergeDispute: undo failed, dispute reopened', new Error(error), { ...ctx, reopened });
-                return { ok: false, reason: 'undo_failed', error, errorId };
-            }
+        const result = await unmergeAdopters(dispute.auditId, actor);
+        if (!result.success) {
+            const reopened = await casDispute(db, disputeId, 'undone', { status: 'open', resolvedBy: null, resolvedAt: null });
+            const error = result.error ?? 'undo failed';
+            const errorId = logger.error('answerMergeDispute: undo failed, dispute reopened', new Error(error), { ...ctx, reopened });
+            return { ok: false, reason: 'undo_failed', error, errorId };
         }
         // An admin decided they are two people: the pair leaves both lists.
         await keepSeparate(db, { a: dispute.survivorId, b: dispute.absorbedId }, actor, `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}dispute-${disputeId}`, ctx);
@@ -258,7 +270,7 @@ export async function answerMergeDispute(db: Db, disputeId: string, actor: strin
     return { ok: true, status: answer.nextStatus };
 }
 
-async function notifyResolved(db: Db, dispute: DisputeRow, status: Exclude<MergeDisputeStatus, 'open'>, actor: string): Promise<void> {
+async function notifyResolved(db: Db, dispute: DisputeRow, status: 'undone' | 'kept', actor: string): Promise<void> {
     const [survivor, absorbed] = await Promise.all([dispute.survivorId, dispute.absorbedId].map(id =>
         db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, id)).get()));
     const actorKey = normEmail(actor);

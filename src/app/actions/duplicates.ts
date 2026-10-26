@@ -4,7 +4,7 @@ import { adopters, adopterFlags, adopterStats, duplicateTokens, duplicateCandida
 import { eq, or, and, inArray, sql, isNull, asc, desc } from 'drizzle-orm';
 import { logger, generateErrorId } from '@/lib/logger';
 import { getDb, getUser } from './_db';
-import { decideDedupAction, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, orderPair, pairChoices, pairKey, realOwner, type DedupSide, type KeepAction, type KeepSide } from '@/domain/dedupPair';
+import { decideDedupAction, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, orderPair, pairChoices, pairKey, realOwner, type DedupSide, type KeepAction, type KeepSide, type PairVerdict } from '@/domain/dedupPair';
 import { needsIdentityChoice } from '@/domain/identityChoice';
 import { matchBreakdown, summarizeBreakdown, type BreakdownField } from '@/domain/matchBreakdown';
 import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
@@ -14,7 +14,8 @@ import { normalizeText, extractPhones, extractEmails, extractSocials, normalizeS
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, storedScoreToPercent, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 
 import { mergeAdopters, notifyMergeOwners } from '@/lib/adopterMerge';
-import { createMergeRequest, declinedForViewer, keepSeparate, settleRequestsAsHousehold } from '@/lib/mergeRequests';
+import { createMergeRequest, keepSeparate, settleRequestsAsHousehold } from '@/lib/mergeRequests';
+import { loadPairVerdict, refuseDisputedMerge, teamOf } from '@/lib/pairVerdict';
 import { grantAccessAfterFold } from '@/lib/mergeAccess';
 import { mergeSideParams } from '@/lib/mergeNotificationSides';
 import { notificationContent } from '@/domain/notificationTemplates';
@@ -39,7 +40,7 @@ import { addHouseholdMember } from './householdMembers';
 export async function attachContractToExistingAdopter(
     notificationId: string,
     matchAdopterId: string,
-): Promise<{ success: boolean; error?: string; primaryName?: string; matchedProfileUrl?: string }> {
+): Promise<{ success: boolean; error?: string; errorId?: string; primaryName?: string; matchedProfileUrl?: string }> {
     let actorEmail = 'unknown';
     try {
         const { getUser } = await import('./_db');
@@ -80,6 +81,15 @@ export async function attachContractToExistingAdopter(
         const match = await db.select().from(adopters).where(eq(adopters.id, matchAdopterId)).get();
         if (!match) return { success: false, error: 'Matched adopter not found' };
         if (match.deletedAt) return { success: false, error: 'Matched adopter has been deleted' };
+
+        // The pair verdict every non-admin merge consults (D43, D49, D50): after
+        // a rejection or an admin's «separate» ruling, the admins decide —
+        // the rescuer asks them from the «Pendientes» row.
+        if (await refuseDisputedMerge(db, { keepId: matchAdopterId, absorbedId: orphanAdopterId, actor: actorEmail })) {
+            const errorId = generateErrorId();
+            logger.warn('attachContractToExistingAdopter: refused, the admins decide this pair', { notificationId, matchAdopterId, orphanAdopterId, actor: actorEmail, errorId });
+            return { success: false, error: 'pair_disputed', errorId };
+        }
 
         // Run merge — match becomes primary, orphan becomes secondary
         const mergeResult = await mergeAdopters(matchAdopterId, orphanAdopterId, actorEmail);
@@ -766,11 +776,15 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
         const sideA = a!, sideB = b!, actor = actorEmail!;
         // The same choices the row offers (pairChoices, also used by the feed):
         // no keepId → the row's default survivor; a keepId outside the pair → not_found.
-        const [isAdmin, declinedByViewer] = await Promise.all([
+        // What has been said about the pair (PairVerdict): a decline of my
+        // team's request (D43), an admin's ruling that they are two people (D50).
+        const [isAdmin, verdict] = await Promise.all([
             isAdminAsync(actor),
-            declinedForViewer(db, sideA.id, sideB.id, actor),
+            teamOf(actor).then(team => loadPairVerdict(db, sideA.id, sideB.id, team)),
         ]);
-        const choices = pairChoices(actor, sideA, sideB, pair!.source, { isAdmin, declinedByViewer, rebuilt: false });
+        const choices = pairChoices(actor, sideA, sideB, pair!.source, {
+            isAdmin, declinedByViewer: verdict.declinedForTeam, adminRuledSeparate: verdict.adminRuledSeparate, rebuilt: false,
+        });
         const { newer, older } = orderPair(sideA, sideB);
         const keepSide: KeepSide | null = chosenKeepId === undefined ? choices.defaultKeep
             : chosenKeepId === newer.id ? 'new' : chosenKeepId === older.id ? 'existing' : null;
@@ -799,51 +813,44 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
         const primaryId = keepId;
         const secondaryId = keepId === sideA.id ? sideB.id : sideA.id;
 
-        if (chosen === 'dispute') {
-            // D49: the other owner rejected this rescuer's request on the pair.
-            // Keeping their profile would fold mine into it with no consent, so
-            // the admins decide instead. Nothing is merged here.
+        // File the request (to the other owner, or the admins); one pending per
+        // pair. Null when it was filed or was already ours; else the refusal.
+        const fileRequest = async (ownerEmail: string | null, dispute: boolean) => {
             const fromFlag = pair!.source === 'flag';
             const filed = await createMergeRequest(db, {
                 primaryId, secondaryId,
                 candidateId: fromFlag ? null : candidateId,
                 flagId: fromFlag ? candidateId : null,
                 requesterEmail: actor,
-                ownerEmail: null,
-                dispute: true,
-            });
-            if ('refused' in filed) return refuse(filed.refused);
-            const { id: requestId, created, requesterEmail } = filed;
-            // Someone else's request is open on the pair (the decliner asking
-            // the other way round): answer that one instead.
-            if (!created && normEmail(requesterEmail) !== normEmail(actor)) {
-                const errorId = generateErrorId();
-                logger.warn('mergePendingDedupPair: request already pending', { candidateId, actorEmail, requestId, errorId });
-                return { success: false, error: 'request_pending', errorId };
-            }
-            logger.info('mergePendingDedupPair: disputed', { candidateId, actorEmail, requestId, created, primaryId, secondaryId });
-            return { success: true, outcome: 'disputed' };
-        }
-
-        if (action.kind === 'request' && !viaAdmin) {
-            const fromFlag = pair!.source === 'flag';
-            const filed = await createMergeRequest(db, {
-                primaryId, secondaryId,
-                candidateId: fromFlag ? null : candidateId,
-                flagId: fromFlag ? candidateId : null,
-                requesterEmail: actor,
-                ownerEmail: action.ownerEmail,
+                ownerEmail,
+                dispute,
             });
             if ('refused' in filed) return refuse(filed.refused);
             const { id: requestId, created, requesterEmail } = filed;
             // Someone else already asked about this pair (possibly asking the
-            // caller): not "your request was sent" — nothing was filed or sent.
+            // caller, or the decliner asking the other way round): not "your
+            // request was sent" — nothing was filed or sent; answer that one.
             if (!created && normEmail(requesterEmail) !== normEmail(actor)) {
                 const errorId = generateErrorId();
                 logger.warn('mergePendingDedupPair: request already pending', { candidateId, actorEmail, requestId, errorId });
-                return { success: false, error: 'request_pending', errorId };
+                return { success: false as const, error: 'request_pending', errorId };
             }
-            logger.info('mergePendingDedupPair: requested', { candidateId, actorEmail, requestId, created, primaryId, secondaryId });
+            logger.info(dispute ? 'mergePendingDedupPair: disputed' : 'mergePendingDedupPair: requested', {
+                candidateId, actorEmail, requestId, created, primaryId, secondaryId,
+            });
+            return null;
+        };
+
+        if (chosen === 'dispute') {
+            // D49/D50: the other owner rejected my team's request on the pair,
+            // or an admin ruled them separate. The admins decide instead;
+            // nothing is merged here.
+            return (await fileRequest(null, true)) ?? { success: true, outcome: 'disputed' };
+        }
+
+        if (action.kind === 'request' && !viaAdmin) {
+            const refused = await fileRequest(action.ownerEmail, false);
+            if (refused) return refused;
             // Who was asked, so the toast names the right person. Display name
             // or email handle, never the address; null when the admins decide.
             const toAdmins = action.ownerEmail === null;
@@ -1274,18 +1281,20 @@ export async function getPendingDuplicatesForUser(
             return built;
         };
 
-        // D43, the same check the click makes: did an owner decline one of the
-        // viewer's requests on the pair? Every request on it, not just the one
-        // the map holds — one query per pair on THIS page (≤ pageSize), none
-        // for admins (who choose freely) or rebuilt pairs (nothing to choose).
-        const declinedOnPage = new Map<string, boolean>();
+        // The same verdict the click reads (PairVerdict): did an owner decline a
+        // request on the pair by the viewer's team (D43), did an admin rule it
+        // separate (D50)? Every request and dispute on it — two queries per pair
+        // on THIS page (≤ pageSize), none for admins (who choose freely) or
+        // rebuilt pairs (nothing to choose).
+        const verdictOnPage = new Map<string, PairVerdict>();
         if (!isAdmin) {
+            const viewerTeam = [viewer, ...teamKeys];
             await Promise.all(pageCandidates.filter(c => !c.rebuilt).map(async (c) => {
                 try {
-                    declinedOnPage.set(c.candidateId, await declinedForViewer(db, c.adopter1Id, c.adopter2Id, viewer));
+                    verdictOnPage.set(c.candidateId, await loadPairVerdict(db, c.adopter1Id, c.adopter2Id, viewerTeam));
                 } catch (e) {
-                    // Offered anyway; the click re-checks (createMergeRequest refuses declined_before).
-                    logger.warn('getPendingDuplicatesForUser: declined-before check failed', {
+                    // Offered anyway; the click re-checks the same verdict.
+                    logger.warn('getPendingDuplicatesForUser: pair verdict check failed', {
                         actorEmail: viewer, candidateId: c.candidateId, error: e instanceof Error ? e.message : String(e),
                     });
                 }
@@ -1315,8 +1324,9 @@ export async function getPendingDuplicatesForUser(
             // The switch's choices, by the same function the click runs
             // (pairChoices): admin bypass (D24), ownerless (D42), no asking
             // again after a decline (D43), nothing on a rebuilt pair.
+            const verdict = verdictOnPage.get(c.candidateId);
             const choices = pairChoices(viewer, dedupSide(a), dedupSide(b), source === 'flagged' ? 'flag' : 'detected', {
-                isAdmin, declinedByViewer: declinedOnPage.get(c.candidateId) ?? false, rebuilt: !!c.rebuilt,
+                isAdmin, declinedByViewer: verdict?.declinedForTeam ?? false, adminRuledSeparate: verdict?.adminRuledSeparate ?? false, rebuilt: !!c.rebuilt,
             });
             const [newSide, existingSide] = [await side(newOne), await side(oldOne)];
             const { same, diff } = summarizeBreakdown(matchBreakdown({

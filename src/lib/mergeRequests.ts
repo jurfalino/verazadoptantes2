@@ -35,6 +35,7 @@ import { createNotification, notifyAdmins, resolveDisplayName } from '@/app/acti
 import { rowsAffected } from '@/lib/interviews/rowsAffected';
 import { grantAccessAfterFold } from '@/lib/mergeAccess';
 import { mergeSideParams } from '@/lib/mergeNotificationSides';
+import { teamOf } from '@/lib/pairVerdict';
 import { notificationContent, type MergeSides, type NotificationTemplate } from '@/domain/notificationTemplates';
 import {
     canRequestAgain,
@@ -104,23 +105,14 @@ async function requestsForPair(db: Db, a: string, b: string): Promise<Array<{ re
 }
 
 /**
- * Did an owner decline one of `viewer`'s requests on this pair (D43)? Then the
- * viewer may not ask again. Every request on the pair, either orientation —
- * the one rule createMergeRequest enforces, for pairChoices in the feed and the
- * click. One query.
- */
-export async function declinedForViewer(db: Db, a: string, b: string, viewer: string): Promise<boolean> {
-    return !canRequestAgain(await requestsForPair(db, a, b), viewer);
-}
-
-/**
  * File a request asking the other profile's owner (and their team, D16) to let
  * the pair be merged, keeping `primaryId` (the requester's choice, D24); with
  * no real owner it goes to the admins (D15). One pending request per pair: if
  * one exists it is returned (`created: false`, with ITS requester — the caller
  * decides whether that is "you already asked" or someone else's request) and
  * nobody is notified. A requester whose earlier request on this pair was
- * declined may not ask again (D43): `{ refused: 'declined_before' }` — except
+ * declined — or a teammate's (the decline holds for the team) — may not ask
+ * again (D43): `{ refused: 'declined_before' }` — except
  * as a `dispute` (D49): a request to the admins (`ownerEmail` must be null),
  * which is exactly what a rejected requester is left with.
  */
@@ -145,7 +137,7 @@ export async function createMergeRequest(db: Db, input: {
     };
     const existing = await findPendingRequestForPair(db, input.primaryId, input.secondaryId);
     if (existing) return { id: existing.id, created: false, requesterEmail: existing.requesterEmail };
-    if (!dispute && !canRequestAgain(await requestsForPair(db, input.primaryId, input.secondaryId), input.requesterEmail)) {
+    if (!dispute && !canRequestAgain(await requestsForPair(db, input.primaryId, input.secondaryId), await teamOf(input.requesterEmail))) {
         logger.info('createMergeRequest: declined before, not asking again', {
             primaryId: input.primaryId, secondaryId: input.secondaryId, actor: input.requesterEmail,
         });

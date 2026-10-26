@@ -83,6 +83,9 @@ const MUST_NOT_BE_ACTIONS = [
     'fileMergeDispute',
     'answerMergeDispute',
     'mergeDisputeOption',
+    // The pair verdict (src/lib/pairVerdict.ts) takes the actor / team as arguments.
+    'refuseDisputedMerge',
+    'loadPairVerdict',
 ];
 
 const files = walk(SRC);
