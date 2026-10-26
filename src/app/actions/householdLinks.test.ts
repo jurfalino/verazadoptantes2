@@ -340,6 +340,18 @@ describe('«No convive» (D48): a correction of the fact for everyone', () => {
         expect(notify.admins).toEqual([]);
     });
 
+    it("the linked team's «No convive» never makes them an approver of the host (fix round 1)", async () => {
+        await link();
+        const [row] = links();
+        expect(await as(OWNER, () => reportNotLivingTogether(row.id as string))).toEqual({ success: true });
+        const kinds = sqlite.prepare(`SELECT adopter_id, kind FROM adopter_history WHERE changed_by = ? ORDER BY rowid`).all(OWNER);
+        // Not privileged on the host: a contribution there; their own profile keeps the edit.
+        expect(kinds).toEqual([{ adopter_id: 'host', kind: 'contribution' }, { adopter_id: 'linked', kind: 'edit' }]);
+        const { loadApprovers } = await import('@/lib/piiAccessRequest');
+        expect((await loadApprovers('host')).all).not.toContain(OWNER);
+        expect((await resolveAdopterVisibility(OWNER, { id: 'host', addedBy: STRANGER })).nothingMasked).toBe(false);
+    });
+
     it('a teammate of the linked owner or an admin may; the host owner, a stranger or a visitor may not', async () => {
         await link();
         const [row] = links();

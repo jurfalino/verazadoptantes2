@@ -37,8 +37,10 @@ function sameEntry(a: ContactEntry, b: ContactEntry): boolean {
  *
  * Side effects on success:
  *   1. UPDATE adopters.contactEntries (entry mutated in place, list re-serialized).
- *   2. INSERT adopter_history kind='edit' with hashed before/after values
- *      (no raw PII in history.changes).
+ *   2. INSERT adopter_history with hashed before/after values (no raw PII in
+ *      history.changes): kind='edit' for owner/admin/org-mate, kind='contribution'
+ *      for a contributor fixing their own entry — an 'edit' row would make them
+ *      an editor (full contact access + approver rights).
  *   3. Re-tokenize so search reflects the new value.
  *
  * Notes:
@@ -177,7 +179,8 @@ export async function updateContactEntry(
             id: crypto.randomUUID(),
             adopterId,
             changedBy: actor,
-            kind: 'edit',
+            // A contributor editing their own entry is not an editor (see header).
+            kind: isOwner || actorIsAdmin || actorIsOrgMate ? 'edit' : 'contribution',
             changes: JSON.stringify({
                 updated_entry: { type: r.updated.type, id: entryId, previousValueHash: r.previousValueHash, newValueHash: r.newValueHash },
             }),

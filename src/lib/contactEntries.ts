@@ -142,6 +142,13 @@ export interface ContactEntry {
      */
     masked?: boolean;
     /**
+     * Display-only (D54): the VIEWER added this entry — set by the masking
+     * layer on the profile page (maskHouseholdMembers with `viewerEmail`) so
+     * the UI can offer edit/remove without reading anyone's email. Never
+     * persisted (serializeHouseholdMembers drops it).
+     */
+    own?: boolean;
+    /**
      * Address-only structured fields (additive — `value` stays the joined
      * source of truth). `streetAndNumber` is the PII-gated half; `locality`
      * is the non-gated half (locality + city + province + cp combined as a
@@ -346,13 +353,18 @@ export function deriveLocality(entry: ContactEntry): string {
     return firstComma > 0 ? v.slice(firstComma + 1).trim() : '';
 }
 
+/** The identity `mergeContactEntries` de-duplicates on: type + normalized value (+ network for socials). */
+export function contactEntryKey(e: Pick<ContactEntry, 'type' | 'value' | 'platform'>): string {
+    return e.type === 'social'
+        ? `social|${normalizeEntryValue('social', e.value)}|${e.platform ?? ''}`
+        : `${e.type}|${normalizeEntryValue(e.type, e.value)}`;
+}
+
 function dedupe(entries: ContactEntry[]): ContactEntry[] {
     const seen = new Set<string>();
     const out: ContactEntry[] = [];
     for (const e of entries) {
-        const key = e.type === 'social'
-            ? `social|${normalizeEntryValue('social', e.value)}|${e.platform ?? ''}`
-            : `${e.type}|${normalizeEntryValue(e.type, e.value)}`;
+        const key = contactEntryKey(e);
         if (seen.has(key)) continue;
         seen.add(key);
         out.push(e);
@@ -590,6 +602,7 @@ export function deserializeContactEntries(json: string | null | undefined): Cont
                 ...social,
                 ...readPhoneApps(e),
                 ...(e.masked === true ? { masked: true } : {}),
+                ...(e.own === true ? { own: true } : {}),
                 // Per-entry contributor attribution (v2.16.0-9+). Length-capped
                 // defensively; undefined if absent (most pre-existing rows).
                 ...(typeof e.addedBy === 'string' && e.addedBy.trim()

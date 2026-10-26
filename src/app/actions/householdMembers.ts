@@ -8,6 +8,8 @@ import { logAudit } from '@/lib/audit';
 import {
     joinedAddressValue,
     detectSocialPlatform,
+    mergeContactEntries,
+    contactEntryKey,
     type ContactEntry,
     type SocialPlatform,
     type MessagingApp,
@@ -22,7 +24,7 @@ import {
 } from '@/lib/householdMembers';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { isRealActorEmail } from '@/lib/piiAccess';
-import { isAdminAsync } from '@/config/admins';
+import { isModeratorOrAdminAsync } from '@/config/admins';
 import { casAdopterLists } from '@/lib/adopterListCas';
 import { itemAuthors } from '@/lib/collabAttribution';
 import { hashEntryValue } from '@/lib/piiAccess';
@@ -37,8 +39,8 @@ import { insertContributionGrant, notifyApprovers, fileContributionAccessRequest
  * contact-details model of `addContactEntry`):
  * - **Add** a member, or a contact on any member: any signed-in rescuer on a
  *   live profile. The item is credited to them (`addedBy`).
- * - **Edit / remove** a member: privileged (owner ∨ admin ∨ org-mate of the
- *   owner), or the member's `addedBy` is the actor. A contributor's edit
+ * - **Edit / remove** a member: privileged (owner ∨ admin/moderator ∨ org-mate
+ *   of the owner), or the member's `addedBy` is the actor. A contributor's edit
  *   changes name / relationship / age only; they may remove their member only
  *   while every contact on it is theirs too. **Edit / remove** a contact on a
  *   member: privileged, or the entry's `addedBy` is the actor. Items with no
@@ -46,14 +48,18 @@ import { insertContributionGrant, notifyApprovers, fileContributionAccessRequest
  *   CURRENT stored item inside the compare-and-swap, never on client input.
  * - Privileged writes keep the editor path: history kind='edit', no notice.
  *   A non-privileged write is a contribution: history kind='contribution' for
- *   EVERY write (a kind='edit' row would promote them to editor = full contact
- *   access, see piiAccessServer.ts), and on an add an entry-scope grant per
+ *   EVERY write, on the host AND on a linked profile (a kind='edit' row would
+ *   make them an editor — full contact access and approver rights, see
+ *   piiAccessServer.ts / loadApprovers). On an add: an entry-scope grant per
  *   contact they typed (so they see it unmasked; everyone else sees the
- *   profile's normal protection), the owner + editors notified
- *   ('household_contribution') and the access request auto-filed, both after
- *   the response — src/lib/contributionSideEffects.ts, shared with
- *   addContactEntry. A member they added keeps its name unmasked for them
- *   (maskHouseholdMembers, `viewerEmail`).
+ *   profile's normal protection); the owner + editors notified
+ *   ('household_contribution'); and, when a contact was added, the access
+ *   request auto-filed — both after the response
+ *   (src/lib/contributionSideEffects.ts, shared with addContactEntry). A
+ *   contact the member already has appends nothing and sends nothing, but the
+ *   contributor still gets its grant. On the profile page, members and
+ *   entries the viewer added carry `own: true` and the member's name stays
+ *   unmasked for them (maskHouseholdMembers, `viewerEmail`).
  *
  * Every write re-tokenizes the adopter (household names + contacts feed dedup)
  * and is audited. Each read-modify-write of the household list is a
@@ -74,7 +80,7 @@ async function authActor(): Promise<string | null> {
 
 /**
  * Load a live adopter row and say whether the actor is privileged on its
- * household (owner ∨ admin ∨ org-mate of the owner). Refuses nothing else:
+ * household (owner ∨ admin/moderator ∨ org-mate of the owner). Refuses nothing else:
  * each action decides what a non-privileged actor may do (D54).
  */
 type Loaded = { ok: true; db: NonNullable<Awaited<ReturnType<typeof getDb>>>; target: typeof adopters.$inferSelect; members: HouseholdMember[]; privileged: boolean };
@@ -86,8 +92,9 @@ async function loadHousehold(adopterId: string, actor: string): Promise<Loaded |
     if (target.deletedAt) return { ok: false, error: 'Cannot edit a deleted adopter' };
     // Case-insensitive: `added_by` keeps whatever case it was written with.
     const isOwner = sameEmail(target.addedBy, actor);
+    // Moderators count, as in the visibility resolver (piiAccessServer.ts).
     const [actorIsAdmin, actorIsOrgMate] = await Promise.all([
-        isAdminAsync(actor),
+        isModeratorOrAdminAsync(actor),
         (await import('@/lib/orgMembership')).isOrgMate(actor, target.addedBy),
     ]);
     const privileged = isOwner || actorIsAdmin || actorIsOrgMate;
@@ -109,7 +116,8 @@ function forbidden(op: string, ctx: Record<string, unknown>): Err {
 /**
  * The side effects of a non-privileged add (D54), as `addContactEntry` does
  * them: an entry grant per contact typed, then — after the response — the
- * owner + editors notified and the access request auto-filed. The item is
+ * owner + editors notified and, when contacts came with it, the access request
+ * auto-filed. The item is
  * already saved: a failed grant is logged, never a failed add (a retry would
  * add it twice).
  */
@@ -138,8 +146,11 @@ async function contributionSideEffects(
         }),
         metadata: { memberId: notice.memberId, what: notice.what, ...(notice.entryType ? { entryType: notice.entryType } : {}) },
     }), ctx);
-    await runAfterResponse(`${notice.op}.autoAccessRequest`,
-        () => fileContributionAccessRequest(notice.op, actor, adopterId), ctx);
+    // As addContactEntry: the request rides on a contact actually added — a bare member files none.
+    if (entries.length > 0) {
+        await runAfterResponse(`${notice.op}.autoAccessRequest`,
+            () => fileContributionAccessRequest(notice.op, actor, adopterId), ctx);
+    }
 }
 
 type Members = HouseholdMember[];
@@ -399,7 +410,7 @@ export async function removeHouseholdMember(
         logAudit({ userEmail: actor, action: 'household_member_removed', target: adopterId, details: { memberId } });
         // Its link goes with it, and the linked profile's history says so (M7).
         // A leftover row is harmless (reads check the member still exists) but is logged.
-        await deleteHouseholdLink(r.db, { hostId: adopterId, hostName: r.target.name, memberId, actor }).catch((e: unknown) => {
+        await deleteHouseholdLink(r.db, { hostId: adopterId, hostName: r.target.name, memberId, actor, kind: r.privileged ? 'edit' : 'contribution' }).catch((e: unknown) => {
             logger.warn('removeHouseholdMember: household link / linked history not written (link ignored on read)', { adopterId, actor, memberId, error: e instanceof Error ? e.message : String(e) });
         });
         return { ok: true };
@@ -425,14 +436,33 @@ export async function addMemberContactEntry(
         const r = await loadHousehold(adopterId, actor);
         if (!r.ok) return r;
         const entry = buildEntry(actor, input.type, value, input);
-        const out = await mutateHousehold<'not_found' | 'added'>(r.db, adopterId, (members) => {
+        type Res = { kind: 'not_found' } | { kind: 'added' } | { kind: 'duplicate'; entryId: string };
+        const out = await mutateHousehold<Res>(r.db, adopterId, (members) => {
             const m = members.find(x => x.id === input.memberId);
-            if (!m) return { result: 'not_found' };
-            return { members: members.map(x => (x.id === m.id ? { ...x, contactEntries: [...x.contactEntries, entry] } : x)), result: 'added' };
+            if (!m) return { result: { kind: 'not_found' } };
+            // De-duplicated like addContactEntry: a value the member already has appends nothing.
+            const merged = mergeContactEntries(m.contactEntries, [entry]);
+            if (!merged.some(e => e.id === entry.id)) {
+                const key = contactEntryKey(entry);
+                const dup = m.contactEntries.find(e => contactEntryKey(e) === key);
+                return { result: { kind: 'duplicate', entryId: dup?.id ?? '' } };
+            }
+            return { members: members.map(x => (x.id === m.id ? { ...x, contactEntries: merged } : x)), result: { kind: 'added' } };
         }, { op: 'addMemberContactEntry', actor, memberId: input.memberId });
         if (out.status === 'missing') return { ok: false, error: 'Adopter not found' };
         if (out.status === 'busy') return busy(out.errorId);
-        if (out.result === 'not_found') return { ok: false, error: 'Member not found' };
+        if (out.result.kind === 'not_found') return { ok: false, error: 'Member not found' };
+        if (out.result.kind === 'duplicate') {
+            // Nothing new on the profile: no history, no notice, no request. The
+            // contributor still gets the grant — they showed they know the value.
+            logger.info('addMemberContactEntry: value already on the member, nothing appended', { adopterId, actor, memberId: input.memberId, type: input.type });
+            if (!r.privileged && entry.type !== 'alias') {
+                await insertContributionGrant(r.db, adopterId, actor, entry).catch((e: unknown) => {
+                    logger.error('addMemberContactEntry: contribution grant not written', e, { adopterId, actor, memberId: input.memberId, type: input.type });
+                });
+            }
+            return { ok: true, entryId: out.result.entryId };
+        }
         await insertHouseholdHistory(r.db, adopterId, actor, { household_contact_added: { memberId: input.memberId, type: input.type } }, r.privileged);
         logAudit({ userEmail: actor, action: 'household_contact_added', target: adopterId, details: { memberId: input.memberId, type: input.type, ...(r.privileged ? {} : { contribution: true }) } });
         if (!r.privileged) await contributionSideEffects(r, actor, [entry], { op: 'addMemberContactEntry', what: 'contact', memberId: input.memberId, entryType: input.type });

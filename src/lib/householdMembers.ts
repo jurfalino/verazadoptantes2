@@ -30,6 +30,13 @@ export interface HouseholdMember {
     contactEntries: ContactEntry[];
     /** Contributor attribution (collaborative-vetting model); undefined for legacy. */
     addedBy?: string;
+    /**
+     * Display-only (D54): the VIEWER added this member — set by the masking
+     * layer on the profile page (maskHouseholdMembers with `viewerEmail`).
+     * Never persisted: serializeHouseholdMembers drops it unless asked for
+     * the view form.
+     */
+    own?: boolean;
     /** Age as given on `ageAsOf` (adoption form, spec 2026-10-04). Show `currentAge()`, never this raw. */
     age?: number;
     /** ISO day (YYYY-MM-DD) the age was given; only kept alongside `age`. */
@@ -113,6 +120,7 @@ export function deserializeHouseholdMembers(json: string | null | undefined): Ho
         const member: HouseholdMember = { id, name: name.trim(), relationship, contactEntries };
         if (typeof m.addedBy === 'string' && m.addedBy.trim()) member.addedBy = m.addedBy.slice(0, 256);
         if (m.giftRecipient === true) member.giftRecipient = true;
+        if (m.own === true) member.own = true;
         const profileId = validProfileId(m.profileId);
         if (profileId) member.profileId = profileId;
         const age = validAge(m.age);
@@ -141,7 +149,11 @@ export function withoutProfileLinks<T extends { profileId?: string }>(members: T
 }
 
 /** Serialize members for storage — drops empty members, caps count, stringifies. */
-export function serializeHouseholdMembers(members: HouseholdMember[] | null | undefined): string {
+export function serializeHouseholdMembers(
+    members: HouseholdMember[] | null | undefined,
+    /** `view`: keep the display-only `own` markers (a masked payload for one viewer). Storage never passes it. */
+    opts: { view?: boolean } = {},
+): string {
     if (!members || members.length === 0) return '[]';
     const clean = members
         .filter(isMeaningfulMember)
@@ -150,7 +162,14 @@ export function serializeHouseholdMembers(members: HouseholdMember[] | null | un
             id: m.id,
             name: (m.name || '').trim().slice(0, MAX_NAME_LEN),
             relationship: m.relationship && REL_SET.has(m.relationship) ? m.relationship : null,
-            contactEntries: m.contactEntries ?? [],
+            contactEntries: opts.view
+                ? (m.contactEntries ?? [])
+                : (m.contactEntries ?? []).map(e => {
+                    if (e.own === undefined) return e;
+                    const { own: _own, ...rest } = e;
+                    return rest;
+                }),
+            ...(opts.view && m.own === true ? { own: true } : {}),
             ...(m.addedBy ? { addedBy: m.addedBy } : {}),
             ...(validAge(m.age) !== undefined ? { age: m.age } : {}),
             ...(validAge(m.age) !== undefined && m.ageAsOf && AGE_DAY.test(m.ageAsOf) ? { ageAsOf: m.ageAsOf } : {}),

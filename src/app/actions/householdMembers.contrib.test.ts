@@ -10,6 +10,7 @@ import * as mocks from '@/test-utils/actionMocks';
 
 const { session, OWNER, MATE, STRANGER } = mocks;
 const OTHER = 'other-rescuer@example.com';
+const MODERATOR = 'moderator@example.com';
 
 const { state, notify, faults } = vi.hoisted(() => ({
     faults: { beforeCas: null as null | (() => void) },
@@ -19,7 +20,11 @@ const { state, notify, faults } = vi.hoisted(() => ({
 
 vi.mock('./_db', () => ({ getDb: async () => state.db, getUser: mocks.getUser }));
 vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
-vi.mock('@/config/admins', () => ({ isAdminAsync: mocks.isAdmin, isModeratorOrAdminAsync: mocks.isAdmin }));
+vi.mock('@/config/admins', () => ({
+    isAdminAsync: mocks.isAdmin,
+    // A moderator is privileged everywhere the visibility resolver says so (fix round 1, item 6).
+    isModeratorOrAdminAsync: async (e: string | null | undefined) => (await mocks.isAdmin(e)) || e === 'moderator@example.com',
+}));
 vi.mock('@/lib/orgMembership', async (orig) => ({
     ...(await orig()), isOrgMate: mocks.isOrgMate, getOrgMemberEmailsFor: mocks.getOrgMemberEmailsFor,
     isOwnerOrOrgMate: (v: string | null | undefined, o: string | null | undefined) => mocks.isOwnerOrOrgMate(v?.trim().toLowerCase(), o?.trim().toLowerCase()),
@@ -60,8 +65,13 @@ import {
     addHouseholdMember, updateHouseholdMember, removeHouseholdMember,
     addMemberContactEntry, updateMemberContactEntry, removeMemberContactEntry,
 } from './householdMembers';
+import { addContactEntry } from './addContactEntry';
+import { updateContactEntry } from './updateContactEntry';
+import { removeContactEntry } from './removeContactEntry';
+import { getAdopterApprovers } from './piiAccess';
+import { loadApprovers } from '@/lib/piiAccessRequest';
 import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
-import { hashEntryValue } from '@/lib/piiAccess';
+import { hashEntryValue, maskHouseholdMembers, NO_ACCESS_VISIBILITY } from '@/lib/piiAccess';
 import { deserializeHouseholdMembers, type HouseholdMember } from '@/lib/householdMembers';
 import { logger } from '@/lib/logger';
 
@@ -99,7 +109,17 @@ beforeEach(() => {
     ];
     sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, household_members) VALUES ('p1', 'Pedro Paez', '5', ?, 1000, 1000, ?)`)
         .run(OWNER, JSON.stringify(household));
+    // Someone else's profile a stranger could name as a conviviente.
+    sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('tgt', 'Rosa Gomez', '5', ?, 2000, 2000)`).run(OTHER);
 });
+
+/** Never an approver (owner or editor) of the profile: no authority over its requests and grants. */
+async function expectNotApprover(email: string, adopterId: string) {
+    expect((await loadApprovers(adopterId)).all, `${email} on ${adopterId}`).not.toContain(email);
+    const { owner, editors } = await getAdopterApprovers(adopterId);
+    expect([owner, ...editors], `${email} on ${adopterId}`).not.toContain(email);
+    expect((await resolveAdopterVisibility(email, { id: adopterId, addedBy: (sqlite.prepare('SELECT added_by FROM adopters WHERE id = ?').get(adopterId)!.added_by as string) })).nothingMasked).toBe(false);
+}
 
 async function strangerAddsMember(): Promise<string> {
     const res = await addHouseholdMember({ adopterId: 'p1', name: 'Rosa Gomez', relationship: 'sibling', contactEntries: [{ type: 'phone', value: STRANGER_PHONE }] });
@@ -278,5 +298,120 @@ describe('privileged writers keep today\'s path', () => {
 
     it('anonymous is still refused', async () => {
         expect(await as(null, () => addHouseholdMember({ adopterId: 'p1', name: 'X' }))).toEqual({ ok: false, error: 'Not authenticated' });
+    });
+});
+
+describe('fix round 1: no contributor ever becomes an approver', () => {
+    it('a stranger links someone else\'s profile, then removes their member: not an approver of either profile', async () => {
+        const res = await addHouseholdMember({ adopterId: 'p1', name: 'Rosa Gomez', relationship: 'sibling', profileId: 'tgt' });
+        if (!res.ok) throw new Error(res.error);
+        expect(await removeHouseholdMember({ adopterId: 'p1', memberId: res.memberId })).toEqual({ ok: true });
+        // The linked profile's history still says the link went (M7), as a contribution.
+        const tgtRows = sqlite.prepare(`SELECT changed_by, kind, changes FROM adopter_history WHERE adopter_id = 'tgt'`).all();
+        expect(tgtRows).toEqual([expect.objectContaining({ changed_by: STRANGER, kind: 'contribution' })]);
+        expect(JSON.parse(tgtRows[0].changes as string)).toHaveProperty('household_removed_by_host');
+        await expectNotApprover(STRANGER, 'tgt');
+        await expectNotApprover(STRANGER, 'p1');
+    });
+
+    it('after a stranger adds, edits and removes on the host (members and contacts)', async () => {
+        const memberId = await strangerAddsMember();
+        await updateHouseholdMember({ adopterId: 'p1', memberId, name: 'Rosa M.' });
+        const c = await addMemberContactEntry({ adopterId: 'p1', memberId: 'om', type: 'email', value: 'marta@example.org' });
+        const entryId = (c as { entryId: string }).entryId;
+        expect(await updateMemberContactEntry({ adopterId: 'p1', memberId: 'om', entryId, value: 'marta2@example.org' })).toEqual({ ok: true });
+        expect(await removeMemberContactEntry({ adopterId: 'p1', memberId: 'om', entryId })).toEqual({ ok: true });
+        expect(await removeHouseholdMember({ adopterId: 'p1', memberId })).toEqual({ ok: true });
+        expect(history().every(h => h.kind === 'contribution')).toBe(true);
+        await expectNotApprover(STRANGER, 'p1');
+    });
+
+    it("a contributor edits and removes their own titular contact: still not an approver", async () => {
+        const added = await addContactEntry({ adopterId: 'p1', type: 'email', value: 'pedro@example.org' });
+        expect(added.ok).toBe(true);
+        const entryId = JSON.parse(sqlite.prepare(`SELECT contact_entries FROM adopters WHERE id = 'p1'`).get()!.contact_entries as string)[0].id;
+        expect((await updateContactEntry({ adopterId: 'p1', entryId, value: 'pedro2@example.org' })).ok).toBe(true);
+        expect((await removeContactEntry({ adopterId: 'p1', entryId })).ok).toBe(true);
+        expect(history().map(h => h.kind)).toEqual(['contribution', 'contribution', 'contribution']);
+        await expectNotApprover(STRANGER, 'p1');
+    });
+
+    it('the owner editing titular contacts stays an edit', async () => {
+        await as(OWNER, () => addContactEntry({ adopterId: 'p1', type: 'email', value: 'pedro@example.org' }));
+        const entryId = JSON.parse(sqlite.prepare(`SELECT contact_entries FROM adopters WHERE id = 'p1'`).get()!.contact_entries as string)[0].id;
+        await as(MATE, () => updateContactEntry({ adopterId: 'p1', entryId, value: 'pedro2@example.org' }));
+        await as(MATE, () => removeContactEntry({ adopterId: 'p1', entryId }));
+        expect(history().slice(-2)).toEqual([expect.objectContaining({ changed_by: MATE, kind: 'edit' }), expect.objectContaining({ changed_by: MATE, kind: 'edit' })]);
+    });
+});
+
+describe('fix round 1: masking and markers', () => {
+    it("on a stranger's own member, another contributor's phone and the owner's contacts stay masked for them", async () => {
+        const memberId = await strangerAddsMember();
+        await as(OTHER, () => addMemberContactEntry({ adopterId: 'p1', memberId, type: 'phone', value: '+54 11 6666 0404' }));
+        await as(OWNER, () => addMemberContactEntry({ adopterId: 'p1', memberId, type: 'email', value: 'rosa@example.org' }));
+        const { getAdopter } = await import('./adopters');
+        const mine = deserializeHouseholdMembers((await as(STRANGER, () => getAdopter('p1')))!.householdMembers).find(m => m.id === memberId)!;
+        const values = mine.contactEntries.map(e => e.value);
+        expect(values).toContain(STRANGER_PHONE);
+        expect(values).not.toContain('+54 11 6666 0404');
+        expect(values).not.toContain('rosa@example.org');
+        expect(mine.contactEntries.filter(e => e.masked)).toHaveLength(2);
+    });
+
+    it("marks what the viewer added with own: true (members and entries), nothing else, never stored", async () => {
+        const memberId = await strangerAddsMember();
+        const c = await addMemberContactEntry({ adopterId: 'p1', memberId: 'om', type: 'email', value: 'marta@example.org' });
+        const entryId = (c as { entryId: string }).entryId;
+        const { getAdopter } = await import('./adopters');
+        const seen = deserializeHouseholdMembers((await as(STRANGER, () => getAdopter('p1')))!.householdMembers);
+        const mine = seen.find(m => m.id === memberId)!;
+        expect(mine.own).toBe(true);
+        expect(mine.contactEntries.every(e => e.own === true)).toBe(true);
+        const om = seen.find(m => m.id === 'om')!;
+        expect(om.own).toBeFalsy();
+        expect(om.contactEntries.find(e => e.id === entryId)!.own).toBe(true);
+        expect(om.contactEntries.filter(e => e.own)).toHaveLength(1);
+        expect(seen.find(m => m.id === 'lm')!.own).toBeFalsy();
+        // Another viewer: no markers at all.
+        const theirs = deserializeHouseholdMembers((await as(OTHER, () => getAdopter('p1')))!.householdMembers);
+        expect(theirs.some(m => m.own || m.contactEntries.some(e => e.own))).toBe(false);
+        // A privileged viewer gets their own markers too (owner added «om»).
+        const owners = deserializeHouseholdMembers((await as(OWNER, () => getAdopter('p1')))!.householdMembers);
+        expect(owners.find(m => m.id === 'om')!.own).toBe(true);
+        expect(owners.find(m => m.id === memberId)!.own).toBeFalsy();
+        // Stored rows never carry the marker.
+        expect(sqlite.prepare(`SELECT household_members FROM adopters WHERE id = 'p1'`).get()!.household_members).not.toContain('"own"');
+    });
+
+    it("the anonymous sentinel never unmasks or marks a member credited to it", () => {
+        const json = JSON.stringify([{ id: 'x', name: 'Ana Perez', relationship: null, addedBy: 'unknown', contactEntries: [] }]);
+        const out = maskHouseholdMembers(json, NO_ACCESS_VISIBILITY, { viewerEmail: 'unknown' }).members[0];
+        expect(out.name).toBe('A P');
+        expect(out.own).toBeFalsy();
+    });
+});
+
+describe('fix round 1: dedup, moderators, access requests', () => {
+    it('a duplicate contact on a member appends nothing and sends nothing, but still grants the contributor', async () => {
+        const res = await addMemberContactEntry({ adopterId: 'p1', memberId: 'om', type: 'phone', value: '+54 11 4444-0303' });
+        expect(res).toEqual({ ok: true, entryId: 'oc' });
+        expect(member('om')!.contactEntries.map(e => e.id)).toEqual(['oc']);
+        expect(history()).toEqual([]);
+        expect(contributionNotices()).toEqual([]);
+        expect(sqlite.prepare(`SELECT id FROM pii_access_requests`).all()).toEqual([]);
+        expect(grants(STRANGER).map(g => g.entry_ref)).toEqual([hashEntryValue('phone', '+54 11 4444-0303')]);
+    });
+
+    it('a moderator is privileged on the household', async () => {
+        expect(await as(MODERATOR, () => updateHouseholdMember({ adopterId: 'p1', memberId: 'om', name: 'Marta P.' }))).toEqual({ ok: true });
+        expect(history()).toEqual([expect.objectContaining({ changed_by: MODERATOR, kind: 'edit' })]);
+    });
+
+    it('a bare member (no contacts) files no access request; the owner is still told', async () => {
+        const res = await addHouseholdMember({ adopterId: 'p1', name: 'Rosa Gomez', relationship: 'sibling' });
+        expect(res.ok).toBe(true);
+        expect(sqlite.prepare(`SELECT id FROM pii_access_requests`).all()).toEqual([]);
+        expect(contributionNotices().map(n => n.userId)).toEqual([OWNER]);
     });
 });

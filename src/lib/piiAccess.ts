@@ -1009,19 +1009,56 @@ export function maskHouseholdMembers(
     options: MaskContactOptions = {},
 ): HouseholdMask {
     const members = deserializeHouseholdMembers(json);
-    if (members.length === 0 || visibility.nothingMasked || options.adopterIsPublic) {
-        return { members, json: json ?? null, maskedFieldCount: 0 };
+    const viewer = viewerKey(options.viewerEmail);
+    if (members.length === 0) return { members, json: json ?? null, maskedFieldCount: 0 };
+    if (visibility.nothingMasked || options.adopterIsPublic) {
+        if (!viewer) return { members, json: json ?? null, maskedFieldCount: 0 };
+        const marked = members.map(m => withOwnMarks(m, m.contactEntries, viewer));
+        return { members: marked, json: serializeHouseholdMembers(marked, { view: true }), maskedFieldCount: 0 };
     }
     let maskedFieldCount = 0;
-    const viewer = options.viewerEmail?.trim().toLowerCase();
     const masked = members.map(m => {
         const { entries, maskedCount } = maskContactEntries(m.contactEntries, visibility, options);
         maskedFieldCount += maskedCount;
+        const marked = withOwnMarks(m, entries, viewer);
         // A member the viewer added keeps its name for them (D54).
-        const own = !!viewer && !!m.addedBy && m.addedBy.trim().toLowerCase() === viewer;
-        return { ...m, name: m.name && !own ? partialRevealName(m.name) : m.name, contactEntries: entries };
+        return { ...marked, name: m.name && !marked.own ? partialRevealName(m.name) : m.name };
     });
-    return { members: masked, json: serializeHouseholdMembers(masked), maskedFieldCount };
+    return { members: masked, json: serializeHouseholdMembers(masked, { view: !!viewer }), maskedFieldCount };
+}
+
+/**
+ * Members and entries `viewerEmail` added, marked `own: true` for the profile
+ * page (D54), with every other stray marker cleared — for a viewer who sees
+ * the household unmasked (getAdopter's fully-visible path, gating off). No
+ * real viewer → the JSON as is.
+ */
+export function markViewerOwnHousehold(json: string | null | undefined, viewerEmail: string | null | undefined): string | null {
+    const viewer = viewerKey(viewerEmail);
+    if (!json || !viewer) return json ?? null;
+    const members = deserializeHouseholdMembers(json);
+    if (members.length === 0) return json;
+    return serializeHouseholdMembers(members.map(m => withOwnMarks(m, m.contactEntries, viewer)), { view: true });
+}
+
+/** The viewer's email, normalized — only a real actor (never the 'unknown' / 'anonymous' sentinels). */
+function viewerKey(email: string | null | undefined): string | undefined {
+    return isRealActorEmail(email) ? email!.trim().toLowerCase() : undefined;
+}
+
+/**
+ * `m` with `entries` (its own contacts, masked or not, index-aligned with
+ * `m.contactEntries`), each marked `own` exactly when `viewer` added it —
+ * read from the stored `addedBy`, since a masked entry no longer carries it.
+ */
+function withOwnMarks(m: HouseholdMember, entries: ContactEntry[], viewer: string | undefined): HouseholdMember {
+    const by = (who: string | undefined) => !!viewer && !!who && who.trim().toLowerCase() === viewer;
+    const { own: _own, ...member } = m;
+    const marked = entries.map((e, i) => {
+        const { own: _e, ...entry } = e;
+        return by(m.contactEntries[i]?.addedBy) ? { ...entry, own: true } : entry;
+    });
+    return { ...member, contactEntries: marked, ...(by(m.addedBy) ? { own: true } : {}) };
 }
 
 // ── History redaction ─────────────────────────────────────────────────────────

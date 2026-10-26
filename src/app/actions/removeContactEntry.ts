@@ -25,8 +25,10 @@ import type { EntryConflict } from './updateContactEntry';
  *
  * Side effects on success:
  *   1. UPDATE adopters.contactEntries (entry filtered out, list re-serialized).
- *   2. INSERT adopter_history kind='edit' with the removed entry's type + id
- *      (no raw value).
+ *   2. INSERT adopter_history with the removed entry's type + id (no raw
+ *      value): kind='edit' for owner/admin/org-mate, kind='contribution' for a
+ *      contributor removing their own entry — an 'edit' row would make them an
+ *      editor (full contact access + approver rights).
  *   3. Revoke any live pii_access_grant rows whose entryRef hashes the removed
  *      value — explicit revoke for audit clarity (they'd go inert on their own
  *      because nothing in contactEntries still hashes to that ref).
@@ -118,7 +120,8 @@ export async function removeContactEntry(
             id: crypto.randomUUID(),
             adopterId,
             changedBy: actor,
-            kind: 'edit',
+            // A contributor removing their own entry is not an editor (see header).
+            kind: isOwner || actorIsAdmin || actorIsOrgMate ? 'edit' : 'contribution',
             changes: JSON.stringify({ removed_entry: { type: removed.type, id: entryId } }),
             changedAt: new Date(),
         });

@@ -21,7 +21,7 @@ import {
     parseBlobToContactEntries,
     mergeContactEntries,
 } from '@/lib/contactEntries';
-import { canEditAdopterRecord, maskAdopterContact, redactHistoryChanges, renderName } from '@/lib/piiAccess';
+import { canEditAdopterRecord, maskAdopterContact, markViewerOwnHousehold, redactHistoryChanges, renderName } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdopterVisibility, buildMaskOptions } from '@/lib/piiAccessServer';
 import { deleteAdopterRecords } from '@/app/actions/_recordWrite';
 import { runAfterResponse } from '@/lib/background';
@@ -54,6 +54,7 @@ async function getAdopterImpl(id: string) {
         if (adopter.deletedAt) return null;
 
         // PII access gating: mask contact fields for non-privileged viewers.
+        let householdMarked = false;
         if (await isPiiGatingEnabled()) {
             const visibility = await resolveAdopterVisibility(user, { id: adopter.id, addedBy: adopter.addedBy });
             // adopterIsPublic option short-circuits the per-entry mask when
@@ -61,7 +62,8 @@ async function getAdopterImpl(id: string) {
             const maskOpts = await buildMaskOptions(adopter);
             const fullyVisible = visibility.nothingMasked || !!maskOpts.adopterIsPublic;
             if (!fullyVisible) {
-                // viewerEmail: household members this viewer added keep their name (D54).
+                // viewerEmail: household members this viewer added keep their name and
+                // carry `own: true`, as do the entries they added (D54).
                 const masked = maskAdopterContact(adopter, visibility, { ...maskOpts, viewerEmail: user });
                 adopter.contactInfo = masked.contactInfo;
                 adopter.contactEntries = masked.contactEntries;
@@ -73,8 +75,12 @@ async function getAdopterImpl(id: string) {
                 adopter.familyMembers = null;
                 // Household masking is now part of maskAdopterContact (above).
                 adopter.householdMembers = masked.householdMembers;
+                householdMarked = true;
             }
         }
+        // Everyone else sees the household unmasked: still mark what this viewer
+        // added (`own: true`, D54) so the page never reads rescuers' emails for it.
+        if (!householdMarked) adopter.householdMembers = markViewerOwnHousehold(adopter.householdMembers, user);
         return adopter;
     } catch (error) {
         logger.error('Get adopter failed', error, { adopterId: id });

@@ -87,10 +87,15 @@ export async function recordHouseholdLink(
  * from which household, instead of the row vanishing silently (M7). The
  * history row goes on the live linked profile (followed through a merge,
  * D51). Returns the linked profile's id when there was a link.
+ *
+ * `kind` is the history kind: 'edit' (default) only when the actor is
+ * privileged on the host. A contributor removing the member they added (D54)
+ * passes 'contribution' — an 'edit' row would make them an editor, and so an
+ * approver, of the LINKED profile, which they have no standing on.
  */
 export async function deleteHouseholdLink(
     db: Db,
-    input: { hostId: string; hostName: string; memberId: string; actor: string },
+    input: { hostId: string; hostName: string; memberId: string; actor: string; kind?: 'edit' | 'contribution' },
 ): Promise<string | null> {
     const { hostId, memberId, actor } = input;
     const link = await db.select({ id: householdLinks.id, linkedAdopterId: householdLinks.linkedAdopterId }).from(householdLinks)
@@ -104,7 +109,7 @@ export async function deleteHouseholdLink(
         return link.linkedAdopterId;
     }
     await db.insert(adopterHistory).values({
-        id: crypto.randomUUID(), adopterId: linked.id, changedBy: actor, kind: 'edit', changedAt: new Date(),
+        id: crypto.randomUUID(), adopterId: linked.id, changedBy: actor, kind: input.kind ?? 'edit', changedAt: new Date(),
         changes: JSON.stringify({ household_removed_by_host: { hostId, hostName: input.hostName } }),
     });
     logger.info('householdLinks: member removed by the host, linked profile history written', { ...ctx, linkedId: linked.id });
@@ -268,11 +273,18 @@ export async function loadLinkForCorrection(db: Db, linkId: string): Promise<Lin
  * first): nothing written, nobody told. A failed batch after the member is
  * removed is logged as one error — the fact is corrected; a retry would find
  * nothing to remove.
+ *
+ * `hostKind` is the history kind of the HOST's row: 'edit' only when the actor
+ * is privileged on the host (an admin, or the host's owner team). The linked
+ * team has no standing on the host — an 'edit' row there would make them its
+ * editor, and so an approver. The linked profile's row stays 'edit' (the
+ * caller checked they are its team or an admin).
  */
 export async function applyNotLivingTogether(
     db: Db,
     target: LinkCorrectionTarget,
     actor: string,
+    opts: { hostKind?: 'edit' | 'contribution' } = {},
 ): Promise<{ removed: boolean; busyErrorId?: string }> {
     const { link, host, linked, linkedIds } = target;
     const ctx = { linkId: link.id, hostId: host.id, linkedId: linked.id, memberId: link.memberId, actor };
@@ -303,7 +315,7 @@ export async function applyNotLivingTogether(
             }),
             // The host's row is a member removal (so a stale edit form names who removed it), with the reason.
             db.insert(adopterHistory).values({
-                id: crypto.randomUUID(), adopterId: host.id, changedBy: actor, kind: 'edit', changedAt: now,
+                id: crypto.randomUUID(), adopterId: host.id, changedBy: actor, kind: opts.hostKind ?? 'edit', changedAt: now,
                 changes: JSON.stringify({ household_member_removed: { id: link.memberId, reason: 'not_living_together', linkedId: linked.id } }),
             }),
             db.insert(adopterHistory).values({
