@@ -33,6 +33,7 @@ import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/cont
 import { deserializeHouseholdMembers, serializeHouseholdMembers, type HouseholdMember } from '@/lib/householdMembers';
 import { casAdopterLists } from '@/lib/adopterListCas';
 import { runBatch } from '@/lib/dbBatch';
+import { historyKindFor } from '@/lib/profilePrivilege';
 import { maskContactEntries, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, maskOptionsFor, resolveAdoptersVisibility } from '@/lib/piiAccessServer';
 import { notificationContent } from '@/domain/notificationTemplates';
@@ -88,14 +89,14 @@ export async function recordHouseholdLink(
  * history row goes on the live linked profile (followed through a merge,
  * D51). Returns the linked profile's id when there was a link.
  *
- * `kind` is the history kind: 'edit' (default) only when the actor is
- * privileged on the host. A contributor removing the member they added (D54)
- * passes 'contribution': they are no editor of the LINKED profile, which they
- * have no standing on (and loadApprovers would not count them anyway).
+ * The row's kind is decided on the LINKED profile (where it lands): 'edit'
+ * only when the actor is privileged there. Standing on the host says nothing
+ * about the linked profile, and an 'edit' row from someone without standing
+ * would make them an approver on builds that predate the loadApprovers fix.
  */
 export async function deleteHouseholdLink(
     db: Db,
-    input: { hostId: string; hostName: string; memberId: string; actor: string; kind?: 'edit' | 'contribution' },
+    input: { hostId: string; hostName: string; memberId: string; actor: string },
 ): Promise<string | null> {
     const { hostId, memberId, actor } = input;
     const link = await db.select({ id: householdLinks.id, linkedAdopterId: householdLinks.linkedAdopterId }).from(householdLinks)
@@ -109,7 +110,7 @@ export async function deleteHouseholdLink(
         return link.linkedAdopterId;
     }
     await db.insert(adopterHistory).values({
-        id: crypto.randomUUID(), adopterId: linked.id, changedBy: actor, kind: input.kind ?? 'edit', changedAt: new Date(),
+        id: crypto.randomUUID(), adopterId: linked.id, changedBy: actor, kind: await historyKindFor(db, linked.id, actor), changedAt: new Date(),
         changes: JSON.stringify({ household_removed_by_host: { hostId, hostName: input.hostName } }),
     });
     logger.info('householdLinks: member removed by the host, linked profile history written', { ...ctx, linkedId: linked.id });

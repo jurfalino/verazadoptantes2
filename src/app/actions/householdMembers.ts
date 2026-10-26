@@ -423,7 +423,7 @@ export async function removeHouseholdMember(
         }
         // Its link goes with it, and the linked profile's history says so (M7).
         // A leftover row is harmless (reads check the member still exists) but is logged.
-        await deleteHouseholdLink(r.db, { hostId: adopterId, hostName: r.target.name, memberId, actor, kind: historyKind(r.privileged) }).catch((e: unknown) => {
+        await deleteHouseholdLink(r.db, { hostId: adopterId, hostName: r.target.name, memberId, actor }).catch((e: unknown) => {
             logger.warn('removeHouseholdMember: household link / linked history not written (link ignored on read)', { adopterId, actor, memberId, error: e instanceof Error ? e.message : String(e) });
         });
         return { ok: true };

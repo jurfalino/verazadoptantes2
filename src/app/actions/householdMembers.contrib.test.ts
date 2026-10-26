@@ -317,6 +317,16 @@ describe('fix round 1: no contributor ever becomes an approver', () => {
         await expectNotApprover(STRANGER, 'p1');
     });
 
+    it("the host's owner links someone else's profile, then removes the member: an edit on the host, a contribution on the linked profile", async () => {
+        const res = await as(OWNER, () => addHouseholdMember({ adopterId: 'p1', name: 'Rosa Gomez', relationship: 'sibling', profileId: 'tgt' }));
+        if (!res.ok) throw new Error(res.error);
+        expect(await as(OWNER, () => removeHouseholdMember({ adopterId: 'p1', memberId: res.memberId }))).toEqual({ ok: true });
+        expect(history().filter(h => h.changed_by === OWNER).every(h => h.kind === 'edit')).toBe(true);
+        const tgtRows = sqlite.prepare(`SELECT changed_by, kind FROM adopter_history WHERE adopter_id = 'tgt'`).all();
+        expect(tgtRows).toEqual([expect.objectContaining({ changed_by: OWNER, kind: 'contribution' })]);
+        await expectNotApprover(OWNER, 'tgt');
+    });
+
     it('after a stranger adds, edits and removes on the host (members and contacts)', async () => {
         const memberId = await strangerAddsMember();
         await updateHouseholdMember({ adopterId: 'p1', memberId, name: 'Rosa M.' });
