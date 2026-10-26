@@ -51,7 +51,9 @@ vi.mock('@/lib/logger', () => ({
 
 import { flagAdopter } from './flags';
 import { saveAdoption } from './adoptions';
-import { getAdopterApprovers, resolvePiiAccessRequest, revokePiiAccessGrant } from './piiAccess';
+import { getAdopterApprovers, resolvePiiAccessRequest, revokePiiAccessGrant, getPiiAccessRequestsForApprover } from './piiAccess';
+import { notifyApprovers } from '@/lib/contributionSideEffects';
+import { createNotification } from './notifications';
 import { loadApprovers } from '@/lib/piiAccessRequest';
 import { removeVerification } from './flags';
 import { deleteAdoption } from './adoptions';
@@ -200,5 +202,51 @@ describe('open history writers: a contribution unless privileged on the profile'
         const done = await voidApiRecord(state.db as never, 'ev1', { keyId: 'k1', actor: STRANGER, requestId: 'rq1' });
         expect(done?.profileId).toBe('p1');
         expect(kindsBy(STRANGER, 'api_record_voided')).toEqual(['contribution']);
+    });
+});
+
+/** Final review I1: the pending-request list follows the approver rule, not "any history row". */
+describe('getPiiAccessRequestsForApprover lists only requests the caller may approve', () => {
+    const listedFor = async (who: string) => (await as(who, () => getPiiAccessRequestsForApprover())).map(r => r.id);
+
+    it('a stranger who contributed (and even holds an old edit row) gets nothing; the owner gets theirs', async () => {
+        await flagAdopter('p1', 'inaccurate_information');
+        sqlite.prepare(`INSERT INTO adopter_history (id, adopter_id, changed_by, kind, changes, changed_at) VALUES ('h-old', 'p1', ?, 'edit', '{"flag_added":{}}', 1000)`).run(STRANGER);
+        expect(await listedFor(STRANGER)).toEqual([]);
+        expect(await listedFor(OWNER)).toEqual(['r1']);
+    });
+
+    it('a teammate who edited sees it; an admin sees every request', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('p2', 'Otra', '5', ?, 1000, 1000)`).run('other@example.com');
+        sqlite.prepare(`INSERT INTO pii_access_requests (id, adopter_id, requester_email, status, justification, created_at) VALUES ('r2', 'p2', ?, 'pending', 'x', 2000)`).run(REQUESTER);
+        await as(MATE, () => flagAdopter('p1', 'inaccurate_information'));
+        expect(await listedFor(MATE)).toEqual(['r1']);
+        expect(await listedFor(OWNER)).toEqual(['r1']);
+        expect(await listedFor(ADMIN)).toEqual(['r1', 'r2']);
+    });
+});
+
+/** Final review M4: the approver paths ignore the case an email was written in. */
+describe('approver emails compare case-insensitively', () => {
+    beforeEach(() => {
+        sqlite.prepare(`UPDATE adopters SET added_by = 'Owner@Example.com' WHERE id = 'p1'`).run();
+    });
+
+    it('a mixed-case added_by owner is listed lowercased and approves, revokes and sees the request', async () => {
+        const { owner, all } = await loadApprovers('p1');
+        expect(owner).toBe(OWNER);
+        expect(all).toEqual([OWNER]);
+        expect(await as(OWNER, () => getPiiAccessRequestsForApprover())).toHaveLength(1);
+        expect(await as(OWNER, () => resolvePiiAccessRequest('r1', 'approved'))).toEqual({ ok: true });
+        expect(await as(OWNER, () => revokePiiAccessGrant('g1'))).toEqual({ ok: true });
+    });
+
+    it('a contributing owner written in another case is not notified of their own contribution', async () => {
+        vi.mocked(createNotification).mockClear();
+        await notifyApprovers({
+            op: 'test', adopterId: 'p1', actor: 'OWNER@example.com', type: 'household_contribution',
+            build: (actorName) => ({ key: 'household_contribution', params: { actorName, what: 'member' } }),
+        });
+        expect(createNotification).not.toHaveBeenCalled();
     });
 });

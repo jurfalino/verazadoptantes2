@@ -77,8 +77,9 @@ export async function notifyApprovers(opts: {
 }): Promise<void> {
     const { op, adopterId, actor } = opts;
     const { owner, editors } = await getAdopterApprovers(adopterId);
+    // loadApprovers returns them lowercased; the actor may not be.
     const recipients = new Set<string>([...(owner ? [owner] : []), ...editors]);
-    recipients.delete(actor);
+    recipients.delete(actor.trim().toLowerCase());
     if (recipients.size === 0) {
         // Own record, an import with no real owner, or the only approver acted.
         logger.info(`${op}: approvers notified`, { adopterId, actor, recipients: 0 });

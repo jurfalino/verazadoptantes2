@@ -12,7 +12,7 @@
  * before the same requester can re-request the same adopter.
  */
 
-import { piiAccessRequests, piiAccessGrants, adopters, adopterHistory } from '@/db/schema';
+import { piiAccessRequests, piiAccessGrants, adopters } from '@/db/schema';
 import { and, eq, desc, asc, isNull } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { logger, withTrace } from '@/lib/logger';
@@ -38,7 +38,7 @@ import { deserializeContactEntries, type ContactEntryType } from '@/lib/contactE
 import { createNotification, resolveDisplayName, resolveDisplayNames } from './notifications';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { requestPiiAccessSchema, resolvePiiRequestSchema, verifyKnownInfoSchema } from './validation';
-import { loadApprovers, fileAccessRequestFor } from '@/lib/piiAccessRequest';
+import { loadApprovers, fileAccessRequestFor, sameApprover } from '@/lib/piiAccessRequest';
 
 type PiiRequest = typeof piiAccessRequests.$inferSelect;
 type PiiGrant = typeof piiAccessGrants.$inferSelect;
@@ -109,14 +109,14 @@ export async function resolvePiiAccessRequest(
         const req = await db.select().from(piiAccessRequests).where(eq(piiAccessRequests.id, requestId)).get();
         if (!req) return { ok: false, error: 'Request not found' };
         if (req.status !== 'pending') return { ok: false, error: 'Request already resolved' };
-        if (req.requesterEmail === actor) return { ok: false, error: 'You cannot resolve your own request' };
+        if (sameApprover(req.requesterEmail, actor)) return { ok: false, error: 'You cannot resolve your own request' };
 
         // Authorize: an approver for this adopter, or an admin.
         const [isAdmin, { all: approvers }] = await Promise.all([
             isAdminAsync(actor),
             loadApprovers(req.adopterId),
         ]);
-        if (!isAdmin && !approvers.includes(actor)) {
+        if (!isAdmin && !approvers.some(a => sameApprover(a, actor))) {
             return { ok: false, error: 'Not authorized to resolve this request' };
         }
 
@@ -186,7 +186,7 @@ export async function revokePiiAccessGrant(grantId: string): Promise<{ ok: boole
             isAdminAsync(actor),
             loadApprovers(grant.adopterId),
         ]);
-        if (!isAdmin && !approvers.includes(actor)) return { ok: false, error: 'Not authorized' };
+        if (!isAdmin && !approvers.some(a => sameApprover(a, actor))) return { ok: false, error: 'Not authorized' };
 
         await db.update(piiAccessGrants)
             .set({ revokedAt: new Date(), revokedByEmail: actor })
@@ -216,14 +216,16 @@ export async function revokePiiAccessGrant(grantId: string): Promise<{ ok: boole
 
 /**
  * Pending requests the caller can act on — admins see all; everyone else sees
- * only requests on adopters they own or have edited. Oldest first. Powers both
- * the on-profile approver panel and the admin dashboard.
+ * only requests on adopters they may approve (loadApprovers: the owner, or an
+ * editor privileged on it right now — never someone who only flagged, logged a
+ * record or contributed). Oldest first. Powers both the on-profile approver
+ * panel and the admin dashboard.
  */
 export async function getPiiAccessRequestsForApprover(): Promise<PiiAccessRequestView[]> {
+    let actor = '';
     try {
         if (!(await isPiiGatingEnabled())) return [];
 
-        let actor = '';
         try { actor = await getUser(); } catch { /* unauthenticated */ }
         if (!isRealActorEmail(actor)) return [];
 
@@ -237,15 +239,22 @@ export async function getPiiAccessRequestsForApprover(): Promise<PiiAccessReques
 
         let visible = allPending;
         if (!isAdmin) {
-            const [ownedRows, editedRows] = await Promise.all([
-                db.select({ id: adopters.id }).from(adopters).where(eq(adopters.addedBy, actor)),
-                db.selectDistinct({ id: adopterHistory.adopterId }).from(adopterHistory)
-                    .where(eq(adopterHistory.changedBy, actor)),
-            ]);
-            const approvableIds = new Set<string>([
-                ...ownedRows.map((r: { id: string }) => r.id),
-                ...editedRows.map((r: { id: string }) => r.id),
-            ]);
+            // The same rule the approve / revoke actions enforce: one
+            // loadApprovers per profile with a pending request (D1: no IN
+            // (array)). A failed check hides that profile's requests (logged).
+            const pendingIds = [...new Set(allPending.map(r => r.adopterId))];
+            const verdicts = await Promise.all(pendingIds.map(async (adopterId) => {
+                try {
+                    const { all } = await loadApprovers(adopterId);
+                    return all.some(a => sameApprover(a, actor));
+                } catch (e) {
+                    logger.warn('getPiiAccessRequestsForApprover: approver check failed, requests hidden', {
+                        adopterId, actor, error: e instanceof Error ? e.message : String(e),
+                    });
+                    return false;
+                }
+            }));
+            const approvableIds = new Set(pendingIds.filter((_, i) => verdicts[i]));
             visible = allPending.filter(r => approvableIds.has(r.adopterId));
         }
         if (visible.length === 0) return [];
@@ -253,9 +262,14 @@ export async function getPiiAccessRequestsForApprover(): Promise<PiiAccessReques
         // Enrich with adopter + requester display names.
         const adopterIds = [...new Set(visible.map(r => r.adopterId))];
         const nameRows = await Promise.all(adopterIds.map(id =>
-            db.select({ id: adopters.id, name: adopters.name })
-                .from(adopters).where(eq(adopters.id, id)).get()
-                .catch(() => null),
+            (async () => db.select({ id: adopters.id, name: adopters.name })
+                .from(adopters).where(eq(adopters.id, id)).get())()
+                .catch((e: unknown) => {
+                    logger.warn('getPiiAccessRequestsForApprover: adopter name lookup failed, generic name shown', {
+                        adopterId: id, actor, error: e instanceof Error ? e.message : String(e),
+                    });
+                    return null;
+                }),
         ));
         const adopterNames = new Map<string, string>();
         for (const row of nameRows) {
@@ -278,7 +292,7 @@ export async function getPiiAccessRequestsForApprover(): Promise<PiiAccessReques
             createdAt: r.createdAt ? new Date(r.createdAt).getTime() : null,
         }));
     } catch (e) {
-        logger.error('getPiiAccessRequestsForApprover failed', e);
+        logger.error('getPiiAccessRequestsForApprover failed', e, { actor });
         return [];
     }
 }

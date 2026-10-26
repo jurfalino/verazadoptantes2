@@ -7,6 +7,7 @@ import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
 import { isRealActorEmail, piiCooldownUntil, type RequestPiiAccessResult } from '@/lib/piiAccess';
 import { createNotification, resolveDisplayName } from '@/app/actions/notifications';
 import { notificationContent } from '@/domain/notificationTemplates';
+import { maskEmail } from '@/lib/dates';
 
 /**
  * The core of "request access to a record's contact data", for a requester the
@@ -25,6 +26,16 @@ import { notificationContent } from '@/domain/notificationTemplates';
  * already knows who acted, so it says so.
  */
 
+/** Approver emails are compared lowercased and trimmed (see loadApprovers). */
+export function normApprover(email: string): string {
+    return email.trim().toLowerCase();
+}
+
+/** Is `actor` the approver `email`, whatever the case either was written in? */
+export function sameApprover(email: string | null | undefined, actor: string | null | undefined): boolean {
+    return !!email && !!actor && normApprover(email) === normApprover(actor);
+}
+
 /**
  * The emails that may approve PII requests for an adopter (real users only):
  * the owner, always, plus `editors` — people who wrote a kind='edit' history
@@ -35,33 +46,42 @@ import { notificationContent } from '@/domain/notificationTemplates';
  * 'contribution' (src/lib/profilePrivilege.ts) — and an approver can approve
  * anyone's request and revoke grants. Contributors (kind='contribution') are
  * never candidates. Callers also use `editors` as "who to notify" — same people.
+ * Every email it returns is lowercased (compare with `sameApprover`).
  */
 export async function loadApprovers(adopterId: string): Promise<{ owner: string | null; editors: string[]; all: string[] }> {
     const db = await getDb();
     if (!db) return { owner: null, editors: [], all: [] };
     const adopter = await db.select({ addedBy: adopters.addedBy })
         .from(adopters).where(eq(adopters.id, adopterId)).get();
-    const owner = isRealActorEmail(adopter?.addedBy) ? adopter!.addedBy : null;
+    const ownerRaw = isRealActorEmail(adopter?.addedBy) ? adopter!.addedBy : null;
+    // Emails come back lowercased: `added_by` / `changed_by` keep whatever case
+    // they were written with, sessions are lowercase. Callers compare with
+    // `sameApprover` / a lowercased actor.
+    const owner = ownerRaw ? normApprover(ownerRaw) : null;
     const editorRows = await db.selectDistinct({ email: adopterHistory.changedBy })
         .from(adopterHistory).where(and(
             eq(adopterHistory.adopterId, adopterId),
             eq(adopterHistory.kind, 'edit'),
         ));
-    const candidates: string[] = [...new Set<string>(editorRows
-        .map((r: { email: string | null }) => r.email)
-        .filter(isRealActorEmail))]
-        .filter(email => !owner || email.trim().toLowerCase() !== owner.trim().toLowerCase());
+    // One candidate per person whatever the case it was written in (the privilege
+    // check runs on the email as written; the output is lowercased).
+    const byNorm = new Map<string, string>();
+    for (const email of editorRows.map((r: { email: string | null }) => r.email).filter(isRealActorEmail)) {
+        const key = normApprover(email);
+        if (key !== owner && !byNorm.has(key)) byNorm.set(key, email);
+    }
+    const candidates = [...byNorm.values()];
     // One check per candidate (D1: no IN (array)); a failed check drops that one, logged.
     const { isPrivilegedOnProfile } = await import('@/lib/profilePrivilege');
     const verdicts = await Promise.all(candidates.map(async (email) => {
         try {
-            return await isPrivilegedOnProfile(email, owner);
+            return await isPrivilegedOnProfile(email, ownerRaw);
         } catch (e) {
-            logger.warn('loadApprovers: privilege check failed, editor not counted', { adopterId, editor: email, error: e instanceof Error ? e.message : String(e) });
+            logger.warn('loadApprovers: privilege check failed, editor not counted', { adopterId, editor: maskEmail(email), error: e instanceof Error ? e.message : String(e) });
             return false;
         }
     }));
-    const editors = candidates.filter((_, i) => verdicts[i]);
+    const editors = candidates.filter((_, i) => verdicts[i]).map(normApprover);
     const all = [...new Set([...(owner ? [owner] : []), ...editors])];
     return { owner, editors, all };
 }
@@ -121,7 +141,7 @@ export async function fileAccessRequestFor(
 
     // Notify owner + editors (push). Admins see it via the dashboard (pull).
     const { all: approvers } = await loadApprovers(adopterId);
-    const recipients = approvers.filter(e => e !== viewer);
+    const recipients = approvers.filter(e => !sameApprover(e, viewer));
     const requesterName = await resolveDisplayName(viewer);
     // v2.19.51: differentiate the auto-fired contribution requests from
     // cold "please let me see X" requests. The body tells the approver
