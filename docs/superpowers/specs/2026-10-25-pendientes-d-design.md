@@ -64,3 +64,14 @@ Same as the earlier spec's Global Constraints (layering, D1 no-IN, logging with 
 
 - How «Quitar de la lista» is stored per viewer.
 - Exact copy beyond the phrases above (Spanish first, voseo).
+
+## Addendum 2026-10-25 — linked convivientes (after staging review of 2.57.0)
+
+Jon on staging: Pedro Paez's household shows «Jonathan Urfalino ↗» (linked via «No, es alguien de su hogar») but (1) no contact data or hint of what Jonathan's profile holds, and (2) Jonathan's profile doesn't show Pedro at all — because D35 never writes another rescuer's profile. Living together is mutual and a household member's record is vetting evidence.
+
+| # | Decision | By |
+|---|---|---|
+| D44 | **The link shows on both profiles without editing anyone's data.** Links are stored in their own table (`household_links`: host adopter, linked profile, created_by, created_at, hidden_at/hidden_by) written whenever a household member gets a `profileId`, backfilled from existing `household_members`. The linked profile shows a read-only «Convive con: {host} ↗ · según {creator name}» built from it | Jon |
+| D45 | **The linked profile's owner and team are notified** when a link to their profile is created (type `household_linked`, category «Cambios en tus perfiles», es/en/pt template) | Claude (proposed, Jon ok) |
+| D46 | **A linked conviviente is a live summary, not just a name** — on the host's household card and on the reverse «Convive con» row: rating and flags first (e.g. «★2 · 1 alerta»), then «3 adopciones · 5 registros», then the contact details exactly as the viewer would see them on that profile (full / partially masked / locked — same visibility rules, never more), then «Ver perfil completo ↗». Read live; nothing copied | Jon |
+| D47 | **Wrong link:** the linked profile's owner/team can hide the «Convive con» row on their profile («Quitar de mi perfil»), which notifies the host's owner; the host's own household member is unchanged (it's the host owner's data) | Claude |
