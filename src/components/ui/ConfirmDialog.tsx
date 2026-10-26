@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useLanguage } from '@/context/LanguageContext';
 
 interface Props {
@@ -40,6 +41,13 @@ interface Props {
  *
  * Focus lands on **Cancel**, not Confirm: an accidental Enter or Space on a
  * destructive dialog should do nothing.
+ *
+ * Rendered on `<body>` (a portal), never in place: an ancestor that makes a
+ * stacking context (the profile form's read-only `opacity-90` grid, a
+ * transform) traps even a `fixed z-50` panel under later siblings — the «No
+ * convive» confirm could not be clicked (tests/one-reality.authed.spec.ts).
+ * The portal waits for the client (`mounted`), so server rendering and the
+ * first hydration pass render nothing.
  */
 export default function ConfirmDialog({
     open,
@@ -54,20 +62,22 @@ export default function ConfirmDialog({
 }: Props) {
     const { t } = useLanguage();
     const cancelRef = useRef<HTMLButtonElement>(null);
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => { setMounted(true); }, []);
 
     useEffect(() => {
-        if (!open) return;
+        if (!open || !mounted) return;
         cancelRef.current?.focus();
         const onKey = (e: KeyboardEvent) => {
             if (e.key === 'Escape' && !busy) onCancel();
         };
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
-    }, [open, busy, onCancel]);
+    }, [open, mounted, busy, onCancel]);
 
-    if (!open) return null;
+    if (!open || !mounted) return null;
 
-    return (
+    return createPortal(
         <div
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
             style={{ background: 'var(--overlay-bg)' }}
@@ -123,6 +133,7 @@ export default function ConfirmDialog({
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body,
     );
 }
