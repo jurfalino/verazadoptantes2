@@ -2,6 +2,33 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.57.1] - 2026-10-26
+
+### Added — one shared reality for households and merges
+- A conviviente added from another profile links both ways: the host shows the person's profile, and the
+  person's profile shows «Convive con» the host (with name, rating and a link), for every rescuer.
+- «No convive»: the linked person's rescuer can correct the household for everyone. The member leaves the
+  host's household, both profiles get a history line, and the host's owner is notified. Adding the person
+  back later notifies admins.
+- Disputes go to admins, never around the other rescuer: after someone said «no es la misma persona»,
+  keeping the other profile becomes «Pedir revisión a un administrador». After an immediate merge
+  (Pendientes, contract or form), the absorbed profile's owner sees «¿No es la misma persona? Avisar a un
+  administrador»; admins «Deshacer combinación» or «Mantener» in «Pedidos de combinación», and both sides
+  are told.
+- After combining in «Pendientes de revisar», the row stays as «Combinado» with «Ver perfil» until reload,
+  and the success notice links to the resulting profile.
+
+### Changed
+- Household links and corrections follow merges and undos.
+- When a host removes a linked member, the linked profile's history says so.
+- Confirmation dialogs open above the page, so they're never dimmed by the section behind them.
+
+### Fixed
+- Two rescuers combining the same pair in opposite directions at the same moment can no longer delete both
+  profiles.
+- Local development no longer sends notification emails.
+- Contract and form notices no longer carry the attaching rescuer's email.
+
 ## [2.57.0] - 2026-10-25
 
 ### Added — combining duplicate profiles between rescuers
