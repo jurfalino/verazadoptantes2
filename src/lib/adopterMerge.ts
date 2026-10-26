@@ -695,15 +695,17 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
 export async function notifyMergeOwners(
     merge: { primaryId: string; secondaryId?: string; primaryName?: string; secondaryName?: string; primaryAddedBy?: string | null; secondaryAddedBy?: string | null; auditId?: string },
     actorEmail: string,
+    /** People told some other way (e.g. the requester of an approved request), never sent this notice. */
+    opts: { skip?: readonly string[] } = {},
 ): Promise<number> {
     // Normalized: notifications are keyed (bell, email) by the lowercased
     // email, and `added_by` keeps whatever case it was written with.
     const norm = (e: string) => e.trim().toLowerCase();
-    const actorKey = norm(actorEmail ?? '');
+    const skip = new Set([actorEmail ?? '', ...(opts.skip ?? [])].map(norm));
     const owners = [...new Set([merge.primaryAddedBy, merge.secondaryAddedBy]
         .filter((e): e is string => !!e && e.includes('@'))
         .map(norm))]
-        .filter(e => e !== actorKey);
+        .filter(e => !skip.has(e));
     if (!owners.length) return 0;
     const { createNotification } = await import('@/app/actions/notifications');
     // D31: each side's owner and date, when the absorbed profile is known.

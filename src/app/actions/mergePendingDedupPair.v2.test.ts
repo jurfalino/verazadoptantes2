@@ -234,8 +234,29 @@ describe('after «Rechazado» (D27, D43, D49)', () => {
         expect(await resolveMergeRequest(dispute, 'accept')).toMatchObject({ success: false, error: 'not_allowed' });
         expect(await as(OWNER, () => resolveMergeRequest(dispute, 'accept'))).toMatchObject({ success: false, error: 'not_allowed' });
         expect(mergeSpy).not.toHaveBeenCalled();
+        notify.create.length = 0;
         expect(await as(ADMIN, () => resolveMergeRequest(dispute, 'accept'))).toEqual({ success: true });
         expect(mergeSpy).toHaveBeenCalledWith('theirs-new', 'mine-old', ADMIN);
+        // The requester hears the answer; the owner who rejected the pair hears that an admin merged it,
+        // with the way back to the admins (D50). Never the admin.
+        expect(notify.create.map(n => [n.userId, n.type]).sort()).toEqual([[OWNER, 'adopter_merged'], [STRANGER, 'merge_request_resolved']]);
+        expect(notify.create.find(n => n.userId === OWNER)).toMatchObject({ url: expect.stringMatching(/^\/adopter\/theirs-new\?dispute=[\w-]+$/) });
+    });
+
+    // KNOWN (task-1-report, «Race»): two answerable requests on one pair, opposite survivors —
+    // each claims only its own row, so both merge, in both directions. Flip to `it` once fixed.
+    it.fails('the decliner accepting and an admin approving the dispute at once: one merge, never both directions', async () => {
+        await mergePendingDedupPair('cand-a', { keepId: 'theirs-new' });
+        const dispute = requests().find(r => r.dispute === 1)!.id as string;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the drizzle handle under test
+        const db = state.db as any;
+        const results = await Promise.all([
+            answerMergeRequest(db, id, OWNER, 'accept'),
+            answerMergeRequest(db, dispute, ADMIN, 'accept'),
+        ]);
+        expect(results.filter(r => r.ok)).toHaveLength(1);
+        expect([deleted('mine-old'), deleted('theirs-new')].filter(Boolean)).toHaveLength(1);
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action = 'adopter_merge'`).get()!.n).toBe(1);
     });
 
     it('the decliner may still change their mind while the dispute is open: their accept merges, the dispute closes', async () => {
@@ -251,6 +272,27 @@ describe('after «Rechazado» (D27, D43, D49)', () => {
         expect(deleted('theirs-new')).toBe(true);
         expect(requests()[0]).toMatchObject({ status: 'accepted' });
         expect(grantsOn('mine-old').map(g => g.email)).toEqual([MATE, OWNER]);
+    });
+});
+
+describe('two answerable requests on one pair (pre-dates D49)', () => {
+    // KNOWN (task-1-report, «Race»): the same hole without any dispute. OWNER declines, then
+    // asks the other way round; OWNER accepting the old request and STRANGER accepting the
+    // new one at once merge in both directions. Flip to `it` once fixed.
+    it.fails('the decliner accepting their declined request and the requester accepting the reverse request at once: one merge', async () => {
+        await mergePendingDedupPair('cand-a', { keepId: 'mine-old' });
+        const declined = requests()[0].id as string;
+        expect(await as(OWNER, () => resolveMergeRequest(declined, 'decline'))).toEqual({ success: true });
+        expect(await as(OWNER, () => mergePendingDedupPair('cand-a', { keepId: 'theirs-new' }))).toMatchObject({ outcome: 'requested' });
+        const reverse = requests().find(r => r.id !== declined)!.id as string;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the drizzle handle under test
+        const db = state.db as any;
+        const results = await Promise.all([
+            answerMergeRequest(db, declined, OWNER, 'accept'),
+            answerMergeRequest(db, reverse, STRANGER, 'accept'),
+        ]);
+        expect(results.filter(r => r.ok)).toHaveLength(1);
+        expect([deleted('mine-old'), deleted('theirs-new')].filter(Boolean)).toHaveLength(1);
     });
 });
 

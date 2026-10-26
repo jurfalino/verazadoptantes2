@@ -28,7 +28,7 @@ import { and, asc, eq, or } from 'drizzle-orm';
 import { adopterFlags, adopters, duplicateCandidates, mergeRequests } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { mergeAdopters } from '@/lib/adopterMerge';
+import { mergeAdopters, notifyMergeOwners } from '@/lib/adopterMerge';
 import { getOrgMemberEmailsFor, isOwnerOrOrgMate, normEmail } from '@/lib/orgMembership';
 import { isAdminAsync } from '@/config/admins';
 import { createNotification, notifyAdmins, resolveDisplayName } from '@/app/actions/notifications';
@@ -295,6 +295,13 @@ export async function answerMergeRequest(
             survivorId: keep.survivorId, absorbedOwnerEmail: keep.absorbed.addedBy ?? null, actor, mergeAuditId: result.auditId ?? null,
             access: { scope: 'all_contact' },
         });
+        if (req.dispute === 1) {
+            // A dispute request has no owner on it (it went to the admins, D49),
+            // but the profiles do: the rescuer who rejected the pair hears that
+            // an admin merged it — with the way back to the admins (D50). The
+            // requester gets merge_request_resolved below. Best-effort, logged.
+            await notifyMergeOwners({ primaryId: keep.survivorId, secondaryId: keep.absorbedId, ...result }, actor, { skip: [req.requesterEmail] });
+        }
     } else if (answer.nextStatus === 'admin_declined') {
         // An admin's decline is final (no one may reopen it), so the pair is
         // resolved as kept-separate. An owner's decline leaves the pair on
