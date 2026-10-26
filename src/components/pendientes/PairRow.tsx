@@ -118,7 +118,7 @@ function summaryLine(pair: PendingDedupPair, t: T): string {
 }
 
 /** What the open row will do, in one line (D23). */
-function explanation(pair: PendingDedupPair, keep: KeepSide, t: T): string | null {
+function explanation(pair: PendingDedupPair, keep: KeepSide, isAdmin: boolean, t: T): string | null {
     const r = pair.request;
     const other = r?.counterpartName || (t('myAdopters.pending_dedup_a_user') || 'Un usuario');
     if (pair.group === 'received' && r) {
@@ -144,6 +144,12 @@ function explanation(pair: PendingDedupPair, keep: KeepSide, t: T): string | nul
             : (t('myAdopters.pending_d_explain_request_admins') || 'Se conserva el tuyo: un administrador tiene que aprobarlo.');
     }
     if (movesToOtherList(pair, keep)) {
+        // A non-admin keeping the other rescuer's profile without their consent keeps
+        // access only to the contact values they entered (mergeAccess absorbed_entries);
+        // an admin's merge keeps full access.
+        if (!isAdmin) {
+            return fill(t('myAdopters.pending_d_explain_moves_entries') || 'Tu perfil pasa a la lista de {name}. Vas a seguir viendo los datos que cargaste.', { name: ownerName(sideOf(pair, keep), t) });
+        }
         return fill(t('myAdopters.pending_d_explain_moves') || 'Tu perfil pasa a la lista de {name}. Vas a seguir viendo sus datos.', { name: ownerName(sideOf(pair, keep), t) });
     }
     return t('myAdopters.pending_d_explain_merge') || 'Los datos del otro perfil se suman al que se conserva.';
@@ -263,7 +269,7 @@ export default function PairRow({ pair, open, onToggle, keep, onKeep, busy, lock
     const writeTo = r?.counterpartName || (t('myAdopters.pending_dedup_a_user') || 'Un usuario');
     const otherOwner = foreignSide(pair);
     const theirsName = r?.counterpartName || (otherOwner ? ownerName(otherOwner, t) : '');
-    const explain = open ? explanation(pair, keep, t) : null;
+    const explain = open ? explanation(pair, keep, isAdmin, t) : null;
     const showScore = isAdmin && typeof pair.adminScore === 'number';
 
     const write = r?.canMessage && (

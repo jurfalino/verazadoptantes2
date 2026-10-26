@@ -30,8 +30,10 @@ function ProfileLine({ side, t, formatShortDate }: { side: PendingDedupSide; t: 
     );
 }
 
-export default function ConfirmCombine({ mode, kept, absorbed, toName, busy, onConfirm, onCancel, t, formatShortDate }: {
+export default function ConfirmCombine({ mode, entriesOnly = false, kept, absorbed, toName, busy, onConfirm, onCancel, t, formatShortDate }: {
     mode: ConfirmMode;
+    /** An immediate keep-theirs by a non-admin: they keep only the details they entered. */
+    entriesOnly?: boolean;
     kept: PendingDedupSide;
     absorbed: PendingDedupSide;
     /** 'moves': whose list the adopter goes to. 'flip': the requester. */
@@ -67,7 +69,9 @@ export default function ConfirmCombine({ mode, kept, absorbed, toName, busy, onC
             <p className={`mt-4 text-[14px] ${T_MUTED}`}>
                 {mode === 'flip'
                     ? fill(t('myAdopters.pending_d_confirm_flip_access') || 'Se conserva el tuyo. {name} va a seguir viendo sus datos.', { name: toName })
-                    : fill(t('myAdopters.pending_d_confirm_kept') || 'Se conserva {profile}. Vas a seguir viendo sus datos.', {
+                    : fill(entriesOnly
+                        ? (t('myAdopters.pending_d_confirm_kept_entries') || 'Se conserva {profile}. Vas a seguir viendo los datos que cargaste.')
+                        : (t('myAdopters.pending_d_confirm_kept') || 'Se conserva {profile}. Vas a seguir viendo sus datos.'), {
                         profile: fill(t('myAdopters.pending_d_confirm_profile_of') || 'el perfil de {name}', { name: ownerName(kept, t) }),
                     })}
             </p>

@@ -306,10 +306,10 @@ export default function PendingDedup() {
     };
 
     /** Who keeps what in the confirmation: the row's survivor (combine) or the request's (accept / flip). */
-    const confirmView = (c: Pending): { mode: ConfirmMode; kept: PendingDedupSide; absorbed: PendingDedupSide; toName: string } | null => {
+    const confirmView = (c: Pending): { mode: ConfirmMode; entriesOnly: boolean; kept: PendingDedupSide; absorbed: PendingDedupSide; toName: string } | null => {
         if (c.kind === 'combine') {
             const kept = sideOf(c.pair, c.keep);
-            return { mode: 'moves', kept, absorbed: sideOf(c.pair, otherSide(c.keep)), toName: ownerName(kept, t) };
+            return { mode: 'moves', entriesOnly: !isAdmin, kept, absorbed: sideOf(c.pair, otherSide(c.keep)), toName: ownerName(kept, t) };
         }
         const r = c.pair.request;
         const requesterKeep = r ? sideById(c.pair, r.keepId) : null;
@@ -317,6 +317,7 @@ export default function PendingDedup() {
         const keep = c.kind === 'accept' ? requesterKeep : otherSide(requesterKeep);
         return {
             mode: c.kind === 'accept' ? 'moves' : 'flip',
+            entriesOnly: false,
             kept: sideOf(c.pair, keep),
             absorbed: sideOf(c.pair, otherSide(keep)),
             toName: r.counterpartName || (t('myAdopters.pending_dedup_a_user') || 'Un usuario'),
