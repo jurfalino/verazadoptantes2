@@ -13,7 +13,7 @@ import {
 } from '@/lib/contactEntries';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { hashEntryValue, isRealActorEmail } from '@/lib/piiAccess';
-import { isAdminAsync } from '@/config/admins';
+import { isModeratorOrAdminAsync } from '@/config/admins';
 import { casAdopterLists } from '@/lib/adopterListCas';
 import { itemAuthors } from '@/lib/collabAttribution';
 import type { EntryConflict } from './updateContactEntry';
@@ -64,8 +64,9 @@ export async function removeContactEntry(
         // of this entry (matching updateContactEntry's relaxation). Entries
         // with no `addedBy` (legacy / blob-migrated) stay owner+admin-only.
         const isOwner = target.addedBy === actor;
+        // Moderators count, as in the visibility resolver and loadHousehold.
         const [actorIsAdmin, actorIsOrgMate] = await Promise.all([
-            isAdminAsync(actor),
+            isModeratorOrAdminAsync(actor),
             (await import('@/lib/orgMembership')).isOrgMate(actor, target.addedBy),
         ]);
 

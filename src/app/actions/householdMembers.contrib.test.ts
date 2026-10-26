@@ -415,3 +415,24 @@ describe('fix round 1: dedup, moderators, access requests', () => {
         expect(contributionNotices().map(n => n.userId)).toEqual([OWNER]);
     });
 });
+
+describe('fix round 2: titular contacts, same rules as the household', () => {
+    it('a contributor editing their own titular contact still sees the new value', async () => {
+        await addContactEntry({ adopterId: 'p1', type: 'email', value: 'pedro@example.org' });
+        const entryId = JSON.parse(sqlite.prepare(`SELECT contact_entries FROM adopters WHERE id = 'p1'`).get()!.contact_entries as string)[0].id;
+        expect((await updateContactEntry({ adopterId: 'p1', entryId, value: 'pedro.paez@example.org' })).ok).toBe(true);
+        expect(grants(STRANGER).map(g => g.entry_ref)).toContain(hashEntryValue('email', 'pedro.paez@example.org'));
+        const { getAdopter } = await import('./adopters');
+        const seen = JSON.parse((await as(STRANGER, () => getAdopter('p1')))!.contactEntries as string);
+        expect(seen).toEqual([expect.objectContaining({ value: 'pedro.paez@example.org' })]);
+        expect(seen[0].masked).toBeFalsy();
+    });
+
+    it('a moderator edits and removes the owner\'s titular contact, as an edit', async () => {
+        await as(OWNER, () => addContactEntry({ adopterId: 'p1', type: 'email', value: 'pedro@example.org' }));
+        const entryId = JSON.parse(sqlite.prepare(`SELECT contact_entries FROM adopters WHERE id = 'p1'`).get()!.contact_entries as string)[0].id;
+        expect((await as(MODERATOR, () => updateContactEntry({ adopterId: 'p1', entryId, value: 'pedro2@example.org' }))).ok).toBe(true);
+        expect((await as(MODERATOR, () => removeContactEntry({ adopterId: 'p1', entryId }))).ok).toBe(true);
+        expect(history().filter(h => h.changed_by === MODERATOR).map(h => h.kind)).toEqual(['edit', 'edit']);
+    });
+});

@@ -15,9 +15,10 @@ import {
 } from '@/lib/contactEntries';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { hashEntryValue, isRealActorEmail } from '@/lib/piiAccess';
-import { isAdminAsync } from '@/config/admins';
+import { isModeratorOrAdminAsync } from '@/config/admins';
 import { casAdopterLists } from '@/lib/adopterListCas';
 import { itemAuthors } from '@/lib/collabAttribution';
+import { insertContributionGrant } from '@/lib/contributionSideEffects';
 
 // History rows that name an entry by id when it is edited or removed.
 const ENTRY_HISTORY_KEYS = ['updated_entry', 'removed_entry'] as const;
@@ -85,8 +86,9 @@ export async function updateContactEntry(
         // Entries with no `addedBy` (legacy / blob-migrated / pre-2.16.0-9)
         // stay owner+admin-only by virtue of failing the third check.
         const isOwner = target.addedBy === actor;
+        // Moderators count, as in the visibility resolver and loadHousehold.
         const [actorIsAdmin, actorIsOrgMate] = await Promise.all([
-            isAdminAsync(actor),
+            isModeratorOrAdminAsync(actor),
             (await import('@/lib/orgMembership')).isOrgMate(actor, target.addedBy),
         ]);
 
@@ -186,6 +188,14 @@ export async function updateContactEntry(
             }),
             changedAt: new Date(),
         });
+
+        // A contributor keeps seeing the value they just typed: their grant names
+        // the OLD value (same rule as the household path). Logged, never a failed edit.
+        if (!(isOwner || actorIsAdmin || actorIsOrgMate) && r.updated.type !== 'alias') {
+            await insertContributionGrant(db, adopterId, actor, r.updated).catch((e: unknown) => {
+                logger.error('updateContactEntry: contribution grant not written', e, { adopterId, actor, entryId });
+            });
+        }
 
         await tokenizeAdopter(adopterId).catch(e => {
             logger.error('updateContactEntry: tokenize after edit failed', e, { adopterId });
