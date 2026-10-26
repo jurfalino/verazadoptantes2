@@ -131,7 +131,6 @@ export function LivesWithSection({ rows }: { rows: LivesWithRow[] }) {
 
     return (
         <div className="space-y-3" data-testid="lives-with">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-stone-500">{t('adopter.hh_lives_with_title')}</p>
             {shown.map(row => (
                 <div key={row.linkId} className="border border-stone-200 rounded-xl p-3.5 bg-stone-50" data-testid="lives-with-row">
                     <div className="flex items-start gap-2.5">
@@ -153,7 +152,7 @@ export function LivesWithSection({ rows }: { rows: LivesWithRow[] }) {
                             onClick={() => setConfirm(row)}
                             disabled={busy}
                             data-testid="lives-with-hide"
-                            className="mt-2.5 inline-flex min-h-[44px] items-center px-3.5 text-sm font-medium rounded-md border border-stone-200 bg-white text-stone-700 hover:bg-teal-50 disabled:opacity-50"
+                            className="mt-2.5 inline-flex min-h-[44px] items-center px-3.5 text-sm font-semibold rounded-md border border-stone-200 bg-white text-stone-800 hover:bg-teal-50 disabled:opacity-50"
                         >
                             {t('adopter.hh_lives_with_hide')}
                         </button>
