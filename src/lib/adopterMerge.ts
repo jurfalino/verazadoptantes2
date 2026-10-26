@@ -109,7 +109,7 @@ export async function mergeAdopters(
             // that are no longer there.
             await db.update(adopters).set({ deletedAt: null, tokenHash: null }).where(eq(adopters.id, secondaryId));
             await tokenizeAdopter(secondaryId);
-            logger.info('mergeAdopters: absorbed profile given back and re-tokenized after a failed merge', { primaryId, secondaryId, actor: actorEmail });
+            logger.info('mergeAdopters: absorbed profile given back after a failed merge (re-tokenize ran; its own errors log separately)', { primaryId, secondaryId, actor: actorEmail });
         };
 
         const mergeDetails: Record<string, number> = {};
