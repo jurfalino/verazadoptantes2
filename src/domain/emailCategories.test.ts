@@ -23,6 +23,7 @@ describe('categoryForType', () => {
         ['ownership_transferred', 'profile_changes'],
         ['household_linked', 'profile_changes'],
         ['household_link_removed', 'profile_changes'],
+        ['household_contribution', 'profile_changes'],
         ['household_link_disputed', 'other'],
         ['api_record', 'api'],
         ['member_joined', 'other'],

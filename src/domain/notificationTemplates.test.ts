@@ -48,6 +48,7 @@ const SAMPLES: { [K in NotificationTemplate['key']]: Extract<NotificationTemplat
     household_linked: { actorName: 'Jon', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
     household_link_removed: { actorName: 'María', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
     household_link_disputed: { actorName: 'Jon', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
+    household_contribution: { actorName: 'Ana', adopterName: 'Pedro Paez', what: 'contact', entryType: 'phone' },
 };
 
 const LOCALES: NotificationLocale[] = ['es', 'en', 'pt'];
@@ -90,6 +91,16 @@ describe('renderNotification', () => {
         // merge request declined: «rechazó» (D30)
         expect(renderNotification({ key: 'merge_request_declined', params: { actorName: 'owner', survivorName: 'A', absorbedName: 'B' } }, 'es')!.title)
             .toBe('owner rechazó combinar dos perfiles');
+    });
+
+    it('household_contribution: a member or a contact on one, per locale (D54)', () => {
+        expect(renderNotification({ key: 'household_contribution', params: { actorName: 'Ana', adopterName: 'Pedro Paez', what: 'member' } }, 'es'))
+            .toEqual({ title: 'Nuevo conviviente', body: 'Ana agregó a alguien al grupo familiar de Pedro Paez.' });
+        expect(renderNotification({ key: 'household_contribution', params: { actorName: 'Ana', adopterName: 'Pedro Paez', what: 'contact', entryType: 'phone' } }, 'es')!.body)
+            .toBe('Ana agregó un teléfono de alguien del grupo familiar de Pedro Paez.');
+        expect(renderNotification({ key: 'household_contribution', params: { actorName: 'Ana', what: 'member' } }, 'en')!.body)
+            .toBe("Ana added someone to the adopter's household.");
+        expect(renderNotification({ key: 'household_contribution', params: { actorName: 'Ana', what: 'sideways' } }, 'pt')).toBeNull();
     });
 
     it('unknown key, missing required param, non-string param or unknown code → null', () => {

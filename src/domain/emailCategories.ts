@@ -52,6 +52,7 @@ const TYPE_TO_CATEGORY: Readonly<Record<string, EmailCategory>> = {
     contact_entry_added: 'profile_changes',
     household_linked: 'profile_changes',
     household_link_removed: 'profile_changes',
+    household_contribution: 'profile_changes',
     // Admins only (D48): no switch of its own.
     household_link_disputed: 'other',
     api_record: 'api',

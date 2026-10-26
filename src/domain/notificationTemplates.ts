@@ -80,6 +80,12 @@ export interface NotificationTemplateParams {
      * other side said they don't live together; `viaMerge: '1'` when a merge they did carried it back (D51).
      */
     household_link_disputed: { actorName: string; hostName?: string; linkedName?: string; viaMerge?: string };
+    /**
+     * D54, the owner + editors: someone with no standing on `adopterName` added to its
+     * household. `what`: 'member' (a person) or 'contact' (a contact on a member;
+     * `entryType` is its ContactEntry type).
+     */
+    household_contribution: { actorName: string; adopterName?: string; what: string; entryType?: string };
 }
 
 export type NotificationTemplateKey = keyof NotificationTemplateParams;
@@ -144,6 +150,13 @@ const ENTRY_TYPE: Record<NotificationLocale, Record<string, string>> = {
     es: { phone: 'un teléfono', email: 'un email', social: 'una red social', id: 'un documento', address: 'una dirección', alias: 'un nombre alternativo', other: 'un dato de contacto' },
     en: { phone: 'a phone number', email: 'an email', social: 'a social profile', id: 'an ID document', address: 'an address', alias: 'an alternative name', other: 'a contact detail' },
     pt: { phone: 'um telefone', email: 'um e-mail', social: 'uma rede social', id: 'um documento', address: 'um endereço', alias: 'um nome alternativo', other: 'um dado de contato' },
+};
+/** «de Pedro» / «del adoptante»: whose household (D54); never a hole when the name is missing. */
+const householdOf = (name: string | undefined, l: NotificationLocale): string => {
+    const n = name?.trim();
+    if (l === 'en') return n ? `${n}'s` : "the adopter's";
+    if (l === 'pt') return n ? `de ${n}` : 'do adotante';
+    return n ? `de ${n}` : 'del adoptante';
 };
 const entryTypeLabel = (code: string, l: NotificationLocale) =>
     Object.hasOwn(ENTRY_TYPE[l], code) ? ENTRY_TYPE[l][code] : ENTRY_TYPE[l].other;
@@ -493,6 +506,24 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
             title: `Convivência em disputa: ${plainName(p.linkedName, 'pt')}`,
             body: `${p.viaMerge === '1' ? `Ao combinar perfis, ${p.actorName} colocou de novo` : `${p.actorName} adicionou de novo`} ${plainName(p.linkedName, 'pt')} no grupo familiar de ${plainName(p.hostName, 'pt')}, depois que a equipe de ${plainName(p.linkedName, 'pt')} indicou que não moram juntos. Revise quem tem razão.`,
         }),
+    },
+    household_contribution: {
+        required: ['actorName', 'what'],
+        es: p => p.what === 'member'
+            ? { title: 'Nuevo conviviente', body: `${p.actorName} agregó a alguien al grupo familiar ${householdOf(p.adopterName, 'es')}.` }
+            : p.what === 'contact'
+                ? { title: 'Nuevo dato de un conviviente', body: `${p.actorName} agregó ${entryTypeLabel(p.entryType ?? '', 'es')} de alguien del grupo familiar ${householdOf(p.adopterName, 'es')}.` }
+                : null,
+        en: p => p.what === 'member'
+            ? { title: 'New household member', body: `${p.actorName} added someone to ${householdOf(p.adopterName, 'en')} household.` }
+            : p.what === 'contact'
+                ? { title: 'New household contact detail', body: `${p.actorName} added ${entryTypeLabel(p.entryType ?? '', 'en')} for someone in ${householdOf(p.adopterName, 'en')} household.` }
+                : null,
+        pt: p => p.what === 'member'
+            ? { title: 'Novo convivente', body: `${p.actorName} adicionou alguém ao grupo familiar ${householdOf(p.adopterName, 'pt')}.` }
+            : p.what === 'contact'
+                ? { title: 'Novo dado de um convivente', body: `${p.actorName} adicionou ${entryTypeLabel(p.entryType ?? '', 'pt')} de alguém do grupo familiar ${householdOf(p.adopterName, 'pt')}.` }
+                : null,
     },
 };
 

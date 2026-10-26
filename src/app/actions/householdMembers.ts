@@ -27,24 +27,39 @@ import { casAdopterLists } from '@/lib/adopterListCas';
 import { itemAuthors } from '@/lib/collabAttribution';
 import { hashEntryValue } from '@/lib/piiAccess';
 import { recordHouseholdLink, deleteHouseholdLink, notifyHouseholdLinked } from '@/lib/householdLinks';
+import { runAfterResponse } from '@/lib/background';
+import { insertContributionGrant, notifyApprovers, fileContributionAccessRequest } from '@/lib/contributionSideEffects';
 
 /**
  * Server actions for the structured household/family section.
  *
- * v1 scope decision: ALL household writes (member add/edit/remove and each
- * member's contact add/edit/remove) are gated to **owner ∨ admin ∨ org-mate**
- * — the `saveAdopter` mutation model — NOT the open-contribution model that
- * `addContactEntry` uses for the titular's contacts. This keeps the PII surface
- * closed (only privileged editors, who already see everything unmasked, can
- * touch household contacts, so no contribution grants are needed) and is much
- * simpler. Open collaborative contribution to household is a deliberate v1
- * non-goal (follow-up). See .agents/plans/2026-08-26-household-members-redesign.md.
+ * Who may write (D54, spec 2026-10-25 pendientes D — household follows the
+ * contact-details model of `addContactEntry`):
+ * - **Add** a member, or a contact on any member: any signed-in rescuer on a
+ *   live profile. The item is credited to them (`addedBy`).
+ * - **Edit / remove** a member: privileged (owner ∨ admin ∨ org-mate of the
+ *   owner), or the member's `addedBy` is the actor. A contributor's edit
+ *   changes name / relationship / age only; they may remove their member only
+ *   while every contact on it is theirs too. **Edit / remove** a contact on a
+ *   member: privileged, or the entry's `addedBy` is the actor. Items with no
+ *   `addedBy` (legacy) stay privileged-only. The verdict is taken on the
+ *   CURRENT stored item inside the compare-and-swap, never on client input.
+ * - Privileged writes keep the editor path: history kind='edit', no notice.
+ *   A non-privileged write is a contribution: history kind='contribution' for
+ *   EVERY write (a kind='edit' row would promote them to editor = full contact
+ *   access, see piiAccessServer.ts), and on an add an entry-scope grant per
+ *   contact they typed (so they see it unmasked; everyone else sees the
+ *   profile's normal protection), the owner + editors notified
+ *   ('household_contribution') and the access request auto-filed, both after
+ *   the response — src/lib/contributionSideEffects.ts, shared with
+ *   addContactEntry. A member they added keeps its name unmasked for them
+ *   (maskHouseholdMembers, `viewerEmail`).
  *
- * Every write re-tokenizes the adopter (household names + contacts feed dedup
- * once Phase 4 wires the tokenizer) and is audited. Each read-modify-write of
- * the household list is a compare-and-swap that re-applies the change to a
- * fresh read after a lost race; an edit or removal can carry what the person
- * saw, and is refused (who + changed/deleted) if a teammate changed it since.
+ * Every write re-tokenizes the adopter (household names + contacts feed dedup)
+ * and is audited. Each read-modify-write of the household list is a
+ * compare-and-swap that re-applies the change to a fresh read after a lost
+ * race; an edit or removal can carry what the person saw, and is refused
+ * (who + changed/deleted) if a teammate changed it since.
  */
 
 type Err = { ok: false; error: string };
@@ -57,25 +72,74 @@ async function authActor(): Promise<string | null> {
     return isRealActorEmail(actor) ? actor : null;
 }
 
-/** Load the adopter row and assert the actor may edit its household (owner/admin/org-mate). */
-type Loaded = { ok: true; db: NonNullable<Awaited<ReturnType<typeof getDb>>>; target: typeof adopters.$inferSelect; members: HouseholdMember[] };
-async function loadEditable(adopterId: string, actor: string): Promise<Loaded | Err> {
+/**
+ * Load a live adopter row and say whether the actor is privileged on its
+ * household (owner ∨ admin ∨ org-mate of the owner). Refuses nothing else:
+ * each action decides what a non-privileged actor may do (D54).
+ */
+type Loaded = { ok: true; db: NonNullable<Awaited<ReturnType<typeof getDb>>>; target: typeof adopters.$inferSelect; members: HouseholdMember[]; privileged: boolean };
+async function loadHousehold(adopterId: string, actor: string): Promise<Loaded | Err> {
     const db = await getDb();
     if (!db) return { ok: false, error: 'No database' };
     const target = await db.select().from(adopters).where(eq(adopters.id, adopterId)).get();
     if (!target) return { ok: false, error: 'Adopter not found' };
     if (target.deletedAt) return { ok: false, error: 'Cannot edit a deleted adopter' };
     // Case-insensitive: `added_by` keeps whatever case it was written with.
-    const isOwner = !!target.addedBy && target.addedBy.trim().toLowerCase() === actor.trim().toLowerCase();
+    const isOwner = sameEmail(target.addedBy, actor);
     const [actorIsAdmin, actorIsOrgMate] = await Promise.all([
         isAdminAsync(actor),
         (await import('@/lib/orgMembership')).isOrgMate(actor, target.addedBy),
     ]);
-    if (!isOwner && !actorIsAdmin && !actorIsOrgMate) {
-        logger.warn('householdMembers: not owner/admin/org-mate', { adopterId, actor });
-        return { ok: false, error: 'Not authorized to edit this household.' };
+    const privileged = isOwner || actorIsAdmin || actorIsOrgMate;
+    return { ok: true, db, target, members: deserializeHouseholdMembers(target.householdMembers), privileged };
+}
+
+/** Case-insensitive: `added_by` keeps whatever case it was written with. */
+function sameEmail(a: string | null | undefined, b: string | null | undefined): boolean {
+    return !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+const NOT_AUTHORIZED = 'Not authorized to edit this household.';
+/** Refuse a write the actor has no right to, logged with the operation's context. */
+function forbidden(op: string, ctx: Record<string, unknown>): Err {
+    logger.warn(`${op}: not owner/admin/org-mate/contributor`, ctx);
+    return { ok: false, error: NOT_AUTHORIZED };
+}
+
+/**
+ * The side effects of a non-privileged add (D54), as `addContactEntry` does
+ * them: an entry grant per contact typed, then — after the response — the
+ * owner + editors notified and the access request auto-filed. The item is
+ * already saved: a failed grant is logged, never a failed add (a retry would
+ * add it twice).
+ */
+async function contributionSideEffects(
+    r: Loaded,
+    actor: string,
+    entries: ContactEntry[],
+    notice: { op: string; what: 'member' | 'contact'; memberId: string; entryType?: ContactEntry['type'] },
+): Promise<void> {
+    const adopterId = r.target.id;
+    const ctx = { adopterId, actor, memberId: notice.memberId };
+    for (const e of entries) {
+        if (e.type === 'alias') continue; // aliases are never masked: a grant would be inert
+        try {
+            await insertContributionGrant(r.db, adopterId, actor, e);
+        } catch (err) {
+            logger.error(`${notice.op}: contribution grant not written`, err, { ...ctx, type: e.type });
+        }
     }
-    return { ok: true, db, target, members: deserializeHouseholdMembers(target.householdMembers) };
+    const adopterName = r.target.name;
+    await runAfterResponse(`${notice.op}.notifyApprovers`, () => notifyApprovers({
+        op: notice.op, adopterId, actor, type: 'household_contribution',
+        build: (actorName) => ({
+            key: 'household_contribution',
+            params: { actorName, what: notice.what, ...(notice.entryType ? { entryType: notice.entryType } : {}), ...(adopterName ? { adopterName } : {}) },
+        }),
+        metadata: { memberId: notice.memberId, what: notice.what, ...(notice.entryType ? { entryType: notice.entryType } : {}) },
+    }), ctx);
+    await runAfterResponse(`${notice.op}.autoAccessRequest`,
+        () => fileContributionAccessRequest(notice.op, actor, adopterId), ctx);
 }
 
 type Members = HouseholdMember[];
@@ -206,7 +270,7 @@ export async function addHouseholdMember(
     const relationship = input.relationship && REL_SET.has(input.relationship) ? input.relationship : null;
     if (!name && !relationship) return { ok: false, error: 'A name or relationship is required' };
     try {
-        const r = await loadEditable(adopterId, actor);
+        const r = await loadHousehold(adopterId, actor);
         if (!r.ok) return r;
         const entries = (input.contactEntries ?? [])
             .slice(0, 50)
@@ -227,8 +291,9 @@ export async function addHouseholdMember(
         // Contact TYPES (never values) so the history shows what came with the member,
         // as the per-contact path does (re-review of 2.56.214, E).
         const contactTypes = entries.map(e => e.type);
-        await insertHouseholdHistory(r.db, adopterId, actor, { household_member_added: { id: member.id, relationship, ...(contactTypes.length ? { contactTypes } : {}) } });
-        logAudit({ userEmail: actor, action: 'household_member_added', target: adopterId, details: { relationship, contactTypes } });
+        await insertHouseholdHistory(r.db, adopterId, actor, { household_member_added: { id: member.id, relationship, ...(contactTypes.length ? { contactTypes } : {}) } }, r.privileged);
+        logAudit({ userEmail: actor, action: 'household_member_added', target: adopterId, details: { relationship, contactTypes, ...(r.privileged ? {} : { contribution: true }) } });
+        if (!r.privileged) await contributionSideEffects(r, actor, entries, { op: 'addHouseholdMember', what: 'member', memberId: member.id });
         if (member.profileId) {
             // D44: the linked profile shows «Convive con» from this row; D45: its team hears about it.
             // The member is already saved — a failed link is logged, never a failed add
@@ -265,11 +330,13 @@ export async function updateHouseholdMember(
         }
         : null;
     try {
-        const r = await loadEditable(adopterId, actor);
+        const r = await loadHousehold(adopterId, actor);
         if (!r.ok) return r;
-        type Res = 'not_found' | 'deleted' | 'changed' | 'empty' | 'noop' | 'updated';
+        type Res = 'forbidden' | 'not_found' | 'deleted' | 'changed' | 'empty' | 'noop' | 'updated';
         const out = await mutateHousehold<Res>(r.db, adopterId, (members) => {
             const m = members.find(x => x.id === memberId);
+            // Decided on the stored member, first, so a refusal says nothing about it.
+            if (!r.privileged && !sameEmail(m?.addedBy, actor)) return { result: 'forbidden' };
             if (!m) return { result: expected ? 'deleted' : 'not_found' };
             const name = input.name !== undefined ? String(input.name).trim() : m.name;
             const relationship = input.relationship !== undefined ? (input.relationship && REL_SET.has(input.relationship) ? input.relationship : null) : m.relationship;
@@ -284,11 +351,12 @@ export async function updateHouseholdMember(
         }, { op: 'updateHouseholdMember', actor, memberId });
         if (out.status === 'missing') return { ok: false, error: 'Adopter not found' };
         if (out.status === 'busy') return busy(out.errorId);
+        if (out.result === 'forbidden') return forbidden('updateHouseholdMember', { adopterId, actor, memberId });
         if (out.result === 'not_found') return { ok: false, error: 'Member not found' };
         if (out.result === 'empty') return { ok: false, error: 'A name or relationship is required' };
         if (out.result === 'deleted' || out.result === 'changed') return conflictOf(r.db, adopterId, memberId, out.result, MEMBER_KEYS, { actor });
         if (out.result === 'noop') return { ok: true };
-        await insertHouseholdHistory(r.db, adopterId, actor, { household_member_updated: { id: memberId } });
+        await insertHouseholdHistory(r.db, adopterId, actor, { household_member_updated: { id: memberId } }, r.privileged);
         logAudit({ userEmail: actor, action: 'household_member_updated', target: adopterId, details: { memberId } });
         return { ok: true };
     } catch (error) {
@@ -308,20 +376,26 @@ export async function removeHouseholdMember(
         ? { name: expectedText(input.expected.name ?? ''), relationship: input.expected.relationship ?? null }
         : null;
     try {
-        const r = await loadEditable(adopterId, actor);
+        const r = await loadHousehold(adopterId, actor);
         if (!r.ok) return r;
-        type Res = 'not_found' | 'deleted' | 'changed' | 'removed';
+        type Res = 'forbidden' | 'not_found' | 'deleted' | 'changed' | 'removed';
         const out = await mutateHousehold<Res>(r.db, adopterId, (members) => {
             const m = members.find(x => x.id === memberId);
+            // A contributor removes only their own member, and only while every contact
+            // on it is theirs too (removing it would delete what others added).
+            if (!r.privileged && (!m || !sameEmail(m.addedBy, actor) || m.contactEntries.some(e => !sameEmail(e.addedBy, actor)))) {
+                return { result: 'forbidden' };
+            }
             if (!m) return { result: expected ? 'deleted' : 'not_found' };
             if (expected && (!sameText(expected.name, m.name) || (expected.relationship ?? null) !== (m.relationship ?? null))) return { result: 'changed' };
             return { members: members.filter(x => x.id !== memberId), result: 'removed' };
         }, { op: 'removeHouseholdMember', actor, memberId });
         if (out.status === 'missing') return { ok: false, error: 'Adopter not found' };
         if (out.status === 'busy') return busy(out.errorId);
+        if (out.result === 'forbidden') return forbidden('removeHouseholdMember', { adopterId, actor, memberId });
         if (out.result === 'not_found') return { ok: false, error: 'Member not found' };
         if (out.result === 'deleted' || out.result === 'changed') return conflictOf(r.db, adopterId, memberId, out.result, MEMBER_KEYS, { actor });
-        await insertHouseholdHistory(r.db, adopterId, actor, { household_member_removed: { id: memberId } });
+        await insertHouseholdHistory(r.db, adopterId, actor, { household_member_removed: { id: memberId } }, r.privileged);
         logAudit({ userEmail: actor, action: 'household_member_removed', target: adopterId, details: { memberId } });
         // Its link goes with it, and the linked profile's history says so (M7).
         // A leftover row is harmless (reads check the member still exists) but is logged.
@@ -348,7 +422,7 @@ export async function addMemberContactEntry(
     const isAddress = input.type === 'address' && (input.streetAndNumber || input.locality);
     if (!value && !isAddress) return { ok: false, error: 'Value required' };
     try {
-        const r = await loadEditable(adopterId, actor);
+        const r = await loadHousehold(adopterId, actor);
         if (!r.ok) return r;
         const entry = buildEntry(actor, input.type, value, input);
         const out = await mutateHousehold<'not_found' | 'added'>(r.db, adopterId, (members) => {
@@ -359,8 +433,9 @@ export async function addMemberContactEntry(
         if (out.status === 'missing') return { ok: false, error: 'Adopter not found' };
         if (out.status === 'busy') return busy(out.errorId);
         if (out.result === 'not_found') return { ok: false, error: 'Member not found' };
-        await insertHouseholdHistory(r.db, adopterId, actor, { household_contact_added: { memberId: input.memberId, type: input.type } });
-        logAudit({ userEmail: actor, action: 'household_contact_added', target: adopterId, details: { memberId: input.memberId, type: input.type } });
+        await insertHouseholdHistory(r.db, adopterId, actor, { household_contact_added: { memberId: input.memberId, type: input.type } }, r.privileged);
+        logAudit({ userEmail: actor, action: 'household_contact_added', target: adopterId, details: { memberId: input.memberId, type: input.type, ...(r.privileged ? {} : { contribution: true }) } });
+        if (!r.privileged) await contributionSideEffects(r, actor, [entry], { op: 'addMemberContactEntry', what: 'contact', memberId: input.memberId, entryType: input.type });
         return { ok: true, entryId: entry.id! };
     } catch (error) {
         const errorId = logger.error('addMemberContactEntry failed', error, { adopterId, actor });
@@ -377,13 +452,15 @@ export async function updateMemberContactEntry(
     const entryId = String(input.entryId || '');
     const expectedValue = expectedText(input.expectedValue);
     try {
-        const r = await loadEditable(adopterId, actor);
+        const r = await loadHousehold(adopterId, actor);
         if (!r.ok) return r;
-        type Res = { kind: 'member_not_found' | 'not_found' | 'deleted' | 'changed' | 'noop' } | { kind: 'updated'; type: ContactEntry['type'] };
+        type Res = { kind: 'forbidden' | 'member_not_found' | 'not_found' | 'deleted' | 'changed' | 'noop' } | { kind: 'updated'; entry: ContactEntry };
         const out = await mutateHousehold<Res>(r.db, adopterId, (members) => {
             const m = members.find(x => x.id === input.memberId);
+            const idx = m ? m.contactEntries.findIndex(e => e.id === entryId) : -1;
+            // Decided on the stored entry, first: a contributor edits only what they added.
+            if (!r.privileged && (idx < 0 || !sameEmail(m!.contactEntries[idx].addedBy, actor))) return { result: { kind: 'forbidden' } };
             if (!m) return { result: { kind: expectedValue !== undefined ? 'deleted' : 'member_not_found' } };
-            const idx = m.contactEntries.findIndex(e => e.id === entryId);
             if (idx < 0) return { result: { kind: expectedValue !== undefined ? 'deleted' : 'not_found' } };
             const original = m.contactEntries[idx];
             const updated = buildEntry(
@@ -397,17 +474,24 @@ export async function updateMemberContactEntry(
             }
             if (expectedValue !== undefined && hashEntryValue(original.type, expectedValue) !== cur) return { result: { kind: 'changed' } };
             const entries = m.contactEntries.map((e, i) => (i === idx ? updated : e));
-            return { members: members.map(x => (x.id === m.id ? { ...x, contactEntries: entries } : x)), result: { kind: 'updated', type: original.type } };
+            return { members: members.map(x => (x.id === m.id ? { ...x, contactEntries: entries } : x)), result: { kind: 'updated', entry: updated } };
         }, { op: 'updateMemberContactEntry', actor, entryId });
         if (out.status === 'missing') return { ok: false, error: 'Adopter not found' };
         if (out.status === 'busy') return busy(out.errorId);
         const res = out.result;
+        if (res.kind === 'forbidden') return forbidden('updateMemberContactEntry', { adopterId, actor, memberId: input.memberId, entryId });
         if (res.kind === 'member_not_found') return { ok: false, error: 'Member not found' };
         if (res.kind === 'not_found') return { ok: false, error: 'Entry not found' };
         if (res.kind === 'deleted' || res.kind === 'changed') return conflictOf(r.db, adopterId, entryId, res.kind, MEMBER_CONTACT_KEYS, { actor });
         if (res.kind !== 'updated') return { ok: true }; // noop
-        await insertHouseholdHistory(r.db, adopterId, actor, { household_contact_updated: { memberId: input.memberId, entryId, type: res.type } });
+        await insertHouseholdHistory(r.db, adopterId, actor, { household_contact_updated: { memberId: input.memberId, entryId, type: res.entry.type } }, r.privileged);
         logAudit({ userEmail: actor, action: 'household_contact_updated', target: adopterId, details: { memberId: input.memberId, entryId } });
+        // A contributor keeps seeing the value they just typed (the old grant names the old value).
+        if (!r.privileged && res.entry.type !== 'alias') {
+            await insertContributionGrant(r.db, adopterId, actor, res.entry).catch((e: unknown) => {
+                logger.error('updateMemberContactEntry: contribution grant not written', e, { adopterId, actor, memberId: input.memberId, entryId });
+            });
+        }
         return { ok: true };
     } catch (error) {
         const errorId = logger.error('updateMemberContactEntry failed', error, { adopterId, actor, entryId });
@@ -424,23 +508,26 @@ export async function removeMemberContactEntry(
     const entryId = String(input.entryId || '');
     const expectedValue = expectedText(input.expectedValue);
     try {
-        const r = await loadEditable(adopterId, actor);
+        const r = await loadHousehold(adopterId, actor);
         if (!r.ok) return r;
-        type Res = 'member_not_found' | 'not_found' | 'deleted' | 'changed' | 'removed';
+        type Res = 'forbidden' | 'member_not_found' | 'not_found' | 'deleted' | 'changed' | 'removed';
         const out = await mutateHousehold<Res>(r.db, adopterId, (members) => {
             const m = members.find(x => x.id === input.memberId);
+            const entry = m?.contactEntries.find(e => e.id === entryId);
+            // Decided on the stored entry, first: a contributor removes only what they added.
+            if (!r.privileged && !sameEmail(entry?.addedBy, actor)) return { result: 'forbidden' };
             if (!m) return { result: expectedValue !== undefined ? 'deleted' : 'member_not_found' };
-            const entry = m.contactEntries.find(e => e.id === entryId);
             if (!entry) return { result: expectedValue !== undefined ? 'deleted' : 'not_found' };
             if (expectedValue !== undefined && hashEntryValue(entry.type, expectedValue) !== hashEntryValue(entry.type, entry.value)) return { result: 'changed' };
             return { members: members.map(x => (x.id === m.id ? { ...x, contactEntries: x.contactEntries.filter(e => e.id !== entryId) } : x)), result: 'removed' };
         }, { op: 'removeMemberContactEntry', actor, entryId });
         if (out.status === 'missing') return { ok: false, error: 'Adopter not found' };
         if (out.status === 'busy') return busy(out.errorId);
+        if (out.result === 'forbidden') return forbidden('removeMemberContactEntry', { adopterId, actor, memberId: input.memberId, entryId });
         if (out.result === 'member_not_found') return { ok: false, error: 'Member not found' };
         if (out.result === 'not_found') return { ok: false, error: 'Entry not found' };
         if (out.result === 'deleted' || out.result === 'changed') return conflictOf(r.db, adopterId, entryId, out.result, MEMBER_CONTACT_KEYS, { actor });
-        await insertHouseholdHistory(r.db, adopterId, actor, { household_contact_removed: { memberId: input.memberId, entryId } });
+        await insertHouseholdHistory(r.db, adopterId, actor, { household_contact_removed: { memberId: input.memberId, entryId } }, r.privileged);
         logAudit({ userEmail: actor, action: 'household_contact_removed', target: adopterId, details: { memberId: input.memberId, entryId } });
         return { ok: true };
     } catch (error) {
@@ -449,18 +536,23 @@ export async function removeMemberContactEntry(
     }
 }
 
-/** History row for a household mutation (kind='edit'; never raw PII in changes). */
+/**
+ * History row for a household mutation (never raw PII in changes): kind='edit'
+ * for a privileged writer, kind='contribution' for anyone else — a 'edit' row
+ * would make them an editor, with full contact access (D54).
+ */
 async function insertHouseholdHistory(
     db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
     adopterId: string,
     actor: string,
     changes: Record<string, unknown>,
+    privileged: boolean,
 ): Promise<void> {
     await db.insert(adopterHistory).values({
         id: crypto.randomUUID(),
         adopterId,
         changedBy: actor,
-        kind: 'edit',
+        kind: privileged ? 'edit' : 'contribution',
         changes: JSON.stringify(changes),
         changedAt: new Date(),
     });

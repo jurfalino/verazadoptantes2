@@ -32,8 +32,15 @@ describe('fileAccessRequestFor', () => {
     });
 
     it('the contribution path passes the actor it already has, not a fresh lookup', () => {
-        const src = read('src/app/actions/addContactEntry.ts');
-        expect(src).toMatch(/fileAccessRequestFor\(actor,/);
-        expect(src).not.toMatch(/requestPiiAccess\(/);
+        // Shared by addContactEntry and the household actions (D54).
+        const helper = read('src/lib/contributionSideEffects.ts');
+        expect(helper).not.toMatch(/^\s*['"]use server['"]/m);
+        expect(helper).toMatch(/fileAccessRequestFor\(actor,/);
+        expect(helper).not.toMatch(/requestPiiAccess\(|getUser\(/);
+        for (const caller of ['src/app/actions/addContactEntry.ts', 'src/app/actions/householdMembers.ts']) {
+            const src = read(caller);
+            expect(src, caller).toMatch(/fileContributionAccessRequest\([^)]*actor, adopterId\)/);
+            expect(src, caller).not.toMatch(/requestPiiAccess\(/);
+        }
     });
 });

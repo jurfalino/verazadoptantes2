@@ -61,7 +61,8 @@ async function getAdopterImpl(id: string) {
             const maskOpts = await buildMaskOptions(adopter);
             const fullyVisible = visibility.nothingMasked || !!maskOpts.adopterIsPublic;
             if (!fullyVisible) {
-                const masked = maskAdopterContact(adopter, visibility, maskOpts);
+                // viewerEmail: household members this viewer added keep their name (D54).
+                const masked = maskAdopterContact(adopter, visibility, { ...maskOpts, viewerEmail: user });
                 adopter.contactInfo = masked.contactInfo;
                 adopter.contactEntries = masked.contactEntries;
                 adopter.addressInfo = masked.addressInfo;

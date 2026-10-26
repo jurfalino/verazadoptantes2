@@ -685,6 +685,12 @@ export interface MaskContactOptions {
      * contributor-added entries are exposed too).
      */
     adopterIsPublic?: boolean;
+    /**
+     * The viewer's email (D54). A household member whose `addedBy` is this viewer
+     * (case-insensitive) keeps its name unmasked for them — they typed it. Its
+     * contacts still go through entry grants like every other entry.
+     */
+    viewerEmail?: string;
 }
 
 export function maskContactEntries(
@@ -995,6 +1001,7 @@ export interface HouseholdMask {
  * partial-revealed and each contact entry masked exactly like the titular's;
  * the relationship stays visible (metadata, not PII). Privileged viewers or an
  * admin-public record pass through unmasked. See the household redesign spec.
+ * With `options.viewerEmail`, members that viewer added keep their name (D54).
  */
 export function maskHouseholdMembers(
     json: string | null | undefined,
@@ -1006,10 +1013,13 @@ export function maskHouseholdMembers(
         return { members, json: json ?? null, maskedFieldCount: 0 };
     }
     let maskedFieldCount = 0;
+    const viewer = options.viewerEmail?.trim().toLowerCase();
     const masked = members.map(m => {
         const { entries, maskedCount } = maskContactEntries(m.contactEntries, visibility, options);
         maskedFieldCount += maskedCount;
-        return { ...m, name: m.name ? partialRevealName(m.name) : m.name, contactEntries: entries };
+        // A member the viewer added keeps its name for them (D54).
+        const own = !!viewer && !!m.addedBy && m.addedBy.trim().toLowerCase() === viewer;
+        return { ...m, name: m.name && !own ? partialRevealName(m.name) : m.name, contactEntries: entries };
     });
     return { members: masked, json: serializeHouseholdMembers(masked), maskedFieldCount };
 }

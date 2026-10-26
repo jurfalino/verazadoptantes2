@@ -1,8 +1,8 @@
 'use server';
 
-import { and, eq, isNull } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
-import { adopters, adopterHistory, piiAccessGrants } from '@/db/schema';
+import { adopters, adopterHistory } from '@/db/schema';
 import { addContactEntrySchema } from './validation';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
@@ -17,12 +17,9 @@ import {
     type MessagingApp,
 } from '@/lib/contactEntries';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
-import { hashEntryValue, isRealActorEmail } from '@/lib/piiAccess';
-import { createNotification, resolveDisplayName } from './notifications';
-import { notificationContent } from '@/domain/notificationTemplates';
-import { getAdopterApprovers } from './piiAccess';
+import { isRealActorEmail } from '@/lib/piiAccess';
 import { runAfterResponse } from '@/lib/background';
-import { fileAccessRequestFor } from '@/lib/piiAccessRequest';
+import { insertContributionGrant, notifyApprovers, fileContributionAccessRequest } from '@/lib/contributionSideEffects';
 import { casAdopterLists } from '@/lib/adopterListCas';
 
 /**
@@ -46,6 +43,10 @@ import { casAdopterLists } from '@/lib/adopterListCas';
  * Idempotent: re-adding an entry already on the profile is a no-op for the
  * adopter row, but still ensures the grant exists so the actor sees what
  * they demonstrated knowledge of.
+ *
+ * The grant, the notice and the auto access request live in
+ * src/lib/contributionSideEffects.ts, shared with the household actions
+ * (D54: anyone can add a member, or a contact on a member, the same way).
  */
 /**
  * Status of the addContactEntry operation:
@@ -161,8 +162,11 @@ export async function addContactEntry(
             // These two ran as bare fire-and-forget calls and never completed once
             // in production (0 notifications, 0 access requests, 0 log lines, May →
             // 2026-09-19): the worker was gone before they finished.
-            await runAfterResponse('addContactEntry.notifyApprovers',
-                () => notifyApprovers(adopterId, target.name, actor, type), { adopterId, actor });
+            await runAfterResponse('addContactEntry.notifyApprovers', () => notifyApprovers({
+                op: 'addContactEntry', adopterId, actor, type: 'contact_entry_added',
+                build: (actorName) => ({ key: 'contact_entry_added', params: { actorName, entryType: type, ...(target.name ? { adopterName: target.name } : {}) } }),
+                metadata: { entryType: type },
+            }), { adopterId, actor });
             // v2.19.51: auto-fire a PII access request on the contributor's
             // behalf. Replaces the v2.19.50-deprecated "contributing earns
             // permanent privileged view" path. `requestPiiAccess` handles
@@ -171,16 +175,10 @@ export async function addContactEntry(
             // cooldown is respected — so we just call it. Runs after the
             // response: the contribution already succeeded, and the request
             // failing shouldn't undo the entry write.
-            await runAfterResponse('addContactEntry.autoAccessRequest', async () => {
-                // `actor` was resolved before the response; do not look the session up
-                // again out here (see src/lib/piiAccessRequest.ts).
-                const res = await fileAccessRequestFor(actor, adopterId, { justification: 'auto:contribution' });
-                if (res.status === 'error') {
-                    logger.warn('addContactEntry: auto access-request did not file', { adopterId, actor, error: res.error });
-                } else {
-                    logger.info('addContactEntry: auto access-request', { adopterId, actor, status: res.status });
-                }
-            }, { adopterId, actor });
+            // `actor` was resolved before the response; do not look the session up
+            // again out here (see src/lib/piiAccessRequest.ts).
+            await runAfterResponse('addContactEntry.autoAccessRequest',
+                () => fileContributionAccessRequest('addContactEntry', actor, adopterId), { adopterId, actor });
             logAudit({ userEmail: actor, action: 'contact_entry_added', target: adopterId, details: { type } });
         }
 
@@ -213,62 +211,4 @@ export async function addContactEntry(
         const errorId = logger.error('addContactEntry failed', error, { adopterId, actor });
         return { ok: false, error: `Failed (Error ID: ${errorId})` };
     }
-}
-
-async function insertContributionGrant(
-    db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
-    adopterId: string,
-    actor: string,
-    entry: ContactEntry,
-): Promise<boolean> {
-    const ref = hashEntryValue(entry.type, entry.value);
-    const existing = await db.select({ id: piiAccessGrants.id }).from(piiAccessGrants)
-        .where(and(
-            eq(piiAccessGrants.adopterId, adopterId),
-            eq(piiAccessGrants.granteeEmail, actor),
-            eq(piiAccessGrants.entryRef, ref),
-            isNull(piiAccessGrants.revokedAt),
-        )).get();
-    if (existing) return false;
-    await db.insert(piiAccessGrants).values({
-        id: crypto.randomUUID(),
-        adopterId,
-        granteeEmail: actor,
-        scope: 'entry',
-        entryRef: ref,
-        origin: 'contribution',
-        grantedByEmail: actor,
-        createdAt: new Date(),
-    });
-    return true;
-}
-
-async function notifyApprovers(
-    adopterId: string,
-    adopterName: string | null,
-    actor: string,
-    type: ContactEntry['type'],
-): Promise<void> {
-    const { owner, editors } = await getAdopterApprovers(adopterId);
-    const recipients = new Set<string>([...(owner ? [owner] : []), ...editors]);
-    recipients.delete(actor);
-    if (recipients.size === 0) {
-        // Own record, an import with no real owner, or the only approver acted.
-        logger.info('addContactEntry: approvers notified', { adopterId, actor, recipients: 0 });
-        return;
-    }
-    const actorName = await resolveDisplayName(actor);
-    const content = notificationContent({
-        key: 'contact_entry_added',
-        params: { actorName, entryType: type, ...(adopterName ? { adopterName } : {}) },
-    });
-    await Promise.all([...recipients].map(email => createNotification({
-        userId: email,
-        type: 'contact_entry_added',
-        ...content,
-        url: `/adopter/${adopterId}`,
-        icon: '+',
-        metadata: { adopterId, contributor: actor, entryType: type },
-    })));
-    logger.info('addContactEntry: approvers notified', { adopterId, actor, recipients: recipients.size });
 }
