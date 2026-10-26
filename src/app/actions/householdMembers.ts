@@ -30,6 +30,7 @@ import { itemAuthors } from '@/lib/collabAttribution';
 import { hashEntryValue } from '@/lib/piiAccess';
 import { recordHouseholdLink, deleteHouseholdLink, notifyHouseholdLinked } from '@/lib/householdLinks';
 import { runAfterResponse } from '@/lib/background';
+import { HOUSEHOLD_NOT_AUTHORIZED } from '@/domain/householdPermissions';
 import { insertContributionGrant, notifyApprovers, fileContributionAccessRequest } from '@/lib/contributionSideEffects';
 
 /**
@@ -106,7 +107,7 @@ function sameEmail(a: string | null | undefined, b: string | null | undefined): 
     return !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
-const NOT_AUTHORIZED = 'Not authorized to edit this household.';
+const NOT_AUTHORIZED = HOUSEHOLD_NOT_AUTHORIZED;
 /** Refuse a write the actor has no right to, logged with the operation's context. */
 function forbidden(op: string, ctx: Record<string, unknown>): Err {
     logger.warn(`${op}: not owner/admin/org-mate/contributor`, ctx);

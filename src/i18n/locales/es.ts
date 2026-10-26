@@ -477,6 +477,7 @@ export const es = {
     errors: {
         link_submission_failed: 'No se pudo vincular la solicitud. Volvé a intentar.',
         save_household_failed: 'No se pudo guardar el grupo familiar. Volvé a intentar.',
+        household_not_authorized: 'Solo podés cambiar lo que agregaste vos. Si era tuyo, alguien lo cambió mientras tanto: ya te mostramos cómo quedó.',
         dedup_already_resolved: 'Esta sugerencia ya fue resuelta. Actualizamos la lista.',
         dedup_not_found: 'Esta sugerencia ya no existe. Actualizamos la lista.',
         dedup_not_authorized: 'No tenés permiso para descartar este par.',
@@ -1026,6 +1027,7 @@ export const es = {
         hh_link_records_many: '{n} registros',
         hh_link_owner: 'Perfil cargado por {name}',
         hh_link_view_full: 'Ver perfil completo',
+        hh_link_adds_to: 'Se agrega al perfil de {name}',
         hh_link_more_contacts: '+{n} datos más en su perfil',
         hh_link_no_contacts: 'Sin datos de contacto',
         hh_link_locked_note: 'Algunos datos están protegidos. Podés pedir acceso desde su perfil.',

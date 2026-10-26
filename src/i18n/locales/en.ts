@@ -478,6 +478,7 @@ export const en = {
     errors: {
         link_submission_failed: "The submission couldn't be linked. Please try again.",
         save_household_failed: "The household couldn't be saved. Please try again.",
+        household_not_authorized: "You can only change what you added. If it was yours, someone changed it meanwhile — here's how it is now.",
         dedup_already_resolved: 'This suggestion was already resolved. The list has been refreshed.',
         dedup_not_found: 'This suggestion no longer exists. The list has been refreshed.',
         dedup_not_authorized: "You don't have permission to dismiss this pair.",
@@ -1019,6 +1020,7 @@ export const en = {
         hh_link_records_many: '{n} records',
         hh_link_owner: 'Profile added by {name}',
         hh_link_view_full: 'View full profile',
+        hh_link_adds_to: "Added to {name}'s profile",
         hh_link_more_contacts: '+{n} more details on their profile',
         hh_link_no_contacts: 'No contact details',
         hh_link_locked_note: 'Some details are protected. You can ask for access from their profile.',

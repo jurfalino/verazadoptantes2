@@ -145,6 +145,14 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     const canChangeProfilePhoto = !isNew && isAuthenticated
         && (isAdmin || isOrgMateOfOwner || (!!currentUser && currentUser === (initialData?.addedBy ?? '')));
 
+    // D54: who may change every household member and contact — owner ∨ admin ∨
+    // org-mate ∨ (gating on) moderator. Everyone else signed in changes only what
+    // they added (the `own` markers); the server applies the same rules.
+    const canEditAllHousehold = !isNew && isAuthenticated && (
+        isAdmin || isOrgMateOfOwner || isPrivileged
+        || (!!currentUser && !!initialData?.addedBy && currentUser.trim().toLowerCase() === initialData.addedBy.trim().toLowerCase())
+    );
+
     // Sliding window logic strictly memoized to avoid expensive sorting on every render
     const periodDays = adoptionConfig?.periodDays || 90;
     const threshold = adoptionConfig?.threshold || 5;
@@ -1523,12 +1531,15 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                 <HouseholdSection
                                     adopterId={adopterId}
                                     initialMembers={deserializeHouseholdMembers(initialData?.householdMembers)}
-                                    canEdit={canEdit}
+                                    // D54: anyone signed in adds; the owner's team, admins and
+                                    // moderators (isPrivileged, when gating is on) change everything.
+                                    canEditAll={canEditAllHousehold}
+                                    canAdd={!!isAuthenticated}
                                     hasLegacyText={hasLegacyFamilyText || linkedSummaries.livesWith.length > 0}
                                     linkedMembers={linkedSummaries.members}
                                     hostName={initialData?.name ?? ''}
                                 />
-                                {linkedSummaries.livesWith.length > 0 && <LivesWithSection rows={linkedSummaries.livesWith} personName={initialData?.name ?? ''} />}
+                                {linkedSummaries.livesWith.length > 0 && <LivesWithSection rows={linkedSummaries.livesWith} personName={initialData?.name ?? ''} canAddContact={!!isAuthenticated} />}
                                 {hasLegacyFamilyText && (
                                     <div>
                                         <p className="text-[11px] font-semibold text-stone-500 mb-1">{t('adopter.family_notes')}</p>

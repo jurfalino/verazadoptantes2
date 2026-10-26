@@ -7,7 +7,10 @@
  * household — rating and alerts first («★2 · 1 alerta»), then «3 adopciones ·
  * 5 registros», then the contacts exactly as the server masked them for this
  * viewer (a locked one shows the partial value with a padlock, as on the
- * profile), then «Ver perfil completo ↗» in a new tab.
+ * profile), then «Ver perfil completo ↗» in a new tab. A signed-in viewer
+ * adds a contact there (D55): it is saved on the LINKED profile through
+ * `addContactEntry` — stored once, same rules as on that profile — and the
+ * summary refreshes in place.
  *
  * `LivesWithSection`: the linked profile's «Convive con» rows (the host, the
  * same summary, «según {creator}»).
@@ -28,17 +31,50 @@ import { handledAsStale } from '@/lib/errorMessage';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import type { ContactEntryType } from '@/lib/contactEntries';
 import type { LinkedSummary, LivesWithRow } from '@/domain/householdLinks';
-import { reportNotLivingTogether } from '@/app/actions';
+import { reportNotLivingTogether, addContactEntry } from '@/app/actions';
+import { ContactComposer, draftPlatform, type ComposerDraft } from '@/components/ContactComposer';
 
 const ICON: Partial<Record<ContactEntryType, typeof Phone>> = { phone: Phone, email: Mail, social: AtSign, id: IdCard, address: MapPin };
 
 const fill = (s: string, vars: Record<string, string | number>) =>
     Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), s);
 
-export function LinkedProfileSummary({ summary, testId = 'linked-summary' }: { summary: LinkedSummary; testId?: string }) {
+export function LinkedProfileSummary({ summary, testId = 'linked-summary', canAddContact = false }: {
+    summary: LinkedSummary;
+    testId?: string;
+    /** Signed in: «Agregar dato de contacto» adds to this linked profile (D55). */
+    canAddContact?: boolean;
+}) {
     const { t } = useLanguage();
+    const toast = useShowToast();
+    const router = useRouter();
     const count = (n: number, one: string, many: string) => (n === 1 ? t(one) : fill(t(many), { n }));
     const anyLocked = summary.contacts.some(c => c.masked);
+
+    /** Saves on the linked profile; true closes the composer, false keeps what was typed. */
+    async function addToLinkedProfile(d: ComposerDraft): Promise<boolean> {
+        const platform = draftPlatform(d);
+        try {
+            const res = await addContactEntry({
+                adopterId: summary.profileId, type: d.type, value: d.value,
+                ...(platform ? { platform } : {}), ...(d.type === 'phone' && d.apps.length ? { apps: d.apps } : {}),
+            });
+            if (!res.ok) {
+                toast.error(t('errors.generic'), res.error === 'busy' ? t('collab.busy') : t('adopter.ce_add_error'),
+                    'errorId' in res ? res.errorId : resolveErrorId(new Error(`addContactEntry (linked): ${res.error}`), 'LinkedProfileSummary'));
+                return false;
+            }
+            // As on the profile itself (ContactEntriesSection): say when an access request was filed for them.
+            if (res.status === 'appended') toast.success('✓', t(res.autoRequestFiled ? 'adopter.ce_add_toast_added_with_request' : 'adopter.ce_add_toast_added'));
+            else if (res.status === 'unlocked_existing') toast.success('✓', t('adopter.ce_add_toast_unlocked'));
+            router.refresh();
+            return true;
+        } catch (e) {
+            toast.error(t('errors.generic'), t('adopter.ce_add_error'), resolveErrorId(e, 'LinkedProfileSummary'));
+            return false;
+        }
+    }
+
     return (
         <div
             className="mt-2.5 rounded-lg border border-stone-200 bg-white p-3 space-y-1.5 min-w-0"
@@ -89,6 +125,14 @@ export function LinkedProfileSummary({ summary, testId = 'linked-summary' }: { s
                 <div className="text-xs italic text-stone-500 pt-1">{t('adopter.hh_link_no_contacts')}</div>
             )}
             {anyLocked && <p className="text-xs text-stone-500">{t('adopter.hh_link_locked_note')}</p>}
+            {canAddContact && (
+                <ContactComposer
+                    onSubmit={addToLinkedProfile}
+                    note={fill(t('adopter.hh_link_adds_to'), { name: summary.name || t('adopter.nameless') })}
+                    triggerTestId="linked-add-contact"
+                    testIdPrefix="linked-contact"
+                />
+            )}
             <a
                 href={`/adopter/${encodeURIComponent(summary.profileId)}`}
                 target="_blank"
@@ -175,7 +219,7 @@ export function NotLivingTogetherButton({ linkId, personName, hostName, classNam
 }
 
 /** The linked profile's «Convive con» rows. `personName`: this profile's name, for the «No convive» dialog. */
-export function LivesWithSection({ rows, personName }: { rows: LivesWithRow[]; personName: string }) {
+export function LivesWithSection({ rows, personName, canAddContact = false }: { rows: LivesWithRow[]; personName: string; canAddContact?: boolean }) {
     const { t } = useLanguage();
     if (rows.length === 0) return null;
 
@@ -195,7 +239,7 @@ export function LivesWithSection({ rows, personName }: { rows: LivesWithRow[]; p
                             {row.creatorName && <div className="text-xs text-stone-500 break-words">{fill(t('adopter.hh_lives_with_by'), { name: row.creatorName })}</div>}
                         </div>
                     </div>
-                    <LinkedProfileSummary summary={row} testId="lives-with-summary" />
+                    <LinkedProfileSummary summary={row} testId="lives-with-summary" canAddContact={canAddContact} />
                     {row.canReportNotLiving && (
                         <NotLivingTogetherButton linkId={row.linkId} personName={personName} hostName={row.name} className="mt-2.5" />
                     )}
