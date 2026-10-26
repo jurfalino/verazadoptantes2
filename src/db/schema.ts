@@ -109,9 +109,12 @@ export const adopterHistory = sqliteTable("adopter_history", {
     changedBy: text("changed_by").default("anonymous"),
     changes: text("changes"), // JSON string of what changed
     changedAt: integer("changed_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
-    // 'edit' (owner/admin core-record write via saveAdopter / appendToExistingAdopter)
-    // | 'contribution' (any authenticated user via addContactEntry). Only 'edit'
-    // rows make the writer an "editor" for PII visibility purposes.
+    // 'edit' (a write by someone privileged on the profile: owner, org-mate,
+    // admin, moderator) | 'contribution' (anyone else: open paths such as
+    // addContactEntry, household adds, flags, activity records). Writers pick it
+    // with src/lib/profilePrivilege.ts. An 'edit' row alone grants nothing
+    // (loadApprovers re-checks privilege); old builds still trust it, so a
+    // non-privileged write must never default to 'edit'.
     kind: text("kind").notNull().default('edit'),
 });
 

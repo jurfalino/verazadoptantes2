@@ -29,11 +29,12 @@ import { notificationContent } from '@/domain/notificationTemplates';
  * The emails that may approve PII requests for an adopter (real users only):
  * the owner, always, plus `editors` — people who wrote a kind='edit' history
  * row on it AND are privileged on it right now (a teammate of the owner, an
- * admin or a moderator). Writing an 'edit' row alone grants nothing: many
- * paths open to any rescuer write one (flagging, logging an adoption, adding
- * images, merges), and an approver can approve anyone's request and revoke
- * grants. Contributors (kind='contribution') are never candidates. Callers
- * also use `editors` as "who to notify" — same people.
+ * admin or a moderator — isPrivilegedOnProfile). Writing an 'edit' row alone
+ * grants nothing: until the final fix wave paths open to any rescuer wrote one
+ * (flagging, logging an adoption, deleting images, merges) — they now write
+ * 'contribution' (src/lib/profilePrivilege.ts) — and an approver can approve
+ * anyone's request and revoke grants. Contributors (kind='contribution') are
+ * never candidates. Callers also use `editors` as "who to notify" — same people.
  */
 export async function loadApprovers(adopterId: string): Promise<{ owner: string | null; editors: string[]; all: string[] }> {
     const db = await getDb();
@@ -51,11 +52,10 @@ export async function loadApprovers(adopterId: string): Promise<{ owner: string 
         .filter(isRealActorEmail))]
         .filter(email => !owner || email.trim().toLowerCase() !== owner.trim().toLowerCase());
     // One check per candidate (D1: no IN (array)); a failed check drops that one, logged.
-    const [{ isOrgMate }, { isModeratorOrAdminAsync }] = await Promise.all([import('@/lib/orgMembership'), import('@/config/admins')]);
+    const { isPrivilegedOnProfile } = await import('@/lib/profilePrivilege');
     const verdicts = await Promise.all(candidates.map(async (email) => {
         try {
-            const [team, staff] = await Promise.all([owner ? isOrgMate(email, owner) : Promise.resolve(false), isModeratorOrAdminAsync(email)]);
-            return team || staff;
+            return await isPrivilegedOnProfile(email, owner);
         } catch (e) {
             logger.warn('loadApprovers: privilege check failed, editor not counted', { adopterId, editor: email, error: e instanceof Error ? e.message : String(e) });
             return false;

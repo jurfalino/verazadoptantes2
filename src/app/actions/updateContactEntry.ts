@@ -16,6 +16,7 @@ import {
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { hashEntryValue, isRealActorEmail } from '@/lib/piiAccess';
 import { isModeratorOrAdminAsync } from '@/config/admins';
+import { historyKind } from '@/lib/profilePrivilege';
 import { casAdopterLists } from '@/lib/adopterListCas';
 import { itemAuthors } from '@/lib/collabAttribution';
 import { insertContributionGrant } from '@/lib/contributionSideEffects';
@@ -182,7 +183,7 @@ export async function updateContactEntry(
             adopterId,
             changedBy: actor,
             // A contributor editing their own entry is not an editor (see header).
-            kind: isOwner || actorIsAdmin || actorIsOrgMate ? 'edit' : 'contribution',
+            kind: historyKind(isOwner || actorIsAdmin || actorIsOrgMate),
             changes: JSON.stringify({
                 updated_entry: { type: r.updated.type, id: entryId, previousValueHash: r.previousValueHash, newValueHash: r.newValueHash },
             }),

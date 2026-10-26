@@ -8,6 +8,7 @@ import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { processImageForStorage } from '@/lib/r2';
 import { animalPrimaryFirst } from '@/lib/showcase';
+import { historyKindFor } from '@/lib/profilePrivilege';
 
 /**
  * v2.26.2: changing an adopter's PROFILE PHOTO (setting an existing image as the
@@ -312,11 +313,13 @@ export async function deleteImage(imageId: string, adopterId: string) {
 
         await db.delete(adopterImages).where(eq(adopterImages.id, imageId));
 
-        // Log to history
+        // Log to history — the uploader on someone else's profile is a
+        // contributor there, not an editor (src/lib/profilePrivilege.ts).
         await db.insert(adopterHistory).values({
             id: crypto.randomUUID(),
             adopterId,
             changedBy,
+            kind: await historyKindFor(db, adopterId, changedBy),
             changes: JSON.stringify({
                 image_deleted: {
                     caption: existing.caption,

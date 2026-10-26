@@ -9,6 +9,7 @@ import { logAudit } from '@/lib/audit';
 import { getDb, getUser, checkIsAdminAsync } from './_db';
 import { flagAdopterSchema, dismissFlagSchema, removeVerificationSchema } from './validation';
 import { runAfterResponse } from '@/lib/background';
+import { historyKindFor } from '@/lib/profilePrivilege';
 
 export async function flagAdopter(adopterId: string, reason: string, details?: string, targetAdopterId?: string) {
     const parsed = flagAdopterSchema.safeParse({ adopterId, reason, details, targetAdopterId });
@@ -37,10 +38,13 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
         // with empty `changes` and the renderer rendered them as the
         // misleading "Metadata update" placeholder. The canonical shape across
         // every other writer is `changes: JSON.stringify({<event_key>: {...}})`.
+        // Flagging is open to anyone signed in: a stranger's flag is a
+        // contribution, never an 'edit' (src/lib/profilePrivilege.ts).
         await db.insert(adopterHistory).values({
             id: crypto.randomUUID(),
             adopterId,
             changedBy: flaggedBy,
+            kind: await historyKindFor(db, adopterId, flaggedBy),
             changes: JSON.stringify({ flag_added: { reason, details: details || null } }),
             changedAt: new Date()
         });
@@ -148,6 +152,8 @@ export async function removeVerification(adopterId: string, type: 'verified_iden
             id: crypto.randomUUID(),
             adopterId,
             changedBy: currentUser,
+            // The flagger removing their own verification is no editor of the profile.
+            kind: await historyKindFor(db, adopterId, currentUser),
             changes: JSON.stringify({ flag_removed: { reason: type, originalFlaggedBy: flag.flaggedBy || null } }),
             changedAt: new Date()
         });

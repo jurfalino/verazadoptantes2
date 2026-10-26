@@ -18,6 +18,7 @@ import { insertRecord, updateRecord, isActivePlacementConflict, deleteRecordById
 import { decideAnimalFate, NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
 import { closePendingSearchesForAdopter } from '@/lib/pendingSearchLog';
 import { animalPrimaryFirst } from '@/lib/showcase';
+import { historyKindFor } from '@/lib/profilePrivilege';
 
 export type RecordFieldConflict = { field: string; by: string; value: unknown };
 export type RecordSaveResult = { success: true; id: string; saved?: string[]; conflicts?: RecordFieldConflict[]; updatedByOthers?: RecordFieldConflict[] };
@@ -86,10 +87,14 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert, opts?: {
 
             // Log to adopter history ONLY if linked immediately
             if (data.adopterId) {
+                // Logging a record on a profile is open to anyone signed in: on
+                // someone else's profile it is a contribution (src/lib/profilePrivilege.ts).
+                const kind = await historyKindFor(db, data.adopterId, changedBy);
                 await db.insert(adopterHistory).values({
                     id: crypto.randomUUID(),
                     adopterId: data.adopterId,
                     changedBy,
+                    kind,
                     changes: JSON.stringify({
                         adoption_added: {
                             animalName: data.animalName,
@@ -126,6 +131,7 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert, opts?: {
                             id: crypto.randomUUID(),
                             adopterId: data.adopterId,
                             changedBy,
+                            kind,
                             changes: JSON.stringify({
                                 contactInfo: {
                                     from: added.result.from || '(empty)',
@@ -289,11 +295,13 @@ export async function deleteAdoption(adoptionId: string, adopterId: string, keep
             }
         }
 
-        // Log to adopter history
+        // Log to adopter history — the record's author on someone else's
+        // profile is a contributor there, not an editor.
         await db.insert(adopterHistory).values({
             id: crypto.randomUUID(),
             adopterId,
             changedBy,
+            kind: await historyKindFor(db, adopterId, changedBy),
             changes: JSON.stringify({
                 adoption_deleted: existing
             }),
@@ -538,6 +546,8 @@ async function updateRecordFields(
                 id: crypto.randomUUID(),
                 adopterId: targetAdopterId,
                 changedBy,
+                // Against the profile the row lands on (a re-link moves it).
+                kind: await historyKindFor(db, targetAdopterId, changedBy),
                 changes: JSON.stringify({ adoption_updated: changes }),
                 changedAt: new Date(),
             });

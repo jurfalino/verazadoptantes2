@@ -14,6 +14,7 @@ import {
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { hashEntryValue, isRealActorEmail } from '@/lib/piiAccess';
 import { isModeratorOrAdminAsync } from '@/config/admins';
+import { historyKind } from '@/lib/profilePrivilege';
 import { casAdopterLists } from '@/lib/adopterListCas';
 import { itemAuthors } from '@/lib/collabAttribution';
 import type { EntryConflict } from './updateContactEntry';
@@ -122,7 +123,7 @@ export async function removeContactEntry(
             adopterId,
             changedBy: actor,
             // A contributor removing their own entry is not an editor (see header).
-            kind: isOwner || actorIsAdmin || actorIsOrgMate ? 'edit' : 'contribution',
+            kind: historyKind(isOwner || actorIsAdmin || actorIsOrgMate),
             changes: JSON.stringify({ removed_entry: { type: removed.type, id: entryId } }),
             changedAt: new Date(),
         });

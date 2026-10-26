@@ -24,7 +24,7 @@ import {
 } from '@/lib/householdMembers';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { isRealActorEmail } from '@/lib/piiAccess';
-import { isModeratorOrAdminAsync } from '@/config/admins';
+import { isPrivilegedOnProfile, historyKind } from '@/lib/profilePrivilege';
 import { casAdopterLists } from '@/lib/adopterListCas';
 import { itemAuthors } from '@/lib/collabAttribution';
 import { hashEntryValue } from '@/lib/piiAccess';
@@ -91,14 +91,8 @@ async function loadHousehold(adopterId: string, actor: string): Promise<Loaded |
     const target = await db.select().from(adopters).where(eq(adopters.id, adopterId)).get();
     if (!target) return { ok: false, error: 'Adopter not found' };
     if (target.deletedAt) return { ok: false, error: 'Cannot edit a deleted adopter' };
-    // Case-insensitive: `added_by` keeps whatever case it was written with.
-    const isOwner = sameEmail(target.addedBy, actor);
-    // Moderators count, as in the visibility resolver (piiAccessServer.ts).
-    const [actorIsAdmin, actorIsOrgMate] = await Promise.all([
-        isModeratorOrAdminAsync(actor),
-        (await import('@/lib/orgMembership')).isOrgMate(actor, target.addedBy),
-    ]);
-    const privileged = isOwner || actorIsAdmin || actorIsOrgMate;
+    // Owner (case-insensitive) ∨ org-mate ∨ admin/moderator — the shared rule (src/lib/profilePrivilege.ts).
+    const privileged = await isPrivilegedOnProfile(actor, target.addedBy);
     return { ok: true, db, target, members: deserializeHouseholdMembers(target.householdMembers), privileged };
 }
 
@@ -416,7 +410,7 @@ export async function removeHouseholdMember(
         logAudit({ userEmail: actor, action: 'household_member_removed', target: adopterId, details: { memberId } });
         // Its link goes with it, and the linked profile's history says so (M7).
         // A leftover row is harmless (reads check the member still exists) but is logged.
-        await deleteHouseholdLink(r.db, { hostId: adopterId, hostName: r.target.name, memberId, actor, kind: r.privileged ? 'edit' : 'contribution' }).catch((e: unknown) => {
+        await deleteHouseholdLink(r.db, { hostId: adopterId, hostName: r.target.name, memberId, actor, kind: historyKind(r.privileged) }).catch((e: unknown) => {
             logger.warn('removeHouseholdMember: household link / linked history not written (link ignored on read)', { adopterId, actor, memberId, error: e instanceof Error ? e.message : String(e) });
         });
         return { ok: true };
@@ -589,7 +583,7 @@ async function insertHouseholdHistory(
         id: crypto.randomUUID(),
         adopterId,
         changedBy: actor,
-        kind: privileged ? 'edit' : 'contribution',
+        kind: historyKind(privileged),
         changes: JSON.stringify(changes),
         changedAt: new Date(),
     });

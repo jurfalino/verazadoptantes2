@@ -39,9 +39,9 @@ export async function reportNotLivingTogether(linkId: string): Promise<ReportRes
             return { success: false, error: 'not_found' };
         }
         // Privileged on the HOST too? (admin/moderator or its owner team) — else the host's history row is a contribution.
-        const { isModeratorOrAdminAsync } = await import('@/config/admins');
-        const [hostAdmin, hostTeam] = await Promise.all([isModeratorOrAdminAsync(actor), isOwnerOrOrgMate(actor, target.host.addedBy)]);
-        const out = await applyNotLivingTogether(db, target, actor, { hostKind: hostAdmin || hostTeam ? 'edit' : 'contribution' });
+        const { historyKindForOwner } = await import('@/lib/profilePrivilege');
+        const hostKind = await historyKindForOwner(actor, target.host.addedBy, { ...ctx, hostId: target.host.id });
+        const out = await applyNotLivingTogether(db, target, actor, { hostKind });
         if (out.busyErrorId) return { success: false, error: 'failed', errorId: out.busyErrorId };
         if (!out.removed) return { success: false, error: 'not_found' };
         logAudit({ userEmail: actor, action: 'household_not_living_together', target: target.linked.id, details: { linkId: id, hostId: target.host.id, memberId: target.link.memberId } });

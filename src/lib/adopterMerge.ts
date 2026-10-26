@@ -25,6 +25,7 @@ import { closeRequestsForAdopter } from '@/lib/mergeRequestClose';
 import { mergeSideParams } from '@/lib/mergeNotificationSides';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { rowsAffected } from '@/lib/interviews/rowsAffected';
+import { historyKindForOwner } from '@/lib/profilePrivilege';
 import { moveHouseholdLinksOnMerge, notifyDisputesAfterMerge, relinkRestoredHost, restoreHouseholdLinks, type MovedHouseholdLink, type MovedHouseholdLinkCorrection } from '@/lib/householdLinks';
 
 export interface MergeAdoptersResult {
@@ -394,13 +395,17 @@ export async function mergeAdopters(
         // 11b. The survivor's own history says it absorbed a profile (2026-10-19,
         // Jon): the audit log alone was invisible on the profile. Best-effort —
         // the merge already happened; a missing line must not fail it.
+        // A rescuer folding their own profile into someone else's (contract or
+        // form «same person», an answered merge request) is no editor of the
+        // survivor: 'contribution' unless privileged on it (src/lib/profilePrivilege.ts).
+        const mergeKind = await historyKindForOwner(actorEmail, primary.addedBy, { primaryId, secondaryId });
         await db.insert(adopterHistory).values({
             id: crypto.randomUUID(),
             adopterId: primaryId,
             changedBy: actorEmail,
             changes: JSON.stringify({ profiles_merged: { fromId: secondaryId, fromName: secondary.name, fromAddedBy: secondary.addedBy ?? null } }),
             changedAt: new Date(),
-            kind: 'edit',
+            kind: mergeKind,
         }).catch((e: unknown) => {
             logger.warn('mergeAdopters: history line not written', { primaryId, secondaryId, actor: actorEmail, error: e instanceof Error ? e.message : String(e) });
         });

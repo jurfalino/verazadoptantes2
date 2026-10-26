@@ -26,6 +26,7 @@ import { ApiError, recordProgress, type ApiCallContext } from './handler';
 import { profileUrl, recordUrl } from './profiles';
 import { importModeOn } from './keys';
 import { notificationContent } from '@/domain/notificationTemplates';
+import { historyKindFor } from '@/lib/profilePrivilege';
 import type { ProfileSummary, SavedActivity, SearchRequest } from './schemas';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -154,6 +155,8 @@ export async function saveApiActivity(
                 id: crypto.randomUUID(),
                 adopterId: profileId,
                 changedBy: `api:${key.name}`,
+                // An API caller is no editor of the profile (as api/contacts.ts).
+                kind: 'contribution',
                 changes: JSON.stringify({ record_added_via_api: { requestId: ctx.requestId, recordId, recordType: activityType, ...(best ? { attachedAsBestMatch: true } : {}) } }),
                 changedAt: new Date(),
             });
@@ -324,10 +327,14 @@ export async function voidApiRecord(db: Db, recordId: string, opts: { keyId: str
         // Decide BEFORE writing this void's own history row (an admin's would read as a human edit).
         const dropProfile = !!createdProfileId && currentProfileId === createdProfileId
             && !(await profileHasOtherData(db, createdProfileId, recordId));
+        // The rescuer voiding (Settings) may be a stranger to the profile the
+        // record sits on now: a contribution unless privileged there.
+        const voidKind = await historyKindFor(db, currentProfileId, opts.actor);
         await db.insert(adopterHistory).values({
             id: crypto.randomUUID(),
             adopterId: currentProfileId,
             changedBy: opts.actor,
+            kind: voidKind,
             changes: JSON.stringify({ api_record_voided: { recordId, originRequestId: origin.id, voidRequestId: opts.requestId, ...(contactsRemoved ? { contactsRemoved } : {}), ...(event ? { removedEvent: event } : {}) } }),
             changedAt: now,
         });
