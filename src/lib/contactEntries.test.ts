@@ -629,3 +629,13 @@ describe('address street/locality round-trip (regression: empty street)', () => 
         expect(deriveLocality(entry)).toBe('CABA');
     });
 });
+
+describe('own: a per-viewer view marker (D54)', () => {
+    const json = JSON.stringify([{ id: 'e1', type: 'phone', value: '+54 11 4444 1212', own: true }]);
+    it('is dropped on a plain read, so storage written from it never carries it', () => {
+        expect(deserializeContactEntries(json)[0]).not.toHaveProperty('own');
+    });
+    it('is kept only when reading a view payload', () => {
+        expect(deserializeContactEntries(json, { viewMarks: true })[0].own).toBe(true);
+    });
+});

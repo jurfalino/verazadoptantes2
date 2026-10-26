@@ -40,6 +40,25 @@ beforeEach(() => {
 
 const householdOf = (id: string) => JSON.parse((sqlite.prepare('SELECT household_members FROM adopters WHERE id = ?').get(id)!.household_members as string | null) || '[]');
 
+describe('view markers are never stored', () => {
+    it('POST /api/adopters drops own: true on contact entries, household members and their entries', async () => {
+        const res = await POST(new Request('http://localhost/api/adopters', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                name: 'Marca Plantada',
+                contactEntries: JSON.stringify([{ id: 'e1', type: 'email', value: 'plantada@example.org', own: true }]),
+                householdMembers: JSON.stringify([{ id: 'x', name: 'Ana', relationship: 'sibling', own: true, contactEntries: [{ id: 'c1', type: 'phone', value: '+54 11 4444 3434', own: true }] }]),
+            }),
+        }));
+        expect(res.status, JSON.stringify(await res.clone().json())).toBeLessThan(300);
+        const created = sqlite.prepare(`SELECT contact_entries, household_members FROM adopters WHERE name = 'Marca Plantada'`).get()!;
+        expect(created.contact_entries as string).toContain('plantada@example.org');
+        expect(created.household_members as string).toContain('+54 11 4444 3434');
+        expect(`${created.contact_entries}${created.household_members}`).not.toContain('"own"');
+    });
+});
+
 describe('profileId only through addHouseholdMember', () => {
     it('POST /api/adopters keeps the relative but drops a planted profileId', async () => {
         const res = await POST(new Request('http://localhost/api/adopters', {

@@ -110,8 +110,11 @@ export function deserializeHouseholdMembers(json: string | null | undefined): Ho
         const relationship: Relationship | null =
             typeof m.relationship === 'string' && REL_SET.has(m.relationship)
                 ? (m.relationship as Relationship) : null;
+        // View marks kept on read (the profile payload carries them); storage
+        // never keeps them — serializeHouseholdMembers drops them on write.
         const contactEntries = deserializeContactEntries(
             Array.isArray(m.contactEntries) ? JSON.stringify(m.contactEntries) : null,
+            { viewMarks: true },
         );
         if (!isMeaningfulMember({ name, relationship, contactEntries })) continue;
         const id = typeof m.id === 'string' && m.id.trim()

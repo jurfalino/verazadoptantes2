@@ -145,7 +145,8 @@ export interface ContactEntry {
      * Display-only (D54): the VIEWER added this entry — set by the masking
      * layer on the profile page (maskHouseholdMembers with `viewerEmail`) so
      * the UI can offer edit/remove without reading anyone's email. Never
-     * persisted (serializeHouseholdMembers drops it).
+     * persisted: deserializeContactEntries drops it unless `viewMarks`, and
+     * serializeHouseholdMembers drops it from storage.
      */
     own?: boolean;
     /**
@@ -571,7 +572,16 @@ const MAX_VALUE_LEN: Record<ContactEntryType, number> = {
  * Drops malformed and empty-value entries and bounds count + value/label
  * length — the single sanitization chokepoint for untrusted entry JSON.
  */
-export function deserializeContactEntries(json: string | null | undefined): ContactEntry[] {
+export function deserializeContactEntries(
+    json: string | null | undefined,
+    /**
+     * `viewMarks`: keep the per-viewer `own` marker — ONLY when reading a view
+     * payload (the household on the profile page). Every other read drops it,
+     * so nothing written back from a read (or from client input) can store it.
+     */
+    opts: { viewMarks?: boolean } = {},
+): ContactEntry[] {
+    const viewMarks = typeof opts === 'object' && opts !== null && opts.viewMarks === true;
     if (!json) return [];
     try {
         const parsed = JSON.parse(json);
@@ -602,7 +612,7 @@ export function deserializeContactEntries(json: string | null | undefined): Cont
                 ...social,
                 ...readPhoneApps(e),
                 ...(e.masked === true ? { masked: true } : {}),
-                ...(e.own === true ? { own: true } : {}),
+                ...(viewMarks && e.own === true ? { own: true } : {}),
                 // Per-entry contributor attribution (v2.16.0-9+). Length-capped
                 // defensively; undefined if absent (most pre-existing rows).
                 ...(typeof e.addedBy === 'string' && e.addedBy.trim()

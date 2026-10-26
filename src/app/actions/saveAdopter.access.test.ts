@@ -57,6 +57,17 @@ describe('saveAdopter — session and column whitelist', () => {
         expect(Number(r.created_at)).toBeGreaterThan(1_000_000);
     });
 
+    it('a client-sent own: true on a contact entry is never stored (it is a per-viewer view marker)', async () => {
+        const res = await saveAdopter({
+            name: 'Con Marca', status: '5',
+            contactEntries: JSON.stringify([{ id: 'e1', type: 'phone', value: '+54 11 4444 1212', own: true }]),
+        } as never);
+        if (!res.success) throw new Error('save failed');
+        const stored = row(res.id as string).contact_entries as string;
+        expect(stored).toContain('+54 11 4444 1212');
+        expect(stored).not.toContain('"own"');
+    });
+
     it('update by the owner: name / status / family change; addedBy, createdAt, deletedAt, isDemo, tokenHash do not', async () => {
         seedOwned('a1', OWNER);
         await saveAdopter({
