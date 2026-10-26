@@ -24,6 +24,7 @@ import { MERGED_FLAG_DETAILS_PREFIX } from '@/domain/dedupPair';
 import { closeRequestsForAdopter } from '@/lib/mergeRequestClose';
 import { mergeSideParams } from '@/lib/mergeNotificationSides';
 import { notificationContent } from '@/domain/notificationTemplates';
+import { rowsAffected } from '@/lib/interviews/rowsAffected';
 
 export interface MergeAdoptersResult {
     success: boolean;
@@ -54,6 +55,9 @@ export async function mergeAdopters(
     secondaryId: string,
     actorEmail: string,
 ): Promise<MergeAdoptersResult> {
+    // Set once this merge has claimed the pair (soft-deleted the secondary), until
+    // its audit row exists: a failure in between gives the secondary back.
+    let restoreSecondary: (() => Promise<void>) | null = null;
     try {
         if (!primaryId || !secondaryId || primaryId === secondaryId) {
             return { success: false, error: 'Invalid merge request' };
@@ -73,6 +77,32 @@ export async function mergeAdopters(
         if (primary.deletedAt || secondary.deletedAt) {
             return { success: false, error: 'Cannot merge already-deleted profiles' };
         }
+
+        // 0. Claim the pair before moving anything: ONE statement soft-deletes
+        // the secondary only while it AND the primary are still live. Two merges
+        // of the same pair at once (two answers to two requests, an admin and a
+        // rescuer, opposite survivors) can both pass the reads above; only one
+        // claim lands, the other moves nothing (`pair_changed`). This is the
+        // same soft-delete unmergeAdopters reverses.
+        const claim = await db.update(adopters).set({ deletedAt: new Date(), tokenHash: 'MERGED' }).where(and(
+            eq(adopters.id, secondaryId),
+            isNull(adopters.deletedAt),
+            sql`(SELECT p.deleted_at FROM adopters p WHERE p.id = ${primaryId}) IS NULL`,
+        )).run();
+        let claimed = rowsAffected(claim);
+        if (claimed === null) {
+            // The driver reported no count: re-read whether the pair is in the state our claim leaves.
+            const [p, s2] = await Promise.all([primaryId, secondaryId].map(id =>
+                db.select({ deletedAt: adopters.deletedAt, tokenHash: adopters.tokenHash }).from(adopters).where(eq(adopters.id, id)).get()));
+            claimed = !p?.deletedAt && !!s2?.deletedAt && s2.tokenHash === 'MERGED' ? 1 : 0;
+        }
+        if (claimed !== 1) {
+            logger.warn('mergeAdopters: pair changed before the claim, nothing moved', { primaryId, secondaryId, actor: actorEmail });
+            return { success: false, error: 'pair_changed' };
+        }
+        restoreSecondary = async () => {
+            await db.update(adopters).set({ deletedAt: null, tokenHash: secondary.tokenHash ?? null }).where(eq(adopters.id, secondaryId));
+        };
 
         const mergeDetails: Record<string, number> = {};
 
@@ -99,8 +129,8 @@ export async function mergeAdopters(
             annotatedFlags: [],
         };
 
-        // 6. (Runs first, so a merge that can't land its survivor write moves
-        // nothing.) Append text fields (preserve secondary data with separators).
+        // 6. (Runs first after the claim, so a merge that can't land its survivor
+        // write moves nothing — the failure path gives the secondary back.) Append text fields (preserve secondary data with separators).
         // Computed from the survivor as it is NOW and written with a
         // compare-and-swap (src/lib/adopterListCas.ts): a teammate's contact or
         // household edit landing mid-merge is merged in, never overwritten. The
@@ -250,11 +280,7 @@ export async function mergeAdopters(
         undo.formSubmissionIds = movedFormIds;
         mergeDetails.forms = movedFormIds.length;
 
-        // 7. Soft-delete secondary
-        await db.update(adopters).set({
-            deletedAt: new Date(),
-            tokenHash: 'MERGED',
-        }).where(eq(adopters.id, secondaryId));
+        // 7. The secondary was soft-deleted by the claim (step 0).
 
         // 8. Clean up tokens for secondary
         await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, secondaryId));
@@ -322,6 +348,8 @@ export async function mergeAdopters(
             }),
             createdAt: new Date(),
         });
+        // From here the merge stands (and undo can reverse it): no more giving back.
+        restoreSecondary = null;
 
         // 11b. The survivor's own history says it absorbed a profile (2026-10-19,
         // Jon): the audit log alone was invisible on the profile. Best-effort —
@@ -372,6 +400,15 @@ export async function mergeAdopters(
         };
     } catch (error) {
         const errorId = logger.error('mergeAdopters failed', error, { primaryId, secondaryId, actor: actorEmail });
+        if (restoreSecondary) {
+            // A failed merge leaves both profiles live (rows already re-pointed
+            // stay on the survivor, as before the claim moved first).
+            try {
+                await restoreSecondary();
+            } catch (e) {
+                logger.error('mergeAdopters: absorbed profile not restored after a failed merge', e, { primaryId, secondaryId, actor: actorEmail, errorId });
+            }
+        }
         return { success: false, error: `Merge failed (Error ID: ${errorId})` };
     }
 }

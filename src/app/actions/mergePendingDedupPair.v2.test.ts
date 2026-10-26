@@ -40,6 +40,10 @@ vi.mock('@/lib/adopterMerge', async (orig) => {
     const actual = await orig<typeof import('@/lib/adopterMerge')>();
     return { ...actual, mergeAdopters: vi.fn(actual.mergeAdopters) };
 });
+vi.mock('@/lib/adopterListCas', async (orig) => {
+    const actual = await orig<typeof import('@/lib/adopterListCas')>();
+    return { ...actual, casAdopterLists: vi.fn(actual.casAdopterLists) };
+});
 vi.mock('@/lib/logger', () => ({
     logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn(() => 'err12345') },
     generateErrorId: () => 'gen12345',
@@ -50,6 +54,7 @@ import { resolveMergeRequest } from './mergeRequests';
 import { answerMergeRequest, createMergeRequest } from '@/lib/mergeRequests';
 import { mergeAdopters } from '@/lib/adopterMerge';
 import { hashEntryValue } from '@/lib/piiAccess';
+import { casAdopterLists } from '@/lib/adopterListCas';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -243,9 +248,9 @@ describe('after «Rechazado» (D27, D43, D49)', () => {
         expect(notify.create.find(n => n.userId === OWNER)).toMatchObject({ url: expect.stringMatching(/^\/adopter\/theirs-new\?dispute=[\w-]+$/) });
     });
 
-    // KNOWN (task-1-report, «Race»): two answerable requests on one pair, opposite survivors —
-    // each claims only its own row, so both merge, in both directions. Flip to `it` once fixed.
-    it.fails('the decliner accepting and an admin approving the dispute at once: one merge, never both directions', async () => {
+    // Two answerable requests on one pair, opposite survivors: each claims only its own row,
+    // so mergeAdopters' pair claim is what lets exactly one of them merge.
+    it('the decliner accepting and an admin approving the dispute at once: one merge, never both directions', async () => {
         await mergePendingDedupPair('cand-a', { keepId: 'theirs-new' });
         const dispute = requests().find(r => r.dispute === 1)!.id as string;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the drizzle handle under test
@@ -255,6 +260,9 @@ describe('after «Rechazado» (D27, D43, D49)', () => {
             answerMergeRequest(db, dispute, ADMIN, 'accept'),
         ]);
         expect(results.filter(r => r.ok)).toHaveLength(1);
+        // The other is refused cleanly: its request closes, since the pair it asked about is gone.
+        expect(results.filter(r => !r.ok)).toEqual([{ ok: false, reason: 'profiles_changed' }]);
+        expect(mergeSpy).toHaveBeenCalledTimes(2);
         expect([deleted('mine-old'), deleted('theirs-new')].filter(Boolean)).toHaveLength(1);
         expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action = 'adopter_merge'`).get()!.n).toBe(1);
     });
@@ -275,11 +283,10 @@ describe('after «Rechazado» (D27, D43, D49)', () => {
     });
 });
 
-describe('two answerable requests on one pair (pre-dates D49)', () => {
-    // KNOWN (task-1-report, «Race»): the same hole without any dispute. OWNER declines, then
-    // asks the other way round; OWNER accepting the old request and STRANGER accepting the
-    // new one at once merge in both directions. Flip to `it` once fixed.
-    it.fails('the decliner accepting their declined request and the requester accepting the reverse request at once: one merge', async () => {
+describe('one merge per pair at a time (mergeAdopters claims the pair)', () => {
+    // The same race without any dispute: OWNER declines, then asks the other way round;
+    // OWNER accepting the old request and STRANGER accepting the new one at once.
+    it('the decliner accepting their declined request and the requester accepting the reverse request at once: one merge', async () => {
         await mergePendingDedupPair('cand-a', { keepId: 'mine-old' });
         const declined = requests()[0].id as string;
         expect(await as(OWNER, () => resolveMergeRequest(declined, 'decline'))).toEqual({ success: true });
@@ -292,7 +299,32 @@ describe('two answerable requests on one pair (pre-dates D49)', () => {
             answerMergeRequest(db, reverse, STRANGER, 'accept'),
         ]);
         expect(results.filter(r => r.ok)).toHaveLength(1);
+        expect(results.filter(r => !r.ok)).toEqual([{ ok: false, reason: 'profiles_changed' }]);
         expect([deleted('mine-old'), deleted('theirs-new')].filter(Boolean)).toHaveLength(1);
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action = 'adopter_merge'`).get()!.n).toBe(1);
+    });
+
+    it('two direct merges of one pair in opposite directions: the second claim moves nothing (pair_changed)', async () => {
+        const results = await Promise.all([
+            mergeAdopters('mine-old', 'theirs-new', ADMIN),
+            mergeAdopters('theirs-new', 'mine-old', ADMIN),
+        ]);
+        expect(results.filter(r => r.success)).toHaveLength(1);
+        expect(results.filter(r => !r.success)).toEqual([{ success: false, error: 'pair_changed' }]);
+        expect([deleted('mine-old'), deleted('theirs-new')].filter(Boolean)).toHaveLength(1);
+    });
+
+    it('a merge that fails after claiming the pair gives the absorbed profile back: both stay live, nothing recorded', async () => {
+        vi.mocked(casAdopterLists).mockResolvedValueOnce({ status: 'busy', errorId: 'busy1234' } as Awaited<ReturnType<typeof casAdopterLists>>);
+        const before = sqlite.prepare(`SELECT token_hash FROM adopters WHERE id = 'theirs-new'`).get()!.token_hash;
+        const res = await mergeAdopters('mine-old', 'theirs-new', ADMIN);
+        expect(res).toMatchObject({ success: false, error: expect.stringMatching(/^Merge failed/) });
+        expect(deleted('mine-old') || deleted('theirs-new')).toBe(false);
+        expect(sqlite.prepare(`SELECT token_hash FROM adopters WHERE id = 'theirs-new'`).get()!.token_hash).toBe(before);
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action = 'adopter_merge'`).get()!.n).toBe(0);
+        // …and the pair can still be merged afterwards.
+        expect(await mergeAdopters('mine-old', 'theirs-new', ADMIN)).toMatchObject({ success: true });
+        expect(deleted('theirs-new')).toBe(true);
     });
 });
 
