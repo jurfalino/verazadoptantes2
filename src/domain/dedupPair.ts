@@ -320,12 +320,19 @@ export function decideMergeDisputeRaise(input: {
     viewerOnAbsorbedTeam: boolean;
     soloMerge: boolean;
     undone: boolean;
+    /**
+     * The survivor was itself merged away (or removed) since: undoing this
+     * merge alone is no longer possible, so a dispute would only be closed as
+     * moot (answerMergeDispute). Refused up front instead.
+     */
+    superseded: boolean;
     /** An admin already resolved a dispute on this merge (kept). */
     decided: boolean;
-}): { ok: true } | { ok: false; reason: 'not_found' | 'already_undone' | 'already_decided' } {
+}): { ok: true } | { ok: false; reason: 'not_found' | 'already_undone' | 'superseded' | 'already_decided' } {
     const eligible = !input.viewerIsActor && !input.soloMerge && (input.viewerOnSurvivorTeam || input.viewerOnAbsorbedTeam);
     if (!eligible) return { ok: false, reason: 'not_found' };
     if (input.undone) return { ok: false, reason: 'already_undone' };
+    if (input.superseded) return { ok: false, reason: 'superseded' };
     if (input.decided) return { ok: false, reason: 'already_decided' };
     return { ok: true };
 }

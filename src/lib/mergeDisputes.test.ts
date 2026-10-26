@@ -142,6 +142,15 @@ describe('raiseMergeDispute (D50)', () => {
         expect(notify.admins).toEqual([]);
     });
 
+    it('(M1) superseded before anyone raised it: refused up front with a clear reason, no dispute row, no admin notice', async () => {
+        const auditId = await ownerMergesIntoMine();
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 5000 WHERE id = 'mine-old'`).run();
+        expect(await getMergeDisputeOption(auditId)).toEqual({ canRaise: false, status: 'none' });
+        expect(await raiseMergeDispute(auditId)).toMatchObject({ success: false, error: 'superseded', errorId: 'gen12345' });
+        expect(disputes()).toEqual([]);
+        expect(notify.admins).toEqual([]);
+    });
+
     it('a solo merge (both profiles in the merging team): no one to dispute it', async () => {
         expect(await as(OWNER, () => mergePendingDedupPair('cand-team'))).toEqual({ success: true, outcome: 'merged' });
         const auditId = sqlite.prepare(`SELECT id FROM audit_log WHERE action = 'adopter_merge' AND target = 'team-old'`).get()!.id as string;
@@ -247,7 +256,7 @@ describe('resolveMergeDispute (D50)', () => {
         expect(await as(ADMIN, () => resolveMergeDispute(disputeId, 'undo'))).toEqual({ success: true, status: 'closed' });
         expect(unmergeSpy).not.toHaveBeenCalled();
         expect(notify.create).toEqual([]);
-        expect(await raiseMergeDispute(auditId)).toMatchObject({ success: false, error: 'already_decided' });
+        expect(await raiseMergeDispute(auditId)).toMatchObject({ success: false, error: 'superseded' });
     });
 
     it('after the admin undid it, the merging rescuer re-flags the pair: keeping the other profile is a dispute, never a merge', async () => {

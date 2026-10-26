@@ -381,7 +381,7 @@ describe('pairChoices — the «¿Cuál se conserva?» switch, for the row and t
 });
 
 describe('decideMergeDisputeRaise (D50)', () => {
-    const base = { viewerIsActor: false, viewerOnSurvivorTeam: true, viewerOnAbsorbedTeam: false, soloMerge: false, undone: false, decided: false };
+    const base = { viewerIsActor: false, viewerOnSurvivorTeam: true, viewerOnAbsorbedTeam: false, soloMerge: false, undone: false, superseded: false, decided: false };
 
     it("the kept profile's owner team may ask the admins; so may the absorbed profile's", () => {
         expect(decideMergeDisputeRaise(base)).toEqual({ ok: true });
@@ -399,6 +399,13 @@ describe('decideMergeDisputeRaise (D50)', () => {
         expect(decideMergeDisputeRaise({ ...base, decided: true })).toEqual({ ok: false, reason: 'already_decided' });
         // …but a stranger still learns nothing.
         expect(decideMergeDisputeRaise({ ...base, viewerOnSurvivorTeam: false, undone: true })).toEqual({ ok: false, reason: 'not_found' });
+    });
+
+    it('superseded (the kept profile was merged away since): refused up front, not accepted and closed as moot later', () => {
+        expect(decideMergeDisputeRaise({ ...base, superseded: true })).toEqual({ ok: false, reason: 'superseded' });
+        expect(decideMergeDisputeRaise({ ...base, superseded: true, decided: true })).toEqual({ ok: false, reason: 'superseded' });
+        expect(decideMergeDisputeRaise({ ...base, superseded: true, undone: true })).toEqual({ ok: false, reason: 'already_undone' });
+        expect(decideMergeDisputeRaise({ ...base, viewerOnSurvivorTeam: false, superseded: true })).toEqual({ ok: false, reason: 'not_found' });
     });
 });
 

@@ -908,6 +908,7 @@ export const es = {
         merge_dispute_sent: 'Le avisamos a un administrador. Te vamos a contar qué decide.',
         merge_dispute_open: 'Un administrador está revisando esta combinación.',
         merge_dispute_already_undone: 'Esta combinación ya se deshizo.',
+        merge_dispute_superseded: 'Este perfil se combinó después con otro, así que esta combinación ya no se puede revisar por separado.',
         merge_dispute_already_decided: 'Un administrador ya revisó esta combinación.',
         merge_dispute_failed: 'No pudimos avisar a un administrador. Volvé a intentar.',
         dup_search_failed: 'No pudimos buscar duplicados ahora',

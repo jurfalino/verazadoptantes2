@@ -136,6 +136,7 @@ async function raiseDecision(db: Db, merge: MergeFacts, viewer: string) {
         viewerOnAbsorbedTeam,
         soloMerge: actorTeamOwnsAll,
         undone: merge.undone || existing?.status === 'undone',
+        superseded: merge.survivorGone,
         decided: existing?.status === 'kept' || existing?.status === 'closed',
     });
     return { decision, existing };
@@ -158,7 +159,7 @@ export async function mergeDisputeOption(db: Db, auditId: string, viewer: string
  */
 export async function fileMergeDispute(db: Db, auditId: string, actor: string): Promise<
     | { ok: true; disputeId: string; created: boolean }
-    | { ok: false; reason: 'not_found' | 'already_undone' | 'already_decided' }
+    | { ok: false; reason: 'not_found' | 'already_undone' | 'superseded' | 'already_decided' }
 > {
     const merge = await loadMerge(db, auditId);
     if (!merge) return { ok: false, reason: 'not_found' };

@@ -155,9 +155,10 @@ export async function attachContractToExistingAdopter(
                     type: 'contract_attached',
                     ...notificationContent({
                         key: 'contract_attached',
-                        params: { actorName, profileName: match.name, ...(animalName ? { animalName } : {}) },
+                        params: { actorName, profileName: match.name, ...(animalName ? { animalName } : {}), ...(mergeResult.auditId ? { disputable: '1' } : {}) },
                     }),
-                    url: `/adopter/${matchAdopterId}`,
+                    // The attach folded the rescuer's profile into this one: «¿No es la misma persona?» opens from here (D50).
+                    url: mergeResult.auditId ? `/adopter/${matchAdopterId}?dispute=${encodeURIComponent(mergeResult.auditId)}` : `/adopter/${matchAdopterId}`,
                     icon: '📝',
                     // Another rescuer's bell: the actor by name, never by email.
                     metadata: {
@@ -165,6 +166,7 @@ export async function attachContractToExistingAdopter(
                         sourceNotificationId: notificationId,
                         animalId,
                         animalName,
+                        auditId: mergeResult.auditId ?? null,
                     },
                 });
             }

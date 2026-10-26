@@ -41,8 +41,9 @@ export interface NotificationTemplateParams {
     deletion_request: { requesterName: string };
     /** `reason` is the FLAG_REASONS code (admins read it as is today). */
     adopter_flagged: { reporterName: string; reason: string };
-    contract_attached: { actorName: string; profileName: string; animalName?: string };
-    form_attached: { actorName: string; profileName: string };
+    /** `disputable`: '1' when attaching folded another profile in and the notice links to «¿No es la misma persona?» (D50). */
+    contract_attached: { actorName: string; profileName: string; animalName?: string; disputable?: string };
+    form_attached: { actorName: string; profileName: string; disputable?: string };
     form_submission_owner: { submitterName: string; animalName?: string; matchCount: string };
     form_submission_teammate: { submitterName: string; animalName?: string; matchCount: string; sharedByName: string };
     contract_result_matches: { adopterName: string; animalName?: string; matchCount: string };
@@ -263,22 +264,22 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
         required: ['actorName', 'profileName'],
         es: p => ({
             title: `${p.actorName} adjuntó un contrato a tu perfil ${p.profileName}`,
-            body: p.animalName ? `Adopción de ${p.animalName} atribuida a este perfil. Tocá para revisar.` : 'Tocá para revisar.',
+            body: (p.animalName ? `Adopción de ${p.animalName} atribuida a este perfil. Tocá para revisar.` : 'Tocá para revisar.') + disputeHint(p, 'es'),
         }),
         en: p => ({
             title: `${p.actorName} attached a contract to your profile ${p.profileName}`,
-            body: p.animalName ? `Adoption of ${p.animalName} credited to this profile. Tap to review.` : 'Tap to review.',
+            body: (p.animalName ? `Adoption of ${p.animalName} credited to this profile. Tap to review.` : 'Tap to review.') + disputeHint(p, 'en'),
         }),
         pt: p => ({
             title: `${p.actorName} anexou um contrato ao seu perfil ${p.profileName}`,
-            body: p.animalName ? `Adoção de ${p.animalName} atribuída a este perfil. Toque para revisar.` : 'Toque para revisar.',
+            body: (p.animalName ? `Adoção de ${p.animalName} atribuída a este perfil. Toque para revisar.` : 'Toque para revisar.') + disputeHint(p, 'pt'),
         }),
     },
     form_attached: {
         required: ['actorName', 'profileName'],
-        es: p => ({ title: `${p.actorName} vinculó una solicitud de adopción a tu perfil ${p.profileName}`, body: 'Tocá para revisar.' }),
-        en: p => ({ title: `${p.actorName} linked an adoption request to your profile ${p.profileName}`, body: 'Tap to review.' }),
-        pt: p => ({ title: `${p.actorName} vinculou uma solicitação de adoção ao seu perfil ${p.profileName}`, body: 'Toque para revisar.' }),
+        es: p => ({ title: `${p.actorName} vinculó una solicitud de adopción a tu perfil ${p.profileName}`, body: `Tocá para revisar.${disputeHint(p, 'es')}` }),
+        en: p => ({ title: `${p.actorName} linked an adoption request to your profile ${p.profileName}`, body: `Tap to review.${disputeHint(p, 'en')}` }),
+        pt: p => ({ title: `${p.actorName} vinculou uma solicitação de adoção ao seu perfil ${p.profileName}`, body: `Toque para revisar.${disputeHint(p, 'pt')}` }),
     },
     form_submission_owner: {
         required: ['submitterName', 'matchCount'],

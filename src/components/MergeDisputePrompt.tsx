@@ -22,6 +22,7 @@ type State = 'loading' | 'hidden' | 'can_raise' | 'open' | 'sent';
 /** Refusals that mean the prompt is out of date: say what is true now and hide the button. */
 const REFUSALS: Record<string, string> = {
     already_undone: 'adopter.merge_dispute_already_undone',
+    superseded: 'adopter.merge_dispute_superseded',
     already_decided: 'adopter.merge_dispute_already_decided',
 };
 

@@ -46,11 +46,17 @@ import { attachContractToExistingAdopter } from './duplicates';
 import { linkFormToExistingAdopter } from './formSubmission';
 import { mergeAdopters } from '@/lib/adopterMerge';
 import { createNotification } from './notifications';
+import { raiseMergeDispute } from './mergeDisputes';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
 const mergeSpy = vi.mocked(mergeAdopters);
 const deleted = (id: string) => sqlite.prepare('SELECT deleted_at FROM adopters WHERE id = ?').get(id)!.deleted_at !== null;
+const as = async <T>(user: string | null, fn: () => Promise<T>): Promise<T> => {
+    const before = session.user;
+    session.user = user;
+    try { return await fn(); } finally { session.user = before; }
+};
 const request = (status: string, requester: string) => sqlite.prepare(`INSERT INTO merge_requests (id, primary_id, secondary_id, requester_email, owner_email, status, created_at)
     VALUES (?, 's-orphan', 'o-match', ?, ?, ?, 1)`).run(`r-${status}`, requester, OWNER, status);
 
@@ -140,5 +146,42 @@ describe('attach notices never carry the actor\'s email', () => {
         expect(notice?.userId).toBe(OWNER);
         expect(notice?.metadata).toMatchObject({ attachedByName: 'stranger' });
         expect(JSON.stringify(notice?.metadata)).not.toContain('@');
+    });
+});
+
+/**
+ * Final review I2: a contract or a form linked to another rescuer's profile
+ * FOLDS the actor's new profile into it — an immediate merge into someone
+ * else's profile. Its notice leads to «¿No es la misma persona?» (D50) like
+ * every other such merge, and the owner can actually raise it.
+ */
+describe('fold notices lead to the merge dispute (I2)', () => {
+    type Notice = { type: string; userId: string; url: string; body: string; metadata?: Record<string, unknown> };
+    const noticeOf = (type: string) => vi.mocked(createNotification).mock.calls.map(c => c[0] as unknown as Notice).find(n => n.type === type)!;
+    const mergeAudit = () => sqlite.prepare(`SELECT id FROM audit_log WHERE action = 'adopter_merge' AND target = 'o-match'`).get()!.id as string;
+    const disputes = () => sqlite.prepare('SELECT audit_id, raised_by, status FROM merge_disputes').all();
+
+    it.each([
+        ['contract_attached', () => attachContractToExistingAdopter('n-contract', 'o-match')],
+        ['form_attached', () => linkFormToExistingAdopter('sub-1', 'o-match')],
+    ] as const)('%s: the url carries ?dispute=<auditId>, the body says how; OWNER raises it', async (type, fold) => {
+        expect(await fold()).toMatchObject({ success: true });
+        const auditId = mergeAudit();
+        const notice = noticeOf(type);
+        expect(notice).toMatchObject({ userId: OWNER, url: `/adopter/o-match?dispute=${auditId}`, metadata: expect.objectContaining({ auditId }) });
+        expect(notice.body).toMatch(/Avisale a un administrador desde el perfil\.$/);
+        expect(await as(OWNER, () => raiseMergeDispute(auditId))).toEqual({ success: true });
+        expect(disputes()).toEqual([{ audit_id: auditId, raised_by: OWNER, status: 'open' }]);
+        // The rescuer who folded it in is not the one who disputes it.
+        expect(await raiseMergeDispute(auditId)).toMatchObject({ success: false, error: 'not_found' });
+    });
+
+    it('a form linked without a merge (no profile of its own to fold): no dispute link', async () => {
+        sqlite.prepare(`UPDATE form_submissions SET linked_adopter_id = NULL, auto_adopter_id = NULL WHERE id = 'sub-1'`).run();
+        expect(await linkFormToExistingAdopter('sub-1', 'o-match')).toMatchObject({ success: true });
+        expect(mergeSpy).not.toHaveBeenCalled();
+        const notice = noticeOf('form_attached');
+        expect(notice.url).toBe('/adopter/o-match');
+        expect(notice.body).not.toContain('administrador');
     });
 });

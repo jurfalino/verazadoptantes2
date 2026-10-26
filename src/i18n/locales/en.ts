@@ -901,6 +901,7 @@ export const en = {
         merge_dispute_sent: 'We let an administrator know. We’ll tell you what they decide.',
         merge_dispute_open: 'An administrator is reviewing this merge.',
         merge_dispute_already_undone: 'This merge was already undone.',
+        merge_dispute_superseded: 'This profile was later merged into another, so this merge can no longer be reviewed on its own.',
         merge_dispute_already_decided: 'An administrator already reviewed this merge.',
         merge_dispute_failed: 'We couldn’t reach an administrator. Please try again.',
         dup_search_failed: "We couldn't check for duplicates right now",

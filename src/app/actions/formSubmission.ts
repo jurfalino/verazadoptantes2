@@ -249,6 +249,8 @@ export async function linkFormToExistingAdopter(
     // Set once the claim below is held, so a throw can release it — otherwise
     // the form would answer every retry with 'busy'.
     let releaseClaim: (() => Promise<unknown>) | null = null;
+    // The merge's audit id when linking folded the form's profile in (the owner's notice links to a dispute).
+    let mergeAuditId: string | undefined;
     try {
         if (!submissionId?.trim() || !adopterId?.trim()) return { success: false, error: 'Missing submissionId or adopterId' };
         const db = await getDb();
@@ -349,6 +351,7 @@ export async function linkFormToExistingAdopter(
             // undone merge never leaves this request on the wrong person.
             await addFormRequestRecord(db, submissionId, plan.orphanId, actorEmail);
             const merged = await mergeAdopters(adopterId, plan.orphanId, actorEmail);
+            mergeAuditId = merged.auditId;
             if (!merged.success) {
                 await releaseClaim?.();
                 const errorId = logger.error('linkFormToExistingAdopter: merge failed', new Error(merged.error ?? 'merge failed'), {
@@ -386,7 +389,7 @@ export async function linkFormToExistingAdopter(
                 });
             }
 
-            await notifyProfileCreator(target, adopterId, submissionId, actorEmail);
+            await notifyProfileCreator(target, adopterId, submissionId, actorEmail, mergeAuditId);
         }
 
         // 'link' writes the request here; after a merge it already arrived with
@@ -421,6 +424,8 @@ async function notifyProfileCreator(
     adopterId: string,
     submissionId: string,
     actorEmail: string,
+    /** Set when linking folded the form's own profile into this one (a merge the owner may dispute, D50). */
+    mergeAuditId?: string,
 ): Promise<void> {
     if (!target?.addedBy || target.addedBy === actorEmail || isAdmin(target.addedBy)) return;
     try {
@@ -431,11 +436,12 @@ async function notifyProfileCreator(
         await createNotification({
             userId: target.addedBy,
             type: 'form_attached',
-            ...notificationContent({ key: 'form_attached', params: { actorName, profileName: target.name } }),
-            url: `/adopter/${adopterId}`,
+            ...notificationContent({ key: 'form_attached', params: { actorName, profileName: target.name, ...(mergeAuditId ? { disputable: '1' } : {}) } }),
+            // «¿No es la misma persona?» opens from here when the link was a merge (D50).
+            url: mergeAuditId ? `/adopter/${adopterId}?dispute=${encodeURIComponent(mergeAuditId)}` : `/adopter/${adopterId}`,
             icon: '📋',
             // Another rescuer's bell: the actor by name, never by email.
-            metadata: { attachedByName: actorName, submissionId },
+            metadata: { attachedByName: actorName, submissionId, auditId: mergeAuditId ?? null },
         });
     } catch (e) {
         logger.warn('notifyProfileCreator: notification failed (non-blocking)', {
