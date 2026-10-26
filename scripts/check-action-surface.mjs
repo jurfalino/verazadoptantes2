@@ -233,7 +233,18 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // distinct ids, ≤ 200 chars) and the only write is the caller's own pending_pair_hidden row —
 // a stranger's key can only hide rows from their own list. Refusals logged with an errorId.
 // 162 = 161 + 1.
-const EXPECTED_ACTIONS = 162;
+// 163 since the linked convivientes (spec 2026-10-25 pendientes D, D47): +1 =
+// hideHouseholdLink(linkId) (src/app/actions/householdLinks.ts, «Quitar de mi perfil»).
+// MEASURED (npm run build: 163). What a stranger can do with arguments they choose: it takes
+// only a link id (capped at 200 chars); getUser() first (no session → not_authenticated); the
+// only write sets hidden_at/hidden_by on that one household_links row, and only when the
+// session is the LINKED profile's owner, a teammate of theirs, or an admin — anyone else gets
+// `not_found`, the same answer as a guessed id, so it cannot probe which links exist. It never
+// edits the host's household data and returns no profile data or emails. The summaries it
+// sits beside are read by src/lib/householdLinks.ts getLinkedSummaries, a plain server
+// module called by the profile page — deliberately NOT an endpoint.
+// 163 = 162 + 1.
+const EXPECTED_ACTIONS = 163;
 
 let manifest;
 try {

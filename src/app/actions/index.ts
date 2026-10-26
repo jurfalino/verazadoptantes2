@@ -47,6 +47,7 @@ export { runAdminQuery, deleteAdopter, resolveDataRequest, listDeletedAdopters, 
 // Duplicates
 export { getDuplicateCandidates, checkTokenDuplicates, countAdoptersBySocialHandle } from './duplicates';
 export { addHouseholdMember, updateHouseholdMember, removeHouseholdMember, addMemberContactEntry, updateMemberContactEntry, removeMemberContactEntry } from './householdMembers';
+export { hideHouseholdLink } from './householdLinks';
 export type { DuplicateCandidate, TokenMatchResult } from './duplicates';
 export { flagAdopterAsDuplicate } from './flagAdopterAsDuplicate';
 

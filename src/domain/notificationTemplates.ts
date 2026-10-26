@@ -64,6 +64,10 @@ export interface NotificationTemplateParams {
     adopter_merged_by_rescuer: { actorName: string } & MergeSides;
     adopter_merged_by_admin: MergeSides;
     pair_message: { fromName: string; profileName?: string; message: string };
+    /** D45: someone recorded that the reader's profile `linkedName` lives with `hostName`. */
+    household_linked: { actorName: string; hostName?: string; linkedName?: string };
+    /** D47: the linked profile's team took «Convive con {hostName}» off `linkedName`; the host's member stays. */
+    household_link_hidden: { actorName: string; hostName?: string; linkedName?: string };
 }
 
 export type NotificationTemplateKey = keyof NotificationTemplateParams;
@@ -416,6 +420,18 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
         es: p => ({ title: `${p.fromName} te escribió sobre «${p.profileName ?? ''}»`, body: p.message }),
         en: p => ({ title: `${p.fromName} wrote to you about “${p.profileName ?? ''}”`, body: p.message }),
         pt: p => ({ title: `${p.fromName} escreveu para você sobre «${p.profileName ?? ''}»`, body: p.message }),
+    },
+    household_linked: {
+        required: ['actorName'],
+        es: p => ({ title: `Conviviente vinculado: ${plainName(p.linkedName, 'es')}`, body: `${p.actorName} indicó que ${plainName(p.linkedName, 'es')} vive con ${plainName(p.hostName, 'es')}. Tu perfil ahora lo muestra en «Convive con».` }),
+        en: p => ({ title: `Household link: ${plainName(p.linkedName, 'en')}`, body: `${p.actorName} noted that ${plainName(p.linkedName, 'en')} lives with ${plainName(p.hostName, 'en')}. Your profile now shows it under “Lives with”.` }),
+        pt: p => ({ title: `Convivente vinculado: ${plainName(p.linkedName, 'pt')}`, body: `${p.actorName} indicou que ${plainName(p.linkedName, 'pt')} mora com ${plainName(p.hostName, 'pt')}. Seu perfil agora mostra isso em «Mora com».` }),
+    },
+    household_link_hidden: {
+        required: ['actorName'],
+        es: p => ({ title: 'Quitaron un vínculo de convivencia', body: `${p.actorName} quitó «Convive con ${plainName(p.hostName, 'es')}» del perfil de ${plainName(p.linkedName, 'es')}. ${plainName(p.linkedName, 'es')} sigue en el grupo familiar de tu perfil.` }),
+        en: p => ({ title: 'A household link was removed', body: `${p.actorName} removed “Lives with ${plainName(p.hostName, 'en')}” from ${plainName(p.linkedName, 'en')}'s profile. ${plainName(p.linkedName, 'en')} is still in your profile's household.` }),
+        pt: p => ({ title: 'Removeram um vínculo de convivência', body: `${p.actorName} removeu «Mora com ${plainName(p.hostName, 'pt')}» do perfil de ${plainName(p.linkedName, 'pt')}. ${plainName(p.linkedName, 'pt')} continua no grupo familiar do seu perfil.` }),
     },
 };
 

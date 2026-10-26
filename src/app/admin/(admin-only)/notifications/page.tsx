@@ -59,6 +59,8 @@ const KNOWN_TYPES: Record<string, { label: string; description: string }> = {
     'api_record': { label: 'Registro por API', description: 'Al rescatista (y su organización) cuando una herramienta conectada guarda un registro con su clave.' },
     'contract_attached': { label: 'Contrato vinculado', description: 'Cuando un contrato firmado se vincula a un perfil.' },
     'adopter_merged': { label: 'Perfiles unidos', description: 'A quienes cargaron dos perfiles cuando un admin los une y elige avisarles.' },
+    'household_linked': { label: 'Conviviente vinculado', description: 'Al dueño (y su equipo) de un perfil cuando otra persona lo anota como conviviente de otro adoptante.' },
+    'household_link_hidden': { label: 'Vínculo de convivencia quitado', description: 'Al dueño del perfil anfitrión cuando el equipo del perfil vinculado quita «Convive con» de su perfil.' },
     'form_attached': { label: 'Solicitud vinculada', description: 'Al creador de un perfil cuando otra persona le vincula una solicitud de adopción del formulario.' },
     'follow_up_due': { label: 'Follow-up Reminders', description: 'Daily cron reminder when an adoption/transit follow-up slot is due.' }
 };

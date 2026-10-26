@@ -27,6 +27,8 @@ import {
     addHouseholdMember, updateHouseholdMember, removeHouseholdMember,
     addMemberContactEntry, updateMemberContactEntry, removeMemberContactEntry,
 } from '@/app/actions';
+import { LinkedProfileSummary } from '@/components/LinkedProfileSummary';
+import type { HouseholdLinkedMembers } from '@/domain/householdLinks';
 
 const COMPOSABLE: ContactEntryType[] = ['phone', 'email', 'social', 'id', 'address', 'alias'];
 const TYPE_ICON: Record<ContactEntryType, typeof Phone> = {
@@ -42,10 +44,12 @@ interface MemberUI extends HouseholdMember {
 }
 interface CEditing extends ContactEntry { editing?: boolean; draft?: Draft }
 
-export default function HouseholdSection({ adopterId, initialMembers, canEdit, hasLegacyText = false }: {
+export default function HouseholdSection({ adopterId, initialMembers, canEdit, hasLegacyText = false, linkedMembers = {} }: {
     adopterId: string; initialMembers: HouseholdMember[]; canEdit: boolean;
-    /** Legacy free-text family notes are shown beneath; don't also say "no family". */
+    /** Legacy free-text family notes (or «Convive con» rows) are shown beneath; don't also say "no family". */
     hasLegacyText?: boolean;
+    /** D46: live summaries of members linked to their own profile, keyed by member id (masked for this viewer). */
+    linkedMembers?: HouseholdLinkedMembers;
 }) {
     const { t } = useLanguage();
     const toast = useShowToast();
@@ -304,6 +308,10 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                                     </div>
                                 )}
                             </div>
+                            {m.profileId && linkedMembers[m.id] && (
+                                // D46: who this person is on their own profile, read live.
+                                <LinkedProfileSummary summary={linkedMembers[m.id]} />
+                            )}
                             {/* contacts — no heading: "Agregar dato de contacto" says it. A
                                 viewer who can't edit a member with no contacts gets no
                                 block at all rather than an empty divider. */}

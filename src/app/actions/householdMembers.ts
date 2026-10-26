@@ -26,6 +26,7 @@ import { isAdminAsync } from '@/config/admins';
 import { casAdopterLists } from '@/lib/adopterListCas';
 import { itemAuthors } from '@/lib/collabAttribution';
 import { hashEntryValue } from '@/lib/piiAccess';
+import { recordHouseholdLink, deleteHouseholdLink, notifyHouseholdLinked } from '@/lib/householdLinks';
 
 /**
  * Server actions for the structured household/family section.
@@ -226,6 +227,19 @@ export async function addHouseholdMember(
         const contactTypes = entries.map(e => e.type);
         await insertHouseholdHistory(r.db, adopterId, actor, { household_member_added: { id: member.id, relationship, ...(contactTypes.length ? { contactTypes } : {}) } });
         logAudit({ userEmail: actor, action: 'household_member_added', target: adopterId, details: { relationship, contactTypes } });
+        if (member.profileId) {
+            // D44: the linked profile shows «Convive con» from this row; D45: its team hears about it.
+            // The member is already saved — a failed link is logged, never a failed add
+            // (a retry would add the person twice).
+            const linkCtx = { adopterId, actor, memberId: member.id, linkedId: member.profileId };
+            try {
+                const created = await recordHouseholdLink(r.db, { hostId: adopterId, memberId: member.id, linkedId: member.profileId, actor });
+                logger.info('addHouseholdMember: household link recorded', { ...linkCtx, created });
+                if (created) await notifyHouseholdLinked({ hostId: adopterId, hostName: r.target.name, linkedId: member.profileId, actor });
+            } catch (e) {
+                logger.error('addHouseholdMember: household link not recorded', e, linkCtx);
+            }
+        }
         return { ok: true, memberId: member.id };
     } catch (error) {
         const errorId = logger.error('addHouseholdMember failed', error, { adopterId, actor });
@@ -307,6 +321,11 @@ export async function removeHouseholdMember(
         if (out.result === 'deleted' || out.result === 'changed') return conflictOf(r.db, adopterId, memberId, out.result, MEMBER_KEYS, { actor });
         await insertHouseholdHistory(r.db, adopterId, actor, { household_member_removed: { id: memberId } });
         logAudit({ userEmail: actor, action: 'household_member_removed', target: adopterId, details: { memberId } });
+        // Its link goes with it. A leftover row is harmless (reads check the member
+        // still exists) but is logged.
+        await deleteHouseholdLink(r.db, adopterId, memberId).catch((e: unknown) => {
+            logger.warn('removeHouseholdMember: household link not removed (ignored on read)', { adopterId, actor, memberId, error: e instanceof Error ? e.message : String(e) });
+        });
         return { ok: true };
     } catch (error) {
         const errorId = logger.error('removeHouseholdMember failed', error, { adopterId, actor, memberId });

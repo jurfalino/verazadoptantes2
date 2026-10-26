@@ -17,6 +17,8 @@ import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesSection from "@/components/ContactEntriesSection";
 import HouseholdSection from "@/components/HouseholdSection";
+import { LivesWithSection } from "@/components/LinkedProfileSummary";
+import { EMPTY_LINKED_SUMMARIES, type LinkedSummaries } from "@/domain/householdLinks";
 import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
 import { deserializeHouseholdMembers } from "@/lib/householdMembers";
 import type { VisibilityBadge } from "@/domain/visibilityBadge";
@@ -104,10 +106,12 @@ interface AdopterFormProps {
     /** Opens the visibility/access explanatory modal when the badge is tapped.
      *  Provided by the profile; absent on the new-adopter form (no badge there). */
     onBadgeClick?: () => void;
+    /** D46: linked convivientes' live summaries (host members + «Convive con»), masked for this viewer. */
+    linkedSummaries?: LinkedSummaries;
 }
 
 
-export function AdopterForm({ origin = null, interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick }: AdopterFormProps) {
+export function AdopterForm({ origin = null, interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick, linkedSummaries = EMPTY_LINKED_SUMMARIES }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -1520,8 +1524,10 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                     adopterId={adopterId}
                                     initialMembers={deserializeHouseholdMembers(initialData?.householdMembers)}
                                     canEdit={canEdit}
-                                    hasLegacyText={hasLegacyFamilyText}
+                                    hasLegacyText={hasLegacyFamilyText || linkedSummaries.livesWith.length > 0}
+                                    linkedMembers={linkedSummaries.members}
                                 />
+                                {linkedSummaries.livesWith.length > 0 && <LivesWithSection rows={linkedSummaries.livesWith} />}
                                 {hasLegacyFamilyText && (
                                     <div>
                                         <p className="text-[11px] font-semibold text-stone-500 mb-1">{t('adopter.family_notes')}</p>

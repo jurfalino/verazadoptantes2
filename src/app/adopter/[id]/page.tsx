@@ -11,6 +11,8 @@ import { resolveMergedAdopterId } from '@/lib/mergedAdopterRedirect';
 import { getFeatureFlag } from '@/config/features';
 import { AdopterProfileV2 } from '@/components/AdopterProfileV2';
 import type { AdopterPiiContext } from '@/lib/piiAccess';
+import { getLinkedSummaries } from '@/lib/householdLinks';
+import { EMPTY_LINKED_SUMMARIES, type LinkedSummaries } from '@/domain/householdLinks';
 
 export default async function AdopterPage({
     params,
@@ -79,6 +81,7 @@ export default async function AdopterPage({
     let dupCandidates: any[] = [];
     let piiContext: AdopterPiiContext | null = null;
     let deletionRequested = false;
+    let linkedSummaries: LinkedSummaries = EMPTY_LINKED_SUMMARIES;
 
     if (!isNew) {
         // Per-fetch fallback: if any single query throws (e.g. transient D1 outage), the page
@@ -93,7 +96,7 @@ export default async function AdopterPage({
             });
             return def;
         };
-        [adopter, history, adoptions, images, allImages, flags, stats, avgRating, availableAnimals, dupCandidates, piiContext, deletionRequested] = await Promise.all([
+        [adopter, history, adoptions, images, allImages, flags, stats, avgRating, availableAnimals, dupCandidates, piiContext, deletionRequested, linkedSummaries] = await Promise.all([
             getAdopter(id).catch(fallback('getAdopter', null)),
             getHistory(id).catch(fallback<any[]>('getHistory', [])),
             getAdoptions(id).catch(fallback<any[]>('getAdoptions', [])),
@@ -106,6 +109,8 @@ export default async function AdopterPage({
             getDuplicateCandidates(id).catch(fallback<any[]>('getDuplicateCandidates', [])),
             getAdopterPiiContext(id).catch(fallback<AdopterPiiContext | null>('getAdopterPiiContext', null)),
             hasPendingDeletionRequest(id).catch(fallback<boolean>('hasPendingDeletionRequest', false)),
+            // D46: linked convivientes' live summaries, masked for this viewer.
+            getLinkedSummaries(currentUser, id).catch(fallback<LinkedSummaries>('getLinkedSummaries', EMPTY_LINKED_SUMMARIES)),
         ]);
     } else {
         availableAnimals = await getAvailableAnimals().catch(e => {
@@ -264,6 +269,7 @@ export default async function AdopterPage({
             originLabels={originLabels}
             mergedFrom={typeof allSearchParams.merged === 'string' && allSearchParams.merged ? allSearchParams.merged : null}
             interviewEnabled={interviewEnabled}
+            linkedSummaries={linkedSummaries}
         />
     );
 }

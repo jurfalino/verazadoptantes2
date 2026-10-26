@@ -47,6 +47,8 @@ const TYPE_TO_CATEGORY: Readonly<Record<string, EmailCategory>> = {
     pii_access_revoked: 'contact_access',
     ownership_transferred: 'profile_changes',
     contact_entry_added: 'profile_changes',
+    household_linked: 'profile_changes',
+    household_link_hidden: 'profile_changes',
     api_record: 'api',
     api_access: 'api',
 };

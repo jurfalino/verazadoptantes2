@@ -43,6 +43,8 @@ const SAMPLES: { [K in NotificationTemplate['key']]: Extract<NotificationTemplat
     adopter_merged_by_rescuer: { actorName: 'Jon', ...sides },
     adopter_merged_by_admin: sides,
     pair_message: { fromName: 'Jon', profileName: 'Julieta Paz', message: 'Hola' },
+    household_linked: { actorName: 'Jon', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
+    household_link_hidden: { actorName: 'María', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
 };
 
 const LOCALES: NotificationLocale[] = ['es', 'en', 'pt'];

@@ -486,6 +486,25 @@ export const pendingPairHidden = sqliteTable("pending_pair_hidden", {
     pk: primaryKey({ columns: [table.viewerEmail, table.pairKey] }),
 }));
 
+// household_links — a household member with their own profile (D44, drizzle/0094).
+// The reverse index behind «Convive con»; the host's household_members JSON stays
+// the source of truth (a row shows only while the member still points here).
+// hidden_at/hidden_by: the linked profile's owner team hid it from their profile (D47).
+export const householdLinks = sqliteTable("household_links", {
+    id: text("id").primaryKey(),
+    hostAdopterId: text("host_adopter_id").notNull(),
+    linkedAdopterId: text("linked_adopter_id").notNull(),
+    memberId: text("member_id").notNull(),
+    createdBy: text("created_by"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    hiddenAt: integer("hidden_at", { mode: "timestamp" }),
+    hiddenBy: text("hidden_by"),
+}, (table) => ({
+    hostMemberIdx: uniqueIndex("idx_household_links_host_member").on(table.hostAdopterId, table.memberId),
+    hostIdx: index("idx_household_links_host").on(table.hostAdopterId),
+    linkedIdx: index("idx_household_links_linked").on(table.linkedAdopterId),
+}));
+
 // pii_access_grants — the access facts. A live (non-revoked) row means
 // `grantee_email` can see some/all of `adopter_id`'s contact info.
 //   scope='entry'       — one entry, unlocked by a search match.

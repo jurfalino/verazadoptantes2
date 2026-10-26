@@ -30,7 +30,8 @@ import { actorLabel } from '@/lib/userDisplay';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdopterStats, AdoptionConfig, DuplicateCandidateInfo } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 import type { AdopterPiiContext } from '@/lib/piiAccess';
-import { NO_ACCESS_VISIBILITY, maskAdopterContact, renderName } from '@/lib/piiAccess';
+import { NO_ACCESS_VISIBILITY, maskAdopterContact, maskContactEntries, renderName } from '@/lib/piiAccess';
+import { EMPTY_LINKED_SUMMARIES, type LinkedSummaries, type LinkedSummary } from '@/domain/householdLinks';
 
 interface AdopterProfileV2Props {
     id: string;
@@ -80,9 +81,11 @@ interface AdopterProfileV2Props {
     mergedFrom?: string | null;
     /** ENABLE_INTERVIEW_GUIDE — «Entrevistar» in the profile's ⋯ menu. */
     interviewEnabled?: boolean;
+    /** D46: linked convivientes' live summaries, already masked for this viewer by the server. */
+    linkedSummaries?: LinkedSummaries;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null, linkedSummaries = EMPTY_LINKED_SUMMARIES }: AdopterProfileV2Props) {
     const { formatDateTime, formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const searchParams = useSearchParams();
@@ -147,6 +150,19 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             householdMembers: masked.householdMembers,
         };
     }, [previewAsStranger, adopter]);
+
+    // Preview-as-stranger also masks the linked convivientes' summaries the
+    // same way (they arrive masked for the REAL viewer, who may see it all).
+    const displayedLinked = useMemo<LinkedSummaries>(() => {
+        if (!previewAsStranger) return linkedSummaries;
+        const asStranger = <T extends LinkedSummary>(s: T): T => ({
+            ...s, contacts: maskContactEntries(s.contacts, NO_ACCESS_VISIBILITY).entries, canSeeContact: false,
+        });
+        return {
+            members: Object.fromEntries(Object.entries(linkedSummaries.members).map(([k, s]) => [k, asStranger(s)])),
+            livesWith: linkedSummaries.livesWith.map(r => ({ ...asStranger(r), canHide: false })),
+        };
+    }, [previewAsStranger, linkedSummaries]);
 
     // Effective piiContext for preview mode — flips `privileged` off and
     // `masked` on so children that branch on those flags render the
@@ -460,6 +476,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     visibilityBadge={visibilityBadge}
                     onBadgeClick={() => setVisibilityModalOpen(true)}
                     canEdit={!effectivePiiContext?.gatingOn || !!effectivePiiContext?.privileged}
+                    linkedSummaries={displayedLinked}
                     onMaskedContactClick={
                         effectivePiiContext?.masked
                             ? (entryType) => setVerifyPopoverOpen(entryType)
