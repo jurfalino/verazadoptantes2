@@ -29,7 +29,7 @@ import { RELATIONSHIPS, currentAge, type HouseholdMember, type Relationship } fr
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { entryConflictMessage } from '@/lib/collabCopy';
 import {
-    HOUSEHOLD_NOT_AUTHORIZED, canAddToHousehold, canEditHouseholdMember, canRemoveHouseholdMember,
+    householdFailure, canAddToHousehold, canEditHouseholdMember, canRemoveHouseholdMember,
     canChangeMemberContact, type HouseholdViewer,
 } from '@/domain/householdPermissions';
 import {
@@ -108,23 +108,23 @@ export default function HouseholdSection({ adopterId, initialMembers, canEditAll
         try {
             const res = await fn();
             if (!res.ok) {
-                const r = res as { error?: string; conflict?: { kind: 'changed' | 'deleted'; by: string }; errorId?: string };
-                if (r.error === 'conflict' && r.conflict) {
-                    toast.warning(entryConflictMessage(t, r.conflict.kind, r.conflict.by));
-                    onConflict?.(r.conflict.kind);
+                const f = householdFailure(res as { error?: string; conflict?: { kind: 'changed' | 'deleted'; by: string }; errorId?: string });
+                if (f.kind === 'conflict') {
+                    toast.warning(entryConflictMessage(t, f.conflict.kind, f.conflict.by));
+                    onConflict?.(f.conflict.kind);
                     router.refresh();
-                } else if (r.error === 'busy') {
-                    toast.error(t('errors.generic') || 'Error', t('collab.busy'), r.errorId);
-                } else if (r.error === HOUSEHOLD_NOT_AUTHORIZED) {
-                    // Not theirs to change — or it was theirs and the owner changed or
-                    // removed it meanwhile (the refusal comes before the conflict
-                    // check). Show what is there now.
-                    toast.error(t('errors.generic') || 'Error', t('errors.household_not_authorized'),
-                        r.errorId ?? resolveErrorId(new Error(`HouseholdSection: ${r.error}`), 'HouseholdSection'));
+                } else if (f.kind === 'busy') {
+                    toast.error(t('errors.generic') || 'Error', t('collab.busy'), f.errorId);
+                } else if (f.kind === 'refused') {
+                    // Expected, not a failure: not theirs to change — or it was theirs
+                    // and the owner changed or removed it meanwhile (the refusal comes
+                    // before the conflict check). A notice, no tracked error; show
+                    // what is there now.
+                    toast.warning(t('errors.household_not_authorized'));
                     router.refresh();
                 } else {
                     toast.error(t('errors.generic') || 'Error', t('errors.save_household_failed'),
-                        r.errorId ?? resolveErrorId(new Error(`HouseholdSection: ${r.error ?? 'unknown'}`), 'HouseholdSection'));
+                        f.errorId ?? resolveErrorId(new Error(`HouseholdSection: ${f.error}`), 'HouseholdSection'));
                 }
                 return null;
             }

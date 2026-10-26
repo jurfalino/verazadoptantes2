@@ -70,3 +70,26 @@ export function withoutOwnMarks<E extends Owned, M extends Owned & { contactEntr
         return { ...rest, contactEntries: m.contactEntries.map(e => { const { own: _e, ...entry } = e; return entry as E; }) } as M;
     });
 }
+
+/**
+ * What a failed household write tells the person (final review M6):
+ * - `conflict`: a teammate changed or removed the item meanwhile (warning).
+ * - `busy`: the save lost the race twice; the server's errorId is shown.
+ * - `refused`: HOUSEHOLD_NOT_AUTHORIZED — expected, not a failure: not theirs
+ *   to change, or it was theirs and the owner changed it meanwhile. A
+ *   localized notice and a refresh; never a tracked error.
+ * - `failed`: anything else — a real failure, shown with an errorId (the
+ *   server's, or one the client files).
+ */
+export type HouseholdFailure =
+    | { kind: 'conflict'; conflict: { kind: 'changed' | 'deleted'; by: string } }
+    | { kind: 'busy'; errorId?: string }
+    | { kind: 'refused' }
+    | { kind: 'failed'; error: string; errorId?: string };
+
+export function householdFailure(res: { error?: string; conflict?: { kind: 'changed' | 'deleted'; by: string }; errorId?: string }): HouseholdFailure {
+    if (res.error === 'conflict' && res.conflict) return { kind: 'conflict', conflict: res.conflict };
+    if (res.error === 'busy') return { kind: 'busy', errorId: res.errorId };
+    if (res.error === HOUSEHOLD_NOT_AUTHORIZED) return { kind: 'refused' };
+    return { kind: 'failed', error: res.error ?? 'unknown', errorId: res.errorId };
+}

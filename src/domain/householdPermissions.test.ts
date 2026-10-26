@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     canAddToHousehold, canEditHouseholdMember, canRemoveHouseholdMember,
-    canChangeMemberContact, withoutOwnMarks, HOUSEHOLD_NOT_AUTHORIZED,
+    canChangeMemberContact, withoutOwnMarks, HOUSEHOLD_NOT_AUTHORIZED, HOUSEHOLD_MEMBER_HAS_PROFILE, householdFailure,
     type HouseholdViewer,
 } from './householdPermissions';
 
@@ -64,5 +64,22 @@ describe('household controls per viewer (D54)', () => {
 
     it('keeps the server\'s refusal string', () => {
         expect(HOUSEHOLD_NOT_AUTHORIZED).toBe('Not authorized to edit this household.');
+    });
+});
+
+describe('what a failed household write tells the person (final review M6)', () => {
+    it('the expected refusal is a notice, never a tracked error', () => {
+        expect(householdFailure({ error: HOUSEHOLD_NOT_AUTHORIZED })).toEqual({ kind: 'refused' });
+        // Even if a server ever attached one, the refusal carries no errorId to show or file.
+        expect(householdFailure({ error: HOUSEHOLD_NOT_AUTHORIZED, errorId: 'abc12345' })).toEqual({ kind: 'refused' });
+    });
+
+    it('a conflict, a busy save and a real failure keep their own paths', () => {
+        const conflict = { kind: 'changed' as const, by: 'Ana' };
+        expect(householdFailure({ error: 'conflict', conflict })).toEqual({ kind: 'conflict', conflict });
+        expect(householdFailure({ error: 'busy', errorId: 'b1' })).toEqual({ kind: 'busy', errorId: 'b1' });
+        expect(householdFailure({ error: 'Failed (Error ID: e1)', errorId: 'e1' })).toEqual({ kind: 'failed', error: 'Failed (Error ID: e1)', errorId: 'e1' });
+        expect(householdFailure({ error: HOUSEHOLD_MEMBER_HAS_PROFILE })).toMatchObject({ kind: 'failed' });
+        expect(householdFailure({})).toEqual({ kind: 'failed', error: 'unknown', errorId: undefined });
     });
 });
