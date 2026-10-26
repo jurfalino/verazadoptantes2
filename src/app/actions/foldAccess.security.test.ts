@@ -4,8 +4,7 @@
  * "duplicate" of another rescuer's profile and merges keeping theirs gets
  * back only the contact values their own profile brought — never
  * `all_contact` — and the victim's own contacts stay masked. Consented folds
- * (accept, flip, admin) keep `all_contact` (D40). And flagging someone else's
- * profile as a duplicate is refused (C1c).
+ * (accept, flip, admin) keep `all_contact` (D40).
  *
  * Real SQL, real flagAdopter / mergePendingDedupPair / mergeAdopters /
  * grantAccessAfterFold / resolveAdopterVisibility; the session is the actor.
@@ -48,8 +47,6 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { flagAdopter } from './flags';
-import { flagAdopterAsDuplicate } from './flagAdopterAsDuplicate';
-import { logger } from '@/lib/logger';
 import { mergePendingDedupPair } from './duplicates';
 import { resolveMergeRequest } from './mergeRequests';
 import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
@@ -67,7 +64,6 @@ const THROWAWAY_PHONE = '+54 11 5555 0001';
 const entries = (...e: Array<[string, string, string]>) => JSON.stringify(e.map(([id, type, value]) => ({ id, type, value })));
 const grantsOn = (id: string) => sqlite.prepare(`SELECT grantee_email AS email, scope, entry_ref AS ref, origin FROM pii_access_grants
     WHERE adopter_id = ? AND revoked_at IS NULL ORDER BY grantee_email, entry_ref`).all(id);
-const flagIds = () => sqlite.prepare('SELECT id FROM adopter_flags').all().map(r => r.id as string);
 
 /** What `viewer` sees of `adopterId`'s contact entries: value → masked? */
 async function seenBy(viewer: string, adopterId: string): Promise<Record<string, boolean>> {
@@ -177,36 +173,5 @@ describe('consented folds keep all_contact (D40)', () => {
         const id = sqlite.prepare('SELECT id FROM merge_requests').get()!.id as string;
         expect(await as(OWNER, () => resolveMergeRequest(id, 'flip'))).toEqual({ success: true });
         expect(grantsOn('victim')).toEqual([{ email: STRANGER, scope: 'all_contact', ref: null, origin: 'merge' }]);
-    });
-});
-
-describe('C1c: flagging someone else\'s profile as a duplicate', () => {
-    it('a stranger to the flagged profile is refused: logged at warn with an errorId, nothing written', async () => {
-        await expect(flagAdopter('victim', 'duplicate', 'x', 'throwaway')).rejects.toThrow(/gen12345/);
-        expect(flagIds()).toEqual([]);
-        expect(logs.warn).toContainEqual(['flagAdopter: duplicate flag refused', expect.objectContaining({
-            adopterId: 'victim', targetAdopterId: 'throwaway', flaggedBy: STRANGER, errorId: 'gen12345',
-        })]);
-    });
-
-    it('through «Marcar como duplicados» (flagAdopterAsDuplicate): not_allowed with the errorId, not logged again as an error', async () => {
-        vi.mocked(logger.error).mockClear();
-        expect(await flagAdopterAsDuplicate({ currentAdopterId: 'victim', matchedAdopterId: 'throwaway', matchedAdopterName: 'Carla' }))
-            .toEqual({ ok: false, error: 'not_allowed:gen12345' });
-        expect(flagIds()).toEqual([]);
-        expect(logger.error).not.toHaveBeenCalled();
-    });
-
-    it('the owner, a teammate and an admin may', async () => {
-        for (const user of [OWNER, MATE, ADMIN]) {
-            await expect(as(user, () => flagAdopter('victim', 'duplicate', 'x', 'throwaway'))).resolves.toMatchObject({ success: true });
-        }
-        expect(flagIds()).toHaveLength(3);
-    });
-
-    it('other reasons are unchanged: anyone signed in may flag', async () => {
-        await expect(flagAdopter('victim', 'inaccurate_information', 'wrong phone')).resolves.toMatchObject({ success: true });
-        await expect(flagAdopter('victim', 'duplicate', 'no target given')).resolves.toMatchObject({ success: true });
-        expect(flagIds()).toHaveLength(2);
     });
 });

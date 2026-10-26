@@ -1,29 +1,19 @@
 'use server';
 
-import { adopterFlags, adopterHistory, adopters } from '@/db/schema';
+import { adopterFlags, adopterHistory } from '@/db/schema';
 import { eq, sql, and } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
-import { generateErrorId, logger } from '@/lib/logger';
+import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser, checkIsAdminAsync } from './_db';
 import { flagAdopterSchema, dismissFlagSchema, removeVerificationSchema } from './validation';
 import { runAfterResponse } from '@/lib/background';
-import { FLAG_REASONS } from '@/domain/constants';
 
 export async function flagAdopter(adopterId: string, reason: string, details?: string, targetAdopterId?: string) {
     const parsed = flagAdopterSchema.safeParse({ adopterId, reason, details, targetAdopterId });
     if (!parsed.success) {
         throw new Error(`Invalid flag data: ${parsed.error.issues.map(i => i.message).join(', ')}`);
-    }
-
-    // A duplicate flag with a target puts the pair on the flagger's
-    // «Pendientes de revisar», where they can merge it: only someone who may
-    // act for the flagged profile — its owner, their team, or an admin — may
-    // file one (final review C1). Checked before the try so the refusal is
-    // logged once, at warn.
-    if (reason === FLAG_REASONS.DUPLICATE && targetAdopterId) {
-        await refuseDuplicateFlagUnlessOwner(adopterId, targetAdopterId);
     }
 
     try {
@@ -78,31 +68,6 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
         const errorId = logger.error('Flag adopter failed', error, { adopterId, reason });
         throw new Error(`Failed to flag adopter (Error ID: ${errorId})`);
     }
-}
-
-/** Throws (logged at warn, with an errorId) unless the session user may flag `adopterId` as a duplicate. */
-async function refuseDuplicateFlagUnlessOwner(adopterId: string, targetAdopterId: string): Promise<void> {
-    let flaggedBy: string | null = null;
-    let allowed = false;
-    let reason = 'not_owner';
-    try {
-        flaggedBy = await getUser();
-        const db = await getDb();
-        if (!db) throw new Error('No database');
-        const flagged = await db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, adopterId)).get();
-        if (!flagged) reason = 'not_found';
-        else {
-            const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
-            allowed = await checkIsAdminAsync(flaggedBy) || await isOwnerOrOrgMate(flaggedBy, flagged.addedBy);
-        }
-    } catch (e) {
-        reason = 'check_failed';
-        logger.warn('flagAdopter: duplicate flag check failed', { adopterId, targetAdopterId, flaggedBy, error: e instanceof Error ? e.message : String(e) });
-    }
-    if (allowed) return;
-    const errorId = generateErrorId();
-    logger.warn('flagAdopter: duplicate flag refused', { adopterId, targetAdopterId, flaggedBy, reason, errorId });
-    throw new Error(`Not allowed to flag this profile as a duplicate (Error ID: ${errorId})`);
 }
 
 export async function getFlags(adopterId: string) {
