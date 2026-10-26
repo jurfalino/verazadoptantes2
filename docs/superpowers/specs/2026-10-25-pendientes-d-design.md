@@ -74,4 +74,17 @@ Jon on staging: Pedro Paez's household shows «Jonathan Urfalino ↗» (linked v
 | D44 | **The link shows on both profiles without editing anyone's data.** Links are stored in their own table (`household_links`: host adopter, linked profile, created_by, created_at, hidden_at/hidden_by) written whenever a household member gets a `profileId`, backfilled from existing `household_members`. The linked profile shows a read-only «Convive con: {host} ↗ · según {creator name}» built from it | Jon |
 | D45 | **The linked profile's owner and team are notified** when a link to their profile is created (type `household_linked`, category «Cambios en tus perfiles», es/en/pt template) | Claude (proposed, Jon ok) |
 | D46 | **A linked conviviente is a live summary, not just a name** — on the host's household card and on the reverse «Convive con» row: rating and flags first (e.g. «★2 · 1 alerta»), then «3 adopciones · 5 registros», then the contact details exactly as the viewer would see them on that profile (full / partially masked / locked — same visibility rules, never more), then «Ver perfil completo ↗». Read live; nothing copied | Jon |
-| D47 | **Wrong link:** the linked profile's owner/team can hide the «Convive con» row on their profile («Quitar de mi perfil»), which notifies the host's owner; the host's own household member is unchanged (it's the host owner's data) | Claude |
+| D47 | ~~Hide «Convive con» on my profile only~~ — **withdrawn** (forks reality); replaced by D48 | — |
+
+## Addendum 2026-10-26 — one shared reality (Jon)
+
+Principle (Jon): BuenAdoptante records **one reality for everyone** — a fact (lives with, same person) is the same for every rescuer. Privacy (who may see contact data) and personal workflow (my list, my email switches) may differ per person; facts may not. Disagreements are resolved (attributed, visible, notified, escalated to admins), never forked.
+
+| # | Decision | By |
+|---|---|---|
+| D48 | **«No convive» corrects the fact for everyone** (replaces D47): the linked profile's owner/team (or admin) can say the link is wrong → the conviviente is removed from the host's household and the link is removed — on both profiles. Both profiles' history records «{name} indicó que no conviven»; the host's owner is notified. The host's owner may re-add (notifying the linked owner); a link removed and re-added again is a **dispute** → admins are notified to decide | Jon |
+| D49 | **After a rejection, nobody merges one-sidedly** (revises D43): the requester's «Combinar conservando el de X» on a rejected pair no longer merges; it becomes «Pedir revisión a un administrador» — a request routed to admins (D15 path) marked as a dispute. The rescuer who rejected can still change their mind and accept | Jon |
+| D50 | **An immediate merge can be disputed** (D24/D41): the notice to the owner of the kept profile offers «No es la misma persona» → a dispute admins see in «Pedidos de combinación» («Disputas»), with «Deshacer combinación» (the existing undo) or «Mantener»; both rescuers are notified of the outcome | Jon |
+| D51 | **Links follow merges**: when a profile with «Convive con» links is merged, its links move to the surviving profile (and move back on undo) | Jon |
+| D52 | **After combining in Pendientes**, the row stays until reload as «✓ Combinados — se conservó {nombre} (de {dueño}) · Ver perfil ↗», and the success toast has «Ver perfil» | Jon |
+| D53 | **Local runs never send email** (only staging/production builds stamped by CI do), unless explicitly allowed for a test | Claude (Jon ok) |
