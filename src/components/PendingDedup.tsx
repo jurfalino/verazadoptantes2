@@ -178,9 +178,10 @@ export default function PendingDedup() {
             toast.success(t('myAdopters.pending_d_household_done') || 'Quedaron separados: lo agregamos como conviviente');
             dropRow(pair);
         } else if (result.success) {
-            // It went to the other profile's owner (or the admins) as a request:
+            // It went to the other profile's owner (or the admins) as a request,
+            // or to the admins as a dispute after a rejection (D49):
             // the reload shows the row under «Enviados».
-            toast.success(!result.toAdmins && result.toName
+            toast.success(result.outcome === 'requested' && !result.toAdmins && result.toName
                 ? fill(t('myAdopters.pending_dedup_request_sent_to') || 'Pedido enviado a {name}', { name: result.toName })
                 : (t('myAdopters.pending_dedup_request_sent_admins') || 'Pedido enviado a un administrador'));
             await load();

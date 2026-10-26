@@ -90,7 +90,7 @@ describe('mergePendingDedupPair', () => {
     it('her newer record folds into a foreign older one: merged, the foreign record survives, actor from the session', async () => {
         expect(await mergePendingDedupPair('cand-mine')).toEqual({ success: true, outcome: 'merged' });
         expect(mergeSpy).toHaveBeenCalledWith('other-old', 'mine-new', OWNER);
-        expect(notifySpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'adopter_merged', userId: 'other@example.com', url: '/adopter/other-old' }));
+        expect(notifySpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'adopter_merged', userId: 'other@example.com', url: expect.stringMatching(/^\/adopter\/other-old\?dispute=/) }));
         expect(requestSpy).not.toHaveBeenCalled();
         // D40: the absorbed side's owner keeps seeing what their profile brought
         // (not the whole survivor: the other rescuer never agreed — final review C1).

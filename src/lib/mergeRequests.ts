@@ -16,6 +16,12 @@
  * declined pair stays on both lists (D27): the requester can't ask again
  * (D43) but the owner team can still accept later. After every merge the
  * absorbed profile's owner team keeps access to the survivor (D40).
+ *
+ * Disputes (addendum 2026-10-26, D49): once an owner rejected the requester's
+ * request, the requester keeping the OTHER rescuer's profile files a request
+ * to the admins (`ownerEmail` null) marked `dispute` instead of merging; the
+ * admins answer it like any request to them (D15). Disputes about merges that
+ * already happened (D50) live in src/lib/mergeDisputes.ts.
  */
 
 import { and, asc, eq, or } from 'drizzle-orm';
@@ -57,6 +63,8 @@ export interface MergeRequestAdminRow {
     secondary: MergeRequestAdminSide;
     requesterEmail: string;
     ownerEmail: string | null;
+    /** Filed after the owner rejected the pair: the requester asks the admins to review it (D49). */
+    dispute: boolean;
 }
 
 /** One profile of a request, as the admin list shows it (D31). Admin page, so the owner email is shown whole. */
@@ -112,7 +120,9 @@ export async function declinedForViewer(db: Db, a: string, b: string, viewer: st
  * one exists it is returned (`created: false`, with ITS requester — the caller
  * decides whether that is "you already asked" or someone else's request) and
  * nobody is notified. A requester whose earlier request on this pair was
- * declined may not ask again (D43): `{ refused: 'declined_before' }`.
+ * declined may not ask again (D43): `{ refused: 'declined_before' }` — except
+ * as a `dispute` (D49): a request to the admins (`ownerEmail` must be null),
+ * which is exactly what a rejected requester is left with.
  */
 export async function createMergeRequest(db: Db, input: {
     primaryId: string;
@@ -121,7 +131,10 @@ export async function createMergeRequest(db: Db, input: {
     flagId: string | null;
     requesterEmail: string;
     ownerEmail: string | null;
+    dispute?: boolean;
 }): Promise<{ id: string; created: boolean; requesterEmail: string } | { refused: 'declined_before' }> {
+    // A dispute only ever goes to the admins.
+    const dispute = !!input.dispute && input.ownerEmail === null;
     // Stored normalized: the feed and the answer checks find a request by
     // these emails, and `added_by` (where ownerEmail comes from) keeps
     // whatever case it was written with.
@@ -132,7 +145,7 @@ export async function createMergeRequest(db: Db, input: {
     };
     const existing = await findPendingRequestForPair(db, input.primaryId, input.secondaryId);
     if (existing) return { id: existing.id, created: false, requesterEmail: existing.requesterEmail };
-    if (!canRequestAgain(await requestsForPair(db, input.primaryId, input.secondaryId), input.requesterEmail)) {
+    if (!dispute && !canRequestAgain(await requestsForPair(db, input.primaryId, input.secondaryId), input.requesterEmail)) {
         logger.info('createMergeRequest: declined before, not asking again', {
             primaryId: input.primaryId, secondaryId: input.secondaryId, actor: input.requesterEmail,
         });
@@ -150,15 +163,16 @@ export async function createMergeRequest(db: Db, input: {
         ownerEmail: input.ownerEmail,
         status: 'pending',
         createdAt: new Date(),
+        dispute: dispute ? 1 : 0,
     });
     logger.info('createMergeRequest: filed', {
         requestId: id, primaryId: input.primaryId, secondaryId: input.secondaryId,
-        actor: input.requesterEmail, toAdmins: input.ownerEmail === null,
+        actor: input.requesterEmail, toAdmins: input.ownerEmail === null, dispute,
     });
 
     // The request stands even if telling people about it fails.
     try {
-        await notifyRequestFiled(db, id, input);
+        await notifyRequestFiled(db, id, { ...input, dispute });
     } catch (e) {
         logger.warn('createMergeRequest: notifications not sent', {
             requestId: id, actor: input.requesterEmail, error: e instanceof Error ? e.message : String(e),
@@ -168,15 +182,15 @@ export async function createMergeRequest(db: Db, input: {
 }
 
 async function notifyRequestFiled(db: Db, requestId: string, input: {
-    primaryId: string; secondaryId: string; requesterEmail: string; ownerEmail: string | null;
+    primaryId: string; secondaryId: string; requesterEmail: string; ownerEmail: string | null; dispute: boolean;
 }): Promise<void> {
     // The requester's choice: primary stays, secondary is absorbed (D31 names both owners and dates).
     const [requester, sides] = await Promise.all([
         resolveDisplayName(input.requesterEmail),
         mergeSideParams(db, { survivorId: input.primaryId, absorbedId: input.secondaryId }),
     ]);
-    const content = notificationContent({ key: 'merge_request', params: { requesterName: requester, ...sides } });
-    const metadata = { mergeRequestId: requestId, primaryId: input.primaryId, secondaryId: input.secondaryId };
+    const content = notificationContent({ key: 'merge_request', params: { requesterName: requester, ...sides, ...(input.dispute ? { dispute: '1' } : {}) } });
+    const metadata = { mergeRequestId: requestId, primaryId: input.primaryId, secondaryId: input.secondaryId, ...(input.dispute ? { dispute: true } : {}) };
 
     if (input.ownerEmail === null) {
         await notifyAdmins({ actorEmail: input.requesterEmail, type: 'merge_request', ...content, url: '/admin/merge-requests', icon: ICON, metadata });
@@ -484,5 +498,6 @@ export async function listMergeRequestsForAdmin(db: Db): Promise<MergeRequestAdm
         secondary: side(r.secondaryId),
         requesterEmail: r.requesterEmail,
         ownerEmail: r.ownerEmail ?? null,
+        dispute: r.dispute === 1,
     }));
 }

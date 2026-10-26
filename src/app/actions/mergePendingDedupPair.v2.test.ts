@@ -1,8 +1,9 @@
 /**
  * «Pendientes de revisar» v2 (spec 2026-10-25-pendientes-d): the rescuer
  * chooses which profile stays (D24), the asked owner may flip it (D26), a
- * declined requester can't re-ask (D43), «¿Es la misma persona?» (D35), and
- * access after a fold (D40). Real SQL, real createMergeRequest /
+ * declined requester can't re-ask (D43) nor merge one-sidedly — keeping the
+ * other's profile asks the admins instead (D49) — «¿Es la misma persona?»
+ * (D35), and access after a fold (D40). Real SQL, real createMergeRequest /
  * answerMergeRequest / addHouseholdMember, real mergeAdopters behind a
  * passthrough spy; the session is the only source of the actor.
  */
@@ -104,7 +105,8 @@ describe('chosen survivor (D24)', () => {
         expect(mergeSpy).toHaveBeenCalledWith('mine-old', 'theirs-new', OWNER);
         expect(deleted('theirs-new')).toBe(true);
         expect(requests()).toEqual([]);
-        expect(notify.create).toEqual([expect.objectContaining({ type: 'adopter_merged', userId: STRANGER, url: '/adopter/mine-old' })]);
+        // The link opens «¿No es la misma persona?» for this merge (D50).
+        expect(notify.create).toEqual([expect.objectContaining({ type: 'adopter_merged', userId: STRANGER, url: expect.stringMatching(/^\/adopter\/mine-old\?dispute=[\w-]+$/) })]);
         expect(grantsOn('mine-old')).toEqual([
             { email: MATE, scope: 'entry', origin: 'merge' },
             { email: OWNER, scope: 'entry', origin: 'merge' },
@@ -176,7 +178,7 @@ describe('the owner flips a request (D26)', () => {
     });
 });
 
-describe('after «Rechazado» (D27, D43)', () => {
+describe('after «Rechazado» (D27, D43, D49)', () => {
     let id: string;
     beforeEach(async () => {
         await mergePendingDedupPair('cand-a', { keepId: 'mine-old' });
@@ -192,11 +194,55 @@ describe('after «Rechazado» (D27, D43)', () => {
         expect(notify.create).toEqual([]);
     });
 
-    it("the requester can still combine keeping the other's profile (no consent needed) — and gets back only what theirs brought", async () => {
-        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'mine-old'`).run(JSON.stringify([{ id: 'p1', type: 'phone', value: '+54 11 5555 0003' }]));
-        expect(await mergePendingDedupPair('cand-a', { keepId: 'theirs-new' })).toEqual({ success: true, outcome: 'merged' });
-        expect(mergeSpy).toHaveBeenCalledWith('theirs-new', 'mine-old', STRANGER);
-        expect(grantsOn('theirs-new')).toEqual([{ email: STRANGER, scope: 'entry', origin: 'merge' }]);
+    it("the requester keeping the other's profile no longer merges: a dispute request goes to the admins (D49)", async () => {
+        notify.admins.length = 0;
+        expect(await mergePendingDedupPair('cand-a', { keepId: 'theirs-new' })).toEqual({ success: true, outcome: 'disputed' });
+        expect(mergeSpy).not.toHaveBeenCalled();
+        expect(deleted('mine-old') || deleted('theirs-new')).toBe(false);
+        expect(requests()).toEqual([
+            expect.objectContaining({ id, status: 'declined', dispute: 0 }),
+            expect.objectContaining({ primary_id: 'theirs-new', secondary_id: 'mine-old', requester_email: STRANGER, owner_email: null, status: 'pending', dispute: 1 }),
+        ]);
+        // The admins hear it as a dispute; the owner who declined is not asked again.
+        expect(notify.create).toEqual([]);
+        expect(notify.admins).toEqual([expect.objectContaining({
+            type: 'merge_request', actorEmail: STRANGER, url: '/admin/merge-requests',
+            title: 'stranger pide que un administrador revise dos perfiles',
+            metadata: expect.objectContaining({ dispute: true }),
+            template: expect.objectContaining({ params: expect.objectContaining({ dispute: '1' }) }),
+        })]);
+        // Asking again is the same open dispute: nothing new filed or sent.
+        expect(await mergePendingDedupPair('cand-a', { keepId: 'theirs-new' })).toEqual({ success: true, outcome: 'disputed' });
+        expect(requests()).toHaveLength(2);
+        expect(notify.admins).toHaveLength(1);
+    });
+
+    it("no way around it: no keepId (the row's default), the same pair from a flag, a crafted keepId — never a merge", async () => {
+        expect(await mergePendingDedupPair('cand-a')).toEqual({ success: true, outcome: 'disputed' });
+        expect(await mergePendingDedupPair('cand-a', { keepId: 'mine-old' })).toMatchObject({ success: false, error: 'declined_before' });
+        expect(await mergePendingDedupPair('cand-a', { keepId: 'theirs-old' })).toMatchObject({ success: false, error: 'not_found' });
+        sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, target_adopter_id, reason, details, flagged_by, created_at)
+            VALUES ('flag-a', 'mine-old', 'theirs-new', 'duplicate', NULL, ?, 1)`).run(STRANGER);
+        expect(await mergePendingDedupPair('flag-a', { keepId: 'theirs-new' })).toEqual({ success: true, outcome: 'disputed' });
+        expect(mergeSpy).not.toHaveBeenCalled();
+        expect(requests().filter(r => r.dispute === 1)).toHaveLength(1);
+    });
+
+    it('the admins answer the dispute like any request to them: approve merges with the requester\'s survivor', async () => {
+        await mergePendingDedupPair('cand-a', { keepId: 'theirs-new' });
+        const dispute = requests().find(r => r.dispute === 1)!.id as string;
+        expect(await resolveMergeRequest(dispute, 'accept')).toMatchObject({ success: false, error: 'not_allowed' });
+        expect(await as(OWNER, () => resolveMergeRequest(dispute, 'accept'))).toMatchObject({ success: false, error: 'not_allowed' });
+        expect(mergeSpy).not.toHaveBeenCalled();
+        expect(await as(ADMIN, () => resolveMergeRequest(dispute, 'accept'))).toEqual({ success: true });
+        expect(mergeSpy).toHaveBeenCalledWith('theirs-new', 'mine-old', ADMIN);
+    });
+
+    it('the decliner may still change their mind while the dispute is open: their accept merges, the dispute closes', async () => {
+        await mergePendingDedupPair('cand-a', { keepId: 'theirs-new' });
+        expect(await as(OWNER, () => resolveMergeRequest(id, 'accept'))).toEqual({ success: true });
+        expect(mergeSpy).toHaveBeenCalledWith('mine-old', 'theirs-new', OWNER);
+        expect(requests().find(r => r.dispute === 1)).toMatchObject({ status: 'closed' });
     });
 
     it('the owner changes their mind and accepts later: merged with the requester\'s survivor', async () => {
@@ -301,7 +347,7 @@ describe('admins choose freely (D24)', () => {
         expect(await as(ADMIN, () => mergePendingDedupPair('cand-adm', { keepId: 'adm-mine' }))).toEqual({ success: true, outcome: 'merged' });
         expect(mergeSpy).toHaveBeenCalledWith('adm-mine', 'adm-theirs', ADMIN);
         expect(requests()).toEqual([]);
-        expect(notify.create).toEqual([expect.objectContaining({ type: 'adopter_merged', userId: OWNER, url: '/adopter/adm-mine' })]);
+        expect(notify.create).toEqual([expect.objectContaining({ type: 'adopter_merged', userId: OWNER, url: expect.stringMatching(/^\/adopter\/adm-mine\?dispute=[\w-]+$/) })]);
         expect(grantsOn('adm-mine').map(g => g.email)).toEqual([MATE, OWNER]);
     });
 

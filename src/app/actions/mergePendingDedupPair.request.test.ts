@@ -142,11 +142,12 @@ describe('mergePendingDedupPair — merge or request', () => {
         expect(mergeSpy).not.toHaveBeenCalled();
     });
 
-    it("declined, then a click with no choice: the row's default — keeping the other's profile, merged now (D43)", async () => {
+    it("declined, then a click with no choice: the row's default — keeping the other's profile — asks the admins, no merge (D49)", async () => {
         await mergePendingDedupPair('cand-older-mine');
         await as(OWNER, () => resolveMergeRequest(requests()[0].id as string, 'decline'));
-        expect(await mergePendingDedupPair('cand-older-mine')).toEqual({ success: true, outcome: 'merged' });
-        expect(mergeSpy).toHaveBeenLastCalledWith('o-new', 's-old', STRANGER);
+        expect(await mergePendingDedupPair('cand-older-mine')).toEqual({ success: true, outcome: 'disputed' });
+        expect(mergeSpy).not.toHaveBeenCalled();
+        expect(requests()[1]).toMatchObject({ primary_id: 'o-new', secondary_id: 's-old', owner_email: null, dispute: 1, status: 'pending' });
     });
 
     it('the owner accepts from their session: merged for real, requester notified', async () => {
@@ -168,8 +169,8 @@ describe('mergePendingDedupPair — merge or request', () => {
             type: 'adopter_merged', userId: OWNER,
             title: 'Se unieron dos perfiles: Ana Díaz → Ana Diaz',
             // D31: each side names its owner and date.
-            body: "stranger combinó su perfil «Ana Díaz (de stranger, 31 dic '69)» con el tuyo «Ana Diaz (de owner, 31 dic '69)» porque son la misma persona. Todo quedó en tu perfil.",
-            url: '/adopter/o-old', icon: '🔗',
+            body: "stranger combinó su perfil «Ana Díaz (de stranger, 31 dic '69)» con el tuyo «Ana Diaz (de owner, 31 dic '69)» porque son la misma persona. Todo quedó en tu perfil. ¿No es la misma persona? Avisale a un administrador desde el perfil.",
+            url: expect.stringMatching(/^\/adopter\/o-old\?dispute=[\w-]+$/), icon: '🔗',
             template: expect.objectContaining({ key: 'adopter_merged_by_rescuer' }),
         })]);
     });
@@ -195,15 +196,16 @@ describe('mergePendingDedupPair — merge or request', () => {
         expect(requests()).toEqual([]);
     });
 
-    it('a cross-rescuer flag keeping mine is a request; declined, the flag stays open (D27) and I can still keep theirs (D43)', async () => {
+    it("a cross-rescuer flag keeping mine is a request; declined, the flag stays open (D27) and keeping theirs asks the admins (D43, D49)", async () => {
         expect(await mergePendingDedupPair('flag-cross', { keepId: 's-new' })).toEqual({ success: true, outcome: 'requested', toName: 'owner', toAdmins: false });
         const [req] = requests();
         expect(req).toMatchObject({ primary_id: 's-new', secondary_id: 'o-old', candidate_id: null, flag_id: 'flag-cross', owner_email: OWNER });
         expect(await as(OWNER, () => resolveMergeRequest(req.id as string, 'decline'))).toEqual({ success: true });
         expect(sqlite.prepare(`SELECT details FROM adopter_flags WHERE id = 'flag-cross'`).get()!.details).toBeNull();
         expect(await mergePendingDedupPair('flag-cross', { keepId: 's-new' })).toMatchObject({ success: false, error: 'declined_before' });
+        expect(await mergePendingDedupPair('flag-cross', { keepId: 'o-old' })).toEqual({ success: true, outcome: 'disputed' });
         expect(mergeSpy).not.toHaveBeenCalled();
-        expect(await mergePendingDedupPair('flag-cross', { keepId: 'o-old' })).toEqual({ success: true, outcome: 'merged' });
+        expect(requests()[1]).toMatchObject({ flag_id: 'flag-cross', owner_email: null, dispute: 1 });
     });
 });
 

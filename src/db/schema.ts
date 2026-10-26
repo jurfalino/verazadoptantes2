@@ -469,11 +469,32 @@ export const mergeRequests = sqliteTable("merge_requests", {
     resolvedByEmail: text("resolved_by_email"),
     resolvedAt: integer("resolved_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    // 1 = a request to the admins after the owner rejected the pair (D49, drizzle/0095).
+    dispute: integer("dispute").notNull().default(0),
 }, (table) => ({
     statusCreatedIdx: index("idx_merge_req_status_created").on(table.status, table.createdAt),
     requesterIdx: index("idx_merge_req_requester").on(table.requesterEmail, table.status),
     ownerIdx: index("idx_merge_req_owner").on(table.ownerEmail, table.status),
     pairIdx: index("idx_merge_req_pair").on(table.primaryId, table.secondaryId, table.status),
+}));
+
+// merge_disputes — «No es la misma persona» on a merge that already happened
+// (D50, drizzle/0095). `audit_id` is the merge's audit_log row (the handle
+// unmergeAdopters takes). status: open | kept | undone; one open per merge.
+export const mergeDisputes = sqliteTable("merge_disputes", {
+    id: text("id").primaryKey(),
+    auditId: text("audit_id").notNull(),
+    survivorId: text("survivor_id").notNull(),
+    absorbedId: text("absorbed_id").notNull(),
+    raisedBy: text("raised_by").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    status: text("status").notNull().default("open"),
+    resolvedBy: text("resolved_by"),
+    resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+}, (table) => ({
+    openAuditIdx: uniqueIndex("idx_merge_disputes_open_audit").on(table.auditId).where(sql`status = 'open'`),
+    auditIdx: index("idx_merge_disputes_audit").on(table.auditId),
+    statusCreatedIdx: index("idx_merge_disputes_status_created").on(table.status, table.createdAt),
 }));
 
 // pending_pair_hidden — a viewer hid a duplicate pair from their «Pendientes de revisar»

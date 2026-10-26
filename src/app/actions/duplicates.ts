@@ -420,6 +420,7 @@ type FeedRequestRow = {
     id: string; primaryId: string; secondaryId: string; candidateId: string | null; flagId: string | null;
     requesterEmail: string; ownerEmail: string | null; createdAt: Date | null;
     status: 'pending' | 'declined'; resolvedByEmail: string | null; resolvedAt: Date | null;
+    dispute: number;
 };
 /** Per query: no one has anywhere near this many open requests. */
 const OPEN_REQUESTS_CAP = 100;
@@ -457,6 +458,7 @@ async function loadRequestsByPair(
         status: mergeRequests.status,
         resolvedByEmail: mergeRequests.resolvedByEmail,
         resolvedAt: mergeRequests.resolvedAt,
+        dispute: mergeRequests.dispute,
     };
     // Both columns are stored normalized (createMergeRequest); so are these.
     const involves = or(eq(mergeRequests.requesterEmail, normEmail(actorEmail)), ...team.map(e => eq(mergeRequests.ownerEmail, normEmail(e))));
@@ -533,6 +535,7 @@ function requestView(
         createdAt: r.createdAt ? Math.floor(r.createdAt.getTime() / 1000) : 0,
         counterpartName: counterpart ? nameOf(counterpart) : null,
         toAdmins: r.ownerEmail === null,
+        dispute: r.dispute === 1,
         // The same rule sendPairMessage enforces: requester ⇄ owner team, never the admins.
         canMessage: !!r.ownerEmail && (direction === 'sent' || teamKeys.has(normEmail(r.ownerEmail))),
         declinedAt: declined && r.resolvedAt ? Math.floor(r.resolvedAt.getTime() / 1000) : null,
@@ -616,14 +619,15 @@ export interface PendingDedupPair {
      * What «Combinar» does with the default survivor: `actionByKeep[defaultKeep]`
      * (kept for the current card until the layout-D UI reads actionByKeep).
      * 'merge' merges now («Combinar perfiles»); 'request' asks the other
-     * profile's owner («Pedir combinar»). Nothing allowed (the viewer created
+     * profile's owner («Pedir combinar»); 'dispute' asks the admins after the
+     * owner rejected it («Pedir revisión a un administrador», D49). Nothing allowed (the viewer created
      * neither side — only listed for a request, whose card shows no button)
      * reads 'merge'.
      */
-    mergeAction: 'merge' | 'request';
+    mergeAction: KeepAction;
     /** Which side the viewer may keep («¿Cuál se conserva?», D24, D42, D43). Admins: either. From pairChoices. */
     keepOptions: { new: boolean; existing: boolean };
-    /** What keeping each side does («Combinar perfiles» / «Pedir combinar»); null = not offered. From pairChoices. */
+    /** What keeping each side does («Combinar perfiles» / «Pedir combinar» / «Pedir revisión a un administrador», D49); null = not offered. From pairChoices. */
     actionByKeep: { new: KeepAction | null; existing: KeepAction | null };
     /** The survivor selected by default, and the one mergePendingDedupPair keeps when sent no keepId. */
     defaultKeep: KeepSide;
@@ -644,6 +648,8 @@ export interface PendingDedupPair {
         counterpartName: string | null;
         /** No real owner, so the admins decide (D15). */
         toAdmins: boolean;
+        /** Sent to the admins after the owner rejected the pair (D49). */
+        dispute: boolean;
         /** «Escribirle» (D28): requester ⇄ owner team, never a request to the admins. */
         canMessage: boolean;
         /** When it was declined (epoch s); null while pending. */
@@ -693,6 +699,12 @@ export interface PendingDedupSide {
  * D43). An ownerless profile can't be kept (`keep_not_allowed`, D42). Admins
  * choose freely: their choice merges straight away and the owners are told.
  *
+ * After that decline, keeping the OTHER rescuer's profile no longer merges
+ * (D49, revising D43): it is a 'dispute' (pairChoices) — a request to the
+ * admins marked as a dispute (createMergeRequest with `ownerEmail: null,
+ * dispute: true`) → outcome 'disputed'. Never a merge: only the rescuer who
+ * declined (accepting, answerMergeRequest) or an admin can merge that pair.
+ *
  * Different names matched on a contact ask «¿Es la misma persona?» first
  * (`identity_required`, D35); `identity: 'household'` is accepted only there
  * (`identity_not_applicable` otherwise) and merges nothing: the
@@ -708,6 +720,7 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
     | { success: true; outcome: 'merged' }
     | { success: true; outcome: 'household' }
     | { success: true; outcome: 'requested'; toName: string | null; toAdmins: boolean }
+    | { success: true; outcome: 'disputed' }
     | { success: false; error: string; errorId?: string }
 > {
     let actorEmail: string | null = null;
@@ -786,6 +799,32 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
         const primaryId = keepId;
         const secondaryId = keepId === sideA.id ? sideB.id : sideA.id;
 
+        if (chosen === 'dispute') {
+            // D49: the other owner rejected this rescuer's request on the pair.
+            // Keeping their profile would fold mine into it with no consent, so
+            // the admins decide instead. Nothing is merged here.
+            const fromFlag = pair!.source === 'flag';
+            const filed = await createMergeRequest(db, {
+                primaryId, secondaryId,
+                candidateId: fromFlag ? null : candidateId,
+                flagId: fromFlag ? candidateId : null,
+                requesterEmail: actor,
+                ownerEmail: null,
+                dispute: true,
+            });
+            if ('refused' in filed) return refuse(filed.refused);
+            const { id: requestId, created, requesterEmail } = filed;
+            // Someone else's request is open on the pair (the decliner asking
+            // the other way round): answer that one instead.
+            if (!created && normEmail(requesterEmail) !== normEmail(actor)) {
+                const errorId = generateErrorId();
+                logger.warn('mergePendingDedupPair: request already pending', { candidateId, actorEmail, requestId, errorId });
+                return { success: false, error: 'request_pending', errorId };
+            }
+            logger.info('mergePendingDedupPair: disputed', { candidateId, actorEmail, requestId, created, primaryId, secondaryId });
+            return { success: true, outcome: 'disputed' };
+        }
+
         if (action.kind === 'request' && !viaAdmin) {
             const fromFlag = pair!.source === 'flag';
             const filed = await createMergeRequest(db, {
@@ -853,8 +892,9 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
                     // Normalized: notifications are keyed (bell, email) by the
                     // lowercased email, and `added_by` keeps whatever case it had.
                     userId: normEmail(notifyOwner),
-                    ...notificationContent({ key: 'adopter_merged_by_rescuer', params: { actorName: requester, ...sides } }),
-                    url: `/adopter/${primaryId}`,
+                    ...notificationContent({ key: 'adopter_merged_by_rescuer', params: { actorName: requester, ...sides, ...(result.auditId ? { disputable: '1' } : {}) } }),
+                    // «¿No es la misma persona?» opens from here (D50).
+                    url: result.auditId ? `/adopter/${primaryId}?dispute=${encodeURIComponent(result.auditId)}` : `/adopter/${primaryId}`,
                     icon: '🔗',
                     metadata: { primaryId, secondaryId, auditId: result.auditId ?? null },
                 });

@@ -689,9 +689,11 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
  * Optional, admin-chosen (2026-10-19): tell whoever registered each of the two
  * profiles that they are now one. Never the admin who merged; one notice per
  * person even when they registered both. Best-effort, logged.
+ * With the merge's `auditId` the notice links to «¿No es la misma persona?»
+ * on the profile (D50, src/lib/mergeDisputes.ts).
  */
 export async function notifyMergeOwners(
-    merge: { primaryId: string; secondaryId?: string; primaryName?: string; secondaryName?: string; primaryAddedBy?: string | null; secondaryAddedBy?: string | null },
+    merge: { primaryId: string; secondaryId?: string; primaryName?: string; secondaryName?: string; primaryAddedBy?: string | null; secondaryAddedBy?: string | null; auditId?: string },
     actorEmail: string,
 ): Promise<number> {
     // Normalized: notifications are keyed (bell, email) by the lowercased
@@ -712,7 +714,7 @@ export async function notifyMergeOwners(
         const sides = db && merge.secondaryId
             ? await mergeSideParams(db, { survivorId: merge.primaryId, absorbedId: merge.secondaryId }, known)
             : { survivorName: merge.primaryName ?? '', absorbedName: merge.secondaryName ?? '' };
-        content = notificationContent({ key: 'adopter_merged_by_admin', params: sides });
+        content = notificationContent({ key: 'adopter_merged_by_admin', params: { ...sides, ...(merge.auditId ? { disputable: '1' } : {}) } });
     } catch (e) {
         logger.warn('notifyMergeOwners: notice not built, nobody notified', { primaryId: merge.primaryId, actor: actorEmail, error: e instanceof Error ? e.message : String(e) });
         return 0;
@@ -724,9 +726,10 @@ export async function notifyMergeOwners(
                 userId: owner,
                 type: 'adopter_merged',
                 ...content,
-                url: `/adopter/${merge.primaryId}`,
+                // «¿No es la misma persona?» opens from here when the merge can be found again (D50).
+                url: merge.auditId ? `/adopter/${merge.primaryId}?dispute=${encodeURIComponent(merge.auditId)}` : `/adopter/${merge.primaryId}`,
                 icon: '🔗',
-                metadata: { primaryId: merge.primaryId, mergedBy: actorEmail },
+                metadata: { primaryId: merge.primaryId, mergedBy: actorEmail, auditId: merge.auditId ?? null },
             });
             sent++;
         } catch (e) {

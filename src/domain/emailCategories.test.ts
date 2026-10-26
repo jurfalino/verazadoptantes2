@@ -16,6 +16,8 @@ describe('categoryForType', () => {
         ['form_attached', 'forms'],
         ['contract_result', 'forms'],
         ['adopter_merged', 'merges'],
+        ['merge_dispute_resolved', 'merges'],
+        ['merge_disputed', 'other'],
         ['duplicate_candidate', 'merges'],
         ['pii_access_revoked', 'contact_access'],
         ['ownership_transferred', 'profile_changes'],

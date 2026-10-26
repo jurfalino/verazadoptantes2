@@ -77,6 +77,12 @@ const MUST_NOT_BE_ACTIONS = [
     // and cancelMergeRequest, which take the actor from the session.
     'createMergeRequest',
     'answerMergeRequest',
+    // Merge disputes (D50, src/lib/mergeDisputes.ts): the raiser / resolving
+    // admin is an argument; the browser goes through raiseMergeDispute,
+    // getMergeDisputeOption and resolveMergeDispute (session).
+    'fileMergeDispute',
+    'answerMergeDispute',
+    'mergeDisputeOption',
 ];
 
 const files = walk(SRC);

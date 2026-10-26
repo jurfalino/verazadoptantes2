@@ -124,12 +124,17 @@ export function orderPair<T extends Pick<DedupSide, 'createdAt'>>(a: T, b: T): {
 }
 
 export type KeepSide = 'new' | 'existing';
-export type KeepAction = 'merge' | 'request';
+/**
+ * What keeping a side does: 'merge' now, 'request' the other owner's consent,
+ * or 'dispute' — ask the admins to review it (D49): the other owner already
+ * rejected this viewer's request on the pair, so nobody merges one-sidedly.
+ */
+export type KeepAction = 'merge' | 'request' | 'dispute';
 
 export interface PairChoices {
     /** Which side the viewer may keep («¿Cuál se conserva?»). */
     keepOptions: { new: boolean; existing: boolean };
-    /** What keeping that side does: merge now, ask the other owner, or null (not allowed). */
+    /** What keeping that side does: merge now, ask the other owner, ask the admins (D49), or null (not allowed). */
     actionByKeep: { new: KeepAction | null; existing: KeepAction | null };
     /** The survivor when the viewer chooses none: the older side if allowed, else the newer. */
     defaultKeep: KeepSide;
@@ -144,7 +149,11 @@ export interface PairChoices {
  *   the admin created neither side (`not_yours`), which nobody may merge here.
  * - A side with no real owner can't be kept by a rescuer (D42, `keep_not_allowed`).
  * - `declinedByViewer` (an owner declined the viewer's own request on this
- *   pair: canRequestAgain is false): a keep that would ask again is not allowed (D43).
+ *   pair: canRequestAgain is false): a keep that would ask again is not allowed
+ *   (D43), and keeping the other rescuer's profile — which would fold the
+ *   viewer's into it with no consent — becomes a request to the admins,
+ *   'dispute' (D49, revising D43): after «no es la misma persona» only the
+ *   rescuer who declined (changing their mind) or an admin can merge.
  * - `rebuilt` (the pair exists only as a merge request — no candidate or flag
  *   row for the click to load): nothing is allowed.
  */
@@ -162,6 +171,7 @@ export function pairChoices(
         if (ctx.isAdmin) return d.kind !== 'refuse' || d.reason === 'keep_not_allowed' ? 'merge' : null;
         if (d.kind === 'refuse') return null;
         if (d.kind === 'request' && ctx.declinedByViewer) return null;
+        if (d.kind === 'merge' && ctx.declinedByViewer && !keep.teamOwned) return 'dispute';
         return d.kind;
     };
     const actionByKeep = { new: actionFor(newer), existing: actionFor(older) };
@@ -245,6 +255,45 @@ export function canRequestAgain(
 ): boolean {
     const norm = (e: string) => e.trim().toLowerCase();
     return !previous.some(r => r.status === 'declined' && norm(r.requesterEmail) === norm(requester));
+}
+
+export type MergeDisputeStatus = 'open' | 'kept' | 'undone';
+
+/**
+ * May this viewer ask the admins to review a merge that already happened
+ * («No es la misma persona», D50)? Only the owner team of either profile —
+ * never the rescuer who merged, and never on a solo merge (every real owner of
+ * both profiles is on the merging actor's team: nobody else's profile was
+ * involved). Anyone else reads `not_found`, the same answer as a guessed id,
+ * before anything about the merge's state. Then: an undone merge has nothing
+ * left to dispute, and once an admin decided to keep it, that answer stands
+ * for everyone (one shared reality).
+ */
+export function decideMergeDisputeRaise(input: {
+    viewerIsActor: boolean;
+    viewerOnSurvivorTeam: boolean;
+    viewerOnAbsorbedTeam: boolean;
+    soloMerge: boolean;
+    undone: boolean;
+    /** An admin already resolved a dispute on this merge (kept). */
+    decided: boolean;
+}): { ok: true } | { ok: false; reason: 'not_found' | 'already_undone' | 'already_decided' } {
+    const eligible = !input.viewerIsActor && !input.soloMerge && (input.viewerOnSurvivorTeam || input.viewerOnAbsorbedTeam);
+    if (!eligible) return { ok: false, reason: 'not_found' };
+    if (input.undone) return { ok: false, reason: 'already_undone' };
+    if (input.decided) return { ok: false, reason: 'already_decided' };
+    return { ok: true };
+}
+
+/** An admin resolves an open dispute (D50): «Deshacer combinación» → undone, «Mantener» → kept. */
+export function decideMergeDisputeResolution(input: {
+    status: MergeDisputeStatus;
+    actorIsAdmin: boolean;
+    decision: 'undo' | 'keep';
+}): { ok: true; nextStatus: Exclude<MergeDisputeStatus, 'open'> } | { ok: false; reason: 'not_allowed' | 'not_open' } {
+    if (!input.actorIsAdmin) return { ok: false, reason: 'not_allowed' };
+    if (input.status !== 'open') return { ok: false, reason: 'not_open' };
+    return { ok: true, nextStatus: input.decision === 'undo' ? 'undone' : 'kept' };
 }
 
 /** A duplicate flag row, as far as the merge feed cares. */

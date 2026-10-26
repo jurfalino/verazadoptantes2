@@ -40,6 +40,9 @@ const TYPE_TO_CATEGORY: Readonly<Record<string, EmailCategory>> = {
     contract_attached: 'forms',
     adopter_merged: 'merges',
     merge_request_resolved: 'merges',
+    merge_dispute_resolved: 'merges',
+    // Admins only (D50): no switch of its own.
+    merge_disputed: 'other',
     duplicate_candidate: 'merges',
     pair_message: 'merges',
     pii_access_approved: 'contact_access',

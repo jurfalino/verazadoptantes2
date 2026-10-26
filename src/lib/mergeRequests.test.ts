@@ -572,7 +572,7 @@ describe('listMergeRequestsForAdmin', () => {
             id: 'p-old', status: 'pending', createdAt: 200_000,
             primary: { id: 'third', name: 'Otra', ownerEmail: OWNER, createdAt: 3_000_000 },
             secondary: { id: 'anon-new', name: 'Anónima', ownerEmail: null, createdAt: 4_000_000 },
-            requesterEmail: REQUESTER, ownerEmail: null,
+            requesterEmail: REQUESTER, ownerEmail: null, dispute: false,
         });
         expect(rows[2]).toMatchObject({ status: 'declined', primary: { name: 'Carla Gómez', ownerEmail: REQUESTER, createdAt: 1_000_000 }, secondary: { name: 'Carla Gomez', ownerEmail: OWNER, createdAt: 2_000_000 }, ownerEmail: OWNER });
     });

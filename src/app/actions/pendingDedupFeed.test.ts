@@ -109,7 +109,7 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         const p = pairOf((await feed(OWNER)).pairs, 'cand-newer-mine');
         expect(p.request).toEqual({
             id: requestId(), status: 'pending', direction: 'sent', createdAt: expect.any(Number), counterpartName: 'stranger', toAdmins: false,
-            canMessage: true, declinedAt: null, declinedByName: null, keepId: 'o-old',
+            dispute: false, canMessage: true, declinedAt: null, declinedByName: null, keepId: 'o-old',
         });
         expect(p.request!.createdAt).toBeLessThan(Date.now() / 1000 + 5); // epoch seconds, not ms
         expect(p.request!.createdAt).toBeGreaterThan(Date.now() / 1000 - 60);
@@ -162,19 +162,23 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         expect(pairOf((await feed(MATE)).pairs, 'cand-older-mine').request!.declinedByName).toBeNull();
     });
 
-    it('after a decline the requester may only keep the other profile (D43); the owner may still keep either', async () => {
+    it("after a decline the requester may only keep the other profile — as a dispute for the admins (D43, D49); the owner may still keep either", async () => {
         // STRANGER kept their older s-old and asked OWNER; OWNER declined.
         await mergePendingDedupPair('cand-older-mine');
         expect(await as(OWNER, () => resolveMergeRequest(requestId(), 'decline'))).toEqual({ success: true });
         const mine = pairOf((await feed(STRANGER)).pairs, 'cand-older-mine');
         expect(mine.keepOptions).toEqual({ new: true, existing: false }); // o-new is OWNER's
-        expect(mine.mergeAction).toBe('merge');
+        expect(mine.mergeAction).toBe('dispute');
         expect(await mergePendingDedupPair('cand-older-mine', { keepId: 's-old' })).toMatchObject({ success: false, error: 'declined_before' });
+        // The row and the click agree: keeping OWNER's asks the admins, and the row then shows it sent to them.
+        expect(await mergePendingDedupPair('cand-older-mine', { keepId: 'o-new' })).toEqual({ success: true, outcome: 'disputed' });
+        expect(pairOf((await feed(STRANGER)).pairs, 'cand-older-mine').request)
+            .toMatchObject({ status: 'pending', direction: 'sent', toAdmins: true, dispute: true, counterpartName: null, canMessage: false });
         const theirs = pairOf((await feed(OWNER)).pairs, 'cand-older-mine');
         expect(theirs.keepOptions).toEqual({ new: true, existing: true });
         expect(theirs.mergeAction).toBe('merge'); // keeping STRANGER's older profile needs no consent
-        // The click agrees with the row: keeping OWNER's merges straight away.
-        expect(await mergePendingDedupPair('cand-older-mine', { keepId: 'o-new' })).toEqual({ success: true, outcome: 'merged' });
+        // The decliner keeping STRANGER's profile is their own consent: merged straight away.
+        expect(await as(OWNER, () => mergePendingDedupPair('cand-older-mine', { keepId: 's-old' }))).toEqual({ success: true, outcome: 'merged' });
     });
 
     it('pairs with an open request sort first, ahead of stronger matches', async () => {
@@ -501,7 +505,7 @@ describe('getPendingDuplicatesForUser — layout D (groups, summary, admin score
 });
 
 describe('getPendingDuplicatesForUser — the row and the click agree (pairChoices)', () => {
-    const outcome = { merge: 'merged', request: 'requested' } as const;
+    const outcome = { merge: 'merged', request: 'requested', dispute: 'disputed' } as const;
     /** The row's prediction, then the click with no keepId does exactly that. */
     const agree = async (who: string, candidateId: string, expected: { actionByKeep: PendingDedupPair['actionByKeep']; defaultKeep: PendingDedupPair['defaultKeep'] }) => {
         const p = pairOf((await feed(who, true)).pairs, candidateId);
@@ -544,14 +548,17 @@ describe('getPendingDuplicatesForUser — the row and the click agree (pairChoic
         await agree(STRANGER, 'cand-anon-old', { actionByKeep: { new: 'request', existing: null }, defaultKeep: 'new' });
     });
 
-    it('D43, even when the row shows a newer pending request the other way: the requester may only keep theirs', async () => {
+    it("D43/D49, even when the row shows a newer pending request the other way: the requester may only keep theirs, as a dispute — and the click points at the open request", async () => {
         await mergePendingDedupPair('cand-older-mine'); // STRANGER keeps s-old, asks OWNER
         expect(await as(OWNER, () => resolveMergeRequest(requestId(), 'decline'))).toEqual({ success: true });
         // OWNER now asks the other way round: keep o-new, absorb STRANGER's s-old.
         expect(await as(OWNER, () => mergePendingDedupPair('cand-older-mine', { keepId: 'o-new' }))).toMatchObject({ outcome: 'requested' });
         const p = pairOf((await feed(STRANGER)).pairs, 'cand-older-mine');
         expect(p.request).toMatchObject({ status: 'pending', direction: 'received' });
-        await agree(STRANGER, 'cand-older-mine', { actionByKeep: { new: 'merge', existing: null }, defaultKeep: 'new' });
+        const row = pairOf((await feed(STRANGER, true)).pairs, 'cand-older-mine');
+        expect({ actionByKeep: row.actionByKeep, defaultKeep: row.defaultKeep }).toEqual({ actionByKeep: { new: 'dispute', existing: null }, defaultKeep: 'new' });
+        // OWNER's own request is open on the pair: STRANGER answers that one (accept) instead of filing a dispute.
+        expect(await mergePendingDedupPair('cand-older-mine')).toMatchObject({ success: false, error: 'request_pending' });
     });
 
     it('a pair rebuilt from a request: nothing to choose, and the click can\'t act on it either', async () => {

@@ -54,15 +54,21 @@ export interface NotificationTemplateParams {
     api_record: { personName: string; context: string; keyName: string; outcome: string; contactsAdded?: string };
     /** Admin-only: keeps the requester's email, as today. */
     api_access_requested: { requesterEmail: string; tool: string };
-    merge_request: { requesterName: string } & MergeSides;
+    /** `dispute`: '1' when the requester asks the admins after the owner rejected the pair (D49; admins only). */
+    merge_request: { requesterName: string; dispute?: string } & MergeSides;
     /** `byAdmin`: '1' when an admin answered (then `actorName` is not shown). */
     merge_request_accepted: { actorName?: string; byAdmin?: string } & MergeSides;
     merge_request_flipped: { actorName?: string; byAdmin?: string } & MergeSides;
     merge_request_declined: { actorName?: string; byAdmin?: string } & MergeSides;
     /** The owner's copy when a teammate answered (D26). `outcome`: accepted | flipped | declined. */
     merge_request_answered_by_teammate: { actorName: string; requesterName: string; outcome: string } & MergeSides;
-    adopter_merged_by_rescuer: { actorName: string } & MergeSides;
-    adopter_merged_by_admin: MergeSides;
+    /** `disputable`: '1' when the notice links to «¿No es la misma persona?» on the profile (D50). */
+    adopter_merged_by_rescuer: { actorName: string; disputable?: string } & MergeSides;
+    adopter_merged_by_admin: { disputable?: string } & MergeSides;
+    /** Admins only (D50): `raiserName` says a merge that already happened is not the same person. */
+    merge_disputed: { raiserName: string } & MergeSides;
+    /** D50, both owners: `outcome` undone | kept. */
+    merge_dispute_resolved: { outcome: string } & MergeSides;
     pair_message: { fromName: string; profileName?: string; message: string };
     /** D45: someone recorded that the reader's profile `linkedName` lives with `hostName`. */
     household_linked: { actorName: string; hostName?: string; linkedName?: string };
@@ -118,6 +124,13 @@ const KEPT_APART: Record<NotificationLocale, (p: MergeSides) => string> = {
     en: p => `${absorbedLabel(p, 'en')} and ${survivorLabel(p, 'en')} remain separate profiles.`,
     pt: p => `${absorbedLabel(p, 'pt')} e ${survivorLabel(p, 'pt')} continuam como perfis separados.`,
 };
+/** The way back from an «adopter_merged» notice to a dispute (D50). */
+const DISPUTE_HINT: Record<NotificationLocale, string> = {
+    es: ' ¿No es la misma persona? Avisale a un administrador desde el perfil.',
+    en: ' Not the same person? Let an administrator know from the profile.',
+    pt: ' Não é a mesma pessoa? Avise um administrador pelo perfil.',
+};
+const disputeHint = (p: { disputable?: string }, l: NotificationLocale) => (p.disputable === '1' ? DISPUTE_HINT[l] : '');
 const answeredBy = (p: { actorName?: string; byAdmin?: string }, l: NotificationLocale): string | null =>
     p.byAdmin === '1' ? AN_ADMIN[l] : (p.actorName?.trim() || null);
 
@@ -363,9 +376,15 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
     },
     merge_request: {
         required: ['requesterName', 'survivorName', 'absorbedName'],
-        es: p => ({ title: `${p.requesterName} pidió combinar dos perfiles`, body: `Pidió combinar dos perfiles porque serían la misma persona: ${KEEPS.es(p)}. Podés aceptar o rechazar el pedido.` }),
-        en: p => ({ title: `${p.requesterName} asked to merge two profiles`, body: `They asked to merge two profiles because they would be the same person: ${KEEPS.en(p)}. You can accept or decline the request.` }),
-        pt: p => ({ title: `${p.requesterName} pediu para combinar dois perfis`, body: `Pediu para combinar dois perfis porque seriam a mesma pessoa: ${KEEPS.pt(p)}. Você pode aceitar ou recusar o pedido.` }),
+        es: p => p.dispute === '1'
+            ? { title: `${p.requesterName} pide que un administrador revise dos perfiles`, body: `El otro rescatista rechazó combinarlos, pero ${p.requesterName} cree que son la misma persona: ${KEEPS.es(p)}. Podés aprobar o rechazar el pedido.` }
+            : { title: `${p.requesterName} pidió combinar dos perfiles`, body: `Pidió combinar dos perfiles porque serían la misma persona: ${KEEPS.es(p)}. Podés aceptar o rechazar el pedido.` },
+        en: p => p.dispute === '1'
+            ? { title: `${p.requesterName} asks an administrator to review two profiles`, body: `The other rescuer declined to merge them, but ${p.requesterName} believes they are the same person: ${KEEPS.en(p)}. You can approve or decline the request.` }
+            : { title: `${p.requesterName} asked to merge two profiles`, body: `They asked to merge two profiles because they would be the same person: ${KEEPS.en(p)}. You can accept or decline the request.` },
+        pt: p => p.dispute === '1'
+            ? { title: `${p.requesterName} pede que um administrador revise dois perfis`, body: `O outro resgatista recusou combiná-los, mas ${p.requesterName} acredita que são a mesma pessoa: ${KEEPS.pt(p)}. Você pode aprovar ou recusar o pedido.` }
+            : { title: `${p.requesterName} pediu para combinar dois perfis`, body: `Pediu para combinar dois perfis porque seriam a mesma pessoa: ${KEEPS.pt(p)}. Você pode aceitar ou recusar o pedido.` },
     },
     merge_request_accepted: {
         required: ['survivorName', 'absorbedName'],
@@ -405,15 +424,36 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
     },
     adopter_merged_by_rescuer: {
         required: ['actorName', 'survivorName', 'absorbedName'],
-        es: p => ({ title: MERGED_TITLE.es(p), body: `${p.actorName} combinó su perfil ${absorbedLabel(p, 'es')} con el tuyo ${survivorLabel(p, 'es')} porque son la misma persona. Todo quedó en tu perfil.` }),
-        en: p => ({ title: MERGED_TITLE.en(p), body: `${p.actorName} merged their profile ${absorbedLabel(p, 'en')} into yours, ${survivorLabel(p, 'en')}, because they are the same person. Everything is now in your profile.` }),
-        pt: p => ({ title: MERGED_TITLE.pt(p), body: `${p.actorName} combinou o perfil ${absorbedLabel(p, 'pt')} com o seu ${survivorLabel(p, 'pt')} porque são a mesma pessoa. Tudo ficou no seu perfil.` }),
+        es: p => ({ title: MERGED_TITLE.es(p), body: `${p.actorName} combinó su perfil ${absorbedLabel(p, 'es')} con el tuyo ${survivorLabel(p, 'es')} porque son la misma persona. Todo quedó en tu perfil.${disputeHint(p, 'es')}` }),
+        en: p => ({ title: MERGED_TITLE.en(p), body: `${p.actorName} merged their profile ${absorbedLabel(p, 'en')} into yours, ${survivorLabel(p, 'en')}, because they are the same person. Everything is now in your profile.${disputeHint(p, 'en')}` }),
+        pt: p => ({ title: MERGED_TITLE.pt(p), body: `${p.actorName} combinou o perfil ${absorbedLabel(p, 'pt')} com o seu ${survivorLabel(p, 'pt')} porque são a mesma pessoa. Tudo ficou no seu perfil.${disputeHint(p, 'pt')}` }),
     },
     adopter_merged_by_admin: {
         required: ['survivorName', 'absorbedName'],
-        es: p => ({ title: MERGED_TITLE.es(p), body: `Un administrador los unió porque son la misma persona: ${KEEPS.es(p)}. Todo lo registrado en los dos quedó en este perfil.` }),
-        en: p => ({ title: MERGED_TITLE.en(p), body: `An administrator merged them because they are the same person: ${KEEPS.en(p)}. Everything recorded in both is now in this profile.` }),
-        pt: p => ({ title: MERGED_TITLE.pt(p), body: `Um administrador os combinou porque são a mesma pessoa: ${KEEPS.pt(p)}. Tudo o que foi registrado nos dois ficou neste perfil.` }),
+        es: p => ({ title: MERGED_TITLE.es(p), body: `Un administrador los unió porque son la misma persona: ${KEEPS.es(p)}. Todo lo registrado en los dos quedó en este perfil.${disputeHint(p, 'es')}` }),
+        en: p => ({ title: MERGED_TITLE.en(p), body: `An administrator merged them because they are the same person: ${KEEPS.en(p)}. Everything recorded in both is now in this profile.${disputeHint(p, 'en')}` }),
+        pt: p => ({ title: MERGED_TITLE.pt(p), body: `Um administrador os combinou porque são a mesma pessoa: ${KEEPS.pt(p)}. Tudo o que foi registrado nos dois ficou neste perfil.${disputeHint(p, 'pt')}` }),
+    },
+    merge_disputed: {
+        required: ['raiserName', 'survivorName', 'absorbedName'],
+        es: p => ({ title: `${p.raiserName} dice que no son la misma persona`, body: `Pide revisar dos perfiles que ya se combinaron: ${KEEPS.es(p)}. Podés deshacer la combinación o mantenerla.` }),
+        en: p => ({ title: `${p.raiserName} says they are not the same person`, body: `They ask to review two profiles that were already merged: ${KEEPS.en(p)}. You can undo the merge or keep it.` }),
+        pt: p => ({ title: `${p.raiserName} diz que não são a mesma pessoa`, body: `Pede para revisar dois perfis que já foram combinados: ${KEEPS.pt(p)}. Você pode desfazer a combinação ou mantê-la.` }),
+    },
+    merge_dispute_resolved: {
+        required: ['outcome', 'survivorName', 'absorbedName'],
+        es: p => disputeOutcome(p, {
+            undone: ['Un administrador separó dos perfiles', `Revisó si eran la misma persona y deshizo la combinación: ${KEPT_APART.es(p)}`],
+            kept: ['Un administrador mantuvo una combinación', `Revisó si eran la misma persona y la combinación queda: ${KEEPS.es(p)}.`],
+        }),
+        en: p => disputeOutcome(p, {
+            undone: ['An administrator separated two profiles', `They reviewed whether it was the same person and undid the merge: ${KEPT_APART.en(p)}`],
+            kept: ['An administrator kept a merge', `They reviewed whether it was the same person and the merge stands: ${KEEPS.en(p)}.`],
+        }),
+        pt: p => disputeOutcome(p, {
+            undone: ['Um administrador separou dois perfis', `Revisou se era a mesma pessoa e desfez a combinação: ${KEPT_APART.pt(p)}`],
+            kept: ['Um administrador manteve uma combinação', `Revisou se era a mesma pessoa e a combinação continua: ${KEEPS.pt(p)}.`],
+        }),
     },
     pair_message: {
         required: ['fromName', 'message'],
@@ -517,6 +557,12 @@ function apiRecord(
 function withWho<P extends { actorName?: string; byAdmin?: string }>(p: P, l: NotificationLocale, build: (who: string) => NotificationText): NotificationText | null {
     const who = answeredBy(p, l);
     return who ? build(who) : null;
+}
+
+function disputeOutcome(p: { outcome: string }, byOutcome: Record<'undone' | 'kept', [string, string]>): NotificationText | null {
+    if (p.outcome !== 'undone' && p.outcome !== 'kept') return null;
+    const [title, body] = byOutcome[p.outcome];
+    return { title, body };
 }
 
 function teammateAnswer(

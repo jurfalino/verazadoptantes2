@@ -41,7 +41,9 @@ const SAMPLES: { [K in NotificationTemplate['key']]: Extract<NotificationTemplat
     merge_request_declined: { actorName: 'María', ...sides },
     merge_request_answered_by_teammate: { actorName: 'Ana', requesterName: 'Jon', outcome: 'accepted', ...sides },
     adopter_merged_by_rescuer: { actorName: 'Jon', ...sides },
-    adopter_merged_by_admin: sides,
+    adopter_merged_by_admin: { disputable: '1', ...sides },
+    merge_disputed: { raiserName: 'María', ...sides },
+    merge_dispute_resolved: { outcome: 'undone', ...sides },
     pair_message: { fromName: 'Jon', profileName: 'Julieta Paz', message: 'Hola' },
     household_linked: { actorName: 'Jon', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
     household_link_hidden: { actorName: 'María', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
@@ -115,6 +117,16 @@ describe('renderNotification', () => {
         // No owner, no date: just the name.
         const bare = renderNotification({ key: 'merge_request_declined', params: { byAdmin: '1', survivorName: 'A', absorbedName: '' } }, 'es')!;
         expect(bare).toEqual({ title: 'Un administrador rechazó combinar dos perfiles', body: '«sin nombre» y «A» siguen como perfiles separados.' });
+    });
+
+    it('disputes (D49, D50): the admin request, the hint on a merge notice, and both outcomes', () => {
+        expect(renderNotification({ key: 'merge_request', params: { requesterName: 'Jon', dispute: '1', ...sides } }, 'es')!.title)
+            .toBe('Jon pide que un administrador revise dos perfiles');
+        expect(renderNotification({ key: 'adopter_merged_by_rescuer', params: { actorName: 'Jon', disputable: '1', ...sides } }, 'es')!.body)
+            .toMatch(/¿No es la misma persona\? Avisale a un administrador desde el perfil\.$/);
+        expect(renderNotification({ key: 'adopter_merged_by_rescuer', params: { actorName: 'Jon', ...sides } }, 'es')!.body).not.toMatch(/administrador/);
+        expect(renderNotification({ key: 'merge_dispute_resolved', params: { outcome: 'kept', ...sides } }, 'en')!.title).toBe('An administrator kept a merge');
+        expect(renderNotification({ key: 'merge_dispute_resolved', params: { outcome: 'sideways', ...sides } }, 'es')).toBeNull();
     });
 
     it('a teammate\'s answer reads per outcome', () => {

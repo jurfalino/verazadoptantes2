@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pairKey, decideDedupMerge, decideDedupAction, decideMergeRequestAnswer, canRequestAgain, keepOptions, pairChoices, orderPair, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, realOwner, type DedupSide } from './dedupPair';
+import { pairKey, decideDedupMerge, decideDedupAction, decideMergeRequestAnswer, canRequestAgain, keepOptions, pairChoices, orderPair, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, realOwner, decideMergeDisputeRaise, decideMergeDisputeResolution, type DedupSide } from './dedupPair';
 
 const ME = 'me@example.com';
 const side = (id: string, addedBy: string | null, createdAt: number, teamOwned: boolean, deleted = false): DedupSide =>
@@ -340,10 +340,16 @@ describe('pairChoices — the «¿Cuál se conserva?» switch, for the row and t
         });
     });
 
-    it('after the owner declined my request, asking again is not offered (D43); keeping theirs still is', () => {
+    it("after the owner declined my request, asking again is not offered (D43); keeping theirs asks the admins instead of merging (D49)", () => {
         expect(pairChoices(ME, FOREIGN_NEW, MINE_OLD, 'detected', { ...NONE, declinedByViewer: true })).toEqual({
-            keepOptions: { new: true, existing: false }, actionByKeep: { new: 'merge', existing: null }, defaultKeep: 'new',
+            keepOptions: { new: true, existing: false }, actionByKeep: { new: 'dispute', existing: null }, defaultKeep: 'new',
         });
+        // A flag alike.
+        expect(pairChoices(ME, MINE_NEW, FOREIGN_OLD, 'flag', { ...NONE, declinedByViewer: true }).actionByKeep).toEqual({ new: null, existing: 'dispute' });
+    });
+
+    it('a decline does not turn a merge inside my own team into a dispute', () => {
+        expect(pairChoices(ME, MATE_NEW, MINE_OLD, 'detected', { ...NONE, declinedByViewer: true }).actionByKeep).toEqual({ new: 'merge', existing: 'merge' });
     });
 
     it('admins choose freely: both sides, both merge — ownerless and declined included', () => {
@@ -365,5 +371,38 @@ describe('pairChoices — the «¿Cuál se conserva?» switch, for the row and t
 
     it('a viewer who created neither side: nothing allowed', () => {
         expect(pairChoices('stranger@example.com', FOREIGN_NEW, MINE_OLD, 'detected', NONE).actionByKeep).toEqual({ new: null, existing: null });
+    });
+});
+
+describe('decideMergeDisputeRaise (D50)', () => {
+    const base = { viewerIsActor: false, viewerOnSurvivorTeam: true, viewerOnAbsorbedTeam: false, soloMerge: false, undone: false, decided: false };
+
+    it("the kept profile's owner team may ask the admins; so may the absorbed profile's", () => {
+        expect(decideMergeDisputeRaise(base)).toEqual({ ok: true });
+        expect(decideMergeDisputeRaise({ ...base, viewerOnSurvivorTeam: false, viewerOnAbsorbedTeam: true })).toEqual({ ok: true });
+    });
+
+    it('a stranger, the rescuer who merged, or anyone on a solo merge: not_found (the same answer as a guessed id)', () => {
+        expect(decideMergeDisputeRaise({ ...base, viewerOnSurvivorTeam: false })).toEqual({ ok: false, reason: 'not_found' });
+        expect(decideMergeDisputeRaise({ ...base, viewerIsActor: true })).toEqual({ ok: false, reason: 'not_found' });
+        expect(decideMergeDisputeRaise({ ...base, soloMerge: true })).toEqual({ ok: false, reason: 'not_found' });
+    });
+
+    it('an undone merge, or one an admin already decided to keep: nothing to raise', () => {
+        expect(decideMergeDisputeRaise({ ...base, undone: true })).toEqual({ ok: false, reason: 'already_undone' });
+        expect(decideMergeDisputeRaise({ ...base, decided: true })).toEqual({ ok: false, reason: 'already_decided' });
+        // …but a stranger still learns nothing.
+        expect(decideMergeDisputeRaise({ ...base, viewerOnSurvivorTeam: false, undone: true })).toEqual({ ok: false, reason: 'not_found' });
+    });
+});
+
+describe('decideMergeDisputeResolution (D50)', () => {
+    it('only an admin, only while open: undo → undone, keep → kept', () => {
+        expect(decideMergeDisputeResolution({ status: 'open', actorIsAdmin: true, decision: 'undo' })).toEqual({ ok: true, nextStatus: 'undone' });
+        expect(decideMergeDisputeResolution({ status: 'open', actorIsAdmin: true, decision: 'keep' })).toEqual({ ok: true, nextStatus: 'kept' });
+        expect(decideMergeDisputeResolution({ status: 'open', actorIsAdmin: false, decision: 'undo' })).toEqual({ ok: false, reason: 'not_allowed' });
+        for (const status of ['kept', 'undone'] as const) {
+            expect(decideMergeDisputeResolution({ status, actorIsAdmin: true, decision: 'undo' })).toEqual({ ok: false, reason: 'not_open' });
+        }
     });
 });

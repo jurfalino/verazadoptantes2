@@ -244,6 +244,26 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // sits beside are read by src/lib/householdLinks.ts getLinkedSummaries, a plain server
 // module called by the profile page — deliberately NOT an endpoint.
 // 163 = 162 + 1.
+// One shared reality (2.57.1), Task 1 — disputes (D49, D50): +3 in
+// src/app/actions/mergeDisputes.ts. COMPUTED, not measured: nothing imports them until the
+// UI task (Task 3) wires them, and Next only records referenced actions, so EXPECTED_ACTIONS
+// stays 163 here and becomes 166 (measured in Task 4) in the commit that imports them.
+// What a stranger can do with arguments they choose:
+//   raiseMergeDispute(auditId)        session required; the id is capped at 200 chars; the
+//                                     only write is one merge_disputes row (one open per merge,
+//                                     partial unique index), and only when the session is on the
+//                                     owner team of the survivor or the absorbed profile of THAT
+//                                     merge and is not the rescuer who merged (nor on a solo
+//                                     merge) — anyone else, and any id that is not an
+//                                     adopter_merge audit row, gets `not_found`. Notifies admins.
+//   getMergeDisputeOption(auditId)    session required; returns only { canRaise, status } and
+//                                     'none' for anyone who may not raise it — no names, ids,
+//                                     emails or merge details, so it cannot probe merges.
+//   resolveMergeDispute(id, decision) admin only (decideMergeDisputeResolution); decision is
+//                                     checked against undo|keep; status moves by compare-and-set
+//                                     so the undo (the shared, audited unmergeAdopters) runs once.
+// The workers that take the actor (fileMergeDispute, answerMergeDispute, mergeDisputeOption,
+// src/lib/mergeDisputes.ts) are listed in MUST_NOT_BE_ACTIONS (serverActionSurface.test.ts).
 const EXPECTED_ACTIONS = 163;
 
 let manifest;
