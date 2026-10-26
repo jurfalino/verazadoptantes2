@@ -25,7 +25,7 @@ import { closeRequestsForAdopter } from '@/lib/mergeRequestClose';
 import { mergeSideParams } from '@/lib/mergeNotificationSides';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { rowsAffected } from '@/lib/interviews/rowsAffected';
-import { moveHouseholdLinksOnMerge, restoreHouseholdLinks, type MovedHouseholdLink } from '@/lib/householdLinks';
+import { moveHouseholdLinksOnMerge, notifyDisputesAfterMerge, restoreHouseholdLinks, type MovedHouseholdLink, type MovedHouseholdLinkCorrection } from '@/lib/householdLinks';
 
 export interface MergeAdoptersResult {
     success: boolean;
@@ -59,6 +59,8 @@ export async function mergeAdopters(
     // Set once this merge has claimed the pair (soft-deleted the secondary), until
     // its audit row exists: a failure in between gives the secondary back.
     let restoreSecondary: (() => Promise<void>) | null = null;
+    // Likewise for the household links / corrections step 6d moved (D51).
+    let revertHouseholdLinks: (() => Promise<void>) | null = null;
     try {
         if (!primaryId || !secondaryId || primaryId === secondaryId) {
             return { success: false, error: 'Invalid merge request' };
@@ -238,15 +240,19 @@ export async function mergeAdopters(
             if (added.enriched.length) undo.enrichedHouseholdMembers = added.enriched;
         }
 
-        // 6d. «Convive con» links follow the merge (D51): those the absorbed
-        // profile hosted move with the members that landed on the survivor,
-        // those naming it now name the survivor. Undo puts them back.
+        // 6d. «Convive con» links and «No convive» corrections follow the
+        // merge (D51): those the absorbed profile hosted move with the members
+        // that landed on the survivor, those naming it now name the survivor.
+        // Undo puts them back; so does a failure before the audit row.
         const landed = new Set(undo.addedHouseholdMemberIds ?? []);
-        undo.householdLinks = await moveHouseholdLinksOnMerge(db, {
+        const movedLinks = await moveHouseholdLinksOnMerge(db, {
             survivorId: primaryId,
             absorbedId: secondaryId,
             landedMemberIds: new Map([...newMemberIds].filter(([, id]) => landed.has(id))),
         });
+        undo.householdLinks = movedLinks.links;
+        undo.householdLinkCorrections = movedLinks.corrections;
+        revertHouseholdLinks = () => restoreHouseholdLinks(db, movedLinks);
 
         // 1. Re-point adoptions (placements + adopter_events → normalized tables)
         const moved = await reassignAdopterRecords(db, secondaryId, primaryId);
@@ -366,6 +372,13 @@ export async function mergeAdopters(
         });
         // From here the merge stands (and undo can reverse it): no more giving back.
         restoreSecondary = null;
+        revertHouseholdLinks = null;
+
+        // 11a. A link this merge carried onto a host whose link to that person
+        // was corrected («No convive») is a dispute: the admins decide (D48).
+        await notifyDisputesAfterMerge(movedLinks.disputedPairs, actorEmail).catch((e: unknown) => {
+            logger.warn('mergeAdopters: household dispute notice not sent', { primaryId, secondaryId, actor: actorEmail, error: e instanceof Error ? e.message : String(e) });
+        });
 
         // 11b. The survivor's own history says it absorbed a profile (2026-10-19,
         // Jon): the audit log alone was invisible on the profile. Best-effort —
@@ -416,6 +429,13 @@ export async function mergeAdopters(
         };
     } catch (error) {
         const errorId = logger.error('mergeAdopters failed', error, { primaryId, secondaryId, actor: actorEmail });
+        if (revertHouseholdLinks) {
+            try {
+                await revertHouseholdLinks();
+            } catch (e) {
+                logger.error('mergeAdopters: household links not put back after a failed merge', e, { primaryId, secondaryId, actor: actorEmail, errorId });
+            }
+        }
         if (restoreSecondary) {
             // A failed merge leaves both profiles live (rows already re-pointed
             // stay on the survivor, as before the claim moved first).
@@ -529,6 +549,8 @@ interface MergeUndoPayload {
     formSubmissionIds?: string[];
     /** Household links this merge moved, as they were before (D51). Absent before 2.57.1. */
     householdLinks?: MovedHouseholdLink[];
+    /** «No convive» corrections this merge moved, as they were before (D48/D51). Absent before 2.57.1. */
+    householdLinkCorrections?: MovedHouseholdLinkCorrection[];
     candidates: Array<{ id: string; status: string }>;
     annotatedFlags: Array<{ id: string; details: string | null }>;
 }
@@ -669,8 +691,12 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
             if (out.status === 'busy') throw new Error(`Undo collided with concurrent household edits (Error ID: ${out.errorId})`);
         }
 
-        // 3c. The household links this merge moved go back where they were (D51).
-        await restoreHouseholdLinks(db, Array.isArray(undo.householdLinks) ? undo.householdLinks : []);
+        // 3c. The household links and corrections this merge moved go back where
+        //     they were (D51); a correction made after the merge stays on the survivor.
+        await restoreHouseholdLinks(db, {
+            links: Array.isArray(undo.householdLinks) ? undo.householdLinks : [],
+            corrections: Array.isArray(undo.householdLinkCorrections) ? undo.householdLinkCorrections : [],
+        });
 
         // 4. Put the touched duplicate candidates back to their prior status —
         //    grouped by target status so each group is a few chunked updates.

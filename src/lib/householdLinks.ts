@@ -12,8 +12,10 @@
  * - `loadLinkForCorrection` / `applyNotLivingTogether`: «No convive» (D48) —
  *   one member removed from the host, the link removed, the correction
  *   remembered, history on both profiles, the host's owner team told.
- * - `moveHouseholdLinksOnMerge` / `restoreHouseholdLinks`: links follow a
- *   merge and come back on undo (D51).
+ * - `moveHouseholdLinksOnMerge` / `restoreHouseholdLinks` /
+ *   `notifyDisputesAfterMerge`: links and corrections follow a merge and
+ *   come back on undo (D51); a merge that carries a corrected person back is
+ *   a dispute (D48).
  * - `getLinkedSummaries`: the live summaries for a profile page (D46) — the
  *   host's linked members and the linked profile's «Convive con» rows — with
  *   each profile's contacts masked exactly as `getAdopter` would mask them
@@ -30,6 +32,7 @@ import { runAfterResponse } from '@/lib/background';
 import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
 import { deserializeHouseholdMembers, serializeHouseholdMembers, type HouseholdMember } from '@/lib/householdMembers';
 import { casAdopterLists } from '@/lib/adopterListCas';
+import { runBatch } from '@/lib/dbBatch';
 import { maskContactEntries, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, maskOptionsFor, resolveAdoptersVisibility } from '@/lib/piiAccessServer';
 import { notificationContent } from '@/domain/notificationTemplates';
@@ -136,34 +139,42 @@ export async function notifyHouseholdLinked(input: { hostId: string; hostName: s
         })));
         logger.info('householdLinks: link notice sent', { ...ctx, recipients: recipients.length });
     }, ctx);
-    await notifyIfDisputedRelink(input, ctx);
+    await notifyIfDisputedRelink({ hostId: input.hostId, linkedId: input.linkedId, actor: input.actor }, ctx);
 }
 
 /**
- * D48: the same person put back on the same host after its linked team said
- * «No convive» — the two sides disagree, so the admins decide. Runs after
- * the response; never throws.
+ * D48: the same person is back on the same host after its linked team said
+ * «No convive» — re-added by hand, or carried there by a merge (D51) — and
+ * the two sides disagree, so the admins decide. Only when the pair has both
+ * a link and a correction. Runs after the response; never throws.
  */
-async function notifyIfDisputedRelink(input: { hostId: string; hostName: string; linkedId: string; actor: string }, ctx: Record<string, unknown>): Promise<void> {
+async function notifyIfDisputedRelink(input: { hostId: string; linkedId: string; actor: string; viaMerge?: boolean }, ctx: Record<string, unknown>): Promise<void> {
     await runAfterResponse('household.link_disputed', async () => {
         const db = await getDb();
         if (!db) return;
-        const corrected = await db.select({ id: householdLinkCorrections.id }).from(householdLinkCorrections)
-            .where(and(eq(householdLinkCorrections.hostAdopterId, input.hostId), eq(householdLinkCorrections.linkedAdopterId, input.linkedId)))
-            .limit(1).get();
-        if (!corrected) return;
-        const linked = await db.select({ name: adopters.name }).from(adopters).where(eq(adopters.id, input.linkedId)).get();
+        const [corrected, linkRow] = await Promise.all([
+            db.select({ id: householdLinkCorrections.id }).from(householdLinkCorrections)
+                .where(and(eq(householdLinkCorrections.hostAdopterId, input.hostId), eq(householdLinkCorrections.linkedAdopterId, input.linkedId))).limit(1).get(),
+            db.select({ id: householdLinks.id }).from(householdLinks)
+                .where(and(eq(householdLinks.hostAdopterId, input.hostId), eq(householdLinks.linkedAdopterId, input.linkedId))).limit(1).get(),
+        ]);
+        if (!corrected || !linkRow) return;
+        const [host, linked] = await Promise.all([input.hostId, input.linkedId].map(id =>
+            db.select({ name: adopters.name }).from(adopters).where(eq(adopters.id, id)).get()));
         const { notifyAdmins } = await import('@/app/actions/notifications');
         const actorName = personLabel(input.actor, await namesFor([input.actor], ctx)) ?? '';
         await notifyAdmins({
             actorEmail: input.actor,
             type: 'household_link_disputed',
-            ...notificationContent({ key: 'household_link_disputed', params: { actorName, hostName: input.hostName, linkedName: linked?.name } }),
+            ...notificationContent({
+                key: 'household_link_disputed',
+                params: { actorName, hostName: host?.name, linkedName: linked?.name, ...(input.viaMerge ? { viaMerge: '1' } : {}) },
+            }),
             url: `/adopter/${input.hostId}`,
             icon: '🏠',
-            metadata: { hostId: input.hostId, linkedId: input.linkedId, correctionId: corrected.id },
+            metadata: { hostId: input.hostId, linkedId: input.linkedId, correctionId: corrected.id, linkId: linkRow.id },
         });
-        logger.info('householdLinks: re-link after a correction, admins told', ctx);
+        logger.info('householdLinks: link back after a correction, admins told', { ...ctx, viaMerge: !!input.viaMerge });
     }, ctx);
 }
 
@@ -225,11 +236,13 @@ export async function loadLinkForCorrection(db: Db, linkId: string): Promise<Lin
 /**
  * «No convive» (D48), after the caller checked the actor may: removes THAT
  * member from the host's household (compare-and-swap; nothing else on the
- * host changes), the link, remembers the correction, writes history on both
- * profiles and tells the host's owner team. `removed: false` when the member
- * was already gone (someone got there first): nothing written, nobody told.
- * Once the member is removed the rest is best-effort and logged — the fact
- * is corrected; a retry would find nothing to remove.
+ * host changes), then in ONE batch deletes the link, records the correction
+ * (with the removed member's JSON, so an admin can put it back) and writes
+ * history on both profiles; then tells the host's owner team.
+ * `removed: false` when the member was already gone (someone got there
+ * first): nothing written, nobody told. A failed batch after the member is
+ * removed is logged as one error — the fact is corrected; a retry would find
+ * nothing to remove.
  */
 export async function applyNotLivingTogether(
     db: Db,
@@ -238,38 +251,46 @@ export async function applyNotLivingTogether(
 ): Promise<{ removed: boolean; busyErrorId?: string }> {
     const { link, host, linked, linkedIds } = target;
     const ctx = { linkId: link.id, hostId: host.id, linkedId: linked.id, memberId: link.memberId, actor };
-    const out = await casAdopterLists<boolean>(db, host.id, (row) => {
+    const isThePerson = (m: HouseholdMember) => m.id === link.memberId && !!m.profileId && linkedIds.has(m.profileId);
+    const out = await casAdopterLists<HouseholdMember | null>(db, host.id, (row) => {
         const members = deserializeHouseholdMembers(row.householdMembers);
-        const next = members.filter(m => !(m.id === link.memberId && !!m.profileId && linkedIds.has(m.profileId)));
-        return next.length === members.length ? { result: false } : { write: { householdMembers: serializeHouseholdMembers(next) }, result: true };
+        const gone = members.find(isThePerson);
+        return gone
+            ? { write: { householdMembers: serializeHouseholdMembers(members.filter(m => !isThePerson(m))) }, result: gone }
+            : { result: null };
     }, { op: 'applyNotLivingTogether', ...ctx });
     if (out.status === 'busy') return { removed: false, busyErrorId: out.errorId };
     if (out.status === 'missing' || !out.result) {
         logger.info('applyNotLivingTogether: member already gone, nothing corrected', ctx);
         return { removed: false };
     }
+    const removedMember = out.result;
     const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
     await tokenizeAdopter(host.id).catch((e: unknown) => { logger.error('applyNotLivingTogether: host tokenize failed', e, ctx); });
 
     const now = new Date();
-    const steps: Array<[string, () => Promise<unknown>]> = [
-        ['link not deleted (ignored on read: the member is gone)', async () => db.delete(householdLinks).where(eq(householdLinks.id, link.id))],
-        ['correction not recorded (a re-add will not reach the admins)', async () => db.insert(householdLinkCorrections).values({
-            id: crypto.randomUUID(), hostAdopterId: host.id, linkedAdopterId: linked.id, memberId: link.memberId, correctedBy: actor, createdAt: now,
-        })],
-        // The host's row is a member removal (so a stale edit form names who removed it), with the reason.
-        ['host history not written', async () => db.insert(adopterHistory).values({
-            id: crypto.randomUUID(), adopterId: host.id, changedBy: actor, kind: 'edit', changedAt: now,
-            changes: JSON.stringify({ household_member_removed: { id: link.memberId, reason: 'not_living_together', linkedId: linked.id } }),
-        })],
-        ['linked history not written', async () => db.insert(adopterHistory).values({
-            id: crypto.randomUUID(), adopterId: linked.id, changedBy: actor, kind: 'edit', changedAt: now,
-            changes: JSON.stringify({ household_not_living_together: { hostId: host.id, hostName: host.name } }),
-        })],
-    ];
-    await Promise.all(steps.map(([what, run]) => run().catch((e: unknown) => {
-        logger.error(`applyNotLivingTogether: ${what}`, e, ctx);
-    })));
+    try {
+        await runBatch(db, [
+            db.delete(householdLinks).where(eq(householdLinks.id, link.id)),
+            db.insert(householdLinkCorrections).values({
+                id: crypto.randomUUID(), hostAdopterId: host.id, linkedAdopterId: linked.id, memberId: link.memberId,
+                memberSnapshot: JSON.stringify(removedMember), correctedBy: actor, createdAt: now,
+            }),
+            // The host's row is a member removal (so a stale edit form names who removed it), with the reason.
+            db.insert(adopterHistory).values({
+                id: crypto.randomUUID(), adopterId: host.id, changedBy: actor, kind: 'edit', changedAt: now,
+                changes: JSON.stringify({ household_member_removed: { id: link.memberId, reason: 'not_living_together', linkedId: linked.id } }),
+            }),
+            db.insert(adopterHistory).values({
+                id: crypto.randomUUID(), adopterId: linked.id, changedBy: actor, kind: 'edit', changedAt: now,
+                changes: JSON.stringify({ household_not_living_together: { hostId: host.id, hostName: host.name } }),
+            }),
+        ]);
+    } catch (e) {
+        // The member is already off the host; without these rows the link is
+        // inert (its member is gone) but the history and the correction are missing.
+        logger.error('applyNotLivingTogether: member removed, but link/correction/history not written', e, ctx);
+    }
     logger.info('applyNotLivingTogether: corrected on both profiles', ctx);
     await notifyHostTeam({ hostId: host.id, hostName: host.name, hostOwner: host.addedBy, linkedName: linked.name, actor }, ctx);
     return { removed: true };
@@ -311,9 +332,14 @@ async function notifyHostTeam(
 
 /** A link's place before a merge moved it — what undo puts back. */
 export type MovedHouseholdLink = { id: string; hostAdopterId: string; linkedAdopterId: string; memberId: string };
+/** A correction's pair before a merge moved it — what undo puts back. */
+export type MovedHouseholdLinkCorrection = { id: string; hostAdopterId: string; linkedAdopterId: string };
+/** Everything a merge moved in the household-link tables (the undo payload's part). */
+export type MovedHouseholdLinks = { links: MovedHouseholdLink[]; corrections: MovedHouseholdLinkCorrection[] };
 
 /**
- * A merge folded `absorbedId` into `survivorId`: its links move with it.
+ * A merge folded `absorbedId` into `survivorId`: its links and «No convive»
+ * corrections move with it.
  * - Host side: the absorbed members landed on the survivor under new ids
  *   (`landedMemberIds`: old id → new id); each link moves to its member's
  *   new id. A member that did not land (a same-name repeat of one of the
@@ -321,42 +347,100 @@ export type MovedHouseholdLink = { id: string; hostAdopterId: string; linkedAdop
  *   profile: inert while merged, live again after undo.
  * - Linked side: links naming the absorbed profile now name the survivor.
  *   The host's member keeps its `profileId` (reads follow the merge).
- * A link between the two merged profiles is left alone (it would point at
- * itself). Returns where each moved link was, for the undo payload.
+ * - Corrections: either side naming the absorbed profile now names the
+ *   survivor, so a re-add on the survivor still counts as a dispute.
+ * Nothing between the two merged profiles moves (it would point at itself).
+ * Returns where each moved row was, for the undo payload; `disputedPairs`
+ * are the pairs this merge left with both a link and a correction —
+ * `notifyDisputesAfterMerge` tells the admins once the merge stands.
  */
 export async function moveHouseholdLinksOnMerge(
     db: Db,
     merge: { survivorId: string; absorbedId: string; landedMemberIds: ReadonlyMap<string, string> },
-): Promise<MovedHouseholdLink[]> {
+): Promise<MovedHouseholdLinks & { disputedPairs: Array<{ hostId: string; linkedId: string }> }> {
     const { survivorId, absorbedId, landedMemberIds } = merge;
-    const [hosted, linkedTo] = await Promise.all([
+    type CorrectionRow = typeof householdLinkCorrections.$inferSelect;
+    const [hosted, linkedTo, correctedHost, correctedLinked] = await Promise.all([
         db.select().from(householdLinks).where(eq(householdLinks.hostAdopterId, absorbedId)).all() as Promise<LinkRow[]>,
         db.select().from(householdLinks).where(eq(householdLinks.linkedAdopterId, absorbedId)).all() as Promise<LinkRow[]>,
+        db.select().from(householdLinkCorrections).where(eq(householdLinkCorrections.hostAdopterId, absorbedId)).all() as Promise<CorrectionRow[]>,
+        db.select().from(householdLinkCorrections).where(eq(householdLinkCorrections.linkedAdopterId, absorbedId)).all() as Promise<CorrectionRow[]>,
     ]);
-    const moved: MovedHouseholdLink[] = [];
-    const before = (l: LinkRow): MovedHouseholdLink => ({ id: l.id, hostAdopterId: l.hostAdopterId, linkedAdopterId: l.linkedAdopterId, memberId: l.memberId });
+    const moved: MovedHouseholdLinks = { links: [], corrections: [] };
+    const touched = new Map<string, { hostId: string; linkedId: string }>();
+    const touch = (hostId: string, linkedId: string) => touched.set(`${hostId}\u0000${linkedId}`, { hostId, linkedId });
     let left = 0;
+    try {
     for (const l of hosted) {
         const memberId = landedMemberIds.get(l.memberId);
         if (l.linkedAdopterId === survivorId || !memberId) { left++; continue; }
         await db.update(householdLinks).set({ hostAdopterId: survivorId, memberId }).where(eq(householdLinks.id, l.id));
-        moved.push(before(l));
+        moved.links.push({ id: l.id, hostAdopterId: l.hostAdopterId, linkedAdopterId: l.linkedAdopterId, memberId: l.memberId });
+        touch(survivorId, l.linkedAdopterId);
     }
     for (const l of linkedTo) {
         if (l.hostAdopterId === survivorId) { left++; continue; }
         await db.update(householdLinks).set({ linkedAdopterId: survivorId }).where(eq(householdLinks.id, l.id));
-        moved.push(before(l));
+        moved.links.push({ id: l.id, hostAdopterId: l.hostAdopterId, linkedAdopterId: l.linkedAdopterId, memberId: l.memberId });
+        touch(l.hostAdopterId, survivorId);
     }
-    if (moved.length || left) logger.info('householdLinks: links moved with a merge', { survivorId, absorbedId, moved: moved.length, left });
-    return moved;
+    for (const c of correctedHost) {
+        if (c.linkedAdopterId === survivorId) continue;
+        await db.update(householdLinkCorrections).set({ hostAdopterId: survivorId }).where(eq(householdLinkCorrections.id, c.id));
+        moved.corrections.push({ id: c.id, hostAdopterId: c.hostAdopterId, linkedAdopterId: c.linkedAdopterId });
+        touch(survivorId, c.linkedAdopterId);
+    }
+    for (const c of correctedLinked) {
+        if (c.hostAdopterId === survivorId) continue;
+        await db.update(householdLinkCorrections).set({ linkedAdopterId: survivorId }).where(eq(householdLinkCorrections.id, c.id));
+        moved.corrections.push({ id: c.id, hostAdopterId: c.hostAdopterId, linkedAdopterId: c.linkedAdopterId });
+        touch(c.hostAdopterId, survivorId);
+    }
+    } catch (e) {
+        // Half-moved: put back what moved, so the failed merge leaves the tables as they were.
+        await restoreHouseholdLinks(db, moved).catch((re: unknown) => {
+            logger.error('householdLinks: half-moved links not restored after a failed move', re, { survivorId, absorbedId });
+        });
+        throw e;
+    }
+    // A pair this merge touched that now has both a link and a correction: the
+    // merge carried the person back onto a host whose link was corrected.
+    const disputedPairs: Array<{ hostId: string; linkedId: string }> = [];
+    for (const p of touched.values()) {
+        const both = and(eq(householdLinks.hostAdopterId, p.hostId), eq(householdLinks.linkedAdopterId, p.linkedId));
+        const bothC = and(eq(householdLinkCorrections.hostAdopterId, p.hostId), eq(householdLinkCorrections.linkedAdopterId, p.linkedId));
+        const [l, c] = await Promise.all([
+            db.select({ id: householdLinks.id }).from(householdLinks).where(both).limit(1).get(),
+            db.select({ id: householdLinkCorrections.id }).from(householdLinkCorrections).where(bothC).limit(1).get(),
+        ]);
+        if (l && c) disputedPairs.push(p);
+    }
+    if (moved.links.length || moved.corrections.length || left) {
+        logger.info('householdLinks: links moved with a merge', { survivorId, absorbedId, links: moved.links.length, corrections: moved.corrections.length, left, disputed: disputedPairs.length });
+    }
+    return { ...moved, disputedPairs };
 }
 
-/** Undo of a merge: each link it moved goes back where it was (one removed since stays removed). */
-export async function restoreHouseholdLinks(db: Db, moved: readonly MovedHouseholdLink[]): Promise<void> {
-    for (const l of moved) {
+/** After a merge stands: the admins hear about each pair it carried back onto a corrected host (D48). Never throws. */
+export async function notifyDisputesAfterMerge(pairs: ReadonlyArray<{ hostId: string; linkedId: string }>, actor: string): Promise<void> {
+    for (const p of pairs) await notifyIfDisputedRelink({ ...p, actor, viaMerge: true }, { hostId: p.hostId, linkedId: p.linkedId, actor });
+}
+
+/**
+ * Undo of a merge (or a merge that failed after moving them): each link and
+ * correction it moved goes back to where it was. A row removed since stays
+ * removed; a correction made after the merge (not in `moved`) stays where it is.
+ */
+export async function restoreHouseholdLinks(db: Db, moved: Partial<MovedHouseholdLinks>): Promise<void> {
+    for (const l of moved.links ?? []) {
         await db.update(householdLinks)
             .set({ hostAdopterId: l.hostAdopterId, linkedAdopterId: l.linkedAdopterId, memberId: l.memberId })
             .where(eq(householdLinks.id, l.id));
+    }
+    for (const c of moved.corrections ?? []) {
+        await db.update(householdLinkCorrections)
+            .set({ hostAdopterId: c.hostAdopterId, linkedAdopterId: c.linkedAdopterId })
+            .where(eq(householdLinkCorrections.id, c.id));
     }
 }
 

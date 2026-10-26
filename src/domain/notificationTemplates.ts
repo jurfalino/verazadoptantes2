@@ -74,8 +74,11 @@ export interface NotificationTemplateParams {
     household_linked: { actorName: string; hostName?: string; linkedName?: string };
     /** D48, the host's owner team: `actorName` (the linked profile's team) said `linkedName` doesn't live with `hostName`; the member was removed on both profiles. */
     household_link_removed: { actorName: string; hostName?: string; linkedName?: string };
-    /** D48, admins only: `actorName` re-added `linkedName` to `hostName`'s household after the other side said they don't live together. */
-    household_link_disputed: { actorName: string; hostName?: string; linkedName?: string };
+    /**
+     * D48, admins only: `actorName` re-added `linkedName` to `hostName`'s household after the
+     * other side said they don't live together; `viaMerge: '1'` when a merge they did carried it back (D51).
+     */
+    household_link_disputed: { actorName: string; hostName?: string; linkedName?: string; viaMerge?: string };
 }
 
 export type NotificationTemplateKey = keyof NotificationTemplateParams;
@@ -477,9 +480,18 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
     },
     household_link_disputed: {
         required: ['actorName'],
-        es: p => ({ title: `Convivencia en disputa: ${plainName(p.linkedName, 'es')}`, body: `${p.actorName} volvió a agregar a ${plainName(p.linkedName, 'es')} al grupo familiar de ${plainName(p.hostName, 'es')}, después de que el equipo de ${plainName(p.linkedName, 'es')} indicara que no conviven. Revisá quién tiene razón.` }),
-        en: p => ({ title: `Household link disputed: ${plainName(p.linkedName, 'en')}`, body: `${p.actorName} added ${plainName(p.linkedName, 'en')} to ${plainName(p.hostName, 'en')}'s household again, after ${plainName(p.linkedName, 'en')}'s team said they don't live together. Please review who is right.` }),
-        pt: p => ({ title: `Convivência em disputa: ${plainName(p.linkedName, 'pt')}`, body: `${p.actorName} adicionou de novo ${plainName(p.linkedName, 'pt')} ao grupo familiar de ${plainName(p.hostName, 'pt')}, depois que a equipe de ${plainName(p.linkedName, 'pt')} indicou que não moram juntos. Revise quem tem razão.` }),
+        es: p => ({
+            title: `Convivencia en disputa: ${plainName(p.linkedName, 'es')}`,
+            body: `${p.viaMerge === '1' ? `Al combinar perfiles, ${p.actorName} volvió a dejar` : `${p.actorName} volvió a agregar`} a ${plainName(p.linkedName, 'es')} en el grupo familiar de ${plainName(p.hostName, 'es')}, después de que el equipo de ${plainName(p.linkedName, 'es')} indicara que no conviven. Revisá quién tiene razón.`,
+        }),
+        en: p => ({
+            title: `Household link disputed: ${plainName(p.linkedName, 'en')}`,
+            body: `${p.viaMerge === '1' ? `By merging profiles, ${p.actorName} put` : `${p.actorName} added`} ${plainName(p.linkedName, 'en')} back in ${plainName(p.hostName, 'en')}'s household, after ${plainName(p.linkedName, 'en')}'s team said they don't live together. Please review who is right.`,
+        }),
+        pt: p => ({
+            title: `Convivência em disputa: ${plainName(p.linkedName, 'pt')}`,
+            body: `${p.viaMerge === '1' ? `Ao combinar perfis, ${p.actorName} colocou de novo` : `${p.actorName} adicionou de novo`} ${plainName(p.linkedName, 'pt')} no grupo familiar de ${plainName(p.hostName, 'pt')}, depois que a equipe de ${plainName(p.linkedName, 'pt')} indicou que não moram juntos. Revise quem tem razão.`,
+        }),
     },
 };
 

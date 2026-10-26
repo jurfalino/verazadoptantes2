@@ -29,7 +29,10 @@ CREATE INDEX IF NOT EXISTS idx_merge_disputes_status_created ON merge_disputes (
 -- D48 «No convive»: the linked profile's owner team (or an admin) said the
 -- person does not live with the host. The member and its household_links row
 -- are removed; this row remembers the correction, so re-adding the same
--- person to the same host is a dispute the admins hear about.
+-- person to the same host is a dispute the admins hear about. Corrections
+-- follow merges like the links do (moved in mergeAdopters, back on undo).
+-- member_snapshot: the removed household member's JSON, so an admin can put
+-- it back if the correction was wrong (PII: never logged).
 -- (household_links.hidden_at / hidden_by from the withdrawn D47 are no longer
 -- read or written; a row hidden then reads as live.)
 CREATE TABLE IF NOT EXISTS household_link_corrections (
@@ -37,7 +40,9 @@ CREATE TABLE IF NOT EXISTS household_link_corrections (
     host_adopter_id TEXT NOT NULL,
     linked_adopter_id TEXT NOT NULL,
     member_id TEXT,
+    member_snapshot TEXT,
     corrected_by TEXT NOT NULL,
     created_at INTEGER DEFAULT (strftime('%s', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_household_link_corrections_pair ON household_link_corrections (host_adopter_id, linked_adopter_id);
+CREATE INDEX IF NOT EXISTS idx_household_link_corrections_linked ON household_link_corrections (linked_adopter_id);

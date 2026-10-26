@@ -530,16 +530,20 @@ export const householdLinks = sqliteTable("household_links", {
 // household_link_corrections — «No convive» (D48, drizzle/0095): the linked
 // profile's owner team (or an admin) said the person does not live with the
 // host; the member and its link were removed. Re-adding the same person to
-// the same host afterwards is a dispute (admins are told).
+// the same host afterwards is a dispute (admins are told). Follows merges like
+// the links. member_snapshot: the removed member's JSON, for an admin to put
+// back if the correction was wrong (PII — never logged).
 export const householdLinkCorrections = sqliteTable("household_link_corrections", {
     id: text("id").primaryKey(),
     hostAdopterId: text("host_adopter_id").notNull(),
     linkedAdopterId: text("linked_adopter_id").notNull(),
     memberId: text("member_id"),
+    memberSnapshot: text("member_snapshot"),
     correctedBy: text("corrected_by").notNull(),
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
     pairIdx: index("idx_household_link_corrections_pair").on(table.hostAdopterId, table.linkedAdopterId),
+    linkedIdx: index("idx_household_link_corrections_linked").on(table.linkedAdopterId),
 }));
 
 // pii_access_grants — the access facts. A live (non-revoked) row means

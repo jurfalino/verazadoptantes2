@@ -13,7 +13,8 @@ import * as mocks from '@/test-utils/actionMocks';
 
 const { session, OWNER, MATE, STRANGER, ADMIN } = mocks;
 
-const { state, notify } = vi.hoisted(() => ({
+const { state, notify, faults } = vi.hoisted(() => ({
+    faults: { casBusy: false, beforeCas: null as null | (() => void), failReassign: false },
     state: { db: null as unknown },
     notify: { create: [] as Array<Record<string, unknown>>, admins: [] as Array<Record<string, unknown>> },
 }));
@@ -30,6 +31,32 @@ vi.mock('@/config/features', async (orig) => ({
     ...(await orig()),
     getFeatureFlag: vi.fn(async (flag: string) => flag === 'ENABLE_PII_ACCESS_GATING'),
 }));
+// Fault injection for «No convive»'s CAS (busy; someone removed the member first)
+// and for a merge failing after it moved the links. Everything else is real.
+vi.mock('@/lib/adopterListCas', async (orig) => {
+    const real = await orig<typeof import('@/lib/adopterListCas')>();
+    return {
+        ...real,
+        casAdopterLists: vi.fn(async (...args: Parameters<typeof real.casAdopterLists>) => {
+            const ctx = args[3] as { op?: string } | undefined;
+            if (ctx?.op === 'applyNotLivingTogether') {
+                if (faults.casBusy) return { status: 'busy', errorId: 'busy1234' };
+                const hook = faults.beforeCas; faults.beforeCas = null; hook?.();
+            }
+            return real.casAdopterLists(...args);
+        }),
+    };
+});
+vi.mock('@/app/actions/_recordWrite', async (orig) => {
+    const real = await orig<typeof import('@/app/actions/_recordWrite')>();
+    return {
+        ...real,
+        reassignAdopterRecords: vi.fn(async (...args: Parameters<typeof real.reassignAdopterRecords>) => {
+            if (faults.failReassign) throw new Error('injected: re-point failed');
+            return real.reassignAdopterRecords(...args);
+        }),
+    };
+});
 vi.mock('@/lib/adopterTokenize', () => ({ tokenizeAdopter: vi.fn(async () => undefined) }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 // Side effects run (not dropped): the notices are part of what is tested.
@@ -67,6 +94,7 @@ beforeEach(() => {
     sqlite = m.sqlite as unknown as typeof sqlite;
     notify.create.length = 0;
     notify.admins.length = 0;
+    Object.assign(faults, { casBusy: false, beforeCas: null, failReassign: false });
     session.user = STRANGER;
     sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, contact_entries) VALUES
         ('host', 'Pedro Paez', '5', ?, 1000, 1000, ?),
@@ -394,5 +422,133 @@ describe('links follow merges (D51)', () => {
         expect((await mergeAdopters('linked', 'host', ADMIN)).success).toBe(true);
         expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked' })]);
         expect(await getLinkedSummaries(OWNER, 'linked')).toEqual({ members: {}, livesWith: [] });
+    });
+});
+
+describe('«No convive» — writes and races (review round 1)', () => {
+    it('the correction keeps the removed member as it was, so an admin can put it back', async () => {
+        const memberId = await link();
+        await as(OWNER, () => reportNotLivingTogether(links()[0].id as string));
+        const row = sqlite.prepare('SELECT member_id, member_snapshot FROM household_link_corrections').get()!;
+        expect(row.member_id).toBe(memberId);
+        expect(JSON.parse(row.member_snapshot as string)).toMatchObject({ id: memberId, name: 'Jonathan Urfalino', profileId: 'linked', addedBy: STRANGER });
+    });
+
+    it('the host is being edited too often (CAS busy): refused with an errorId, nothing changes', async () => {
+        await link();
+        notify.create.length = 0;
+        faults.casBusy = true;
+        expect(await as(OWNER, () => reportNotLivingTogether(links()[0].id as string))).toEqual({ success: false, error: 'failed', errorId: 'busy1234' });
+        expect(hostMembers()).toHaveLength(1);
+        expect(links()).toHaveLength(1);
+        expect(corrections()).toEqual([]);
+        expect(historyOf('linked')).toEqual([]);
+        expect(notify.create).toEqual([]);
+    });
+
+    it('the host team removed the member meanwhile: not_found, no correction, no history, nobody told', async () => {
+        const memberId = await link();
+        notify.create.length = 0;
+        const hostHistory = historyOf('host').length;
+        faults.beforeCas = () => {
+            sqlite.prepare(`UPDATE adopters SET household_members = '[]' WHERE id = 'host'`).run();
+        };
+        expect(await as(OWNER, () => reportNotLivingTogether(`hl-host-${memberId}`))).toEqual({ success: false, error: 'not_found' });
+        expect(corrections()).toEqual([]);
+        expect(historyOf('host')).toHaveLength(hostHistory);
+        expect(historyOf('linked')).toEqual([]);
+        expect(notify.create).toEqual([]);
+    });
+});
+
+describe('corrections follow merges (review round 1)', () => {
+    beforeEach(() => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
+            ('host2', 'Pedro A. Paez', '5', ?, 500, 500),
+            ('linked2', 'Jonathan U.', '5', ?, 600, 600)`).run(STRANGER, OWNER);
+    });
+    const correct = async () => {
+        await link();
+        expect(await as(OWNER, () => reportNotLivingTogether(links()[0].id as string))).toEqual({ success: true });
+        notify.create.length = 0;
+        notify.admins.length = 0;
+    };
+
+    it('(a) a re-add on the survivor finds the correction made on the absorbed profile — host side and linked side', async () => {
+        await correct();
+        expect((await mergeAdopters('host2', 'host', ADMIN)).success).toBe(true);
+        expect(corrections()).toEqual([expect.objectContaining({ host_adopter_id: 'host2', linked_adopter_id: 'linked' })]);
+        expect(notify.admins).toEqual([]); // nothing carried back: no dispute
+        const res = await addHouseholdMember({ adopterId: 'host2', name: 'Jonathan Urfalino', relationship: 'unknown', profileId: 'linked' });
+        expect(res.ok).toBe(true);
+        expect(notify.admins).toEqual([expect.objectContaining({ type: 'household_link_disputed', url: '/adopter/host2' })]);
+
+        notify.admins.length = 0;
+        expect((await mergeAdopters('linked2', 'linked', ADMIN)).success).toBe(true);
+        expect(corrections()).toEqual([expect.objectContaining({ host_adopter_id: 'host2', linked_adopter_id: 'linked2' })]);
+    });
+
+    it('(a, linked side) the corrected person merged into another profile: re-adding the survivor is a dispute', async () => {
+        await correct();
+        expect((await mergeAdopters('linked2', 'linked', ADMIN)).success).toBe(true);
+        expect(corrections()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked2' })]);
+        await addHouseholdMember({ adopterId: 'host', name: 'Jonathan U.', relationship: 'unknown', profileId: 'linked2' });
+        expect(notify.admins).toEqual([expect.objectContaining({ type: 'household_link_disputed', metadata: expect.objectContaining({ hostId: 'host', linkedId: 'linked2' }) })]);
+    });
+
+    it('(b) a merge that carries the person back onto the corrected host keeps the link and tells the admins', async () => {
+        await correct();
+        // A duplicate host profile still lists the person.
+        const dup = await addHouseholdMember({ adopterId: 'host2', name: 'Jonathan Urfalino', relationship: 'unknown', profileId: 'linked' });
+        if (!dup.ok) throw new Error(dup.error);
+        notify.admins.length = 0;
+        expect((await mergeAdopters('host', 'host2', ADMIN)).success).toBe(true);
+        expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked' })]);
+        expect(Object.values((await getLinkedSummaries(STRANGER, 'host')).members).map(m => m.profileId)).toEqual(['linked']);
+        expect(notify.admins).toEqual([expect.objectContaining({
+            actorEmail: ADMIN, type: 'household_link_disputed', url: '/adopter/host',
+            metadata: expect.objectContaining({ hostId: 'host', linkedId: 'linked' }),
+        })]);
+        expect(notify.admins[0].body).toContain('combinar');
+    });
+
+    it('(b, other direction) the corrected host absorbed into the duplicate that still lists the person: also a dispute', async () => {
+        await correct();
+        await addHouseholdMember({ adopterId: 'host2', name: 'Jonathan Urfalino', relationship: 'unknown', profileId: 'linked' });
+        notify.admins.length = 0;
+        expect((await mergeAdopters('host2', 'host', ADMIN)).success).toBe(true);
+        expect(corrections()).toEqual([expect.objectContaining({ host_adopter_id: 'host2', linked_adopter_id: 'linked' })]);
+        expect(notify.admins).toEqual([expect.objectContaining({ type: 'household_link_disputed', url: '/adopter/host2' })]);
+    });
+
+    it('(c) undo: a correction from before the merge goes back; one made after stays on the survivor; the absorbed host gets its own member back', async () => {
+        await correct(); // correction #1 on (host, linked), before the merge
+        await link(); // the host team re-adds the person (a dispute already)
+        const original = hostMembers();
+        const merged = await mergeAdopters('host2', 'host', ADMIN);
+        expect(merged.success).toBe(true);
+        // After the merge, the linked team corrects it again — on the survivor.
+        expect(await as(OWNER, () => reportNotLivingTogether(links()[0].id as string))).toEqual({ success: true });
+        expect(corrections().map(c => c.host_adopter_id)).toEqual(['host2', 'host2']);
+
+        expect((await unmergeAdopters(merged.auditId!, ADMIN)).success).toBe(true);
+        expect(corrections()).toEqual([
+            expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked' }),
+            expect.objectContaining({ host_adopter_id: 'host2', linked_adopter_id: 'linked' }),
+        ]);
+        // The absorbed host keeps its own, unchanged member; no extra correction is made for it.
+        expect(hostMembers()).toEqual(original);
+    });
+
+    it('a merge failing after it moved the links puts the links and corrections back', async () => {
+        await correct();
+        const memberId = await link();
+        faults.failReassign = true;
+        const res = await mergeAdopters('host2', 'host', ADMIN);
+        expect(res.success).toBe(false);
+        expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked', member_id: memberId })]);
+        expect(corrections()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked' })]);
+        expect(sqlite.prepare(`SELECT deleted_at FROM adopters WHERE id = 'host'`).get()!.deleted_at).toBeNull();
+        expect(notify.admins.filter(n => (n.body as string).includes('combinar'))).toEqual([]);
     });
 });
