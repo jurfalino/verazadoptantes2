@@ -618,23 +618,35 @@ function viewerContacts(
  * Bounded (MAX_LINKED_SUMMARIES per side). Never throws: a failure yields
  * empty summaries and is logged.
  */
-export async function getLinkedSummaries(viewer: string | null | undefined, adopterId: string): Promise<LinkedSummaries> {
+export async function getLinkedSummaries(
+    viewer: string | null | undefined,
+    adopterId: string,
+    /**
+     * The profile page's own read of this adopter (getAdopter: null when it is
+     * missing, soft-deleted or failed), reused instead of reading it again —
+     * only its owner and household member ids / profile ids are used, which
+     * the viewer's masking leaves as they are. Omitted: read here.
+     */
+    loaded?: Promise<{ addedBy: string | null; householdMembers: string | null } | null>,
+): Promise<LinkedSummaries> {
     const ctx = { adopterId, viewer: viewer ?? null };
     try {
         const db = await getDb();
         if (!db) return EMPTY_LINKED_SUMMARIES;
-        const self = await loadProfile(db, adopterId);
-        if (!self || self.deletedAt) return EMPTY_LINKED_SUMMARIES;
 
         // Oldest first (stable order); liveness is checked BEFORE the cap, so
         // stale rows can't crowd out live links. MAX_LINK_ROWS bounds the read.
-        const [outgoing, incoming] = await Promise.all([
+        const [self, outgoing, incoming] = await Promise.all([
+            loaded
+                ? loaded
+                : loadProfile(db, adopterId).then(p => (p && !p.deletedAt ? p : null)),
             db.select().from(householdLinks).where(eq(householdLinks.hostAdopterId, adopterId))
                 .orderBy(asc(householdLinks.createdAt), asc(householdLinks.id)).limit(MAX_LINK_ROWS).all() as Promise<LinkRow[]>,
             // hidden_at (the withdrawn D47) is not read: a row hidden then is live.
             db.select().from(householdLinks).where(eq(householdLinks.linkedAdopterId, adopterId))
                 .orderBy(asc(householdLinks.createdAt), asc(householdLinks.id)).limit(MAX_LINK_ROWS).all() as Promise<LinkRow[]>,
         ]);
+        if (!self) return EMPTY_LINKED_SUMMARIES;
         if (outgoing.length === 0 && incoming.length === 0) return EMPTY_LINKED_SUMMARIES;
         if (outgoing.length >= MAX_LINK_ROWS || incoming.length >= MAX_LINK_ROWS) {
             logger.warn('householdLinks: link row cap hit, older-than-cap links not read', { ...ctx, outgoing: outgoing.length, incoming: incoming.length, cap: MAX_LINK_ROWS });

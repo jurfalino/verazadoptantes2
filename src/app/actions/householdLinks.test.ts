@@ -72,6 +72,7 @@ vi.mock('./notifications', () => ({
 vi.mock('@/lib/logger', () => ({
     logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn(() => 'err12345') },
     generateErrorId: () => 'gen12345',
+    withTrace: (_op: string, fn: () => unknown) => fn(),
 }));
 
 import { addHouseholdMember, removeHouseholdMember } from './householdMembers';
@@ -257,6 +258,22 @@ describe('read path (D46)', () => {
                 for (const email of [OWNER, MATE, STRANGER, ADMIN]) expect(json, `${viewer} on ${id}`).not.toContain(email);
             }
         }
+    });
+
+    it("(M5) the profile page's own read of the adopter is reused — its masked household included", async () => {
+        const memberId = await link();
+        const { getAdopter } = await import('./adopters');
+        // MATE does not own the host: getAdopter masks its household for them.
+        const pageRead = as(MATE, () => getAdopter('host'));
+        const read = await pageRead;
+        expect(JSON.parse(read!.householdMembers as string)[0]).toMatchObject({ id: memberId, profileId: 'linked' });
+        expect(JSON.parse(read!.householdMembers as string)[0].name).not.toBe('Jonathan Urfalino');
+        const viaPage = await getLinkedSummaries(MATE, 'host', pageRead);
+        expect(Object.keys(viaPage.members)).toEqual([memberId]);
+        expect(viaPage).toEqual(await getLinkedSummaries(MATE, 'host'));
+        // It is that read that counts, not a second one.
+        expect((await getLinkedSummaries(MATE, 'host', Promise.resolve({ addedBy: STRANGER, householdMembers: '[]' }))).members).toEqual({});
+        expect(await getLinkedSummaries(MATE, 'host', Promise.resolve(null))).toEqual({ members: {}, livesWith: [] });
     });
 
     it('a profileId planted in the JSON without a link shows no summary; a link whose member moved on shows nothing', async () => {

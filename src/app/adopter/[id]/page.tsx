@@ -96,8 +96,10 @@ export default async function AdopterPage({
             });
             return def;
         };
+        // One read of the adopter: the linked summaries reuse it (owner + household ids).
+        const adopterRead = getAdopter(id).catch(fallback('getAdopter', null));
         [adopter, history, adoptions, images, allImages, flags, stats, avgRating, availableAnimals, dupCandidates, piiContext, deletionRequested, linkedSummaries] = await Promise.all([
-            getAdopter(id).catch(fallback('getAdopter', null)),
+            adopterRead,
             getHistory(id).catch(fallback<any[]>('getHistory', [])),
             getAdoptions(id).catch(fallback<any[]>('getAdoptions', [])),
             getImages(id).catch(fallback<any[]>('getImages', [])),
@@ -110,7 +112,7 @@ export default async function AdopterPage({
             getAdopterPiiContext(id).catch(fallback<AdopterPiiContext | null>('getAdopterPiiContext', null)),
             hasPendingDeletionRequest(id).catch(fallback<boolean>('hasPendingDeletionRequest', false)),
             // D46: linked convivientes' live summaries, masked for this viewer.
-            getLinkedSummaries(currentUser, id).catch(fallback<LinkedSummaries>('getLinkedSummaries', EMPTY_LINKED_SUMMARIES)),
+            getLinkedSummaries(currentUser, id, adopterRead).catch(fallback<LinkedSummaries>('getLinkedSummaries', EMPTY_LINKED_SUMMARIES)),
         ]);
     } else {
         availableAnimals = await getAvailableAnimals().catch(e => {
