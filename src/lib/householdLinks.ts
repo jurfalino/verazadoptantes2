@@ -444,6 +444,55 @@ export async function restoreHouseholdLinks(db: Db, moved: Partial<MovedHousehol
     }
 }
 
+/**
+ * Undo of a merge, after `restoreHouseholdLinks`: each link the merge moved
+ * OFF the restored host (`hostAdopterId === hostId` in `moved`) whose row is
+ * gone now — removed on the survivor since, by «No convive» or by the
+ * survivor's team removing the landed member — is written again, when the
+ * restored host still lists that member with a profile and the linked
+ * profile (followed through merges) is live. Without it the host lists the
+ * person but nobody sees «Convive con», nor can say «No convive».
+ * A correction made on the survivor stays there. Only links this merge moved
+ * are considered: a profileId planted in the JSON without a link stays
+ * unlinked. Idempotent (deterministic id, insert-or-ignore); no notice — it
+ * restores what was there. Throws on a DB failure (the undo is retryable).
+ */
+export async function relinkRestoredHost(
+    db: Db,
+    hostId: string,
+    moved: ReadonlyArray<MovedHouseholdLink>,
+    ctx: Record<string, unknown>,
+): Promise<number> {
+    const fromHost = moved.filter(l => l.hostAdopterId === hostId);
+    if (fromHost.length === 0) return 0;
+    const host = await db.select({ addedBy: adopters.addedBy, householdMembers: adopters.householdMembers, deletedAt: adopters.deletedAt })
+        .from(adopters).where(eq(adopters.id, hostId)).get();
+    if (!host || host.deletedAt) return 0;
+    const members = deserializeHouseholdMembers(host.householdMembers);
+    let relinked = 0;
+    for (const l of fromHost) {
+        const c = { ...ctx, hostId, linkId: l.id, memberId: l.memberId };
+        const still = await db.select({ id: householdLinks.id }).from(householdLinks)
+            .where(and(eq(householdLinks.hostAdopterId, hostId), eq(householdLinks.memberId, l.memberId))).limit(1).get();
+        if (still) continue;
+        const member = members.find(m => m.id === l.memberId);
+        if (!member?.profileId) {
+            logger.info('householdLinks: undo — member no longer on the restored host, not relinked', c);
+            continue;
+        }
+        const linked = await liveProfile(db, member.profileId, c);
+        if (!linked || linked.id === hostId) {
+            logger.info('householdLinks: undo — linked profile not live, not relinked', c);
+            continue;
+        }
+        // «según …» names whoever added the member, as the 0094 backfill does — never the admin undoing.
+        const created = await recordHouseholdLink(db, { hostId, memberId: l.memberId, linkedId: linked.id, actor: member.addedBy || host.addedBy || String(ctx.actor ?? '') });
+        if (created) relinked++;
+    }
+    if (relinked) logger.info('householdLinks: undo — links written again on the restored host', { ...ctx, hostId, relinked });
+    return relinked;
+}
+
 // ─────────────────────────── Read path ───────────────────────────
 
 type ProfileRow = {

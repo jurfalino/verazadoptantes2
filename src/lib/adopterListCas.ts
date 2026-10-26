@@ -47,14 +47,25 @@ export async function casAdopterLists<R>(
     adopterId: string,
     step: (row: Row) => ListStep<R>,
     ctx: Record<string, unknown> = {},
+    /**
+     * `requireLive`: a soft-deleted row counts as missing, and the write lands
+     * only while the row is still live — a merge must never write its survivor
+     * after another merge absorbed it (the chain race S→P while P→Q).
+     */
+    opts: { requireLive?: boolean } = {},
 ): Promise<ListCasOutcome<R>> {
     for (let attempt = 0; attempt < LIST_SAVE_ATTEMPTS; attempt++) {
         const row = await db.select().from(adopters).where(eq(adopters.id, adopterId)).get() as Row | undefined;
         if (!row) return { status: 'missing' };
+        if (opts.requireLive && row.deletedAt) {
+            logger.info('casAdopterLists: row soft-deleted, nothing written', { adopterId, attempt, ...ctx });
+            return { status: 'missing' };
+        }
         const { write, result } = step(row);
         if (!write || !Object.keys(write).length) return { status: 'done', result, wrote: false, row };
 
         const conds = [eq(adopters.id, adopterId)];
+        if (opts.requireLive) conds.push(isNull(adopters.deletedAt));
         const guard = (col: Guarded) => {
             const v = row[col];
             conds.push(v === null || v === undefined ? isNull(adopters[col]) : eq(adopters[col], v));

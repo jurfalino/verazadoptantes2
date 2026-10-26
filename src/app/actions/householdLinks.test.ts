@@ -14,7 +14,7 @@ import * as mocks from '@/test-utils/actionMocks';
 const { session, OWNER, MATE, STRANGER, ADMIN } = mocks;
 
 const { state, notify, faults } = vi.hoisted(() => ({
-    faults: { casBusy: false, beforeCas: null as null | (() => void), failReassign: false },
+    faults: { casBusy: false, beforeCas: null as null | (() => void), beforeMergeCas: null as null | (() => void), failReassign: false },
     state: { db: null as unknown },
     notify: { create: [] as Array<Record<string, unknown>>, admins: [] as Array<Record<string, unknown>> },
 }));
@@ -42,6 +42,9 @@ vi.mock('@/lib/adopterListCas', async (orig) => {
             if (ctx?.op === 'applyNotLivingTogether') {
                 if (faults.casBusy) return { status: 'busy', errorId: 'busy1234' };
                 const hook = faults.beforeCas; faults.beforeCas = null; hook?.();
+            }
+            if (ctx?.op === 'mergeAdopters') {
+                const hook = faults.beforeMergeCas; faults.beforeMergeCas = null; hook?.();
             }
             return real.casAdopterLists(...args);
         }),
@@ -76,6 +79,7 @@ import { reportNotLivingTogether } from './householdLinks';
 import { mergeAdopters, unmergeAdopters } from '@/lib/adopterMerge';
 import { getLinkedSummaries, recordHouseholdLink } from '@/lib/householdLinks';
 import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
+import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { maskContactEntries } from '@/lib/piiAccess';
 
 type Row = Record<string, unknown>;
@@ -94,7 +98,8 @@ beforeEach(() => {
     sqlite = m.sqlite as unknown as typeof sqlite;
     notify.create.length = 0;
     notify.admins.length = 0;
-    Object.assign(faults, { casBusy: false, beforeCas: null, failReassign: false });
+    Object.assign(faults, { casBusy: false, beforeCas: null, beforeMergeCas: null, failReassign: false });
+    vi.mocked(tokenizeAdopter).mockClear();
     session.user = STRANGER;
     sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, contact_entries) VALUES
         ('host', 'Pedro Paez', '5', ?, 1000, 1000, ?),
@@ -432,6 +437,21 @@ describe('links follow merges (D51)', () => {
         expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked' })]);
         expect(await getLinkedSummaries(OWNER, 'linked')).toEqual({ members: {}, livesWith: [] });
     });
+
+    it('(M2) the survivor never lists itself as a conviviente; undo gives the absorbed host its member back', async () => {
+        const other = await addHouseholdMember({ adopterId: 'host', name: 'Ana', relationship: 'sibling' });
+        if (!other.ok) throw new Error(other.error);
+        const memberId = await link();
+        const merged = await mergeAdopters('linked', 'host', ADMIN);
+        expect(merged.success).toBe(true);
+        const survivorMembers = JSON.parse((sqlite.prepare(`SELECT household_members FROM adopters WHERE id = 'linked'`).get()!.household_members as string) || '[]') as Array<Record<string, unknown>>;
+        expect(survivorMembers.map(m => m.name)).toEqual(['Ana']);
+        expect(survivorMembers.some(m => m.profileId === 'linked')).toBe(false);
+        expect((await unmergeAdopters(merged.auditId!, ADMIN)).success).toBe(true);
+        expect(hostMembers().map(m => m.id)).toEqual([other.memberId, memberId]);
+        expect(links()).toEqual([expect.objectContaining({ id: `hl-host-${memberId}`, host_adopter_id: 'host', linked_adopter_id: 'linked' })]);
+        expect(JSON.parse((sqlite.prepare(`SELECT household_members FROM adopters WHERE id = 'linked'`).get()!.household_members as string) || '[]')).toEqual([]);
+    });
 });
 
 describe('«No convive» — writes and races (review round 1)', () => {
@@ -540,6 +560,7 @@ describe('corrections follow merges (review round 1)', () => {
         expect(await as(OWNER, () => reportNotLivingTogether(links()[0].id as string))).toEqual({ success: true });
         expect(corrections().map(c => c.host_adopter_id)).toEqual(['host2', 'host2']);
 
+        const noticesBeforeUndo = { admins: notify.admins.length, create: notify.create.length };
         expect((await unmergeAdopters(merged.auditId!, ADMIN)).success).toBe(true);
         expect(corrections()).toEqual([
             expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked' }),
@@ -547,6 +568,42 @@ describe('corrections follow merges (review round 1)', () => {
         ]);
         // The absorbed host keeps its own, unchanged member; no extra correction is made for it.
         expect(hostMembers()).toEqual(original);
+        // ...and its link (I1): the post-merge «No convive» deleted the moved row, so undo writes it again.
+        const [member] = original;
+        expect(links()).toEqual([expect.objectContaining({
+            id: `hl-host-${member.id}`, host_adopter_id: 'host', linked_adopter_id: 'linked', member_id: member.id, created_by: STRANGER,
+        })]);
+        expect((await getLinkedSummaries(OWNER, 'linked')).livesWith).toEqual([expect.objectContaining({ profileId: 'host', canReportNotLiving: true })]);
+        // A restore, not a new link: nobody is told.
+        expect({ admins: notify.admins.length, create: notify.create.length }).toEqual(noticesBeforeUndo);
+        // ...so the linked team can correct it on the restored host too.
+        expect(await as(OWNER, () => reportNotLivingTogether(`hl-host-${member.id}`))).toEqual({ success: true });
+        expect(hostMembers()).toEqual([]);
+        expect(links()).toEqual([]);
+    });
+
+    it('(c, I1) undo after the survivor team removed the landed member: the absorbed host gets its link back', async () => {
+        const memberId = await link();
+        const merged = await mergeAdopters('host2', 'host', ADMIN);
+        expect(merged.success).toBe(true);
+        const [moved] = links();
+        expect(moved).toMatchObject({ host_adopter_id: 'host2' });
+        expect(await removeHouseholdMember({ adopterId: 'host2', memberId: moved.member_id as string })).toEqual({ ok: true });
+        expect(links()).toEqual([]);
+
+        expect((await unmergeAdopters(merged.auditId!, ADMIN)).success).toBe(true);
+        expect(hostMembers().map(m => m.id)).toEqual([memberId]);
+        expect(links()).toEqual([expect.objectContaining({ id: `hl-host-${memberId}`, host_adopter_id: 'host', linked_adopter_id: 'linked', member_id: memberId })]);
+        expect((await getLinkedSummaries(OWNER, 'linked')).livesWith.map(r => r.profileId)).toEqual(['host']);
+        expect(Object.values((await getLinkedSummaries(STRANGER, 'host')).members).map(s => s.profileId)).toEqual(['linked']);
+    });
+
+    it('(I1) undo never links a profileId planted in the JSON without a link', async () => {
+        sqlite.prepare(`UPDATE adopters SET household_members = ? WHERE id = 'host'`).run(JSON.stringify([{ id: 'planted', name: 'X', profileId: 'linked' }]));
+        const merged = await mergeAdopters('host2', 'host', ADMIN);
+        expect(merged.success).toBe(true);
+        expect((await unmergeAdopters(merged.auditId!, ADMIN)).success).toBe(true);
+        expect(links()).toEqual([]);
     });
 
     it('a merge failing after it moved the links puts the links and corrections back', async () => {
@@ -559,5 +616,27 @@ describe('corrections follow merges (review round 1)', () => {
         expect(corrections()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked' })]);
         expect(sqlite.prepare(`SELECT deleted_at FROM adopters WHERE id = 'host'`).get()!.deleted_at).toBeNull();
         expect(notify.admins.filter(n => (n.body as string).includes('combinar'))).toEqual([]);
+    });
+
+    it('(M4) a failed merge re-tokenizes the profile it gives back instead of trusting its old token hash', async () => {
+        sqlite.prepare(`UPDATE adopters SET token_hash = 'old-hash' WHERE id = 'host'`).run();
+        faults.failReassign = true;
+        expect((await mergeAdopters('host2', 'host', ADMIN)).success).toBe(false);
+        expect(sqlite.prepare(`SELECT deleted_at, token_hash FROM adopters WHERE id = 'host'`).get()).toEqual({ deleted_at: null, token_hash: null });
+        expect(vi.mocked(tokenizeAdopter)).toHaveBeenCalledWith('host');
+    });
+
+    it('(M3) the survivor merged away meanwhile (S→P while P→Q): nothing written onto it, the absorbed profile comes back', async () => {
+        await link();
+        const before = sqlite.prepare(`SELECT household_members, contact_entries FROM adopters WHERE id = 'host2'`).get();
+        faults.beforeMergeCas = () => {
+            sqlite.prepare(`UPDATE adopters SET deleted_at = 9000, token_hash = 'MERGED' WHERE id = 'host2'`).run();
+        };
+        const res = await mergeAdopters('host2', 'host', ADMIN);
+        expect(res).toMatchObject({ success: false, error: expect.stringContaining('Merge failed') });
+        expect(sqlite.prepare(`SELECT household_members, contact_entries FROM adopters WHERE id = 'host2'`).get()).toEqual(before);
+        expect(sqlite.prepare(`SELECT deleted_at FROM adopters WHERE id = 'host'`).get()!.deleted_at).toBeNull();
+        expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked' })]);
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action = 'adopter_merge'`).get()!.n).toBe(0);
     });
 });

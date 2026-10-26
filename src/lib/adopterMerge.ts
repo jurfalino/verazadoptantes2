@@ -25,7 +25,7 @@ import { closeRequestsForAdopter } from '@/lib/mergeRequestClose';
 import { mergeSideParams } from '@/lib/mergeNotificationSides';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { rowsAffected } from '@/lib/interviews/rowsAffected';
-import { moveHouseholdLinksOnMerge, notifyDisputesAfterMerge, restoreHouseholdLinks, type MovedHouseholdLink, type MovedHouseholdLinkCorrection } from '@/lib/householdLinks';
+import { moveHouseholdLinksOnMerge, notifyDisputesAfterMerge, relinkRestoredHost, restoreHouseholdLinks, type MovedHouseholdLink, type MovedHouseholdLinkCorrection } from '@/lib/householdLinks';
 
 export interface MergeAdoptersResult {
     success: boolean;
@@ -104,7 +104,12 @@ export async function mergeAdopters(
             return { success: false, error: 'pair_changed' };
         }
         restoreSecondary = async () => {
-            await db.update(adopters).set({ deletedAt: null, tokenHash: secondary.tokenHash ?? null }).where(eq(adopters.id, secondaryId));
+            // tokenHash null, then a fresh tokenize: step 8 may already have
+            // deleted its duplicate_tokens, so the old hash would claim tokens
+            // that are no longer there.
+            await db.update(adopters).set({ deletedAt: null, tokenHash: null }).where(eq(adopters.id, secondaryId));
+            await tokenizeAdopter(secondaryId);
+            logger.info('mergeAdopters: absorbed profile given back and re-tokenized after a failed merge', { primaryId, secondaryId, actor: actorEmail });
         };
 
         const mergeDetails: Record<string, number> = {};
@@ -144,8 +149,11 @@ export async function mergeAdopters(
         // Their contacts too: one may be carried onto a survivor's same-named
         // member, and undo removes it by id.
         // Old id → new id, so the absorbed profile's household links can follow their member (D51).
+        // A member that IS the survivor is not carried: the survivor would list
+        // itself as its own conviviente. It stays on the absorbed profile (with
+        // its link), so undo finds it where it was.
         const newMemberIds = new Map<string, string>();
-        const absorbedMembers = deserializeHouseholdMembers(secondary.householdMembers).map(m => {
+        const absorbedMembers = deserializeHouseholdMembers(secondary.householdMembers).filter(m => m.profileId !== primaryId).map(m => {
             const id = crypto.randomUUID();
             newMemberIds.set(m.id, id);
             return { ...m, id, contactEntries: m.contactEntries.map(c => ({ ...c, id: crypto.randomUUID() })) };
@@ -220,8 +228,11 @@ export async function mergeAdopters(
             updates.updatedAt = new Date();
             return updates;
         };
-        const written = await casAdopterLists(db, primaryId, (row) => ({ write: mergedFields(row as typeof primary), result: null }), { op: 'mergeAdopters', secondaryId });
-        if (written.status === 'missing') throw new Error('Primary adopter disappeared during merge');
+        // requireLive: if another merge absorbed the survivor since the claim
+        // (S→P while P→Q), nothing is written onto the dead row — this merge
+        // fails and gives the secondary back.
+        const written = await casAdopterLists(db, primaryId, (row) => ({ write: mergedFields(row as typeof primary), result: null }), { op: 'mergeAdopters', secondaryId }, { requireLive: true });
+        if (written.status === 'missing') throw new Error('Primary adopter was deleted or merged away during the merge');
         if (written.status === 'busy') throw new Error(`Merge collided with concurrent edits (Error ID: ${written.errorId})`);
         undo.primarySnapshot = {
             contactInfo: written.row.contactInfo,
@@ -693,10 +704,16 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
 
         // 3c. The household links and corrections this merge moved go back where
         //     they were (D51); a correction made after the merge stays on the survivor.
+        const movedLinks = Array.isArray(undo.householdLinks) ? undo.householdLinks : [];
         await restoreHouseholdLinks(db, {
-            links: Array.isArray(undo.householdLinks) ? undo.householdLinks : [],
+            links: movedLinks,
             corrections: Array.isArray(undo.householdLinkCorrections) ? undo.householdLinkCorrections : [],
         });
+        // 3d. A link this merge moved off the absorbed host and that was removed
+        //     on the survivor since («No convive», or the survivor's team removed
+        //     the member) did not come back above; the absorbed host still lists
+        //     that person, so the link is written again (I1).
+        await relinkRestoredHost(db, secondaryId, movedLinks, { auditId, actor: actorEmail });
 
         // 4. Put the touched duplicate candidates back to their prior status —
         //    grouped by target status so each group is a few chunked updates.
