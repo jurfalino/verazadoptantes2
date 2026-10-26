@@ -48,9 +48,9 @@ import { insertContributionGrant, notifyApprovers, fileContributionAccessRequest
  *   CURRENT stored item inside the compare-and-swap, never on client input.
  * - Privileged writes keep the editor path: history kind='edit', no notice.
  *   A non-privileged write is a contribution: history kind='contribution' for
- *   EVERY write, on the host AND on a linked profile (a kind='edit' row would
- *   make them an editor — full contact access and approver rights, see
- *   piiAccessServer.ts / loadApprovers). On an add: an entry-scope grant per
+ *   EVERY write, on the host AND on a linked profile ('edit' is the editor
+ *   trail; loadApprovers counts an editor only while privileged, so this is
+ *   defence in depth, and the history says honestly who had standing). On an add: an entry-scope grant per
  *   contact they typed (so they see it unmasked; everyone else sees the
  *   profile's normal protection); the owner + editors notified
  *   ('household_contribution'); and, when a contact was added, the access
@@ -568,8 +568,8 @@ export async function removeMemberContactEntry(
 
 /**
  * History row for a household mutation (never raw PII in changes): kind='edit'
- * for a privileged writer, kind='contribution' for anyone else — a 'edit' row
- * would make them an editor, with full contact access (D54).
+ * for a privileged writer, kind='contribution' for anyone else (D54) — the
+ * editor trail stays truthful (see the header).
  */
 async function insertHouseholdHistory(
     db: NonNullable<Awaited<ReturnType<typeof getDb>>>,

@@ -2,6 +2,7 @@ import { piiAccessRequests, adopters, adopterHistory } from '@/db/schema';
 import { and, eq, desc } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
+import { logger } from '@/lib/logger';
 import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
 import { isRealActorEmail, piiCooldownUntil, type RequestPiiAccessResult } from '@/lib/piiAccess';
 import { createNotification, resolveDisplayName } from '@/app/actions/notifications';
@@ -24,24 +25,43 @@ import { notificationContent } from '@/domain/notificationTemplates';
  * already knows who acted, so it says so.
  */
 
-/** The owner + editor emails that may approve PII requests for an adopter (real users only). */
+/**
+ * The emails that may approve PII requests for an adopter (real users only):
+ * the owner, always, plus `editors` — people who wrote a kind='edit' history
+ * row on it AND are privileged on it right now (a teammate of the owner, an
+ * admin or a moderator). Writing an 'edit' row alone grants nothing: many
+ * paths open to any rescuer write one (flagging, logging an adoption, adding
+ * images, merges), and an approver can approve anyone's request and revoke
+ * grants. Contributors (kind='contribution') are never candidates. Callers
+ * also use `editors` as "who to notify" — same people.
+ */
 export async function loadApprovers(adopterId: string): Promise<{ owner: string | null; editors: string[]; all: string[] }> {
     const db = await getDb();
     if (!db) return { owner: null, editors: [], all: [] };
     const adopter = await db.select({ addedBy: adopters.addedBy })
         .from(adopters).where(eq(adopters.id, adopterId)).get();
     const owner = isRealActorEmail(adopter?.addedBy) ? adopter!.addedBy : null;
-    // Only kind='edit' rows count toward editor status. Contributors
-    // (kind='contribution') are not approvers — they merely added one
-    // contact detail and have no authority over the rest of the record.
     const editorRows = await db.selectDistinct({ email: adopterHistory.changedBy })
         .from(adopterHistory).where(and(
             eq(adopterHistory.adopterId, adopterId),
             eq(adopterHistory.kind, 'edit'),
         ));
-    const editors = editorRows
+    const candidates: string[] = [...new Set<string>(editorRows
         .map((r: { email: string | null }) => r.email)
-        .filter(isRealActorEmail);
+        .filter(isRealActorEmail))]
+        .filter(email => !owner || email.trim().toLowerCase() !== owner.trim().toLowerCase());
+    // One check per candidate (D1: no IN (array)); a failed check drops that one, logged.
+    const [{ isOrgMate }, { isModeratorOrAdminAsync }] = await Promise.all([import('@/lib/orgMembership'), import('@/config/admins')]);
+    const verdicts = await Promise.all(candidates.map(async (email) => {
+        try {
+            const [team, staff] = await Promise.all([owner ? isOrgMate(email, owner) : Promise.resolve(false), isModeratorOrAdminAsync(email)]);
+            return team || staff;
+        } catch (e) {
+            logger.warn('loadApprovers: privilege check failed, editor not counted', { adopterId, editor: email, error: e instanceof Error ? e.message : String(e) });
+            return false;
+        }
+    }));
+    const editors = candidates.filter((_, i) => verdicts[i]);
     const all = [...new Set([...(owner ? [owner] : []), ...editors])];
     return { owner, editors, all };
 }

@@ -139,9 +139,10 @@ export async function resolveAdopterVisibility(
             isModeratorOrAdminAsync(viewerEmail),
             // v2.18.11: org-mates of the owner get full privileged tier too.
             isOrgMate(viewerEmail, adopter.addedBy),
-            // Editor status: only kind='edit' rows count. kind='contribution'
-            // rows (additive writes via addContactEntry) must NOT promote the
-            // writer to editor — that would silently grant full PII visibility.
+            // Editor status: only kind='edit' rows count. Since v2.19.51 it
+            // grants NO visibility (resolveVisibility ignores isEditor) and
+            // approver rights only while privileged (loadApprovers); kept on
+            // the verdict for callers that still read it.
             db.select({ id: adopterHistory.adopterId }).from(adopterHistory)
                 .where(and(
                     eq(adopterHistory.adopterId, adopter.id),

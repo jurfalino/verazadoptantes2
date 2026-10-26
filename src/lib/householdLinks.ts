@@ -90,8 +90,8 @@ export async function recordHouseholdLink(
  *
  * `kind` is the history kind: 'edit' (default) only when the actor is
  * privileged on the host. A contributor removing the member they added (D54)
- * passes 'contribution' — an 'edit' row would make them an editor, and so an
- * approver, of the LINKED profile, which they have no standing on.
+ * passes 'contribution': they are no editor of the LINKED profile, which they
+ * have no standing on (and loadApprovers would not count them anyway).
  */
 export async function deleteHouseholdLink(
     db: Db,
@@ -276,8 +276,8 @@ export async function loadLinkForCorrection(db: Db, linkId: string): Promise<Lin
  *
  * `hostKind` is the history kind of the HOST's row: 'edit' only when the actor
  * is privileged on the host (an admin, or the host's owner team). The linked
- * team has no standing on the host — an 'edit' row there would make them its
- * editor, and so an approver. The linked profile's row stays 'edit' (the
+ * team has no standing on the host, so they are no editor of it (and
+ * loadApprovers would not count them anyway). The linked profile's row stays 'edit' (the
  * caller checked they are its team or an admin).
  */
 export async function applyNotLivingTogether(

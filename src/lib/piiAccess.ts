@@ -404,7 +404,7 @@ export interface ResolveVisibilityInput {
      *  read; admin still owns write actions like `setAdopterPublic`. */
     isModerator: boolean;
     /** Viewer shares at least one org with the adopter's owner (v2.18.11).
-     *  Org-mates get the same `privileged` tier as admin/moderator/editor —
+     *  Org-mates get the same `privileged` tier as owner/admin/moderator —
      *  unmask all contact, see "who has access", approve PII requests on
      *  teammate profiles. The audit log + owner notifications are the
      *  trust-but-verify backstop. */
@@ -432,7 +432,7 @@ export interface ResolveVisibilityInput {
 
 export interface Visibility {
     tier: VisibilityTier;
-    /** owner / editor / admin — gets the "who has access" UI, can approve, sees no banner. */
+    /** owner / org-mate / admin / moderator (never a mere editor since v2.19.51) — gets the "who has access" UI, can approve, sees no banner. */
     privileged: boolean;
     /** True ⇒ no contact field is masked for this viewer (privileged OR holds an all-contact grant). */
     nothingMasked: boolean;

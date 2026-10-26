@@ -27,8 +27,8 @@ import type { EntryConflict } from './updateContactEntry';
  *   1. UPDATE adopters.contactEntries (entry filtered out, list re-serialized).
  *   2. INSERT adopter_history with the removed entry's type + id (no raw
  *      value): kind='edit' for owner/admin/org-mate, kind='contribution' for a
- *      contributor removing their own entry — an 'edit' row would make them an
- *      editor (full contact access + approver rights).
+ *      contributor removing their own entry (they are not an editor; editors get
+ *      approver rights only while privileged — loadApprovers).
  *   3. Revoke any live pii_access_grant rows whose entryRef hashes the removed
  *      value — explicit revoke for audit clarity (they'd go inert on their own
  *      because nothing in contactEntries still hashes to that ref).

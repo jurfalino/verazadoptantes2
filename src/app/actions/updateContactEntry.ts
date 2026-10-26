@@ -39,8 +39,8 @@ function sameEntry(a: ContactEntry, b: ContactEntry): boolean {
  *   1. UPDATE adopters.contactEntries (entry mutated in place, list re-serialized).
  *   2. INSERT adopter_history with hashed before/after values (no raw PII in
  *      history.changes): kind='edit' for owner/admin/org-mate, kind='contribution'
- *      for a contributor fixing their own entry — an 'edit' row would make them
- *      an editor (full contact access + approver rights).
+ *      for a contributor fixing their own entry (they are not an editor; editors
+ *      get approver rights only while privileged — loadApprovers).
  *   3. Re-tokenize so search reflects the new value.
  *
  * Notes:

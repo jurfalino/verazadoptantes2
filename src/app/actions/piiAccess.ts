@@ -84,8 +84,8 @@ export async function requestPiiAccess(
 }
 
 /**
- * Approve or deny a pending request. The actor must be an approver (owner /
- * editor) or admin for the adopter, and not the requester. Approval writes an
+ * Approve or deny a pending request. The actor must be an approver (owner, or
+ * an editor who is privileged on it — loadApprovers) or admin for the adopter, and not the requester. Approval writes an
  * `all_contact` grant; either way the requester is notified.
  */
 export async function resolvePiiAccessRequest(
@@ -166,7 +166,7 @@ export async function resolvePiiAccessRequest(
     }
 }
 
-/** Revoke a live grant. Owner / editor / admin only; the grantee is notified (Resolution #6). */
+/** Revoke a live grant. Owner / privileged editor (loadApprovers) / admin only; the grantee is notified (Resolution #6). */
 export async function revokePiiAccessGrant(grantId: string): Promise<{ ok: boolean; error?: string }> {
     try {
         if (!(await isPiiGatingEnabled())) return { ok: false, error: 'PII gating not enabled' };
