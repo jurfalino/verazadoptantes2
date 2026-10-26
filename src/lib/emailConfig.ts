@@ -41,6 +41,16 @@ export async function resolveEmailConfig(db: Db): Promise<{ apiKey: string | nul
     return { apiKey: apiKey || null, from };
 }
 
+/**
+ * A build CI did not stamp: `next dev`, a local build, the e2e server (D53).
+ * CI's deploy builds always set APP_ENVIRONMENT (staging | production; the
+ * build step refuses to run without it) and next.config.ts inlines it, so an
+ * empty value can only be a run on someone's machine or a test server.
+ */
+export function isLocalRun(): boolean {
+    return !process.env.APP_ENVIRONMENT;
+}
+
 /** Anything that is not production (staging, preview, local) labels its emails. */
 export function isStagingEnvironment(): boolean {
     return process.env.APP_ENVIRONMENT !== 'production';

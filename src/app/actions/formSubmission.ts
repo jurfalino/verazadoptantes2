@@ -434,7 +434,8 @@ async function notifyProfileCreator(
             ...notificationContent({ key: 'form_attached', params: { actorName, profileName: target.name } }),
             url: `/adopter/${adopterId}`,
             icon: '📋',
-            metadata: { attachedBy: actorEmail, submissionId },
+            // Another rescuer's bell: the actor by name, never by email.
+            metadata: { attachedByName: actorName, submissionId },
         });
     } catch (e) {
         logger.warn('notifyProfileCreator: notification failed (non-blocking)', {

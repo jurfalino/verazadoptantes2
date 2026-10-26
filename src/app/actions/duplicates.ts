@@ -159,8 +159,9 @@ export async function attachContractToExistingAdopter(
                     }),
                     url: `/adopter/${matchAdopterId}`,
                     icon: '📝',
+                    // Another rescuer's bell: the actor by name, never by email.
                     metadata: {
-                        attachedBy: actorEmail,
+                        attachedByName: actorName,
                         sourceNotificationId: notificationId,
                         animalId,
                         animalName,

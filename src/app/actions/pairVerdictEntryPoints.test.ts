@@ -45,6 +45,7 @@ vi.mock('@/lib/logger', () => ({
 import { attachContractToExistingAdopter } from './duplicates';
 import { linkFormToExistingAdopter } from './formSubmission';
 import { mergeAdopters } from '@/lib/adopterMerge';
+import { createNotification } from './notifications';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -58,6 +59,7 @@ beforeEach(() => {
     state.db = m.db;
     sqlite = m.sqlite as unknown as typeof sqlite;
     mergeSpy.mockClear();
+    vi.mocked(createNotification).mockClear();
     // STRANGER's new profile (from a contract / an adoption form) matched OWNER's existing one.
     sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
         ('o-match', 'Carla Gómez', '5', ?, 1000, 1000), ('s-orphan', 'Carla Gomez', '5', ?, 2000, 2000)`).run(OWNER, STRANGER);
@@ -114,5 +116,29 @@ describe('linkFormToExistingAdopter consults the pair verdict', () => {
         expect(await refuseDisputedMerge(state.db as any, { keepId: 'o-match', absorbedId: 's-orphan', actor: ADMIN })).toBe(false);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the drizzle handle under test
         expect(await refuseDisputedMerge(state.db as any, { keepId: 'o-match', absorbedId: 's-orphan', actor: STRANGER })).toBe(true);
+    });
+});
+
+/**
+ * The «attached to your profile» notices land in ANOTHER rescuer's bell (the
+ * matched profile's creator): their metadata names the actor, never by email.
+ */
+describe('attach notices never carry the actor\'s email', () => {
+    const noticeOf = (type: string) => vi.mocked(createNotification).mock.calls.map(c => c[0] as { type: string; userId: string; metadata?: unknown }).find(n => n.type === type);
+
+    it('contract_attached: to OWNER, metadata names STRANGER without an email', async () => {
+        expect(await attachContractToExistingAdopter('n-contract', 'o-match')).toMatchObject({ success: true });
+        const notice = noticeOf('contract_attached');
+        expect(notice?.userId).toBe(OWNER);
+        expect(notice?.metadata).toMatchObject({ attachedByName: 'stranger' });
+        expect(JSON.stringify(notice?.metadata)).not.toContain('@');
+    });
+
+    it('form_attached: to OWNER, metadata names STRANGER without an email', async () => {
+        expect(await linkFormToExistingAdopter('sub-1', 'o-match')).toMatchObject({ success: true });
+        const notice = noticeOf('form_attached');
+        expect(notice?.userId).toBe(OWNER);
+        expect(notice?.metadata).toMatchObject({ attachedByName: 'stranger' });
+        expect(JSON.stringify(notice?.metadata)).not.toContain('@');
     });
 });

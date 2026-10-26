@@ -18,6 +18,7 @@ vi.mock('@/lib/email', async (orig) => ({ ...(await orig<typeof import('@/lib/em
 
 import { sendNotificationEmail } from './notificationEmail';
 import { buildNotificationEmail } from './email';
+import { isLocalRun } from './emailConfig';
 
 type Sqlite = { prepare: (s: string) => { get: (...a: unknown[]) => Record<string, unknown> | undefined; run: (...a: unknown[]) => unknown } };
 let sqlite: Sqlite;
@@ -41,6 +42,9 @@ beforeEach(() => {
     state.localeFails = false;
     vi.stubEnv('RESEND_API_KEY', 'key');
     vi.stubEnv('AUTH_SECRET', 'test-secret');
+    // A CI-stamped build (D53): an unstamped one is a local run and never emails.
+    vi.stubEnv('APP_ENVIRONMENT', 'staging');
+    vi.stubEnv('EMAIL_ALLOW_LOCAL', '');
     // A registered recipient (no user_profiles row yet: every switch on).
     sqlite.prepare(`INSERT INTO user (id, email) VALUES ('u1', ?)`).run(EMAIL);
 });
@@ -131,6 +135,51 @@ describe('sendNotificationEmail', () => {
         vi.stubEnv('RESEND_API_KEY', '');
         expect(await call(addNotif('form_submission'), 'form_submission')).toBe('skipped_config');
         expect(send).not.toHaveBeenCalled();
+    });
+});
+
+describe('local runs never email (D53)', () => {
+    it('no APP_ENVIRONMENT stamp -> skipped_local, nothing sent, emailed_at stays null, logged at info', async () => {
+        const { logger } = await import('@/lib/logger');
+        const info = vi.spyOn(logger, 'info');
+        vi.stubEnv('APP_ENVIRONMENT', '');
+        const id = addNotif('merge_request');
+        expect(await call(id, 'merge_request')).toBe('skipped_local');
+        expect(send).not.toHaveBeenCalled();
+        expect(emailedAt(id)).toBeNull();
+        expect(info).toHaveBeenCalledWith(expect.stringContaining('local run'), expect.objectContaining({ notificationId: id, type: 'merge_request' }));
+        info.mockRestore();
+    });
+    it('EMAIL_ALLOW_LOCAL=1 lets a local run send (explicitly allowed for a test)', async () => {
+        vi.stubEnv('APP_ENVIRONMENT', '');
+        vi.stubEnv('EMAIL_ALLOW_LOCAL', '1');
+        const id = addNotif('merge_request');
+        expect(await call(id, 'merge_request')).toBe('sent');
+        expect(send).toHaveBeenCalledTimes(1);
+        expect(emailedAt(id)).not.toBeNull();
+    });
+    it('only exactly "1" allows it', async () => {
+        vi.stubEnv('APP_ENVIRONMENT', '');
+        for (const v of ['true', '0', 'yes']) {
+            vi.stubEnv('EMAIL_ALLOW_LOCAL', v);
+            expect(await call(addNotif('merge_request'), 'merge_request')).toBe('skipped_local');
+        }
+        expect(send).not.toHaveBeenCalled();
+    });
+    it('stamped staging and production builds send', async () => {
+        for (const env of ['staging', 'production']) {
+            vi.stubEnv('APP_ENVIRONMENT', env);
+            expect(await call(addNotif('merge_request'), 'merge_request')).toBe('sent');
+        }
+        expect(send).toHaveBeenCalledTimes(2);
+    });
+    it('isLocalRun: true without the stamp, false for staging and production', () => {
+        vi.stubEnv('APP_ENVIRONMENT', '');
+        expect(isLocalRun()).toBe(true);
+        vi.stubEnv('APP_ENVIRONMENT', 'staging');
+        expect(isLocalRun()).toBe(false);
+        vi.stubEnv('APP_ENVIRONMENT', 'production');
+        expect(isLocalRun()).toBe(false);
     });
 });
 

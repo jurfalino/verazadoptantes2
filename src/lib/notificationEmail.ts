@@ -2,7 +2,7 @@
  * Email twin of every in-app notification, governed by the
  * ENABLE_NOTIFICATION_EMAIL kill switch and the per-category switches in
  * user_profiles.email_prefs. Only registered recipients (a `user` row) are
- * emailed. NOT a 'use server' module.
+ * emailed. A local run (no CI stamp) never sends (D53). NOT a 'use server' module.
  * `notifications.user_id` is the recipient EMAIL.
  */
 import { and, desc, eq, gte, isNotNull } from 'drizzle-orm';
@@ -13,7 +13,7 @@ import { maskEmail } from '@/lib/dates';
 import { ALWAYS_ON_CATEGORIES, categoryForType, emailThrottleKey, isEmailEnabled } from '@/domain/emailCategories';
 import { getEmailRecipient, getLocaleForEmail } from '@/lib/emailPrefs';
 import { getFeatureFlag } from '@/config/features';
-import { appBaseUrl, isStagingEnvironment, resolveEmailConfig } from '@/lib/emailConfig';
+import { appBaseUrl, isLocalRun, isStagingEnvironment, resolveEmailConfig } from '@/lib/emailConfig';
 import { buildNotificationEmail, sendEmailViaResend } from '@/lib/email';
 import { unsubscribeUrl } from '@/lib/emailUnsubscribe';
 import { resolveAuthSecret } from '@/lib/otp';
@@ -21,7 +21,7 @@ import { localizedNotification } from '@/domain/notificationTemplates';
 import type { EmailLocale } from '@/lib/email';
 
 export type NotificationEmailResult =
-    | 'sent' | 'skipped_disabled' | 'skipped_no_account' | 'skipped_pref' | 'skipped_throttle' | 'skipped_config' | 'failed';
+    | 'sent' | 'skipped_disabled' | 'skipped_no_account' | 'skipped_pref' | 'skipped_throttle' | 'skipped_config' | 'skipped_local' | 'failed';
 
 const THROTTLE_MS = 10 * 60_000;
 const THROTTLE_SCAN_LIMIT = 50;
@@ -77,7 +77,15 @@ export async function sendNotificationEmail(n: {
         return 'skipped_config';
     }
 
-    // 5. Send.
+    // 5. Local runs never email (D53): only builds CI stamped (staging,
+    //    production) reach real inboxes — a developer's .env.local may carry
+    //    a real key. EMAIL_ALLOW_LOCAL=1 opts in, for testing the email itself.
+    if (isLocalRun() && process.env.EMAIL_ALLOW_LOCAL !== '1') {
+        logger.info('sendNotificationEmail: local run, send skipped (EMAIL_ALLOW_LOCAL=1 to allow)', { notificationId: n.id, type: n.type });
+        return 'skipped_local';
+    }
+
+    // 6. Send.
     const base = appBaseUrl();
     const unsub = ALWAYS_ON_CATEGORIES.has(category)
         ? null
