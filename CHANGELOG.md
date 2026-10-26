@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.57.2] - 2026-10-26
+
+### Added — anyone can add to a household
+- Any signed-in rescuer can add a household member, or a contact to a member, on any profile, credited to
+  them, the same way contact details work. They can edit or delete only what they added; the owner's team,
+  admins and moderators can change everything. The contacts they add stay protected for everyone else, the
+  owner's team is notified, and access is requested for them.
+- A linked conviviente's card («Convive con» and the host's household) has «Agregar dato de contacto»: it
+  saves on that person's own profile («Se agrega al perfil de …»), so their details are stored once.
+- Adding a contact that was already there says so («Ese dato ya estaba cargado») instead of doing nothing.
+
+### Security
+- Only the owner, their team, admins and moderators can approve or revoke access to a profile's contact
+  details, or see its pending requests. Before, flagging a profile, logging a record on it or deleting one
+  of its photos counted as "editing" it and gave that power. Not used in production (no requests on record).
+- What a rescuer does on someone else's profile is recorded as a contribution, never as an edit.
+
+### Fixed
+- «Ver como otro usuario» no longer shows household edit and delete buttons to the owner.
+- Approvals and access notices no longer depend on the capitalisation of the owner's email.
+
 ## [2.57.1] - 2026-10-26
 
 ### Added — one shared reality for households and merges
