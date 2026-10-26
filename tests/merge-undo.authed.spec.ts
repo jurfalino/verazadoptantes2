@@ -365,7 +365,8 @@ test.describe('Duplicate mass-merge and undo', () => {
         const auditId = (await res.json() as { results: Array<{ auditId: string }> }).results[0].auditId;
         const notes = parseD1Rows(execD1(`SELECT user_id, url FROM notifications WHERE type = 'adopter_merged'`));
         expect(notes.map(n => n.user_id)).toEqual(['testuser@example.com']);
-        expect(String(notes[0].url)).toBe(`/adopter/${M1}`);
+        // The notice opens «¿No es la misma persona?» for this merge (D50).
+        expect(String(notes[0].url)).toBe(`/adopter/${M1}?dispute=${encodeURIComponent(auditId)}`);
 
         // The survivor's history records the merge, and the profile shows it.
         const merged = parseD1Rows(execD1(`SELECT changes FROM adopter_history WHERE adopter_id = '${M1}' AND changes LIKE '%profiles_merged%'`));

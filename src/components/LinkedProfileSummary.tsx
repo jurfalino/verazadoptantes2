@@ -17,6 +17,7 @@
  * the member from the host and the link, on both profiles, for everyone.
  */
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { Phone, Mail, AtSign, IdCard, MapPin, Lock, ExternalLink, Home } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -160,15 +161,23 @@ export function NotLivingTogetherButton({ linkId, personName, hostName, classNam
             >
                 {t('adopter.hh_not_living')}
             </button>
-            <ConfirmDialog
-                open={open}
-                busy={busy}
-                title={fill(t('adopter.hh_not_living_title'), names)}
-                message={fill(t('adopter.hh_not_living_note'), names)}
-                confirmLabel={t('adopter.hh_not_living_confirm')}
-                onConfirm={() => { void report(); }}
-                onCancel={() => setOpen(false)}
-            />
+            {/* On <body>: rendered in place, an ancestor stacking context (the
+                profile form's read-only `opacity-90` grid, most likely) left the
+                fixed dialog UNDER the adoptions card — its confirm could not be
+                clicked (found by tests/one-reality.authed.spec.ts). Open only
+                after a click, so `document` exists. */}
+            {open && createPortal(
+                <ConfirmDialog
+                    open
+                    busy={busy}
+                    title={fill(t('adopter.hh_not_living_title'), names)}
+                    message={fill(t('adopter.hh_not_living_note'), names)}
+                    confirmLabel={t('adopter.hh_not_living_confirm')}
+                    onConfirm={() => { void report(); }}
+                    onCancel={() => setOpen(false)}
+                />,
+                document.body,
+            )}
         </>
     );
 }
