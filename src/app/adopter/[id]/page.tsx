@@ -260,6 +260,7 @@ export default async function AdopterPage({
             isAdmin={isAdmin}
             canViewAudit={canViewAudit}
             isOrgMateOfOwner={isOrgMateOfOwner}
+            isModeratorOrAdmin={isModeratorOrAdmin}
             attribution={attribution}
             adoptionConfig={adoptionConfig}
             duplicateCandidates={dupCandidates}

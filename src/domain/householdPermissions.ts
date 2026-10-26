@@ -53,12 +53,13 @@ export function canChangeMemberContact(viewer: HouseholdViewer, entry: ContactLi
 }
 
 /**
- * After a contact this viewer added to a member is saved: whether to say
- * «Solicitamos acceso…». The household actions return no `autoRequestFiled`
- * (frozen shapes), and they file the request for every non-privileged contact
- * add, so it follows from the viewer. A bare member files none — callers show
- * this only after a contact.
+ * The household as a stranger would get it: no `own` markers. For «Ver como
+ * desconocido» — a stranger added nothing, so the owner's own members must not
+ * keep their edit/remove controls in the preview.
  */
-export function showsAccessRequestHint(viewer: HouseholdViewer): boolean {
-    return viewer.signedIn && !viewer.privileged;
+export function withoutOwnMarks<E extends Owned, M extends Owned & { contactEntries: E[] }>(members: M[]): M[] {
+    return members.map(m => {
+        const { own: _own, ...rest } = m;
+        return { ...rest, contactEntries: m.contactEntries.map(e => { const { own: _e, ...entry } = e; return entry as E; }) } as M;
+    });
 }

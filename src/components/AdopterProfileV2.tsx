@@ -59,6 +59,8 @@ interface AdopterProfileV2Props {
      *  Drives the "you can edit this" affordances + the attribution chip's
      *  shared-org accent. */
     isOrgMateOfOwner?: boolean;
+    /** Admin or moderator (the page's getIsModeratorOrAdmin): changes every household member (D54). */
+    isModeratorOrAdmin?: boolean;
     /** v2.18.11: pre-resolved creator name + org for the attribution chip
      *  below the adopter name. null means the chip is suppressed (creation
      *  context unknown, e.g. anonymous-created or DB error). */
@@ -86,7 +88,7 @@ interface AdopterProfileV2Props {
     linkedSummaries?: LinkedSummaries;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null, linkedSummaries = EMPTY_LINKED_SUMMARIES }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, isModeratorOrAdmin = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null, linkedSummaries = EMPTY_LINKED_SUMMARIES }: AdopterProfileV2Props) {
     const { formatDateTime, formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const searchParams = useSearchParams();
@@ -480,6 +482,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     hasDuplicateBanner={false}
                     attribution={attribution}
                     isOrgMateOfOwner={isOrgMateOfOwner && !previewAsStranger}
+                    isModerator={isModeratorOrAdmin && !previewAsStranger}
+                    previewAsStranger={previewAsStranger}
                     isPrivileged={!!effectivePiiContext?.privileged}
                     visibilityBadge={visibilityBadge}
                     onBadgeClick={() => setVisibilityModalOpen(true)}

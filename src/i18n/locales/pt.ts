@@ -1028,6 +1028,8 @@ export const pt = {
         hh_link_owner: 'Perfil cadastrado por {name}',
         hh_link_view_full: 'Ver perfil completo',
         hh_link_adds_to: 'Será adicionado ao perfil de {name}',
+        hh_contact_already_there: 'Esse dado já estava cadastrado.',
+        hh_contact_already_there_unlocked: 'Esse dado já estava cadastrado. Como você o conhece, agora você também o vê.',
         hh_link_more_contacts: '+{n} dados a mais no perfil',
         hh_link_no_contacts: 'Sem dados de contato',
         hh_link_locked_note: 'Alguns dados estão protegidos. Você pode pedir acesso pelo perfil.',

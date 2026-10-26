@@ -124,6 +124,8 @@ async function expectNotApprover(email: string, adopterId: string) {
 async function strangerAddsMember(): Promise<string> {
     const res = await addHouseholdMember({ adopterId: 'p1', name: 'Rosa Gomez', relationship: 'sibling', contactEntries: [{ type: 'phone', value: STRANGER_PHONE }] });
     if (!res.ok) throw new Error(res.error);
+    // A contributor's member with a contact files the access request for them, and says so.
+    expect(res.autoRequestFiled).toBe(true);
     return res.memberId;
 }
 
@@ -240,7 +242,7 @@ describe('a stranger edits / removes members', () => {
 describe("a stranger and the member's contacts", () => {
     it("adds a contact to the owner's member ✓: credited, contribution, grant, owner told", async () => {
         const res = await addMemberContactEntry({ adopterId: 'p1', memberId: 'om', type: 'email', value: 'marta@example.org' });
-        expect(res.ok).toBe(true);
+        expect(res).toMatchObject({ ok: true, appended: true, autoRequestFiled: true });
         const entryId = (res as { entryId: string }).entryId;
         expect(member('om')!.contactEntries.find(e => e.id === entryId)).toMatchObject({ value: 'marta@example.org', addedBy: STRANGER });
         expect(history()).toEqual([expect.objectContaining({ changed_by: STRANGER, kind: 'contribution' })]);
@@ -280,7 +282,7 @@ describe("a stranger and the member's contacts", () => {
 describe('privileged writers keep today\'s path', () => {
     it('an org-mate adds a member with a phone: history kind=edit, no grant, no contribution notice, no access request', async () => {
         const res = await as(MATE, () => addHouseholdMember({ adopterId: 'p1', name: 'Ana', relationship: 'sibling', contactEntries: [{ type: 'phone', value: '+54 11 7777 0000' }] }));
-        expect(res.ok).toBe(true);
+        expect(res).toMatchObject({ ok: true, appended: true, autoRequestFiled: false });
         expect(history()).toEqual([expect.objectContaining({ changed_by: MATE, kind: 'edit' })]);
         expect(grants(MATE)).toEqual([]);
         expect(contributionNotices()).toEqual([]);
@@ -395,7 +397,7 @@ describe('fix round 1: masking and markers', () => {
 describe('fix round 1: dedup, moderators, access requests', () => {
     it('a duplicate contact on a member appends nothing and sends nothing, but still grants the contributor', async () => {
         const res = await addMemberContactEntry({ adopterId: 'p1', memberId: 'om', type: 'phone', value: '+54 11 4444-0303' });
-        expect(res).toEqual({ ok: true, entryId: 'oc' });
+        expect(res).toEqual({ ok: true, entryId: 'oc', appended: false, autoRequestFiled: false });
         expect(member('om')!.contactEntries.map(e => e.id)).toEqual(['oc']);
         expect(history()).toEqual([]);
         expect(contributionNotices()).toEqual([]);
@@ -410,7 +412,7 @@ describe('fix round 1: dedup, moderators, access requests', () => {
 
     it('a bare member (no contacts) files no access request; the owner is still told', async () => {
         const res = await addHouseholdMember({ adopterId: 'p1', name: 'Rosa Gomez', relationship: 'sibling' });
-        expect(res.ok).toBe(true);
+        expect(res).toMatchObject({ ok: true, appended: true, autoRequestFiled: false });
         expect(sqlite.prepare(`SELECT id FROM pii_access_requests`).all()).toEqual([]);
         expect(contributionNotices().map(n => n.userId)).toEqual([OWNER]);
     });

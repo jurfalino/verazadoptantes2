@@ -30,7 +30,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { entryConflictMessage } from '@/lib/collabCopy';
 import {
     HOUSEHOLD_NOT_AUTHORIZED, canAddToHousehold, canEditHouseholdMember, canRemoveHouseholdMember,
-    canChangeMemberContact, showsAccessRequestHint, type HouseholdViewer,
+    canChangeMemberContact, type HouseholdViewer,
 } from '@/domain/householdPermissions';
 import {
     addHouseholdMember, updateHouseholdMember, removeHouseholdMember,
@@ -151,6 +151,7 @@ export default function HouseholdSection({ adopterId, initialMembers, canEditAll
         if (isNew) {
             const res = await run(() => addHouseholdMember({ adopterId, name, relationship, age: age ?? undefined }));
             if (!res) return;
+            if (res.autoRequestFiled) toast.success('✓', t('adopter.ce_add_toast_added_with_request'));
             setMembers(prev => prev.map(x => x.id === m.id
                 // `own`: the viewer just added it, as the refreshed server copy will say.
                 ? { ...x, id: res.memberId, name, relationship, own: true, ...(typeof age === 'number' ? { age, ageAsOf: new Date().toISOString().slice(0, 10) } : {}), editing: false, draftName: undefined, draftRel: undefined, draftAge: undefined, isNew: false } as MemberUI
@@ -183,13 +184,17 @@ export default function HouseholdSection({ adopterId, initialMembers, canEditAll
         const platform = draftPlatform(c);
         const res = await run(() => addMemberContactEntry({ adopterId, memberId: m.id, type: c.type, value: c.value, platform, apps: c.apps }));
         if (!res) return false;
-        // A value the member already has comes back as that entry's id, with nothing appended.
-        const duplicate = m.contactEntries.some(e => e.id === res.entryId);
-        if (!duplicate) {
+        if (res.appended) {
             const entry: ContactEntry = { id: res.entryId, type: c.type, value: c.value, own: true, ...(platform ? { platform } : {}), ...(c.apps.length ? { apps: c.apps } : {}) };
             setMembers(prev => prev.map(x => x.id === m.id ? { ...x, contactEntries: [...x.contactEntries, entry] } : x));
-            // A contributor's contact files an access request on their behalf (D54), as on the titular.
-            if (showsAccessRequestHint(viewer) && c.type !== 'alias') toast.success('✓', t('adopter.ce_add_toast_added_with_request'));
+            // The server says when it filed an access request on their behalf (D54), as on the titular.
+            if (res.autoRequestFiled) toast.success('✓', t('adopter.ce_add_toast_added_with_request'));
+        } else {
+            // Already on the member. Shown to them (by id) → it was simply there; not shown → it
+            // was masked, and typing it earned them a grant: after the refresh they see it.
+            const shown = canEditAll || !m.contactEntries.some(e => e.masked)
+                || m.contactEntries.some(e => e.id === res.entryId && !e.masked);
+            toast.info(t(shown ? 'adopter.hh_contact_already_there' : 'adopter.hh_contact_already_there_unlocked'));
         }
         router.refresh();
         return true;

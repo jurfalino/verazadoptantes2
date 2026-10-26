@@ -1021,6 +1021,8 @@ export const en = {
         hh_link_owner: 'Profile added by {name}',
         hh_link_view_full: 'View full profile',
         hh_link_adds_to: "Added to {name}'s profile",
+        hh_contact_already_there: 'That detail was already there.',
+        hh_contact_already_there_unlocked: 'That detail was already there. Since you know it, you can now see it too.',
         hh_link_more_contacts: '+{n} more details on their profile',
         hh_link_no_contacts: 'No contact details',
         hh_link_locked_note: 'Some details are protected. You can ask for access from their profile.',

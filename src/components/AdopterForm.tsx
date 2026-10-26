@@ -17,6 +17,7 @@ import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesSection from "@/components/ContactEntriesSection";
 import HouseholdSection from "@/components/HouseholdSection";
+import { withoutOwnMarks } from "@/domain/householdPermissions";
 import { LivesWithSection } from "@/components/LinkedProfileSummary";
 import { EMPTY_LINKED_SUMMARIES, type LinkedSummaries } from "@/domain/householdLinks";
 import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
@@ -108,10 +109,14 @@ interface AdopterFormProps {
     onBadgeClick?: () => void;
     /** D46: linked convivientes' live summaries (host members + «Convive con»), masked for this viewer. */
     linkedSummaries?: LinkedSummaries;
+    /** Admin or moderator (false in preview-as-stranger): changes every household member (D54). */
+    isModerator?: boolean;
+    /** «Ver como desconocido»: the household shows exactly what a stranger gets — no team controls, no own markers. */
+    previewAsStranger?: boolean;
 }
 
 
-export function AdopterForm({ origin = null, interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick, linkedSummaries = EMPTY_LINKED_SUMMARIES }: AdopterFormProps) {
+export function AdopterForm({ origin = null, interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick, linkedSummaries = EMPTY_LINKED_SUMMARIES, isModerator = false, previewAsStranger = false }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -146,10 +151,11 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         && (isAdmin || isOrgMateOfOwner || (!!currentUser && currentUser === (initialData?.addedBy ?? '')));
 
     // D54: who may change every household member and contact — owner ∨ admin ∨
-    // org-mate ∨ (gating on) moderator. Everyone else signed in changes only what
-    // they added (the `own` markers); the server applies the same rules.
-    const canEditAllHousehold = !isNew && isAuthenticated && (
-        isAdmin || isOrgMateOfOwner || isPrivileged
+    // moderator ∨ org-mate. Everyone else signed in changes only what they added
+    // (the `own` markers); the server applies the same rules. Never in
+    // preview-as-stranger: a stranger is none of these.
+    const canEditAllHousehold = !isNew && !previewAsStranger && !!isAuthenticated && (
+        isAdmin || isModerator || isOrgMateOfOwner || isPrivileged
         || (!!currentUser && !!initialData?.addedBy && currentUser.trim().toLowerCase() === initialData.addedBy.trim().toLowerCase())
     );
 
@@ -1530,9 +1536,11 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                             <div className="space-y-3">
                                 <HouseholdSection
                                     adopterId={adopterId}
-                                    initialMembers={deserializeHouseholdMembers(initialData?.householdMembers)}
-                                    // D54: anyone signed in adds; the owner's team, admins and
-                                    // moderators (isPrivileged, when gating is on) change everything.
+                                    initialMembers={previewAsStranger
+                                        ? withoutOwnMarks(deserializeHouseholdMembers(initialData?.householdMembers))
+                                        : deserializeHouseholdMembers(initialData?.householdMembers)}
+                                    // D54: anyone signed in adds (a stranger too, so also in the
+                                    // preview); the owner's team, admins and moderators change everything.
                                     canEditAll={canEditAllHousehold}
                                     canAdd={!!isAuthenticated}
                                     hasLegacyText={hasLegacyFamilyText || linkedSummaries.livesWith.length > 0}

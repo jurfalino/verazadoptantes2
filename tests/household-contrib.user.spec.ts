@@ -59,6 +59,7 @@ function cleanup() {
         execD1(`DELETE FROM pii_access_requests WHERE adopter_id = '${id}'`);
         execD1(`DELETE FROM duplicate_tokens WHERE adopter_id = '${id}'`);
         execD1(`DELETE FROM adopters WHERE id = '${id}'`);
+        execD1(`DELETE FROM notifications WHERE url LIKE '%${id}%'`);
     }
     execD1(`DELETE FROM household_links WHERE host_adopter_id = '${HOST}' OR linked_adopter_id = '${LINKED}'`);
     execD1(`DELETE FROM notifications WHERE user_id = '${OWNER}'`);
@@ -88,6 +89,8 @@ test.describe('household contributions by a non-owner (D54, D55)', () => {
         const hostMembers = () => JSON.parse(String(rows(`SELECT household_members AS h FROM adopters WHERE id = '${HOST}'`)[0]?.h ?? '[]')) as Array<{ id: string; name: string; addedBy?: string; contactEntries: Array<{ value: string; addedBy?: string }> }>;
         const contactsOf = (id: string) => JSON.parse(String(rows(`SELECT contact_entries AS c FROM adopters WHERE id = '${id}'`)[0]?.c ?? '[]')) as Array<{ value: string; addedBy?: string }>;
         const hostContactsBefore = contactsOf(HOST);
+        // rows() answers [] on a failed query: make sure the baseline is the seeded contact.
+        expect(hostContactsBefore.map(e => e.value)).toEqual(['11 4100-0001']);
 
         await page.goto(`/adopter/${HOST}`);
         await dismissCountryBanner(page);
@@ -125,6 +128,15 @@ test.describe('household contributions by a non-owner (D54, D55)', () => {
         await expect(mine.getByTestId('household-member-edit')).toHaveCount(1);
         await expect(mine.getByTestId('household-member-remove')).toHaveCount(1);
         await expect(cards.nth(0).getByTestId('household-member-edit')).toHaveCount(0);
+
+        // The same phone again: nothing appended — no second row, here or stored.
+        await mine.getByTestId('household-add-contact').click();
+        await mine.getByTestId('household-contact-type-phone').click();
+        await mine.getByTestId('household-contact-input').fill(NEW_MEMBER_PHONE);
+        await mine.getByTestId('household-contact-save').click();
+        await expect(mine.getByTestId('household-contact-input')).toHaveCount(0, { timeout: 15_000 });
+        await expect(mine.locator('li', { hasText: NEW_MEMBER_PHONE })).toHaveCount(1);
+        expect(hostMembers().find(m => m.name === NEW_MEMBER)?.contactEntries).toHaveLength(1);
 
         // ── D55: a phone added on the linked conviviente's card goes to THEIR profile.
         const linkedCard = cards.filter({ has: page.getByTestId('linked-summary') });

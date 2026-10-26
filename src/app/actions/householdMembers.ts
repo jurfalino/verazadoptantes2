@@ -120,14 +120,16 @@ function forbidden(op: string, ctx: Record<string, unknown>): Err {
  * owner + editors notified and, when contacts came with it, the access request
  * auto-filed. The item is
  * already saved: a failed grant is logged, never a failed add (a retry would
- * add it twice).
+ * add it twice). Returns whether the access request was filed for them — the
+ * `autoRequestFiled` the add actions report (as addContactEntry: any contact,
+ * aliases included).
  */
 async function contributionSideEffects(
     r: Loaded,
     actor: string,
     entries: ContactEntry[],
     notice: { op: string; what: 'member' | 'contact'; memberId: string; entryType?: ContactEntry['type'] },
-): Promise<void> {
+): Promise<boolean> {
     const adopterId = r.target.id;
     const ctx = { adopterId, actor, memberId: notice.memberId };
     for (const e of entries) {
@@ -148,10 +150,12 @@ async function contributionSideEffects(
         metadata: { memberId: notice.memberId, what: notice.what, ...(notice.entryType ? { entryType: notice.entryType } : {}) },
     }), ctx);
     // As addContactEntry: the request rides on a contact actually added — a bare member files none.
-    if (entries.length > 0) {
+    const fileRequest = entries.length > 0;
+    if (fileRequest) {
         await runAfterResponse(`${notice.op}.autoAccessRequest`,
             () => fileContributionAccessRequest(notice.op, actor, adopterId), ctx);
     }
+    return fileRequest;
 }
 
 type Members = HouseholdMember[];
@@ -274,7 +278,7 @@ export async function addHouseholdMember(
          */
         profileId?: string;
     },
-): Promise<{ ok: true; memberId: string } | Busy | Err> {
+): Promise<{ ok: true; memberId: string; appended: boolean; autoRequestFiled: boolean } | Busy | Err> {
     const actor = await authActor();
     if (!actor) return { ok: false, error: 'Not authenticated' };
     const adopterId = String(input.adopterId || '');
@@ -305,7 +309,8 @@ export async function addHouseholdMember(
         const contactTypes = entries.map(e => e.type);
         await insertHouseholdHistory(r.db, adopterId, actor, { household_member_added: { id: member.id, relationship, ...(contactTypes.length ? { contactTypes } : {}) } }, r.privileged);
         logAudit({ userEmail: actor, action: 'household_member_added', target: adopterId, details: { relationship, contactTypes, ...(r.privileged ? {} : { contribution: true }) } });
-        if (!r.privileged) await contributionSideEffects(r, actor, entries, { op: 'addHouseholdMember', what: 'member', memberId: member.id });
+        const autoRequestFiled = !r.privileged
+            && await contributionSideEffects(r, actor, entries, { op: 'addHouseholdMember', what: 'member', memberId: member.id });
         if (member.profileId) {
             // D44: the linked profile shows «Convive con» from this row; D45: its team hears about it.
             // The member is already saved — a failed link is logged, never a failed add
@@ -319,7 +324,7 @@ export async function addHouseholdMember(
                 logger.error('addHouseholdMember: household link not recorded', e, linkCtx);
             }
         }
-        return { ok: true, memberId: member.id };
+        return { ok: true, memberId: member.id, appended: true, autoRequestFiled };
     } catch (error) {
         const errorId = logger.error('addHouseholdMember failed', error, { adopterId, actor });
         return { ok: false, error: `Failed (Error ID: ${errorId})` };
@@ -425,7 +430,7 @@ export async function removeHouseholdMember(
 
 export async function addMemberContactEntry(
     input: { adopterId: string; memberId: string; type: ContactEntry['type']; value: string; streetAndNumber?: string; locality?: string; platform?: SocialPlatform; apps?: MessagingApp[] },
-): Promise<{ ok: true; entryId: string } | Busy | Err> {
+): Promise<{ ok: true; entryId: string; appended: boolean; autoRequestFiled: boolean } | Busy | Err> {
     const actor = await authActor();
     if (!actor) return { ok: false, error: 'Not authenticated' };
     const adopterId = String(input.adopterId || '');
@@ -462,12 +467,13 @@ export async function addMemberContactEntry(
                     logger.error('addMemberContactEntry: contribution grant not written', e, { adopterId, actor, memberId: input.memberId, type: input.type });
                 });
             }
-            return { ok: true, entryId: out.result.entryId };
+            return { ok: true, entryId: out.result.entryId, appended: false, autoRequestFiled: false };
         }
         await insertHouseholdHistory(r.db, adopterId, actor, { household_contact_added: { memberId: input.memberId, type: input.type } }, r.privileged);
         logAudit({ userEmail: actor, action: 'household_contact_added', target: adopterId, details: { memberId: input.memberId, type: input.type, ...(r.privileged ? {} : { contribution: true }) } });
-        if (!r.privileged) await contributionSideEffects(r, actor, [entry], { op: 'addMemberContactEntry', what: 'contact', memberId: input.memberId, entryType: input.type });
-        return { ok: true, entryId: entry.id! };
+        const autoRequestFiled = !r.privileged
+            && await contributionSideEffects(r, actor, [entry], { op: 'addMemberContactEntry', what: 'contact', memberId: input.memberId, entryType: input.type });
+        return { ok: true, entryId: entry.id!, appended: true, autoRequestFiled };
     } catch (error) {
         const errorId = logger.error('addMemberContactEntry failed', error, { adopterId, actor });
         return { ok: false, error: `Failed (Error ID: ${errorId})` };

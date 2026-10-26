@@ -66,7 +66,9 @@ export function LinkedProfileSummary({ summary, testId = 'linked-summary', canAd
             }
             // As on the profile itself (ContactEntriesSection): say when an access request was filed for them.
             if (res.status === 'appended') toast.success('✓', t(res.autoRequestFiled ? 'adopter.ce_add_toast_added_with_request' : 'adopter.ce_add_toast_added'));
-            else if (res.status === 'unlocked_existing') toast.success('✓', t('adopter.ce_add_toast_unlocked'));
+            // Nothing was added: say why instead of closing silently.
+            else if (res.status === 'unlocked_existing') toast.info(t('adopter.hh_contact_already_there_unlocked'));
+            else toast.info(t('adopter.hh_contact_already_there'));
             router.refresh();
             return true;
         } catch (e) {

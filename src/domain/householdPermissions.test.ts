@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     canAddToHousehold, canEditHouseholdMember, canRemoveHouseholdMember,
-    canChangeMemberContact, showsAccessRequestHint, HOUSEHOLD_NOT_AUTHORIZED,
+    canChangeMemberContact, withoutOwnMarks, HOUSEHOLD_NOT_AUTHORIZED,
     type HouseholdViewer,
 } from './householdPermissions';
 
@@ -46,10 +46,20 @@ describe('household controls per viewer (D54)', () => {
         expect(canChangeMemberContact(anonymous, { id: 'a', own: true })).toBe(false);
     });
 
-    it('the «Solicitamos acceso» note follows a contact a non-privileged viewer added', () => {
-        expect(showsAccessRequestHint(contributor)).toBe(true);
-        expect(showsAccessRequestHint(privileged)).toBe(false);
-        expect(showsAccessRequestHint(anonymous)).toBe(false);
+    it('an unmasked contact someone else added (gating off: nothing masked) gives a non-privileged viewer no edit/remove', () => {
+        const theirs = { id: 'ce-1', type: 'phone', value: '11 4200-0002' };
+        expect(canChangeMemberContact(contributor, theirs)).toBe(false);
+        expect(canRemoveHouseholdMember(contributor, { own: true, contactEntries: [theirs] })).toBe(false);
+        expect(canChangeMemberContact(privileged, theirs)).toBe(true);
+    });
+
+    it('preview as a stranger: no own markers survive, so no controls from them', () => {
+        const members = [{ id: 'm', own: true, contactEntries: [{ id: 'e', own: true }, { id: 'f' }] }];
+        const asStranger = withoutOwnMarks(members);
+        expect(asStranger).toEqual([{ id: 'm', contactEntries: [{ id: 'e' }, { id: 'f' }] }]);
+        expect(canEditHouseholdMember(contributor, asStranger[0])).toBe(false);
+        expect(canChangeMemberContact(contributor, asStranger[0].contactEntries[0])).toBe(false);
+        expect(members[0].own).toBe(true); // the input is not touched
     });
 
     it('keeps the server\'s refusal string', () => {
