@@ -125,6 +125,21 @@ export function deserializeHouseholdMembers(json: string | null | undefined): Ho
     return out;
 }
 
+/**
+ * One rule for `profileId` (D44 review): only `addHouseholdMember` may set it —
+ * it checks the profile exists and records the household link beside it. Every
+ * other path that writes household members from outside input (the
+ * /api/adopters import JSON, the submission factory) strips it with this, so a
+ * client can never plant a link to someone else's profile.
+ */
+export function withoutProfileLinks<T extends { profileId?: string }>(members: T[]): T[] {
+    return members.map(m => {
+        if (m.profileId === undefined) return m;
+        const { profileId: _dropped, ...rest } = m;
+        return rest as T;
+    });
+}
+
 /** Serialize members for storage — drops empty members, caps count, stringifies. */
 export function serializeHouseholdMembers(members: HouseholdMember[] | null | undefined): string {
     if (!members || members.length === 0) return '[]';

@@ -216,8 +216,10 @@ export async function addHouseholdMember(
         applyAge(member, input.age);
         const profileId = typeof input.profileId === 'string' ? input.profileId.trim().slice(0, 64) : '';
         if (profileId && profileId !== adopterId) {
-            const linked = await r.db.select({ id: adopters.id }).from(adopters).where(eq(adopters.id, profileId)).get();
-            if (linked) member.profileId = profileId;
+            // A live profile only: a soft-deleted one (merged away, removed) gets no link and no notice.
+            const linked = await r.db.select({ id: adopters.id, deletedAt: adopters.deletedAt }).from(adopters).where(eq(adopters.id, profileId)).get();
+            if (linked && !linked.deletedAt) member.profileId = profileId;
+            else logger.info('addHouseholdMember: profileId ignored (missing or deleted profile)', { adopterId, actor, profileId });
         }
         const out = await mutateHousehold(r.db, adopterId, (members) => ({ members: [...members, member], result: null }), { op: 'addHouseholdMember', actor });
         if (out.status === 'missing') return { ok: false, error: 'Adopter not found' };

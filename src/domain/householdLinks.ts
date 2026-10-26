@@ -10,6 +10,12 @@ import { isOpenDuplicateFlag, realOwner, type DuplicateFlagRow } from './dedupPa
 
 /** At most this many linked summaries per side of a profile page (bounded reads). */
 export const MAX_LINKED_SUMMARIES = 10;
+/**
+ * Link rows read per side before liveness is checked. Stale rows (member edited
+ * away, merged host) are filtered BEFORE the MAX_LINKED_SUMMARIES cap so they can
+ * never crowd out live links; this only bounds the read itself.
+ */
+export const MAX_LINK_ROWS = 100;
 /** At most this many contact rows in one summary card; the full profile has the rest. */
 export const MAX_SUMMARY_CONTACTS = 6;
 /** Contact types a summary shows — notes (`other`) and aliases are not contact details. */

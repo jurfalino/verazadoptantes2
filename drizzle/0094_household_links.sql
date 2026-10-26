@@ -22,21 +22,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_household_links_host_member ON household_l
 CREATE INDEX IF NOT EXISTS idx_household_links_host ON household_links (host_adopter_id);
 CREATE INDEX IF NOT EXISTS idx_household_links_linked ON household_links (linked_adopter_id);
 
--- Backfill from existing household members that carry a profileId. The CASE
--- keeps json_each away from malformed JSON (a WHERE json_valid guard is not
--- guaranteed to run first). Skips self-links, deleted hosts, missing profiles.
+-- Backfill from existing household members that carry a profileId. SQLite does
+-- not guarantee WHERE order, so every JSON probe is guarded where it is made:
+-- the CASE in json_each keeps it away from malformed or non-array JSON, and the
+-- CASE WHEN m.type = 'object' keeps the path probes away from text or number
+-- elements (json_type on an unquoted text value raises malformed JSON).
+-- Skips self-links, deleted hosts, missing profiles.
 INSERT OR IGNORE INTO household_links (id, host_adopter_id, linked_adopter_id, member_id, created_by, created_at)
 SELECT
-    'hl-' || a.id || '-' || json_extract(m.value, '$.id'),
+    'hl-' || a.id || '-' || CASE WHEN m.type = 'object' THEN json_extract(m.value, '$.id') END,
     a.id,
-    json_extract(m.value, '$.profileId'),
-    json_extract(m.value, '$.id'),
-    COALESCE(json_extract(m.value, '$.addedBy'), a.added_by),
+    CASE WHEN m.type = 'object' THEN json_extract(m.value, '$.profileId') END,
+    CASE WHEN m.type = 'object' THEN json_extract(m.value, '$.id') END,
+    COALESCE(CASE WHEN m.type = 'object' THEN json_extract(m.value, '$.addedBy') END, a.added_by),
     strftime('%s', 'now')
 FROM adopters a, json_each(CASE WHEN json_valid(a.household_members) AND json_type(a.household_members) = 'array' THEN a.household_members ELSE '[]' END) m
 WHERE a.deleted_at IS NULL
-    AND json_type(m.value) = 'object'
-    AND json_type(m.value, '$.profileId') = 'text'
-    AND json_type(m.value, '$.id') = 'text'
-    AND json_extract(m.value, '$.profileId') <> a.id
-    AND EXISTS (SELECT 1 FROM adopters l WHERE l.id = json_extract(m.value, '$.profileId'));
+    AND m.type = 'object'
+    AND CASE WHEN m.type = 'object' THEN json_type(m.value, '$.profileId') END = 'text'
+    AND CASE WHEN m.type = 'object' THEN json_type(m.value, '$.id') END = 'text'
+    AND CASE WHEN m.type = 'object' THEN json_extract(m.value, '$.profileId') END <> a.id
+    AND EXISTS (SELECT 1 FROM adopters l WHERE l.id = CASE WHEN m.type = 'object' THEN json_extract(m.value, '$.profileId') END);

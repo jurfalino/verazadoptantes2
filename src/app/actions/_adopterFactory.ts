@@ -32,7 +32,7 @@
  */
 
 import { logger } from '@/lib/logger';
-import { serializeHouseholdMembers, type HouseholdMember } from '@/lib/householdMembers';
+import { serializeHouseholdMembers, withoutProfileLinks, type HouseholdMember } from '@/lib/householdMembers';
 import type { SocialPlatform } from '@/lib/contactEntries';
 
 export type AdopterSource = 'manual' | 'form' | 'contract' | 'imported' | 'api';
@@ -155,7 +155,7 @@ export async function createAdopterFromSubmission(
         name: trimmedName,
         contactInfo: contactInfo || null,
         contactEntries: contactEntries.length ? JSON.stringify(contactEntries) : null,
-        householdMembers: input.householdMembers?.length ? serializeHouseholdMembers(input.householdMembers) : null,
+        householdMembers: input.householdMembers?.length ? serializeHouseholdMembers(withoutProfileLinks(input.householdMembers)) : null,
         addressInfo: input.address || null,
         addedBy: input.addedBy || 'anonymous',
         source: input.source,

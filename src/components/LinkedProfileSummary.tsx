@@ -138,7 +138,7 @@ export function LivesWithSection({ rows }: { rows: LivesWithRow[] }) {
                         <div className="min-w-0 flex-1">
                             <div className="font-semibold text-[15px] text-stone-900 break-words">
                                 <span className="text-stone-500 font-normal">{t('adopter.hh_lives_with_title')}: </span>
-                                <a href={`/adopter/${encodeURIComponent(row.profileId)}`} target="_blank" rel="noopener noreferrer" className="text-teal-700 hover:underline">
+                                <a href={`/adopter/${encodeURIComponent(row.profileId)}`} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center gap-1 align-middle text-teal-700 hover:underline">
                                     {row.name} <span aria-hidden="true">↗</span>
                                 </a>
                             </div>

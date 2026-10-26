@@ -15,8 +15,8 @@
  * Decisions live in src/domain/householdLinks.ts. D1: no `IN (array)` —
  * one bounded query set per profile, fanned out with Promise.all.
  */
-import { and, eq, isNull, sql } from 'drizzle-orm';
-import { adopterEvents, adopterFlags, adopters, adoptions, householdLinks, placements } from '@/db/schema';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { adopters, householdLinks } from '@/db/schema';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
@@ -30,6 +30,7 @@ import { realOwner } from '@/domain/dedupPair';
 import {
     EMPTY_LINKED_SUMMARIES,
     MAX_LINKED_SUMMARIES,
+    MAX_LINK_ROWS,
     canHideHouseholdLink,
     countOpenAlerts,
     isLiveLink,
@@ -164,35 +165,42 @@ async function liveProfile(db: Db, id: string, ctx: Record<string, unknown>): Pr
 
 type Counts = { rating: number | null; openAlerts: number; adoptions: number; records: number };
 
-/** Rating (same source as the profile page: AVG over the adoptions view), open alerts, adoptions, records. */
+/**
+ * Rating (same source as the profile page: AVG over the adoptions view), open
+ * alerts, adoptions and records — ONE query per profile (scalar subqueries,
+ * the id bound as a parameter). Flags come back as a JSON array so the open-alert rule stays in
+ * src/domain (countOpenAlerts), not in SQL. A failure degrades to an empty
+ * summary line and is logged.
+ */
 async function countsFor(db: Db, id: string, ctx: Record<string, unknown>): Promise<Counts> {
-    // Each read degrades on its own (logged), and awaits a promise whether the
-    // driver returns one (D1) or a plain value (better-sqlite3 in dev/tests).
-    const safe = async <T,>(op: string, def: T, run: () => unknown): Promise<T> => {
-        try {
-            return (await run()) as T;
-        } catch (e) {
-            logger.warn(`householdLinks: ${op} D1 fallback hit`, { ...ctx, profileId: id, error: errMsg(e) });
-            return def;
-        }
+    type Raw = { avg: number | null; adopted: number | null; records: number | null; flags: string | null };
+    let raw: Raw | undefined;
+    try {
+        // `await` whether the driver returns a promise (D1) or a value (better-sqlite3 in dev/tests).
+        raw = await db.select({
+            avg: sql<number | null>`(SELECT AVG(rating) FROM adoptions WHERE adopter_id = ${id})`,
+            adopted: sql<number>`(SELECT COUNT(*) FROM placements WHERE adopter_id = ${id} AND record_type = ${RECORD_TYPES.ADOPTION})`,
+            records: sql<number>`(SELECT COUNT(*) FROM adopter_events WHERE adopter_id = ${id})`,
+            flags: sql<string | null>`(SELECT json_group_array(json_object('reason', reason, 'targetAdopterId', target_adopter_id, 'details', details)) FROM adopter_flags WHERE adopter_id = ${id})`,
+        }).from(adopters).where(eq(adopters.id, id)).get() as Raw | undefined;
+    } catch (e) {
+        logger.warn('householdLinks: counts D1 fallback hit', { ...ctx, profileId: id, error: errMsg(e) });
+        return { rating: null, openAlerts: 0, adoptions: 0, records: 0 };
+    }
+    let flags: Array<{ reason?: string | null; targetAdopterId?: string | null; details?: string | null }> = [];
+    try {
+        const parsed: unknown = JSON.parse(raw?.flags || '[]');
+        if (Array.isArray(parsed)) flags = parsed;
+    } catch (e) {
+        logger.warn('householdLinks: unreadable flags, no alerts counted', { ...ctx, profileId: id, error: errMsg(e) });
+    }
+    const avg = raw?.avg ?? null;
+    return {
+        rating: avg == null ? null : Number(avg),
+        openAlerts: countOpenAlerts(flags.map(f => ({ adopterId: id, ...f }))),
+        adoptions: Number(raw?.adopted ?? 0),
+        records: Number(raw?.records ?? 0),
     };
-    type FlagRow = { adopterId: string; targetAdopterId: string | null; reason: string | null; details: string | null };
-    const [avgRow, flags, adoptedRow, recordsRow] = await Promise.all([
-        safe<{ v: number | null } | undefined>('rating', undefined, () =>
-            db.select({ v: sql<number | null>`AVG(${adoptions.rating})` }).from(adoptions).where(eq(adoptions.adopterId, id)).get()),
-        safe<FlagRow[]>('flags', [], () =>
-            db.select({ adopterId: adopterFlags.adopterId, targetAdopterId: adopterFlags.targetAdopterId, reason: adopterFlags.reason, details: adopterFlags.details })
-                .from(adopterFlags).where(eq(adopterFlags.adopterId, id)).all()),
-        safe<{ n: number } | undefined>('adoptions', undefined, () =>
-            db.select({ n: sql<number>`COUNT(*)` }).from(placements)
-                .where(and(eq(placements.adopterId, id), eq(placements.recordType, RECORD_TYPES.ADOPTION))).get()),
-        safe<{ n: number } | undefined>('records', undefined, () =>
-            db.select({ n: sql<number>`COUNT(*)` }).from(adopterEvents).where(eq(adopterEvents.adopterId, id)).get()),
-    ]);
-    const avg = avgRow?.v ?? null;
-    const adopted = Number(adoptedRow?.n ?? 0);
-    const records = Number(recordsRow?.n ?? 0);
-    return { rating: avg == null ? null : Number(avg), openAlerts: countOpenAlerts(flags), adoptions: adopted, records };
 }
 
 /** Contacts as this viewer may see them on that profile — the same rule getAdopter applies. */
@@ -230,34 +238,45 @@ export async function getLinkedSummaries(viewer: string | null | undefined, adop
         const self = await loadProfile(db, adopterId);
         if (!self || self.deletedAt) return EMPTY_LINKED_SUMMARIES;
 
+        // Oldest first (stable order); liveness is checked BEFORE the cap, so
+        // stale rows can't crowd out live links. MAX_LINK_ROWS bounds the read.
         const [outgoing, incoming] = await Promise.all([
-            db.select().from(householdLinks).where(eq(householdLinks.hostAdopterId, adopterId)).limit(MAX_LINKED_SUMMARIES + 1).all() as Promise<LinkRow[]>,
+            db.select().from(householdLinks).where(eq(householdLinks.hostAdopterId, adopterId))
+                .orderBy(asc(householdLinks.createdAt), asc(householdLinks.id)).limit(MAX_LINK_ROWS).all() as Promise<LinkRow[]>,
             db.select().from(householdLinks)
                 .where(and(eq(householdLinks.linkedAdopterId, adopterId), isNull(householdLinks.hiddenAt)))
-                .limit(MAX_LINKED_SUMMARIES + 1).all() as Promise<LinkRow[]>,
+                .orderBy(asc(householdLinks.createdAt), asc(householdLinks.id)).limit(MAX_LINK_ROWS).all() as Promise<LinkRow[]>,
         ]);
         if (outgoing.length === 0 && incoming.length === 0) return EMPTY_LINKED_SUMMARIES;
-        if (outgoing.length > MAX_LINKED_SUMMARIES || incoming.length > MAX_LINKED_SUMMARIES) {
-            logger.warn('householdLinks: link cap hit, extra links not shown', { ...ctx, outgoing: outgoing.length, incoming: incoming.length, cap: MAX_LINKED_SUMMARIES });
+        if (outgoing.length >= MAX_LINK_ROWS || incoming.length >= MAX_LINK_ROWS) {
+            logger.warn('householdLinks: link row cap hit, older-than-cap links not read', { ...ctx, outgoing: outgoing.length, incoming: incoming.length, cap: MAX_LINK_ROWS });
         }
 
         // Host side: only links whose member is still on this profile and still points there.
         const selfMembers = deserializeHouseholdMembers(self.householdMembers);
-        const hostLinks = outgoing.slice(0, MAX_LINKED_SUMMARIES).filter(l => isLiveLink(l, selfMembers));
+        const liveOutgoing = outgoing.filter(l => isLiveLink(l, selfMembers));
+        const hostLinks = liveOutgoing.slice(0, MAX_LINKED_SUMMARIES);
         const linkedRows = await Promise.all(hostLinks.map(l => liveProfile(db, l.linkedAdopterId, { ...ctx, linkId: l.id })));
 
-        // Linked side: the host (or the profile it was merged into) must still list this profile.
-        const reverse = incoming.slice(0, MAX_LINKED_SUMMARIES);
-        const hostRows = await Promise.all(reverse.map(l => liveProfile(db, l.hostAdopterId, { ...ctx, linkId: l.id })));
+        // Linked side: the host (or the profile it was merged into) must still list
+        // this profile. Checked a batch at a time until MAX_LINKED_SUMMARIES are live.
         const seenHosts = new Set<string>();
         const reverseLive: Array<{ link: LinkRow; host: ProfileRow }> = [];
-        reverse.forEach((link, i) => {
-            const host = hostRows[i];
-            if (!host || host.id === adopterId || seenHosts.has(host.id)) return;
-            if (!isLiveLink(link, deserializeHouseholdMembers(host.householdMembers))) return;
-            seenHosts.add(host.id);
-            reverseLive.push({ link, host });
-        });
+        for (let i = 0; i < incoming.length && reverseLive.length < MAX_LINKED_SUMMARIES; i += MAX_LINKED_SUMMARIES) {
+            const batch = incoming.slice(i, i + MAX_LINKED_SUMMARIES);
+            const hostRows = await Promise.all(batch.map(l => liveProfile(db, l.hostAdopterId, { ...ctx, linkId: l.id })));
+            batch.forEach((link, j) => {
+                const host = hostRows[j];
+                if (reverseLive.length >= MAX_LINKED_SUMMARIES) return;
+                if (!host || host.id === adopterId || seenHosts.has(host.id)) return;
+                if (!isLiveLink(link, deserializeHouseholdMembers(host.householdMembers))) return;
+                seenHosts.add(host.id);
+                reverseLive.push({ link, host });
+            });
+        }
+        if (liveOutgoing.length > MAX_LINKED_SUMMARIES || reverseLive.length >= MAX_LINKED_SUMMARIES) {
+            logger.info('householdLinks: summary cap reached', { ...ctx, liveOutgoing: liveOutgoing.length, cap: MAX_LINKED_SUMMARIES });
+        }
 
         const profiles = new Map<string, ProfileRow>();
         linkedRows.forEach(p => { if (p && p.id !== adopterId) profiles.set(p.id, p); });

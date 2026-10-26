@@ -116,6 +116,17 @@ describe('write path (D44, D45)', () => {
         expect(notify.create).toEqual([]);
     });
 
+    it('a soft-deleted profile is refused: the member is added by name only, no link, no notice', async () => {
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 3000 WHERE id = 'linked'`).run();
+        const res = await addHouseholdMember({ adopterId: 'host', name: 'Jonathan Urfalino', relationship: 'unknown', profileId: 'linked' });
+        expect(res.ok).toBe(true);
+        const members = JSON.parse(sqlite.prepare(`SELECT household_members FROM adopters WHERE id = 'host'`).get()!.household_members as string);
+        expect(members).toEqual([expect.objectContaining({ name: 'Jonathan Urfalino' })]);
+        expect(members[0]).not.toHaveProperty('profileId');
+        expect(links()).toEqual([]);
+        expect(notify.create).toEqual([]);
+    });
+
     it('removing the member removes the link', async () => {
         const memberId = await link();
         expect(await removeHouseholdMember({ adopterId: 'host', memberId })).toEqual({ ok: true });
@@ -133,10 +144,15 @@ describe('backfill (drizzle/0094)', () => {
             { id: 'm-self', name: 'Pedro', profileId: 'host' },
             { id: 'm-gone', name: 'X', profileId: 'no-such-profile' },
         ]));
-        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, household_members) VALUES ('broken', 'B', '5', ?, '{not json'), ('obj', 'O', '5', ?, '{"a":1}')`).run(STRANGER, STRANGER);
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, household_members) VALUES ('broken', 'B', '5', ?, '{not json'), ('obj', 'O', '5', ?, '{"a":1}'), ('mixed', 'M', '5', ?, ?)`)
+            .run(STRANGER, STRANGER, STRANGER, JSON.stringify(['Juan', 7, null, [1], { id: 'm1', name: 'Jonathan Urfalino', profileId: 'linked' }]));
         const sql = readFileSync(resolve(process.cwd(), 'drizzle/0094_household_links.sql'), 'utf8').replace(/--.*$/gm, '');
         for (const stmt of sql.split(';').map(s => s.trim()).filter(Boolean)) sqlite.exec(stmt);
-        expect(links()).toEqual([expect.objectContaining({ id: 'hl-host-m-old', host_adopter_id: 'host', linked_adopter_id: 'linked', member_id: 'm-old', created_by: STRANGER })]);
+        // A text element («"Juan"») next to an object in the same array must not abort it.
+        expect(links()).toEqual([
+            expect.objectContaining({ id: 'hl-host-m-old', host_adopter_id: 'host', linked_adopter_id: 'linked', member_id: 'm-old', created_by: STRANGER }),
+            expect.objectContaining({ id: 'hl-mixed-m1', host_adopter_id: 'mixed', linked_adopter_id: 'linked', member_id: 'm1', created_by: STRANGER }),
+        ]);
     });
 });
 
@@ -203,6 +219,20 @@ describe('read path (D46)', () => {
         expect(await getLinkedSummaries(STRANGER, 'host')).toEqual({ members: {}, livesWith: [] });
         sqlite.prepare(`INSERT INTO household_links (id, host_adopter_id, linked_adopter_id, member_id) VALUES ('hl-x', 'host', 'linked', 'other-member')`).run();
         expect((await getLinkedSummaries(OWNER, 'linked')).livesWith).toEqual([]);
+    });
+});
+
+describe('bounded reads', () => {
+    it('stale link rows (older, many) cannot crowd out a live link on either side', async () => {
+        const insert = sqlite.prepare(`INSERT INTO household_links (id, host_adopter_id, linked_adopter_id, member_id, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)`);
+        for (let i = 0; i < 25; i++) {
+            insert.run(`stale-out-${i}`, 'host', 'linked', `gone-${i}`, STRANGER, 10 + i); // host member no longer exists
+            sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by) VALUES (?, 'Old host', '5', ?)`).run(`old-host-${i}`, MATE);
+            insert.run(`stale-in-${i}`, `old-host-${i}`, 'linked', `gone-${i}`, MATE, 10 + i); // that host never listed it
+        }
+        const memberId = await link(); // the one live link, newest
+        expect(Object.keys((await getLinkedSummaries(STRANGER, 'host')).members)).toEqual([memberId]);
+        expect((await getLinkedSummaries(OWNER, 'linked')).livesWith.map(r => r.profileId)).toEqual(['host']);
     });
 });
 

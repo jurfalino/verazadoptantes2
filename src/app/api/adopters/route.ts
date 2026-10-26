@@ -12,7 +12,7 @@ import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { processImageForStorage, uploadToR2 } from '@/lib/r2';
 import { createAdopterApiSchema } from '@/app/actions/validation';
 import { deserializeContactEntries, contactEntriesToBlob } from '@/lib/contactEntries';
-import { deserializeHouseholdMembers, serializeHouseholdMembers } from '@/lib/householdMembers';
+import { deserializeHouseholdMembers, serializeHouseholdMembers, withoutProfileLinks } from '@/lib/householdMembers';
 import { maskAdopterRow } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
 
@@ -331,8 +331,9 @@ export async function POST(request: Request) {
 
     const { name, contactInfo, contactEntries, notes, sourceUrl, flags, images, adoption, source, isPublic: callerIsPublic, householdMembers: householdJson } = parsed.data;
     // Relatives named in the same post: sanitized, given real ids and the
-    // contributor, saved with the profile (Jon, 2026-10-22).
-    const relatives = deserializeHouseholdMembers(householdJson ?? null)
+    // contributor, saved with the profile (Jon, 2026-10-22). Never a profileId:
+    // only addHouseholdMember may link a member to a profile.
+    const relatives = withoutProfileLinks(deserializeHouseholdMembers(householdJson ?? null))
         .map(m => ({ ...m, id: crypto.randomUUID(), addedBy: session.user?.email || undefined }));
 
     // Log the incoming request (without image data for size)
