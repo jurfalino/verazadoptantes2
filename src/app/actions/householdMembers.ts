@@ -10,6 +10,7 @@ import {
     detectSocialPlatform,
     mergeContactEntries,
     contactEntryKey,
+    deserializeContactEntries,
     type ContactEntry,
     type SocialPlatform,
     type MessagingApp,
@@ -30,8 +31,8 @@ import { itemAuthors } from '@/lib/collabAttribution';
 import { hashEntryValue } from '@/lib/piiAccess';
 import { recordHouseholdLink, deleteHouseholdLink, notifyHouseholdLinked } from '@/lib/householdLinks';
 import { runAfterResponse } from '@/lib/background';
-import { HOUSEHOLD_NOT_AUTHORIZED } from '@/domain/householdPermissions';
-import { insertContributionGrant, notifyApprovers, fileContributionAccessRequest } from '@/lib/contributionSideEffects';
+import { HOUSEHOLD_NOT_AUTHORIZED, HOUSEHOLD_MEMBER_HAS_PROFILE } from '@/domain/householdPermissions';
+import { insertContributionGrant, notifyApprovers, fileContributionAccessRequest, revokeContributionGrants, entryRefsOnProfile } from '@/lib/contributionSideEffects';
 
 /**
  * Server actions for the structured household/family section.
@@ -390,6 +391,9 @@ export async function removeHouseholdMember(
         const r = await loadHousehold(adopterId, actor);
         if (!r.ok) return r;
         type Res = 'forbidden' | 'not_found' | 'deleted' | 'changed' | 'removed';
+        // What the landed write took out, and what stayed (for the contributor's grants, M5).
+        let taken: HouseholdMember | undefined;
+        let left: HouseholdMember[] = [];
         const out = await mutateHousehold<Res>(r.db, adopterId, (members) => {
             const m = members.find(x => x.id === memberId);
             // A contributor removes only their own member, and only while every contact
@@ -399,7 +403,9 @@ export async function removeHouseholdMember(
             }
             if (!m) return { result: expected ? 'deleted' : 'not_found' };
             if (expected && (!sameText(expected.name, m.name) || (expected.relationship ?? null) !== (m.relationship ?? null))) return { result: 'changed' };
-            return { members: members.filter(x => x.id !== memberId), result: 'removed' };
+            taken = m;
+            left = members.filter(x => x.id !== memberId);
+            return { members: left, result: 'removed' };
         }, { op: 'removeHouseholdMember', actor, memberId });
         if (out.status === 'missing') return { ok: false, error: 'Adopter not found' };
         if (out.status === 'busy') return busy(out.errorId);
@@ -408,6 +414,13 @@ export async function removeHouseholdMember(
         if (out.result === 'deleted' || out.result === 'changed') return conflictOf(r.db, adopterId, memberId, out.result, MEMBER_KEYS, { actor });
         await insertHouseholdHistory(r.db, adopterId, actor, { household_member_removed: { id: memberId } }, r.privileged);
         logAudit({ userEmail: actor, action: 'household_member_removed', target: adopterId, details: { memberId } });
+        // A contributor taking back their member takes back what its contacts unlocked for them.
+        if (!r.privileged && taken?.contactEntries.length) {
+            await revokeContributionGrants(r.db, {
+                op: 'removeHouseholdMember', adopterId, actor, memberId, removed: taken.contactEntries,
+                stillOnProfile: entryRefsOnProfile(deserializeContactEntries(r.target.contactEntries), left),
+            });
+        }
         // Its link goes with it, and the linked profile's history says so (M7).
         // A leftover row is harmless (reads check the member still exists) but is logged.
         await deleteHouseholdLink(r.db, { hostId: adopterId, hostName: r.target.name, memberId, actor, kind: historyKind(r.privileged) }).catch((e: unknown) => {
@@ -436,10 +449,12 @@ export async function addMemberContactEntry(
         const r = await loadHousehold(adopterId, actor);
         if (!r.ok) return r;
         const entry = buildEntry(actor, input.type, value, input);
-        type Res = { kind: 'not_found' } | { kind: 'added' } | { kind: 'duplicate'; entryId: string };
+        type Res = { kind: 'not_found' } | { kind: 'linked'; profileId: string } | { kind: 'added' } | { kind: 'duplicate'; entryId: string };
         const out = await mutateHousehold<Res>(r.db, adopterId, (members) => {
             const m = members.find(x => x.id === input.memberId);
             if (!m) return { result: { kind: 'not_found' } };
+            // D55: a linked member's contacts live on their own profile (decided on the stored member).
+            if (m.profileId) return { result: { kind: 'linked', profileId: m.profileId } };
             // De-duplicated like addContactEntry: a value the member already has appends nothing.
             const merged = mergeContactEntries(m.contactEntries, [entry]);
             if (!merged.some(e => e.id === entry.id)) {
@@ -452,6 +467,10 @@ export async function addMemberContactEntry(
         if (out.status === 'missing') return { ok: false, error: 'Adopter not found' };
         if (out.status === 'busy') return busy(out.errorId);
         if (out.result.kind === 'not_found') return { ok: false, error: 'Member not found' };
+        if (out.result.kind === 'linked') {
+            logger.warn('addMemberContactEntry: refused, the member has their own profile (D55)', { adopterId, actor, memberId: input.memberId, linkedId: out.result.profileId, type: input.type });
+            return { ok: false, error: HOUSEHOLD_MEMBER_HAS_PROFILE };
+        }
         if (out.result.kind === 'duplicate') {
             // Nothing new on the profile: no history, no notice, no request. The
             // contributor still gets the grant — they showed they know the value.
@@ -542,6 +561,9 @@ export async function removeMemberContactEntry(
         const r = await loadHousehold(adopterId, actor);
         if (!r.ok) return r;
         type Res = 'forbidden' | 'member_not_found' | 'not_found' | 'deleted' | 'changed' | 'removed';
+        // What the landed write took out, and what stayed (for the contributor's grants, M5).
+        let taken: ContactEntry | undefined;
+        let left: HouseholdMember[] = [];
         const out = await mutateHousehold<Res>(r.db, adopterId, (members) => {
             const m = members.find(x => x.id === input.memberId);
             const entry = m?.contactEntries.find(e => e.id === entryId);
@@ -550,7 +572,9 @@ export async function removeMemberContactEntry(
             if (!m) return { result: expectedValue !== undefined ? 'deleted' : 'member_not_found' };
             if (!entry) return { result: expectedValue !== undefined ? 'deleted' : 'not_found' };
             if (expectedValue !== undefined && hashEntryValue(entry.type, expectedValue) !== hashEntryValue(entry.type, entry.value)) return { result: 'changed' };
-            return { members: members.map(x => (x.id === m.id ? { ...x, contactEntries: x.contactEntries.filter(e => e.id !== entryId) } : x)), result: 'removed' };
+            taken = entry;
+            left = members.map(x => (x.id === m.id ? { ...x, contactEntries: x.contactEntries.filter(e => e.id !== entryId) } : x));
+            return { members: left, result: 'removed' };
         }, { op: 'removeMemberContactEntry', actor, entryId });
         if (out.status === 'missing') return { ok: false, error: 'Adopter not found' };
         if (out.status === 'busy') return busy(out.errorId);
@@ -560,6 +584,13 @@ export async function removeMemberContactEntry(
         if (out.result === 'deleted' || out.result === 'changed') return conflictOf(r.db, adopterId, entryId, out.result, MEMBER_CONTACT_KEYS, { actor });
         await insertHouseholdHistory(r.db, adopterId, actor, { household_contact_removed: { memberId: input.memberId, entryId } }, r.privileged);
         logAudit({ userEmail: actor, action: 'household_contact_removed', target: adopterId, details: { memberId: input.memberId, entryId } });
+        // As removeContactEntry revokes on the titular path — narrowed to the contributor's own grant.
+        if (!r.privileged && taken) {
+            await revokeContributionGrants(r.db, {
+                op: 'removeMemberContactEntry', adopterId, actor, memberId: input.memberId, removed: [taken],
+                stillOnProfile: entryRefsOnProfile(deserializeContactEntries(r.target.contactEntries), left),
+            });
+        }
         return { ok: true };
     } catch (error) {
         const errorId = logger.error('removeMemberContactEntry failed', error, { adopterId, actor, entryId });

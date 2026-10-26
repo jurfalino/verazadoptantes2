@@ -21,6 +21,13 @@
 /** The refusal every household action returns for a write the actor may not make. */
 export const HOUSEHOLD_NOT_AUTHORIZED = 'Not authorized to edit this household.';
 
+/**
+ * D55 stored once: a member linked to their own profile (`profileId`) takes new
+ * contacts on THAT profile (addContactEntry), never a copy on the host's
+ * household row. The UI routes there; the server refuses a direct add.
+ */
+export const HOUSEHOLD_MEMBER_HAS_PROFILE = 'This member has their own profile: add the contact there.';
+
 export interface HouseholdViewer {
     signedIn: boolean;
     /** owner ∨ admin ∨ moderator ∨ org-mate of the owner. */

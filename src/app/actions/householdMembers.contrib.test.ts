@@ -74,6 +74,7 @@ import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
 import { hashEntryValue, maskHouseholdMembers, NO_ACCESS_VISIBILITY } from '@/lib/piiAccess';
 import { deserializeHouseholdMembers, type HouseholdMember } from '@/lib/householdMembers';
 import { logger } from '@/lib/logger';
+import { HOUSEHOLD_MEMBER_HAS_PROFILE } from '@/domain/householdPermissions';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -436,5 +437,61 @@ describe('fix round 2: titular contacts, same rules as the household', () => {
         expect((await as(MODERATOR, () => updateContactEntry({ adopterId: 'p1', entryId, value: 'pedro2@example.org' }))).ok).toBe(true);
         expect((await as(MODERATOR, () => removeContactEntry({ adopterId: 'p1', entryId }))).ok).toBe(true);
         expect(history().filter(h => h.changed_by === MODERATOR).map(h => h.kind)).toEqual(['edit', 'edit']);
+    });
+});
+
+describe('final review M3: a linked member takes contacts on their own profile only (D55)', () => {
+    it('adding a contact to a member linked to a profile is refused for anyone, nothing stored', async () => {
+        const res = await addHouseholdMember({ adopterId: 'p1', name: 'Rosa Gomez', relationship: 'sibling', profileId: 'tgt' });
+        if (!res.ok) throw new Error(res.error);
+        const before = history().length;
+        for (const who of [STRANGER, OWNER]) {
+            expect(await as(who, () => addMemberContactEntry({ adopterId: 'p1', memberId: res.memberId, type: 'phone', value: STRANGER_PHONE })))
+                .toEqual({ ok: false, error: HOUSEHOLD_MEMBER_HAS_PROFILE });
+        }
+        expect(member(res.memberId)!.contactEntries).toEqual([]);
+        expect(history()).toHaveLength(before);
+        expect(grants(STRANGER)).toEqual([]);
+        expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(expect.stringContaining('own profile'), expect.objectContaining({ adopterId: 'p1', actor: OWNER, memberId: res.memberId, linkedId: 'tgt' }));
+    });
+
+    it('an unlinked member still takes contacts', async () => {
+        expect(await addMemberContactEntry({ adopterId: 'p1', memberId: 'lm', type: 'phone', value: STRANGER_PHONE })).toMatchObject({ ok: true, appended: true });
+    });
+});
+
+describe('final review M5: a contributor taking back a contact takes back its grant', () => {
+    const live = (email: string, ref: string) => sqlite.prepare(
+        `SELECT origin FROM pii_access_grants WHERE adopter_id = 'p1' AND grantee_email = ? AND entry_ref = ? AND revoked_at IS NULL ORDER BY origin`,
+    ).all(email, ref).map(g => g.origin);
+
+    it("removing their contact on the owner's member revokes their contribution grant on it — only that one", async () => {
+        const ref = hashEntryValue('email', 'marta@example.org');
+        const res = await addMemberContactEntry({ adopterId: 'p1', memberId: 'om', type: 'email', value: 'marta@example.org' });
+        const entryId = (res as { entryId: string }).entryId;
+        // A grant from another origin on the same value, and someone else's contribution grant, stay.
+        sqlite.prepare(`INSERT INTO pii_access_grants (id, adopter_id, grantee_email, scope, entry_ref, origin, granted_by_email) VALUES ('gs', 'p1', ?, 'entry', ?, 'search_match', ?), ('go', 'p1', ?, 'entry', ?, 'contribution', ?)`)
+            .run(STRANGER, ref, STRANGER, OTHER, ref, OTHER);
+        expect(live(STRANGER, ref)).toEqual(['contribution', 'search_match']);
+
+        expect(await removeMemberContactEntry({ adopterId: 'p1', memberId: 'om', entryId })).toEqual({ ok: true });
+        expect(live(STRANGER, ref)).toEqual(['search_match']);
+        expect(live(OTHER, ref)).toEqual(['contribution']);
+        expect(sqlite.prepare(`SELECT revoked_by_email FROM pii_access_grants WHERE grantee_email = ? AND origin = 'contribution' AND entry_ref = ?`).get(STRANGER, ref)!.revoked_by_email).toBe(STRANGER);
+    });
+
+    it('removing their member revokes the grants its contacts gave them', async () => {
+        const memberId = await strangerAddsMember();
+        expect(grants(STRANGER)).toHaveLength(1);
+        expect(await removeHouseholdMember({ adopterId: 'p1', memberId })).toEqual({ ok: true });
+        expect(grants(STRANGER)).toEqual([]);
+    });
+
+    it('a value still on the profile keeps its grant (they showed they know it)', async () => {
+        const ref = hashEntryValue('phone', OWNER_PHONE);
+        const res = await addMemberContactEntry({ adopterId: 'p1', memberId: 'lm', type: 'phone', value: OWNER_PHONE });
+        const entryId = (res as { entryId: string }).entryId;
+        expect(await removeMemberContactEntry({ adopterId: 'p1', memberId: 'lm', entryId })).toEqual({ ok: true });
+        expect(live(STRANGER, ref)).toEqual(['contribution']); // Marta («om») still has it
     });
 });

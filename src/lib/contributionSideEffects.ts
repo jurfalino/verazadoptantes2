@@ -63,6 +63,53 @@ export async function insertContributionGrant(
 }
 
 /**
+ * A contributor took back contacts they added (a household contact, or their
+ * member with its contacts): revoke the entry grants THEY hold BY CONTRIBUTION
+ * on those values — the counterpart of removeContactEntry's revoke, narrowed to
+ * the actor's own contribution grants (a grant from a search match, a request
+ * or someone else's stays). A value still on the profile (`stillOnProfile`, the
+ * entry refs left after the remove) keeps its grant: they showed they know it.
+ * One statement per ref (D1: no IN (array)); a failure is logged, never a
+ * failed remove — the remove already landed.
+ */
+export async function revokeContributionGrants(
+    db: Db,
+    opts: { op: string; adopterId: string; actor: string; removed: Array<Pick<ContactEntry, 'type' | 'value'>>; stillOnProfile: Set<string>; memberId?: string },
+): Promise<void> {
+    const { op, adopterId, actor } = opts;
+    const refs = [...new Set(opts.removed
+        .filter(e => e.type !== 'alias') // aliases are never masked: no grant to take back
+        .map(e => hashEntryValue(e.type, e.value)))]
+        .filter(ref => !opts.stillOnProfile.has(ref));
+    if (refs.length === 0) return;
+    const now = new Date();
+    const results = await Promise.all(refs.map(ref => (async () => {
+        await db.update(piiAccessGrants)
+            .set({ revokedAt: now, revokedByEmail: actor })
+            .where(and(
+                eq(piiAccessGrants.adopterId, adopterId),
+                eq(piiAccessGrants.granteeEmail, actor),
+                eq(piiAccessGrants.entryRef, ref),
+                eq(piiAccessGrants.origin, 'contribution'),
+                isNull(piiAccessGrants.revokedAt),
+            ));
+        return true;
+    })().catch((e: unknown) => {
+        logger.error(`${op}: contribution grant not revoked`, e, { adopterId, actor, memberId: opts.memberId });
+        return false;
+    })));
+    logger.info(`${op}: contribution grants revoked`, { adopterId, actor, memberId: opts.memberId, refs: refs.length, failed: results.filter(ok => !ok).length });
+}
+
+/** Every entry ref on a profile: its titular contacts plus every household member's. */
+export function entryRefsOnProfile(titular: Array<Pick<ContactEntry, 'type' | 'value'>>, members: Array<{ contactEntries: Array<Pick<ContactEntry, 'type' | 'value'>> }>): Set<string> {
+    const refs = new Set<string>();
+    for (const e of titular) refs.add(hashEntryValue(e.type, e.value));
+    for (const m of members) for (const e of m.contactEntries) refs.add(hashEntryValue(e.type, e.value));
+    return refs;
+}
+
+/**
  * Notify the profile's owner + editors that `actor` contributed. `build` gets
  * the actor's display name and returns the template; `metadata` always carries
  * `adopterId` and `contributor`. `op` names the caller in the log line.
