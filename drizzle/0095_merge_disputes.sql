@@ -25,3 +25,19 @@ CREATE TABLE IF NOT EXISTS merge_disputes (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_merge_disputes_open_audit ON merge_disputes (audit_id) WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS idx_merge_disputes_audit ON merge_disputes (audit_id);
 CREATE INDEX IF NOT EXISTS idx_merge_disputes_status_created ON merge_disputes (status, created_at);
+
+-- D48 «No convive»: the linked profile's owner team (or an admin) said the
+-- person does not live with the host. The member and its household_links row
+-- are removed; this row remembers the correction, so re-adding the same
+-- person to the same host is a dispute the admins hear about.
+-- (household_links.hidden_at / hidden_by from the withdrawn D47 are no longer
+-- read or written; a row hidden then reads as live.)
+CREATE TABLE IF NOT EXISTS household_link_corrections (
+    id TEXT PRIMARY KEY,
+    host_adopter_id TEXT NOT NULL,
+    linked_adopter_id TEXT NOT NULL,
+    member_id TEXT,
+    corrected_by TEXT NOT NULL,
+    created_at INTEGER DEFAULT (strftime('%s', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_household_link_corrections_pair ON household_link_corrections (host_adopter_id, linked_adopter_id);

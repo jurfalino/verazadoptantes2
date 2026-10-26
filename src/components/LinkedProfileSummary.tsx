@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Linked convivientes (spec 2026-10-25 pendientes D, D46/D47).
+ * Linked convivientes (spec 2026-10-25 pendientes D, D46, D48).
  *
  * `LinkedProfileSummary`: the live summary of a profile linked through a
  * household — rating and alerts first («★2 · 1 alerta»), then «3 adopciones ·
@@ -10,8 +10,9 @@
  * profile), then «Ver perfil completo ↗» in a new tab.
  *
  * `LivesWithSection`: the linked profile's «Convive con» rows (the host, the
- * same summary, «según {creator}») with «Quitar de mi perfil» for the linked
- * profile's team.
+ * same summary, «según {creator}») with a button for the linked profile's
+ * team that says the person does not live there («No convive», D48: removes
+ * the member from the host and the link, on both profiles).
  */
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -25,7 +26,7 @@ import { handledAsStale } from '@/lib/errorMessage';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import type { ContactEntryType } from '@/lib/contactEntries';
 import type { LinkedSummary, LivesWithRow } from '@/domain/householdLinks';
-import { hideHouseholdLink } from '@/app/actions';
+import { reportNotLivingTogether } from '@/app/actions';
 
 const ICON: Partial<Record<ContactEntryType, typeof Phone>> = { phone: Phone, email: Mail, social: AtSign, id: IdCard, address: MapPin };
 
@@ -113,8 +114,8 @@ export function LivesWithSection({ rows }: { rows: LivesWithRow[] }) {
     async function hide(row: LivesWithRow) {
         setBusy(true);
         try {
-            const res = await hideHouseholdLink(row.linkId);
-            if (!res.ok) {
+            const res = await reportNotLivingTogether(row.linkId);
+            if (!res.success) {
                 toast.error(t('errors.generic') || 'Error', t('adopter.hh_lives_with_hide_failed'), 'errorId' in res ? res.errorId : undefined);
                 return;
             }
@@ -146,7 +147,7 @@ export function LivesWithSection({ rows }: { rows: LivesWithRow[] }) {
                         </div>
                     </div>
                     <LinkedProfileSummary summary={row} testId="lives-with-summary" />
-                    {row.canHide && (
+                    {row.canReportNotLiving && (
                         <button
                             type="button"
                             onClick={() => setConfirm(row)}

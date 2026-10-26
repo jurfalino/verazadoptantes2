@@ -1,12 +1,19 @@
 /**
- * Linked convivientes (spec 2026-10-25 pendientes D, addendum D44–D47) —
- * server side. NOT a 'use server' module: every export here is called by
- * server code only (addHouseholdMember / removeHouseholdMember, the profile
- * page, the hide action), so none of it is a browser-callable endpoint.
+ * Linked convivientes (spec 2026-10-25 pendientes D, addendum D44–D46, D48,
+ * D51) — server side. NOT a 'use server' module: every export here is called
+ * by server code only (addHouseholdMember / removeHouseholdMember, the profile
+ * page, reportNotLivingTogether, mergeAdopters / unmergeAdopters), so none of
+ * it is a browser-callable endpoint.
  *
  * - `recordHouseholdLink` / `deleteHouseholdLink`: the `household_links` row
  *   kept beside a household member that carries a `profileId`.
- * - `notifyHouseholdLinked`: the linked profile's owner team hears about it (D45).
+ * - `notifyHouseholdLinked`: the linked profile's owner team hears about it
+ *   (D45); a re-link after a «No convive» also tells the admins (D48).
+ * - `loadLinkForCorrection` / `applyNotLivingTogether`: «No convive» (D48) —
+ *   one member removed from the host, the link removed, the correction
+ *   remembered, history on both profiles, the host's owner team told.
+ * - `moveHouseholdLinksOnMerge` / `restoreHouseholdLinks`: links follow a
+ *   merge and come back on undo (D51).
  * - `getLinkedSummaries`: the live summaries for a profile page (D46) — the
  *   host's linked members and the linked profile's «Convive con» rows — with
  *   each profile's contacts masked exactly as `getAdopter` would mask them
@@ -15,13 +22,14 @@
  * Decisions live in src/domain/householdLinks.ts. D1: no `IN (array)` —
  * one bounded query set per profile, fanned out with Promise.all.
  */
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
-import { adopters, householdLinks } from '@/db/schema';
+import { and, asc, eq, sql } from 'drizzle-orm';
+import { adopterHistory, adopters, householdLinkCorrections, householdLinks } from '@/db/schema';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
 import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
-import { deserializeHouseholdMembers } from '@/lib/householdMembers';
+import { deserializeHouseholdMembers, serializeHouseholdMembers, type HouseholdMember } from '@/lib/householdMembers';
+import { casAdopterLists } from '@/lib/adopterListCas';
 import { maskContactEntries, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, maskOptionsFor, resolveAdoptersVisibility } from '@/lib/piiAccessServer';
 import { notificationContent } from '@/domain/notificationTemplates';
@@ -31,7 +39,7 @@ import {
     EMPTY_LINKED_SUMMARIES,
     MAX_LINKED_SUMMARIES,
     MAX_LINK_ROWS,
-    canHideHouseholdLink,
+    canReportNotLivingTogether,
     countOpenAlerts,
     isLiveLink,
     linkNoticeRecipients,
@@ -128,6 +136,228 @@ export async function notifyHouseholdLinked(input: { hostId: string; hostName: s
         })));
         logger.info('householdLinks: link notice sent', { ...ctx, recipients: recipients.length });
     }, ctx);
+    await notifyIfDisputedRelink(input, ctx);
+}
+
+/**
+ * D48: the same person put back on the same host after its linked team said
+ * «No convive» — the two sides disagree, so the admins decide. Runs after
+ * the response; never throws.
+ */
+async function notifyIfDisputedRelink(input: { hostId: string; hostName: string; linkedId: string; actor: string }, ctx: Record<string, unknown>): Promise<void> {
+    await runAfterResponse('household.link_disputed', async () => {
+        const db = await getDb();
+        if (!db) return;
+        const corrected = await db.select({ id: householdLinkCorrections.id }).from(householdLinkCorrections)
+            .where(and(eq(householdLinkCorrections.hostAdopterId, input.hostId), eq(householdLinkCorrections.linkedAdopterId, input.linkedId)))
+            .limit(1).get();
+        if (!corrected) return;
+        const linked = await db.select({ name: adopters.name }).from(adopters).where(eq(adopters.id, input.linkedId)).get();
+        const { notifyAdmins } = await import('@/app/actions/notifications');
+        const actorName = personLabel(input.actor, await namesFor([input.actor], ctx)) ?? '';
+        await notifyAdmins({
+            actorEmail: input.actor,
+            type: 'household_link_disputed',
+            ...notificationContent({ key: 'household_link_disputed', params: { actorName, hostName: input.hostName, linkedName: linked?.name } }),
+            url: `/adopter/${input.hostId}`,
+            icon: '🏠',
+            metadata: { hostId: input.hostId, linkedId: input.linkedId, correctionId: corrected.id },
+        });
+        logger.info('householdLinks: re-link after a correction, admins told', ctx);
+    }, ctx);
+}
+
+// ─────────────────────── «No convive» (D48) ───────────────────────
+
+type HostRow = typeof adopters.$inferSelect;
+
+/**
+ * The ids that count as the linked profile for this host member: the link's
+ * own, plus the member's `profileId` when a merge folded that profile into it
+ * (D51 — the link moved to the survivor, the host's JSON was left as is).
+ * Empty when the member is gone or points at someone else.
+ */
+async function memberLinkedIds(
+    link: { id: string; memberId: string; linkedAdopterId: string },
+    members: ReadonlyArray<HouseholdMember>,
+    ctx: Record<string, unknown>,
+): Promise<Set<string>> {
+    const m = members.find(x => x.id === link.memberId);
+    if (!m?.profileId) return new Set();
+    if (m.profileId === link.linkedAdopterId) return new Set([link.linkedAdopterId]);
+    try {
+        const { resolveMergedAdopterId } = await import('@/lib/mergedAdopterRedirect');
+        return (await resolveMergedAdopterId(m.profileId)) === link.linkedAdopterId ? new Set([link.linkedAdopterId, m.profileId]) : new Set();
+    } catch (e) {
+        logger.warn('householdLinks: merge redirect lookup failed, link treated as stale', { ...ctx, linkId: link.id, error: errMsg(e) });
+        return new Set();
+    }
+}
+
+/** isLiveLink, following a merged linked profile (D51). */
+async function isLiveLinkFollowingMerges(link: LinkRow, members: ReadonlyArray<HouseholdMember>, ctx: Record<string, unknown>): Promise<boolean> {
+    if (isLiveLink(link, members)) return true;
+    const ids = await memberLinkedIds(link, members, ctx);
+    return ids.size > 0 && isLiveLink(link, members, ids);
+}
+
+export type LinkCorrectionTarget = { link: LinkRow; host: HostRow; linked: ProfileRow; linkedIds: Set<string> };
+
+/**
+ * What «No convive» acts on: the link, its live host and the live linked
+ * profile (followed through a merge). Null when any is gone or the host no
+ * longer lists that person — nothing to correct.
+ */
+export async function loadLinkForCorrection(db: Db, linkId: string): Promise<LinkCorrectionTarget | null> {
+    const ctx = { linkId };
+    const link = await db.select().from(householdLinks).where(eq(householdLinks.id, linkId)).get() as LinkRow | undefined;
+    if (!link) return null;
+    const [host, linked] = await Promise.all([
+        db.select().from(adopters).where(eq(adopters.id, link.hostAdopterId)).get() as Promise<HostRow | undefined>,
+        liveProfile(db, link.linkedAdopterId, ctx),
+    ]);
+    if (!host || host.deletedAt || !linked) return null;
+    const linkedIds = await memberLinkedIds(link, deserializeHouseholdMembers(host.householdMembers), ctx);
+    if (linkedIds.size === 0) return null;
+    return { link, host, linked, linkedIds };
+}
+
+/**
+ * «No convive» (D48), after the caller checked the actor may: removes THAT
+ * member from the host's household (compare-and-swap; nothing else on the
+ * host changes), the link, remembers the correction, writes history on both
+ * profiles and tells the host's owner team. `removed: false` when the member
+ * was already gone (someone got there first): nothing written, nobody told.
+ * Once the member is removed the rest is best-effort and logged — the fact
+ * is corrected; a retry would find nothing to remove.
+ */
+export async function applyNotLivingTogether(
+    db: Db,
+    target: LinkCorrectionTarget,
+    actor: string,
+): Promise<{ removed: boolean; busyErrorId?: string }> {
+    const { link, host, linked, linkedIds } = target;
+    const ctx = { linkId: link.id, hostId: host.id, linkedId: linked.id, memberId: link.memberId, actor };
+    const out = await casAdopterLists<boolean>(db, host.id, (row) => {
+        const members = deserializeHouseholdMembers(row.householdMembers);
+        const next = members.filter(m => !(m.id === link.memberId && !!m.profileId && linkedIds.has(m.profileId)));
+        return next.length === members.length ? { result: false } : { write: { householdMembers: serializeHouseholdMembers(next) }, result: true };
+    }, { op: 'applyNotLivingTogether', ...ctx });
+    if (out.status === 'busy') return { removed: false, busyErrorId: out.errorId };
+    if (out.status === 'missing' || !out.result) {
+        logger.info('applyNotLivingTogether: member already gone, nothing corrected', ctx);
+        return { removed: false };
+    }
+    const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
+    await tokenizeAdopter(host.id).catch((e: unknown) => { logger.error('applyNotLivingTogether: host tokenize failed', e, ctx); });
+
+    const now = new Date();
+    const steps: Array<[string, () => Promise<unknown>]> = [
+        ['link not deleted (ignored on read: the member is gone)', async () => db.delete(householdLinks).where(eq(householdLinks.id, link.id))],
+        ['correction not recorded (a re-add will not reach the admins)', async () => db.insert(householdLinkCorrections).values({
+            id: crypto.randomUUID(), hostAdopterId: host.id, linkedAdopterId: linked.id, memberId: link.memberId, correctedBy: actor, createdAt: now,
+        })],
+        // The host's row is a member removal (so a stale edit form names who removed it), with the reason.
+        ['host history not written', async () => db.insert(adopterHistory).values({
+            id: crypto.randomUUID(), adopterId: host.id, changedBy: actor, kind: 'edit', changedAt: now,
+            changes: JSON.stringify({ household_member_removed: { id: link.memberId, reason: 'not_living_together', linkedId: linked.id } }),
+        })],
+        ['linked history not written', async () => db.insert(adopterHistory).values({
+            id: crypto.randomUUID(), adopterId: linked.id, changedBy: actor, kind: 'edit', changedAt: now,
+            changes: JSON.stringify({ household_not_living_together: { hostId: host.id, hostName: host.name } }),
+        })],
+    ];
+    await Promise.all(steps.map(([what, run]) => run().catch((e: unknown) => {
+        logger.error(`applyNotLivingTogether: ${what}`, e, ctx);
+    })));
+    logger.info('applyNotLivingTogether: corrected on both profiles', ctx);
+    await notifyHostTeam({ hostId: host.id, hostName: host.name, hostOwner: host.addedBy, linkedName: linked.name, actor }, ctx);
+    return { removed: true };
+}
+
+/** The host's owner and team (never the actor) hear that the other side said «No convive». Never throws. */
+async function notifyHostTeam(
+    input: { hostId: string; hostName: string; hostOwner: string | null; linkedName: string; actor: string },
+    ctx: Record<string, unknown>,
+): Promise<void> {
+    await runAfterResponse('household.link_removed', async () => {
+        const owner = realOwner(input.hostOwner);
+        if (!owner) {
+            logger.info('applyNotLivingTogether: host has no real owner, nobody to notify', ctx);
+            return;
+        }
+        const { getOrgMemberEmailsFor } = await import('@/lib/orgMembership');
+        const recipients = linkNoticeRecipients(owner, await getOrgMemberEmailsFor(owner), input.actor);
+        if (recipients.length === 0) {
+            logger.info('applyNotLivingTogether: host notice — no recipients', ctx);
+            return;
+        }
+        const { createNotification } = await import('@/app/actions/notifications');
+        const actorName = personLabel(input.actor, await namesFor([input.actor], ctx)) ?? '';
+        const content = notificationContent({ key: 'household_link_removed', params: { actorName, hostName: input.hostName, linkedName: input.linkedName } });
+        await Promise.all(recipients.map(userId => createNotification({
+            userId,
+            type: 'household_link_removed',
+            ...content,
+            url: `/adopter/${input.hostId}`,
+            icon: '🏠',
+            metadata: { hostId: input.hostId, linkId: ctx.linkId },
+        })));
+        logger.info('applyNotLivingTogether: host notice sent', { ...ctx, recipients: recipients.length });
+    }, ctx);
+}
+
+// ───────────────────── Links follow merges (D51) ─────────────────────
+
+/** A link's place before a merge moved it — what undo puts back. */
+export type MovedHouseholdLink = { id: string; hostAdopterId: string; linkedAdopterId: string; memberId: string };
+
+/**
+ * A merge folded `absorbedId` into `survivorId`: its links move with it.
+ * - Host side: the absorbed members landed on the survivor under new ids
+ *   (`landedMemberIds`: old id → new id); each link moves to its member's
+ *   new id. A member that did not land (a same-name repeat of one of the
+ *   survivor's, or past the member cap) keeps its link on the absorbed
+ *   profile: inert while merged, live again after undo.
+ * - Linked side: links naming the absorbed profile now name the survivor.
+ *   The host's member keeps its `profileId` (reads follow the merge).
+ * A link between the two merged profiles is left alone (it would point at
+ * itself). Returns where each moved link was, for the undo payload.
+ */
+export async function moveHouseholdLinksOnMerge(
+    db: Db,
+    merge: { survivorId: string; absorbedId: string; landedMemberIds: ReadonlyMap<string, string> },
+): Promise<MovedHouseholdLink[]> {
+    const { survivorId, absorbedId, landedMemberIds } = merge;
+    const [hosted, linkedTo] = await Promise.all([
+        db.select().from(householdLinks).where(eq(householdLinks.hostAdopterId, absorbedId)).all() as Promise<LinkRow[]>,
+        db.select().from(householdLinks).where(eq(householdLinks.linkedAdopterId, absorbedId)).all() as Promise<LinkRow[]>,
+    ]);
+    const moved: MovedHouseholdLink[] = [];
+    const before = (l: LinkRow): MovedHouseholdLink => ({ id: l.id, hostAdopterId: l.hostAdopterId, linkedAdopterId: l.linkedAdopterId, memberId: l.memberId });
+    let left = 0;
+    for (const l of hosted) {
+        const memberId = landedMemberIds.get(l.memberId);
+        if (l.linkedAdopterId === survivorId || !memberId) { left++; continue; }
+        await db.update(householdLinks).set({ hostAdopterId: survivorId, memberId }).where(eq(householdLinks.id, l.id));
+        moved.push(before(l));
+    }
+    for (const l of linkedTo) {
+        if (l.hostAdopterId === survivorId) { left++; continue; }
+        await db.update(householdLinks).set({ linkedAdopterId: survivorId }).where(eq(householdLinks.id, l.id));
+        moved.push(before(l));
+    }
+    if (moved.length || left) logger.info('householdLinks: links moved with a merge', { survivorId, absorbedId, moved: moved.length, left });
+    return moved;
+}
+
+/** Undo of a merge: each link it moved goes back where it was (one removed since stays removed). */
+export async function restoreHouseholdLinks(db: Db, moved: readonly MovedHouseholdLink[]): Promise<void> {
+    for (const l of moved) {
+        await db.update(householdLinks)
+            .set({ hostAdopterId: l.hostAdopterId, linkedAdopterId: l.linkedAdopterId, memberId: l.memberId })
+            .where(eq(householdLinks.id, l.id));
+    }
 }
 
 // ─────────────────────────── Read path ───────────────────────────
@@ -226,7 +456,7 @@ function viewerContacts(
  *   profile of their own (and recorded in household_links), that profile's
  *   summary, keyed by member id.
  * - `livesWith`: the «Convive con» rows — hosts that list this profile as a
- *   household member, not hidden by this profile's team.
+ *   household member (or a profile merged into it, D51).
  * Bounded (MAX_LINKED_SUMMARIES per side). Never throws: a failure yields
  * empty summaries and is logged.
  */
@@ -243,8 +473,8 @@ export async function getLinkedSummaries(viewer: string | null | undefined, adop
         const [outgoing, incoming] = await Promise.all([
             db.select().from(householdLinks).where(eq(householdLinks.hostAdopterId, adopterId))
                 .orderBy(asc(householdLinks.createdAt), asc(householdLinks.id)).limit(MAX_LINK_ROWS).all() as Promise<LinkRow[]>,
-            db.select().from(householdLinks)
-                .where(and(eq(householdLinks.linkedAdopterId, adopterId), isNull(householdLinks.hiddenAt)))
+            // hidden_at (the withdrawn D47) is not read: a row hidden then is live.
+            db.select().from(householdLinks).where(eq(householdLinks.linkedAdopterId, adopterId))
                 .orderBy(asc(householdLinks.createdAt), asc(householdLinks.id)).limit(MAX_LINK_ROWS).all() as Promise<LinkRow[]>,
         ]);
         if (outgoing.length === 0 && incoming.length === 0) return EMPTY_LINKED_SUMMARIES;
@@ -254,7 +484,8 @@ export async function getLinkedSummaries(viewer: string | null | undefined, adop
 
         // Host side: only links whose member is still on this profile and still points there.
         const selfMembers = deserializeHouseholdMembers(self.householdMembers);
-        const liveOutgoing = outgoing.filter(l => isLiveLink(l, selfMembers));
+        const outgoingLive = await Promise.all(outgoing.map(l => isLiveLinkFollowingMerges(l, selfMembers, { ...ctx, linkId: l.id })));
+        const liveOutgoing = outgoing.filter((_, i) => outgoingLive[i]);
         const hostLinks = liveOutgoing.slice(0, MAX_LINKED_SUMMARIES);
         const linkedRows = await Promise.all(hostLinks.map(l => liveProfile(db, l.linkedAdopterId, { ...ctx, linkId: l.id })));
 
@@ -265,11 +496,14 @@ export async function getLinkedSummaries(viewer: string | null | undefined, adop
         for (let i = 0; i < incoming.length && reverseLive.length < MAX_LINKED_SUMMARIES; i += MAX_LINKED_SUMMARIES) {
             const batch = incoming.slice(i, i + MAX_LINKED_SUMMARIES);
             const hostRows = await Promise.all(batch.map(l => liveProfile(db, l.hostAdopterId, { ...ctx, linkId: l.id })));
+            const live = await Promise.all(batch.map((link, j) => {
+                const host = hostRows[j];
+                return host ? isLiveLinkFollowingMerges(link, deserializeHouseholdMembers(host.householdMembers), { ...ctx, linkId: link.id }) : false;
+            }));
             batch.forEach((link, j) => {
                 const host = hostRows[j];
                 if (reverseLive.length >= MAX_LINKED_SUMMARIES) return;
-                if (!host || host.id === adopterId || seenHosts.has(host.id)) return;
-                if (!isLiveLink(link, deserializeHouseholdMembers(host.householdMembers))) return;
+                if (!host || !live[j] || host.id === adopterId || seenHosts.has(host.id)) return;
                 seenHosts.add(host.id);
                 reverseLive.push({ link, host });
             });
@@ -325,11 +559,11 @@ export async function getLinkedSummaries(viewer: string | null | undefined, adop
             const p = linkedRows[i];
             if (p && p.id !== adopterId) members[l.memberId] = summarize(p, l.id);
         });
-        const canHide = canHideHouseholdLink({ viewerIsAdmin: !!viewerIsAdmin, viewerIsLinkedOwnerTeam: !!viewerIsSelfTeam });
+        const canReportNotLiving = canReportNotLivingTogether({ viewerIsAdmin: !!viewerIsAdmin, viewerIsLinkedOwnerTeam: !!viewerIsSelfTeam });
         const livesWith: LivesWithRow[] = reverseLive.map(({ link, host }) => ({
             ...summarize(host, link.id),
             creatorName: personLabel(link.createdBy, names),
-            canHide,
+            canReportNotLiving,
         }));
         return { members, livesWith };
     } catch (e) {

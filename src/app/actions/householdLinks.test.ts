@@ -1,7 +1,8 @@
 /**
- * Linked convivientes (spec 2026-10-25 pendientes D, D44–D47). Real SQL, real
- * addHouseholdMember / removeHouseholdMember / hideHouseholdLink and the real
- * visibility resolver; the session is the only source of the actor.
+ * Linked convivientes (spec 2026-10-25 pendientes D, D44–D46, D48, D51). Real
+ * SQL, real addHouseholdMember / removeHouseholdMember / reportNotLivingTogether,
+ * the real mergeAdopters / unmergeAdopters and the real visibility resolver;
+ * the session is the only source of the actor.
  * STRANGER owns the host profile; OWNER (team: MATE) owns the linked profile.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -14,7 +15,7 @@ const { session, OWNER, MATE, STRANGER, ADMIN } = mocks;
 
 const { state, notify } = vi.hoisted(() => ({
     state: { db: null as unknown },
-    notify: { create: [] as Array<Record<string, unknown>> },
+    notify: { create: [] as Array<Record<string, unknown>>, admins: [] as Array<Record<string, unknown>> },
 }));
 
 vi.mock('./_db', () => ({ getDb: async () => state.db, getUser: mocks.getUser }));
@@ -35,6 +36,7 @@ vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 vi.mock('@/lib/background', () => ({ runAfterResponse: vi.fn(async (_n: string, task: () => Promise<unknown>) => { await task(); }) }));
 vi.mock('./notifications', () => ({
     createNotification: vi.fn(async (d: Record<string, unknown>) => { notify.create.push(d); return 'n'; }),
+    notifyAdmins: vi.fn(async (d: Record<string, unknown>) => { notify.admins.push(d); }),
     resolveDisplayName: vi.fn(async (email: string) => email.split('@')[0]),
 }));
 vi.mock('@/lib/logger', () => ({
@@ -43,7 +45,8 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { addHouseholdMember, removeHouseholdMember } from './householdMembers';
-import { hideHouseholdLink } from './householdLinks';
+import { reportNotLivingTogether } from './householdLinks';
+import { mergeAdopters, unmergeAdopters } from '@/lib/adopterMerge';
 import { getLinkedSummaries, recordHouseholdLink } from '@/lib/householdLinks';
 import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
 import { maskContactEntries } from '@/lib/piiAccess';
@@ -63,6 +66,7 @@ beforeEach(() => {
     state.db = m.db;
     sqlite = m.sqlite as unknown as typeof sqlite;
     notify.create.length = 0;
+    notify.admins.length = 0;
     session.user = STRANGER;
     sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, contact_entries) VALUES
         ('host', 'Pedro Paez', '5', ?, 1000, 1000, ?),
@@ -171,7 +175,7 @@ describe('read path (D46)', () => {
         const linked = await getLinkedSummaries(OWNER, 'linked');
         expect(linked.members).toEqual({});
         expect(linked.livesWith).toEqual([expect.objectContaining({
-            profileId: 'host', name: 'Pedro Paez', ownerName: 'stranger', creatorName: 'stranger', canHide: true,
+            profileId: 'host', name: 'Pedro Paez', ownerName: 'stranger', creatorName: 'stranger', canReportNotLiving: true,
         })]);
     });
 
@@ -236,39 +240,159 @@ describe('bounded reads', () => {
     });
 });
 
-describe('«Quitar de mi perfil» (D47)', () => {
-    it('only the linked profile team or an admin can hide; then the row is gone for everyone and the host owner is told', async () => {
-        await link();
+const hostMembers = () => JSON.parse((sqlite.prepare(`SELECT household_members FROM adopters WHERE id = 'host'`).get()!.household_members as string) || '[]') as Array<Record<string, unknown>>;
+const historyOf = (id: string) => sqlite.prepare(`SELECT changed_by, changes FROM adopter_history WHERE adopter_id = ? ORDER BY changed_at, rowid`).all(id)
+    .map(r => ({ by: r.changed_by, changes: JSON.parse(r.changes as string) as Record<string, Record<string, unknown>> }));
+const corrections = () => sqlite.prepare('SELECT host_adopter_id, linked_adopter_id, corrected_by FROM household_link_corrections ORDER BY created_at, rowid').all();
+
+describe('«No convive» (D48): a correction of the fact for everyone', () => {
+    it('the linked profile owner removes the member from a host owned by another rescuer — only that member — on both profiles, with history and a notice', async () => {
+        const other = await addHouseholdMember({ adopterId: 'host', name: 'Ana', relationship: 'sibling' });
+        if (!other.ok) throw new Error(other.error);
+        const memberId = await link();
         const [row] = links();
         notify.create.length = 0;
-        expect(await as(STRANGER, () => hideHouseholdLink(row.id as string))).toEqual({ ok: false, error: 'not_found' });
-        expect(links()[0].hidden_at).toBeNull();
 
-        expect(await as(MATE, () => hideHouseholdLink(row.id as string))).toEqual({ ok: true });
-        expect(links()[0]).toMatchObject({ hidden_by: MATE });
-        expect(links()[0].hidden_at).not.toBeNull();
+        expect(await as(OWNER, () => reportNotLivingTogether(row.id as string))).toEqual({ success: true });
+
+        // The host's household: that member is gone, Ana stays untouched.
+        expect(hostMembers().map(m => m.id)).toEqual([other.memberId]);
+        expect(links()).toEqual([]);
+        expect(corrections()).toEqual([{ host_adopter_id: 'host', linked_adopter_id: 'linked', corrected_by: OWNER }]);
+        // Gone for everyone, both sides.
         for (const viewer of [OWNER, MATE, STRANGER, ADMIN]) {
             expect((await getLinkedSummaries(viewer, 'linked')).livesWith, viewer).toEqual([]);
+            expect((await getLinkedSummaries(viewer, 'host')).members, viewer).toEqual({});
         }
-        expect(notify.create).toEqual([expect.objectContaining({ userId: STRANGER, type: 'household_link_hidden', url: '/adopter/host' })]);
-        // The host's own member and its summary are unchanged (the host owner's data).
-        expect(Object.keys((await getLinkedSummaries(STRANGER, 'host')).members)).toHaveLength(1);
-        // Again: a no-op, no second notice.
-        expect(await as(OWNER, () => hideHouseholdLink(row.id as string))).toEqual({ ok: true });
-        expect(notify.create).toHaveLength(1);
+        // Attributed history on both profiles. The host's row is a member removal
+        // (so a stale edit form names who removed it), with the reason.
+        expect(historyOf('host').at(-1)).toEqual({
+            by: OWNER,
+            changes: { household_member_removed: { id: memberId, reason: 'not_living_together', linkedId: 'linked' } },
+        });
+        expect(historyOf('linked').at(-1)).toEqual({
+            by: OWNER,
+            changes: { household_not_living_together: { hostId: 'host', hostName: 'Pedro Paez' } },
+        });
+        // The host's owner (and team) hears about it — never the actor.
+        expect(notify.create).toEqual([expect.objectContaining({ userId: STRANGER, type: 'household_link_removed', url: '/adopter/host' })]);
+        expect((notify.create[0].template as { key: string }).key).toBe('household_link_removed');
+        expect(notify.create[0].body).toContain('Jonathan Urfalino');
+        expect(JSON.stringify(notify.create[0])).not.toContain(OWNER);
+        expect(notify.admins).toEqual([]);
     });
 
-    it('an admin may hide; a visitor without a session may not', async () => {
+    it('a teammate of the linked owner or an admin may; the host owner, a stranger or a visitor may not', async () => {
         await link();
         const [row] = links();
-        expect(await as(null, () => hideHouseholdLink(row.id as string))).toEqual({ ok: false, error: 'not_authenticated' });
-        expect(await as(ADMIN, () => hideHouseholdLink(row.id as string))).toEqual({ ok: true });
-        expect((await getLinkedSummaries(OWNER, 'linked')).livesWith).toEqual([]);
+        expect(await as(null, () => reportNotLivingTogether(row.id as string))).toEqual({ success: false, error: 'not_authenticated' });
+        // STRANGER owns the host: their own tool is removing the member; this is the other side's correction.
+        expect(await as(STRANGER, () => reportNotLivingTogether(row.id as string))).toEqual({ success: false, error: 'not_found' });
+        expect(await as(STRANGER, () => reportNotLivingTogether('hl-no-such-link'))).toEqual({ success: false, error: 'not_found' });
+        expect(links()).toHaveLength(1);
+        expect(hostMembers()).toHaveLength(1);
+
+        expect(await as(MATE, () => reportNotLivingTogether(row.id as string))).toEqual({ success: true });
+        expect(hostMembers()).toEqual([]);
+        // Already corrected: nothing left to correct, no second notice.
+        const notices = notify.create.length;
+        expect(await as(OWNER, () => reportNotLivingTogether(row.id as string))).toEqual({ success: false, error: 'not_found' });
+        expect(notify.create).toHaveLength(notices);
+
+        await link();
+        expect(await as(ADMIN, () => reportNotLivingTogether(links()[0].id as string))).toEqual({ success: true });
+        expect(hostMembers()).toEqual([]);
     });
 
-    it('canHide is false for viewers outside the linked profile team', async () => {
+    it('canReportNotLiving is true only for the linked profile team and admins', async () => {
         await link();
-        expect((await getLinkedSummaries(STRANGER, 'linked')).livesWith[0].canHide).toBe(false);
-        expect((await getLinkedSummaries(ADMIN, 'linked')).livesWith[0].canHide).toBe(true);
+        expect((await getLinkedSummaries(STRANGER, 'linked')).livesWith[0].canReportNotLiving).toBe(false);
+        expect((await getLinkedSummaries(MATE, 'linked')).livesWith[0].canReportNotLiving).toBe(true);
+        expect((await getLinkedSummaries(ADMIN, 'linked')).livesWith[0].canReportNotLiving).toBe(true);
+    });
+
+    it('re-adding the person after a correction links again, tells the linked owner AND the admins (a dispute)', async () => {
+        await link();
+        // A first link is no dispute.
+        expect(notify.admins).toEqual([]);
+        await as(OWNER, () => reportNotLivingTogether(links()[0].id as string));
+        notify.create.length = 0;
+
+        const again = await link();
+        expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked', member_id: again })]);
+        expect(notify.create.map(n => n.userId).sort()).toEqual([MATE, OWNER].sort());
+        expect(notify.create.every(n => n.type === 'household_linked')).toBe(true);
+        expect(notify.admins).toEqual([expect.objectContaining({
+            actorEmail: STRANGER, type: 'household_link_disputed', url: '/adopter/host',
+            metadata: expect.objectContaining({ hostId: 'host', linkedId: 'linked' }),
+        })]);
+        expect(notify.admins[0].body).toContain('Pedro Paez');
+        expect(notify.admins[0].body).toContain('Jonathan Urfalino');
+    });
+
+    it('a row hidden by the withdrawn «Quitar de mi perfil» (D47) reads as live again', async () => {
+        await link();
+        sqlite.prepare(`UPDATE household_links SET hidden_at = 5000, hidden_by = ?`).run(OWNER);
+        expect((await getLinkedSummaries(OWNER, 'linked')).livesWith.map(r => r.profileId)).toEqual(['host']);
+        expect((await getLinkedSummaries(STRANGER, 'linked')).livesWith.map(r => r.profileId)).toEqual(['host']);
+    });
+});
+
+describe('links follow merges (D51)', () => {
+    beforeEach(() => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
+            ('host2', 'Pedro A. Paez', '5', ?, 500, 500),
+            ('linked2', 'Jonathan U.', '5', ?, 600, 600)`).run(STRANGER, OWNER);
+    });
+
+    it('the host merged into another profile: the member summary and «Convive con» follow the survivor; undo puts them back', async () => {
+        await link();
+        const merged = await mergeAdopters('host2', 'host', ADMIN);
+        expect(merged.success).toBe(true);
+
+        const survivor = await getLinkedSummaries(STRANGER, 'host2');
+        const [memberId] = Object.keys(survivor.members);
+        expect(survivor.members[memberId]).toMatchObject({ profileId: 'linked', name: 'Jonathan Urfalino' });
+        expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host2', linked_adopter_id: 'linked', member_id: memberId })]);
+        expect((await getLinkedSummaries(OWNER, 'linked')).livesWith.map(r => r.profileId)).toEqual(['host2']);
+
+        expect((await unmergeAdopters(merged.auditId!, ADMIN)).success).toBe(true);
+        expect((await getLinkedSummaries(STRANGER, 'host2')).members).toEqual({});
+        const back = await getLinkedSummaries(STRANGER, 'host');
+        expect(Object.values(back.members).map(s => s.profileId)).toEqual(['linked']);
+        expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host', member_id: hostMembers()[0].id })]);
+        expect((await getLinkedSummaries(OWNER, 'linked')).livesWith.map(r => r.profileId)).toEqual(['host']);
+    });
+
+    it('the linked profile merged into another: both sides show the survivor; undo puts them back', async () => {
+        const memberId = await link();
+        const merged = await mergeAdopters('linked2', 'linked', ADMIN);
+        expect(merged.success).toBe(true);
+
+        expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked2', member_id: memberId })]);
+        expect((await getLinkedSummaries(STRANGER, 'host')).members[memberId]).toMatchObject({ profileId: 'linked2' });
+        expect((await getLinkedSummaries(OWNER, 'linked2')).livesWith.map(r => r.profileId)).toEqual(['host']);
+
+        expect((await unmergeAdopters(merged.auditId!, ADMIN)).success).toBe(true);
+        expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked', member_id: memberId })]);
+        expect((await getLinkedSummaries(STRANGER, 'host')).members[memberId]).toMatchObject({ profileId: 'linked' });
+        expect((await getLinkedSummaries(OWNER, 'linked')).livesWith.map(r => r.profileId)).toEqual(['host']);
+        expect((await getLinkedSummaries(OWNER, 'linked2')).livesWith).toEqual([]);
+    });
+
+    it('after the linked profile is merged, its survivor owner can say «No convive»', async () => {
+        await link();
+        expect((await mergeAdopters('linked2', 'linked', ADMIN)).success).toBe(true);
+        expect((await getLinkedSummaries(OWNER, 'linked2')).livesWith[0].canReportNotLiving).toBe(true);
+        expect(await as(OWNER, () => reportNotLivingTogether(links()[0].id as string))).toEqual({ success: true });
+        expect(hostMembers()).toEqual([]);
+        expect(corrections()).toEqual([{ host_adopter_id: 'host', linked_adopter_id: 'linked2', corrected_by: OWNER }]);
+    });
+
+    it('merging the host with the person it lists moves no link onto itself', async () => {
+        await link();
+        expect((await mergeAdopters('linked', 'host', ADMIN)).success).toBe(true);
+        expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked' })]);
+        expect(await getLinkedSummaries(OWNER, 'linked')).toEqual({ members: {}, livesWith: [] });
     });
 });

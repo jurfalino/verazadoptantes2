@@ -160,7 +160,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
         });
         return {
             members: Object.fromEntries(Object.entries(linkedSummaries.members).map(([k, s]) => [k, asStranger(s)])),
-            livesWith: linkedSummaries.livesWith.map(r => ({ ...asStranger(r), canHide: false })),
+            livesWith: linkedSummaries.livesWith.map(r => ({ ...asStranger(r), canReportNotLiving: false })),
         };
     }, [previewAsStranger, linkedSummaries]);
 

@@ -1,5 +1,5 @@
 /**
- * Linked convivientes (spec 2026-10-25 pendientes D, addendum D44–D47): the
+ * Linked convivientes (spec 2026-10-25 pendientes D, addendum D44–D46, D48, D51): the
  * rules behind a household member that has its own adopter profile. Pure — no
  * DB, no server imports. The server side (src/lib/householdLinks.ts) fetches
  * rows and asks here what to show and who may do what.
@@ -55,8 +55,11 @@ export type HouseholdLinkedMembers = Record<string, LinkedSummary>;
 export interface LivesWithRow extends LinkedSummary {
     /** Who recorded the link (display name / handle), or null when unknown. */
     creatorName: string | null;
-    /** The viewer may take this row off the profile («Quitar de mi perfil», D47). */
-    canHide: boolean;
+    /**
+     * The viewer may say the person does not live with that host («No convive»,
+     * D48): a correction of the fact on both profiles, not a per-side hide.
+     */
+    canReportNotLiving: boolean;
 }
 
 export interface LinkedSummaries {
@@ -85,6 +88,9 @@ export function countOpenAlerts(flags: DuplicateFlagRow[]): number {
  * A link row is live while the host still has that member and the member
  * still points at the linked profile (the host's JSON is the source of
  * truth; a row orphaned by an edit, a merge or an import is ignored).
+ * `linkedIds`: the ids that count as the linked profile — after a merge moved
+ * the link onto the survivor (D51), the member's own `profileId` may still
+ * name the absorbed profile.
  */
 export function isLiveLink(
     link: { memberId: string; linkedAdopterId: string },
@@ -94,8 +100,12 @@ export function isLiveLink(
     return hostMembers.some(m => m.id === link.memberId && !!m.profileId && linkedIds.has(m.profileId));
 }
 
-/** Who may hide a «Convive con» row: the linked profile's owner, their team, or an admin (D47). */
-export function canHideHouseholdLink(p: { viewerIsAdmin: boolean; viewerIsLinkedOwnerTeam: boolean }): boolean {
+/**
+ * Who may say «No convive» (D48): the linked profile's owner, their team, or an
+ * admin — the people who know that person. The host's own team removes the
+ * member with its own tools.
+ */
+export function canReportNotLivingTogether(p: { viewerIsAdmin: boolean; viewerIsLinkedOwnerTeam: boolean }): boolean {
     return p.viewerIsAdmin || p.viewerIsLinkedOwnerTeam;
 }
 

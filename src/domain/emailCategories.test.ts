@@ -22,7 +22,8 @@ describe('categoryForType', () => {
         ['pii_access_revoked', 'contact_access'],
         ['ownership_transferred', 'profile_changes'],
         ['household_linked', 'profile_changes'],
-        ['household_link_hidden', 'profile_changes'],
+        ['household_link_removed', 'profile_changes'],
+        ['household_link_disputed', 'other'],
         ['api_record', 'api'],
         ['member_joined', 'other'],
     ] as const)('%s -> %s', (type, cat) => {

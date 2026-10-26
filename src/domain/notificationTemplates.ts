@@ -72,8 +72,10 @@ export interface NotificationTemplateParams {
     pair_message: { fromName: string; profileName?: string; message: string };
     /** D45: someone recorded that the reader's profile `linkedName` lives with `hostName`. */
     household_linked: { actorName: string; hostName?: string; linkedName?: string };
-    /** D47: the linked profile's team took «Convive con {hostName}» off `linkedName`; the host's member stays. */
-    household_link_hidden: { actorName: string; hostName?: string; linkedName?: string };
+    /** D48, the host's owner team: `actorName` (the linked profile's team) said `linkedName` doesn't live with `hostName`; the member was removed on both profiles. */
+    household_link_removed: { actorName: string; hostName?: string; linkedName?: string };
+    /** D48, admins only: `actorName` re-added `linkedName` to `hostName`'s household after the other side said they don't live together. */
+    household_link_disputed: { actorName: string; hostName?: string; linkedName?: string };
 }
 
 export type NotificationTemplateKey = keyof NotificationTemplateParams;
@@ -467,11 +469,17 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
         en: p => ({ title: `Household link: ${plainName(p.linkedName, 'en')}`, body: `${p.actorName} noted that ${plainName(p.linkedName, 'en')} lives with ${plainName(p.hostName, 'en')}. Your profile now shows it under “Lives with”.` }),
         pt: p => ({ title: `Convivente vinculado: ${plainName(p.linkedName, 'pt')}`, body: `${p.actorName} indicou que ${plainName(p.linkedName, 'pt')} mora com ${plainName(p.hostName, 'pt')}. Seu perfil agora mostra isso em «Mora com».` }),
     },
-    household_link_hidden: {
+    household_link_removed: {
         required: ['actorName'],
-        es: p => ({ title: 'Quitaron un vínculo de convivencia', body: `${p.actorName} quitó «Convive con ${plainName(p.hostName, 'es')}» del perfil de ${plainName(p.linkedName, 'es')}. ${plainName(p.linkedName, 'es')} sigue en el grupo familiar de tu perfil.` }),
-        en: p => ({ title: 'A household link was removed', body: `${p.actorName} removed “Lives with ${plainName(p.hostName, 'en')}” from ${plainName(p.linkedName, 'en')}'s profile. ${plainName(p.linkedName, 'en')} is still in your profile's household.` }),
-        pt: p => ({ title: 'Removeram um vínculo de convivência', body: `${p.actorName} removeu «Mora com ${plainName(p.hostName, 'pt')}» do perfil de ${plainName(p.linkedName, 'pt')}. ${plainName(p.linkedName, 'pt')} continua no grupo familiar do seu perfil.` }),
+        es: p => ({ title: `No conviven: ${plainName(p.linkedName, 'es')}`, body: `${p.actorName} indicó que ${plainName(p.linkedName, 'es')} no vive con ${plainName(p.hostName, 'es')}. Se quitó del grupo familiar de tu perfil y del perfil de ${plainName(p.linkedName, 'es')}; queda en el historial de ambos. Si no es así, podés volver a agregarlo y un administrador lo revisa.` }),
+        en: p => ({ title: `Not living together: ${plainName(p.linkedName, 'en')}`, body: `${p.actorName} said ${plainName(p.linkedName, 'en')} doesn't live with ${plainName(p.hostName, 'en')}. They were removed from your profile's household and from ${plainName(p.linkedName, 'en')}'s profile; both histories show it. If that's wrong, you can add them again and an administrator will review it.` }),
+        pt: p => ({ title: `Não moram juntos: ${plainName(p.linkedName, 'pt')}`, body: `${p.actorName} indicou que ${plainName(p.linkedName, 'pt')} não mora com ${plainName(p.hostName, 'pt')}. Foi removido do grupo familiar do seu perfil e do perfil de ${plainName(p.linkedName, 'pt')}; fica no histórico dos dois. Se não for assim, você pode adicioná-lo de novo e um administrador vai revisar.` }),
+    },
+    household_link_disputed: {
+        required: ['actorName'],
+        es: p => ({ title: `Convivencia en disputa: ${plainName(p.linkedName, 'es')}`, body: `${p.actorName} volvió a agregar a ${plainName(p.linkedName, 'es')} al grupo familiar de ${plainName(p.hostName, 'es')}, después de que el equipo de ${plainName(p.linkedName, 'es')} indicara que no conviven. Revisá quién tiene razón.` }),
+        en: p => ({ title: `Household link disputed: ${plainName(p.linkedName, 'en')}`, body: `${p.actorName} added ${plainName(p.linkedName, 'en')} to ${plainName(p.hostName, 'en')}'s household again, after ${plainName(p.linkedName, 'en')}'s team said they don't live together. Please review who is right.` }),
+        pt: p => ({ title: `Convivência em disputa: ${plainName(p.linkedName, 'pt')}`, body: `${p.actorName} adicionou de novo ${plainName(p.linkedName, 'pt')} ao grupo familiar de ${plainName(p.hostName, 'pt')}, depois que a equipe de ${plainName(p.linkedName, 'pt')} indicou que não moram juntos. Revise quem tem razão.` }),
     },
 };
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { countOpenAlerts, isLiveLink, linkNoticeRecipients, personLabel, summaryContacts, canHideHouseholdLink, MAX_SUMMARY_CONTACTS } from './householdLinks';
+import { countOpenAlerts, isLiveLink, linkNoticeRecipients, personLabel, summaryContacts, canReportNotLivingTogether, MAX_SUMMARY_CONTACTS } from './householdLinks';
 import { KEPT_SEPARATE_FLAG_DETAILS_PREFIX } from './dedupPair';
 
 describe('countOpenAlerts', () => {
@@ -27,6 +27,10 @@ describe('isLiveLink', () => {
         expect(isLiveLink(link, [{ id: 'm1' }])).toBe(false);
         expect(isLiveLink(link, [{ id: 'm1', profileId: 'p2' }])).toBe(false);
         expect(isLiveLink(link, [{ id: 'm2', profileId: 'p1' }])).toBe(false);
+    });
+    it('counts a profile merged into the linked one when the caller names it (D51)', () => {
+        expect(isLiveLink(link, [{ id: 'm1', profileId: 'absorbed' }], new Set(['p1', 'absorbed']))).toBe(true);
+        expect(isLiveLink(link, [{ id: 'm1', profileId: 'absorbed' }])).toBe(false);
     });
 });
 
@@ -59,10 +63,10 @@ describe('summaryContacts', () => {
     });
 });
 
-describe('canHideHouseholdLink', () => {
+describe('canReportNotLivingTogether', () => {
     it('the linked profile team or an admin', () => {
-        expect(canHideHouseholdLink({ viewerIsAdmin: false, viewerIsLinkedOwnerTeam: true })).toBe(true);
-        expect(canHideHouseholdLink({ viewerIsAdmin: true, viewerIsLinkedOwnerTeam: false })).toBe(true);
-        expect(canHideHouseholdLink({ viewerIsAdmin: false, viewerIsLinkedOwnerTeam: false })).toBe(false);
+        expect(canReportNotLivingTogether({ viewerIsAdmin: false, viewerIsLinkedOwnerTeam: true })).toBe(true);
+        expect(canReportNotLivingTogether({ viewerIsAdmin: true, viewerIsLinkedOwnerTeam: false })).toBe(true);
+        expect(canReportNotLivingTogether({ viewerIsAdmin: false, viewerIsLinkedOwnerTeam: false })).toBe(false);
     });
 });

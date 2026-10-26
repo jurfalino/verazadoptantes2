@@ -60,7 +60,8 @@ const KNOWN_TYPES: Record<string, { label: string; description: string }> = {
     'contract_attached': { label: 'Contrato vinculado', description: 'Cuando un contrato firmado se vincula a un perfil.' },
     'adopter_merged': { label: 'Perfiles unidos', description: 'A quienes cargaron dos perfiles cuando un admin los une y elige avisarles.' },
     'household_linked': { label: 'Conviviente vinculado', description: 'Al dueño (y su equipo) de un perfil cuando otra persona lo anota como conviviente de otro adoptante.' },
-    'household_link_hidden': { label: 'Vínculo de convivencia quitado', description: 'Al dueño del perfil anfitrión cuando el equipo del perfil vinculado quita «Convive con» de su perfil.' },
+    'household_link_removed': { label: 'No conviven', description: 'Al dueño (y su equipo) del perfil anfitrión cuando el equipo del perfil vinculado indica que esa persona no convive: se quita de los dos perfiles.' },
+    'household_link_disputed': { label: 'Convivencia en disputa', description: 'A los administradores cuando alguien vuelve a agregar como conviviente a una persona cuyo equipo ya indicó que no conviven.' },
     'form_attached': { label: 'Solicitud vinculada', description: 'Al creador de un perfil cuando otra persona le vincula una solicitud de adopción del formulario.' },
     'follow_up_due': { label: 'Follow-up Reminders', description: 'Daily cron reminder when an adoption/transit follow-up slot is due.' }
 };

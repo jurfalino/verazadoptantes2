@@ -25,6 +25,7 @@ import { closeRequestsForAdopter } from '@/lib/mergeRequestClose';
 import { mergeSideParams } from '@/lib/mergeNotificationSides';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { rowsAffected } from '@/lib/interviews/rowsAffected';
+import { moveHouseholdLinksOnMerge, restoreHouseholdLinks, type MovedHouseholdLink } from '@/lib/householdLinks';
 
 export interface MergeAdoptersResult {
     success: boolean;
@@ -140,8 +141,13 @@ export async function mergeAdopters(
         // collide with the survivor's — undo removes exactly these.
         // Their contacts too: one may be carried onto a survivor's same-named
         // member, and undo removes it by id.
-        const absorbedMembers = deserializeHouseholdMembers(secondary.householdMembers)
-            .map(m => ({ ...m, id: crypto.randomUUID(), contactEntries: m.contactEntries.map(c => ({ ...c, id: crypto.randomUUID() })) }));
+        // Old id → new id, so the absorbed profile's household links can follow their member (D51).
+        const newMemberIds = new Map<string, string>();
+        const absorbedMembers = deserializeHouseholdMembers(secondary.householdMembers).map(m => {
+            const id = crypto.randomUUID();
+            newMemberIds.set(m.id, id);
+            return { ...m, id, contactEntries: m.contactEntries.map(c => ({ ...c, id: crypto.randomUUID() })) };
+        });
         const mergedFields = (p: typeof primary) => {
             const updates: Partial<typeof adopters.$inferInsert> = {};
 
@@ -231,6 +237,16 @@ export async function mergeAdopters(
             undo.addedHouseholdMemberIds = added.memberIds;
             if (added.enriched.length) undo.enrichedHouseholdMembers = added.enriched;
         }
+
+        // 6d. «Convive con» links follow the merge (D51): those the absorbed
+        // profile hosted move with the members that landed on the survivor,
+        // those naming it now name the survivor. Undo puts them back.
+        const landed = new Set(undo.addedHouseholdMemberIds ?? []);
+        undo.householdLinks = await moveHouseholdLinksOnMerge(db, {
+            survivorId: primaryId,
+            absorbedId: secondaryId,
+            landedMemberIds: new Map([...newMemberIds].filter(([, id]) => landed.has(id))),
+        });
 
         // 1. Re-point adoptions (placements + adopter_events → normalized tables)
         const moved = await reassignAdopterRecords(db, secondaryId, primaryId);
@@ -511,6 +527,8 @@ interface MergeUndoPayload {
     statsIds: string[];
     /** Absent in payloads written before v2.56.129 — those merges never moved forms. */
     formSubmissionIds?: string[];
+    /** Household links this merge moved, as they were before (D51). Absent before 2.57.1. */
+    householdLinks?: MovedHouseholdLink[];
     candidates: Array<{ id: string; status: string }>;
     annotatedFlags: Array<{ id: string; details: string | null }>;
 }
@@ -650,6 +668,9 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
             }, { op: 'unmergeAdopters.household', auditId });
             if (out.status === 'busy') throw new Error(`Undo collided with concurrent household edits (Error ID: ${out.errorId})`);
         }
+
+        // 3c. The household links this merge moved go back where they were (D51).
+        await restoreHouseholdLinks(db, Array.isArray(undo.householdLinks) ? undo.householdLinks : []);
 
         // 4. Put the touched duplicate candidates back to their prior status —
         //    grouped by target status so each group is a few chunked updates.

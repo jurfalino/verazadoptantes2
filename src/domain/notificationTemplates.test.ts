@@ -46,7 +46,8 @@ const SAMPLES: { [K in NotificationTemplate['key']]: Extract<NotificationTemplat
     merge_dispute_resolved: { outcome: 'undone', ...sides },
     pair_message: { fromName: 'Jon', profileName: 'Julieta Paz', message: 'Hola' },
     household_linked: { actorName: 'Jon', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
-    household_link_hidden: { actorName: 'María', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
+    household_link_removed: { actorName: 'María', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
+    household_link_disputed: { actorName: 'Jon', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
 };
 
 const LOCALES: NotificationLocale[] = ['es', 'en', 'pt'];
