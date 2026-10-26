@@ -2,6 +2,36 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.57.0] - 2026-10-25
+
+### Added — combining duplicate profiles between rescuers
+- «Pendientes de revisar» is rebuilt as an inbox: rows grouped as Necesitan tu respuesta → Enviados →
+  Rechazados → Posibles duplicados, each with «Coinciden: … · Distinto: …»; admins also see the match %
+  behind the gauge icon. Opening a row shows the «Qué coincide y qué no» comparison.
+- The rescuer chooses which profile stays («¿Cuál se conserva?»). Keeping the other rescuer's profile
+  combines right away after a confirmation; keeping yours sends «Pedir combinar» to its owner, who can
+  accept, keep their own instead, or reject. Admins decide any request at any time
+  («Pedidos de combinación» in the admin panel).
+- Different names with the same phone/email/address ask «¿Es la misma persona?»; «alguien de su hogar»
+  keeps both profiles and links the person as a conviviente.
+- Rejected pairs stay listed with «Escribirle» (a message whose reply goes to the sender) and «Quitar de la
+  lista».
+- «Qué coincide y qué no» on every same-person screen (post import, form and contract results, new adopter,
+  Reportar duplicado, spreadsheet import); match scores shown only to admins.
+- Every notification is also emailed, in each person's language, with per-category switches in
+  Configuración («Avisos por email»), a one-click «dejar de recibir» link, an admin off switch
+  (ENABLE_NOTIFICATION_EMAIL) and a «[Staging]» label on staging.
+
+### Changed
+- An old link to a merged profile opens the profile it was merged into, with a note.
+- After your profile folds into another rescuer's, you keep seeing the details you entered (the whole
+  profile when its owner agreed or an admin merged).
+- Dark theme: duplicate chips, warnings, hints, placeholders and admin pages are readable.
+
+### Fixed
+- «Revisar →» and «Posible duplicado» links open «Pendientes de revisar».
+- A failed duplicate search on the new-adopter form says so and can be retried.
+
 ## [2.56.235] - 2026-10-23
 
 ### Changed — the post-deploy environment check, tightened after its review
