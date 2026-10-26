@@ -338,9 +338,10 @@ export default function HouseholdSection({ adopterId, initialMembers, canEditAll
                                                     <span className={`flex-1 min-w-0 truncate ${ce.masked ? 'text-stone-400 select-none' : 'text-stone-800'}`}>{ce.value}</span>
                                                     {(ce.apps ?? []).map(a => <MessagingLogo key={a} app={a} size={14} />)}
                                                     {canChangeMemberContact(viewer, ce) && (
-                                                        <span className="hidden group-hover:flex group-focus-within:flex gap-0.5 shrink-0">
-                                                            <button type="button" data-testid="household-contact-edit" onClick={() => startEditContact(m, ce)} aria-label={t('adopter.ce_edit_label')} className="p-1 text-stone-500 hover:text-teal-700 rounded"><Pencil className="w-3.5 h-3.5" /></button>
-                                                            <button type="button" data-testid="household-contact-remove" onClick={() => deleteContact(m, ce)} aria-label={t('adopter.ce_remove')} className="p-1 text-stone-500 hover:text-red-600 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                                                        // Always shown on a phone (no hover there); revealed on hover from md up.
+                                                        <span className="flex md:hidden md:group-hover:flex gap-0.5 shrink-0">
+                                                            <button type="button" data-testid="household-contact-edit" onClick={() => startEditContact(m, ce)} aria-label={t('adopter.ce_edit_label')} className="inline-flex min-w-[44px] min-h-[44px] items-center justify-center text-stone-500 hover:text-teal-700 rounded"><Pencil className="w-3.5 h-3.5" /></button>
+                                                            <button type="button" data-testid="household-contact-remove" onClick={() => deleteContact(m, ce)} aria-label={t('adopter.ce_remove')} className="inline-flex min-w-[44px] min-h-[44px] items-center justify-center text-stone-500 hover:text-red-600 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
                                                         </span>
                                                     )}
                                                 </li>

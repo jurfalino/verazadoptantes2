@@ -153,10 +153,17 @@ test.describe('household contributions by a non-owner (D54, D55)', () => {
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
         expect(overflow).toBeLessThanOrEqual(0);
         await linkedCard.getByTestId('linked-contact-cancel').click();
+        // On a phone (no hover) a contributor still reaches edit/remove on their own contact.
+        await expect(mine.getByTestId('household-contact-edit')).toBeVisible();
+        await expect(mine.getByTestId('household-contact-remove')).toBeVisible();
+        const editBox = await mine.getByTestId('household-contact-edit').boundingBox();
+        expect(editBox && Math.min(editBox.width, editBox.height)).toBeGreaterThanOrEqual(44);
 
         // And it is on the linked profile itself.
         await page.goto(`/adopter/${LINKED}`);
         await dismissCountryBanner(page);
         await expect(page.getByTestId('ce-chip').filter({ hasText: LINKED_PHONE })).toHaveCount(1, { timeout: 30_000 });
+        // …where «Convive con» the host offers the same add (to the host's profile, D55) — not used here.
+        await expect(page.getByTestId('lives-with-row').getByTestId('linked-add-contact')).toHaveCount(1);
     });
 });
