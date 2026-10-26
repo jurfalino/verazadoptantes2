@@ -617,6 +617,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                             // «No convive» (D48): written on both profiles. A plain member removal shares the host-side key.
                                             else if (parsed.household_member_removed?.reason === 'not_living_together') { eventType = 'hh_not_living_host'; changes = parsed.household_member_removed; }
                                             else if (parsed.household_not_living_together) { eventType = 'hh_not_living_linked'; changes = parsed.household_not_living_together; }
+                                            // The host's team removed this person from its household (M7): «Convive con» went away with it.
+                                            else if (parsed.household_removed_by_host) { eventType = 'hh_removed_by_host'; changes = parsed.household_removed_by_host; }
                                             else { changes = parsed; }
                                         } catch { /* ignore */ }
 
@@ -645,6 +647,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                         {eventType === 'profiles_merged' && <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_profiles_merged')}</span>}
                                                         {eventType === 'profiles_unmerged' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_profiles_unmerged')}</span>}
                                                         {(eventType === 'hh_not_living_host' || eventType === 'hh_not_living_linked') && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_not_living')}</span>}
+                                                        {eventType === 'hh_removed_by_host' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_removed_by_host')}</span>}
                                                     </div>
                                                     <span className="text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
                                                         {t('audit.by')} {(h.changedBy ? actorLabel(h.changedBy, userNameMap?.[h.changedBy], t) : t('common.anonymous'))}
@@ -697,6 +700,16 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                                     </div>
                                                                 );
                                                             })()}
+                                                            {eventType === 'hh_removed_by_host' && (
+                                                                <div className="text-teal-800 font-medium break-words" data-testid="history-hh-removed-by-host">
+                                                                    {t('audit.desc_hh_removed_by_host')
+                                                                        .replace('{who}', h.changedBy ? actorLabel(h.changedBy, userNameMap?.[h.changedBy], t) : t('common.anonymous'))
+                                                                        .replace('{host}', changes.hostName || t('adopter.nameless'))}
+                                                                    {typeof changes.hostId === 'string' && changes.hostId && (
+                                                                        <> <a href={`/adopter/${encodeURIComponent(changes.hostId)}`} className="inline-flex min-h-[44px] items-center font-semibold text-teal-700 hover:underline">{t('audit.hh_not_living_view')} ↗</a></>
+                                                                    )}
+                                                                </div>
+                                                            )}
                                                             {eventType === 'adoption_added' && (
                                                                 <div className="text-teal-800 font-medium break-words">
                                                                     {t('audit.desc_adoption_added')} <span className="font-semibold break-all">{changes.animalName}</span> ({changes.species}) - {changes.status}

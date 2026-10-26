@@ -1266,6 +1266,8 @@ export const en = {
         desc_hh_not_living_host: '{who} said they don’t live together and removed them from the household.',
         desc_hh_not_living_linked: '{who} said this person doesn’t live with {host}.',
         hh_not_living_view: 'View their profile',
+        event_hh_removed_by_host: 'Removed from household',
+        desc_hh_removed_by_host: '{who} removed this person from {host}’s household.',
         event_api_contract: 'Contract attached via API',
         desc_api_contacts: 'Added: {fields}',
         field_phone: 'phone',

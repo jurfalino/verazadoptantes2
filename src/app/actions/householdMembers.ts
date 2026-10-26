@@ -323,10 +323,10 @@ export async function removeHouseholdMember(
         if (out.result === 'deleted' || out.result === 'changed') return conflictOf(r.db, adopterId, memberId, out.result, MEMBER_KEYS, { actor });
         await insertHouseholdHistory(r.db, adopterId, actor, { household_member_removed: { id: memberId } });
         logAudit({ userEmail: actor, action: 'household_member_removed', target: adopterId, details: { memberId } });
-        // Its link goes with it. A leftover row is harmless (reads check the member
-        // still exists) but is logged.
-        await deleteHouseholdLink(r.db, adopterId, memberId).catch((e: unknown) => {
-            logger.warn('removeHouseholdMember: household link not removed (ignored on read)', { adopterId, actor, memberId, error: e instanceof Error ? e.message : String(e) });
+        // Its link goes with it, and the linked profile's history says so (M7).
+        // A leftover row is harmless (reads check the member still exists) but is logged.
+        await deleteHouseholdLink(r.db, { hostId: adopterId, hostName: r.target.name, memberId, actor }).catch((e: unknown) => {
+            logger.warn('removeHouseholdMember: household link / linked history not written (link ignored on read)', { adopterId, actor, memberId, error: e instanceof Error ? e.message : String(e) });
         });
         return { ok: true };
     } catch (error) {

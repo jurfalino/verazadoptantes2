@@ -81,9 +81,34 @@ export async function recordHouseholdLink(
     return rows.length > 0;
 }
 
-/** The host member is gone: so is its link (the linked profile stops showing «Convive con»). */
-export async function deleteHouseholdLink(db: Db, hostId: string, memberId: string): Promise<void> {
+/**
+ * The host's team removed the member: its link goes too, so the linked
+ * profile stops showing «Convive con» — and its history says who removed it
+ * from which household, instead of the row vanishing silently (M7). The
+ * history row goes on the live linked profile (followed through a merge,
+ * D51). Returns the linked profile's id when there was a link.
+ */
+export async function deleteHouseholdLink(
+    db: Db,
+    input: { hostId: string; hostName: string; memberId: string; actor: string },
+): Promise<string | null> {
+    const { hostId, memberId, actor } = input;
+    const link = await db.select({ id: householdLinks.id, linkedAdopterId: householdLinks.linkedAdopterId }).from(householdLinks)
+        .where(and(eq(householdLinks.hostAdopterId, hostId), eq(householdLinks.memberId, memberId))).limit(1).get();
     await db.delete(householdLinks).where(and(eq(householdLinks.hostAdopterId, hostId), eq(householdLinks.memberId, memberId)));
+    if (!link) return null;
+    const ctx = { hostId, memberId, linkId: link.id, actor };
+    const linked = await liveProfile(db, link.linkedAdopterId, ctx);
+    if (!linked || linked.id === hostId) {
+        logger.info('householdLinks: link removed, linked profile not live — no history line', ctx);
+        return link.linkedAdopterId;
+    }
+    await db.insert(adopterHistory).values({
+        id: crypto.randomUUID(), adopterId: linked.id, changedBy: actor, kind: 'edit', changedAt: new Date(),
+        changes: JSON.stringify({ household_removed_by_host: { hostId, hostName: input.hostName } }),
+    });
+    logger.info('householdLinks: member removed by the host, linked profile history written', { ...ctx, linkedId: linked.id });
+    return linked.id;
 }
 
 /** Display names keyed by the email as stored; a lookup failure falls back to handles. */

@@ -1271,6 +1271,8 @@ export const pt = {
         desc_hh_not_living_host: '{who} indicou que não moram juntos e o tirou do grupo familiar.',
         desc_hh_not_living_linked: '{who} indicou que não mora com {host}.',
         hh_not_living_view: 'Ver o perfil',
+        event_hh_removed_by_host: 'Removido do grupo familiar',
+        desc_hh_removed_by_host: '{who} tirou esta pessoa do grupo familiar de {host}.',
         event_api_contract: 'Contrato anexado via API',
         desc_api_contacts: 'Dados adicionados: {fields}',
         field_phone: 'telefone',

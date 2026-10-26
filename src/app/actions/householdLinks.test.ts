@@ -164,11 +164,19 @@ describe('write path (D44, D45)', () => {
         expect(notify.create).toEqual([]);
     });
 
-    it('removing the member removes the link', async () => {
+    it('removing the member removes the link, and the linked profile\'s history says who removed it from which household (M7)', async () => {
         const memberId = await link();
         expect(await removeHouseholdMember({ adopterId: 'host', memberId })).toEqual({ ok: true });
         expect(links()).toEqual([]);
         expect((await getLinkedSummaries(OWNER, 'linked')).livesWith).toEqual([]);
+        expect(historyOf('linked')).toEqual([{ by: STRANGER, changes: { household_removed_by_host: { hostId: 'host', hostName: 'Pedro Paez' } } }]);
+    });
+
+    it('removing a member without a link writes nothing on any other profile (M7)', async () => {
+        const ana = await addHouseholdMember({ adopterId: 'host', name: 'Ana', relationship: 'sibling' });
+        if (!ana.ok) throw new Error(ana.error);
+        expect(await removeHouseholdMember({ adopterId: 'host', memberId: ana.memberId })).toEqual({ ok: true });
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopter_history WHERE adopter_id <> 'host'`).get()!.n).toBe(0);
     });
 });
 
