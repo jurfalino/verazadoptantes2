@@ -271,7 +271,12 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                                     so the undo (the shared, audited unmergeAdopters) runs once.
 // The workers that take the actor (fileMergeDispute, answerMergeDispute, mergeDisputeOption,
 // src/lib/mergeDisputes.ts) are listed in MUST_NOT_BE_ACTIONS (serverActionSurface.test.ts).
-const EXPECTED_ACTIONS = 163;
+// One shared reality (2.57.1), Task 3 — the UI wires those three: raiseMergeDispute and
+// getMergeDisputeOption (MergeDisputePrompt on the profile, `?dispute=<auditId>`) and
+// resolveMergeDispute (MergeDisputesSection, admin «Disputas»). MEASURED (npm run build: 166).
+// No other new action: the admin lists are read by the page (lib), «No convive» was already
+// counted, and the D52 confirmation row calls nothing new. 166 = 163 + 3.
+const EXPECTED_ACTIONS = 166;
 
 let manifest;
 try {

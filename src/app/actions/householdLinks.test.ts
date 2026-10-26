@@ -339,6 +339,15 @@ describe('«No convive» (D48): a correction of the fact for everyone', () => {
         expect((await getLinkedSummaries(ADMIN, 'linked')).livesWith[0].canReportNotLiving).toBe(true);
     });
 
+    it("on the host's household card too: the linked profile's team and admins, never the host's own team", async () => {
+        const memberId = await link();
+        const flag = async (viewer: string) => (await getLinkedSummaries(viewer, 'host')).members[memberId].canReportNotLiving;
+        expect(await flag(STRANGER)).toBe(false); // the host's owner edits the household with its own tools
+        expect(await flag(OWNER)).toBe(true);
+        expect(await flag(MATE)).toBe(true);
+        expect(await flag(ADMIN)).toBe(true);
+    });
+
     it('re-adding the person after a correction links again, tells the linked owner AND the admins (a dispute)', async () => {
         await link();
         // A first link is no dispute.

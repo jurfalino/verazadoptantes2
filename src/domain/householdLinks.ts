@@ -46,6 +46,13 @@ export interface LinkedSummary {
     moreContacts: number;
     /** True when nothing on that profile is masked for this viewer. */
     canSeeContact: boolean;
+    /**
+     * The viewer may say the person does not live with that host («No convive»,
+     * D48): a correction of the fact on both profiles, not a per-side hide.
+     * canReportNotLivingTogether against the LINKED profile — on the host's
+     * card that is the summarised profile, on «Convive con» the one viewed.
+     */
+    canReportNotLiving: boolean;
 }
 
 /** The host side: a household member's live summary, keyed by member id. */
@@ -55,11 +62,6 @@ export type HouseholdLinkedMembers = Record<string, LinkedSummary>;
 export interface LivesWithRow extends LinkedSummary {
     /** Who recorded the link (display name / handle), or null when unknown. */
     creatorName: string | null;
-    /**
-     * The viewer may say the person does not live with that host («No convive»,
-     * D48): a correction of the fact on both profiles, not a per-side hide.
-     */
-    canReportNotLiving: boolean;
 }
 
 export interface LinkedSummaries {

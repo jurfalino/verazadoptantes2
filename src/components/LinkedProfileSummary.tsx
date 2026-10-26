@@ -10,9 +10,11 @@
  * profile), then «Ver perfil completo ↗» in a new tab.
  *
  * `LivesWithSection`: the linked profile's «Convive con» rows (the host, the
- * same summary, «según {creator}») with a button for the linked profile's
- * team that says the person does not live there («No convive», D48: removes
- * the member from the host and the link, on both profiles).
+ * same summary, «según {creator}»).
+ *
+ * `NotLivingTogetherButton`: «No convive» (D48) for the linked profile's team
+ * or an admin — on «Convive con» and on the host's household card. It removes
+ * the member from the host and the link, on both profiles, for everyone.
  */
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -101,38 +103,84 @@ export function LinkedProfileSummary({ summary, testId = 'linked-summary' }: { s
     );
 }
 
-export function LivesWithSection({ rows }: { rows: LivesWithRow[] }) {
+/**
+ * «No convive» (D48) for one link, with its confirmation. Shown only when the
+ * server says the viewer may (`canReportNotLiving`: the linked profile's team
+ * or an admin), on the linked profile's «Convive con» row and on the host's
+ * household card. It changes BOTH profiles — the member leaves the host's
+ * household and the link goes — so the dialog says so, and that the host's
+ * owner is told. The page refreshes after, so both blocks read the new fact.
+ */
+export function NotLivingTogetherButton({ linkId, personName, hostName, className = '' }: {
+    linkId: string;
+    /** Who is said not to live there (the linked profile / the member). */
+    personName: string;
+    /** The profile whose household lists them. */
+    hostName: string;
+    className?: string;
+}) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
-    const [hidden, setHidden] = useState<Set<string>>(() => new Set());
-    const [confirm, setConfirm] = useState<LivesWithRow | null>(null);
+    const [open, setOpen] = useState(false);
     const [busy, setBusy] = useState(false);
-    const shown = rows.filter(r => !hidden.has(r.linkId));
-    if (shown.length === 0) return null;
+    const names = { person: personName || t('adopter.nameless'), host: hostName || t('adopter.nameless') };
 
-    async function hide(row: LivesWithRow) {
+    async function report() {
         setBusy(true);
         try {
-            const res = await reportNotLivingTogether(row.linkId);
-            if (!res.success) {
-                toast.error(t('errors.generic') || 'Error', t('adopter.hh_lives_with_hide_failed'), 'errorId' in res ? res.errorId : undefined);
+            const res = await reportNotLivingTogether(linkId);
+            if (res.success) {
+                toast.success(t('adopter.hh_not_living_done'));
+            } else if (res.error === 'not_found') {
+                // Someone already corrected it (or the household changed): show what is true now.
+                toast.success(t('common.updated') || 'Actualizado', t('adopter.hh_not_living_stale'));
+            } else {
+                toast.error(t('errors.generic') || 'Error', t('adopter.hh_not_living_failed'),
+                    res.errorId ?? resolveErrorId(new Error(`reportNotLivingTogether: ${res.error}`), 'NotLivingTogetherButton'));
                 return;
             }
-            setHidden(prev => new Set(prev).add(row.linkId));
-            toast.success(t('adopter.hh_lives_with_hidden'));
             router.refresh();
         } catch (e) {
-            if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', t('adopter.hh_lives_with_hide_failed'), resolveErrorId(e, 'LivesWithSection'));
+            if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', t('adopter.hh_not_living_failed'), resolveErrorId(e, 'NotLivingTogetherButton'));
         } finally {
             setBusy(false);
-            setConfirm(null);
+            setOpen(false);
         }
     }
 
     return (
+        <>
+            <button
+                type="button"
+                onClick={() => setOpen(true)}
+                disabled={busy}
+                data-testid="hh-not-living-together"
+                className={`inline-flex min-h-[44px] items-center px-3.5 text-sm font-semibold rounded-md border border-stone-200 bg-white text-stone-800 hover:bg-teal-50 disabled:opacity-50 ${className}`}
+            >
+                {t('adopter.hh_not_living')}
+            </button>
+            <ConfirmDialog
+                open={open}
+                busy={busy}
+                title={fill(t('adopter.hh_not_living_title'), names)}
+                message={fill(t('adopter.hh_not_living_note'), names)}
+                confirmLabel={t('adopter.hh_not_living_confirm')}
+                onConfirm={() => { void report(); }}
+                onCancel={() => setOpen(false)}
+            />
+        </>
+    );
+}
+
+/** The linked profile's «Convive con» rows. `personName`: this profile's name, for the «No convive» dialog. */
+export function LivesWithSection({ rows, personName }: { rows: LivesWithRow[]; personName: string }) {
+    const { t } = useLanguage();
+    if (rows.length === 0) return null;
+
+    return (
         <div className="space-y-3" data-testid="lives-with">
-            {shown.map(row => (
+            {rows.map(row => (
                 <div key={row.linkId} className="border border-stone-200 rounded-xl p-3.5 bg-stone-50" data-testid="lives-with-row">
                     <div className="flex items-start gap-2.5">
                         <div className="w-9 h-9 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center shrink-0"><Home className="w-4 h-4" aria-hidden="true" /></div>
@@ -148,27 +196,10 @@ export function LivesWithSection({ rows }: { rows: LivesWithRow[] }) {
                     </div>
                     <LinkedProfileSummary summary={row} testId="lives-with-summary" />
                     {row.canReportNotLiving && (
-                        <button
-                            type="button"
-                            onClick={() => setConfirm(row)}
-                            disabled={busy}
-                            data-testid="lives-with-hide"
-                            className="mt-2.5 inline-flex min-h-[44px] items-center px-3.5 text-sm font-semibold rounded-md border border-stone-200 bg-white text-stone-800 hover:bg-teal-50 disabled:opacity-50"
-                        >
-                            {t('adopter.hh_lives_with_hide')}
-                        </button>
+                        <NotLivingTogetherButton linkId={row.linkId} personName={personName} hostName={row.name} className="mt-2.5" />
                     )}
                 </div>
             ))}
-            <ConfirmDialog
-                open={!!confirm}
-                busy={busy}
-                title={fill(t('adopter.hh_lives_with_hide_title'), { name: confirm?.name ?? '' })}
-                message={t('adopter.hh_lives_with_hide_note')}
-                confirmLabel={t('adopter.hh_lives_with_hide')}
-                onConfirm={() => { if (confirm) void hide(confirm); }}
-                onCancel={() => setConfirm(null)}
-            />
         </div>
     );
 }

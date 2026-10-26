@@ -221,8 +221,8 @@ test.describe('Pendientes de revisar (layout D)', () => {
             row = await openRow(page, NAME); // a full load (a hash-only goto would keep the stale list)
             await expect(row).toHaveAttribute('data-group', 'declined');
             await expect(row.getByTestId('dedup-request-status')).toHaveText(/^(Declined by|Rechazado por|Recusado por) /);
-            // D43: asking again is off; keeping theirs is on offer.
-            await expect(row.getByTestId('dedup-merge')).toHaveText(/^(Merge keeping|Combinar conservando el de|Combinar mantendo o de) /);
+            // D43: asking again is off. D49: keeping theirs is no longer a one-sided merge — it asks the admins.
+            await expect(row.getByTestId('dedup-merge')).toHaveText(/^(Ask an administrator to review|Pedir revisión a un administrador|Pedir revisão a um administrador)$/);
 
             // ── «Escribirle»: a pair_message to the owner, replies going to the requester.
             await row.getByTestId('dedup-write').click();

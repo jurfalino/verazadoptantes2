@@ -27,7 +27,7 @@ import {
     addHouseholdMember, updateHouseholdMember, removeHouseholdMember,
     addMemberContactEntry, updateMemberContactEntry, removeMemberContactEntry,
 } from '@/app/actions';
-import { LinkedProfileSummary } from '@/components/LinkedProfileSummary';
+import { LinkedProfileSummary, NotLivingTogetherButton } from '@/components/LinkedProfileSummary';
 import type { HouseholdLinkedMembers } from '@/domain/householdLinks';
 
 const COMPOSABLE: ContactEntryType[] = ['phone', 'email', 'social', 'id', 'address', 'alias'];
@@ -44,12 +44,14 @@ interface MemberUI extends HouseholdMember {
 }
 interface CEditing extends ContactEntry { editing?: boolean; draft?: Draft }
 
-export default function HouseholdSection({ adopterId, initialMembers, canEdit, hasLegacyText = false, linkedMembers = {} }: {
+export default function HouseholdSection({ adopterId, initialMembers, canEdit, hasLegacyText = false, linkedMembers = {}, hostName = '' }: {
     adopterId: string; initialMembers: HouseholdMember[]; canEdit: boolean;
     /** Legacy free-text family notes (or «Convive con» rows) are shown beneath; don't also say "no family". */
     hasLegacyText?: boolean;
     /** D46: live summaries of members linked to their own profile, keyed by member id (masked for this viewer). */
     linkedMembers?: HouseholdLinkedMembers;
+    /** This profile's name, for the «No convive» dialog (D48). */
+    hostName?: string;
 }) {
     const { t } = useLanguage();
     const toast = useShowToast();
@@ -311,6 +313,10 @@ export default function HouseholdSection({ adopterId, initialMembers, canEdit, h
                             {m.profileId && linkedMembers[m.id] && (
                                 // D46: who this person is on their own profile, read live.
                                 <LinkedProfileSummary summary={linkedMembers[m.id]} />
+                            )}
+                            {m.profileId && linkedMembers[m.id]?.canReportNotLiving && (
+                                // D48: the linked profile's team (or an admin) corrects the fact from here too.
+                                <NotLivingTogetherButton linkId={linkedMembers[m.id].linkId} personName={m.name} hostName={hostName} className="mt-2.5" />
                             )}
                             {/* contacts — no heading: "Agregar dato de contacto" says it. A
                                 viewer who can't edit a member with no contacts gets no

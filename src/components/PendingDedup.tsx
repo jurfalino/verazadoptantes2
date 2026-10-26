@@ -8,6 +8,11 @@
  * answer opens on load; the section opens itself on #pendientes or when such a
  * row exists.
  *
+ * After a rejection nobody merges one-sidedly (D49): keeping the other's
+ * profile asks the admins («Pedir revisión a un administrador»). A pair
+ * combined here stays, until the page reloads, as «✓ Combinados — se conservó
+ * …» with «Ver perfil» (D52, pendientes/MergedRow).
+ *
  * This file loads the feed and runs the actions; the row (pendientes/PairRow)
  * and the dialogs (ConfirmCombine, IdentityChoice, WriteMessage) only render.
  * Every choice offered comes from the feed, and the server re-decides each
@@ -38,6 +43,7 @@ import PairRow, { GROUP_ORDER, groupLabel, type RowAction } from '@/components/p
 import ConfirmCombine, { type ConfirmMode } from '@/components/pendientes/ConfirmCombine';
 import IdentityChoice from '@/components/pendientes/IdentityChoice';
 import WriteMessage from '@/components/pendientes/WriteMessage';
+import MergedRow, { keptSentence, mergedInfo, type MergedInfo } from '@/components/pendientes/MergedRow';
 import { fill, movesToOtherList, otherSide, ownerName, sideById, sideOf, T_MUTED, type KeepSide } from '@/components/pendientes/ui';
 
 /** The section's anchor: request notifications link to /my-adopters#pendientes. */
@@ -88,6 +94,12 @@ export default function PendingDedup() {
     const [confirm, setConfirm] = useState<Pending | null>(null);
     const [identityAsk, setIdentityAsk] = useState<{ pair: PendingDedupPair; keep: KeepSide } | null>(null);
     const [writeTo, setWriteTo] = useState<PendingDedupPair | null>(null);
+    /**
+     * D52: pairs combined on this page, shown as «✓ Combinados — se conservó …»
+     * until the page reloads. Their own state, so a list reload after another
+     * row's action keeps them.
+     */
+    const [merged, setMerged] = useState<MergedInfo[]>([]);
 
     const load = useCallback(async () => {
         try {
@@ -152,6 +164,15 @@ export default function PendingDedup() {
         setTotal(n => Math.max(0, n - 1));
     };
 
+    /** D52: the row turns into its confirmation, and the toast offers the kept profile. */
+    const markMerged = (pair: PendingDedupPair, kept: KeepSide, title: string) => {
+        const info = mergedInfo(pair, sideOf(pair, kept), t);
+        setMerged(prev => [...prev.filter(m => m.candidateId !== pair.candidateId), info]);
+        setTotal(n => Math.max(0, n - 1));
+        setOpenId(id => (id === pair.candidateId ? null : id));
+        toast.success(title, keptSentence(info, t), { label: t('adopter.dup_action_view') || 'Ver perfil', href: `/adopter/${encodeURIComponent(info.keptId)}` });
+    };
+
     /** One action on a row, with the row marked busy; a thrown call gets the shared toast. */
     const run = async (pair: PendingDedupPair, failKey: string, failFallback: string, fn: () => Promise<void>) => {
         if (busyCandidateId) return;
@@ -172,14 +193,17 @@ export default function PendingDedup() {
         setConfirm(null);
         setIdentityAsk(null);
         if (result.success && result.outcome === 'merged') {
-            toast.success(t('myAdopters.pending_dedup_merged') || 'Perfiles combinados');
-            dropRow(pair);
+            markMerged(pair, keep, t('myAdopters.pending_dedup_merged') || 'Perfiles combinados');
+        } else if (result.success && result.outcome === 'disputed') {
+            // D49: after a rejection (or an admin's ruling) nothing merges here;
+            // the admins decide. The reload shows the row under «Enviados».
+            toast.success(t('myAdopters.pending_d_disputed') || 'Se lo pasamos a un administrador para que decida');
+            await load();
         } else if (result.success && result.outcome === 'household') {
             toast.success(t('myAdopters.pending_d_household_done') || 'Quedaron separados: lo agregamos como conviviente');
             dropRow(pair);
         } else if (result.success) {
-            // It went to the other profile's owner (or the admins) as a request,
-            // or to the admins as a dispute after a rejection (D49):
+            // It went to the other profile's owner (or the admins) as a request:
             // the reload shows the row under «Enviados».
             toast.success(result.outcome === 'requested' && !result.toAdmins && result.toName
                 ? fill(t('myAdopters.pending_dedup_request_sent_to') || 'Pedido enviado a {name}', { name: result.toName })
@@ -210,6 +234,29 @@ export default function PendingDedup() {
                 toast.error(t('errors.generic') || 'Error', t('myAdopters.pending_dedup_request_failed') || 'No se pudo completar la acción.',
                     result.errorId ?? resolveErrorId(new Error(`mergeRequest: ${result.error}`), 'PendingDedup'));
             }
+            await load();
+        });
+
+    /**
+     * Accept (the requester's survivor) or flip (the viewer's stays): both
+     * merge, so a success turns the row into its confirmation (D52). A failure
+     * reloads — the row may be stale.
+     */
+    const answerMerge = (pair: PendingDedupPair, decision: 'accept' | 'flip') =>
+        run(pair, 'myAdopters.pending_dedup_request_failed', 'No se pudo completar la acción.', async () => {
+            const r = pair.request;
+            const requesterKeep = r ? sideById(pair, r.keepId) : null;
+            if (!r || !requesterKeep) return;
+            const result = await resolveMergeRequest(r.id, decision);
+            setConfirm(null);
+            if (result.success) {
+                markMerged(pair, decision === 'accept' ? requesterKeep : otherSide(requesterKeep), decision === 'accept'
+                    ? (t('myAdopters.pending_dedup_merged') || 'Perfiles combinados')
+                    : (t('myAdopters.pending_d_flipped') || 'Perfiles combinados: se conservó el tuyo'));
+                return;
+            }
+            toast.error(t('errors.generic') || 'Error', t('myAdopters.pending_dedup_request_failed') || 'No se pudo completar la acción.',
+                result.errorId ?? resolveErrorId(new Error(`mergeRequest: ${result.error}`), 'PendingDedup'));
             await load();
         });
 
@@ -296,8 +343,7 @@ export default function PendingDedup() {
         const r = c.pair.request;
         if (c.kind === 'combine') return void merge(c.pair, c.keep, c.identity);
         if (!r) return;
-        if (c.kind === 'accept') return void answer(c.pair, () => resolveMergeRequest(r.id, 'accept'), 'myAdopters.pending_dedup_merged', 'Perfiles combinados');
-        return void answer(c.pair, () => resolveMergeRequest(r.id, 'flip'), 'myAdopters.pending_d_flipped', 'Perfiles combinados: se conservó el tuyo');
+        return void answerMerge(c.pair, c.kind);
     };
 
     const requestAge = (epochS: number): string => {
@@ -326,7 +372,9 @@ export default function PendingDedup() {
     };
 
     if (pairs === null) return null; // not loaded yet
-    if (total === 0) return null;
+    // A pair just combined keeps the section on screen (D52), even the last one.
+    if (total === 0 && merged.length === 0) return null;
+    const mergedById = new Map(merged.map(m => [m.candidateId, m]));
 
     const confirmShown = confirm ? confirmView(confirm) : null;
 
@@ -357,13 +405,18 @@ export default function PendingDedup() {
                     <div id="pending-dedup-list" className="rounded-2xl bg-white border border-[var(--border-default)] shadow-sm overflow-hidden">
                         {GROUP_ORDER.flatMap(group => {
                             const list = pairs.filter(p => p.group === group);
-                            if (!list.length) return [];
+                            // Combined rows no longer in the list (it reloaded since) stay at the end of their group.
+                            const gone = merged.filter(m => m.group === group && !pairs.some(p => p.candidateId === m.candidateId));
+                            if (!list.length && !gone.length) return [];
+                            const live = list.filter(p => !mergedById.has(p.candidateId)).length;
                             return [
                                 <h3 key={`h-${group}`}
                                     className={`px-4 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider border-t border-[var(--border-default)] first:border-t-0 ${group === 'received' ? 'text-[var(--status-warning-text)]' : T_MUTED}`}>
-                                    {groupLabel(group, t)} · {list.length}
+                                    {groupLabel(group, t)}{live > 0 && ` · ${live}`}
                                 </h3>,
-                                ...list.map(pair => (
+                                ...list.map(pair => mergedById.has(pair.candidateId) ? (
+                                    <MergedRow key={pair.candidateId} info={mergedById.get(pair.candidateId)!} t={t} />
+                                ) : (
                                     <PairRow
                                         key={pair.candidateId}
                                         pair={pair}
@@ -381,6 +434,7 @@ export default function PendingDedup() {
                                         onRequestAccess={setAccessTarget}
                                     />
                                 )),
+                                ...gone.map(info => <MergedRow key={info.candidateId} info={info} t={t} />),
                             ];
                         })}
                     </div>
@@ -389,7 +443,7 @@ export default function PendingDedup() {
                         <div className="flex items-center justify-center gap-3 mt-4 text-sm">
                             <button
                                 type="button"
-                                onClick={() => { setOpenId(null); setPage(n => Math.max(1, n - 1)); }}
+                                onClick={() => { setOpenId(null); setMerged([]); setPage(n => Math.max(1, n - 1)); }}
                                 disabled={page <= 1 || !!busyCandidateId}
                                 className="min-h-[44px] px-4 rounded-xl border border-[var(--text-faint)] text-[var(--text-primary)] font-semibold hover:bg-[var(--accent-subtle-bg)] disabled:opacity-40 disabled:cursor-not-allowed"
                             >
@@ -400,7 +454,7 @@ export default function PendingDedup() {
                             </span>
                             <button
                                 type="button"
-                                onClick={() => { setOpenId(null); setPage(n => Math.min(pageCount, n + 1)); }}
+                                onClick={() => { setOpenId(null); setMerged([]); setPage(n => Math.min(pageCount, n + 1)); }}
                                 disabled={page >= pageCount || !!busyCandidateId}
                                 className="min-h-[44px] px-4 rounded-xl border border-[var(--text-faint)] text-[var(--text-primary)] font-semibold hover:bg-[var(--accent-subtle-bg)] disabled:opacity-40 disabled:cursor-not-allowed"
                             >

@@ -43,6 +43,7 @@ import {
     KEPT_SEPARATE_FLAG_DETAILS_PREFIX,
     type MergeRequestStatus,
 } from '@/domain/dedupPair';
+import { oneRowPerPair, type RejectedPosition } from '@/domain/mergeRequestAdminRows';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type RequestRow = typeof mergeRequests.$inferSelect;
@@ -66,6 +67,17 @@ export interface MergeRequestAdminRow {
     ownerEmail: string | null;
     /** Filed after the owner rejected the pair: the requester asks the admins to review it (D49). */
     dispute: boolean;
+    /** Who answered the request (on a declined one: who rejected it); null while pending. Admin page: whole email. */
+    resolvedByEmail: string | null;
+    /** epoch ms of that answer */
+    resolvedAt: number | null;
+    /**
+     * On a dispute row: the rejection it answers — the declined request on
+     * the same pair, which is folded into this row (one row per pair,
+     * oneRowPerPair). Null on every other row, and on a dispute filed after an
+     * admin ruled the pair separate (no decline to show).
+     */
+    rejected: RejectedPosition | null;
 }
 
 /** One profile of a request, as the admin list shows it (D31). Admin page, so the owner email is shown whole. */
@@ -467,7 +479,11 @@ async function notifyAnswered(
     }));
 }
 
-/** Requests an admin can still act on: pending first, then declined, each oldest first. */
+/**
+ * Requests an admin can still act on: pending first, then declined, each
+ * oldest first — one row per pair: a dispute absorbs the declined request it
+ * came from (oneRowPerPair).
+ */
 export async function listMergeRequestsForAdmin(db: Db): Promise<MergeRequestAdminRow[]> {
     const byStatus = (status: 'pending' | 'declined') =>
         db.select().from(mergeRequests).where(eq(mergeRequests.status, status)).orderBy(asc(mergeRequests.createdAt)).all() as Promise<RequestRow[]>;
@@ -489,7 +505,7 @@ export async function listMergeRequestsForAdmin(db: Db): Promise<MergeRequestAdm
     })));
     const side = (id: string): MergeRequestAdminSide => sides.get(id) ?? { id, name: '', ownerEmail: null, createdAt: null };
 
-    return rows.map(r => ({
+    return oneRowPerPair(rows.map(r => ({
         id: r.id,
         status: r.status as MergeRequestStatus,
         createdAt: r.createdAt ? r.createdAt.getTime() : null,
@@ -498,5 +514,7 @@ export async function listMergeRequestsForAdmin(db: Db): Promise<MergeRequestAdm
         requesterEmail: r.requesterEmail,
         ownerEmail: r.ownerEmail ?? null,
         dispute: r.dispute === 1,
-    }));
+        resolvedByEmail: r.resolvedByEmail ?? null,
+        resolvedAt: r.resolvedAt ? r.resolvedAt.getTime() : null,
+    })));
 }

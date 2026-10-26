@@ -6,46 +6,23 @@ import { useDateFormat } from '@/context/TimezoneContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveMergeRequest } from '@/app/actions/mergeRequests';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-import { userFacingMessage } from '@/lib/errorMessage';
-import type { MergeRequestAdminRow, MergeRequestAdminSide } from '@/lib/mergeRequests';
-
-const DAY_MS = 86_400_000;
-/** An adopter with no name still needs a visible, clickable link. */
-const NO_NAME = '(sin nombre)';
-
-/** "hace 3 días" — computed after mount only (reads the clock; see useRelativeTime). */
-function waited(createdAt: number | null, now: number | null): string {
-    if (createdAt == null || now == null) return '';
-    const days = Math.max(0, Math.floor((now - createdAt) / DAY_MS));
-    if (days === 0) return 'hoy';
-    return days === 1 ? 'hace 1 día' : `hace ${days} días`;
-}
-
-/** One profile of a request: name, who owns it, when it was created, and whether it stays or is absorbed (D31). */
-function SideCard({ side, role, formatShortDate }: { side: MergeRequestAdminSide; role: 'keep' | 'absorb'; formatShortDate: (ms: number) => string }) {
-    const keep = role === 'keep';
-    return (
-        <div data-testid={keep ? 'merge-request-keep' : 'merge-request-absorb'} className="rounded-lg border border-stone-200 bg-stone-50 p-3 space-y-0.5 min-w-0">
-            <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold border ${keep ? 'bg-teal-50 border-teal-200 text-teal-700' : 'bg-stone-100 border-stone-300 text-stone-600'}`}>
-                {keep ? 'se conserva' : 'se absorbe'}
-            </span>
-            <div><a href={`/adopter/${side.id}`} className="font-semibold text-teal-700 hover:underline break-words">{side.name || NO_NAME}</a></div>
-            <div className="text-stone-600 break-all">
-                <span className="font-medium">Dueño: </span>
-                {side.ownerEmail ?? <span className="italic text-stone-500">sin dueño</span>}
-            </div>
-            {side.createdAt != null && <div className="text-xs text-stone-500">Creado el {formatShortDate(side.createdAt)}</div>}
-        </div>
-    );
-}
+import { handledAsStale, userFacingMessage } from '@/lib/errorMessage';
+import type { MergeRequestAdminRow } from '@/lib/mergeRequests';
+import type { MergeDisputeAdminRow } from '@/lib/mergeDisputes';
+import { pairKey } from '@/domain/dedupPair';
+import MergeDisputesSection from './MergeDisputesSection';
+import { AdminSideCard, BADGE, PRIMARY_BTN, SECONDARY_BTN, waited, type T } from './mergeAdminUi';
 
 /**
- * Admin queue for merge requests: both profiles, who asked, who owns the
- * target, how long it has waited. Approving merges (older profile survives);
- * a declined request can still be approved ("Aprobar igual"). A resolved row
+ * Admin «Pedidos de combinación»: open disputes about merges that already
+ * happened («Disputas», D50) first, then the merge requests — both profiles,
+ * who asked, who owns the target, how long it has waited. Approving merges
+ * (the requester's survivor); a declined request can still be approved
+ * ("Aprobar igual"). One row per pair (oneRowPerPair): a dispute after a
+ * rejection («Disputa», D49) shows both rescuers' positions. A resolved row
  * leaves the list with a toast.
  */
-export default function MergeRequestsPanel({ requests }: { requests: MergeRequestAdminRow[] }) {
+export default function MergeRequestsPanel({ requests, disputes }: { requests: MergeRequestAdminRow[]; disputes: MergeDisputeAdminRow[] }) {
     const { t } = useLanguage();
     const { formatShortDate } = useDateFormat();
     const toast = useShowToast();
@@ -54,81 +31,104 @@ export default function MergeRequestsPanel({ requests }: { requests: MergeReques
     const [now, setNow] = useState<number | null>(null);
     useEffect(() => { setNow(Date.now()); }, []);
 
-    async function resolve(id: string, decision: 'accept' | 'decline') {
-        setBusyId(id);
+    async function resolve(row: MergeRequestAdminRow, decision: 'accept' | 'decline') {
+        const failed = t('admin.merge_req_failed') || 'No se pudo resolver el pedido. Volvé a intentar.';
+        setBusyId(row.id);
         try {
-            const res = await resolveMergeRequest(id, decision);
+            const res = await resolveMergeRequest(row.id, decision);
             if (res.success) {
-                setItems(prev => prev.filter(r => r.id !== id));
-                toast.success('✓', decision === 'accept' ? 'Perfiles combinados' : 'Pedido rechazado');
+                // A dispute row stands for its whole pair (oneRowPerPair): nothing of it stays.
+                const key = pairKey(row.primary.id, row.secondary.id);
+                setItems(prev => prev.filter(r => r.id !== row.id && !(row.dispute && pairKey(r.primary.id, r.secondary.id) === key)));
+                toast.success('✓', decision === 'accept' ? (t('admin.merge_req_merged') || 'Perfiles combinados') : (t('admin.merge_req_declined') || 'Pedido rechazado'));
             } else {
-                toast.error(t('errors.generic') || 'Error', 'No se pudo resolver el pedido. Volvé a intentar.', res.errorId);
+                toast.error(t('errors.generic') || 'Error', failed, res.errorId ?? resolveErrorId(new Error(`resolveMergeRequest: ${res.error}`), 'MergeRequestsPanel'));
             }
         } catch (e) {
-            toast.error(t('errors.generic') || 'Error', userFacingMessage(e, 'No se pudo resolver el pedido. Volvé a intentar.'), resolveErrorId(e, 'MergeRequestsPanel'));
+            if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', userFacingMessage(e, failed), resolveErrorId(e, 'MergeRequestsPanel'));
         } finally {
             setBusyId(null);
         }
     }
 
-    if (items.length === 0) {
-        return (
-            <div className="rounded-xl border border-stone-200 bg-white p-6 text-sm text-stone-500">
-                No hay pedidos de combinación pendientes.
-            </div>
-        );
-    }
-
     return (
-        <ul className="space-y-3">
-            {items.map(r => {
-                const declined = r.status === 'declined';
-                const busy = busyId === r.id;
-                return (
-                    <li key={r.id} data-testid="merge-request-row" className="rounded-xl border border-stone-200 bg-white p-4 text-sm space-y-2">
-                        <div className="flex flex-wrap items-center gap-2 font-semibold">
-                            <span className={`ml-auto order-last px-2 py-0.5 rounded-full text-xs font-semibold border ${declined ? 'bg-rose-50 border-rose-200 text-rose-700' : 'bg-amber-50 border-amber-300 text-amber-800'}`}>
-                                {declined ? 'Rechazado' : 'Pendiente'}
-                            </span>
-                        </div>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                            <SideCard side={r.primary} role="keep" formatShortDate={formatShortDate} />
-                            <SideCard side={r.secondary} role="absorb" formatShortDate={formatShortDate} />
-                        </div>
-                        <div className="text-stone-600 break-all">
-                            <span className="font-medium">Pidió: </span>{r.requesterEmail}
-                        </div>
-                        {r.createdAt != null && (
-                            <div className="text-xs text-stone-500">
-                                Pedido el {formatShortDate(r.createdAt)}
-                                {now != null && <> · {waited(r.createdAt, now)}</>}
-                            </div>
-                        )}
-                        <div className="flex gap-2 pt-1">
-                            <button
-                                type="button"
-                                data-testid="merge-request-approve"
-                                onClick={() => resolve(r.id, 'accept')}
-                                disabled={busy}
-                                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-600 text-white hover:bg-teal-700 transition-colors disabled:opacity-50"
-                            >
-                                {declined ? 'Aprobar igual' : 'Aprobar'}
-                            </button>
-                            {!declined && (
-                                <button
-                                    type="button"
-                                    data-testid="merge-request-decline"
-                                    onClick={() => resolve(r.id, 'decline')}
-                                    disabled={busy}
-                                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-stone-200 text-stone-700 hover:opacity-70 transition-opacity disabled:opacity-50"
-                                >
-                                    Rechazar
-                                </button>
-                            )}
-                        </div>
-                    </li>
-                );
-            })}
-        </ul>
+        <div className="max-w-3xl">
+            <h1 className="text-2xl font-bold text-stone-900 mb-1">{t('admin.nav_merge_requests') || 'Pedidos de combinación'}</h1>
+            <p className="text-sm text-stone-500 mb-6">
+                {t('admin.merge_req_subtitle') || 'Pedidos para unir dos perfiles de adoptantes. Los pendientes primero, del más antiguo al más nuevo.'}
+            </p>
+
+            <MergeDisputesSection disputes={disputes} />
+
+            {items.length === 0 ? (
+                <div className="rounded-xl border border-stone-200 bg-white p-6 text-sm text-stone-500">
+                    {t('admin.merge_req_empty') || 'No hay pedidos de combinación pendientes.'}
+                </div>
+            ) : (
+                <ul className="space-y-3">
+                    {items.map(r => (
+                        <RequestRow key={r.id} row={r} busy={busyId === r.id} locked={!!busyId} now={now} t={t} formatShortDate={formatShortDate} onResolve={resolve} />
+                    ))}
+                </ul>
+            )}
+        </div>
+    );
+}
+
+function RequestRow({ row: r, busy, locked, now, t, formatShortDate, onResolve }: {
+    row: MergeRequestAdminRow;
+    busy: boolean;
+    locked: boolean;
+    now: number | null;
+    t: T;
+    formatShortDate: (ms: number) => string;
+    onResolve: (row: MergeRequestAdminRow, decision: 'accept' | 'decline') => void;
+}) {
+    const declined = r.status === 'declined';
+    const badge = r.dispute
+        ? { cls: 'bg-[var(--status-warning-bg)] border-[var(--status-warning-border)] text-[var(--status-warning-text)]', label: t('admin.merge_req_status_dispute') || 'Disputa' }
+        : declined
+            ? { cls: 'bg-[var(--status-error-bg)] border-[var(--status-error-border)] text-[var(--status-error-text)]', label: t('admin.merge_req_status_declined') || 'Rechazado' }
+            : { cls: 'bg-[var(--surface-muted)] border-[var(--border-default)] text-[var(--text-muted)]', label: t('admin.merge_req_status_pending') || 'Pendiente' };
+    const age = waited(r.createdAt, now, t);
+    return (
+        <li data-testid="merge-request-row" data-dispute={r.dispute ? '1' : undefined} className="rounded-xl border border-stone-200 bg-white p-4 text-sm space-y-2">
+            <div className="flex flex-wrap items-center gap-2 font-semibold">
+                <span data-testid="merge-request-badge" className={`ml-auto order-last ${BADGE} ${badge.cls}`}>{badge.label}</span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+                <AdminSideCard testId="merge-request-keep" side={r.primary} label={t('admin.merge_req_keep') || 'se conserva'} kept t={t} formatShortDate={formatShortDate} />
+                <AdminSideCard testId="merge-request-absorb" side={r.secondary} label={t('admin.merge_req_absorb') || 'se absorbe'} kept={false} t={t} formatShortDate={formatShortDate} />
+            </div>
+            {/* A dispute (D49) carries both positions: who wants them combined, and who said they are not the same person. */}
+            <div className="text-stone-600 break-all">
+                <span className="font-medium">{r.dispute ? (t('admin.merge_req_review_by') || 'Pide revisión (quiere combinarlos)') : (t('admin.merge_req_requested_by') || 'Pidió')}: </span>{r.requesterEmail}
+            </div>
+            {r.createdAt != null && (
+                <div className="text-xs text-stone-500">
+                    {(t('admin.merge_req_requested_on') || 'Pedido el {date}').replace('{date}', formatShortDate(r.createdAt))}
+                    {age && <> · {age}</>}
+                </div>
+            )}
+            {r.dispute && r.rejected && (
+                <div data-testid="merge-request-rejected" className="text-stone-600 break-all">
+                    <span className="font-medium">{t('admin.merge_req_rejected_by') || 'Rechazó (no es la misma persona)'}: </span>
+                    {r.rejected.byEmail ?? (t('admin.merge_dispute_unknown') || 'desconocido')}
+                    {r.rejected.at != null && (
+                        <span className="text-xs text-stone-500"> · {(t('admin.merge_req_rejected_on') || 'Rechazado el {date}').replace('{date}', formatShortDate(r.rejected.at))}</span>
+                    )}
+                </div>
+            )}
+            <div className="flex flex-wrap gap-2 pt-1">
+                <button type="button" data-testid="merge-request-approve" onClick={() => onResolve(r, 'accept')} disabled={locked} className={PRIMARY_BTN}>
+                    {busy ? (t('common.processing') || 'Procesando...') : declined ? (t('admin.merge_req_approve_anyway') || 'Aprobar igual') : (t('admin.merge_req_approve') || 'Aprobar')}
+                </button>
+                {!declined && (
+                    <button type="button" data-testid="merge-request-decline" onClick={() => onResolve(r, 'decline')} disabled={locked} className={SECONDARY_BTN}>
+                        {t('admin.merge_req_decline') || 'Rechazar'}
+                    </button>
+                )}
+            </div>
+        </li>
     );
 }

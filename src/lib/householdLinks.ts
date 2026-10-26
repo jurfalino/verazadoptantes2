@@ -602,17 +602,22 @@ export async function getLinkedSummaries(viewer: string | null | undefined, adop
         if (profiles.size === 0) return EMPTY_LINKED_SUMMARIES;
 
         const viewerEmail = viewer ?? null;
-        const [gatingOn, publicFlag, visibilities, counts, viewerIsAdmin, viewerIsSelfTeam] = await Promise.all([
+        // «No convive» (D48) is for the LINKED profile's team or an admin: on
+        // «Convive con» that is this profile, on the host's card each member's
+        // own profile (at most MAX_LINKED_SUMMARIES of them).
+        const onLinkedTeam = async (addedBy: string | null) => !!viewerEmail
+            && (await import('@/lib/orgMembership')).isOwnerOrOrgMate(viewerEmail, addedBy);
+        const memberProfiles = linkedRows.filter((p): p is ProfileRow => !!p && p.id !== adopterId);
+        const [gatingOn, publicFlag, visibilities, counts, viewerIsAdmin, viewerIsSelfTeam, memberTeams] = await Promise.all([
             isPiiGatingEnabled(),
             isPublicProfilesEnabled(),
             resolveAdoptersVisibility(viewerEmail, [...profiles.values()].map(p => ({ id: p.id, addedBy: p.addedBy }))),
             Promise.all([...profiles.keys()].map(async id => [id, await countsFor(db, id, ctx)] as const)),
-            reverseLive.length && viewerEmail
+            viewerEmail
                 ? (async () => (await import('@/config/admins')).isAdminAsync(viewerEmail))()
                 : Promise.resolve(false),
-            reverseLive.length && viewerEmail
-                ? (async () => (await import('@/lib/orgMembership')).isOwnerOrOrgMate(viewerEmail, self.addedBy))()
-                : Promise.resolve(false),
+            reverseLive.length ? onLinkedTeam(self.addedBy) : Promise.resolve(false),
+            Promise.all(memberProfiles.map(async p => [p.id, await onLinkedTeam(p.addedBy)] as const)).then(e => new Map(e)),
         ]);
         const countMap = new Map(counts);
         const names = await namesFor([
@@ -620,7 +625,7 @@ export async function getLinkedSummaries(viewer: string | null | undefined, adop
             ...reverseLive.map(r => r.link.createdBy),
         ], ctx);
 
-        const summarize = (p: ProfileRow, linkId: string): LinkedSummary => {
+        const summarize = (p: ProfileRow, linkId: string, viewerOnLinkedTeam: boolean): LinkedSummary => {
             const c = countMap.get(p.id) ?? { rating: null, openAlerts: 0, adoptions: 0, records: 0 };
             const { contacts, more, canSeeContact } = viewerContacts(p, gatingOn, publicFlag, visibilities.get(p.id));
             return {
@@ -635,19 +640,18 @@ export async function getLinkedSummaries(viewer: string | null | undefined, adop
                 contacts,
                 moreContacts: more,
                 canSeeContact,
+                canReportNotLiving: canReportNotLivingTogether({ viewerIsAdmin: !!viewerIsAdmin, viewerIsLinkedOwnerTeam: viewerOnLinkedTeam }),
             };
         };
 
         const members: LinkedSummaries['members'] = {};
         hostLinks.forEach((l, i) => {
             const p = linkedRows[i];
-            if (p && p.id !== adopterId) members[l.memberId] = summarize(p, l.id);
+            if (p && p.id !== adopterId) members[l.memberId] = summarize(p, l.id, !!memberTeams.get(p.id));
         });
-        const canReportNotLiving = canReportNotLivingTogether({ viewerIsAdmin: !!viewerIsAdmin, viewerIsLinkedOwnerTeam: !!viewerIsSelfTeam });
         const livesWith: LivesWithRow[] = reverseLive.map(({ link, host }) => ({
-            ...summarize(host, link.id),
+            ...summarize(host, link.id, !!viewerIsSelfTeam),
             creatorName: personLabel(link.createdBy, names),
-            canReportNotLiving,
         }));
         return { members, livesWith };
     } catch (e) {

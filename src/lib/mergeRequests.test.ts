@@ -573,7 +573,21 @@ describe('listMergeRequestsForAdmin', () => {
             primary: { id: 'third', name: 'Otra', ownerEmail: OWNER, createdAt: 3_000_000 },
             secondary: { id: 'anon-new', name: 'Anónima', ownerEmail: null, createdAt: 4_000_000 },
             requesterEmail: REQUESTER, ownerEmail: null, dispute: false,
+            resolvedByEmail: null, resolvedAt: null, rejected: null,
         });
         expect(rows[2]).toMatchObject({ status: 'declined', primary: { name: 'Carla Gómez', ownerEmail: REQUESTER, createdAt: 1_000_000 }, secondary: { name: 'Carla Gomez', ownerEmail: OWNER, createdAt: 2_000_000 }, ownerEmail: OWNER });
+    });
+
+    it('a dispute and the declined request it came from are one row: the dispute, with who rejected it (D49)', async () => {
+        const ins = sqlite.prepare(`INSERT INTO merge_requests (id, primary_id, secondary_id, requester_email, owner_email, status, created_at, resolved_by_email, resolved_at, dispute) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        ins.run('declined', 'r-old', 'o-new', REQUESTER, OWNER, 'declined', 100, OWNER, 150, 0);
+        ins.run('dispute', 'o-new', 'r-old', REQUESTER, null, 'pending', 200, null, null, 1);
+        const rows = await listMergeRequestsForAdmin(db());
+        expect(rows.map(r => r.id)).toEqual(['dispute']);
+        expect(rows[0]).toMatchObject({
+            dispute: true, requesterEmail: REQUESTER, ownerEmail: null,
+            primary: { id: 'o-new' }, secondary: { id: 'r-old' },
+            rejected: { byEmail: OWNER, at: 150_000 },
+        });
     });
 });

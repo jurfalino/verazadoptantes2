@@ -27,7 +27,10 @@ import {
 
 export type RowAction =
     | 'combine' | 'keep_separate' | 'accept' | 'decline' | 'flip' | 'cancel' | 'hide' | 'write'
-    /** Declined, requester side: combine keeping the asked owner's profile (no consent needed, D43). */
+    /**
+     * Declined, requester side: keep the asked owner's profile — merged now by
+     * an admin (D43), or for a rescuer «Pedir revisión a un administrador» (D49).
+     */
     | 'combine_theirs';
 
 type Group = PendingDedupPair['group'];
@@ -97,6 +100,7 @@ function stateLine(pair: PendingDedupPair, t: T, age: (epochS: number) => string
         return fill(t('myAdopters.pending_d_line_received') || '{name} te pide combinar · {when}', { name: r.counterpartName || someone, when: age(r.createdAt) });
     }
     if (pair.group === 'sent') {
+        if (r.dispute) return fill(t('myAdopters.pending_d_line_sent_dispute') || 'Revisión pedida a un administrador · {when}', { when: age(r.createdAt) });
         return r.toAdmins || !r.counterpartName
             ? fill(t('myAdopters.pending_d_line_sent_admins') || 'Enviado a un administrador · {when}', { when: age(r.createdAt) })
             : fill(t('myAdopters.pending_d_line_sent') || 'Esperando a {name} · {when}', { name: r.counterpartName, when: age(r.createdAt) });
@@ -125,18 +129,25 @@ function explanation(pair: PendingDedupPair, keep: KeepSide, isAdmin: boolean, t
         return fill(t('myAdopters.pending_d_explain_received') || 'Si aceptás, tu perfil pasa a la lista de {name}. Con «Conservar el mío», el de {name} se suma al tuyo.', { name: other });
     }
     if (pair.group === 'sent' && r) {
+        if (r.dispute) return t('myAdopters.pending_d_explain_sent_dispute') || 'Un administrador va a decidir si son la misma persona.';
         return r.toAdmins || !r.counterpartName
             ? (t('myAdopters.pending_d_explain_sent_admins') || 'Se conserva el tuyo cuando un administrador lo apruebe.')
             : fill(t('myAdopters.pending_d_explain_sent') || 'Se conserva el tuyo cuando {name} acepte.', { name: other });
     }
     if (pair.group === 'declined' && r) {
         if (r.direction === 'received') return t('myAdopters.pending_d_explain_declined_owner') || 'Siguen separados. Si cambiaste de idea, podés aceptar ahora.';
-        return combineTheirsSide(pair)
+        const theirs = combineTheirsSide(pair);
+        if (theirs && pair.actionByKeep[theirs] === 'dispute') {
+            return fill(t('myAdopters.pending_d_explain_declined_requester_dispute') || '{name} prefirió no combinarlos: no podés volver a pedirlo. Si creés que son la misma persona, un administrador puede revisarlo.', { name: other });
+        }
+        return theirs
             ? fill(t('myAdopters.pending_d_explain_declined_requester') || '{name} prefirió no combinarlos: no podés volver a pedirlo, pero podés combinar conservando su perfil.', { name: other })
             : fill(t('myAdopters.pending_d_explain_declined_requester_nocombine') || '{name} prefirió no combinarlos. Siguen separados.', { name: other });
     }
     const action = pair.actionByKeep[keep];
     if (!action) return null;
+    // D49/D50: a rejection or an admin's ruling stands between this pair and a merge.
+    if (action === 'dispute') return t('myAdopters.pending_d_explain_dispute') || 'Ya se dijo que no son la misma persona: un administrador va a decidir si se combinan.';
     const absorbed = sideOf(pair, otherSide(keep));
     if (action === 'request') {
         return absorbed.createdByName
@@ -357,7 +368,9 @@ export default function PairRow({ pair, open, onToggle, keep, onKeep, busy, lock
                             {theirs && (
                                 <button type="button" data-testid="dedup-merge" className={PRIMARY} disabled={locked} onClick={() => onAction(pair, 'combine_theirs', theirs)}>
                                     {busy ? (t('common.processing') || 'Procesando...')
-                                        : fill(t('myAdopters.pending_d_action_combine_theirs') || 'Combinar conservando el de {name}', { name: theirsName })}
+                                        : pair.actionByKeep[theirs] === 'dispute'
+                                            ? (t('myAdopters.pending_d_action_dispute') || 'Pedir revisión a un administrador')
+                                            : fill(t('myAdopters.pending_d_action_combine_theirs') || 'Combinar conservando el de {name}', { name: theirsName })}
                                 </button>
                             )}
                             {r?.direction === 'received' && (
@@ -378,7 +391,9 @@ export default function PairRow({ pair, open, onToggle, keep, onKeep, busy, lock
                                     {busy ? (t('common.processing') || 'Procesando...')
                                         : mainAction === 'request'
                                             ? (t('myAdopters.pending_dedup_action_request') || 'Pedir combinar')
-                                            : (t('myAdopters.pending_dedup_action_merge') || 'Combinar perfiles')}
+                                            : mainAction === 'dispute'
+                                                ? (t('myAdopters.pending_d_action_dispute') || 'Pedir revisión a un administrador')
+                                                : (t('myAdopters.pending_dedup_action_merge') || 'Combinar perfiles')}
                                 </button>
                             )}
                         </>}

@@ -31,6 +31,12 @@ describe('combineTheirsSide (D43)', () => {
     it("the requester may keep the asked owner's side when the feed allows merging it", () => {
         expect(combineTheirsSide(declined('sent', { new: 'merge', existing: null }))).toBe('new');
     });
+    it("D49: a rescuer's keep-theirs after a rejection is a dispute, and the row still offers it", () => {
+        expect(combineTheirsSide(declined('sent', { new: 'dispute', existing: null }))).toBe('new');
+    });
+    it('a keep that would ask the owner again is not offered', () => {
+        expect(combineTheirsSide(declined('sent', { new: 'request', existing: null }))).toBeNull();
+    });
     it('not on a rebuilt pair (nothing allowed), nor for the side that declined', () => {
         expect(combineTheirsSide(declined('sent', { new: null, existing: null }))).toBeNull();
         expect(combineTheirsSide(declined('received', { new: 'merge', existing: null }))).toBeNull();

@@ -38,9 +38,12 @@ export function movesToOtherList(pair: RowPair, keep: KeepSide): boolean {
 }
 
 /**
- * A declined request, seen by its requester: the asked owner's side, when it
- * may be kept right away (D43 — no consent needed). Null otherwise, including
- * a pair rebuilt from the request, where nothing is allowed.
+ * A declined request, seen by its requester: the asked owner's side, when the
+ * feed still offers keeping it — merged right away (an admin, D43) or, for a
+ * rescuer, sent to the admins as a dispute (D49: after a rejection nobody
+ * merges one-sidedly; the row's button is «Pedir revisión a un
+ * administrador»). Null otherwise, including a pair rebuilt from the request,
+ * where nothing is allowed.
  */
 export function combineTheirsSide(pair: RowPair): KeepSide | null {
     const r = pair.request;
@@ -48,5 +51,6 @@ export function combineTheirsSide(pair: RowPair): KeepSide | null {
     const requesterKeep = sideById(pair, r.keepId);
     if (!requesterKeep) return null;
     const theirs = otherSide(requesterKeep);
-    return pair.actionByKeep[theirs] === 'merge' ? theirs : null;
+    const action = pair.actionByKeep[theirs];
+    return action === 'merge' || action === 'dispute' ? theirs : null;
 }

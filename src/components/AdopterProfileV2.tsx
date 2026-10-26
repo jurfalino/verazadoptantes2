@@ -17,6 +17,7 @@ import AdoptionHistory from '@/components/AdoptionHistory';
 import AdoptionFormWizard from '@/components/AdoptionFormWizard';
 import AdoptionFormEditV2 from '@/components/AdoptionFormEditV2';
 import VisitIntentCard from '@/components/VisitIntentCard';
+import MergeDisputePrompt from '@/components/MergeDisputePrompt';
 import { useLanguage } from '@/context/LanguageContext';
 import { saveImage, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
 import { ImageGallery } from '@/components/ImageGallery';
@@ -89,6 +90,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     const { formatDateTime, formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const searchParams = useSearchParams();
+    const disputeAuditId = searchParams.get('dispute')?.trim() || null;
     const toast = useShowToast();
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [deleteLoading, setDeleteLoading] = useState(false);
@@ -156,11 +158,11 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     const displayedLinked = useMemo<LinkedSummaries>(() => {
         if (!previewAsStranger) return linkedSummaries;
         const asStranger = <T extends LinkedSummary>(s: T): T => ({
-            ...s, contacts: maskContactEntries(s.contacts, NO_ACCESS_VISIBILITY).entries, canSeeContact: false,
+            ...s, contacts: maskContactEntries(s.contacts, NO_ACCESS_VISIBILITY).entries, canSeeContact: false, canReportNotLiving: false,
         });
         return {
             members: Object.fromEntries(Object.entries(linkedSummaries.members).map(([k, s]) => [k, asStranger(s)])),
-            livesWith: linkedSummaries.livesWith.map(r => ({ ...asStranger(r), canReportNotLiving: false })),
+            livesWith: linkedSummaries.livesWith.map(asStranger),
         };
     }, [previewAsStranger, linkedSummaries]);
 
@@ -388,6 +390,12 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     </p>
                 )}
 
+                {/* D50: the `adopter_merged` notice links here with ?dispute=<auditId>;
+                    the prompt asks the server whether this viewer may dispute it. */}
+                {!isNew && adopter && disputeAuditId && !previewAsStranger && (
+                    <MergeDisputePrompt auditId={disputeAuditId} />
+                )}
+
                 {/* v39: pending-duplicate signal. Owner / admin gets the clickable
                     "Revisar" affordance straight to /my-adopters#pendientes
                     where the merge UI lives. Everyone else sees the same flag
@@ -606,6 +614,9 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                             // Merges (2026-10-19): the survivor's history says it absorbed a profile, and an undo says so too.
                                             else if (parsed.profiles_merged) { eventType = 'profiles_merged'; changes = parsed.profiles_merged; }
                                             else if (parsed.profiles_unmerged) { eventType = 'profiles_unmerged'; changes = parsed.profiles_unmerged; }
+                                            // «No convive» (D48): written on both profiles. A plain member removal shares the host-side key.
+                                            else if (parsed.household_member_removed?.reason === 'not_living_together') { eventType = 'hh_not_living_host'; changes = parsed.household_member_removed; }
+                                            else if (parsed.household_not_living_together) { eventType = 'hh_not_living_linked'; changes = parsed.household_not_living_together; }
                                             else { changes = parsed; }
                                         } catch { /* ignore */ }
 
@@ -633,6 +644,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                         {eventType === 'api_contract' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_contract')}</span>}
                                                         {eventType === 'profiles_merged' && <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_profiles_merged')}</span>}
                                                         {eventType === 'profiles_unmerged' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_profiles_unmerged')}</span>}
+                                                        {(eventType === 'hh_not_living_host' || eventType === 'hh_not_living_linked') && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_not_living')}</span>}
                                                     </div>
                                                     <span className="text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
                                                         {t('audit.by')} {(h.changedBy ? actorLabel(h.changedBy, userNameMap?.[h.changedBy], t) : t('common.anonymous'))}
@@ -670,6 +682,21 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                                     {changes.otherName ? t('audit.desc_profiles_unmerged').replace('{name}', changes.otherName) : t('audit.desc_profiles_unmerged_plain')}
                                                                 </div>
                                                             )}
+                                                            {(eventType === 'hh_not_living_host' || eventType === 'hh_not_living_linked') && (() => {
+                                                                const who = h.changedBy ? actorLabel(h.changedBy, userNameMap?.[h.changedBy], t) : t('common.anonymous');
+                                                                // The other profile of the correction: the linked one (host side) or the host (linked side).
+                                                                const otherId = eventType === 'hh_not_living_host' ? changes.linkedId : changes.hostId;
+                                                                return (
+                                                                    <div className="text-teal-800 font-medium break-words" data-testid="history-hh-not-living">
+                                                                        {eventType === 'hh_not_living_host'
+                                                                            ? t('audit.desc_hh_not_living_host').replace('{who}', who)
+                                                                            : t('audit.desc_hh_not_living_linked').replace('{who}', who).replace('{host}', changes.hostName || t('adopter.nameless'))}
+                                                                        {typeof otherId === 'string' && otherId && (
+                                                                            <> <a href={`/adopter/${encodeURIComponent(otherId)}`} className="inline-flex min-h-[44px] items-center font-semibold text-teal-700 hover:underline">{t('audit.hh_not_living_view')} ↗</a></>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                             {eventType === 'adoption_added' && (
                                                                 <div className="text-teal-800 font-medium break-words">
                                                                     {t('audit.desc_adoption_added')} <span className="font-semibold break-all">{changes.animalName}</span> ({changes.species}) - {changes.status}

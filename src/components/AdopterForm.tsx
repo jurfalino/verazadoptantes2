@@ -1526,8 +1526,9 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                     canEdit={canEdit}
                                     hasLegacyText={hasLegacyFamilyText || linkedSummaries.livesWith.length > 0}
                                     linkedMembers={linkedSummaries.members}
+                                    hostName={initialData?.name ?? ''}
                                 />
-                                {linkedSummaries.livesWith.length > 0 && <LivesWithSection rows={linkedSummaries.livesWith} />}
+                                {linkedSummaries.livesWith.length > 0 && <LivesWithSection rows={linkedSummaries.livesWith} personName={initialData?.name ?? ''} />}
                                 {hasLegacyFamilyText && (
                                     <div>
                                         <p className="text-[11px] font-semibold text-stone-500 mb-1">{t('adopter.family_notes')}</p>
