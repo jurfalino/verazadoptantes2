@@ -64,9 +64,16 @@ type GrantRow = typeof piiAccessGrants.$inferSelect;
 
 /** The lazy conversion's actor (a page view): a sentinel, never the viewer — nothing is credited to them. */
 export const CONVERSION_ACTOR = 'system';
-/** Hosts per call of the bulk run (each converted member is ~20 D1 subrequests). */
-export const CONVERSION_DEFAULT_LIMIT = 5;
-export const CONVERSION_MAX_LIMIT = 25;
+/** Hosts read per call of the bulk run (an upper bound; the work budget below is what stops a page). */
+export const CONVERSION_DEFAULT_LIMIT = 25;
+export const CONVERSION_MAX_LIMIT = 100;
+/**
+ * Members (and corrections) a bulk page may actually convert before it stops and hands back its cursor —
+ * each is ~25–40 D1 subrequests, so a page stays well under one Workers invocation's ceiling. A host is never
+ * split: the page stops after the host that reached the budget. Already-converted members cost no budget.
+ */
+export const CONVERSION_DEFAULT_BUDGET = 10;
+export const CONVERSION_MAX_BUDGET = 25;
 /** Hosts listing one profile through household_links that a view of that profile converts first. */
 const MAX_LINKING_HOSTS = 20;
 
@@ -131,6 +138,11 @@ export type HostConversion = {
     corrections: MemberReport[];
     /** Members / corrections that failed this time (retried next time). */
     failed: number;
+    /**
+     * Members that are still only in the JSON and must not be left behind on a soft-deleted row: failed, plus
+     * `household_full` and `converted_profile_deleted`. A merge refuses while this is > 0.
+     */
+    blocked: number;
 };
 
 export type ConversionReport = {
@@ -346,6 +358,12 @@ export type ConvertHostOptions = {
     dryRun?: boolean;
     /** Who runs it: the admin (bulk) or CONVERSION_ACTOR (a view, a merge). Recorded in the ledger and the audit only. */
     actor?: string;
+    /**
+     * Each created profile's duplicate scan, after the response (default true). The bulk run passes false: its
+     * pages stay within one invocation's subrequest budget, and Admin → Duplicates → Scan Now (the next step of
+     * the runbook) scans every profile anyway.
+     */
+    scanDuplicates?: boolean;
 };
 
 type HostState = {
@@ -359,6 +377,7 @@ type HostState = {
     byName: Map<string, string> | null;
     gifts: Set<string> | null;
     touched: boolean;
+    scanDuplicates: boolean;
 };
 
 async function accessOf(db: Db, st: HostState): Promise<HostAccess> {
@@ -425,14 +444,17 @@ async function linkedTarget(db: Db, links: LinkRow[], m: HouseholdMember): Promi
  * nothing on the profile is dropped or rewritten — rename aliases stay).
  * Returns the number appended (in a dry run: would be).
  */
-async function appendContacts(db: Db, profileId: string, entries: ContactEntry[], dryRun: boolean, ctx: Record<string, unknown>): Promise<number> {
+async function appendContacts(db: Db, profileId: string, entries: ContactEntry[], dryRun: boolean, ctx: Record<string, unknown>): Promise<number | null> {
     if (!entries.length) return 0;
     const key = (e: Pick<ContactEntry, 'type' | 'value'>) => `${e.type}|${normalizeEntryValue(e.type, e.value)}`;
     const missingFrom = (json: string | null) => {
         const have = new Set(deserializeContactEntries(json).map(key));
         return entries.filter(e => !have.has(key(e)));
     };
-    if (dryRun) return missingFrom((await profileRow(db, profileId))?.contactEntries ?? null).length;
+    if (dryRun) {
+        const row = await profileRow(db, profileId);
+        return row && !row.deletedAt ? missingFrom(row.contactEntries).length : null;
+    }
     const { casAdopterLists } = await import('@/lib/adopterListCas');
     const out = await casAdopterLists<number>(db, profileId, (row) => {
         const add = missingFrom(row.contactEntries);
@@ -441,7 +463,7 @@ async function appendContacts(db: Db, profileId: string, entries: ContactEntry[]
         return { write: { contactEntries: JSON.stringify(next), contactInfo: contactEntriesToBlob(next) || null, tokenHash: null }, result: add.length };
     }, { op: 'householdConversion.appendContacts', ...ctx }, { requireLive: true });
     if (out.status === 'busy') throw new Error(`householdConversion: contacts not appended, profile busy (Error ID: ${out.errorId})`);
-    return out.status === 'done' ? out.result : 0;
+    return out.status === 'done' ? out.result : null;
 }
 
 /** Place the person in the host's home and record the conversion in ONE batch (the ledger row is what "converted" means). */
@@ -528,17 +550,25 @@ async function syncEditedMember(db: Db, st: HostState, m: HouseholdMember, row: 
         const recorded = recordedRefs(row.contactRefs);
         const entries = storedEntries(m.contactEntries);
         const fresh = entries.filter(e => !recorded.has(hashEntryValue(e.type, e.value)));
-        const profileLive = row.profileId ? (await profileRow(db, row.profileId)) : null;
-        if (fresh.length && profileLive && !profileLive.deletedAt) {
-            const appended = await appendContacts(db, profileLive.id, fresh, st.dryRun, ctx);
-            const grants = await grantsFor(st.host, await accessOf(db, st), profileLive.id, refsOf(fresh), !!row.createdProfile, st.actor);
+        if (fresh.length) {
+            // The person's profile now: the one converted, or the survivor it was merged into since.
+            const target = row.profileId ? await resolveLive(db, row.profileId) : null;
+            const appended = target ? await appendContacts(db, target, fresh, st.dryRun, { ...ctx, targetId: target }) : null;
+            if (target === null || appended === null) {
+                // Nowhere to put them yet (deleted, or gone mid-write): not marked as carried over — retried next time.
+                logger.warn('householdConversion: an old tab\'s contacts for a converted member have no live profile to go to (retried)', { ...ctx, contacts: fresh.length });
+                return report;
+            }
+            // Grants of a made profile copy as on creation only while it is still that profile (not merged into another).
+            const grants = await grantsFor(st.host, await accessOf(db, st), target, refsOf(fresh), !!row.createdProfile && target === row.profileId, st.actor);
             report.grantsCopied = await writeGrants(db, grants, st.dryRun);
             if (appended && !st.dryRun) {
                 const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
-                await tokenizeAdopter(profileLive.id, { force: true });
+                await tokenizeAdopter(target, { force: true });
             }
             report.outcome = 'updated';
-            logger.info('householdConversion: contacts an old tab added to a converted member carried over', { ...ctx, contacts: fresh.length, appended, grants: report.grantsCopied });
+            report.profileId = target;
+            logger.info('householdConversion: contacts an old tab added to a converted member carried over', { ...ctx, targetId: target, contacts: fresh.length, appended, grants: report.grantsCopied });
         }
         if (!st.dryRun) {
             await db.update(householdConversions).set({ fingerprint, contactRefs: contactRefsJson(entries, recorded) })
@@ -665,7 +695,7 @@ async function convertMember(db: Db, st: HostState, m: HouseholdMember, links: L
         }, ctx);
         if (m.name.trim()) st.byName?.set(householdNameKey(m.name), profileId);
         st.touched = true;
-        if (created) await scanDuplicates(db, host.id, profileId, m, { ...ctx, profileId });
+        if (created && st.scanDuplicates) await scanDuplicates(db, host.id, profileId, m, { ...ctx, profileId });
         logger.info('householdConversion: member converted', { ...ctx, profileId, householdId: placed.householdId, created, reason, grants: report.grantsCopied });
         return { ...report, outcome: created ? 'created' : 'reused', reason: reason ?? undefined, profileId, householdId: placed.householdId, ...(notes.length ? { notes } : {}) };
     } catch (e) {
@@ -714,7 +744,7 @@ async function convertCorrection(db: Db, st: HostState, c: typeof householdLinkC
  * (`failed`), and retried next time.
  */
 export async function convertHost(db: Db, hostId: string, opts: ConvertHostOptions = {}): Promise<HostConversion> {
-    const out: HostConversion = { hostId, live: false, members: [], corrections: [], failed: 0 };
+    const out: HostConversion = { hostId, live: false, members: [], corrections: [], failed: 0, blocked: 0 };
     const host = await hostRow(db, hostId);
     if (!host || host.deletedAt) return out;
     out.live = true;
@@ -729,17 +759,18 @@ export async function convertHost(db: Db, hostId: string, opts: ConvertHostOptio
     if (members.length === 0 && corrections.length === 0) return out;
     const st: HostState = {
         host, actor: opts.actor ?? CONVERSION_ACTOR, dryRun: opts.dryRun === true, ledger,
-        access: null, home: null, byName: null, gifts: null, touched: false,
+        access: null, home: null, byName: null, gifts: null, touched: false, scanDuplicates: opts.scanDuplicates !== false,
     };
     // Members in their JSON order (one at a time: the same-name rule and the cap see the ones before).
     for (const m of members) {
         const r = await convertMember(db, st, m, links);
         if (r.reason === 'failed') out.failed++;
+        if (r.outcome === 'skipped' && (r.reason === 'failed' || r.reason === 'household_full' || r.reason === 'converted_profile_deleted')) out.blocked++;
         out.members.push(r);
     }
     for (const c of corrections) {
         const r = await convertCorrection(db, st, c);
-        if (r.reason === 'failed') out.failed++;
+        if (r.reason === 'failed') { out.failed++; out.blocked++; }
         out.corrections.push(r);
     }
     if (st.touched) {
@@ -770,28 +801,36 @@ export async function ensureHostConverted(db: Db, hostId: string, actor: string 
  * the hosts whose household_links name it (so Marta's page shows Pedro even
  * before Pedro's is viewed). Throws on a DB failure; callers log it.
  */
-export async function ensureProfileConverted(db: Db, adopterId: string, actor: string = CONVERSION_ACTOR): Promise<{ failed: number }> {
-    let failed = (await ensureHostConverted(db, adopterId, actor)).failed;
+export async function ensureProfileConverted(db: Db, adopterId: string, actor: string = CONVERSION_ACTOR): Promise<{ failed: number; blocked: number }> {
+    const own = await ensureHostConverted(db, adopterId, actor);
+    let failed = own.failed;
+    let blocked = own.blocked;
     const linking = await db.select({ hostAdopterId: householdLinks.hostAdopterId }).from(householdLinks)
         .where(eq(householdLinks.linkedAdopterId, adopterId)).limit(MAX_LINKING_HOSTS).all() as Array<{ hostAdopterId: string }>;
     for (const hostId of [...new Set(linking.map(l => l.hostAdopterId))]) {
         if (hostId === adopterId) continue;
-        failed += (await ensureHostConverted(db, hostId, actor)).failed;
+        const h = await ensureHostConverted(db, hostId, actor);
+        failed += h.failed;
+        blocked += h.blocked;
     }
-    return { failed };
+    return { failed, blocked };
 }
 
 /**
  * The bulk run (admin route; Jon approves it on production): every live host
  * with inline members or «No convive» corrections, a page at a time
- * (`cursor` = the last host id of the previous page). `dryRun`: reads only —
+ * (`cursor` = the last host id of the previous page), each page bounded by a
+ * work budget (members actually converted, CONVERSION_DEFAULT_BUDGET). Created
+ * profiles' duplicate scans are left to Admin → Duplicates → Scan Now, the
+ * runbook's next step (not this invocation's budget). `dryRun`: reads only —
  * the per-member report of what would happen, nothing written. Idempotent.
  */
 export async function convertInlineHouseholds(
     db: Db,
-    opts: { dryRun: boolean; actor: string; cursor?: string | null; limit?: number },
+    opts: { dryRun: boolean; actor: string; cursor?: string | null; limit?: number; budget?: number },
 ): Promise<ConversionReport> {
     const limit = Math.max(1, Math.min(CONVERSION_MAX_LIMIT, Math.floor(opts.limit ?? CONVERSION_DEFAULT_LIMIT)));
+    const budget = Math.max(1, Math.min(CONVERSION_MAX_BUDGET, Math.floor(opts.budget ?? CONVERSION_DEFAULT_BUDGET)));
     const cursor = opts.cursor ?? '';
     const report: ConversionReport = {
         dryRun: opts.dryRun, hosts: 0, members: 0, createdProfiles: 0, reusedProfiles: 0, alreadyConverted: 0, updatedMembers: 0, grantsCopied: 0,
@@ -813,11 +852,19 @@ export async function convertInlineHouseholds(
     const page = ids.slice(0, limit);
     report.next = ids.length > limit ? page[page.length - 1] : null;
 
-    for (const hostId of page) {
+    let work = 0;
+    for (let i = 0; i < page.length; i++) {
+        const hostId = page[i];
+        // The budget is spent: stop after the previous host; the next page starts here.
+        if (work >= budget) {
+            report.next = page[i - 1];
+            break;
+        }
         let h: HostConversion;
         try {
-            h = await convertHost(db, hostId, { dryRun: opts.dryRun, actor: opts.actor });
+            h = await convertHost(db, hostId, { dryRun: opts.dryRun, actor: opts.actor, scanDuplicates: false });
         } catch (e) {
+            work++;
             const errorId = logger.error('convertInlineHouseholds: host not converted (retried next run)', e, { hostId, actor: opts.actor, dryRun: opts.dryRun });
             report.failed++;
             report.skipped.push({ hostId, memberId: null, reason: 'failed' });
@@ -829,6 +876,7 @@ export async function convertInlineHouseholds(
         report.members += h.members.length;
         report.failed += h.failed;
         for (const r of [...h.members, ...h.corrections]) {
+            if (r.outcome !== 'already') work++;
             report.details.push(r);
             report.grantsCopied += r.grantsCopied;
             if (r.reason === 'correction') { if (r.outcome === 'created') report.corrections++; continue; }
@@ -842,7 +890,7 @@ export async function convertInlineHouseholds(
     logger.info('convertInlineHouseholds: page done', {
         actor: opts.actor, dryRun: opts.dryRun, cursor: cursor || null, hosts: report.hosts, members: report.members,
         created: report.createdProfiles, reused: report.reusedProfiles, already: report.alreadyConverted, updated: report.updatedMembers,
-        skipped: report.skipped.length, failed: report.failed, grants: report.grantsCopied, next: report.next,
+        skipped: report.skipped.length, failed: report.failed, grants: report.grantsCopied, work, budget, next: report.next,
     });
     return report;
 }
@@ -894,6 +942,23 @@ async function moveMembership(
     return won.length ? 'moved' : 'gone';
 }
 
+/**
+ * What a ledger row alone placed: its membership (not when it reused someone of
+ * the same name already home, or another row points at the same membership),
+ * its profile (made by it and no other row uses it) and the host's grants on
+ * that profile (no other row of the same host uses the profile). An undo only
+ * moves / re-owns / revokes what the row alone owns.
+ */
+async function ownership(db: Db, row: LedgerRow): Promise<{ membership: boolean; profile: boolean; grants: boolean }> {
+    const others = (await db.select().from(householdConversions).where(eq(householdConversions.profileId, row.profileId!)).all() as LedgerRow[])
+        .filter(o => o.sourceKey !== row.sourceKey && o.outcome === 'converted');
+    return {
+        membership: row.reason !== 'same_name' && !others.some(o => o.membershipId && o.membershipId === row.membershipId),
+        profile: row.reason !== 'same_name' && others.length === 0,
+        grants: !others.some(o => o.hostAdopterId === row.hostAdopterId),
+    };
+}
+
 /** Take back the grants the conversion wrote on `targetId` for `hostId`'s data (only those: their ids say so). */
 async function revokeConversionGrants(db: Db, hostId: string, targetId: string, actor: string): Promise<void> {
     const prefix = conversionGrantPrefix(hostId);
@@ -930,8 +995,10 @@ export async function reverseConvertedOldMerge(db: Db, undo: OldMergeHouseholdUn
     const { survivorId: S, absorbedId: A } = undo;
     const out = { moved: 0, dropped: 0, left: 0 };
     const [absorbed, survivor] = await Promise.all([hostRow(db, A), hostRow(db, S)]);
-    if (!absorbed || absorbed.deletedAt || !survivor) {
-        logger.warn('householdConversion.undo: a profile of the undone merge is missing or still deleted, nothing reversed', { ...ctx, survivorId: S, absorbedId: A });
+    // Run while the absorbed profile is still soft-deleted (unmergeAdopters does it before reviving it), so no
+    // view converts it from its own JSON in between; a retried undo finds it revived — handled per member below.
+    if (!absorbed || !survivor) {
+        logger.warn('householdConversion.undo: a profile of the undone merge is missing, nothing reversed', { ...ctx, survivorId: S, absorbedId: A });
         return out;
     }
     const tally = (r: 'moved' | 'dropped' | 'gone') => { if (r === 'moved') out.moved++; else if (r === 'dropped') out.dropped++; else out.left++; };
@@ -950,38 +1017,71 @@ export async function reverseConvertedOldMerge(db: Db, undo: OldMergeHouseholdUn
     for (const copyId of undo.addedMemberIds) {
         const row = await ledgerRow(db, inlineKey(S, copyId));
         if (!row || row.outcome !== 'converted' || !row.profileId) continue;
-        const c = { ...ctx, survivorId: S, absorbedId: A, sourceKey: row.sourceKey, profileId: row.profileId };
+        const P = row.profileId;
+        const c = { ...ctx, survivorId: S, absorbedId: A, sourceKey: row.sourceKey, profileId: P };
         const original = row.fingerprint ? byFingerprint.get(row.fingerprint)?.shift() : undefined;
         if (!original) {
             logger.warn('householdConversion.undo: a copied member matches nobody on the absorbed host, left on the survivor', c);
             out.left++;
             continue;
         }
+        const own = await ownership(db, row);
         const targetKey = inlineKey(A, original.id);
-        if ((await ledgerRow(db, targetKey))?.outcome === 'converted') continue; // a re-run
+        const target = await ledgerRow(db, targetKey);
+        if (target?.outcome === 'converted') {
+            if (target.profileId === P) continue; // a re-run
+            // The revived absorbed host was converted from its own JSON meanwhile (a retried undo): the person lives
+            // there already as another profile, so the copy leaves the survivor's home. The copy's profile is left
+            // for the duplicate review (logged).
+            if (own.membership && row.householdId && row.membershipId) {
+                await db.delete(householdMemberships).where(and(
+                    eq(householdMemberships.id, row.membershipId), eq(householdMemberships.householdId, row.householdId), eq(householdMemberships.adopterId, P),
+                )).run();
+                out.dropped++;
+            }
+            if (own.grants) await revokeConversionGrants(db, S, P, actor);
+            logger.warn('householdConversion.undo: the absorbed host was converted meanwhile; the copy left the survivor\'s home, its profile stays for review', { ...c, otherProfileId: target.profileId });
+            continue;
+        }
         const hh = await home();
-        const r = row.householdId
-            ? await moveMembership(db, row.membershipId, { householdId: row.householdId, adopterId: row.profileId }, { householdId: hh, adopterId: row.profileId, sourceKey: targetKey, relativeFrom: S, relativeTo: A }, c)
-            : 'gone';
-        tally(r);
+        let r: 'moved' | 'dropped' | 'gone' | 'added';
+        if (own.membership) {
+            r = row.householdId
+                ? await moveMembership(db, row.membershipId, { householdId: row.householdId, adopterId: P }, { householdId: hh, adopterId: P, sourceKey: targetKey, relativeFrom: S, relativeTo: A }, c)
+                : 'gone';
+        } else {
+            // The copy was converted onto a person the survivor already had (same name): the survivor keeps them,
+            // and the absorbed home gets them too — one person, two homes.
+            const there = await membershipIn(db, hh, P);
+            if (!there) {
+                await db.insert(householdMemberships).values({
+                    id: newMembershipId(), householdId: hh, adopterId: P, relationship: original.relationship ?? 'unknown',
+                    relativeToAdopterId: A, giftRecipient: 0, addedBy: realOwner(original.addedBy) ?? realOwner(absorbed.addedBy),
+                    addedAt: new Date(), sourceKey: targetKey, recordedAt: new Date(),
+                }).onConflictDoNothing().run();
+            }
+            r = 'added';
+        }
+        if (r === 'moved' || r === 'added') out.moved++; else tally(r);
         let ownerEmail: string | null = null;
-        if (row.createdProfile && row.ownerEmail && absorbed.addedBy && lc(row.ownerEmail) !== lc(absorbed.addedBy)) {
+        if (own.profile && row.createdProfile && row.ownerEmail && absorbed.addedBy && lc(row.ownerEmail) !== lc(absorbed.addedBy)) {
             const won = await db.update(adopters).set({ addedBy: absorbed.addedBy, isPublic: absorbed.isPublic ?? 0, updatedAt: new Date() })
-                .where(and(eq(adopters.id, row.profileId), eq(adopters.addedBy, row.ownerEmail))).returning({ id: adopters.id });
+                .where(and(eq(adopters.id, P), eq(adopters.addedBy, row.ownerEmail))).returning({ id: adopters.id });
             ownerEmail = won.length ? absorbed.addedBy : null;
             if (!won.length) logger.info('householdConversion.undo: profile re-owned since the conversion, owner left', c);
-        } else if (row.createdProfile) {
+        } else if (own.profile && row.createdProfile) {
             ownerEmail = row.ownerEmail;
         }
-        await revokeConversionGrants(db, S, row.profileId, actor);
-        await writeGrants(db, await grantsFor(absorbed, await access(), row.profileId, refsOf(storedEntries(original.contactEntries)), !!row.createdProfile, actor), false);
+        if (own.grants) await revokeConversionGrants(db, S, P, actor);
+        await writeGrants(db, await grantsFor(absorbed, await access(), P, refsOf(storedEntries(original.contactEntries)), own.profile && !!row.createdProfile, actor), false);
+        const placed = r === 'added' ? await membershipIn(db, hh, P) : null;
         await runBatch(db, [db.insert(householdConversions).values({
             sourceKey: targetKey, hostAdopterId: A, memberId: original.id, outcome: 'converted',
             reason: r === 'gone' ? 'removed_while_merged' : 'undo_moved', fingerprint: row.fingerprint, contactRefs: row.contactRefs, householdId: hh,
-            membershipId: r === 'moved' ? row.membershipId : null, profileId: row.profileId, createdProfile: row.createdProfile,
+            membershipId: r === 'moved' ? row.membershipId : placed?.id ?? null, profileId: P, createdProfile: own.profile ? row.createdProfile : 0,
             ownerEmail, actor, convertedAt: new Date(),
         }).onConflictDoNothing()]);
-        logger.info('householdConversion.undo: copied member back on the absorbed host', { ...c, result: r });
+        logger.info('householdConversion.undo: copied member back on the absorbed host', { ...c, result: r, ownsMembership: own.membership, ownsProfile: own.profile });
     }
 
     // 2. Links the merge moved.
@@ -992,12 +1092,28 @@ export async function reverseConvertedOldMerge(db: Db, undo: OldMergeHouseholdUn
         if (l.hostAdopterId === A && row.hostAdopterId === S) {
             // Hosted by the absorbed profile: the person goes back to its home.
             const hh = await home();
-            const r = await moveMembership(db, row.membershipId, { householdId: row.householdId, adopterId: row.profileId }, { householdId: hh, adopterId: row.profileId, relativeFrom: S, relativeTo: A }, c);
-            tally(r);
+            const own = await ownership(db, row);
             const member = absorbedMembers.find(m => m.id === l.memberId);
-            await revokeConversionGrants(db, S, row.profileId, actor);
+            let r: 'moved' | 'dropped' | 'gone';
+            let placedId: string | null = row.membershipId;
+            if (own.membership) {
+                r = await moveMembership(db, row.membershipId, { householdId: row.householdId, adopterId: row.profileId }, { householdId: hh, adopterId: row.profileId, relativeFrom: S, relativeTo: A }, c);
+            } else {
+                // Someone else's row placed that person in the survivor's home too: it stays; the absorbed home gets them.
+                if (!(await membershipIn(db, hh, row.profileId))) {
+                    await db.insert(householdMemberships).values({
+                        id: newMembershipId(), householdId: hh, adopterId: row.profileId, relationship: member?.relationship ?? 'unknown',
+                        relativeToAdopterId: A, giftRecipient: 0, addedBy: realOwner(member?.addedBy) ?? realOwner(absorbed.addedBy),
+                        addedAt: new Date(), recordedAt: new Date(),
+                    }).onConflictDoNothing().run();
+                }
+                placedId = (await membershipIn(db, hh, row.profileId))?.id ?? null;
+                r = 'moved';
+            }
+            tally(r);
+            if (own.grants) await revokeConversionGrants(db, S, row.profileId, actor);
             if (member) await writeGrants(db, await grantsFor(absorbed, await access(), row.profileId, refsOf(storedEntries(member.contactEntries)), false, actor), false);
-            await db.update(householdConversions).set({ hostAdopterId: A, memberId: l.memberId, householdId: hh, ...(r === 'moved' ? {} : { membershipId: null }) })
+            await db.update(householdConversions).set({ hostAdopterId: A, memberId: l.memberId, householdId: hh, membershipId: r === 'moved' ? placedId : null })
                 .where(eq(householdConversions.sourceKey, row.sourceKey)).run();
             logger.info('householdConversion.undo: linked member back on the absorbed host', { ...c, result: r });
         } else if (l.linkedAdopterId === A && row.profileId === S) {

@@ -541,6 +541,23 @@ describe('merges and the conversion (Task 6 carries)', () => {
             expect(vi.mocked(logger.error)).not.toHaveBeenCalled();
         });
 
+        it('a retried undo after the revived absorbed host was converted meanwhile: the copy leaves the survivor\'s home (nobody lives twice)', async () => {
+            await getHouseholdsFor(db(), OWNER, 'ana');
+            const copyRaul = await convertedProfileId(inlineKey('ana', 'copy-1'));
+            // A first undo attempt died after reviving the absorbed profile; a view converted it from its own JSON then.
+            const details = JSON.parse(String(sqlite.prepare(`SELECT details FROM audit_log WHERE id = 'audit-old'`).get()!.details));
+            sqlite.prepare(`UPDATE audit_log SET details = ? WHERE id = 'audit-old'`).run(JSON.stringify({ ...details, undoStartedAt: 5500 }));
+            sqlite.prepare(`UPDATE adopters SET deleted_at = NULL, token_hash = NULL WHERE id = 'ana2'`).run();
+            await getHouseholdsFor(db(), OTHER_OWNER, 'ana2');
+            const origRaul = await convertedProfileId(inlineKey('ana2', 'orig-1'));
+            expect((await unmergeAdopters('audit-old', ADMIN)).success).toBe(true);
+            expect(householdOf('hh-ana')).toEqual(['ana']);
+            const homeA = householdOf('hh-ana2');
+            expect(homeA).toContain(origRaul);
+            expect(homeA).not.toContain(copyRaul);
+            expect(homeA.filter(id => id === 'lucas')).toHaveLength(1);
+        });
+
         it('undone before any conversion, the absorbed host converts from its own JSON as if never merged', async () => {
             expect((await unmergeAdopters('audit-old', ADMIN)).success).toBe(true);
             await getHouseholdsFor(db(), OTHER_OWNER, 'ana2');
@@ -548,5 +565,149 @@ describe('merges and the conversion (Task 6 carries)', () => {
             expect(membershipsOfHost('ana2').map(m => m.adopter_id).sort()).toEqual(['ana2', 'lucas', raul].sort());
             expect(profile(raul)).toMatchObject({ added_by: OTHER_OWNER });
         });
+    });
+});
+
+// ─────────────────────────── Fix round 1 ───────────────────────────
+
+describe('fix round 1: undo of an old merge when the copy was converted onto someone else\'s membership (I1)', () => {
+    it('the survivor keeps its own member, membership and grants; the absorbed home gets the person too', async () => {
+        const original: Member = { id: 'orig-1', name: 'Raúl Gómez', relationship: 'partner', addedBy: OTHER_OWNER, contactEntries: [] };
+        adopter('ana2', 'Ana Gomez', { owner: OTHER_OWNER, members: [original], deleted: 'MERGED' });
+        // The survivor's own Raúl ('unknown') + the old merge's copy ('partner': the old merge's name+relationship key differs, so it appended it).
+        adopter('ana', 'Ana Gómez', { members: [
+            { id: 'own-1', name: 'Raúl Gómez', relationship: 'unknown', addedBy: OWNER, contactEntries: [] },
+            { ...original, id: 'copy-1' },
+        ] });
+        grant('g-ana-all', 'ana', GRANTEE, 'all_contact');
+        const snap = profile('ana')!;
+        const undo = {
+            primarySnapshot: { contactInfo: snap.contact_info, contactEntries: snap.contact_entries, addressInfo: null, familyMembers: null, sourceUrl: null, isPublic: 0 },
+            placementIds: [], adopterEventIds: [], imageIds: [], flagIds: [], historyIds: [], statsIds: [], formSubmissionIds: [], candidates: [], annotatedFlags: [],
+            addedHouseholdMemberIds: ['copy-1'], householdLinks: [], householdLinkCorrections: [],
+        };
+        sqlite.prepare(`INSERT INTO audit_log (id, user_id, user_email, action, target, details, created_at) VALUES ('audit-old', ?, ?, 'adopter_merge', 'ana', ?, 5000)`)
+            .run(ADMIN, ADMIN, JSON.stringify({ primaryId: 'ana', secondaryId: 'ana2', secondaryName: 'Ana Gomez', mergeDetails: {}, undo }));
+        await getHouseholdsFor(db(), OWNER, 'ana');
+        const ownRaul = await convertedProfileId(inlineKey('ana', 'own-1'));
+        const ownRow = sqlite.prepare('SELECT * FROM household_memberships WHERE adopter_id = ?').get(ownRaul)!;
+        const grantsBefore = liveGrantsOn(ownRaul);
+        expect(grantsBefore).toEqual([{ grantee_email: GRANTEE, scope: 'all_contact', entry_ref: null, origin: 'request' }]);
+
+        expect((await unmergeAdopters('audit-old', ADMIN)).success).toBe(true);
+        expect(householdOf('hh-ana')).toEqual(['ana', ownRaul]);
+        expect(sqlite.prepare('SELECT * FROM household_memberships WHERE id = ?').get(ownRow.id)).toEqual(ownRow);
+        expect(liveGrantsOn(ownRaul)).toEqual(grantsBefore);
+        expect(profile(ownRaul)).toMatchObject({ added_by: OWNER });
+        // The absorbed host lists the same person again: one profile, two homes, keyed by the original.
+        expect(householdOf('hh-ana2')).toEqual(['ana2', ownRaul]);
+        expect(sqlite.prepare('SELECT source_key FROM household_memberships WHERE household_id = ? AND adopter_id = ?').get('hh-ana2', ownRaul)!.source_key).toBe(inlineKey('ana2', 'orig-1'));
+        await getHouseholdsFor(db(), OWNER, 'ana');
+        await getHouseholdsFor(db(), OTHER_OWNER, 'ana2');
+        expect(householdOf('hh-ana')).toEqual(['ana', ownRaul]);
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopters WHERE name = 'Raúl Gómez'`).get()!.n).toBe(1);
+    });
+});
+
+describe('fix round 1: merges', () => {
+    it('a merge converts the hosts that link to either profile first (their memberships move with the merge)', async () => {
+        adopter('ana', 'Ana Gómez');
+        adopter('ana2', 'Ana Gomez');
+        adopter('hector', 'Héctor Paz', { members: [{ id: 'hm1', name: 'Ana Gomez', relationship: 'sibling', profileId: 'ana2', contactEntries: [] }] });
+        sqlite.prepare(`INSERT INTO household_links (id, host_adopter_id, linked_adopter_id, member_id, created_by, created_at) VALUES ('hl-hector-hm1', 'hector', 'ana2', 'hm1', ?, 1000)`).run(OWNER);
+        expect((await mergeAdopters('ana', 'ana2', ADMIN)).success).toBe(true);
+        expect(householdOf('hh-hector')).toEqual(['hector', 'ana']);
+        // …and the merge's own undo payload brings it back.
+        const audit = sqlite.prepare(`SELECT id FROM audit_log WHERE action = 'adopter_merge'`).get()!;
+        expect((await unmergeAdopters(String(audit.id), ADMIN)).success).toBe(true);
+        expect(householdOf('hh-hector')).toEqual(['hector', 'ana2']);
+    });
+
+    it('a member that can\'t be placed (household full) refuses the merge with a clear code', async () => {
+        adopter('ana', 'Ana Gómez', { members: [{ id: 'am1', name: 'Lucía Gómez', relationship: 'child', contactEntries: [] }] });
+        adopter('ana2', 'Ana Gomez');
+        sqlite.prepare(`INSERT INTO households (id, created_by, created_at) VALUES ('hh-ana', ?, 900)`).run(OWNER);
+        sqlite.prepare(`INSERT INTO household_memberships (id, household_id, adopter_id, relationship, gift_recipient, added_by, added_at) VALUES ('hm-000', 'hh-ana', 'ana', 'unknown', 0, NULL, 900)`).run();
+        for (let i = 1; i < 30; i++) {
+            adopter(`p${i}`, `Persona Llena ${i}`);
+            sqlite.prepare(`INSERT INTO household_memberships (id, household_id, adopter_id, relationship, relative_to_adopter_id, gift_recipient, added_by, added_at) VALUES (?, 'hh-ana', ?, 'unknown', 'ana', 0, ?, 900)`).run(`hm-${String(i).padStart(3, '0')}`, `p${i}`, OWNER);
+        }
+        expect(await mergeAdopters('ana', 'ana2', ADMIN)).toMatchObject({ success: false, error: 'household_not_converted' });
+        expect(profile('ana2')!.deleted_at).toBeNull();
+    });
+});
+
+describe('fix round 1: an old tab\'s edit follows the person through a merge', () => {
+    beforeEach(() => {
+        adopter('pedro', 'Pedro Paez', { members: [{ id: 'pm1', name: 'Marta Paez', relationship: 'partner', addedBy: OWNER, contactEntries: [] }] });
+    });
+    const addEmailInOldTab = (value: string) => {
+        const members = hostMembersJson('pedro');
+        members[0].contactEntries.push({ id: `c-${value}`, type: 'email', value, addedBy: OWNER });
+        sqlite.prepare('UPDATE adopters SET household_members = ? WHERE id = ?').run(JSON.stringify(members), 'pedro');
+    };
+
+    it('the contact lands on the profile Marta was merged into', async () => {
+        await ensureHostConverted(db(), 'pedro');
+        const marta = await convertedProfileId(inlineKey('pedro', 'pm1'));
+        adopter('marta-main', 'Marta Paez');
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 6000, token_hash = 'MERGED' WHERE id = ?`).run(marta);
+        sqlite.prepare(`INSERT INTO audit_log (id, user_id, user_email, action, target, details, created_at) VALUES ('am2', ?, ?, 'adopter_merge', 'marta-main', ?, 6000)`)
+            .run(ADMIN, ADMIN, JSON.stringify({ primaryId: 'marta-main', secondaryId: marta }));
+        addEmailInOldTab('marta@example.org');
+        await ensureHostConverted(db(), 'pedro');
+        expect(deserializeContactEntries(profile('marta-main')!.contact_entries as string).map(e => e.value)).toEqual(['marta@example.org']);
+    });
+
+    it('when the profile is gone for good, the edit is not marked as carried over (retried)', async () => {
+        await ensureHostConverted(db(), 'pedro');
+        const marta = await convertedProfileId(inlineKey('pedro', 'pm1'));
+        const fp = ledger()[0].fingerprint;
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 6000, token_hash = 'DELETED' WHERE id = ?`).run(marta);
+        addEmailInOldTab('marta@example.org');
+        await ensureHostConverted(db(), 'pedro');
+        expect(ledger()[0].fingerprint).toBe(fp);
+    });
+});
+
+describe('fix round 1: the bulk run', () => {
+    beforeEach(productionFixture);
+
+    it('a page stops at its work budget and the next page goes on from there', async () => {
+        const first = await convertInlineHouseholds(db(), { dryRun: false, actor: ADMIN, budget: 3 });
+        expect(first.createdProfiles).toBeGreaterThanOrEqual(3);
+        expect(first.createdProfiles).toBeLessThan(6);
+        expect(first.next).not.toBeNull();
+        const rest = await runAll(false);
+        expect(first.createdProfiles + rest.createdProfiles).toBe(29);
+    });
+
+    it('two simultaneous views, a merge-time conversion and a bulk run make each person once', async () => {
+        const res = await Promise.allSettled([
+            getHouseholdsFor(db(), STRANGER, 'h01'), getHouseholdsFor(db(), OWNER, 'h01'), ensureHostConverted(db(), 'h01'), runAll(false),
+        ]);
+        expect(res.map(r => r.status)).toEqual(['fulfilled', 'fulfilled', 'fulfilled', 'fulfilled']);
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopters WHERE name LIKE 'Persona%'`).get()!.n).toBe(29);
+        expect(sqlite.prepare('SELECT COUNT(*) AS n FROM household_memberships').get()!.n).toBe(48);
+        expect(sqlite.prepare('SELECT COUNT(*) AS n FROM households').get()!.n).toBe(19);
+        expect(vi.mocked(logger.error)).not.toHaveBeenCalled();
+    });
+
+    it('a revoked grant on the host is not copied', async () => {
+        sqlite.prepare(`INSERT INTO pii_access_grants (id, adopter_id, grantee_email, scope, entry_ref, origin, granted_by_email, created_at, revoked_at) VALUES ('g-rev', 'h01', 'revoked@example.com', 'all_contact', NULL, 'request', ?, 1000, 2000)`).run(OWNER);
+        await runAll(false);
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM pii_access_grants WHERE grantee_email = 'revoked@example.com'`).get()!.n).toBe(1);
+    });
+});
+
+describe('fix round 1: a member\'s age moves onto the profile', () => {
+    it('age and the day it was given; a minor by that age', async () => {
+        adopter('pedro', 'Pedro Paez', { members: [
+            { id: 'pm1', name: 'Lucas Paez', relationship: 'child', contactEntries: [], age: 9, ageAsOf: '2024-03-01' },
+            { id: 'pm2', name: 'Marta Paez', relationship: 'partner', contactEntries: [], age: 41, ageAsOf: '2025-01-15' },
+        ] });
+        await ensureHostConverted(db(), 'pedro');
+        expect(profile(await convertedProfileId(inlineKey('pedro', 'pm1')))).toMatchObject({ age: 9, age_as_of: '2024-03-01', is_minor: 1 });
+        expect(profile(await convertedProfileId(inlineKey('pedro', 'pm2')))).toMatchObject({ age: 41, age_as_of: '2025-01-15', is_minor: 0 });
     });
 });

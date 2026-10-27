@@ -23,6 +23,8 @@ export const MINOR_AGE_LIMIT = 18;
  * the other profile as the survivor merges.
  */
 export const MINOR_SURVIVOR_HAS_ACTIVITY = 'minor_survivor_has_activity';
+/** A merge refused because part of a profile's old inline household could not be converted first (Task 7; retry later). */
+export const HOUSEHOLD_NOT_CONVERTED = 'household_not_converted';
 
 /** The only relationships shown back from the other side (no gender recorded, so no «padre de»). */
 const SYMMETRIC: ReadonlySet<string> = new Set<Relationship>(['partner', 'sibling']);
