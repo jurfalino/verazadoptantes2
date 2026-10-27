@@ -88,13 +88,15 @@ interface AdopterProfileV2Props {
     interviewEnabled?: boolean;
     /** Households as profiles: every household this profile is in, members masked for this viewer by the server; gift forms. */
     households?: ProfileHouseholds;
+    /** ENABLE_HOUSEHOLD_MEMBERS as the server read it (the section renders at once, no free-text flash). */
+    householdsEnabled?: boolean;
     /** Households as profiles: «Conocido/a como», age and «Menor de edad», computed on the server. */
     identity?: ProfileIdentityView | null;
     /** The rename this viewer may undo from the history (owner team / admin / moderator), or null. */
     renameUndoId?: string | null;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, isModeratorOrAdmin = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null, households = EMPTY_PROFILE_HOUSEHOLDS, identity = null, renameUndoId = null }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, isModeratorOrAdmin = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null, households = EMPTY_PROFILE_HOUSEHOLDS, householdsEnabled = false, identity = null, renameUndoId = null }: AdopterProfileV2Props) {
     const { formatDateTime, formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const searchParams = useSearchParams();
@@ -512,6 +514,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     onBadgeClick={() => setVisibilityModalOpen(true)}
                     canEdit={!effectivePiiContext?.gatingOn || !!effectivePiiContext?.privileged}
                     households={displayedHouseholds}
+                    householdsEnabled={householdsEnabled}
                     identity={identity}
                     onMaskedContactClick={
                         effectivePiiContext?.masked

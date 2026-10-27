@@ -84,6 +84,8 @@ export default async function AdopterPage({
     let piiContext: AdopterPiiContext | null = null;
     let deletionRequested = false;
     let households: ProfileHouseholds = EMPTY_PROFILE_HOUSEHOLDS;
+    // Known on the server, so the section never flashes the old free-text field first.
+    let householdsEnabled = false;
 
     if (!isNew) {
         // Per-fetch fallback: if any single query throws (e.g. transient D1 outage), the page
@@ -101,8 +103,9 @@ export default async function AdopterPage({
         // One read of the adopter: the household read reuses it (the gift permission needs the owner).
         const adopterRead = getAdopter(id).catch(fallback('getAdopter', null));
         // Households as profiles: only while ENABLE_HOUSEHOLD_MEMBERS is on (the section is hidden otherwise).
-        const householdsRead = getFeatureFlag('ENABLE_HOUSEHOLD_MEMBERS')
-            .then(on => (on ? readProfileHouseholds(currentUser, id, adopterRead) : EMPTY_PROFILE_HOUSEHOLDS))
+        const householdsFlag = getFeatureFlag('ENABLE_HOUSEHOLD_MEMBERS').catch(fallback<boolean>('ENABLE_HOUSEHOLD_MEMBERS', false));
+        const householdsRead = householdsFlag
+            .then(on => { householdsEnabled = on; return on ? readProfileHouseholds(currentUser, id, adopterRead) : EMPTY_PROFILE_HOUSEHOLDS; })
             .catch(fallback<ProfileHouseholds>('readProfileHouseholds', EMPTY_PROFILE_HOUSEHOLDS));
         [adopter, history, adoptions, images, allImages, flags, stats, avgRating, availableAnimals, dupCandidates, piiContext, deletionRequested, households] = await Promise.all([
             adopterRead,
@@ -289,6 +292,7 @@ export default async function AdopterPage({
             mergedFrom={typeof allSearchParams.merged === 'string' && allSearchParams.merged ? allSearchParams.merged : null}
             interviewEnabled={interviewEnabled}
             households={households}
+            householdsEnabled={householdsEnabled}
             identity={identity}
             renameUndoId={renameUndoId}
         />

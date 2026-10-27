@@ -111,6 +111,8 @@ interface AdopterFormProps {
     onBadgeClick?: () => void;
     /** Households as profiles: every household this profile is in (members masked for this viewer) and its gift forms. */
     households?: ProfileHouseholds;
+    /** ENABLE_HOUSEHOLD_MEMBERS as the server read it (profile page); the create form reads /api/config. */
+    householdsEnabled?: boolean;
     /** Admin or moderator (false in preview-as-stranger): changes every household member (D54). */
     isModerator?: boolean;
     /** «Ver como desconocido»: the household shows exactly what a stranger gets — no team controls, no own markers. */
@@ -120,7 +122,7 @@ interface AdopterFormProps {
 }
 
 
-export function AdopterForm({ origin = null, interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick, households = EMPTY_PROFILE_HOUSEHOLDS, isModerator = false, previewAsStranger = false, identity = null }: AdopterFormProps) {
+export function AdopterForm({ origin = null, interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick, households = EMPTY_PROFILE_HOUSEHOLDS, householdsEnabled = false, isModerator = false, previewAsStranger = false, identity = null }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -186,7 +188,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     const [nameEditing, setNameEditing] = useState(false);
     // ENABLE_HOUSEHOLD_MEMBERS (public flag): swaps the free-text family field for
     // the structured HouseholdSection on saved profiles. Read once from /api/config.
-    const [enableHousehold, setEnableHousehold] = useState(false);
+    const [enableHousehold, setEnableHousehold] = useState(householdsEnabled);
     useEffect(() => {
         let active = true;
         fetch('/api/config').then(r => r.json()).then((d) => {
@@ -1640,7 +1642,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
 
 
                     {/* Family Members (Full Width) */}
-                    <div className="md:col-span-2">
+                    <div className="md:col-span-2 min-w-0">
                         <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.family_members')}</h3>
                         {!isNew && enableHousehold && adopterId ? (
                             <div className="space-y-3">
