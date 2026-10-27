@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.57.3] - 2026-10-26
+
+### Fixed
+- «Convive con» is listed with the household members, above «Agregar familiar / conviviente».
+- A linked conviviente's card looks like any member's: summary under the name, contacts in the same rows,
+  «Agregar dato de contacto» on its own line, then «Ver perfil completo» and «No convive». The extra
+  «Se agrega al perfil de…» label is gone.
+
 ## [2.57.2] - 2026-10-26
 
 ### Added — anyone can add to a household
