@@ -29,7 +29,7 @@ import { serializeHouseholdMembers, type HouseholdMember } from '@/lib/household
 import type { ContactEntry } from '@/lib/contactEntries';
 import { findIdentifierHits, ownerCountry as apiOwnerCountry } from '@/lib/api/profiles';
 import {
-    addMembership, claimMembershipRecord, ensureHousehold, hasCorrection, householdExists, householdIdsOf,
+    addMembership, claimMembershipRecord, ensureHousehold, hasCorrection, householdExists, ordinaryHouseholdCount,
     isMemberOf, membershipBySourceKey, membershipsOf, newMembershipId, releaseMembershipRecord,
 } from '@/lib/households';
 import { notifyHouseholdPersonAdded, notifyHouseholdReaddDisputed } from '@/lib/householdNotices';
@@ -297,7 +297,7 @@ export async function attachHouseholdPeople(db: Db, input: AttachInput): Promise
                 logger.warn('attachHouseholdPeople: household full, person not added', { ...pctx, householdId: hh, cap: MAX_HOUSEHOLD_MEMBERS });
                 continue;
             }
-            if (personId && !alreadyIn && (await householdIdsOf(db, personId)).length >= MAX_HOUSEHOLDS_PER_PROFILE) {
+            if (personId && !alreadyIn && (await ordinaryHouseholdCount(db, personId)) >= MAX_HOUSEHOLDS_PER_PROFILE) {
                 result.skipped.push({ index, reason: 'too_many_households' });
                 logger.warn('attachHouseholdPeople: matched profile is in too many households, not added', { ...pctx, profileId: personId, cap: MAX_HOUSEHOLDS_PER_PROFILE });
                 continue;
@@ -613,10 +613,7 @@ export async function createGiftRecipientFromForm(
         ));
         logger.warn('createGiftRecipientFromForm: a deleted recipient\'s row outside the gift household removed', { ...ctx, householdId: keyed.householdId });
     }
-    if ((await householdIdsOf(db, giver.id)).length >= MAX_HOUSEHOLDS_PER_PROFILE) {
-        logger.info('createGiftRecipientFromForm: refused, the giver is in too many households', ctx);
-        return { ok: false, error: 'too_many_households' };
-    }
+    // A gift household never counts toward MAX_HOUSEHOLDS_PER_PROFILE (final fix S4): one per form, no cap check.
 
     // The claim: one household per form. `claimedAt` is our claim's mark — the cleanup below
     // removes the household only while it still carries it (a takeover replaces it).

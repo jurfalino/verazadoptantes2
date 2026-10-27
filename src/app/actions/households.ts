@@ -39,12 +39,12 @@ import { runBatch } from '@/lib/dbBatch';
 import { runAfterResponse } from '@/lib/background';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { isPrivilegedOnProfile, historyKind, historyKindForOwner } from '@/lib/profilePrivilege';
-import { contactEntryFromInput, type ContactEntry } from '@/lib/contactEntries';
+import { CONTACT_ENTRIES_FULL, contactEntryFromInput, type ContactEntry } from '@/lib/contactEntries';
 import { RELATIONSHIPS, type Relationship } from '@/lib/householdMembers';
 import { insertContributionGrant, fileContributionAccessRequest, revokeContributionGrants } from '@/lib/contributionSideEffects';
 import { extractErrorId } from '@/lib/errorUtils';
 import {
-    addMembership, claimMembershipRecord, createHousehold, ensureHousehold, hasCorrection, householdExists, householdIdsOf,
+    addMembership, claimMembershipRecord, ensureHousehold, hasCorrection, householdExists, ordinaryHouseholdCount,
     householdLinesFor, isMemberOf, membershipById, membershipBySourceKey, membershipsOf, ownTeamOf, releaseMembershipRecord, removeMembership, setMembershipRelationship,
     type HouseholdLine,
 } from '@/lib/households';
@@ -79,7 +79,9 @@ export type HouseholdActionError =
      * caller has no standing on that person: nothing is added, and who it is stays unsaid. Not a
      * failure for the importer — the relative is there.
      */
-    | 'already_there';
+    | 'already_there'
+    /** The existing profile already holds the maximum contact entries (S1): the link stands, the contact didn't land. */
+    | typeof CONTACT_ENTRIES_FULL;
 type Fail = { ok: false; error: HouseholdActionError; errorId?: string };
 
 export type AddHouseholdPersonInput = {
@@ -96,8 +98,6 @@ export type AddHouseholdPersonInput = {
     /** «Es menor de edad» ticked (new profiles only): counts only with no age — a typed age decides by itself. */
     isMinor?: boolean;
     contactEntries?: HouseholdContactInput[];
-    /** A gift recipient: a gift household of its own with the anchor (the giver), never the ordinary one. */
-    giftRecipient?: boolean;
     /**
      * A relative an import names (ImportWizard, Task 4 fix round 1). Re-merging the same post
      * must not add them twice: someone of the same name already in that household is that
@@ -184,14 +184,9 @@ async function resolveHousehold(db: Db, anchorId: string, chosen: string, actor:
 async function capacityError(db: Db, householdId: string, adopterId: string | null): Promise<'household_full' | 'too_many_households' | null> {
     if (adopterId && await isMemberOf(db, householdId, adopterId)) return null;
     if ((await membershipsOf(db, householdId, MAX_HOUSEHOLD_MEMBERS + 1)).length >= MAX_HOUSEHOLD_MEMBERS) return 'household_full';
-    if (adopterId && (await householdIdsOf(db, adopterId)).length >= MAX_HOUSEHOLDS_PER_PROFILE) return 'too_many_households';
+    // Gift households don't count (final fix S4): only homes.
+    if (adopterId && (await ordinaryHouseholdCount(db, adopterId)) >= MAX_HOUSEHOLDS_PER_PROFILE) return 'too_many_households';
     return null;
-}
-
-/** A gift household is one more household for the giver, and for an existing recipient. */
-async function giftCapacityError(db: Db, anchorId: string, recipientId: string | null): Promise<'too_many_households' | null> {
-    const counts = await Promise.all([anchorId, ...(recipientId ? [recipientId] : [])].map(id => householdIdsOf(db, id)));
-    return counts.some(c => c.length >= MAX_HOUSEHOLDS_PER_PROFILE) ? 'too_many_households' : null;
 }
 
 /**
@@ -322,13 +317,18 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
     const chosen = id200(input?.householdId);
     const existingId = id64(input?.existingProfileId);
     const name = typeof input?.name === 'string' ? input.name.trim().slice(0, 200) : '';
-    const gift = input?.giftRecipient === true;
-    const ctx: Record<string, unknown> = { anchorId, actor, householdId: chosen || null, existingProfileId: existingId || null, gift };
+    const ctx: Record<string, unknown> = { anchorId, actor, householdId: chosen || null, existingProfileId: existingId || null };
 
     if (!anchorId) return { ok: false, error: 'invalid' };
+    // Final fix S4: no gift household from here — only «Crear perfil de {nombre}»
+    // (createGiftRecipientProfile, gated on the giver's team) makes one.
+    if ((input as { giftRecipient?: unknown })?.giftRecipient === true) {
+        logger.warn('addHouseholdPerson: refused, a gift recipient is not added here', ctx);
+        return { ok: false, error: 'invalid' };
+    }
     const fromImport = input?.fromImport ?? null;
     if (fromImport && (typeof fromImport.slot !== 'string' || !/^[a-z0-9]{1,8}$/.test(fromImport.slot))) return { ok: false, error: 'invalid' };
-    let importKey = fromImport && !gift ? await importSourceKey(actor, anchorId, fromImport) : null;
+    let importKey = fromImport ? await importSourceKey(actor, anchorId, fromImport) : null;
     if (input.relationship !== undefined && input.relationship !== null && !REL_SET.has(input.relationship)) return { ok: false, error: 'invalid' };
     const relationship: Relationship = input.relationship && REL_SET.has(input.relationship) ? input.relationship : 'unknown';
     const age = input.age;
@@ -358,14 +358,7 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
 
         // Where they go — checked BEFORE a profile is made, so a refusal leaves nothing behind.
         let householdId = '';
-        if (gift) {
-            // A gift household is one more household for the giver (and an existing recipient).
-            const full = await giftCapacityError(db, anchor.id, existing?.id ?? null);
-            if (full) {
-                logger.info('addHouseholdPerson: refused, cap reached (gift)', { ...ctx, cap: full });
-                return { ok: false, error: full };
-            }
-        } else {
+        {
             // Today's inline household first (Task 7): the anchor's home and the same-name rule must see it.
             await convertFirst(db, anchor.id, ctx);
             const resolved = await resolveHousehold(db, anchor.id, chosen, actor, ctx);
@@ -420,7 +413,7 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                 isMinor: input.isMinor === true,
                 // Same owner as the anchor, so the same standing.
                 historyKind: historyKind(privilegedOnAnchor),
-                history: { created_in_household: { anchorId: anchor.id, anchorName: anchor.name, householdId: householdId || null, gift, ...(contactTypes.length ? { contactTypes } : {}) } },
+                history: { created_in_household: { anchorId: anchor.id, anchorName: anchor.name, householdId: householdId || null, gift: false, ...(contactTypes.length ? { contactTypes } : {}) } },
             });
             logAudit({ userEmail: actor, action: 'adopter_created', target: newId, details: { name, via: 'household' } });
             person = { id: newId, name, addedBy: anchor.addedBy, deletedAt: null };
@@ -430,21 +423,12 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
         // The membership. A new profile that ends up in no household is undone.
         let placed: { householdId: string; membershipId: string; created: boolean };
         try {
-            if (gift) {
-                // Recipient first: a household is "gift" once a membership says so (Task 1).
-                householdId = await createHousehold(db, actor);
-                const recipient = await addMembership(db, { householdId, adopterId: person.id, relationship, relativeToAdopterId: anchor.id, giftRecipient: true, addedBy: actor });
-                // The giver's own row has no adder (as ensureHousehold's anchor row).
-                await addMembership(db, { householdId, adopterId: anchor.id, relationship: 'unknown', addedBy: null });
-                placed = { householdId, ...recipient };
-            } else {
-                const joined = await joinHousehold(db, { householdId, chosen: !!chosen, anchorId: anchor.id, adopterId: person.id, relationship, actor, sourceKey: importKey }, ctx);
-                if (joined === 'not_found') {
-                    if (createdProfile) await undoCreatedProfile(db, person.id, actor, entries, ctx);
-                    return { ok: false, error: 'not_found' };
-                }
-                placed = joined;
+            const joined = await joinHousehold(db, { householdId, chosen: !!chosen, anchorId: anchor.id, adopterId: person.id, relationship, actor, sourceKey: importKey }, ctx);
+            if (joined === 'not_found') {
+                if (createdProfile) await undoCreatedProfile(db, person.id, actor, entries, ctx);
+                return { ok: false, error: 'not_found' };
             }
+            placed = joined;
         } catch (e) {
             // The import key is unique (0098): a racing re-merge placed this person first. Theirs stands.
             const winner = importKey ? await membershipBySourceKey(db, importKey) : null;
@@ -505,7 +489,7 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                     });
                     throw e;
                 }
-                logAudit({ userEmail: actor, action: 'household_person_added', target: anchor.id, details: { membershipId: placed.membershipId, householdId: placed.householdId, profileId: person.id, createdProfile, relationship, contactTypes, gift, ...(privilegedOnAnchor ? {} : { contribution: true }) } });
+                logAudit({ userEmail: actor, action: 'household_person_added', target: anchor.id, details: { membershipId: placed.membershipId, householdId: placed.householdId, profileId: person.id, createdProfile, relationship, contactTypes, ...(privilegedOnAnchor ? {} : { contribution: true }) } });
                 logger.info('addHouseholdPerson: added', { ...out, createdProfile, completedLater: !placed.created });
                 await notifyHouseholdPersonAdded({
                     householdId: placed.householdId, membershipId: placed.membershipId,
@@ -530,6 +514,10 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
         if (existing) {
             for (const c of contacts) {
                 const res = await addContactEntry({ adopterId: existing.id, ...c, platform: c.platform ?? undefined });
+                if (!res.ok && res.error === CONTACT_ENTRIES_FULL) {
+                    logger.info('addHouseholdPerson: linked, but the profile holds the maximum contact entries', { ...out, type: c.type });
+                    return { ok: false, error: CONTACT_ENTRIES_FULL };
+                }
                 if (!res.ok) {
                     const errorId = ('errorId' in res ? res.errorId : extractErrorId(res.error))
                         ?? logger.error('addHouseholdPerson: contact refused by addContactEntry', new Error(res.error), { ...out, type: c.type });

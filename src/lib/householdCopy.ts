@@ -10,6 +10,7 @@
  *   server's errorId (or one the caller reports).
  */
 import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
+import { CONTACT_ENTRIES_FULL } from '@/lib/contactEntries';
 
 type T = (key: string) => string;
 
@@ -24,6 +25,7 @@ const REFUSALS: Record<string, string> = {
     invalid: 'adopter.hh_err_invalid',
     has_activity: 'adopter.age_has_activity',
     not_authenticated: 'adopter.hh_err_not_authorized',
+    [CONTACT_ENTRIES_FULL]: 'adopter.ce_add_full',
     [MINOR_SURVIVOR_HAS_ACTIVITY]: 'errors.merge_minor_survivor',
     [HOUSEHOLD_NOT_CONVERTED]: 'errors.merge_household_not_converted',
 };

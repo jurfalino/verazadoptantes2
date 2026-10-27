@@ -146,6 +146,19 @@ export async function membershipsOfProfile(db: Db, adopterId: string, limit: num
 }
 
 /** The households a profile is in (gift ones included), oldest membership first. */
+/**
+ * How many ORDINARY households (homes) `adopterId` is in — the number
+ * MAX_HOUSEHOLDS_PER_PROFILE caps. Gift households don't count (final fix S4).
+ * One indexed count with a correlated check per row (no bound array).
+ */
+export async function ordinaryHouseholdCount(db: Db, adopterId: string): Promise<number> {
+    const row = await db.select({ n: sql<number>`COUNT(*)` }).from(householdMemberships).where(and(
+        eq(householdMemberships.adopterId, adopterId),
+        sql`NOT EXISTS (SELECT 1 FROM household_memberships g WHERE g.household_id = ${householdMemberships.householdId} AND g.gift_recipient = 1)`,
+    )).get() as { n: number } | undefined;
+    return Number(row?.n ?? 0);
+}
+
 export async function householdIdsOf(db: Db, adopterId: string): Promise<string[]> {
     return (await ownMemberships(db, adopterId, MAX_HOUSEHOLDS_PER_PROFILE * 10)).map(m => m.householdId);
 }

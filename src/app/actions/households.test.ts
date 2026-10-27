@@ -153,6 +153,19 @@ beforeEach(() => {
     insert.run('rosa', 'Rosa Diaz', OTHER, null);
 });
 
+/** A gift household with Pedro as giver, made the way createGiftRecipientFromForm does (S4: addHouseholdPerson no longer can). */
+function giftHouseholdFor(giverId: string, recipientName: string, n = 0): { householdId: string; profileId: string } {
+    const profileId = `gift-${n}`;
+    const householdId = `hh-gift-${n}`;
+    sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES (?, ?, '5', ?, 1000, 1000)`).run(profileId, recipientName, OWNER);
+    sqlite.prepare('INSERT INTO households (id, created_by, created_at) VALUES (?, ?, 1000)').run(householdId, OWNER);
+    sqlite.prepare(`INSERT INTO household_memberships (id, household_id, adopter_id, relationship, relative_to_adopter_id, gift_recipient, added_by, added_at) VALUES (?, ?, ?, 'unknown', ?, 1, ?, 1000)`)
+        .run(`hm-g${n}`, householdId, profileId, giverId, OWNER);
+    sqlite.prepare(`INSERT INTO household_memberships (id, household_id, adopter_id, relationship, gift_recipient, added_by, added_at) VALUES (?, ?, ?, 'unknown', 0, NULL, 1001)`)
+        .run(`hm-gg${n}`, householdId, giverId);
+    return { householdId, profileId };
+}
+
 async function strangerAddsLucas() {
     const res = await addHouseholdPerson({
         anchorAdopterId: 'pedro', name: 'Lucas Paez', relationship: 'child', age: 12,
@@ -268,9 +281,7 @@ describe('addHouseholdPerson — a new person', () => {
     });
 
     it('Task 8 fix A1: a gift household is never a target for an ordinary add (a crafted householdId → not_found, nothing written)', async () => {
-        const gift = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Ana Regalo', giftRecipient: true });
-        if (!gift.ok) throw new Error(gift.error);
-        const giftHousehold = sqlite.prepare('SELECT household_id FROM household_memberships WHERE adopter_id = ?').get(gift.profileId)!.household_id as string;
+        const giftHousehold = giftHouseholdFor('pedro', 'Ana Regalo').householdId;
         const before = membershipsIn(giftHousehold).length;
         expect(await addHouseholdPerson({ anchorAdopterId: 'pedro', householdId: giftHousehold, name: 'Intruso Falso' })).toEqual({ ok: false, error: 'not_found' });
         expect(await addHouseholdPerson({ anchorAdopterId: 'pedro', householdId: giftHousehold, existingProfileId: 'rosa' })).toEqual({ ok: false, error: 'not_found' });
@@ -278,15 +289,14 @@ describe('addHouseholdPerson — a new person', () => {
         expect(profileNamed('Intruso Falso')).toBeUndefined();
     });
 
-    it('a gift recipient gets a gift household of its own (recipient first), never the ordinary one', async () => {
+    it('final fix S4: addHouseholdPerson makes no gift household — a gift input is refused, nothing written', async () => {
         await strangerAddsLucas();
-        const res = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Ana Regalo', giftRecipient: true, householdId: 'hh-pedro' });
-        if (!res.ok) throw new Error(res.error);
-        const gift = sqlite.prepare('SELECT household_id FROM household_memberships WHERE adopter_id = ?').get(res.profileId)!.household_id as string;
-        expect(gift).not.toBe('hh-pedro');
-        expect(membershipsIn(gift).map(m => [m.adopter_id, m.gift_recipient])).toEqual([[res.profileId, 1], ['pedro', 0]]);
-        // The ordinary household is untouched (still no gift membership in it).
-        expect(membershipsIn('hh-pedro').every(m => m.gift_recipient === 0)).toBe(true);
+        const before = { profiles: sqlite.prepare('SELECT COUNT(*) AS n FROM adopters').get()!.n, households: sqlite.prepare('SELECT COUNT(*) AS n FROM households').get()!.n };
+        expect(await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Ana Regalo', giftRecipient: true } as never)).toEqual({ ok: false, error: 'invalid' });
+        expect(await addHouseholdPerson({ anchorAdopterId: 'pedro', existingProfileId: 'marta', giftRecipient: true } as never)).toEqual({ ok: false, error: 'invalid' });
+        expect(profileNamed('Ana Regalo')).toBeUndefined();
+        expect(sqlite.prepare('SELECT COUNT(*) AS n FROM household_memberships WHERE gift_recipient = 1').get()!.n).toBe(0);
+        expect({ profiles: sqlite.prepare('SELECT COUNT(*) AS n FROM adopters').get()!.n, households: sqlite.prepare('SELECT COUNT(*) AS n FROM households').get()!.n }).toEqual(before);
     });
 });
 
@@ -579,22 +589,23 @@ describe('Task 2 fix round 1', () => {
         expect(await removeHouseholdMembership({ membershipId: pedroRow.id as string, reason: 'not_living' })).toEqual({ ok: false, error: 'not_authorized' });
         expect(membershipsIn('hh-pedro').map(m => m.adopter_id)).toContain('pedro');
         // The same for a gift household's giver row.
-        const gift = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Ana Regalo', giftRecipient: true });
-        if (!gift.ok) throw new Error(gift.error);
-        const hh = sqlite.prepare('SELECT household_id FROM household_memberships WHERE id = ?').get(gift.membershipId)!.household_id as string;
+        const hh = giftHouseholdFor('pedro', 'Ana Regalo').householdId;
         const giver = sqlite.prepare(`SELECT * FROM household_memberships WHERE household_id = ? AND adopter_id = 'pedro'`).get(hh)!;
         expect(giver).toMatchObject({ added_by: null, relative_to_adopter_id: null });
         expect(await removeHouseholdMembership({ membershipId: giver.id as string, reason: 'not_living' })).toEqual({ ok: false, error: 'not_authorized' });
     });
 
-    it('2: gift adds respect the per-profile household cap (giver and an existing recipient); nothing is created', async () => {
-        tenHouseholds('pedro');
-        expect(await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Ana Regalo', giftRecipient: true })).toEqual({ ok: false, error: 'too_many_households' });
-        expect(profileNamed('Ana Regalo')).toBeUndefined();
-        expect(sqlite.prepare('SELECT COUNT(*) AS n FROM households').get()!.n).toBe(10);
-        // Now Pedro is free and Marta (an existing recipient) is the one in ten households.
-        sqlite.prepare(`UPDATE household_memberships SET adopter_id = 'marta' WHERE adopter_id = 'pedro'`).run();
-        expect(await addHouseholdPerson({ anchorAdopterId: 'pedro', existingProfileId: 'marta', giftRecipient: true })).toEqual({ ok: false, error: 'too_many_households' });
+    it('2 (final fix S4): gift households never count toward the per-profile household cap', async () => {
+        for (let i = 0; i < 9; i++) {
+            sqlite.prepare('INSERT INTO households (id, created_by, created_at) VALUES (?, ?, 1000)').run(`hh-x${i}`, OTHER);
+            sqlite.prepare(`INSERT INTO household_memberships (id, household_id, adopter_id, relationship, gift_recipient, added_by, added_at) VALUES (?, ?, ?, 'unknown', 0, ?, 1000)`)
+                .run(`hm-x${i}`, `hh-x${i}`, 'rosa', OTHER);
+        }
+        for (let i = 0; i < 3; i++) giftHouseholdFor('rosa', `Regalo ${i}`, i);
+        // Rosa: 9 homes + 3 gift households → one more home is allowed (the gifts don't count)…
+        expect(await addHouseholdPerson({ anchorAdopterId: 'pedro', existingProfileId: 'rosa' })).toMatchObject({ ok: true });
+        // …and the tenth home is the cap.
+        expect(await addHouseholdPerson({ anchorAdopterId: 'marta', existingProfileId: 'rosa' })).toEqual({ ok: false, error: 'too_many_households' });
     });
 
     it("3+7: the contacts failing never skips the link's history, notices and dispute check; the errorId is addContactEntry's, not re-logged; a retry completes", async () => {
