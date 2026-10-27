@@ -519,15 +519,15 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
     },
     household_link_removed: {
         required: ['actorName'],
-        es: p => ({ title: `No conviven: ${plainName(p.linkedName, 'es')}`, body: `${p.actorName} indicó que ${plainName(p.linkedName, 'es')} no vive con ${plainName(p.hostName, 'es')}. Se quitó del grupo familiar de tu perfil y del perfil de ${plainName(p.linkedName, 'es')}; queda en el historial de ambos. Si no es así, podés volver a agregarlo y un administrador lo revisa.` }),
+        es: p => ({ title: `No conviven: ${plainName(p.linkedName, 'es')}`, body: `${p.actorName} indicó que ${plainName(p.linkedName, 'es')} no vive con ${plainName(p.hostName, 'es')}. Se quitó del hogar de tu perfil y del perfil de ${plainName(p.linkedName, 'es')}; queda en el historial de ambos. Si no es así, podés volver a agregarlo y un administrador lo revisa.` }),
         en: p => ({ title: `Not living together: ${plainName(p.linkedName, 'en')}`, body: `${p.actorName} said ${plainName(p.linkedName, 'en')} doesn't live with ${plainName(p.hostName, 'en')}. They were removed from your profile's household and from ${plainName(p.linkedName, 'en')}'s profile; both histories show it. If that's wrong, you can add them again and an administrator will review it.` }),
-        pt: p => ({ title: `Não moram juntos: ${plainName(p.linkedName, 'pt')}`, body: `${p.actorName} indicou que ${plainName(p.linkedName, 'pt')} não mora com ${plainName(p.hostName, 'pt')}. Foi removido do grupo familiar do seu perfil e do perfil de ${plainName(p.linkedName, 'pt')}; fica no histórico dos dois. Se não for assim, você pode adicioná-lo de novo e um administrador vai revisar.` }),
+        pt: p => ({ title: `Não moram juntos: ${plainName(p.linkedName, 'pt')}`, body: `${p.actorName} indicou que ${plainName(p.linkedName, 'pt')} não mora com ${plainName(p.hostName, 'pt')}. Foi removido do lar do seu perfil e do perfil de ${plainName(p.linkedName, 'pt')}; fica no histórico dos dois. Se não for assim, você pode adicioná-lo de novo e um administrador vai revisar.` }),
     },
     household_link_disputed: {
         required: ['actorName'],
         es: p => ({
             title: `Convivencia en disputa: ${plainName(p.linkedName, 'es')}`,
-            body: `${p.viaMerge === '1' ? `Al combinar perfiles, ${p.actorName} volvió a dejar` : `${p.actorName} volvió a agregar`} a ${plainName(p.linkedName, 'es')} en el grupo familiar de ${plainName(p.hostName, 'es')}, después de que el equipo de ${plainName(p.linkedName, 'es')} indicara que no conviven. Revisá quién tiene razón.`,
+            body: `${p.viaMerge === '1' ? `Al combinar perfiles, ${p.actorName} volvió a dejar` : `${p.actorName} volvió a agregar`} a ${plainName(p.linkedName, 'es')} en el hogar de ${plainName(p.hostName, 'es')}, después de que el equipo de ${plainName(p.linkedName, 'es')} indicara que no conviven. Revisá quién tiene razón.`,
         }),
         en: p => ({
             title: `Household link disputed: ${plainName(p.linkedName, 'en')}`,
@@ -535,15 +535,15 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
         }),
         pt: p => ({
             title: `Convivência em disputa: ${plainName(p.linkedName, 'pt')}`,
-            body: `${p.viaMerge === '1' ? `Ao combinar perfis, ${p.actorName} colocou de novo` : `${p.actorName} adicionou de novo`} ${plainName(p.linkedName, 'pt')} no grupo familiar de ${plainName(p.hostName, 'pt')}, depois que a equipe de ${plainName(p.linkedName, 'pt')} indicou que não moram juntos. Revise quem tem razão.`,
+            body: `${p.viaMerge === '1' ? `Ao combinar perfis, ${p.actorName} colocou de novo` : `${p.actorName} adicionou de novo`} ${plainName(p.linkedName, 'pt')} no lar de ${plainName(p.hostName, 'pt')}, depois que a equipe de ${plainName(p.linkedName, 'pt')} indicou que não moram juntos. Revise quem tem razão.`,
         }),
     },
     household_contribution: {
         required: ['actorName', 'what'],
         es: p => p.what === 'member'
-            ? { title: 'Nuevo conviviente', body: `${p.actorName} agregó a alguien al grupo familiar ${householdOf(p.adopterName, 'es')}.` }
+            ? { title: 'Nuevo conviviente', body: `${p.actorName} agregó a alguien al hogar ${householdOf(p.adopterName, 'es')}.` }
             : p.what === 'contact'
-                ? { title: 'Nuevo dato de un conviviente', body: `${p.actorName} agregó ${entryTypeLabel(p.entryType ?? '', 'es')} de alguien del grupo familiar ${householdOf(p.adopterName, 'es')}.` }
+                ? { title: 'Nuevo dato de un conviviente', body: `${p.actorName} agregó ${entryTypeLabel(p.entryType ?? '', 'es')} de alguien del hogar ${householdOf(p.adopterName, 'es')}.` }
                 : null,
         en: p => p.what === 'member'
             ? { title: 'New household member', body: `${p.actorName} added someone to ${householdOf(p.adopterName, 'en')} household.` }
@@ -551,16 +551,16 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
                 ? { title: 'New household contact detail', body: `${p.actorName} added ${entryTypeLabel(p.entryType ?? '', 'en')} for someone in ${householdOf(p.adopterName, 'en')} household.` }
                 : null,
         pt: p => p.what === 'member'
-            ? { title: 'Novo convivente', body: `${p.actorName} adicionou alguém ao grupo familiar ${householdOf(p.adopterName, 'pt')}.` }
+            ? { title: 'Novo convivente', body: `${p.actorName} adicionou alguém ao lar ${householdOf(p.adopterName, 'pt')}.` }
             : p.what === 'contact'
-                ? { title: 'Novo dado de um convivente', body: `${p.actorName} adicionou ${entryTypeLabel(p.entryType ?? '', 'pt')} de alguém do grupo familiar ${householdOf(p.adopterName, 'pt')}.` }
+                ? { title: 'Novo dado de um convivente', body: `${p.actorName} adicionou ${entryTypeLabel(p.entryType ?? '', 'pt')} de alguém do lar ${householdOf(p.adopterName, 'pt')}.` }
                 : null,
     },
     household_also_lives_with: {
         required: ['actorName'],
-        es: p => ({ title: `${plainName(p.personName, 'es')} también vive en otro hogar`, body: `${p.actorName} indicó que ${plainName(p.personName, 'es')} también vive con ${plainName(p.hostName, 'es')}. Sigue apareciendo en el grupo familiar de tu perfil.` }),
+        es: p => ({ title: `${plainName(p.personName, 'es')} también vive en otro hogar`, body: `${p.actorName} indicó que ${plainName(p.personName, 'es')} también vive con ${plainName(p.hostName, 'es')}. Sigue apareciendo en el hogar de tu perfil.` }),
         en: p => ({ title: `${plainName(p.personName, 'en')} also lives elsewhere`, body: `${p.actorName} noted that ${plainName(p.personName, 'en')} also lives with ${plainName(p.hostName, 'en')}. They still show in your profile's household.` }),
-        pt: p => ({ title: `${plainName(p.personName, 'pt')} também mora em outro lar`, body: `${p.actorName} indicou que ${plainName(p.personName, 'pt')} também mora com ${plainName(p.hostName, 'pt')}. Continua aparecendo no grupo familiar do seu perfil.` }),
+        pt: p => ({ title: `${plainName(p.personName, 'pt')} também mora em outro lar`, body: `${p.actorName} indicou que ${plainName(p.personName, 'pt')} também mora com ${plainName(p.hostName, 'pt')}. Continua aparecendo no lar do seu perfil.` }),
     },
     household_relationship_changed: {
         required: ['actorName', 'relationship'],
@@ -586,9 +586,9 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
     household_member_removed: {
         required: ['actorName', 'reason'],
         es: p => p.reason === 'not_living'
-            ? { title: `No vive ahí: ${plainName(p.personName, 'es')}`, body: `${p.actorName} indicó que ${plainName(p.personName, 'es')} no vive con ${plainName(p.hostName, 'es')}. Se quitó de ese grupo familiar y queda en el historial. Si no es así, podés volver a agregarlo y un administrador lo revisa.` }
+            ? { title: `No vive ahí: ${plainName(p.personName, 'es')}`, body: `${p.actorName} indicó que ${plainName(p.personName, 'es')} no vive con ${plainName(p.hostName, 'es')}. Se quitó de ese hogar y queda en el historial. Si no es así, podés volver a agregarlo y un administrador lo revisa.` }
             : p.reason === 'mistake'
-                ? { title: `Quitado del grupo familiar: ${plainName(p.personName, 'es')}`, body: `${p.actorName} quitó a ${plainName(p.personName, 'es')} del grupo familiar ${householdOf(p.hostName, 'es')} porque se había cargado por error.` }
+                ? { title: `Quitado del hogar: ${plainName(p.personName, 'es')}`, body: `${p.actorName} quitó a ${plainName(p.personName, 'es')} del hogar ${householdOf(p.hostName, 'es')} porque se había cargado por error.` }
                 : null,
         en: p => p.reason === 'not_living'
             ? { title: `Doesn't live there: ${plainName(p.personName, 'en')}`, body: `${p.actorName} said ${plainName(p.personName, 'en')} doesn't live with ${plainName(p.hostName, 'en')}. They were removed from that household; the history shows it. If that's wrong, you can add them again and an administrator will review it.` }
@@ -596,9 +596,9 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
                 ? { title: `Removed from a household: ${plainName(p.personName, 'en')}`, body: `${p.actorName} removed ${plainName(p.personName, 'en')} from ${householdOf(p.hostName, 'en')} household because they were added by mistake.` }
                 : null,
         pt: p => p.reason === 'not_living'
-            ? { title: `Não mora lá: ${plainName(p.personName, 'pt')}`, body: `${p.actorName} indicou que ${plainName(p.personName, 'pt')} não mora com ${plainName(p.hostName, 'pt')}. Foi removido desse grupo familiar e fica no histórico. Se não for assim, você pode adicioná-lo de novo e um administrador vai revisar.` }
+            ? { title: `Não mora lá: ${plainName(p.personName, 'pt')}`, body: `${p.actorName} indicou que ${plainName(p.personName, 'pt')} não mora com ${plainName(p.hostName, 'pt')}. Foi removido desse lar e fica no histórico. Se não for assim, você pode adicioná-lo de novo e um administrador vai revisar.` }
             : p.reason === 'mistake'
-                ? { title: `Removido do grupo familiar: ${plainName(p.personName, 'pt')}`, body: `${p.actorName} removeu ${plainName(p.personName, 'pt')} do grupo familiar ${householdOf(p.hostName, 'pt')} porque tinha sido adicionado por engano.` }
+                ? { title: `Removido do lar: ${plainName(p.personName, 'pt')}`, body: `${p.actorName} removeu ${plainName(p.personName, 'pt')} do lar ${householdOf(p.hostName, 'pt')} porque tinha sido adicionado por engano.` }
                 : null,
     },
     profile_renamed: {
@@ -669,9 +669,9 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
     },
     household_member_disputed: {
         required: ['actorName'],
-        es: p => ({ title: `Convivencia en disputa: ${plainName(p.personName, 'es')}`, body: `${p.viaMerge === '1' ? `Al combinar perfiles, ${p.actorName} volvió a dejar a ${plainName(p.personName, 'es')} en el` : `${p.actorName} volvió a agregar a ${plainName(p.personName, 'es')} al`} grupo familiar ${householdOf(p.hostName, 'es')}, después de que alguien indicara que no vive ahí. Revisá quién tiene razón.` }),
+        es: p => ({ title: `Convivencia en disputa: ${plainName(p.personName, 'es')}`, body: `${p.viaMerge === '1' ? `Al combinar perfiles, ${p.actorName} volvió a dejar a ${plainName(p.personName, 'es')} en el` : `${p.actorName} volvió a agregar a ${plainName(p.personName, 'es')} al`} hogar ${householdOf(p.hostName, 'es')}, después de que alguien indicara que no vive ahí. Revisá quién tiene razón.` }),
         en: p => ({ title: `Household disputed: ${plainName(p.personName, 'en')}`, body: `${p.viaMerge === '1' ? `By merging profiles, ${p.actorName} put ${plainName(p.personName, 'en')} back in` : `${p.actorName} added ${plainName(p.personName, 'en')} back to`} ${householdOf(p.hostName, 'en')} household after someone said they don't live there. Please review who is right.` }),
-        pt: p => ({ title: `Convivência em disputa: ${plainName(p.personName, 'pt')}`, body: `${p.viaMerge === '1' ? `Ao combinar perfis, ${p.actorName} colocou de novo ${plainName(p.personName, 'pt')} no` : `${p.actorName} adicionou de novo ${plainName(p.personName, 'pt')} ao`} grupo familiar ${householdOf(p.hostName, 'pt')}, depois que alguém indicou que não mora lá. Revise quem tem razão.` }),
+        pt: p => ({ title: `Convivência em disputa: ${plainName(p.personName, 'pt')}`, body: `${p.viaMerge === '1' ? `Ao combinar perfis, ${p.actorName} colocou de novo ${plainName(p.personName, 'pt')} no` : `${p.actorName} adicionou de novo ${plainName(p.personName, 'pt')} ao`} lar ${householdOf(p.hostName, 'pt')}, depois que alguém indicou que não mora lá. Revise quem tem razão.` }),
     },
 };
 

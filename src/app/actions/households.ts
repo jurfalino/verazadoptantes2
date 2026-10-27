@@ -664,7 +664,7 @@ export async function removeHouseholdMembership(
 
         const person = profiles.get(m.adopterId) ?? null;
         const remaining = [...profiles.values()].filter(p => p.id !== m.adopterId);
-        // «el grupo familiar de Pedro»: the person they were added next to, else the oldest housemate.
+        // «el hogar de Pedro»: the person they were added next to, else the oldest housemate.
         const host = remaining.find(p => p.id === m.relativeToAdopterId) ?? remaining[0] ?? null;
         const kinds = await Promise.all([person, ...remaining].map(p => (p ? historyKindForOwner(actor, p.addedBy, ctx) : Promise.resolve(null))));
         const now = new Date();

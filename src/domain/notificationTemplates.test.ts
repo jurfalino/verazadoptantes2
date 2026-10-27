@@ -107,27 +107,27 @@ describe('renderNotification', () => {
             .toBe("Ana changed Marta Paez's relationship to “child”.");
         expect(renderNotification({ key: 'household_relationship_changed', params: { actorName: 'Ana', relationship: 'cousin' } }, 'pt')).toBeNull();
         expect(renderNotification({ key: 'household_member_removed', params: { actorName: 'Ana', personName: 'Lucas', hostName: 'Pedro Paez', reason: 'mistake' } }, 'es')!.body)
-            .toBe('Ana quitó a Lucas del grupo familiar de Pedro Paez porque se había cargado por error.');
+            .toBe('Ana quitó a Lucas del hogar de Pedro Paez porque se había cargado por error.');
         expect(renderNotification({ key: 'household_member_removed', params: { actorName: 'Ana', personName: 'Lucas', reason: 'not_living' } }, 'en')!.title)
             .toBe("Doesn't live there: Lucas");
         expect(renderNotification({ key: 'household_member_removed', params: { actorName: 'Ana', reason: 'moved' } }, 'es')).toBeNull();
         expect(renderNotification({ key: 'household_member_disputed', params: { actorName: 'Jon', personName: 'Marta Paez' } }, 'es')!.body)
-            .toBe('Jon volvió a agregar a Marta Paez al grupo familiar del adoptante, después de que alguien indicara que no vive ahí. Revisá quién tiene razón.');
+            .toBe('Jon volvió a agregar a Marta Paez al hogar del adoptante, después de que alguien indicara que no vive ahí. Revisá quién tiene razón.');
         // A merge carried the person back (Task 6): said so, in every locale.
         const viaMerge = { actorName: 'Jon', personName: 'Marta Paez', hostName: 'Pedro Paez', viaMerge: '1' };
         expect(renderNotification({ key: 'household_member_disputed', params: viaMerge }, 'es')!.body)
-            .toBe('Al combinar perfiles, Jon volvió a dejar a Marta Paez en el grupo familiar de Pedro Paez, después de que alguien indicara que no vive ahí. Revisá quién tiene razón.');
+            .toBe('Al combinar perfiles, Jon volvió a dejar a Marta Paez en el hogar de Pedro Paez, después de que alguien indicara que no vive ahí. Revisá quién tiene razón.');
         expect(renderNotification({ key: 'household_member_disputed', params: viaMerge }, 'en')!.body)
             .toBe("By merging profiles, Jon put Marta Paez back in Pedro Paez's household after someone said they don't live there. Please review who is right.");
         expect(renderNotification({ key: 'household_member_disputed', params: viaMerge }, 'pt')!.body)
-            .toBe('Ao combinar perfis, Jon colocou de novo Marta Paez no grupo familiar de Pedro Paez, depois que alguém indicou que não mora lá. Revise quem tem razão.');
+            .toBe('Ao combinar perfis, Jon colocou de novo Marta Paez no lar de Pedro Paez, depois que alguém indicou que não mora lá. Revise quem tem razão.');
     });
 
     it('household_contribution: a member or a contact on one, per locale (D54)', () => {
         expect(renderNotification({ key: 'household_contribution', params: { actorName: 'Ana', adopterName: 'Pedro Paez', what: 'member' } }, 'es'))
-            .toEqual({ title: 'Nuevo conviviente', body: 'Ana agregó a alguien al grupo familiar de Pedro Paez.' });
+            .toEqual({ title: 'Nuevo conviviente', body: 'Ana agregó a alguien al hogar de Pedro Paez.' });
         expect(renderNotification({ key: 'household_contribution', params: { actorName: 'Ana', adopterName: 'Pedro Paez', what: 'contact', entryType: 'phone' } }, 'es')!.body)
-            .toBe('Ana agregó un teléfono de alguien del grupo familiar de Pedro Paez.');
+            .toBe('Ana agregó un teléfono de alguien del hogar de Pedro Paez.');
         expect(renderNotification({ key: 'household_contribution', params: { actorName: 'Ana', what: 'member' } }, 'en')!.body)
             .toBe("Ana added someone to the adopter's household.");
         expect(renderNotification({ key: 'household_contribution', params: { actorName: 'Ana', what: 'sideways' } }, 'pt')).toBeNull();
