@@ -40,6 +40,7 @@ import { runAfterResponse } from '@/lib/background';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { isPrivilegedOnProfile, historyKind, historyKindForOwner } from '@/lib/profilePrivilege';
 import { CONTACT_ENTRIES_FULL, contactEntryFromInput, type ContactEntry } from '@/lib/contactEntries';
+import { countsFor } from '@/lib/profileSummary';
 import { RELATIONSHIPS, type Relationship } from '@/lib/householdMembers';
 import { insertContributionGrant, fileContributionAccessRequest, revokeContributionGrants } from '@/lib/contributionSideEffects';
 import { extractErrorId } from '@/lib/errorUtils';
@@ -117,7 +118,11 @@ export type AddHouseholdPersonResult =
     }
     | Fail;
 
-export type HouseholdMatchCandidate = DiscoveryMatch & { householdLine: HouseholdLine[] };
+export type HouseholdMatchCandidate = DiscoveryMatch & {
+    householdLine: HouseholdLine[];
+    /** Open alerts, counted exactly as the household line counts them (ProfileCounts / countOpenAlerts — final fix P6). */
+    openAlerts: number;
+};
 
 const REL_SET: ReadonlySet<string> = new Set(RELATIONSHIPS);
 const MAX_CONTACTS = 20;
@@ -737,8 +742,11 @@ export async function getHouseholdMatchCandidates(
         // The household line already rides on each candidate (hydrateDuplicateMatches);
         // read it here only for one that came without it.
         const missing = matches.filter(r => !r.households).map(r => r.adopter.id);
-        const lines = missing.length > 0 ? await householdLinesFor(db, actor, missing) : {};
-        return { results: matches.map(r => ({ ...r, householdLine: r.households ?? lines[r.adopter.id] ?? [] })) };
+        const [lines, counts] = await Promise.all([
+            missing.length > 0 ? householdLinesFor(db, actor, missing) : Promise.resolve({} as Record<string, HouseholdLine[]>),
+            Promise.all(matches.map(r => countsFor(db, r.adopter.id, { ...ctx, profileId: r.adopter.id }))),
+        ]);
+        return { results: matches.map((r, i) => ({ ...r, householdLine: r.households ?? lines[r.adopter.id] ?? [], openAlerts: counts[i].openAlerts })) };
     } catch (e) {
         // The form says the check failed (with this id) and lets the rescuer decide — never a silent «new».
         const errorId = logger.error('getHouseholdMatchCandidates failed — the form shows no suggestions', e, ctx);

@@ -52,7 +52,8 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
     const name = a.name?.trim() || t('adopter.nameless');
     const entries = deserializeContactEntries(a.contactEntries).filter(e => SUMMARY_CONTACT_TYPES.includes(e.type));
     const shown = entries.slice(0, MAX_SUMMARY_CONTACTS);
-    const alerts = (candidate.flags.inaccurate ? 1 : 0) + (candidate.flags.duplicate ? 1 : 0);
+    // The same count as the household line (final fix P6).
+    const alerts = candidate.openAlerts ?? ((candidate.flags.inaccurate ? 1 : 0) + (candidate.flags.duplicate ? 1 : 0));
     const homes = householdLineGroups(candidate.householdLine);
     const others = homes[0]?.map(l => l.name) ?? [];
     const minor = !!candidate.isMinor;

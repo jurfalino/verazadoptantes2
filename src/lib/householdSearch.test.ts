@@ -56,7 +56,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { tokenizeAdopter } from './adopterTokenize';
-import { addMembership, createHousehold, withHouseholdLines, HOUSEHOLD_LINE_CARDS } from './households';
+import { addMembership, createHousehold, householdLinesFor, withHouseholdLines, HOUSEHOLD_LINE_CARDS } from './households';
 import { MAX_HOUSEHOLD_LINES } from '@/domain/households';
 import { enrichAdopters } from '@/app/actions/enrichAdopters';
 import { logger } from '@/lib/logger';
@@ -437,5 +437,16 @@ describe('final fix P2 — «Pendientes de revisar» shows each side as every ca
         const rosa = [pair.newAdopter, pair.existingAdopter].find(s => s.id === 'rosa')!;
         expect(rosa.households ?? []).toEqual([]);
         expect(rosa.isMinor).toBeFalsy();
+    });
+});
+
+describe('final fix P6 — «¿Es este perfil?» counts alerts as the household line does', () => {
+    it('two open inaccuracy reports → 2 (not the 0/1 per kind of the search flags)', async () => {
+        sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason) VALUES ('f2', 'pedro', ?, 'inaccurate_information')`).run(ADMIN);
+        const { results } = await getHouseholdMatchCandidates({ name: 'Pedro Paez', contactEntries: [{ type: 'phone', value: HOME_PHONE }] });
+        const pedro = results.find(r => r.adopterId === 'pedro')!;
+        expect(pedro.openAlerts).toBe(2);
+        const line = (await householdLinesFor(db(), OWNER, ['marta'])).marta.find(l => l.profileId === 'pedro')!;
+        expect(line.openAlerts).toBe(pedro.openAlerts);
     });
 });
