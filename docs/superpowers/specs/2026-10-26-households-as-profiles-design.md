@@ -42,8 +42,8 @@ The relationship is relative to the person they were added next to, e.g. «parej
 
 With a group, adding Marta and Lucas from Pedro's profile shows all three on each other's profiles. Pairwise links (today's `household_links`) would show Marta only Pedro.
 
-### Gift recipient (decided by Claude, flagged for Jon)
-The person the adopter gives the animal to (form flow, `giftRecipient`) does not live with the giver. They become a profile, because they are the actual future keeper and get vetted like anyone. The giver's profile shows them as «Destinatario del regalo», a membership with `gift_recipient = 1` in a household of its own with the giver. They are never shown under «Convive con».
+### Gift recipient (Jon, 2026-10-27)
+The form can't tell whose name and phone it gave (the recipient's or the requester's), so **no profile is created automatically**. The giver's profile shows «Destinatario del regalo (según el formulario)» with the name and phone exactly as the form gave them, kept with the giver's record: searching that phone finds the giver, as today. A rescuer who confirms who the recipient is can press «Crear perfil de {nombre}», which creates the profile (owner = the giver's owner, data credited to the form) and puts it in a gift household with the giver, never under «Convive con».
 
 ### Who owns the profile a household add creates (decided by Claude, after the builder check)
 **The host's owner** (the owner of the profile the person was added from), with the person who typed it credited on the membership and on every contact (`addedBy`), and given entry grants as contributors get today (D54). This keeps today's reality: the host's team sees and answers for what is written about the household, an outside contributor sees only what they typed. From an adoption form, the form's owner (today's behaviour).
@@ -60,6 +60,9 @@ Credit, history and notices are the same as today's contribution model (D54). Th
 
 ### Removing / correcting
 - **«No convive»** (D48) removes that person's membership from that household, for everyone. History goes on the affected profiles and the household's other teams are notified. If the same pair is linked again after a correction, admins are notified (dispute), as today.
+- **Member card (Jon, 2026-10-27):** the person's name is the link to their profile (no «Ver perfil completo» row). A «⋯» menu next to the name holds «Editar parentesco», «Quitar del hogar» and «Eliminar perfil de {nombre}» / «Pedir eliminación».
+  - **«Quitar del hogar»** asks why. «Lo cargué por error» removes the membership with no record. «No vive acá» is «No convive»: it writes a correction, and a re-add is a dispute.
+  - **«Eliminar perfil»** follows today's deletion rules exactly. The owner can delete only when nobody else contributed (no one else's records, photos, edits or contacts, no alerts, no linked forms). Otherwise the owner gets «Pedir eliminación» (admins decide; it goes to the Papelera, restorable). Admins can always delete. Nobody else sees it.
 - **Who may remove a membership:** whoever added it; the team (owner, org-mates) of any profile in that household; admins and moderators. Others get «No convive» only through the dispute path.
 
 ### Search and duplicate detection (Jon, 2026-10-26)
@@ -79,6 +82,9 @@ Credit, history and notices are the same as today's contribution model (D54). Th
 
 ### Removing / correcting
 - **«No convive»** (D48) removes that person's membership from that household, for everyone. History goes on the affected profiles and the household's other teams are notified. If the same pair is linked again after a correction, admins are notified (dispute), as today.
+- **Member card (Jon, 2026-10-27):** the person's name is the link to their profile (no «Ver perfil completo» row). A «⋯» menu next to the name holds «Editar parentesco», «Quitar del hogar» and «Eliminar perfil de {nombre}» / «Pedir eliminación».
+  - **«Quitar del hogar»** asks why. «Lo cargué por error» removes the membership with no record. «No vive acá» is «No convive»: it writes a correction, and a re-add is a dispute.
+  - **«Eliminar perfil»** follows today's deletion rules exactly. The owner can delete only when nobody else contributed (no one else's records, photos, edits or contacts, no alerts, no linked forms). Otherwise the owner gets «Pedir eliminación» (admins decide; it goes to the Papelera, restorable). Admins can always delete. Nobody else sees it.
 - **Who may remove a membership:** whoever added it; the team (owner, org-mates) of any profile in that household; admins and moderators. Others get «No convive» only through the dispute path.
 
 ### Search and duplicate detection (abuse detection)
