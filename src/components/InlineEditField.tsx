@@ -14,6 +14,7 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react';
 import { Check, X, Pencil } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
+import { INLINE_CANCEL_BTN, INLINE_SAVE_BTN } from '@/components/ui/inlineFormButtons';
 
 interface Props {
     value: string;
@@ -95,7 +96,7 @@ export function InlineEditField({
                         type="button"
                         onClick={cancelEdit}
                         disabled={busy}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 rounded transition-colors disabled:opacity-50"
+                        className={INLINE_CANCEL_BTN}
                     >
                         <X className="w-3.5 h-3.5" /> {t('adopter.ce_edit_cancel')}
                     </button>
@@ -104,7 +105,7 @@ export function InlineEditField({
                         onClick={commit}
                         data-testid={editButtonTestId ? `${editButtonTestId}-save` : undefined}
                         disabled={busy || (required && !draft.trim())}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
+                        className={INLINE_SAVE_BTN}
                     >
                         <Check className="w-3.5 h-3.5" /> {t('adopter.ce_edit_save')}
                     </button>

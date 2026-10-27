@@ -2,61 +2,29 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-    Phone, Mail, AtSign, IdCard, MapPin, StickyNote, UserRound, Lock,
-    Pencil, Trash2, Check, X, Plus, type LucideIcon,
-} from 'lucide-react';
+import { Pencil, Trash2, Check, X, Plus } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
-import { CONTACT_ENTRIES_FULL, isRenameAlias, deriveStreet, deriveLocality, detectSocialPlatform, socialUrl, phoneAppUrl, retypeDraft, SOCIAL_PLATFORMS, type ContactEntry, type ContactEntryType, type ContactDraft, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
-import { ContactTypePicker } from '@/components/ContactTypePicker';
+import { CONTACT_ENTRIES_FULL, isRenameAlias, deriveStreet, deriveLocality, detectSocialPlatform, retypeDraft, type ContactEntry, type ContactEntryType, type ContactDraft, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
+import { ContactTypePicker, CONTACT_TYPE_ICON } from '@/components/ContactTypePicker';
+import { ContactLead, ContactValueCell } from '@/components/ContactRow';
+import { INLINE_CANCEL_BTN, INLINE_SAVE_BTN } from '@/components/ui/inlineFormButtons';
 import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
-import { SocialLogo } from '@/components/SocialLogo';
 import { PhoneAppsToggle } from '@/components/PhoneAppsToggle';
-import { MessagingLogo } from '@/components/MessagingLogo';
 import { addContactEntry } from '@/app/actions/addContactEntry';
 import { updateContactEntry } from '@/app/actions/updateContactEntry';
 import { removeContactEntry } from '@/app/actions/removeContactEntry';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { entryConflictMessage } from '@/lib/collabCopy';
-import { renderTextWithLinks } from '@/lib/textUtils';
 import DuplicateHint from '@/components/DuplicateHint';
-
-const TYPE_ICON: Record<ContactEntryType, LucideIcon> = {
-    phone: Phone,
-    email: Mail,
-    social: AtSign,
-    id: IdCard,
-    address: MapPin,
-    alias: UserRound,
-    other: StickyNote,
-};
 
 /** Read order — actionable contact methods first, aliases near top (name-like), notes last. */
 const DISPLAY_ORDER: ContactEntryType[] = ['alias', 'phone', 'email', 'social', 'address', 'id', 'other'];
 
-/** Per-network brand label (Facebook / Instagram / ...), keyed by platform. */
-const SOCIAL_LABEL = Object.fromEntries(SOCIAL_PLATFORMS.map(p => [p.key, p.label])) as Record<SocialPlatform, string>;
-
-/**
- * A social entry that should render with its OWN network icon + name (Facebook,
- * Instagram, TikTok, X, Threads) instead of the generic "@ Red social" row.
- * Returns null only for a non-social entry or the 'other'/undetected network.
- * Masked rows still get the branded icon + name — only the handle value is
- * hidden; which network it is isn't treated as PII.
- */
-function brandedSocialPlatform(entry: ContactEntry): Exclude<SocialPlatform, 'other'> | null {
-    if (entry.type !== 'social') return null;
-    const p = entry.platform;
-    return p && p !== 'other' ? (p as Exclude<SocialPlatform, 'other'>) : null;
-}
-
 /** Types offered in the add composer chip row. `other` is not contributable
  *  through this surface (notes belong on the activity record, not contact). */
 const COMPOSABLE_TYPES: ContactEntryType[] = ['phone', 'email', 'social', 'id', 'address', 'alias'];
-
-const LINK_CLASS = 'text-teal-700 hover:underline';
 
 interface Props {
     entries: ContactEntry[];
@@ -98,8 +66,8 @@ interface Props {
      * exists for the profile header.
      */
     hideVisibilityMicrocopy?: boolean;
-    /** Override the "no entries yet" copy for contexts where "yet" is wrong. */
-    emptyMessage?: string;
+    /** Override the "no entries yet" copy for contexts where "yet" is wrong; null shows none. */
+    emptyMessage?: string | null;
     /** True if the viewer can edit/remove ANY entry (owner/admin). In local
      *  mode always true (you're creating it). Per-entry contributor-self
      *  edit is computed in addition to this — see `currentUser` below. */
@@ -124,6 +92,27 @@ interface Props {
      *  the redundant public eye line here — one signal, not two (Nielsen #8). The
      *  owner-only "solo visible para vos" (padlock) line is unaffected. */
     hidePublicMicrocopy?: boolean;
+    /**
+     * The section is mounted somewhere else on the page too (a household
+     * member's contacts sit under the profile's own): its data-testids carry
+     * this prefix instead of `ce`, so `ce-*` always means the profile's own.
+     */
+    testIdPrefix?: string;
+    /**
+     * Where the composer starts. 'auto' (default): local mode with no entries
+     * opens straight at a phone input, else closed. 'closed': never pre-open —
+     * for a form whose first field has the focus (the household «Agregar»),
+     * where the phone input's autofocus would steal it.
+     */
+    startComposer?: 'auto' | 'closed';
+    /** False: no «Agregar dato de contacto» (a signed-out viewer of a household member). */
+    canAdd?: boolean;
+    /**
+     * The composer opened (true) or closed (false). A form that holds this
+     * section hides its own «Cancelar / Guardar» meanwhile, so only one pair is
+     * on screen and a contact still being typed can't be lost to the outer save.
+     */
+    onComposerOpenChange?: (open: boolean) => void;
 }
 
 /**
@@ -139,15 +128,7 @@ interface Props {
  */
 type EditDraft = ContactDraft;
 
-function socialHref(value: string): string | null {
-    const v = value.trim();
-    if (!v) return null;
-    if (/^https?:\/\//i.test(v)) return v;
-    if (/^[\w-]+(\.[\w-]+)+\//.test(v)) return `https://${v}`;
-    return null;
-}
-
-export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick, adopterIsPublic = false, hidePublicMicrocopy = false, allowTypeChange = false, hideVisibilityMicrocopy = false, emptyMessage }: Props) {
+export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick, adopterIsPublic = false, hidePublicMicrocopy = false, allowTypeChange = false, hideVisibilityMicrocopy = false, emptyMessage, testIdPrefix = 'ce', startComposer = 'auto', canAdd = true, onComposerOpenChange }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
@@ -188,7 +169,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
     // views and forms that already have entries keep the default 'closed'
     // start — we don't want to surprise editors with an unsolicited input.
     const [composerStage, setComposerStage] = useState<'closed' | 'pick-type' | 'editing'>(
-        () => isLocalMode && entries.length === 0 ? 'editing' : 'closed',
+        () => startComposer === 'auto' && isLocalMode && entries.length === 0 ? 'editing' : 'closed',
     );
     const [composerType, setComposerType] = useState<ContactEntryType>('phone');
     const [composerValue, setComposerValue] = useState('');
@@ -236,19 +217,15 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         if (wasComposerOpenRef.current && !isOpenNow) {
             triggerRef.current?.focus();
         }
+        if (wasComposerOpenRef.current !== isOpenNow) onComposerOpenChange?.(isOpenNow);
         wasComposerOpenRef.current = isOpenNow;
-    }, [composerStage]);
+    }, [composerStage, onComposerOpenChange]);
 
     // A previous name kept by a rename is a name token, not a contact: the header shows it («Conocido/a como»).
     const visibleEntries = entries.filter(e => e.id !== deletingId && !isRenameAlias(e));
     const sorted = [...visibleEntries].sort(
         (a, b) => DISPLAY_ORDER.indexOf(a.type) - DISPLAY_ORDER.indexOf(b.type),
     );
-
-    const labelFor = (entry: ContactEntry): string =>
-        entry.type === 'id' && entry.label?.trim()
-            ? entry.label.trim()
-            : t(`adopter.ce_type_${entry.type}`);
 
     function resetComposer() {
         setComposerType('phone');
@@ -606,84 +583,6 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         }
     }
 
-    function renderValueReadOnly(entry: ContactEntry) {
-        if (entry.masked) {
-            if (onMaskedClick) {
-                return (
-                    <button
-                        type="button"
-                        onClick={() => onMaskedClick(entry.type)}
-                        aria-label={t('adopter.pii_masked_chip_aria')}
-                        className="inline-flex items-center gap-1.5 text-stone-500 hover:text-teal-700 hover:bg-teal-50 -mx-1.5 -my-0.5 px-1.5 py-0.5 rounded-md transition-colors cursor-pointer group"
-                    >
-                        <Lock className="w-3 h-3 opacity-60 group-hover:opacity-100" aria-hidden="true" />
-                        <span className="select-none">{entry.value}</span>
-                    </button>
-                );
-            }
-            return (
-                <span
-                    className="text-stone-400 select-none"
-                    aria-label={`${labelFor(entry)}: ${t('adopter.ce_masked')}`}
-                >
-                    {entry.value}
-                </span>
-            );
-        }
-        if (entry.type === 'phone') {
-            const tel = (
-                <a href={`tel:${entry.value.replace(/[^\d+]/g, '')}`} className={LINK_CLASS}>{entry.value}</a>
-            );
-            if (!entry.apps?.length) return tel;
-            return (
-                <span className="inline-flex items-center gap-1.5 flex-wrap">
-                    {tel}
-                    {entry.apps.map(app => {
-                        const u = phoneAppUrl(app, entry.value);
-                        const logo = <MessagingLogo app={app} size={15} />;
-                        return u
-                            ? <a key={app} href={u} target="_blank" rel="noopener noreferrer" title={app === 'whatsapp' ? 'WhatsApp' : 'Telegram'} className="inline-flex">{logo}</a>
-                            : <span key={app} title={app === 'whatsapp' ? 'WhatsApp' : 'Telegram'}>{logo}</span>;
-                    })}
-                </span>
-            );
-        }
-        if (entry.type === 'email') {
-            return <a href={`mailto:${entry.value}`} className={LINK_CLASS}>{entry.value}</a>;
-        }
-        if (entry.type === 'address') {
-            const query = encodeURIComponent(entry.value.replace(/\n/g, ', '));
-            return (
-                <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${query}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={LINK_CLASS}
-                >
-                    {entry.value}
-                </a>
-            );
-        }
-        if (entry.type === 'social') {
-            const href = socialUrl(entry.value, entry.platform) ?? socialHref(entry.value);
-            const inner = href ? (
-                <a href={href} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>{entry.value}</a>
-            ) : (
-                <span className="text-stone-800">{entry.value}</span>
-            );
-            // Branded networks now carry their icon + name in the row's leading
-            // icon + label, so the value shows only the handle. 'other' keeps its
-            // inline generic-link mark (its row stays "@ Red social").
-            return entry.platform === 'other' ? (
-                <span className="inline-flex items-center gap-1.5"><SocialLogo platform="other" size={15} />{inner}</span>
-            ) : inner;
-        }
-        if (entry.type === 'other') {
-            return <span className="text-stone-700">{renderTextWithLinks(entry.value)}</span>;
-        }
-        return <span className="text-stone-800">{entry.value}</span>;
-    }
-
     function placeholderFor(type: ContactEntryType): string {
         if (type === 'alias') return t('adopter.ce_alias_ph');
         return t(`adopter.ce_input_ph_${type}`) || '';
@@ -749,8 +648,6 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
             {sorted.length > 0 && (
                 <ul className="space-y-1.5">
                     {sorted.map(entry => {
-                        const branded = brandedSocialPlatform(entry);
-                        const Icon = TYPE_ICON[entry.type];
                         const isEditing = editingId === entry.id;
                         /**
                          * The type the FORM is currently shaped around. While editing with
@@ -773,21 +670,13 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                             <li
                                 key={entry.id || `${entry.type}:${entry.value}`}
                                 className="group flex items-start gap-2 text-sm"
-                                data-testid="ce-chip"
+                                data-testid={`${testIdPrefix}-chip`}
                                 data-entry-type={entry.type}
                             >
-                                {!pickerOwnsType && (branded
-                                    ? <SocialLogo platform={branded} size={16} className="mt-0.5 shrink-0" />
-                                    : <Icon className="w-4 h-4 mt-0.5 shrink-0 text-teal-600" aria-hidden="true" />)}
-                                {/* The icon already states the type, so this label is a
-                                    second copy of it costing a fixed 96px — the width the
-                                    value (and, while editing, the input) has to give up on
-                                    a phone. Kept from `sm:` up, where it genuinely helps
-                                    scanning a list, and sr-only below so the type is still
-                                    announced: the icon beside it is aria-hidden. */}
-                                {!pickerOwnsType && (
-                                    <span className="sr-only sm:not-sr-only sm:w-24 sm:shrink-0 text-stone-500">{branded ? SOCIAL_LABEL[branded] : labelFor(entry)}</span>
-                                )}
+                                {/* Icon + type label: the one row lead (ContactRow), shared with every
+                                    other place a contact is shown. While the type picker is on screen it IS
+                                    the row's type indicator, so the lead steps aside. */}
+                                {!pickerOwnsType && <ContactLead entry={entry} />}
                                 <div className="flex-1 min-w-0">
                                     {isEditing ? (
                                         <div className="space-y-2">
@@ -813,7 +702,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                                 value={editDraft.streetAndNumber}
                                                                 onChange={e => setEditDraft({ ...editDraft, streetAndNumber: e.target.value })}
                                                                 placeholder={t('adopter.ce_input_ph_address')}
-                                                                className="w-full px-2 py-1 border border-stone-300 rounded text-sm"
+                                                                className="w-full px-2 py-1 border border-stone-300 rounded text-base sm:text-sm"
                                                                 autoFocus
                                                             />
                                                             <input
@@ -821,7 +710,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                                 value={editDraft.locality}
                                                                 onChange={e => setEditDraft({ ...editDraft, locality: e.target.value })}
                                                                 placeholder={t('adopter.ce_input_ph_locality')}
-                                                                className="w-full px-2 py-1 border border-stone-300 rounded text-sm"
+                                                                className="w-full px-2 py-1 border border-stone-300 rounded text-base sm:text-sm"
                                                             />
                                                         </>
                                                     ) : (
@@ -834,7 +723,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                                 if (e.key === 'Enter') { e.preventDefault(); commitEdit(entry); }
                                                                 if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
                                                             }}
-                                                            className="w-full px-2 py-1 border border-stone-300 rounded text-sm"
+                                                            className="w-full px-2 py-1 border border-stone-300 rounded text-base sm:text-sm"
                                                             autoFocus
                                                         />
                                                     )}
@@ -877,7 +766,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                     type="button"
                                                     onClick={cancelEdit}
                                                     disabled={editBusy}
-                                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 rounded transition-colors"
+                                                    className={INLINE_CANCEL_BTN}
                                                 >
                                                     <X className="w-3.5 h-3.5" /> {t('adopter.ce_edit_cancel')}
                                                 </button>
@@ -885,19 +774,16 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                     type="button"
                                                     onClick={() => commitEdit(entry)}
                                                     disabled={editBusy || (formType === 'social' && editDraft.value.trim().length > 0 && !(detectSocialPlatform(editDraft.value) ?? editDraft.platform))}
-                                                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
-                                                    data-testid="ce-edit-save"
+                                                    className={INLINE_SAVE_BTN}
+                                                    data-testid={`${testIdPrefix}-edit-save`}
                                                 >
                                                     <Check className="w-3.5 h-3.5" /> {t('adopter.ce_edit_save')}
                                                 </button>
                                             </div>
                                         </div>
                                     ) : (
-                                        <div className="flex items-start justify-between gap-2">
-                                            <span className="font-medium text-stone-800 flex-1 min-w-0" style={{ overflowWrap: 'anywhere' }}>
-                                                {renderValueReadOnly(entry)}
-                                            </span>
-                                            {canEditEntry(entry) && !entry.masked && entry.id && (
+                                        <ContactValueCell entry={entry} onMaskedClick={onMaskedClick} trailing={
+                                            canEditEntry(entry) && !entry.masked && entry.id && (
                                                 <span className="flex items-center gap-1 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 transition-opacity">
                                                     <button
                                                         type="button"
@@ -905,7 +791,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                         aria-label={t('adopter.ce_edit_label')}
                                                         title={t('adopter.ce_edit_label')}
                                                         className="p-1 text-stone-500 hover:text-teal-700 hover:bg-teal-50 rounded transition-colors"
-                                                        data-testid="ce-edit-btn"
+                                                        data-testid={`${testIdPrefix}-edit-btn`}
                                                     >
                                                         <Pencil className="w-3.5 h-3.5" />
                                                     </button>
@@ -915,13 +801,12 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                         aria-label={t('adopter.ce_delete_label')}
                                                         title={t('adopter.ce_delete_label')}
                                                         className="p-1 text-stone-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
-                                                        data-testid="ce-delete-btn"
+                                                        data-testid={`${testIdPrefix}-delete-btn`}
                                                     >
                                                         <Trash2 className="w-3.5 h-3.5" />
                                                     </button>
                                                 </span>
-                                            )}
-                                        </div>
+                                            )} />
                                     )}
                                 </div>
                             </li>
@@ -935,7 +820,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                 primary affordance instead of a faint link tucked at the
                 bottom. Suppressed when an undo bar is up (the deleted entry's
                 temporary absence isn't an empty state). */}
-            {sorted.length === 0 && !deletingId && composerStage === 'closed' && (
+            {sorted.length === 0 && !deletingId && composerStage === 'closed' && emptyMessage !== null && (
                 <p className="text-sm text-stone-500 italic">{emptyMessage ?? t('adopter.ce_empty')}</p>
             )}
 
@@ -946,32 +831,28 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 + DuplicateHint + Cancel + Save buttons, laid
                                 out identically to the in-row edit form so add
                                 and edit feel symmetric. */}
-            <div className="pt-1">
+            {canAdd && <div className="pt-1">
                 {composerStage === 'closed' && (
                     <button
                         type="button"
                         ref={triggerRef}
                         onClick={() => setComposerStage('pick-type')}
-                        data-testid="ce-add-trigger"
-                        /* One treatment in BOTH states — deliberate, and it must stay
-                         * that way. Until v2.54.4 this was a Secondary button on an empty
-                         * list and a bare text link once entries existed.
-                         *
-                         * The deciding evidence is `HouseholdSection`, the sibling
-                         * list-section on the same profile: its section-level "add a
-                         * member" is this exact Secondary button, rendered unconditionally
-                         * (HouseholdSection.tsx:274), while its NESTED per-member "add a
-                         * contact" is a bare text link (:266). The link is not a lighter
-                         * button — it marks an action one level down. Swapping to it
-                         * whenever this list happened to be non-empty dressed a
-                         * section-level action as a nested one, and made two sibling
-                         * sections answer "add a record to this list" differently.
+                        data-testid={`${testIdPrefix}-add-trigger`}
+                        /* THE «Agregar dato de contacto» control of the whole app: one
+                         * Secondary button, in both states (empty or not), wherever a
+                         * person's contacts can be added to — the profile's own list, the
+                         * new-adopter form, the import wizard, a household member's
+                         * contacts and the household «Agregar» form (all of them are this
+                         * component). Until v2.54.4 it was a Secondary button on an empty
+                         * list and a bare text link once entries existed, and until
+                         * v2.58.2 the household drew its own («Agregar dato» as a link):
+                         * the same action in three looks.
                          *
                          * Emphasis for the empty state is carried by its own hint line
                          * above ("Aún no hay datos de contacto…"), not by changing what
                          * the button is. If this ever reads too loud beside a populated
-                         * list, quiet the Secondary variant globally — do not special-case
-                         * one state back into a different component.
+                         * list, quiet the Secondary variant here — for every place at
+                         * once — rather than special-casing one place back into a link.
                          */
                         className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-md transition-colors"
                     >
@@ -991,7 +872,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                         </p>
                         <div className="flex flex-wrap gap-1.5">
                             {COMPOSABLE_TYPES.map((typ, idx) => {
-                                const Icon = TYPE_ICON[typ];
+                                const Icon = CONTACT_TYPE_ICON[typ];
                                 return (
                                     <button
                                         key={typ}
@@ -1005,7 +886,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                         // v2.18.4 plan.
                                         autoFocus={idx === 0}
                                         className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-white border border-stone-300 text-stone-700 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-800 focus:bg-teal-50 focus:border-teal-300 focus:text-teal-800 focus:outline-none transition-colors"
-                                        data-testid={`ce-type-${typ}`}
+                                        data-testid={`${testIdPrefix}-type-${typ}`}
                                     >
                                         <Icon className="w-3 h-3" />
                                         {t(`adopter.ce_type_${typ}`)}
@@ -1017,8 +898,8 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                             <button
                                 type="button"
                                 onClick={resetComposer}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 rounded transition-colors"
-                                data-testid="ce-pick-type-cancel"
+                                className={INLINE_CANCEL_BTN}
+                                data-testid={`${testIdPrefix}-pick-type-cancel`}
                             >
                                 <X className="w-3.5 h-3.5" /> {t('adopter.ce_edit_cancel')}
                             </button>
@@ -1076,7 +957,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                             value={composerStreet}
                                             onChange={e => setComposerStreet(e.target.value)}
                                             placeholder={t('adopter.ce_input_ph_address')}
-                                            className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
+                                            className="w-full px-2 py-1.5 border border-stone-300 rounded text-base sm:text-sm"
                                             autoFocus
                                         />
                                         <input
@@ -1084,7 +965,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                             value={composerLocality}
                                             onChange={e => setComposerLocality(e.target.value)}
                                             placeholder={t('adopter.ce_input_ph_locality')}
-                                            className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
+                                            className="w-full px-2 py-1.5 border border-stone-300 rounded text-base sm:text-sm"
                                         />
                                     </>
                                 ) : (
@@ -1095,11 +976,12 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                         placeholder={composerType === 'social'
                                             ? (effectiveSocialPlatform ? t(`adopter.ce_input_ph_social_${effectiveSocialPlatform}`) : t('adopter.ce_input_ph_social'))
                                             : placeholderFor(composerType)}
+                                        data-testid={`${testIdPrefix}-composer-input`}
                                         onKeyDown={e => {
                                             if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }
                                             if (e.key === 'Escape') { e.preventDefault(); resetComposer(); }
                                         }}
-                                        className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm"
+                                        className="w-full px-2 py-1.5 border border-stone-300 rounded text-base sm:text-sm"
                                         autoFocus
                                     />
                                 )}
@@ -1137,8 +1019,8 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 type="button"
                                 onClick={resetComposer}
                                 disabled={composerBusy}
-                                data-testid="ce-composer-cancel"
-                                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 rounded transition-colors"
+                                data-testid={`${testIdPrefix}-composer-cancel`}
+                                className={INLINE_CANCEL_BTN}
                             >
                                 <X className="w-3.5 h-3.5" /> {t('adopter.ce_edit_cancel')}
                             </button>
@@ -1146,15 +1028,15 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 type="button"
                                 onClick={handleAdd}
                                 disabled={composerBusy || socialNeedsPlatform}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
-                                data-testid="ce-composer-submit"
+                                className={INLINE_SAVE_BTN}
+                                data-testid={`${testIdPrefix}-composer-submit`}
                             >
                                 <Check className="w-3.5 h-3.5" /> {t('adopter.ce_edit_save')}
                             </button>
                         </div>
                     </div>
                 )}
-            </div>
+            </div>}
 
             <ConfirmDialog
                 open={!!confirmDeleteTarget}
