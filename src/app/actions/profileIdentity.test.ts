@@ -450,3 +450,17 @@ describe('Task 3 fix round 2 — no path makes an old name unfindable', () => {
     });
 });
 
+describe('Task 3 fix round 3', () => {
+    it("unmerge: the absorbed side's plain alias equal to the survivor's name, upgraded by a later rename on the survivor, stays (the previous name never vanishes)", async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, contact_entries) VALUES ('abs', 'Pedro P.', '5', ?, 1000, 1000, ?)`)
+            .run(OWNER, JSON.stringify([{ id: 'abs-alias', type: 'alias', value: 'Pedro Paez', addedBy: MATE }]));
+        const merged = await mergeAdopters('pedro', 'abs', OWNER);
+        expect(merged.success).toBe(true);
+        await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' });
+        expect(entriesOf('pedro').find(e => e.id === 'abs-alias')).toMatchObject({ fromRename: true });
+        expect((await unmergeAdopters(merged.auditId!, ADMIN)).success).toBe(true);
+        expect(entriesOf('pedro').find(e => e.type === 'alias' && e.value === 'Pedro Paez')).toMatchObject({ fromRename: true });
+        expect(sqlite.prepare("SELECT token_value AS v FROM duplicate_tokens WHERE adopter_id = 'pedro'").all().map(r => r.v)).toContain('pedro paez');
+    });
+});
+

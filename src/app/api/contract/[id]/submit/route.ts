@@ -300,10 +300,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         changes: JSON.stringify({ name: { from: change.from || null, to: change.to }, name_changed: { from: change.from || null, to: change.to, aliasKept: change.aliasKept } }),
                         changedAt: new Date(),
                     });
+                } catch (e) {
+                    logger.error('Contract submit: rename history row failed (the name and its alias landed)', e, { animalId, adopterId });
+                }
+                // Its own try: a failed history row must not leave the new name unindexed.
+                try {
                     const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
                     await tokenizeAdopter(adopterId);
                 } catch (e) {
-                    logger.error('Contract submit: rename history / re-index failed (the name and its alias landed)', e, { animalId, adopterId });
+                    logger.error('Contract submit: re-index after the rename failed', e, { animalId, adopterId });
                 }
             }
 

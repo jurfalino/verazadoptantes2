@@ -716,9 +716,11 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
         //    Previous names a rename kept since (households as profiles) stay:
         //    the snapshot predates them, and dropping them would make an old
         //    name unfindable while the profile keeps its new one.
-        // Leaving with the absorbed profile: its own entries (by id) and the name this merge carried over.
+        // Leaving with the absorbed profile: the rename aliases it already had (by id) and the
+        // name this merge carried over. An absorbed PLAIN alias a later rename on the survivor
+        // upgraded is the survivor's previous name now — it stays.
         const leaving = new Set<string>([
-            ...deserializeContactEntries(secondary.contactEntries).map(e => e.id ?? '').filter(Boolean),
+            ...deserializeContactEntries(secondary.contactEntries).filter(isRenameAlias).map(e => e.id ?? '').filter(Boolean),
             ...(undo.renameAliasIdsAddedByMerge ?? []),
         ]);
         const restoredContacts = withRenameAliasesKept(undo.primarySnapshot, primary, leaving);
