@@ -155,3 +155,11 @@ export function isMinor(
 export function isGiftHousehold(memberships: ReadonlyArray<{ giftRecipient?: number | boolean | null }>): boolean {
     return memberships.some(m => !!m.giftRecipient);
 }
+
+/**
+ * The key two names in one household are "the same person" by (unattended
+ * adds, the interview's rule): case, accents and spacing ignored.
+ */
+export function householdNameKey(name: string | null | undefined): string {
+    return (name ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}

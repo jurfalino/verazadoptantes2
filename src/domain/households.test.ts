@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canRemoveMembership, currentAge, isMinor, membershipLabel } from './households';
+import { canRemoveMembership, currentAge, householdNameKey, isMinor, membershipLabel } from './households';
 
 // Pedro's household: Marta is Pedro's partner, Lucas is Pedro's child. Pedro is
 // the person the relationships point at (his own row has none).
@@ -135,5 +135,13 @@ describe('currentAge / isMinor', () => {
 
     it('an adult age is not a minor', () => {
         expect(isMinor({ age: 40, ageAsOf: '2026-01-01', isMinor: 0 }, today)).toBe(false);
+    });
+});
+
+describe('householdNameKey', () => {
+    it('ignores case, accents and spacing; keeps different names apart', () => {
+        expect(householdNameKey('  laura   PÁEZ ')).toBe(householdNameKey('Laura Paez'));
+        expect(householdNameKey('Laura Paez')).not.toBe(householdNameKey('Laura Pérez'));
+        expect(householdNameKey(null)).toBe('');
     });
 });

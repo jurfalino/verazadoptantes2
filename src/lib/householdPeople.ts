@@ -15,31 +15,33 @@
  * the record. Plain server module (NOT 'use server'): nothing here is a
  * browser-callable endpoint. D1: no IN lists; bounded single-row queries.
  */
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { adopterHistory, adopters, formSubmissions, householdMemberships, households } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
+import { runAfterResponse } from '@/lib/background';
 import { runBatch } from '@/lib/dbBatch';
 import { isRealActorEmail, maskHouseholdMembers } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, maskOptionsFor, resolveAdoptersVisibility } from '@/lib/piiAccessServer';
 import { historyKind, isPrivilegedOnProfile } from '@/lib/profilePrivilege';
-import { normalizeText } from '@/lib/tokenizer';
 import { serializeHouseholdMembers, type HouseholdMember } from '@/lib/householdMembers';
 import type { ContactEntry } from '@/lib/contactEntries';
 import { findIdentifierHits, ownerCountry as apiOwnerCountry } from '@/lib/api/profiles';
 import {
     addMembership, claimMembershipRecord, ensureHousehold, hasCorrection, householdExists, householdIdsOf,
-    isMemberOf, membershipsOf, releaseMembershipRecord,
+    isMemberOf, membershipBySourceKey, membershipsOf, releaseMembershipRecord,
 } from '@/lib/households';
 import { notifyHouseholdPersonAdded, notifyHouseholdReaddDisputed } from '@/lib/householdNotices';
 import { FORM_SENTINEL, giftProfileOf, giftRecipientsOf, giftSourceKey, type FormGiftRecipient } from '@/lib/giftRecipients';
 import { decideExactOutcome, isFullName, isUsableDocumentId } from '@/domain/apiExactMatch';
 import { hasMinimumIdentifier } from '@/domain/adopterIdentity';
-import { MAX_HOUSEHOLD_MEMBERS, MAX_HOUSEHOLDS_PER_PROFILE } from '@/domain/households';
+import { MAX_HOUSEHOLD_MEMBERS, MAX_HOUSEHOLDS_PER_PROFILE, householdNameKey } from '@/domain/households';
 import { parseGiftRecipient, recipientFullName } from '@/domain/giftRecipient';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+/** Candidates kept per new profile (findAdopters' default duplicate limit). */
+const DUPLICATE_SLOTS = 5;
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const sameEmail = (a: string | null | undefined, b: string | null | undefined) =>
     !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -116,6 +118,12 @@ export type AttachInput = {
      * of a public record). Default: protected.
      */
     isPublic?: boolean;
+    /**
+     * The public form: each new profile's tokenize and duplicate scan run after the response
+     * (runAfterResponse), and a name-only person's scan skips the LIKE fallback — one
+     * anonymous POST may name up to 15 people. The memberships are placed before the response.
+     */
+    background?: boolean;
 };
 
 export type AttachSkipReason = 'no_identifier' | 'same_name_in_household' | 'same_as_anchor' | 'household_full' | 'too_many_households' | 'failed';
@@ -136,25 +144,19 @@ async function liveRow(db: Db, id: string): Promise<AnchorRow | null> {
     return row && !row.deletedAt ? row : null;
 }
 
-/** The membership an earlier run of the same source wrote, if it is still there. */
-async function membershipBySourceKey(db: Db, sourceKey: string): Promise<{ id: string; adopterId: string; householdId: string } | null> {
-    const row = await db.select({ id: householdMemberships.id, adopterId: householdMemberships.adopterId, householdId: householdMemberships.householdId })
-        .from(householdMemberships).where(eq(householdMemberships.sourceKey, sourceKey)).limit(1).get() as { id: string; adopterId: string; householdId: string } | undefined;
-    return row ?? null;
-}
-
 /** «form», «import», «interview»… — the history's `via`. */
 const viaOf = (sourceKey: string) => sourceKey.split(/[-:]/)[0] || 'unknown';
 
 /** Soft-delete a profile made here that never got its membership (a retry must not leave two live ones). */
-async function undoCreated(db: Db, profileId: string, ctx: Record<string, unknown>): Promise<void> {
+async function undoCreated(db: Db, profileId: string, ctx: Record<string, unknown>, why: 'failed' | 'lost_race' = 'failed'): Promise<void> {
     try {
         const { duplicateTokens } = await import('@/db/schema');
         await runBatch(db, [
             db.update(adopters).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(adopters.id, profileId)),
             db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, profileId)),
         ]);
-        logger.warn('attachHouseholdPeople: membership not placed, new profile undone', { ...ctx, profileId });
+        if (why === 'lost_race') logger.info('attachHouseholdPeople: a racing run placed this person first, own new profile dropped', { ...ctx, profileId });
+        else logger.warn('attachHouseholdPeople: membership not placed, new profile undone', { ...ctx, profileId });
     } catch (e) {
         logger.error('attachHouseholdPeople: membership not placed and the new profile could not be undone', e, { ...ctx, profileId });
     }
@@ -224,7 +226,7 @@ export async function attachHouseholdPeople(db: Db, input: AttachInput): Promise
         const members = await membershipsOf(db, id, MAX_HOUSEHOLD_MEMBERS + 1);
         memberCount = members.length;
         const rows = await Promise.all(members.filter(m => m.adopterId !== anchor.id).map(m => liveRow(db, m.adopterId)));
-        for (const r of rows) if (r?.name?.trim()) byName.set(normalizeText(r.name.trim()), r.id);
+        for (const r of rows) if (r?.name?.trim()) byName.set(householdNameKey(r.name), r.id);
         householdId = id;
         result.householdId = id;
         return id;
@@ -274,7 +276,7 @@ export async function attachHouseholdPeople(db: Db, input: AttachInput): Promise
 
             // Their household — made only now, once someone is really going in.
             const hh = await home();
-            const nameKey = name ? normalizeText(name) : '';
+            const nameKey = householdNameKey(name);
             if (!personId && nameKey && byName.has(nameKey)) {
                 result.skipped.push({ index, reason: 'same_name_in_household' });
                 logger.info('attachHouseholdPeople: someone of that name already lives there, not added again', { ...pctx, householdId: hh, profileId: byName.get(nameKey) });
@@ -305,6 +307,7 @@ export async function attachHouseholdPeople(db: Db, input: AttachInput): Promise
                     age: p.age ?? null,
                     isMinor: p.isMinor,
                     isPublic: input.isPublic === true,
+                    skipTokenize: input.background === true,
                     historyKind: historyKind(await privilegedOn(input.ownerEmail)),
                     history: { created_in_household: { anchorId: anchor.id, anchorName: anchor.name, householdId: hh, gift: false, via: viaOf(input.sourceKey), ...(contactTypes.length ? { contactTypes } : {}) } },
                 });
@@ -319,6 +322,15 @@ export async function attachHouseholdPeople(db: Db, input: AttachInput): Promise
                     addedBy: input.actor, sourceKey: key,
                 });
             } catch (e) {
+                // The source key is unique (0098): a run of the same source placed its person
+                // between our lookup and our insert. Theirs stands; ours is dropped quietly.
+                const winner = await membershipBySourceKey(db, key);
+                if (winner) {
+                    if (createdId) await undoCreated(db, createdId, pctx, 'lost_race');
+                    result.householdId = result.householdId ?? winner.householdId;
+                    result.reused.push(winner.adopterId);
+                    continue;
+                }
                 if (createdId) await undoCreated(db, createdId, pctx);
                 throw e;
             }
@@ -366,14 +378,31 @@ export async function attachHouseholdPeople(db: Db, input: AttachInput): Promise
                 logger.error('attachHouseholdPeople: a step after the person was placed failed (the add stands)', e, out);
             }
 
-            // A new profile's likely duplicates → «Pendientes de revisar», never its housemates (spec anti-goal).
+            // A new profile's likely duplicates → «Pendientes de revisar», never its housemates (spec
+            // anti-goal). Enough candidates are fetched that the housemates can't fill every slot.
             if (createdId) {
-                const { findAndPersistDuplicateCandidates } = await import('@/app/actions/_adopterFactory');
-                const { sameHousehold } = await import('@/lib/households');
-                await findAndPersistDuplicateCandidates(db, createdId, {
-                    name, phone, email, documentId,
-                    socials: entries.filter(e => e.type === 'social').map(e => e.value),
-                }, { skipPair: async other => other === anchor.id || await sameHousehold(db, createdId!, other), ctx: out });
+                const newId = createdId;
+                const nameOnly = !phone && !email && !documentId && !entries.some(e => e.type === 'social');
+                const index = async () => {
+                    if (input.background) {
+                        const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
+                        await tokenizeAdopter(newId);
+                    }
+                    const { findAndPersistDuplicateCandidates } = await import('@/app/actions/_adopterFactory');
+                    const { sameHousehold } = await import('@/lib/households');
+                    await findAndPersistDuplicateCandidates(db, newId, {
+                        name, phone, email, documentId,
+                        socials: entries.filter(e => e.type === 'social').map(e => e.value),
+                    }, {
+                        skipPair: async other => other === anchor.id || await sameHousehold(db, newId, other),
+                        limit: DUPLICATE_SLOTS + memberCount + 1,
+                        keep: DUPLICATE_SLOTS,
+                        skipLikeFallback: input.background === true && nameOnly,
+                        ctx: out,
+                    });
+                };
+                if (input.background) await runAfterResponse('attachHouseholdPeople.index', index, out);
+                else await index();
             }
 
             // Contacts typed for an existing profile: addContactEntry's semantics (deduped, credited, grants).
@@ -493,25 +522,46 @@ export async function createGiftRecipientFromForm(
     };
     const done = await already();
     if (done) return done;
+    const householdId = `hh-gift-${sub.id}`;
+    // A recipient profile made earlier and since deleted is absent: its stale gift household
+    // goes, so «Crear perfil» works again (the source key is unique, 0098).
+    const stale = await membershipBySourceKey(db, sourceKey);
+    if (stale && !(await liveRow(db, stale.adopterId))) {
+        const staleHousehold = stale.householdId;
+        await runBatch(db, [
+            db.delete(householdMemberships).where(eq(householdMemberships.householdId, staleHousehold)),
+            db.delete(households).where(eq(households.id, staleHousehold)),
+        ]);
+        logger.info('createGiftRecipientFromForm: the earlier recipient profile is deleted, its gift household removed', { ...ctx, householdId: staleHousehold, profileId: stale.adopterId });
+    }
     if ((await householdIdsOf(db, giver.id)).length >= MAX_HOUSEHOLDS_PER_PROFILE) {
         logger.info('createGiftRecipientFromForm: refused, the giver is in too many households', ctx);
         return { ok: false, error: 'too_many_households' };
     }
 
-    // The claim: one household per form.
-    const householdId = `hh-gift-${sub.id}`;
-    const claim = () => db.insert(households).values({ id: householdId, createdBy: input.actor, createdAt: new Date() })
+    // The claim: one household per form. `claimedAt` is our claim's mark — the cleanup below
+    // removes the household only while it still carries it (a takeover replaces it).
+    const claimedAt = new Date();
+    const claim = () => db.insert(households).values({ id: householdId, createdBy: input.actor, createdAt: claimedAt })
         .onConflictDoNothing().returning({ id: households.id });
     let won = (await claim()).length > 0;
     if (!won) {
         const again = await already();
         if (again) return again;
         const row = await db.select({ createdAt: households.createdAt }).from(households).where(eq(households.id, householdId)).get() as { createdAt: Date | null } | undefined;
-        const stale = !!row?.createdAt && Date.now() - new Date(row.createdAt).getTime() > ABANDONED_GIFT_CLAIM_MS;
-        if (stale && (await membershipsOf(db, householdId, 1)).length === 0) {
-            logger.warn('createGiftRecipientFromForm: abandoned claim reclaimed', ctx);
-            await db.delete(households).where(eq(households.id, householdId));
-            won = (await claim()).length > 0;
+        const abandoned = !!row?.createdAt && Date.now() - new Date(row.createdAt).getTime() > ABANDONED_GIFT_CLAIM_MS;
+        if (abandoned && row?.createdAt) {
+            // Take it over with a compare-and-set on the mark we read, while it holds nobody:
+            // of two requests taking over at once, exactly one wins, and nothing is deleted.
+            const took = await db.update(households).set({ createdBy: input.actor, createdAt: claimedAt })
+                .where(and(
+                    eq(households.id, householdId),
+                    eq(households.createdAt, row.createdAt),
+                    sql`NOT EXISTS (SELECT 1 FROM household_memberships m WHERE m.household_id = ${households.id})`,
+                ))
+                .returning({ id: households.id });
+            won = took.length > 0;
+            if (won) logger.warn('createGiftRecipientFromForm: abandoned claim taken over', ctx);
         }
         if (!won) {
             logger.info('createGiftRecipientFromForm: another request is making this profile', ctx);
@@ -520,6 +570,7 @@ export async function createGiftRecipientFromForm(
     }
 
     let profileId: string | null = null;
+    const mine: string[] = []; // memberships this request created — the only ones its cleanup may remove
     try {
         const { createHouseholdProfile } = await import('@/app/actions/_adopterFactory');
         const entries: ContactEntry[] = recipient.phone ? [{ id: crypto.randomUUID(), type: 'phone', value: recipient.phone, addedBy: FORM_SENTINEL }] : [];
@@ -537,7 +588,9 @@ export async function createGiftRecipientFromForm(
             householdId, adopterId: profileId, relationship: recipient.relationship, relativeToAdopterId: giver.id,
             giftRecipient: true, addedBy: input.actor, sourceKey,
         });
-        await addMembership(db, { householdId, adopterId: giver.id, relationship: 'unknown', addedBy: null });
+        if (placed.created) mine.push(placed.membershipId);
+        const giverRow = await addMembership(db, { householdId, adopterId: giver.id, relationship: 'unknown', addedBy: null });
+        if (giverRow.created) mine.push(giverRow.membershipId);
         if (await claimMembershipRecord(db, placed.membershipId)) {
             await db.insert(adopterHistory).values({
                 id: crypto.randomUUID(), adopterId: giver.id, changedBy: input.actor, kind: historyKind(privileged), changedAt: new Date(),
@@ -551,12 +604,17 @@ export async function createGiftRecipientFromForm(
         logger.info('createGiftRecipientFromForm: recipient profile made', { ...ctx, profileId, householdId });
         return { ok: true, profileId, householdId, membershipId: placed.membershipId, created: true };
     } catch (e) {
-        // Take the claim back so a retry can make it: the memberships, the household, the half-made profile.
+        // Take OUR claim back so a retry can make it: only the memberships we created, the
+        // household only while it still carries our mark and holds nobody (never a winner's
+        // rows after a takeover), and the half-made profile.
         try {
-            await runBatch(db, [
-                db.delete(householdMemberships).where(eq(householdMemberships.householdId, householdId)),
-                db.delete(households).where(eq(households.id, householdId)),
-            ]);
+            for (const id of mine) await db.delete(householdMemberships).where(eq(householdMemberships.id, id));
+            await db.delete(households).where(and(
+                eq(households.id, householdId),
+                eq(households.createdAt, claimedAt),
+                eq(households.createdBy, input.actor),
+                sql`NOT EXISTS (SELECT 1 FROM household_memberships m WHERE m.household_id = ${households.id})`,
+            ));
             if (profileId) await undoCreated(db, profileId, ctx);
         } catch (ce) {
             logger.error('createGiftRecipientFromForm: claim not taken back', ce, { ...ctx, profileId });

@@ -588,7 +588,8 @@ export const householdMemberships = sqliteTable("household_memberships", {
     pairIdx: uniqueIndex("idx_household_memberships_pair").on(table.householdId, table.adopterId),
     adopterIdx: index("idx_household_memberships_adopter").on(table.adopterId),
     householdIdx: index("idx_household_memberships_household").on(table.householdId),
-    sourceKeyIdx: index("idx_household_memberships_source_key").on(table.sourceKey),
+    // 0098: unique when set — two runs of one source can never place a person twice.
+    sourceKeyIdx: uniqueIndex("idx_household_memberships_source_key").on(table.sourceKey).where(sql`source_key IS NOT NULL`),
 }));
 
 export const householdCorrections = sqliteTable("household_corrections", {

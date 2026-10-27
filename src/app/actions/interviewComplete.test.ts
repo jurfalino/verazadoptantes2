@@ -174,6 +174,21 @@ describe('completeInterview', () => {
         expect(sqlite.prepare(`SELECT household_members FROM adopters WHERE id = 'a-owned'`).get()).toEqual({ household_members: null });
     });
 
+    it('two completions at once add the household person once (source key is unique)', async () => {
+        const answers = {
+            story_household: { status: 'answered', household: [{ name: 'Ana López', relationship: 'partner' }] },
+            details_email: { status: 'answered', contacts: [{ type: 'email', value: 'juan@x.com' }] },
+        };
+        seedDraft({ answers });
+        const add = { ...ADD, household: [{ name: 'Ana López', relationship: 'partner' as const }] };
+        await Promise.all([
+            completeInterview('i1', { adopterId: 'a-owned', additions: add, rating: null, summary: null }),
+            completeInterview('i1', { adopterId: 'a-owned', additions: add, rating: null, summary: null }),
+        ]);
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopters WHERE name = 'Ana López' AND deleted_at IS NULL`).get()).toEqual({ n: 1 });
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM household_memberships WHERE source_key = 'interview:i1-0'`).get()).toEqual({ n: 1 });
+    });
+
     it('a retry that names a different candidate than the one already chosen is refused before any write', async () => {
         seedDraft({ candidateIds: ['a-owned', 'a-foreign'] });
         state.failObservation = true;

@@ -274,7 +274,15 @@ export async function findAndPersistDuplicateCandidates(
     db: NonNullable<Awaited<ReturnType<typeof import('@/lib/db').getDb>>>,
     adopterId: string,
     probe: DuplicateProbe,
-    opts: { skipLikeFallback?: boolean; skipPair?: (otherId: string) => Promise<boolean>; ctx?: Record<string, unknown> } = {},
+    opts: {
+        skipLikeFallback?: boolean;
+        skipPair?: (otherId: string) => Promise<boolean>;
+        /** Candidates fetched (default 5); raise it when skipPair may drop some, so the real ones still fit. */
+        limit?: number;
+        /** Candidates kept after skipPair (default: all fetched). */
+        keep?: number;
+        ctx?: Record<string, unknown>;
+    } = {},
 ): Promise<DupCandidateSummary[]> {
     const PERSIST_THRESHOLD = 30;
     try {
@@ -299,12 +307,13 @@ export async function findAndPersistDuplicateCandidates(
                 socials: socials.length ? extractSocials(socials.join('\n')) : [],
                 excludeAdopterId: adopterId,
             },
-            { mode: 'duplicate', minRelevance: 0, limit: 5, skipLikeFallback: opts.skipLikeFallback === true },
+            { mode: 'duplicate', minRelevance: 0, limit: opts.limit ?? 5, skipLikeFallback: opts.skipLikeFallback === true },
         );
 
         const found = (dupResult.results as Array<{ adopterId: string; adopterName: string; matchTypes: string[]; relevancePercent: number }>) || [];
         const matches: typeof found = [];
         for (const m of found) {
+            if (opts.keep !== undefined && matches.length >= opts.keep) break;
             if (opts.skipPair && await opts.skipPair(m.adopterId)) continue;
             matches.push(m);
         }
@@ -375,6 +384,8 @@ export interface CreateHouseholdProfileInput {
     isMinor?: boolean;
     /** Record-level «público» — only for people who arrive with a public host (a public social post); default protected. */
     isPublic?: boolean;
+    /** The caller tokenizes later (the public form does it after the response). */
+    skipTokenize?: boolean;
     /** profilePrivilege on the new profile: 'edit' only when the typist is on the owner's team (or staff). */
     historyKind: 'edit' | 'contribution';
     /** The creation line of the new profile's history (never raw contact values). */
@@ -433,11 +444,13 @@ export async function createHouseholdProfile(
         changes: JSON.stringify(input.history),
         changedAt: now,
     });
-    try {
-        const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
-        await tokenizeAdopter(adopterId);
-    } catch (e) {
-        logger.error('createHouseholdProfile: tokenize failed (continuing)', e, { adopterId, actor: input.actor });
+    if (!input.skipTokenize) {
+        try {
+            const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
+            await tokenizeAdopter(adopterId);
+        } catch (e) {
+            logger.error('createHouseholdProfile: tokenize failed (continuing)', e, { adopterId, actor: input.actor });
+        }
     }
     logger.info('Adopter created from a household add', { adopterId, actor: input.actor, contacts: input.contactEntries.length });
     return adopterId;

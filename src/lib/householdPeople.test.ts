@@ -15,7 +15,9 @@ import * as mocks from '@/test-utils/actionMocks';
 const { session, OWNER, MATE, STRANGER, ADMIN } = mocks;
 const OTHER = 'other-rescuer@example.com';
 
-const { state, notify } = vi.hoisted(() => ({
+const { state, notify, deferred, faults } = vi.hoisted(() => ({
+    deferred: { on: false, tasks: [] as Array<{ name: string; task: () => Promise<unknown> }> },
+    faults: { beforeAdd: null as null | ((input: { householdId: string; sourceKey?: string | null }) => void) },
     state: { db: null as unknown },
     notify: { create: [] as Array<Record<string, unknown>>, admins: [] as Array<Record<string, unknown>> },
 }));
@@ -41,7 +43,28 @@ vi.mock('@/config/features', async (orig) => ({
 }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 vi.mock('@/lib/r2', () => ({ processImageForStorage: vi.fn(), uploadToR2: vi.fn() }));
-vi.mock('@/lib/background', () => ({ runAfterResponse: vi.fn(async (_n: string, task: () => Promise<unknown>) => { await task(); }) }));
+// Inline by default; `deferred.on` holds the tasks back (what runs after the response).
+vi.mock('@/lib/background', () => ({
+    runAfterResponse: vi.fn(async (name: string, task: () => Promise<unknown>) => {
+        if (deferred.on) { deferred.tasks.push({ name, task }); return; }
+        await task();
+    }),
+}));
+// A racing run landing its membership between our source-key lookup and our insert.
+vi.mock('@/lib/households', async (orig) => {
+    const real = await orig<typeof import('@/lib/households')>();
+    return {
+        ...real,
+        addMembership: vi.fn(async (...args: Parameters<typeof real.addMembership>) => {
+            const hook = faults.beforeAdd; faults.beforeAdd = null; hook?.(args[1]);
+            return real.addMembership(...args);
+        }),
+    };
+});
+vi.mock('@/app/actions/findAdopters', async (orig) => {
+    const real = await orig<typeof import('@/app/actions/findAdopters')>();
+    return { ...real, findAdopters: vi.fn(real.findAdopters) };
+});
 vi.mock('@/app/actions/notifications', () => ({
     createNotification: vi.fn(async (d: Record<string, unknown>) => { notify.create.push(d); return 'n'; }),
     notifyAdmins: vi.fn(async (d: Record<string, unknown>) => { notify.admins.push(d); }),
@@ -63,6 +86,9 @@ import { createGiftRecipientProfile } from '@/app/actions/households';
 import { tokenizeAdopter } from './adopterTokenize';
 import { findIdentifierHits } from './api/profiles';
 import { addMembership, ensureHousehold } from './households';
+import { addHouseholdPerson } from '@/app/actions/households';
+import { logger } from '@/lib/logger';
+import { findAdopters } from '@/app/actions/findAdopters';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -104,6 +130,10 @@ beforeEach(async () => {
     sqlite = m.sqlite as unknown as typeof sqlite;
     notify.create.length = 0;
     notify.admins.length = 0;
+    deferred.on = false;
+    deferred.tasks.length = 0;
+    faults.beforeAdd = null;
+    vi.mocked(findAdopters).mockClear();
     session.user = OWNER;
     // The form link's owner, in Argentina: phones are read as Argentine ones.
     sqlite.prepare(`INSERT INTO user (id, email, name) VALUES ('u-owner', ?, 'Owner')`).run(OWNER);
@@ -396,5 +426,139 @@ describe('POST /api/adopters (post importer)', () => {
         const [laura] = profileNamed('Laura Publica');
         expect(laura.is_public).toBe(1);
         expect(laura.contact_entries as string).not.toContain('isPublic'); // never stamped per entry (the host's members weren't)
+    });
+});
+
+describe('Task 4 fix round 1', () => {
+    const live = (name: string) => count('SELECT COUNT(*) AS n FROM adopters WHERE name = ? AND deleted_at IS NULL', name);
+
+    it('I1: two runs with the same source key at once → one person, one membership', async () => {
+        const run = () => attachHouseholdPeople(db(), {
+            anchorAdopterId: 'pedro', actor: OWNER, ownerEmail: OWNER, sourceKey: 'interview:race',
+            people: [{ name: 'Ana López', relationship: 'partner', index: 0 }],
+        });
+        const [a, b] = await Promise.all([run(), run()]);
+        expect(live('Ana López')).toBe(1);
+        expect(count(`SELECT COUNT(*) AS n FROM household_memberships WHERE source_key = 'interview:race-0'`)).toBe(1);
+        expect([...a.created, ...b.created]).toHaveLength(1);
+        expect([...a.reused, ...b.reused]).toHaveLength(1);
+        expect([...a.skipped, ...b.skipped]).toEqual([]);
+    });
+
+    it('I1: a run that loses the source key to a racing run reuses the winner\'s person and drops its own profile', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('winner', 'Ana López', '5', ?, 1, 1)`).run(OWNER);
+        faults.beforeAdd = (m) => {
+            sqlite.prepare(`INSERT INTO household_memberships (id, household_id, adopter_id, relationship, relative_to_adopter_id, added_by, added_at, source_key) VALUES ('hm-winner', ?, 'winner', 'partner', 'pedro', ?, 1, ?)`)
+                .run(m.householdId, OWNER, m.sourceKey);
+        };
+        vi.mocked(logger.error).mockClear();
+        const res = await attachHouseholdPeople(db(), {
+            anchorAdopterId: 'pedro', actor: OWNER, ownerEmail: OWNER, sourceKey: 'interview:lost',
+            people: [{ name: 'Ana López', relationship: 'partner', index: 0 }],
+        });
+        expect(res).toMatchObject({ created: [], reused: ['winner'], skipped: [] });
+        expect(live('Ana López')).toBe(1);
+        expect(count(`SELECT COUNT(*) AS n FROM household_memberships WHERE source_key = 'interview:lost-0'`)).toBe(1);
+        expect(vi.mocked(logger.error)).not.toHaveBeenCalled();
+    });
+
+    it('I1: the source key is unique in the database (0098)', () => {
+        const hh = 'hh-x';
+        sqlite.prepare(`INSERT INTO households (id, created_at) VALUES (?, 1)`).run(hh);
+        sqlite.prepare(`INSERT INTO household_memberships (id, household_id, adopter_id, added_at, source_key) VALUES ('m1', ?, 'pedro', 1, 'k-1')`).run(hh);
+        expect(() => sqlite.prepare(`INSERT INTO household_memberships (id, household_id, adopter_id, added_at, source_key) VALUES ('m2', ?, 'marta', 1, 'k-1')`).run(hh)).toThrow(/UNIQUE/);
+        // NULL keys never collide.
+        sqlite.prepare(`INSERT INTO household_memberships (id, household_id, adopter_id, added_at) VALUES ('m3', ?, 'marta', 1)`).run(hh);
+    });
+
+    it('I2: re-merging the same post adds its relatives once (source key per post + slot, and the household name rule)', async () => {
+        const add = () => addHouseholdPerson({
+            anchorAdopterId: 'pedro', name: 'Laura Paez', relationship: 'partner',
+            contactEntries: [{ type: 'social', value: 'instagram.com/laurapaez' }],
+            fromImport: { sourceUrl: 'https://facebook.com/posts/9', slot: 'r0' },
+        });
+        const first = await add();
+        const second = await add();
+        expect(first).toMatchObject({ ok: true, createdProfile: true });
+        expect(second).toMatchObject({ ok: true, createdProfile: false });
+        if (first.ok && second.ok) expect(second.profileId).toBe(first.profileId);
+        expect(live('Laura Paez')).toBe(1);
+        // Another post naming the same person (same household, same name) adds nobody.
+        const other = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'laura  PÁEZ', relationship: 'partner', fromImport: { sourceUrl: null, slot: 'r0' } });
+        expect(other).toMatchObject({ ok: true, createdProfile: false });
+        expect(live('Laura Paez') + live('laura  PÁEZ')).toBe(1);
+        const keys = sqlite.prepare(`SELECT source_key FROM household_memberships WHERE source_key IS NOT NULL`).all().map(r => String(r.source_key));
+        expect(keys).toHaveLength(1);
+        expect(keys[0]).toMatch(/^import-post:[0-9a-f]{16}-r0$/);
+    });
+
+    it('gift: a soft-deleted recipient profile is absent — «Crear perfil» works again', async () => {
+        const { submissionId, applicantId } = await postForm({
+            name: 'Jonathan Giver', email: 'jg9@example.com', phone: '11 6123 1212', intent: 'gift',
+            giftRecipient: { relationship: 'child', firstName: 'Sofía', lastName: 'Gómez', phone: '11 5555 0101' },
+        });
+        const first = await createGiftRecipientProfile({ giverAdopterId: applicantId, submissionId });
+        if (!first.ok) throw new Error(first.error);
+        sqlite.prepare('UPDATE adopters SET deleted_at = 5 WHERE id = ?').run(first.profileId);
+        const again = await createGiftRecipientProfile({ giverAdopterId: applicantId, submissionId });
+        expect(again).toMatchObject({ ok: true, created: true });
+        if (again.ok) expect(again.profileId).not.toBe(first.profileId);
+        expect(live('Sofía Gómez')).toBe(1);
+        expect(count(`SELECT COUNT(*) AS n FROM household_memberships WHERE source_key = ?`, `gift-${submissionId}`)).toBe(1);
+    });
+
+    it('gift: two requests taking over an abandoned claim at once → one profile, nobody deletes the winner', async () => {
+        const { submissionId, applicantId } = await postForm({
+            name: 'Jonathan Giver', email: 'jg8@example.com', phone: '11 6123 1313', intent: 'gift',
+            giftRecipient: { relationship: 'child', firstName: 'Paula', lastName: 'Ríos' },
+        });
+        // A request that crashed right after claiming, long ago.
+        sqlite.prepare(`INSERT INTO households (id, created_by, created_at) VALUES (?, ?, 1000)`).run(`hh-gift-${submissionId}`, OWNER);
+        const both = await Promise.all([
+            createGiftRecipientProfile({ giverAdopterId: applicantId, submissionId }),
+            createGiftRecipientProfile({ giverAdopterId: applicantId, submissionId }),
+        ]);
+        expect(both.filter(r => r.ok && r.created)).toHaveLength(1);
+        expect(live('Paula Ríos')).toBe(1);
+        const members = householdOf(`hh-gift-${submissionId}`);
+        expect(members.map(m => m.gift_recipient)).toEqual([1, 0]);
+    });
+
+    it('public form: household people are indexed and scanned after the response; name-only ones skip the LIKE fallback', async () => {
+        deferred.on = true;
+        await postForm({
+            name: 'Juan Diferido', email: 'jd@example.com', phone: '11 2222 5555', intent: 'self',
+            householdPeople: [{ relationship: 'child', age: 5, firstName: 'Tomás', lastName: 'Diferido' }], livesAlone: false,
+        });
+        const [tomas] = profileNamed('Tomás Diferido');
+        // Placed now, indexed later.
+        expect(membershipsOf(tomas.id as string)).toHaveLength(1);
+        expect(tokensOf(tomas.id as string)).toEqual([]);
+        expect(deferred.tasks.map(t => t.name)).toContain('attachHouseholdPeople.index');
+        for (const t of deferred.tasks) await t.task();
+        expect(tokensOf(tomas.id as string).length).toBeGreaterThan(0);
+        const scan = vi.mocked(findAdopters).mock.calls.find(c => (c[0] as { excludeAdopterId?: string }).excludeAdopterId === tomas.id);
+        expect(scan?.[1]).toMatchObject({ mode: 'duplicate', skipLikeFallback: true });
+    });
+
+    it('housemates never crowd a real duplicate out of the candidate slots', async () => {
+        const P = '11 4545 6767';
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, country, created_at, updated_at, contact_entries) VALUES ('outsider', 'Rita Sosa', '5', ?, 'AR', 1000, 1000, ?)`)
+            .run(OTHER, JSON.stringify([{ id: 'oc', type: 'phone', value: P, addedBy: OTHER }]));
+        await tokenizeAdopter('outsider');
+        const names = ['Ana Gomez', 'Bea Gomez', 'Ceci Gomez', 'Dora Gomez', 'Eva Gomez', 'Fede Gomez'];
+        await attachHouseholdPeople(db(), {
+            anchorAdopterId: 'pedro', actor: OWNER, ownerEmail: OWNER, sourceKey: 'import:crowd',
+            people: names.map((name, i) => ({ name, relationship: 'housemate', index: i, contactEntries: [{ id: `c${i}`, type: 'phone' as const, value: P, addedBy: OWNER }] })),
+        });
+        const res = await attachHouseholdPeople(db(), {
+            anchorAdopterId: 'pedro', actor: OWNER, ownerEmail: OWNER, sourceKey: 'import:crowd2',
+            people: [{ name: 'Zoe Gomez', relationship: 'housemate', contactEntries: [{ id: 'z', type: 'phone', value: P, addedBy: OWNER }] }],
+        });
+        const zoe = res.created[0];
+        const pairs = sqlite.prepare('SELECT adopter1_id AS a, adopter2_id AS b FROM duplicate_candidates').all();
+        expect(pairs.some(p => (p.a === zoe && p.b === 'outsider') || (p.b === zoe && p.a === 'outsider'))).toBe(true);
+        const housemates = new Set(membershipsOf('pedro').length ? sqlite.prepare(`SELECT adopter_id FROM household_memberships WHERE household_id = 'hh-pedro'`).all().map(r => r.adopter_id) : []);
+        expect(pairs.some(p => (p.a === zoe && housemates.has(p.b)) || (p.b === zoe && housemates.has(p.a)))).toBe(false);
     });
 });

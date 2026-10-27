@@ -45,13 +45,13 @@ import { insertContributionGrant, fileContributionAccessRequest, revokeContribut
 import { extractErrorId } from '@/lib/errorUtils';
 import {
     addMembership, claimMembershipRecord, createHousehold, ensureHousehold, hasCorrection, householdExists, householdIdsOf,
-    householdLinesFor, isMemberOf, membershipById, membershipsOf, ownTeamOf, releaseMembershipRecord, removeMembership, setMembershipRelationship,
+    householdLinesFor, isMemberOf, membershipById, membershipBySourceKey, membershipsOf, ownTeamOf, releaseMembershipRecord, removeMembership, setMembershipRelationship,
     type HouseholdLine,
 } from '@/lib/households';
 import {
     notifyHouseholdMemberRemoved, notifyHouseholdPersonAdded, notifyHouseholdReaddDisputed, notifyHouseholdRelationshipChanged,
 } from '@/lib/householdNotices';
-import { canRemoveMembership, MAX_HOUSEHOLD_MEMBERS, MAX_HOUSEHOLDS_PER_PROFILE } from '@/domain/households';
+import { canRemoveMembership, householdNameKey, MAX_HOUSEHOLD_MEMBERS, MAX_HOUSEHOLDS_PER_PROFILE } from '@/domain/households';
 import { hasMinimumIdentifier } from '@/domain/adopterIdentity';
 import { householdContactSchema } from './validation';
 import { addContactEntry } from './addContactEntry';
@@ -90,6 +90,14 @@ export type AddHouseholdPersonInput = {
     contactEntries?: HouseholdContactInput[];
     /** A gift recipient: a gift household of its own with the anchor (the giver), never the ordinary one. */
     giftRecipient?: boolean;
+    /**
+     * A relative an import names (ImportWizard, Task 4 fix round 1). Re-merging the same post
+     * must not add them twice: someone of the same name already in that household is that
+     * person (the interview's rule), and with the post's URL the membership gets a source key
+     * built HERE from (typist, anchor, URL) + `slot` — a client can never pick another source's
+     * key. `slot`: the person's place in the post ('s' = the post's person, 'r0', 'r1'…).
+     */
+    fromImport?: { sourceUrl?: string | null; slot: string };
 };
 
 export type AddHouseholdPersonResult =
@@ -204,13 +212,13 @@ async function undoCreatedProfile(db: Db, profileId: string, actor: string, entr
  */
 async function joinHousehold(
     db: Db,
-    p: { householdId: string; chosen: boolean; anchorId: string; adopterId: string; relationship: Relationship; actor: string },
+    p: { householdId: string; chosen: boolean; anchorId: string; adopterId: string; relationship: Relationship; actor: string; sourceKey?: string | null },
     ctx: Record<string, unknown>,
 ): Promise<{ householdId: string; membershipId: string; created: boolean } | 'not_found'> {
     let householdId = p.householdId;
     for (let attempt = 0; attempt < 2; attempt++) {
         const out = await addMembership(db, {
-            householdId, adopterId: p.adopterId, relationship: p.relationship, relativeToAdopterId: p.anchorId, addedBy: p.actor,
+            householdId, adopterId: p.adopterId, relationship: p.relationship, relativeToAdopterId: p.anchorId, addedBy: p.actor, sourceKey: p.sourceKey ?? null,
         });
         if (await householdExists(db, householdId)) return { householdId, ...out };
         logger.warn('addHouseholdPerson: household gone after the membership landed (lost race), membership taken back', { ...ctx, householdId, membershipId: out.membershipId, attempt });
@@ -227,6 +235,44 @@ async function joinHousehold(
     throw new Error('addHouseholdPerson: the household kept disappearing');
 }
 
+/** The source key of an imported relative: never chosen by the client (typist + anchor + post URL, hashed) + its slot. */
+async function importSourceKey(actor: string, anchorId: string, from: { sourceUrl?: string | null; slot: string }): Promise<string | null> {
+    const url = typeof from.sourceUrl === 'string' ? from.sourceUrl.trim().slice(0, 2000) : '';
+    if (!url) return null;
+    const bytes = new TextEncoder().encode(`${actor.trim().toLowerCase()}|${anchorId}|${url}`);
+    const hex = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
+    return `import-post:${hex.slice(0, 16)}-${from.slot}`;
+}
+
+/**
+ * An imported relative who is already in this household: the membership this
+ * post's re-merge wrote before (its source key), or someone of the same name
+ * (householdNameKey: case, accents, spacing) living there — the interview's rule. Null = add them.
+ */
+async function importedAlready(
+    db: Db,
+    p: { householdId: string; anchorId: string; importKey: string | null; name: string; ctx: Record<string, unknown> },
+): Promise<{ profileId: string; membershipId: string } | null> {
+    if (p.importKey) {
+        const m = await membershipBySourceKey(db, p.importKey);
+        if (m && await liveProfile(db, m.adopterId)) {
+            logger.info('addHouseholdPerson: this post\'s relative is already there, reused', { ...p.ctx, membershipId: m.id });
+            return { profileId: m.adopterId, membershipId: m.id };
+        }
+    }
+    const key = householdNameKey(p.name);
+    if (!key) return null;
+    for (const m of await membershipsOf(db, p.householdId)) {
+        if (m.adopterId === p.anchorId) continue;
+        const prof = await liveProfile(db, m.adopterId);
+        if (prof?.name && householdNameKey(prof.name) === key) {
+            logger.info('addHouseholdPerson: someone of that name already lives there, not added again (import)', { ...p.ctx, membershipId: m.id });
+            return { profileId: prof.id, membershipId: m.id };
+        }
+    }
+    return null;
+}
+
 // ─────────────────────────── Add ───────────────────────────
 
 export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promise<AddHouseholdPersonResult> {
@@ -240,6 +286,9 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
     const ctx: Record<string, unknown> = { anchorId, actor, householdId: chosen || null, existingProfileId: existingId || null, gift };
 
     if (!anchorId) return { ok: false, error: 'invalid' };
+    const fromImport = input?.fromImport ?? null;
+    if (fromImport && (typeof fromImport.slot !== 'string' || !/^[a-z0-9]{1,8}$/.test(fromImport.slot))) return { ok: false, error: 'invalid' };
+    const importKey = fromImport && !gift ? await importSourceKey(actor, anchorId, fromImport) : null;
     if (input.relationship !== undefined && input.relationship !== null && !REL_SET.has(input.relationship)) return { ok: false, error: 'invalid' };
     const relationship: Relationship = input.relationship && REL_SET.has(input.relationship) ? input.relationship : 'unknown';
     const age = input.age;
@@ -283,6 +332,11 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                 return { ok: false, error: 'not_found' };
             }
             householdId = resolved;
+            // An imported relative already there (same post re-merged, or the same name in that household).
+            if (fromImport) {
+                const there = await importedAlready(db, { householdId, anchorId: anchor.id, importKey, name: existing ? '' : name, ctx });
+                if (there) return { ok: true, profileId: there.profileId, membershipId: there.membershipId, createdProfile: false, autoRequestFiled: false };
+            }
             const full = await capacityError(db, householdId, existing?.id ?? null);
             if (full) {
                 logger.info('addHouseholdPerson: refused, cap reached', { ...ctx, householdId, cap: full });
@@ -324,7 +378,7 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                 await addMembership(db, { householdId, adopterId: anchor.id, relationship: 'unknown', addedBy: null });
                 placed = { householdId, ...recipient };
             } else {
-                const joined = await joinHousehold(db, { householdId, chosen: !!chosen, anchorId: anchor.id, adopterId: person.id, relationship, actor }, ctx);
+                const joined = await joinHousehold(db, { householdId, chosen: !!chosen, anchorId: anchor.id, adopterId: person.id, relationship, actor, sourceKey: importKey }, ctx);
                 if (joined === 'not_found') {
                     if (createdProfile) await undoCreatedProfile(db, person.id, actor, entries, ctx);
                     return { ok: false, error: 'not_found' };
@@ -332,6 +386,12 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                 placed = joined;
             }
         } catch (e) {
+            // The import key is unique (0098): a racing re-merge placed this person first. Theirs stands.
+            const winner = importKey ? await membershipBySourceKey(db, importKey) : null;
+            if (winner) {
+                if (createdProfile) await undoCreatedProfile(db, person.id, actor, entries, { ...ctx, lostRace: true });
+                return { ok: true, profileId: winner.adopterId, membershipId: winner.id, createdProfile: false, autoRequestFiled: false };
+            }
             if (createdProfile) await undoCreatedProfile(db, person.id, actor, entries, ctx);
             throw e;
         }

@@ -1336,9 +1336,10 @@ export default function ImportWizard() {
             // a relative carrying the post's contacts. Otherwise the post's name,
             // when it differs, stays as an alias (decision B8).
             const asRelative = mergeAs === 'relative' && needsIdentityChoice(selectedMatch);
+            // Each with its place in the post (`slot`): a re-merge of the same post adds nobody twice.
             const members = [
-                ...(asRelative ? [{ name: extractedData.name?.trim() || '', relationship: 'unknown' as const, contactEntries }] : []),
-                ...relatives.map(toMember),
+                ...(asRelative ? [{ name: extractedData.name?.trim() || '', relationship: 'unknown' as const, contactEntries, slot: 's' }] : []),
+                ...relatives.map((p, i) => ({ ...toMember(p), slot: `r${i}` })),
             ];
             const alias = asRelative ? null : aliasForMerge(extractedData.name, mergeTarget.name);
             const entriesToMerge: ContactEntry[] = asRelative ? [] : (alias
@@ -1384,6 +1385,7 @@ export default function ImportWizard() {
                         ...(e.streetAndNumber ? { streetAndNumber: e.streetAndNumber } : {}),
                         ...(e.locality ? { locality: e.locality } : {}),
                     })),
+                    fromImport: { sourceUrl: sourceUrl || null, slot: m.slot },
                 });
                 if (!res.ok) {
                     toast.error(t('errors.generic'), t('import.relative_failed'), res.errorId);

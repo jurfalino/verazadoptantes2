@@ -185,6 +185,13 @@ export async function membershipById(db: Db, membershipId: string): Promise<Memb
     return row ?? null;
 }
 
+/** The membership written under this source_key (unique when set, 0098), or null. */
+export async function membershipBySourceKey(db: Db, sourceKey: string): Promise<{ id: string; adopterId: string; householdId: string } | null> {
+    const row = await db.select({ id: householdMemberships.id, adopterId: householdMemberships.adopterId, householdId: householdMemberships.householdId })
+        .from(householdMemberships).where(eq(householdMemberships.sourceKey, sourceKey)).limit(1).get() as { id: string; adopterId: string; householdId: string } | undefined;
+    return row ?? null;
+}
+
 /** `adopterId` has a membership in `householdId`. */
 export async function isMemberOf(db: Db, householdId: string, adopterId: string): Promise<boolean> {
     const row = await db.select({ id: householdMemberships.id }).from(householdMemberships)

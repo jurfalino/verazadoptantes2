@@ -294,7 +294,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                         const { attachHouseholdPeople } = await import('@/lib/householdPeople');
                         await attachHouseholdPeople(db, {
                             anchorAdopterId: applicantId, people, actor: 'form-submission', ownerEmail: rescuerEmail,
-                            sourceKey: `form-${submissionId}`, requestId: submissionId,
+                            sourceKey: `form-${submissionId}`, requestId: submissionId, background: true,
                         });
                     } catch (e) {
                         logger.error('Form household people not attached (the form is saved)', e, { submissionId, adopterId: applicantId });
