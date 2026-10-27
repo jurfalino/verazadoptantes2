@@ -13,6 +13,7 @@ import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdmin } from '@/config/admins';
 import { planFormLink, canLinkSubmissionDirectly } from '@/domain/formLink';
 import { logger, generateErrorId } from '@/lib/logger';
+import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
 
 // ── Human-readable label helpers ──────────────────────────────────
 
@@ -355,9 +356,15 @@ export async function linkFormToExistingAdopter(
             mergeAuditId = merged.auditId;
             if (!merged.success) {
                 await releaseClaim?.();
-                const errorId = logger.error('linkFormToExistingAdopter: merge failed', new Error(merged.error ?? 'merge failed'), {
-                    submissionId, adopterId, orphanId: plan.orphanId, actorEmail,
-                });
+                const ctx = { submissionId, adopterId, orphanId: plan.orphanId, actorEmail };
+                // A merge rule's refusal (minor survivor with records on the other side; household data not
+                // converted yet) is an expected answer the card explains — warn, not error.
+                if (merged.error === MINOR_SURVIVOR_HAS_ACTIVITY || merged.error === HOUSEHOLD_NOT_CONVERTED) {
+                    const errorId = generateErrorId();
+                    logger.warn('linkFormToExistingAdopter: merge refused', { ...ctx, reason: merged.error, errorId });
+                    return { success: false, error: merged.error, errorId };
+                }
+                const errorId = logger.error('linkFormToExistingAdopter: merge failed', new Error(merged.error ?? 'merge failed'), ctx);
                 return { success: false, error: merged.error, errorId };
             }
         }

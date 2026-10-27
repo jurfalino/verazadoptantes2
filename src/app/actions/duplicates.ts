@@ -20,9 +20,9 @@ import { grantAccessAfterFold } from '@/lib/mergeAccess';
 import { mergeSideParams } from '@/lib/mergeNotificationSides';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdminAsync } from '@/config/admins';
-import { addHouseholdMember } from './householdMembers';
+import { addHouseholdPerson } from './households';
 import { sharesHomeSql } from '@/lib/housemateSql';
-import { MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
+import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
 import { minorSurvivorHasActivity } from '@/lib/minors';
 
 /**
@@ -97,7 +97,10 @@ export async function attachContractToExistingAdopter(
         // Run merge — match becomes primary, orphan becomes secondary
         const mergeResult = await mergeAdopters(matchAdopterId, orphanAdopterId, actorEmail);
         if (!mergeResult.success) {
-            return { success: false, error: mergeResult.error };
+            // A merge rule's refusal (minor survivor; household data not converted yet) is expected: warn with an id.
+            const errorId = generateErrorId();
+            logger.warn('attachContractToExistingAdopter: merge refused or failed', { notificationId, matchAdopterId, orphanAdopterId, actor: actorEmail, reason: mergeResult.error, errorId });
+            return { success: false, error: mergeResult.error, errorId };
         }
 
         // Context-specific audit entry on top of the generic one written by mergeAdopters
@@ -880,6 +883,8 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
         // The kept profile is a minor and the other has records or alerts: the
         // row can be combined keeping the other profile (Task 6 ruling).
         if (!result.success && result.error === MINOR_SURVIVOR_HAS_ACTIVITY) return refuse(MINOR_SURVIVOR_HAS_ACTIVITY);
+        // Some old household data of these two couldn't be converted yet (Task 7): retryable, nothing moved.
+        if (!result.success && result.error === HOUSEHOLD_NOT_CONVERTED) return refuse(HOUSEHOLD_NOT_CONVERTED);
         if (!result.success) {
             const errorId = logger.error('mergePendingDedupPair: merge failed', new Error(result.error ?? 'merge failed'), {
                 candidateId, actorEmail, primaryId, secondaryId,
@@ -946,11 +951,13 @@ function parseMatchTypes(raw: string | null, candidateId: string): string[] {
 }
 
 /**
- * «No, es alguien de su hogar» (D35): nothing is merged. Each side the
- * caller's team owns gets the other person as a household member — name only,
- * relationship unknown, linked to their profile — through the same write as
- * «Agregar persona» (addHouseholdMember: owner / org-mate / admin gate, CAS,
- * history, audit). The other rescuer's profile is never touched. Then the pair
+ * «No, es alguien de su hogar» (D35): nothing is merged. The two profiles now
+ * live together: the other person joins the household of the first side the
+ * caller's team owns — relationship unknown, the existing profile linked —
+ * through the same add anyone uses («Agregar familiar / conviviente»,
+ * addHouseholdPerson with `existingProfileId`: credited, history, notices).
+ * A household is a group, so one membership puts them together on both
+ * profiles. Neither profile's own data changes. Then the pair
  * leaves both lists: kept-separate; a pending request asking the caller's team
  * counts as their decline, any other pending one closes
  * (settleRequestsAsHousehold).
@@ -963,13 +970,13 @@ async function keepAsHousehold(
     b: DedupSide & { name: string },
 ): Promise<{ success: true; outcome: 'household' } | { success: false; error: string; errorId: string }> {
     const ctx = { candidateId, actorEmail: actor, primaryId: a.id, secondaryId: b.id };
-    for (const [own, other] of [[a, b], [b, a]] as const) {
-        if (!own.teamOwned) continue;
-        const res = await addHouseholdMember({ adopterId: own.id, name: other.name, relationship: 'unknown', profileId: other.id });
-        if (!res.ok) {
-            const errorId = 'errorId' in res && res.errorId
-                ? res.errorId
-                : logger.error('mergePendingDedupPair: household member not added', new Error(res.error), { ...ctx, adopterId: own.id });
+    const pair = ([[a, b], [b, a]] as const).find(([own]) => own.teamOwned);
+    if (pair) {
+        const [own, other] = pair;
+        const res = await addHouseholdPerson({ anchorAdopterId: own.id, existingProfileId: other.id, relationship: 'unknown' });
+        if (!res.ok && res.error !== 'already_there') {
+            const errorId = res.errorId
+                ?? logger.error('mergePendingDedupPair: household member not added', new Error(res.error), { ...ctx, adopterId: own.id });
             return { success: false, error: 'household_failed', errorId };
         }
     }

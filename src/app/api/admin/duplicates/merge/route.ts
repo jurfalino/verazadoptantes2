@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { isAdminAsync } from '@/config/admins';
 import { mergeAdopters, mergeCandidatePair, notifyMergeOwners } from '@/lib/adopterMerge';
-import { MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
+import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
 
 /**
  * How many secondaries one request may merge into the primary. Each merge is
@@ -90,7 +90,7 @@ export async function POST(request: Request) {
         // A minor survivor refused (the other side has records/alerts): pick the other side.
         const status = firstError.includes('not found') ? 404
             : firstError.includes('Invalid') || firstError.includes('already-deleted') ? 400
-            : firstError === MINOR_SURVIVOR_HAS_ACTIVITY ? 409
+            : firstError === MINOR_SURVIVOR_HAS_ACTIVITY || firstError === HOUSEHOLD_NOT_CONVERTED ? 409
             : 500;
         return NextResponse.json({ error: firstError, results }, { status });
     }

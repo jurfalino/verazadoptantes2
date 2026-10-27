@@ -336,7 +336,15 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // The unattended attach / match / gift readers (src/lib/householdPeople.ts,
 // src/lib/giftRecipients.ts) are plain lib code.
 // 175 = 174 + 1.
-const EXPECTED_ACTIONS = 175;
+// Households as profiles, Task 8: the old household JSON actions are RETIRED (nothing reads or
+// writes adopters.household_members for display or edits any more; the profile UI, the importer
+// and «alguien de su hogar» use src/app/actions/households.ts). Removed with their files:
+//   addHouseholdMember, updateHouseholdMember, removeHouseholdMember, addMemberContactEntry,
+//   updateMemberContactEntry, removeMemberContactEntry (src/app/actions/householdMembers.ts) and
+//   reportNotLivingTogether (src/app/actions/householdLinks.ts — «No vive acá» is now
+//   removeHouseholdMembership(…, 'not_living')). No action added. MEASURED (npm run build): 168.
+// 168 = 175 − 7.
+const EXPECTED_ACTIONS = 168;
 
 let manifest;
 try {

@@ -23,7 +23,7 @@ import {
     stripRenameMarks,
 } from '@/lib/contactEntries';
 import { sameName } from '@/domain/profileIdentity';
-import { canEditAdopterRecord, maskAdopterContact, markViewerOwnHousehold, redactHistoryChanges, renderName } from '@/lib/piiAccess';
+import { canEditAdopterRecord, maskAdopterContact, redactHistoryChanges, renderName } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdopterVisibility, buildMaskOptions } from '@/lib/piiAccessServer';
 import { deleteAdopterRecords } from '@/app/actions/_recordWrite';
 import { runAfterResponse } from '@/lib/background';
@@ -56,7 +56,6 @@ async function getAdopterImpl(id: string) {
         if (adopter.deletedAt) return null;
 
         // PII access gating: mask contact fields for non-privileged viewers.
-        let householdMarked = false;
         if (await isPiiGatingEnabled()) {
             const visibility = await resolveAdopterVisibility(user, { id: adopter.id, addedBy: adopter.addedBy });
             // adopterIsPublic option short-circuits the per-entry mask when
@@ -75,14 +74,11 @@ async function getAdopterImpl(id: string) {
                 // familyMembers → hidden (PII).
                 adopter.name = renderName(adopter.name, visibility, undefined, maskOpts);
                 adopter.familyMembers = null;
-                // Household masking is now part of maskAdopterContact (above).
-                adopter.householdMembers = masked.householdMembers;
-                householdMarked = true;
             }
         }
-        // Everyone else sees the household unmasked: still mark what this viewer
-        // added (`own: true`, D54) so the page never reads rescuers' emails for it.
-        if (!householdMarked) adopter.householdMembers = markViewerOwnHousehold(adopter.householdMembers, user);
+        // Households as profiles: the old household JSON is never shown or edited
+        // any more (the page reads src/lib/households.ts), so it never leaves the server.
+        adopter.householdMembers = null;
         return adopter;
     } catch (error) {
         logger.error('Get adopter failed', error, { adopterId: id });
@@ -789,6 +785,10 @@ export async function deleteOwnAdopter(adopterId: string) {
             db.delete(duplicateCandidates).where(sql`${duplicateCandidates.adopter1Id} = ${adopterId} OR ${duplicateCandidates.adopter2Id} = ${adopterId}`),
             db.update(formSubmissions).set({ linkedAdopterId: null }).where(eq(formSubmissions.linkedAdopterId, adopterId)),
         ]);
+
+        // Households as profiles: the person leaves the households they lived in («deja de figurar en el hogar»).
+        const { dropMembershipsOfDeletedProfile } = await import('@/lib/households');
+        await dropMembershipsOfDeletedProfile(db, adopterId);
 
         await db.delete(adopters).where(eq(adopters.id, adopterId));
         await closeRequestsForDeletedAdopter(db, adopterId, user);

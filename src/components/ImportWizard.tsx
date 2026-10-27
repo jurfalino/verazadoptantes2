@@ -46,6 +46,8 @@ import { handledAsStale } from '@/lib/errorMessage';
 import { resolveErrorId, reportClientError } from '@/lib/clientErrorReporter';
 import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, recordDateFrom, aliasForMerge, cleanOtherPeople, extractionQuality, type PostPerson, type ExtractionIssue } from '@/domain/importInput';
 import { needsIdentityChoice as needsIdentityChoiceFor } from '@/domain/identityChoice';
+import { ImportRelativeCheck, type RelativeChoice } from '@/components/import/ImportRelativeCheck';
+import type { HouseholdContactInput } from '@/app/actions/households';
 import DatePicker from '@/components/ui/DatePicker';
 import MatchCompare from '@/components/MatchCompare';
 import { buttonClasses } from '@/components/ui/Button';
@@ -320,6 +322,8 @@ export default function ImportWizard() {
     const [reportDate, setReportDate] = useState('');
     // Other people the post names: saved as relatives of the profile (Jon, 2026-10-22).
     const [relatives, setRelatives] = useState<PostPerson[]>([]);
+    // «¿Es este perfil?» per relative (a rescuer is here): the profile to link, keyed by the relative.
+    const [relativeChoices, setRelativeChoices] = useState<Record<string, RelativeChoice>>({});
     // Merging into a profile matched only on phone/email/address: is the post's
     // person the same one under another name, or someone in that household?
     const [mergeAs, setMergeAs] = useState<'alias' | 'relative' | null>(null);
@@ -1109,7 +1113,8 @@ export default function ImportWizard() {
                 // stampPublic block entirely → entries land non-public.
                 ...(sourceUrl && !fromContacts ? { isPublic: isPublicProfile } : {}),
                 // The other people the post names, as relatives of this profile.
-                ...(relatives.length ? { householdMembers: JSON.stringify(relatives.map(toMember)) } : {}),
+                // Those the rescuer recognised as an existing profile («¿Es este perfil?» → sí) are linked after the save.
+                ...(relatives.some(p => !linkedProfileOf(p)) ? { householdMembers: JSON.stringify(relatives.filter(p => !linkedProfileOf(p)).map(toMember)) } : {}),
                 images: [
                     // Honor the review-step de-selection: a processed image is
                     // excluded by `p:<i>`, a manual image by `m:<i>`.
@@ -1158,6 +1163,21 @@ export default function ImportWizard() {
             }
 
             const adopterId = result.id;
+
+            // Relatives recognised as an existing profile join the new profile's household (credited, notified).
+            for (const [i, p] of relatives.entries()) {
+                const existingProfileId = linkedProfileOf(p);
+                if (!existingProfileId) continue;
+                const res = await addHouseholdPerson({
+                    anchorAdopterId: adopterId, existingProfileId, relationship: p.relationship,
+                    contactEntries: asHouseholdContacts(toMember(p).contactEntries),
+                    fromImport: { sourceUrl: sourceUrl || null, slot: `r${i}` },
+                });
+                if (!res.ok && res.error !== 'already_there') {
+                    toast.error(t('errors.generic'), t('import.relative_failed'), res.errorId ?? resolveErrorId(new Error(`addHouseholdPerson (import, linked): ${res.error}`), 'ImportWizard'));
+                    break;
+                }
+            }
 
             // Upload any pending video files via FormData (they were excluded from JSON body)
             const pendingVideoFiles = manualImages.filter((img, i) => img.file && !isMediaExcluded(`m:${i}`));
@@ -1221,6 +1241,20 @@ export default function ImportWizard() {
         relationship: p.relationship,
         contactEntries: buildContactEntries({ phones: p.phones, socials: p.socialProfiles }),
     });
+    /** The add actions' contact shape for a relative's (or the post person's) entries. */
+    const asHouseholdContacts = (entries: ContactEntry[]): HouseholdContactInput[] => entries.map(e => ({
+        type: e.type, value: e.value,
+        ...(e.platform ? { platform: e.platform } : {}),
+        ...(e.apps?.length ? { apps: e.apps } : {}),
+        ...(e.streetAndNumber ? { streetAndNumber: e.streetAndNumber } : {}),
+        ...(e.locality ? { locality: e.locality } : {}),
+    }));
+    /** A relative's «¿Es este perfil?» answer is kept under who they are, not their place in the list. */
+    const relativeKey = (p: PostPerson) => JSON.stringify([p.name, p.phones, p.socialProfiles]);
+    const linkedProfileOf = (p: PostPerson): string | null => {
+        const c = relativeChoices[relativeKey(p)];
+        return c && c !== 'new' ? c : null;
+    };
 
     /**
      * Merging into a match that did NOT match on the name (only phone, email or
@@ -1339,7 +1373,7 @@ export default function ImportWizard() {
             // Each with its place in the post (`slot`): a re-merge of the same post adds nobody twice.
             const members = [
                 ...(asRelative ? [{ name: extractedData.name?.trim() || '', relationship: 'unknown' as const, contactEntries, slot: 's' }] : []),
-                ...relatives.map((p, i) => ({ ...toMember(p), slot: `r${i}` })),
+                ...relatives.map((p, i) => ({ ...toMember(p), slot: `r${i}`, existingProfileId: linkedProfileOf(p) })),
             ];
             const alias = asRelative ? null : aliasForMerge(extractedData.name, mergeTarget.name);
             const entriesToMerge: ContactEntry[] = asRelative ? [] : (alias
@@ -1374,22 +1408,17 @@ export default function ImportWizard() {
             // in uses (D54: credited, granted, the target's team told). The «¿Es este
             // perfil?» confirmation per relative comes with the household UI (Task 8).
             for (const m of members) {
+                const linked = 'existingProfileId' in m && m.existingProfileId ? m.existingProfileId : null;
                 const res = await addHouseholdPerson({
                     anchorAdopterId: mergeTarget.id,
-                    name: m.name,
+                    ...(linked ? { existingProfileId: linked } : { name: m.name }),
                     relationship: m.relationship,
-                    contactEntries: m.contactEntries.map(e => ({
-                        type: e.type, value: e.value,
-                        ...(e.platform ? { platform: e.platform } : {}),
-                        ...(e.apps?.length ? { apps: e.apps } : {}),
-                        ...(e.streetAndNumber ? { streetAndNumber: e.streetAndNumber } : {}),
-                        ...(e.locality ? { locality: e.locality } : {}),
-                    })),
+                    contactEntries: asHouseholdContacts(m.contactEntries),
                     fromImport: { sourceUrl: sourceUrl || null, slot: m.slot },
                 });
                 // 'already_there': someone of that name already lives there — nothing to add.
                 if (!res.ok && res.error !== 'already_there') {
-                    toast.error(t('errors.generic'), t('import.relative_failed'), res.errorId);
+                    toast.error(t('errors.generic'), t('import.relative_failed'), res.errorId ?? resolveErrorId(new Error(`addHouseholdPerson (import): ${res.error}`), 'ImportWizard'));
                     break;
                 }
             }
@@ -1998,7 +2027,8 @@ export default function ImportWizard() {
                             <p className="text-xs text-stone-500">{t('import.relatives_hint')}</p>
                             <ul className="space-y-2">
                                 {relatives.map((p, i) => (
-                                    <li key={`${p.name}-${i}`} className="flex items-center justify-between gap-3 rounded-lg bg-stone-50 border border-stone-200 pl-3">
+                                    <li key={`${p.name}-${i}`} className="rounded-lg bg-stone-50 border border-stone-200">
+                                    <div className="flex items-center justify-between gap-3 pl-3">
                                         <span className="min-w-0 py-2">
                                             <span className="block font-semibold text-stone-900 break-words">{p.name}</span>
                                             <span className="block text-xs text-stone-500">
@@ -2015,6 +2045,14 @@ export default function ImportWizard() {
                                         >
                                             <CloseIcon className="w-4 h-4" />
                                         </button>
+                                    </div>
+                                    <ImportRelativeCheck
+                                        name={p.name}
+                                        contactEntries={asHouseholdContacts(toMember(p).contactEntries)}
+                                        excludeIds={selectedMatch ? [selectedMatch.id] : []}
+                                        choice={relativeChoices[relativeKey(p)]}
+                                        onChoose={c => setRelativeChoices(prev => ({ ...prev, [relativeKey(p)]: c }))}
+                                    />
                                     </li>
                                 ))}
                             </ul>

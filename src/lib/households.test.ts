@@ -31,7 +31,7 @@ vi.mock('@/lib/logger', () => ({
 
 import {
     addMembership, ensureHousehold, getHouseholdsFor, hasCorrection, householdIdsOf, householdLinesFor,
-    MAX_CARD_PROFILE_READS, removeMembership, sameHousehold,
+    MAX_CARD_PROFILE_READS, removeMembership, sameHousehold, dropMembershipsOfDeletedProfile,
 } from './households';
 import { logger } from '@/lib/logger';
 import { MAX_HOUSEHOLD_LINES, currentAge } from '@/domain/households';
@@ -234,6 +234,18 @@ describe('write core', () => {
     });
 });
 
+describe('dropMembershipsOfDeletedProfile (Task 8: «Eliminar perfil»)', () => {
+    it('takes a deleted profile out of its ordinary households; gift households stay as they are', async () => {
+        const hh = await pedrosHousehold();
+        sqlite.exec(`INSERT INTO households (id, created_by, created_at) VALUES ('gift1', '${OWNER}', 1)`);
+        await addMembership(db(), { householdId: 'gift1', adopterId: 'lucas', giftRecipient: true, relativeToAdopterId: 'ana', addedBy: OWNER });
+        await addMembership(db(), { householdId: 'gift1', adopterId: 'ana', addedBy: null });
+        await dropMembershipsOfDeletedProfile(db(), 'lucas');
+        expect(memberships().filter(r => r.adopter_id === 'lucas').map(r => r.household_id)).toEqual(['gift1']);
+        expect(memberships().filter(r => r.household_id === hh).map(r => r.adopter_id).sort()).toEqual(['marta', 'pedro']);
+    });
+});
+
 describe('getHouseholdsFor', () => {
     it("excludes the viewed profile; labels per spec; each member's live summary", async () => {
         const hh = await pedrosHousehold();
@@ -253,6 +265,30 @@ describe('getHouseholdsFor', () => {
         const lucas = onMarta.find(m => m.profileId === 'lucas')!;
         expect(lucas).toMatchObject({ isMinor: true, age: currentAge({ age: 12, ageAsOf: '2026-01-01' }), relationship: 'child', relativeToAdopterId: 'pedro', addedByName: 'stranger' });
         expect(lucas.label).toEqual({ key: 'adopter.hh_rel_of', params: { rel: 'adopter.hh_rel_child', name: 'Pedro Paez' } });
+    });
+
+    it("Task 8: the viewed profile's own place («Lucas figura como hijo/a de Pedro · según …»), anchor rows, the viewer's own adds and profiles", async () => {
+        await pedrosHousehold();
+        const [onLucas] = await getHouseholdsFor(db(), STRANGER, 'lucas');
+        expect(onLucas.self).toEqual({
+            label: { key: 'adopter.hh_rel_of', params: { rel: 'adopter.hh_rel_child', name: 'Pedro Paez' } },
+            addedByName: 'stranger', isAnchor: false, addedByViewer: true,
+        });
+        const pedro = onLucas.members.find(m => m.profileId === 'pedro')!;
+        const marta = onLucas.members.find(m => m.profileId === 'marta')!;
+        expect(pedro).toMatchObject({ isAnchor: true, addedByViewer: false, ownerIsViewer: false });
+        expect(marta).toMatchObject({ isAnchor: false, addedByViewer: false, ownerIsViewer: false });
+
+        const [onPedro] = await getHouseholdsFor(db(), STRANGER, 'pedro');
+        expect(onPedro.self).toEqual({ label: null, addedByName: null, isAnchor: true, addedByViewer: false });
+        // STRANGER added Lucas and owns his profile.
+        expect(onPedro.members.find(m => m.profileId === 'lucas')).toMatchObject({ addedByViewer: true, ownerIsViewer: true, isAnchor: false });
+        const asOwner = (await getHouseholdsFor(db(), OWNER.toUpperCase(), 'pedro'))[0].members.find(m => m.profileId === 'marta')!;
+        expect(asOwner).toMatchObject({ addedByViewer: true, ownerIsViewer: true });
+        // A guest is nobody.
+        const asGuest = (await getHouseholdsFor(db(), null, 'pedro'))[0];
+        expect(asGuest.self.addedByViewer).toBe(false);
+        expect(asGuest.members.every(m => !m.addedByViewer && !m.ownerIsViewer)).toBe(true);
     });
 
     it('two households → two views', async () => {

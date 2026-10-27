@@ -37,10 +37,12 @@ describe('fileAccessRequestFor', () => {
         expect(helper).not.toMatch(/^\s*['"]use server['"]/m);
         expect(helper).toMatch(/fileAccessRequestFor\(actor,/);
         expect(helper).not.toMatch(/requestPiiAccess\(|getUser\(/);
-        for (const caller of ['src/app/actions/addContactEntry.ts', 'src/app/actions/householdMembers.ts']) {
-            const src = read(caller);
-            expect(src, caller).toMatch(/fileContributionAccessRequest\([^)]*actor, adopterId\)/);
-            expect(src, caller).not.toMatch(/requestPiiAccess\(/);
-        }
+        const contact = read('src/app/actions/addContactEntry.ts');
+        expect(contact).toMatch(/fileContributionAccessRequest\([^)]*actor, adopterId\)/);
+        expect(contact).not.toMatch(/requestPiiAccess\(/);
+        // Households as profiles: the household add files on the person it made, with the actor it has.
+        const households = read('src/app/actions/households.ts');
+        expect(households).toMatch(/fileContributionAccessRequest\([^)]*actor, person\.id\)/);
+        expect(households).not.toMatch(/requestPiiAccess\(/);
     });
 });

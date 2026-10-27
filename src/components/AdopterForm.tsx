@@ -21,11 +21,9 @@ import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesSection from "@/components/ContactEntriesSection";
 import HouseholdSection from "@/components/HouseholdSection";
-import { withoutOwnMarks } from "@/domain/householdPermissions";
-import { LivesWithSection } from "@/components/LinkedProfileSummary";
-import { EMPTY_LINKED_SUMMARIES, type LinkedSummaries } from "@/domain/householdLinks";
+import { KnownAsLine } from "@/components/household/KnownAsLine";
+import { EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from "@/domain/profileHouseholds";
 import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
-import { deserializeHouseholdMembers } from "@/lib/householdMembers";
 import type { VisibilityBadge } from "@/domain/visibilityBadge";
 import { hasMinimumIdentifier } from "@/domain/adopterIdentity";
 import { adopterDisplayName, namelessSubIdentifier } from "@/lib/adopterDisplay";
@@ -111,8 +109,8 @@ interface AdopterFormProps {
     /** Opens the visibility/access explanatory modal when the badge is tapped.
      *  Provided by the profile; absent on the new-adopter form (no badge there). */
     onBadgeClick?: () => void;
-    /** D46: linked convivientes' live summaries (host members + «Convive con»), masked for this viewer. */
-    linkedSummaries?: LinkedSummaries;
+    /** Households as profiles: every household this profile is in (members masked for this viewer) and its gift forms. */
+    households?: ProfileHouseholds;
     /** Admin or moderator (false in preview-as-stranger): changes every household member (D54). */
     isModerator?: boolean;
     /** «Ver como desconocido»: the household shows exactly what a stranger gets — no team controls, no own markers. */
@@ -122,7 +120,7 @@ interface AdopterFormProps {
 }
 
 
-export function AdopterForm({ origin = null, interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick, linkedSummaries = EMPTY_LINKED_SUMMARIES, isModerator = false, previewAsStranger = false, identity = null }: AdopterFormProps) {
+export function AdopterForm({ origin = null, interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick, households = EMPTY_PROFILE_HOUSEHOLDS, isModerator = false, previewAsStranger = false, identity = null }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -1326,10 +1324,9 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                           <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }} data-testid="rename-hint">{t('adopter.rename_hint')}</p>
                                       )}
                                       {/* Previous names a rename kept: still found by search, never listed with the contacts. */}
-                                      {!isNew && !!identity?.knownAs.length && (
-                                          <p className="text-xs mt-0.5 break-words" style={{ color: 'var(--text-muted)' }} data-testid="profile-known-as">
-                                              {t('adopter.known_as')} <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{identity.knownAs.join(', ')}</span>
-                                          </p>
+                                      {/* The team (and admins/moderators) may take out a junk one. */}
+                                      {!isNew && !!identity?.knownAsEntries.length && initialData?.id && (
+                                          <KnownAsLine adopterId={initialData.id} entries={identity.knownAsEntries} canRemove={canEditAllHousehold} />
                                       )}
                                       {/* Sub-identifier for a nameless adopter — only when the
                                           contact reaching this form is unmasked for the viewer
@@ -1649,19 +1646,13 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                             <div className="space-y-3">
                                 <HouseholdSection
                                     adopterId={adopterId}
-                                    initialMembers={previewAsStranger
-                                        ? withoutOwnMarks(deserializeHouseholdMembers(initialData?.householdMembers))
-                                        : deserializeHouseholdMembers(initialData?.householdMembers)}
-                                    // D54: anyone signed in adds (a stranger too, so also in the
-                                    // preview); the owner's team, admins and moderators change everything.
-                                    canEditAll={canEditAllHousehold}
-                                    canAdd={!!isAuthenticated}
-                                    hasLegacyText={hasLegacyFamilyText || linkedSummaries.livesWith.length > 0}
-                                    linkedMembers={linkedSummaries.members}
                                     hostName={initialData?.name ?? ''}
-                                    beforeAdd={linkedSummaries.livesWith.length > 0
-                                        ? <LivesWithSection rows={linkedSummaries.livesWith} personName={initialData?.name ?? ''} canAddContact={!!isAuthenticated} />
-                                        : null}
+                                    data={households}
+                                    // Anyone signed in adds (a stranger too, so also in the preview).
+                                    signedIn={!!isAuthenticated}
+                                    isAdmin={isAdmin && !previewAsStranger}
+                                    preview={previewAsStranger}
+                                    hasLegacyText={hasLegacyFamilyText}
                                 />
                                 {hasLegacyFamilyText && (
                                     <div>

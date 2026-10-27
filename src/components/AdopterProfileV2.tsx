@@ -32,7 +32,7 @@ import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, 
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 import type { AdopterPiiContext } from '@/lib/piiAccess';
 import { NO_ACCESS_VISIBILITY, maskAdopterContact, maskContactEntries, renderName } from '@/lib/piiAccess';
-import { EMPTY_LINKED_SUMMARIES, type LinkedSummaries, type LinkedSummary } from '@/domain/householdLinks';
+import { EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from '@/domain/profileHouseholds';
 import { UNDO_RENAME_PARAM, type ProfileIdentityView } from '@/domain/profileIdentity';
 import RenameUndoPrompt, { RenameUndoButton } from '@/components/RenameUndo';
 
@@ -86,15 +86,15 @@ interface AdopterProfileV2Props {
     mergedFrom?: string | null;
     /** ENABLE_INTERVIEW_GUIDE — «Entrevistar» in the profile's ⋯ menu. */
     interviewEnabled?: boolean;
-    /** D46: linked convivientes' live summaries, already masked for this viewer by the server. */
-    linkedSummaries?: LinkedSummaries;
+    /** Households as profiles: every household this profile is in, members masked for this viewer by the server; gift forms. */
+    households?: ProfileHouseholds;
     /** Households as profiles: «Conocido/a como», age and «Menor de edad», computed on the server. */
     identity?: ProfileIdentityView | null;
     /** The rename this viewer may undo from the history (owner team / admin / moderator), or null. */
     renameUndoId?: string | null;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, isModeratorOrAdmin = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null, linkedSummaries = EMPTY_LINKED_SUMMARIES, identity = null, renameUndoId = null }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, isModeratorOrAdmin = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null, households = EMPTY_PROFILE_HOUSEHOLDS, identity = null, renameUndoId = null }: AdopterProfileV2Props) {
     const { formatDateTime, formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const searchParams = useSearchParams();
@@ -161,22 +161,31 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             contactInfo: masked.contactInfo,
             contactEntries: masked.contactEntries,
             addressInfo: masked.addressInfo,
-            householdMembers: masked.householdMembers,
         };
     }, [previewAsStranger, adopter]);
 
-    // Preview-as-stranger also masks the linked convivientes' summaries the
-    // same way (they arrive masked for the REAL viewer, who may see it all).
-    const displayedLinked = useMemo<LinkedSummaries>(() => {
-        if (!previewAsStranger) return linkedSummaries;
-        const asStranger = <T extends LinkedSummary>(s: T): T => ({
-            ...s, contacts: maskContactEntries(s.contacts, NO_ACCESS_VISIBILITY).entries, canSeeContact: false, canReportNotLiving: false,
-        });
+    // Preview-as-stranger also masks the household members' summaries the same
+    // way (they arrive masked for the REAL viewer, who may see it all), and
+    // drops everything a stranger can't do there (menus, own markers, «Crear perfil»).
+    const displayedHouseholds = useMemo<ProfileHouseholds>(() => {
+        if (!previewAsStranger) return households;
         return {
-            members: Object.fromEntries(Object.entries(linkedSummaries.members).map(([k, s]) => [k, asStranger(s)])),
-            livesWith: linkedSummaries.livesWith.map(asStranger),
+            views: households.views.map(v => ({
+                ...v,
+                self: { ...v.self, addedByViewer: false },
+                members: v.members.map(m => ({
+                    ...m, contacts: maskContactEntries(m.contacts, NO_ACCESS_VISIBILITY).entries, canSeeContact: false,
+                    canReportNotLiving: false, canRemove: false, addedByViewer: false, ownerIsViewer: false,
+                })),
+            })),
+            giftForms: households.giftForms.map(g => g.masked ? g : {
+                ...g, masked: true,
+                name: renderName(g.name, NO_ACCESS_VISIBILITY) || '',
+                phone: g.phone ? maskContactEntries([{ type: 'phone', value: g.phone }], NO_ACCESS_VISIBILITY).entries[0]?.value ?? null : null,
+            }),
+            canCreateGift: false,
         };
-    }, [previewAsStranger, linkedSummaries]);
+    }, [previewAsStranger, households]);
 
     // Effective piiContext for preview mode — flips `privileged` off and
     // `masked` on so children that branch on those flags render the
@@ -502,7 +511,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     visibilityBadge={visibilityBadge}
                     onBadgeClick={() => setVisibilityModalOpen(true)}
                     canEdit={!effectivePiiContext?.gatingOn || !!effectivePiiContext?.privileged}
-                    linkedSummaries={displayedLinked}
+                    households={displayedHouseholds}
                     identity={identity}
                     onMaskedContactClick={
                         effectivePiiContext?.masked
@@ -648,6 +657,12 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                             else if (parsed.household_not_living_together) { eventType = 'hh_not_living_linked'; changes = parsed.household_not_living_together; }
                                             // The host's team removed this person from its household (M7): «Convive con» went away with it.
                                             else if (parsed.household_removed_by_host) { eventType = 'hh_removed_by_host'; changes = parsed.household_removed_by_host; }
+                                            // Households as profiles: a person made in a household, added to one, joined one, a relationship changed, a mistaken add taken out.
+                                            else if (parsed.created_in_household) { eventType = 'hh_created'; changes = parsed.created_in_household; }
+                                            else if (parsed.household_member_added) { eventType = 'hh_member_added'; changes = parsed.household_member_added; }
+                                            else if (parsed.household_joined) { eventType = 'hh_joined'; changes = parsed.household_joined; }
+                                            else if (parsed.household_relationship_changed) { eventType = 'hh_rel_changed'; changes = parsed.household_relationship_changed; }
+                                            else if (parsed.household_member_removed) { eventType = 'hh_member_removed_mistake'; changes = parsed.household_member_removed; }
                                             else { changes = parsed; }
                                         } catch { /* ignore */ }
 
@@ -677,6 +692,11 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                         {eventType === 'profiles_unmerged' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_profiles_unmerged')}</span>}
                                                         {(eventType === 'hh_not_living_host' || eventType === 'hh_not_living_linked') && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_not_living')}</span>}
                                                         {eventType === 'hh_removed_by_host' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_removed_by_host')}</span>}
+                                                        {eventType === 'hh_member_removed_mistake' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_removed_by_host')}</span>}
+                                                        {eventType === 'hh_created' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_created')}</span>}
+                                                        {eventType === 'hh_member_added' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_member_added')}</span>}
+                                                        {eventType === 'hh_joined' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_joined')}</span>}
+                                                        {eventType === 'hh_rel_changed' && <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_relationship_changed')}</span>}
                                                         {eventType === 'name_changed' && <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_name_changed')}</span>}
                                                         {eventType === 'name_restored' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_name_restored')}</span>}
                                                         {eventType === 'age_changed' && <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_age_changed')}</span>}
@@ -764,9 +784,50 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                                     </div>
                                                                 );
                                                             })()}
+                                                            {['hh_created', 'hh_member_added', 'hh_joined', 'hh_rel_changed', 'hh_member_removed_mistake'].includes(eventType) && (() => {
+                                                                const who = h.changedBy ? actorLabel(h.changedBy, userNameMap?.[h.changedBy], t) : t('common.anonymous');
+                                                                const rel = (code: unknown) => (typeof code === 'string' && code && code !== 'unknown' ? t(`adopter.hh_rel_${code}`) : t('adopter.hh_rel_unknown_display'));
+                                                                const host = changes.hostName || changes.anchorName || t('adopter.nameless');
+                                                                let text = '';
+                                                                let otherId: unknown = null;
+                                                                if (eventType === 'hh_created') {
+                                                                    const via = typeof changes.via === 'string' ? changes.via.replace(/^household-/, '') : '';
+                                                                    text = changes.gift ? t('audit.desc_hh_created_gift')
+                                                                        : ['form', 'import', 'interview', 'conversion'].includes(via) ? t(`audit.desc_hh_created_via_${via}`)
+                                                                        : t('audit.desc_hh_created');
+                                                                    text = text.replace('{host}', host);
+                                                                    otherId = changes.anchorId;
+                                                                } else if (eventType === 'hh_member_added') {
+                                                                    text = changes.gift ? t('audit.desc_hh_member_added_gift')
+                                                                        : changes.relationship && changes.relationship !== 'unknown'
+                                                                            ? t('audit.desc_hh_member_added').replace('{rel}', rel(changes.relationship).toLowerCase())
+                                                                            : t('audit.desc_hh_member_added_plain');
+                                                                    otherId = changes.profileId;
+                                                                } else if (eventType === 'hh_joined') {
+                                                                    text = t('audit.desc_hh_joined').replace('{host}', host);
+                                                                    otherId = changes.hostId;
+                                                                } else if (eventType === 'hh_member_removed_mistake') {
+                                                                    text = t('audit.desc_hh_member_removed_mistake').replace('{who}', who);
+                                                                    otherId = changes.linkedId;
+                                                                }
+                                                                return (
+                                                                    <div className="text-teal-800 font-medium break-words" data-testid={`history-${eventType}`}>
+                                                                        {eventType === 'hh_rel_changed' ? (
+                                                                            <>
+                                                                                <span className="line-through text-rose-400 text-xs mr-2 opacity-70">{rel(changes.from)}</span>
+                                                                                <span className="text-teal-700 mr-2">➜</span>
+                                                                                <span className="text-teal-900 bg-teal-100 px-1.5 rounded">{rel(changes.to)}</span>
+                                                                            </>
+                                                                        ) : text}
+                                                                        {typeof otherId === 'string' && otherId && otherId !== id && (
+                                                                            <> <a href={`/adopter/${encodeURIComponent(otherId)}`} className="inline-flex min-h-[44px] items-center font-semibold text-teal-700 hover:underline">{t('audit.hh_view_profile')} ↗</a></>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                             {eventType === 'hh_removed_by_host' && (
                                                                 <div className="text-teal-800 font-medium break-words" data-testid="history-hh-removed-by-host">
-                                                                    {t('audit.desc_hh_removed_by_host')
+                                                                    {t(changes.reason === 'mistake' ? 'audit.desc_hh_removed_mistake' : 'audit.desc_hh_removed_by_host')
                                                                         .replace('{who}', h.changedBy ? actorLabel(h.changedBy, userNameMap?.[h.changedBy], t) : t('common.anonymous'))
                                                                         .replace('{host}', changes.hostName || t('adopter.nameless'))}
                                                                     {typeof changes.hostId === 'string' && changes.hostId && (

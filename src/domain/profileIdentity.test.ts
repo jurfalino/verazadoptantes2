@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-    ageColumns, knownAsNames, parseNameChange, renameEntries, renameUndoPath, undoableRenameId, sameName,
+    ageColumns, knownAsNames, profileIdentityView, parseNameChange, renameEntries, renameUndoPath, undoableRenameId, sameName,
 } from './profileIdentity';
 import { deserializeContactEntries, contactEntriesToBlob, mergeContactEntries, stripRenameMarks, type ContactEntry } from '@/lib/contactEntries';
 import { maskContactEntries, maskAdopterContact, NO_ACCESS_VISIBILITY } from '@/lib/piiAccess';
@@ -64,6 +64,11 @@ describe('knownAsNames / undo bookkeeping', () => {
     const kept = (v: string): ContactEntry => ({ id: v, type: 'alias', value: v, fromRename: true });
     it('lists rename aliases only, never the current name, once each', () => {
         expect(knownAsNames([phone, kept('Pedro Paez'), { id: 'x', type: 'alias', value: 'Peter' }, kept('pedro paez'), kept('P. Paez')], 'P. Paez')).toEqual(['Pedro Paez']);
+    });
+    it('Task 8: the identity view carries each kept name with every alias id behind it (a junk one can be removed)', () => {
+        const v = profileIdentityView({ name: 'P. Paez' }, [phone, kept('Pedro Paez'), { id: 'x', type: 'alias', value: 'Peter' }, kept('pedro paez'), kept('P. Paez')]);
+        expect(v.knownAs).toEqual(['Pedro Paez']);
+        expect(v.knownAsEntries).toEqual([{ name: 'Pedro Paez', ids: ['Pedro Paez', 'pedro paez'] }]);
     });
     it('parseNameChange reads the history row; undoableRenameId offers only the newest rename still in place', () => {
         const rename = { id: 'h1', changedAt: 100, changes: JSON.stringify({ name: { from: 'A', to: 'B' }, name_changed: { from: 'A', to: 'B', aliasKept: true } }) };

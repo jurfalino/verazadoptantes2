@@ -79,7 +79,6 @@ export function assembleDiscoveryMatch(
             contactInfo: maskResult.contactInfo,
             contactEntries: maskResult.contactEntries,
             addressInfo: maskResult.addressInfo,
-            householdMembers: maskResult.householdMembers, // masked household (was leaking raw)
             familyMembers: null, // PII — hidden from non-privileged viewers
         };
         if (snippet && (snippet.field === 'contact' || snippet.field === 'address' || snippet.field === 'adoption')) {
@@ -94,7 +93,8 @@ export function assembleDiscoveryMatch(
         matchTypes: meta.matchTypes,
         matchValues: meta.matchValues,
         source: meta.source,
-        adopter: finalAdopter,
+        // Households as profiles: the old household JSON never leaves the server (the card's household line is `households`).
+        adopter: { ...finalAdopter, householdMembers: null },
         matchSnippet: snippet,
         contactProtected,
         visibilityBadge,

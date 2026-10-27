@@ -93,6 +93,8 @@ export type AddHouseholdPersonInput = {
     relationship?: Relationship;
     /** A whole 0–120 (new profiles only; an existing profile's age is changed through its own form). */
     age?: number | null;
+    /** «Es menor de edad» ticked (new profiles only): counts only with no age — a typed age decides by itself. */
+    isMinor?: boolean;
     contactEntries?: HouseholdContactInput[];
     /** A gift recipient: a gift household of its own with the anchor (the giver), never the ordinary one. */
     giftRecipient?: boolean;
@@ -408,6 +410,7 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                 name,
                 contactEntries: entries,
                 age: age ?? null,
+                isMinor: input.isMinor === true,
                 // Same owner as the anchor, so the same standing.
                 historyKind: historyKind(privilegedOnAnchor),
                 history: { created_in_household: { anchorId: anchor.id, anchorName: anchor.name, householdId: householdId || null, gift, ...(contactTypes.length ? { contactTypes } : {}) } },

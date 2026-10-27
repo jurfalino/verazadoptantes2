@@ -163,6 +163,15 @@ async function strangerAddsLucas() {
 }
 
 describe('addHouseholdPerson — a new person', () => {
+    it('Task 8: «Es menor de edad» ticked with no age → a minor profile; with an age the age decides', async () => {
+        const kid = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Tomás Paez', relationship: 'child', isMinor: true });
+        expect(kid.ok).toBe(true);
+        expect(profileNamed('Tomás Paez')).toMatchObject({ age: null, is_minor: 1 });
+        const adult = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Ana Paez', relationship: 'sibling', age: 30, isMinor: true });
+        expect(adult.ok).toBe(true);
+        expect(profileNamed('Ana Paez')).toMatchObject({ age: 30, is_minor: 0 });
+    });
+
     it("a stranger adds Lucas: Pedro's owner owns him, the phone is the stranger's with a grant, contributions only, Pedro's team told", async () => {
         const res = await strangerAddsLucas();
         expect(res).toMatchObject({ ok: true, createdProfile: true, autoRequestFiled: true });

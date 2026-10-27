@@ -193,6 +193,8 @@ export type ProfileIdentityView = {
     isMinor: boolean;
     /** The stored «Es menor de edad» box (what the editor starts from when there's no age). */
     minorBox: boolean;
+    /** Each «Conocido/a como» name with the ids of the rename aliases behind it (the team removes a junk one). */
+    knownAsEntries: Array<{ name: string; ids: string[] }>;
 };
 
 export function profileIdentityView(
@@ -200,7 +202,12 @@ export function profileIdentityView(
     entries: readonly ContactEntry[],
     today: Date = new Date(),
 ): ProfileIdentityView {
-    return { knownAs: knownAsNames(entries, p.name), age: currentAge(p, today), isMinor: isMinor(p, today), minorBox: !!p.isMinor };
+    const knownAs = knownAsNames(entries, p.name);
+    const knownAsEntries = knownAs.map(name => ({
+        name,
+        ids: entries.filter(e => isRenameAlias(e) && aliasKey(e.value) === aliasKey(name) && typeof e.id === 'string').map(e => e.id as string),
+    }));
+    return { knownAs, age: currentAge(p, today), isMinor: isMinor(p, today), minorBox: !!p.isMinor, knownAsEntries };
 }
 
 /**

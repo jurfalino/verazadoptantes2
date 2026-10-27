@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import DuplicateMergeModal from '@/components/DuplicateMergeModal';
 import { useLanguage } from '@/context/LanguageContext';
+import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
 import { scanRetryDelayMs, SCAN_MAX_CONSECUTIVE_FAILURES } from '@/domain/scanResilience';
 
 /**
@@ -123,6 +124,11 @@ function collectRecords(
 
 export default function DuplicatesPanel() {
     const { t } = useLanguage();
+    /** A merge rule's refusal, in words (households as profiles); anything else as the server said it. */
+    const mergeErrorText = (e: string | null | undefined) =>
+        e === MINOR_SURVIVOR_HAS_ACTIVITY ? t('errors.merge_minor_survivor')
+            : e === HOUSEHOLD_NOT_CONVERTED ? t('errors.merge_household_not_converted')
+            : (e ?? '');
     const [userFlagged, setUserFlagged] = useState<UserFlagged[]>([]);
     const [candidates, setCandidates] = useState<DuplicateCandidate[]>([]);
     const [counts, setCounts] = useState<Counts>({ pending: 0, dismissed: 0, merged: 0, userFlagged: 0 });
@@ -438,7 +444,7 @@ export default function DuplicatesPanel() {
             clearSelection();
             fetchData();
         } else {
-            alert(`Merge failed: ${data.error}`);
+            alert(`Merge failed: ${mergeErrorText(data.error)}`);
         }
     }
 
@@ -470,11 +476,11 @@ export default function DuplicatesPanel() {
         const okResults = allResults.filter(r => r.success);
         const failed = allResults.filter(r => !r.success);
         if (transportError && okResults.length === 0) {
-            alert(`Merge failed: ${transportError}`);
+            alert(`Merge failed: ${mergeErrorText(transportError)}`);
             return;
         }
         if (failed.length > 0 || transportError) {
-            alert(`Se fusionaron ${okResults.length} perfiles, pero ${failed.length || 'algunos'} fallaron:\n${failed.map(f => `• ${f.error}`).join('\n')}${transportError ? `\n• ${transportError}` : ''}`);
+            alert(`Se fusionaron ${okResults.length} perfiles, pero ${failed.length || 'algunos'} fallaron:\n${failed.map(f => `• ${mergeErrorText(f.error)}`).join('\n')}${transportError ? `\n• ${mergeErrorText(transportError)}` : ''}`);
         }
         const auditIds = okResults.filter(r => r.auditId).map(r => r.auditId!);
         setLastMerge(auditIds.length > 0 ? { auditIds, label: `${auditIds.length} perfil${auditIds.length === 1 ? '' : 'es'} fusionado${auditIds.length === 1 ? '' : 's'}`, primaryIds: [primaryId] } : null);

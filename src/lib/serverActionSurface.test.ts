@@ -108,6 +108,9 @@ const MUST_NOT_BE_ACTIONS = [
     'ensureHostConverted',
     'ensureProfileConverted',
     'reverseConvertedOldMerge',
+    // Households as profiles, Task 8: the profile page's household read and the delete cleanup.
+    'readProfileHouseholds',
+    'dropMembershipsOfDeletedProfile',
     // Profile name / age (src/lib/profileIdentity.ts): the actor is an argument; the browser
     // goes through src/app/actions/profileIdentity.ts (session).
     'renameProfile',

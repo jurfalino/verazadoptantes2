@@ -71,9 +71,23 @@ export type HouseholdMemberView = LinkedSummary & {
     isMinor: boolean;
     /** Current age (goes up by itself), null when unknown. */
     age: number | null;
+    /** The household's own anchor row (added next to nobody): the person relationships point at — no «Editar» there. */
+    isAnchor: boolean;
+    /** The viewer added this membership («Lo agregaste vos»). */
+    addedByViewer: boolean;
+    /** The viewer owns this member's profile (the deletion items: «Eliminar perfil» / «Pedir eliminación»). */
+    ownerIsViewer: boolean;
 };
 
-export type HouseholdView = { id: string; isGift: boolean; members: HouseholdMemberView[] };
+/** The viewed profile's own place in a household: «Lucas figura como hijo/a de Pedro · según Jonathan U». */
+export type HouseholdSelfView = {
+    label: MembershipLabel | null;
+    addedByName: string | null;
+    isAnchor: boolean;
+    addedByViewer: boolean;
+};
+
+export type HouseholdView = { id: string; isGift: boolean; self: HouseholdSelfView; members: HouseholdMemberView[] };
 
 /** A housemate on a search / «¿Es este perfil?» card — defined in the domain so client components can import it. */
 export type { HouseholdLine };
@@ -406,6 +420,21 @@ export async function dropHousemateCandidates(db: Db, householdId: string, adopt
 }
 
 /**
+ * A profile deleted for good (owner delete / admin delete): it leaves every
+ * ordinary household it was in, so it neither lingers against the 30-person
+ * cap nor in the housemate checks. Gift households are left as they are: the
+ * giver's row alone would read as the giver's own home (the «Crear perfil»
+ * path replaces a missing recipient itself). Throws on a DB failure (the
+ * caller logs with its context).
+ */
+export async function dropMembershipsOfDeletedProfile(db: Db, adopterId: string): Promise<void> {
+    await db.delete(householdMemberships).where(and(
+        eq(householdMemberships.adopterId, adopterId),
+        sql`NOT EXISTS (SELECT 1 FROM household_memberships g WHERE g.household_id = ${householdMemberships.householdId} AND g.gift_recipient = 1)`,
+    )).run();
+}
+
+/**
  * Take one person out of one household, for everyone. With `correction`
  * («No vive acá», D48) the fact is remembered per (household, person) with
  * the removed row as the snapshot, in the same batch. The household itself
@@ -553,6 +582,9 @@ export async function getHouseholdsFor(
             ...capped.flat().map(m => m.addedBy),
         ], ctx);
         const today = new Date();
+        const me = viewerEmail?.trim().toLowerCase() || null;
+        const isViewer = (email: string | null | undefined) => !!me && !!email && email.trim().toLowerCase() === me;
+        const isAnchorRow = (m: MembershipRow) => !m.relativeToAdopterId && !m.addedBy;
 
         const views: HouseholdView[] = [];
         own.forEach((selfMembership, i) => {
@@ -594,10 +626,20 @@ export async function getHouseholdsFor(
                     giftRecipient: !!m.giftRecipient,
                     isMinor: isMinor(p, today),
                     age: currentAge(p, today),
+                    isAnchor: isAnchorRow(m),
+                    addedByViewer: isViewer(m.addedBy),
+                    ownerIsViewer: isViewer(p.addedBy),
                 });
             }
             if (members.length === 0) return;
-            views.push({ id: selfMembership.householdId, isGift: isGiftHousehold(group), members });
+            const selfView: HouseholdSelfView = {
+                // How the viewed profile itself reads in this household («hijo/a de Pedro»): seen from nobody's profile.
+                label: membershipLabel('', selfMembership, names),
+                addedByName: personLabel(selfMembership.addedBy, rescuerNames),
+                isAnchor: isAnchorRow(selfMembership),
+                addedByViewer: isViewer(selfMembership.addedBy),
+            };
+            views.push({ id: selfMembership.householdId, isGift: isGiftHousehold(group), self: selfView, members });
         });
         return views;
     } catch (e) {

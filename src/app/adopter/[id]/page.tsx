@@ -11,8 +11,7 @@ import { resolveMergedAdopterId } from '@/lib/mergedAdopterRedirect';
 import { getFeatureFlag } from '@/config/features';
 import { AdopterProfileV2 } from '@/components/AdopterProfileV2';
 import type { AdopterPiiContext } from '@/lib/piiAccess';
-import { getLinkedSummaries } from '@/lib/householdLinks';
-import { EMPTY_LINKED_SUMMARIES, type LinkedSummaries } from '@/domain/householdLinks';
+import { readProfileHouseholds, EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from '@/lib/profileHouseholds';
 import { profileIdentityView, undoableRenameId, type ProfileIdentityView } from '@/domain/profileIdentity';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { profileReturnPath } from '@/domain/profileReturnPath';
@@ -84,7 +83,7 @@ export default async function AdopterPage({
     let dupCandidates: any[] = [];
     let piiContext: AdopterPiiContext | null = null;
     let deletionRequested = false;
-    let linkedSummaries: LinkedSummaries = EMPTY_LINKED_SUMMARIES;
+    let households: ProfileHouseholds = EMPTY_PROFILE_HOUSEHOLDS;
 
     if (!isNew) {
         // Per-fetch fallback: if any single query throws (e.g. transient D1 outage), the page
@@ -99,9 +98,13 @@ export default async function AdopterPage({
             });
             return def;
         };
-        // One read of the adopter: the linked summaries reuse it (owner + household ids).
+        // One read of the adopter: the household read reuses it (the gift permission needs the owner).
         const adopterRead = getAdopter(id).catch(fallback('getAdopter', null));
-        [adopter, history, adoptions, images, allImages, flags, stats, avgRating, availableAnimals, dupCandidates, piiContext, deletionRequested, linkedSummaries] = await Promise.all([
+        // Households as profiles: only while ENABLE_HOUSEHOLD_MEMBERS is on (the section is hidden otherwise).
+        const householdsRead = getFeatureFlag('ENABLE_HOUSEHOLD_MEMBERS')
+            .then(on => (on ? readProfileHouseholds(currentUser, id, adopterRead) : EMPTY_PROFILE_HOUSEHOLDS))
+            .catch(fallback<ProfileHouseholds>('readProfileHouseholds', EMPTY_PROFILE_HOUSEHOLDS));
+        [adopter, history, adoptions, images, allImages, flags, stats, avgRating, availableAnimals, dupCandidates, piiContext, deletionRequested, households] = await Promise.all([
             adopterRead,
             getHistory(id).catch(fallback<any[]>('getHistory', [])),
             getAdoptions(id).catch(fallback<any[]>('getAdoptions', [])),
@@ -114,8 +117,8 @@ export default async function AdopterPage({
             getDuplicateCandidates(id).catch(fallback<any[]>('getDuplicateCandidates', [])),
             getAdopterPiiContext(id).catch(fallback<AdopterPiiContext | null>('getAdopterPiiContext', null)),
             hasPendingDeletionRequest(id).catch(fallback<boolean>('hasPendingDeletionRequest', false)),
-            // D46: linked convivientes' live summaries, masked for this viewer.
-            getLinkedSummaries(currentUser, id, adopterRead).catch(fallback<LinkedSummaries>('getLinkedSummaries', EMPTY_LINKED_SUMMARIES)),
+            // Every household this profile is in, each member's live summary masked for this viewer (D46).
+            householdsRead,
         ]);
     } else {
         availableAnimals = await getAvailableAnimals().catch(e => {
@@ -285,7 +288,7 @@ export default async function AdopterPage({
             originLabels={originLabels}
             mergedFrom={typeof allSearchParams.merged === 'string' && allSearchParams.merged ? allSearchParams.merged : null}
             interviewEnabled={interviewEnabled}
-            linkedSummaries={linkedSummaries}
+            households={households}
             identity={identity}
             renameUndoId={renameUndoId}
         />

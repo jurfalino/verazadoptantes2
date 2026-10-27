@@ -61,7 +61,10 @@ let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefine
 const mergeSpy = vi.mocked(mergeAdopters);
 const requests = () => sqlite.prepare('SELECT * FROM merge_requests').all();
 const deleted = (id: string) => sqlite.prepare('SELECT deleted_at FROM adopters WHERE id = ?').get(id)!.deleted_at !== null;
-const household = (id: string) => JSON.parse((sqlite.prepare('SELECT household_members FROM adopters WHERE id = ?').get(id)!.household_members as string | null) || '[]');
+/** Households as profiles: who lives with `id` (every housemate in every household it is in), with the membership that put them there. */
+const household = (id: string) => sqlite.prepare(`SELECT o.adopter_id AS profileId, o.relationship AS relationship, o.added_by AS addedBy
+    FROM household_memberships m JOIN household_memberships o ON o.household_id = m.household_id AND o.adopter_id != m.adopter_id
+    WHERE m.adopter_id = ? ORDER BY o.added_at, o.id`).all(id);
 const candidate = (id: string) => sqlite.prepare('SELECT status FROM duplicate_candidates WHERE id = ?').get(id)!.status;
 const grantsOn = (id: string) => sqlite.prepare(`SELECT grantee_email AS email, scope, origin FROM pii_access_grants WHERE adopter_id = ? AND revoked_at IS NULL ORDER BY grantee_email`).all(id);
 
@@ -364,32 +367,34 @@ describe('«¿Es la misma persona?» (D35)', () => {
         expect(mergeSpy).toHaveBeenCalledWith('hh-theirs', 'hh-mine', STRANGER);
     });
 
-    it("«alguien de su hogar»: no merge; the other person is added by name on MY profile only, linked; the pair is resolved", async () => {
+    it("«alguien de su hogar»: no merge; the other person joins MY profile's household, linked; the pair is resolved", async () => {
         expect(await mergePendingDedupPair('cand-hh', { identity: 'household' })).toEqual({ success: true, outcome: 'household' });
         expect(mergeSpy).not.toHaveBeenCalled();
-        expect(household('hh-mine')).toEqual([expect.objectContaining({
-            name: 'Lucía Pérez', relationship: 'unknown', profileId: 'hh-theirs', contactEntries: [], addedBy: STRANGER,
-        })]);
-        expect(household('hh-theirs')).toEqual([]);
+        // One household (a group): Lucía joins MY profile's home, credited to me; she lives with me on both
+        // profiles, and nothing on her profile itself changes.
+        expect(household('hh-mine')).toEqual([{ profileId: 'hh-theirs', relationship: 'unknown', addedBy: STRANGER }]);
+        expect(household('hh-theirs')).toEqual([expect.objectContaining({ profileId: 'hh-mine' })]);
         expect(sqlite.prepare(`SELECT updated_at FROM adopters WHERE id = 'hh-theirs'`).get()!.updated_at).toBe(2000);
-        expect(candidate('cand-hh')).toBe('dismissed');
+        // Joining a household removes the pair's pending candidate row (housemates are never duplicates, Task 5):
+        // the pair is out of both lists either way.
+        expect(sqlite.prepare('SELECT status FROM duplicate_candidates WHERE id = ?').get('cand-hh')).toBeUndefined();
         expect(requests()).toEqual([]);
         expect(deleted('hh-mine') || deleted('hh-theirs')).toBe(false);
     });
 
-    it('«alguien de su hogar» on a pair inside my team: each side gets the other', async () => {
+    it('«alguien de su hogar» on a pair inside my team: they live together on both profiles', async () => {
         expect(await as(OWNER, () => mergePendingDedupPair('cand-hh-team', { identity: 'household' }))).toEqual({ success: true, outcome: 'household' });
-        expect(household('hh-owner')).toEqual([expect.objectContaining({ name: 'Lucía Pérez', profileId: 'hh-mate' })]);
-        expect(household('hh-mate')).toEqual([expect.objectContaining({ name: 'Ana Pérez', profileId: 'hh-owner' })]);
+        expect(household('hh-owner')).toEqual([expect.objectContaining({ profileId: 'hh-mate' })]);
+        expect(household('hh-mate')).toEqual([expect.objectContaining({ profileId: 'hh-owner' })]);
     });
 
-    it("«alguien de su hogar» on two of my profiles, one whose added_by has capitals: both get the other", async () => {
+    it("«alguien de su hogar» on two of my profiles, one whose added_by has capitals: they live together on both", async () => {
         sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('hh-caps', 'Lucía Pérez', '5', 'Stranger@Example.com', 3000, 3000)`).run();
         sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at)
             VALUES ('cand-hh-caps', 'hh-caps', 'hh-mine', '["phone"]', 90, 'high', 'pending', 1)`).run();
         expect(await mergePendingDedupPair('cand-hh-caps', { identity: 'household' })).toEqual({ success: true, outcome: 'household' });
-        expect(household('hh-mine')).toEqual([expect.objectContaining({ name: 'Lucía Pérez', profileId: 'hh-caps' })]);
-        expect(household('hh-caps')).toEqual([expect.objectContaining({ name: 'Ana Pérez', profileId: 'hh-mine' })]);
+        expect(household('hh-mine')).toEqual([expect.objectContaining({ profileId: 'hh-caps' })]);
+        expect(household('hh-caps')).toEqual([expect.objectContaining({ profileId: 'hh-mine' })]);
     });
 
     it('a stranger to both sides cannot use the household path either', async () => {

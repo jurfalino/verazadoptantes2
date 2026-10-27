@@ -63,6 +63,9 @@ export async function POST(request: NextRequest) {
         await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopterId));
         await db.delete(duplicateCandidates).where(sql`${duplicateCandidates.adopter1Id} = ${adopterId} OR ${duplicateCandidates.adopter2Id} = ${adopterId}`);
         await db.update(formSubmissions).set({ linkedAdopterId: null }).where(eq(formSubmissions.linkedAdopterId, adopterId));
+        // Households as profiles: the person leaves the households they lived in (mirrors deleteOwnAdopter).
+        const { dropMembershipsOfDeletedProfile } = await import('@/lib/households');
+        await dropMembershipsOfDeletedProfile(db, adopterId);
         await db.delete(adopters).where(eq(adopters.id, adopterId));
         await closeRequestsForDeletedAdopter(db, adopterId, session.user.email);
 
