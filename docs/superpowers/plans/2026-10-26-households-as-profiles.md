@@ -18,7 +18,10 @@
 - **Unattended matching = exactly the API's** `findIdentifierHits` + `decideExactOutcome` (phone, email, ID number; name must fit; exactly one consistent profile). Otherwise create a new profile and let the duplicate scan decide. Never pick on a fuzzy match.
 - **Search returns only the profiles that match.** Every card (search, «¿Es este perfil?») shows its households' line with each housemate's live rating and alerts. Housemates never become duplicate candidates of each other.
 - A profile can be in several households. Relationship is stored relative to `relative_to_adopter_id`; labels per spec §Households (no reverse labels except the symmetric `partner`, `sibling`).
-- Gift recipient: a profile, plus a membership with `gift_recipient = 1` in a 2-person household with the giver. Shown as «Destinatario del regalo», never under «Convive con».
+- Gift recipient: NOT a profile by default. The giver's profile shows «Destinatario del regalo (según el formulario)» from the form answers. «Crear perfil de {nombre}» creates the profile and puts it in a gift household (`gift_recipient = 1`), never shown under «Convive con».
+- **Visual source of truth:** prototype branch `prototype/households-as-profiles` (commit 4afff8f7, worktree ../verazadoptantes2-hhproto, `src/components/prototype/*`) and its screenshots in `/Users/jurfalino/Developer/Personal/verazadoptantes2/proto-shots/households/` (states P1–P5, M1, Q1, D1, D2, E1, E2, K1, A1–A5, N2, N3, H1, S1, S2). Jon approved these screens. The real UI must match them.
+- **Names and ages of any profile** can be changed by anyone signed in. The old name is kept as a rename alias (shown only as «Conocido/a como» under the name, not in the contact list), the owner's team is told in-app and by email with «Deshacer», and the change goes into the history.
+- **Minors** (current age < 18, or `is_minor`) are searchable profiles tagged «Menor de edad». They get no rating, no alerts and no adoption records (server-enforced), and their profile hides «¿Qué pasó con …?» and «Actividad».
 - Corrections are stored per (household, person); a re-add or a merge back is a dispute that notifies admins (D48).
 - Privacy: each person's contacts follow their own profile. The conversion copies the host's `is_public` and every live grant (`all_contact` and `entry`) that covered the moved contacts.
 - History kinds: 'edit' only for actors privileged on that profile (`src/lib/profilePrivilege.ts`); else 'contribution'.
@@ -28,11 +31,11 @@
 
 ## Review Focus
 
-1. **Nobody sees more, or less, contact data after the conversion.** A viewer who saw a member's phone on the host still sees it on the member's profile. A viewer who didn't still doesn't. Test in Task 6.
-2. **An old tab writing the old JSON after the conversion** (deploy skew forwards it to an old build) loses nothing. The conversion is idempotent and re-runnable, and a re-run picks up members written since. Test in Task 6.
-3. **Re-sending the same adoption form, or re-importing the same person,** never creates the household person twice. Test in Task 3.
-4. **Merging two housemates,** or a member into their host, leaves no self-membership and no duplicate membership. Undo restores exactly. Test in Task 5.
-5. **A dangerous relative stays visible:** searching the son's name or phone shows the son's card with «Convive con Pedro ★1». Test in Task 4 (unit) and Task 7 (e2e).
+1. **Nobody sees more, or less, contact data after the conversion.** A viewer who saw a member's phone on the host still sees it on the member's profile. A viewer who didn't still doesn't. Test in Task 7.
+2. **An old tab writing the old JSON after the conversion** (deploy skew forwards it to an old build) loses nothing. The conversion is idempotent and re-runnable, and a re-run picks up members written since. Test in Task 7.
+3. **Re-sending the same adoption form, or re-importing the same person,** never creates the household person twice. Test in Task 4.
+4. **Merging two housemates,** or a member into their host, leaves no self-membership and no duplicate membership. Undo restores exactly. Test in Task 6.
+5. **A dangerous relative stays visible:** searching the son's name or phone shows the son's card with «Convive con Pedro ★1». Test in Task 5 (unit) and Task 8 (e2e).
 
 ---
 
@@ -45,8 +48,9 @@
 **Interfaces (produced):**
 - Tables:
   - `households(id TEXT PK, created_by TEXT, created_at INTEGER)`.
-  - `household_memberships(id TEXT PK, household_id TEXT NOT NULL, adopter_id TEXT NOT NULL, relationship TEXT NOT NULL DEFAULT 'unknown', relative_to_adopter_id TEXT, age INTEGER, age_as_of TEXT, gift_recipient INTEGER NOT NULL DEFAULT 0, added_by TEXT, added_at INTEGER NOT NULL, source_key TEXT)`, `UNIQUE(household_id, adopter_id)`, indexes on `adopter_id`, `household_id` and `source_key`. `source_key` identifies where a membership came from: `inline:{hostId}:{memberId}`, `link:{linkId}`, `form-{submissionId}-{i}`, `interview:{id}:{i}`, `import:{batch}:{row}`.
+  - `household_memberships(id TEXT PK, household_id TEXT NOT NULL, adopter_id TEXT NOT NULL, relationship TEXT NOT NULL DEFAULT 'unknown', relative_to_adopter_id TEXT, gift_recipient INTEGER NOT NULL DEFAULT 0, added_by TEXT, added_at INTEGER NOT NULL, source_key TEXT)`, `UNIQUE(household_id, adopter_id)`, indexes on `adopter_id`, `household_id` and `source_key`. `source_key` identifies where a membership came from: `inline:{hostId}:{memberId}`, `link:{linkId}`, `form-{submissionId}-{i}`, `interview:{id}:{i}`, `import:{batch}:{row}`.
   - `household_corrections(id TEXT PK, household_id TEXT NOT NULL, adopter_id TEXT NOT NULL, corrected_by TEXT NOT NULL, corrected_at INTEGER NOT NULL, snapshot TEXT)`.
+  - `adopters` gains `age INTEGER`, `age_as_of TEXT`, `is_minor INTEGER NOT NULL DEFAULT 0`. Memberships carry no age. Add the pure `isMinor({ age, ageAsOf, isMinor }, today): boolean` in `src/domain/households.ts`, reusing today's `currentAge` logic.
 - Domain:
   - `membershipLabel(viewedProfileId: string, m: { adopterId; relationship; relativeToAdopterId }, names: Record<string,string>): { key: string; params: Record<string,string> } | null`. Returns an i18n key + params, e.g. `{ key:'adopter.hh_rel_partner' }` or `{ key:'adopter.hh_rel_of', params:{ rel, name } }`.
   - `canRemoveMembership(viewer: { email; privilegedOn: (adopterId) => boolean; isAdmin }, m, householdAdopterIds: string[]): boolean`. True for: the adder, privileged on any profile in the household, admin/moderator.
@@ -75,8 +79,8 @@
   - With `existingProfileId`: link that profile; contacts go through `addContactEntry` semantics on it.
   - Without it: create a profile with owner = the anchor's owner, contacts credited to the actor with contribution grants. Refuse when `hasMinimumIdentifier` fails.
   - If a correction exists for (household, person): add anyway and notify admins (dispute).
-- `updateHouseholdMembership({ membershipId, relationship?, age? })`: allowed for the adder or someone privileged on any profile in the household.
-- `removeHouseholdMembership({ membershipId, notLivingTogether: boolean })`: `canRemoveMembership`. With `notLivingTogether`, also writes a correction. History on the person's profile and every remaining housemate's (kind via `historyKindFor`). Notices to the other teams.
+- `updateHouseholdMembership({ membershipId, relationship })`: open to anyone signed in. Credited, with history, and the household's teams are notified. Name and age go through Task 3's actions.
+- `removeHouseholdMembership({ membershipId, reason: 'mistake' | 'not_living' })`: `canRemoveMembership`. `'mistake'` removes the membership with no record. `'not_living'` writes a correction («No vive acá»). History on the person's profile and every remaining housemate's (kind via `historyKindFor`). Notices to the other teams.
 - `getHouseholdMatchCandidates({ name, contactEntries })`: the «¿Es este perfil?» data for the add form. It reuses the duplicate check used by «Nuevo adoptante» (find it in `src/components/AdopterForm.tsx`) and adds each candidate's household line.
 
 - [ ] Write failing tests:
@@ -89,7 +93,40 @@
 - [ ] Implement; ratchet the action count (log the new count); run vitest + `npx tsc --noEmit`.
 - [ ] Commit.
 
-### Task 3: Unattended paths — forms, API, importer, interview, gift recipient
+### Task 3: Any profile — open rename, age, minors
+
+**Files:**
+- Create: `src/app/actions/profileIdentity.ts` (+ test).
+- Modify:
+  - the name/age display in `src/components/AdopterProfileV2.tsx` (header: «Conocido/a como: …» line, «16 años», «Menor de edad» tag)
+  - `src/app/actions/adoptions.ts` (refuse records on a minor)
+  - `src/app/actions/flags.ts` (refuse alerts on a minor)
+  - the rating paths
+  - `src/domain/notificationTemplates.ts` + `src/domain/emailCategories.ts` (new `profile_renamed`, category «Cambios en tus perfiles», es/en/pt, `metadata.undo`)
+  - `src/lib/notificationEmail.ts` (second «Deshacer» button when `metadata.undo` is present)
+  - the notification bell item and the history list (a «Deshacer» action)
+
+**Interfaces:**
+- `changeProfileName({ adopterId, name, expectedName }): Promise<{ ok:true } | { ok:false; error:'conflict'|...; errorId? }>`. Open to any signed-in user.
+  - Compare-and-set on `expectedName`, else `conflict` (existing collab message).
+  - The old name is appended as a contact entry `{ type:'alias', value: old, addedBy: actor, fromRename: true }`. It's a name token, hidden from the contact list, shown as «Conocido/a como».
+  - History `name_changed` (kind via `historyKindFor`).
+  - Notify the owner's team (`profile_renamed`, url to the profile, `metadata.undo = { historyId }`); the actor is not notified.
+- `undoProfileRename(historyId)`: owner team or admin. Restores the name, keeps the reverted name as a rename alias, writes history, notifies the renamer.
+- `changeProfileAge({ adopterId, age: number|null, isMinor: boolean })`: open; credited, with history and notice. `age < 18` forces `isMinor`.
+
+- [ ] Write failing tests:
+  - A stranger renames → name changed, alias kept, a search for the old name still finds the profile, the owner is notified with undo, the stranger is not an approver.
+  - A stale `expectedName` → `conflict`.
+  - Undo by the owner ✓, by a stranger ✗.
+  - Age 12 → minor.
+  - On a minor: `saveAdoption` refused, `flagAdopter` refused, rating refused.
+  - At 18 (age + time) → not a minor.
+  - The email for `profile_renamed` has the «Deshacer» link.
+- [ ] Implement; ratchet the action count; run vitest + tsc.
+- [ ] Commit.
+
+### Task 4: Unattended paths — forms, API, importer, interview, gift recipient
 
 **Files:**
 - Create: `src/lib/householdPeople.ts` (+ test).
@@ -103,7 +140,7 @@
 
 **Interfaces:**
 - `resolveHouseholdPerson(db, person: { name; phone?; email?; documentId? }, ownerCountry: string|null, requestId: string): Promise<{ profileId: string } | null>`. Returns a profile only when `decideExactOutcome` is `found`.
-- `attachHouseholdPeople(db, { anchorAdopterId, people: Array<{ name; relationship; age?; contactEntries; giftRecipient? }>, actor, ownerEmail, sourceKey: string }): Promise<void>`. For each person: resolve, else create; then `addMembership`.
+- `attachHouseholdPeople(db, { anchorAdopterId, people: Array<{ name; relationship; age?; isMinor?; contactEntries }>, actor, ownerEmail, sourceKey: string }): Promise<void>`. For each person: resolve, else create; then `addMembership`.
   - `sourceKey` (e.g. `form-${submissionId}-${i}`) is stored on the membership (`source_key`) and checked first, so a resend reuses that membership and its person.
   - It never writes `household_members`.
 
@@ -112,13 +149,14 @@
   - The same form re-submitted → no new profiles.
   - A person whose phone + name match exactly one profile → that profile is reused.
   - Phone matches but the name doesn't fit → a new profile.
-  - Gift intent → a gift household, and the recipient's phone is on the recipient's profile.
+  - Gift intent → NO profile and no household; the giver's profile reads the recipient from the form answers.
+  - `createGiftRecipientProfile({ giverAdopterId, submissionId })` (open to the giver's team or admins) creates the profile from the answers (owner = the giver's owner) plus a gift household.
   - Interview additions → memberships, no duplicates by name within that household.
   - `POST /api/adopters` with `householdMembers` JSON → memberships, no JSON stored.
 - [ ] Implement; run the touched tests + tsc.
 - [ ] Commit.
 
-### Task 4: Search, duplicate detection, API exact mode
+### Task 5: Search, duplicate detection, API exact mode
 
 **Files:**
 - Modify:
@@ -142,7 +180,7 @@
 - [ ] Implement; run vitest + tsc. Add a ledger note: after deploy, Admin → Duplicates → Scan Now (v8 re-tokenize).
 - [ ] Commit.
 
-### Task 5: Merge and undo
+### Task 6: Merge and undo
 
 **Files:**
 - Modify: `src/lib/adopterMerge.ts` (memberships re-point to the survivor; collapse a duplicate pair in the same household; drop a self-membership; corrections re-point; all recorded in the undo payload; `unmergeAdopters` restores).
@@ -157,7 +195,7 @@
 - [ ] Implement; run vitest + tsc.
 - [ ] Commit.
 
-### Task 6: Conversion of existing data
+### Task 7: Conversion of existing data
 
 **Files:**
 - Create: `src/lib/householdConversion.ts` (+ test); an admin-only API route `src/app/api/admin/households/convert/route.ts` (`POST ?dryRun=1`) that returns a per-member report.
@@ -179,11 +217,17 @@
 - [ ] Implement; run vitest + tsc.
 - [ ] Commit.
 
-### Task 7: Profile UI, add-person flow, cleanup, e2e
+### Task 8: Profile UI, add-person flow, cleanup, e2e
 
 **Files:**
 - Modify:
-  - `src/components/AdopterForm.tsx`, `src/components/HouseholdSection.tsx` (rewritten on `HouseholdView[]`: one block per household; member cards = the linked-card layout shipped in 2.57.3; «Destinatario del regalo» block)
+  - `src/components/AdopterForm.tsx`, `src/components/HouseholdSection.tsx` (rewritten on `HouseholdView[]`, matching the prototype states):
+    - one block per household; «Hogar con …» titles only when a person is in 2+ homes;
+    - member card: the name is the profile link, a «⋯» menu with «Editar» / «Quitar del hogar» / «Eliminar perfil de X» or «Pedir eliminación» (today's delete rules: `deleteOwnAdopter` / `requestAdopterDeletion` / admin);
+    - Q1 dialog with the 'mistake' / 'not_living' reasons;
+    - the «Editar» form (E1);
+    - minors tag;
+    - gift block (P4/P5).
   - `src/components/LinkedProfileSummary.tsx`
   - `src/app/adopter/[id]/page.tsx`
   - the add form (name, relationship, age, contacts, then «¿Es este perfil?» from `getHouseholdMatchCandidates`)
