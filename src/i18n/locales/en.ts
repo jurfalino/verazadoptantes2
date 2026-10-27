@@ -1020,7 +1020,6 @@ export const en = {
         hh_link_records_many: '{n} records',
         hh_link_owner: 'Profile added by {name}',
         hh_link_view_full: 'View full profile',
-        hh_link_adds_to: "Added to {name}'s profile",
         hh_contact_already_there: 'That detail was already there.',
         hh_contact_already_there_unlocked: 'That detail was already there. Since you know it, you can now see it too.',
         hh_link_more_contacts: '+{n} more details on their profile',

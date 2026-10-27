@@ -15,7 +15,7 @@
  * (LinkedProfileSummary), never to this household's copy.
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { Pencil, Trash2, Plus, Check, X } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -49,7 +49,7 @@ interface MemberUI extends HouseholdMember {
 }
 interface CEditing extends ContactEntry { editing?: boolean; draft?: Draft }
 
-export default function HouseholdSection({ adopterId, initialMembers, canEditAll, canAdd, hasLegacyText = false, linkedMembers = {}, hostName = '' }: {
+export default function HouseholdSection({ adopterId, initialMembers, canEditAll, canAdd, hasLegacyText = false, linkedMembers = {}, hostName = '', beforeAdd = null }: {
     adopterId: string; initialMembers: HouseholdMember[];
     /** Owner ∨ admin ∨ moderator ∨ org-mate of the owner: may change every member and contact (D54). */
     canEditAll: boolean;
@@ -61,6 +61,8 @@ export default function HouseholdSection({ adopterId, initialMembers, canEditAll
     linkedMembers?: HouseholdLinkedMembers;
     /** This profile's name, for the «No convive» dialog (D48). */
     hostName?: string;
+    /** Rendered after the members and before «Agregar familiar» (the «Convive con» rows). */
+    beforeAdd?: ReactNode;
 }) {
     const { t } = useLanguage();
     const toast = useShowToast();
@@ -318,11 +320,12 @@ export default function HouseholdSection({ adopterId, initialMembers, canEditAll
                             </div>
                             {linked && (
                                 // D46: who this person is on their own profile, read live; D55: add their contacts there.
-                                <LinkedProfileSummary summary={linked} canAddContact={canAddToHousehold(viewer)} />
-                            )}
-                            {m.profileId && linkedMembers[m.id]?.canReportNotLiving && (
                                 // D48: the linked profile's team (or an admin) corrects the fact from here too.
-                                <NotLivingTogetherButton linkId={linkedMembers[m.id].linkId} personName={m.name} hostName={hostName} className="mt-2.5" />
+                                <LinkedProfileSummary
+                                    summary={linked}
+                                    canAddContact={canAddToHousehold(viewer)}
+                                    actions={linked.canReportNotLiving ? <NotLivingTogetherButton linkId={linked.linkId} personName={m.name} hostName={hostName} /> : null}
+                                />
                             )}
                             {/* contacts — no heading: "Agregar dato de contacto" says it. A
                                 viewer who can't edit a member with no contacts gets no
@@ -369,6 +372,8 @@ export default function HouseholdSection({ adopterId, initialMembers, canEditAll
                 </div>
                 );
             })}
+            {/* The profile's «Convive con» rows are household too: listed with the members, above the add button. */}
+            {beforeAdd}
             {canAddToHousehold(viewer) && (
                 <button type="button" data-testid="household-add-member" onClick={startAdd} disabled={busy} className="inline-flex min-h-[44px] items-center gap-1.5 px-3 py-2 text-sm font-medium text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-md disabled:opacity-50">
                     <Plus className="w-4 h-4" />{t('adopter.hh_cta_add')}

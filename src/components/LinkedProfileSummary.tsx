@@ -19,9 +19,9 @@
  * or an admin — on «Convive con» and on the host's household card. It removes
  * the member from the host and the link, on both profiles, for everyone.
  */
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { Phone, Mail, AtSign, IdCard, MapPin, Lock, ExternalLink, Home } from 'lucide-react';
+import { Phone, Mail, AtSign, IdCard, MapPin, ExternalLink, Home } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -39,9 +39,11 @@ const ICON: Partial<Record<ContactEntryType, typeof Phone>> = { phone: Phone, em
 const fill = (s: string, vars: Record<string, string | number>) =>
     Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), s);
 
-export function LinkedProfileSummary({ summary, testId = 'linked-summary', canAddContact = false }: {
+export function LinkedProfileSummary({ summary, testId = 'linked-summary', canAddContact = false, actions = null }: {
     summary: LinkedSummary;
     testId?: string;
+    /** Shown next to «Ver perfil completo» (e.g. «No convive»). */
+    actions?: ReactNode;
     /** Signed in: «Agregar dato de contacto» adds to this linked profile (D55). */
     canAddContact?: boolean;
 }) {
@@ -78,73 +80,81 @@ export function LinkedProfileSummary({ summary, testId = 'linked-summary', canAd
     }
 
     return (
+        // Laid out like any household member card (HouseholdSection): the
+        // profile's live summary under the name, then its contacts in the same
+        // rows with «Agregar dato de contacto» below them, then the links.
         <div
-            className="mt-2.5 rounded-lg border border-stone-200 bg-white p-3 space-y-1.5 min-w-0"
+            className="min-w-0"
             data-testid={testId}
             aria-label={fill(t('adopter.hh_link_summary_aria'), { name: summary.name })}
         >
-            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
-                {summary.rating != null && summary.rating >= 1
-                    ? <RatingBadge rating={summary.rating} variant="inline" size="md" />
-                    : <span className="text-stone-500">{t('adopter.hh_link_unrated')}</span>}
-                <span className="text-stone-400" aria-hidden="true">·</span>
-                {summary.openAlerts > 0
-                    ? <span className="font-semibold text-rose-700">{count(summary.openAlerts, 'adopter.hh_link_alerts_one', 'adopter.hh_link_alerts_many')}</span>
-                    : <span className="text-stone-500">{t('adopter.hh_link_no_alerts')}</span>}
+            <div className="mt-2 space-y-0.5">
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
+                    {summary.rating != null && summary.rating >= 1
+                        ? <RatingBadge rating={summary.rating} variant="inline" size="md" />
+                        : <span className="text-stone-500">{t('adopter.hh_link_unrated')}</span>}
+                    <span className="text-stone-400" aria-hidden="true">·</span>
+                    {summary.openAlerts > 0
+                        ? <span className="font-semibold text-rose-700">{count(summary.openAlerts, 'adopter.hh_link_alerts_one', 'adopter.hh_link_alerts_many')}</span>
+                        : <span className="text-stone-500">{t('adopter.hh_link_no_alerts')}</span>}
+                </div>
+                <div className="text-xs text-stone-600">
+                    {count(summary.adoptions, 'adopter.hh_link_adoptions_one', 'adopter.hh_link_adoptions_many')}
+                    {' · '}
+                    {count(summary.records, 'adopter.hh_link_records_one', 'adopter.hh_link_records_many')}
+                </div>
+                {summary.ownerName && (
+                    <div className="text-xs text-stone-500 break-words">{fill(t('adopter.hh_link_owner'), { name: summary.ownerName })}</div>
+                )}
             </div>
-            <div className="text-xs text-stone-600">
-                {count(summary.adoptions, 'adopter.hh_link_adoptions_one', 'adopter.hh_link_adoptions_many')}
-                {' · '}
-                {count(summary.records, 'adopter.hh_link_records_one', 'adopter.hh_link_records_many')}
-            </div>
-            {summary.ownerName && (
-                <div className="text-xs text-stone-500 break-words">{fill(t('adopter.hh_link_owner'), { name: summary.ownerName })}</div>
-            )}
-            {summary.contacts.length > 0 ? (
-                <ul className="space-y-1 pt-1">
-                    {summary.contacts.map((c, i) => {
-                        const branded = c.type === 'social' && c.platform && c.platform !== 'other' && !c.masked;
-                        const Icon = ICON[c.type] ?? AtSign;
-                        return (
-                            <li key={`${c.id ?? c.type}-${i}`} className="flex items-center gap-2 text-sm min-w-0">
-                                {branded ? <SocialLogo platform={c.platform!} size={16} className="shrink-0" /> : <Icon className="w-4 h-4 shrink-0 text-teal-600" aria-hidden="true" />}
-                                {c.masked ? (
-                                    <span className="flex items-center gap-1.5 min-w-0 text-stone-500" aria-label={`${t(`adopter.ce_type_${c.type}`)}: ${t('adopter.ce_masked')}`}>
-                                        <Lock className="w-3 h-3 shrink-0 opacity-60" aria-hidden="true" />
-                                        <span className="truncate select-none">{c.value}</span>
-                                    </span>
-                                ) : (
-                                    <span className="truncate text-stone-800">{c.value}</span>
-                                )}
-                            </li>
-                        );
-                    })}
-                    {summary.moreContacts > 0 && (
-                        <li className="text-xs text-stone-500">{fill(t('adopter.hh_link_more_contacts'), { n: summary.moreContacts })}</li>
+            {(summary.contacts.length > 0 || canAddContact) && (
+                <div className="mt-3 pt-3 border-t border-dashed border-stone-200">
+                    {summary.contacts.length > 0 && (
+                        <ul className="space-y-1.5 mb-2">
+                            {summary.contacts.map((c, i) => {
+                                const branded = c.type === 'social' && c.platform && c.platform !== 'other' && !c.masked;
+                                const Icon = ICON[c.type] ?? AtSign;
+                                return (
+                                    <li key={`${c.id ?? c.type}-${i}`} className="flex items-center gap-2 text-sm min-w-0">
+                                        {branded ? <SocialLogo platform={c.platform!} size={16} className="shrink-0" /> : <Icon className="w-4 h-4 shrink-0 text-teal-600" aria-hidden="true" />}
+                                        <span className="w-20 shrink-0 text-stone-500 text-xs">{branded ? '' : t(`adopter.ce_type_${c.type}`)}</span>
+                                        <span
+                                            className={`flex-1 min-w-0 truncate ${c.masked ? 'text-stone-400 select-none' : 'text-stone-800'}`}
+                                            {...(c.masked ? { 'aria-label': `${t(`adopter.ce_type_${c.type}`)}: ${t('adopter.ce_masked')}` } : {})}
+                                        >
+                                            {c.value}
+                                        </span>
+                                    </li>
+                                );
+                            })}
+                            {summary.moreContacts > 0 && (
+                                <li className="text-xs text-stone-500">{fill(t('adopter.hh_link_more_contacts'), { n: summary.moreContacts })}</li>
+                            )}
+                        </ul>
                     )}
-                </ul>
-            ) : (
-                <div className="text-xs italic text-stone-500 pt-1">{t('adopter.hh_link_no_contacts')}</div>
+                    {anyLocked && <p className="text-xs text-stone-500 mb-2">{t('adopter.hh_link_locked_note')}</p>}
+                    {canAddContact && (
+                        <ContactComposer
+                            onSubmit={addToLinkedProfile}
+                            triggerTestId="linked-add-contact"
+                            testIdPrefix="linked-contact"
+                        />
+                    )}
+                </div>
             )}
-            {anyLocked && <p className="text-xs text-stone-500">{t('adopter.hh_link_locked_note')}</p>}
-            {canAddContact && (
-                <ContactComposer
-                    onSubmit={addToLinkedProfile}
-                    note={fill(t('adopter.hh_link_adds_to'), { name: summary.name || t('adopter.nameless') })}
-                    triggerTestId="linked-add-contact"
-                    testIdPrefix="linked-contact"
-                />
-            )}
-            <a
-                href={`/adopter/${encodeURIComponent(summary.profileId)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                data-testid={`${testId}-open`}
-                className="inline-flex min-h-[44px] items-center gap-1 text-sm font-semibold text-teal-700 hover:underline"
-            >
-                {t('adopter.hh_link_view_full')}
-                <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
-            </a>
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                <a
+                    href={`/adopter/${encodeURIComponent(summary.profileId)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid={`${testId}-open`}
+                    className="inline-flex min-h-[44px] items-center gap-1 text-sm font-semibold text-teal-700 hover:underline"
+                >
+                    {t('adopter.hh_link_view_full')}
+                    <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+                </a>
+                {actions}
+            </div>
         </div>
     );
 }
@@ -225,6 +235,7 @@ export function LivesWithSection({ rows, personName, canAddContact = false }: { 
     const { t } = useLanguage();
     if (rows.length === 0) return null;
 
+    // Rendered inside the household list (HouseholdSection beforeAdd), above «Agregar familiar».
     return (
         <div className="space-y-3" data-testid="lives-with">
             {rows.map(row => (
@@ -241,10 +252,12 @@ export function LivesWithSection({ rows, personName, canAddContact = false }: { 
                             {row.creatorName && <div className="text-xs text-stone-500 break-words">{fill(t('adopter.hh_lives_with_by'), { name: row.creatorName })}</div>}
                         </div>
                     </div>
-                    <LinkedProfileSummary summary={row} testId="lives-with-summary" canAddContact={canAddContact} />
-                    {row.canReportNotLiving && (
-                        <NotLivingTogetherButton linkId={row.linkId} personName={personName} hostName={row.name} className="mt-2.5" />
-                    )}
+                    <LinkedProfileSummary
+                        summary={row}
+                        testId="lives-with-summary"
+                        canAddContact={canAddContact}
+                        actions={row.canReportNotLiving ? <NotLivingTogetherButton linkId={row.linkId} personName={personName} hostName={row.name} /> : null}
+                    />
                 </div>
             ))}
         </div>

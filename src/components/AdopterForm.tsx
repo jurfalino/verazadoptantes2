@@ -1546,8 +1546,10 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                     hasLegacyText={hasLegacyFamilyText || linkedSummaries.livesWith.length > 0}
                                     linkedMembers={linkedSummaries.members}
                                     hostName={initialData?.name ?? ''}
+                                    beforeAdd={linkedSummaries.livesWith.length > 0
+                                        ? <LivesWithSection rows={linkedSummaries.livesWith} personName={initialData?.name ?? ''} canAddContact={!!isAuthenticated} />
+                                        : null}
                                 />
-                                {linkedSummaries.livesWith.length > 0 && <LivesWithSection rows={linkedSummaries.livesWith} personName={initialData?.name ?? ''} canAddContact={!!isAuthenticated} />}
                                 {hasLegacyFamilyText && (
                                     <div>
                                         <p className="text-[11px] font-semibold text-stone-500 mb-1">{t('adopter.family_notes')}</p>

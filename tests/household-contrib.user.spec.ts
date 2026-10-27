@@ -145,7 +145,8 @@ test.describe('household contributions by a non-owner (D54, D55)', () => {
         await expect(linkedCard.getByTestId('household-add-contact')).toHaveCount(0);
         await linkedCard.getByTestId('linked-add-contact').click();
         await linkedCard.getByTestId('linked-contact-type-phone').click();
-        await expect(linkedCard.getByTestId('linked-contact-note')).toBeVisible();
+        // Same composer as any member's: no extra label.
+        await expect(linkedCard.getByTestId('linked-contact-note')).toHaveCount(0);
         await linkedCard.getByTestId('linked-contact-input').fill(LINKED_PHONE);
         await linkedCard.getByTestId('linked-contact-save').click();
 
@@ -177,5 +178,9 @@ test.describe('household contributions by a non-owner (D54, D55)', () => {
         await expect(page.getByTestId('ce-chip').filter({ hasText: LINKED_PHONE })).toHaveCount(1, { timeout: 30_000 });
         // …where «Convive con» the host offers the same add (to the host's profile, D55) — not used here.
         await expect(page.getByTestId('lives-with-row').getByTestId('linked-add-contact')).toHaveCount(1);
+        // «Convive con» is listed with the household, above «Agregar familiar».
+        const livesWithBox = await page.getByTestId('lives-with-row').first().boundingBox();
+        const addMemberBox = await page.getByTestId('household-add-member').boundingBox();
+        expect(livesWithBox!.y).toBeLessThan(addMemberBox!.y);
     });
 });
