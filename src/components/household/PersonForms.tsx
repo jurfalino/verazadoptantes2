@@ -73,8 +73,9 @@ function MinorCheckbox({ age, value, onChange }: { age: string; value: boolean; 
     const byAge = n !== null && Number.isFinite(n);
     return (
         <label className="inline-flex min-h-[44px] items-center gap-2 text-sm text-stone-700 cursor-pointer" data-testid="hh-minor-checkbox">
-            <input type="checkbox" checked={byAge ? (n as number) < MINOR_AGE_LIMIT : value} disabled={byAge}
-                onChange={e => onChange(e.target.checked)} className="w-4 h-4 accent-teal-600" />
+            {/* Follows a typed age and can't be changed then — kept readable (teal, as the approved A5/E1), not greyed out. */}
+            <input type="checkbox" checked={byAge ? (n as number) < MINOR_AGE_LIMIT : value} aria-readonly={byAge || undefined}
+                onChange={e => { if (!byAge) onChange(e.target.checked); }} className="w-4 h-4 accent-teal-600" />
             {t('adopter.age_minor_box')}
         </label>
     );

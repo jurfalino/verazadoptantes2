@@ -14,7 +14,8 @@ import {
  *      and her profile shows Pedro.
  *   2. Searching Marta's phone shows only Marta's card, with Pedro's rating line.
  *   3. Adding a person whose phone matches an existing profile offers
- *      «¿Es este perfil?»; «Sí» links that profile (no new one).
+ *      «¿Es este perfil?»; «Sí» links that profile (no new one). From that
+ *      profile (only linked into Pedro's home), an add starts its own home.
  *   4. A stranger's rename: the owner is told and «Deshacer» puts the name back.
  *   5. A minor's profile has no «¿Qué pasó con …?».
  *   6. «Quitar del hogar» → «No vive acá» removes the person on every profile.
@@ -30,6 +31,7 @@ const PEDRO_NAME = `Pedro Paez ${stamp}`;
 const MARTA_NAME = `Marta Paez ${stamp}`;
 const ROSA_NAME = `Rosa Existe ${stamp}`;
 const TOMAS_NAME = `Tomas Paez ${stamp}`;
+const HUGO_NAME = `Hugo Existe ${stamp}`;
 const PEDRO_PHONE = `11 4${s.slice(-3)}-${s.slice(-7, -3)}`;
 const MARTA_PHONE = `11 5${s.slice(-3)}-${s.slice(-7, -3)}`;
 const ROSA_PHONE = `11 6${s.slice(-3)}-${s.slice(-7, -3)}`;
@@ -65,7 +67,7 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         execD1(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, created_at) VALUES ('test-hh-fixture-fl-${stamp}', '${PEDRO}', '${ADMIN_EMAIL}', 'inaccurate_information', strftime('%s','now','-3 days'))`);
     });
     test.afterAll(async () => {
-        const made = [MARTA_NAME, `Marta P. ${stamp}`, TOMAS_NAME].map(n => profileNamed(n)?.id).filter(Boolean) as string[];
+        const made = [MARTA_NAME, `Marta P. ${stamp}`, TOMAS_NAME, HUGO_NAME].map(n => profileNamed(n)?.id).filter(Boolean) as string[];
         cleanupProfiles([PEDRO, ROSA, ...made]);
         execD1(`DELETE FROM notifications WHERE type = 'profile_renamed' AND body LIKE '%${stamp}%'`);
         await admin?.dispose();
@@ -131,6 +133,21 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         expect(profileNamed(`Rosa ${stamp}`), 'no second profile').toBeUndefined();
     });
 
+    test("3b. from Rosa's page (linked into Pedro's home only) an add starts Rosa's own home, never Pedro's", async ({ page }) => {
+        test.setTimeout(150_000);
+        await page.goto(`/adopter/${ROSA}`);
+        await dismissCountryBanner(page);
+        await expect(card(page, PEDRO_NAME)).toHaveCount(1, { timeout: 30_000 });
+        await fillAddForm(page, { name: HUGO_NAME, relationship: 'sibling' });
+        await saveAsNew(page);
+        const hugo = String(profileNamed(HUGO_NAME)!.id);
+        expect(housemates(PEDRO).map(h => h.profileId)).not.toContain(hugo);
+        expect(housemates(ROSA).map(h => h.profileId)).toContain(hugo);
+        // Two homes now: one block each, labelled by who is there.
+        await expect(page.getByTestId('household-block')).toHaveCount(2, { timeout: 30_000 });
+        await expect(page.getByTestId('household-block').filter({ hasText: HUGO_NAME })).not.toContainText(PEDRO_NAME);
+    });
+
     test('4. a stranger renames Marta: her owner is told and «Deshacer» puts the name back', async ({ page, browser }) => {
         test.setTimeout(180_000);
         const marta = String(profileNamed(MARTA_NAME)!.id);
@@ -170,7 +187,9 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         // The box follows the age: ticked and locked.
         const box = form.getByTestId('hh-minor-checkbox').locator('input');
         await expect(box).toBeChecked();
-        await expect(box).toBeDisabled();
+        await expect(box).toHaveAttribute('aria-readonly', 'true');
+        await box.click(); // locked by the age: stays ticked
+        await expect(box).toBeChecked();
         await saveAsNew(page);
         const tomasCard = card(page, TOMAS_NAME);
         await expect(tomasCard).toHaveCount(1, { timeout: 30_000 });

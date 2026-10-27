@@ -32,6 +32,7 @@ import { createGiftRecipientProfile } from '@/app/actions';
 import type { HouseholdView } from '@/lib/households';
 import type { ProfileHouseholds } from '@/domain/profileHouseholds';
 import { fill, firstName, joinNames } from '@/lib/householdCopy';
+import { householdForAdd } from '@/domain/households';
 
 function AddMemberButton({ onClick }: { onClick: () => void }) {
     const { t } = useLanguage();
@@ -121,14 +122,17 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
         if (!canAdd) return null;
         const key = view?.id ?? '';
         if (adding === key) {
+            // Only a home this profile anchors, or a block the rescuer picked, is named (Task 2 fix A).
+            const target = householdForAdd(view, titled);
+            const targetView = target ? view : null;
             return (
                 <AddPersonForm
                     anchorAdopterId={adopterId}
-                    householdId={view?.id}
+                    householdId={target}
                     hostName={hostName}
                     relativeName={hostFirst}
-                    othersInHome={view?.members.map(m => m.name).filter(Boolean) ?? []}
-                    excludeIds={view?.members.map(m => m.profileId) ?? []}
+                    othersInHome={targetView?.members.map(m => m.name).filter(Boolean) ?? []}
+                    excludeIds={homes.flatMap(h => h.members.map(m => m.profileId))}
                     onDone={() => setAdding(null)}
                 />
             );
@@ -162,7 +166,8 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
             {nothing && !canAdd && !hasLegacyText && <p className="text-sm text-stone-500 italic">{t('adopter.no_family')}</p>}
 
             {titled ? homes.map(view => {
-                const others = view.members.map(m => m.name).filter(Boolean);
+                // Labelled by the anchor first (the person relationships point at), then everyone else.
+                const others = [...view.members].sort((a, b) => Number(b.isAnchor) - Number(a.isAnchor)).map(m => m.name).filter(Boolean);
                 const selfLabel = labelOf(view.self.label);
                 const sub = [
                     selfLabel ? fill(t('adopter.hh_self_as'), { name: hostFirst, rel: selfLabel.charAt(0).toLowerCase() + selfLabel.slice(1) }) : null,

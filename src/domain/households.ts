@@ -203,3 +203,16 @@ export function householdLineGroups(lines: ReadonlyArray<HouseholdLine> | null |
     }
     return [...groups.values()];
 }
+
+/**
+ * Which household «Agregar familiar / conviviente» names (Task 8). An explicit
+ * id is honoured by the server, so it is sent only when the viewed profile
+ * anchors that home, or when the rescuer picked a titled block (2+ homes).
+ * A single home the profile was only linked into (someone else's) gets none:
+ * the server's own-home default applies (Task 2 fix A — being linked into X's
+ * home never makes X's team the household of everyone added later).
+ */
+export function householdForAdd(view: { id: string; self: { isAnchor: boolean } } | null, titled: boolean): string | undefined {
+    if (!view) return undefined;
+    return titled || view.self.isAnchor ? view.id : undefined;
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canRemoveMembership, currentAge, householdLineGroups, householdNameKey, isMinor, membershipLabel } from './households';
+import { canRemoveMembership, currentAge, householdForAdd, householdLineGroups, householdNameKey, isMinor, membershipLabel } from './households';
 
 // Pedro's household: Marta is Pedro's partner, Lucas is Pedro's child. Pedro is
 // the person the relationships point at (his own row has none).
@@ -156,5 +156,21 @@ describe('householdLineGroups (the card line: «Convive con» / «En otro hogar,
     it('nothing → no groups', () => {
         expect(householdLineGroups(undefined)).toEqual([]);
         expect(householdLineGroups([line('rosa', 'g1', true)])).toEqual([]);
+    });
+});
+
+describe('householdForAdd (Task 8: where «Agregar familiar / conviviente» puts someone)', () => {
+    const home = (id: string, isAnchor: boolean) => ({ id, self: { isAnchor } });
+    it('one home this profile anchors → that home', () => {
+        expect(householdForAdd(home('hh-pedro', true), false)).toBe('hh-pedro');
+    });
+    it("one home this profile was only linked into (someone else's) → none: the server's own-home default applies (Task 2 fix A)", () => {
+        expect(householdForAdd(home('hh-x', false), false)).toBeUndefined();
+    });
+    it('a titled block the rescuer picked (2+ homes) → that home', () => {
+        expect(householdForAdd(home('hh-x', false), true)).toBe('hh-x');
+    });
+    it('no home yet → none', () => {
+        expect(householdForAdd(null, false)).toBeUndefined();
     });
 });
