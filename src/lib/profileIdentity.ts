@@ -287,8 +287,37 @@ async function actorOnTeam(actor: string, ownerEmail: string | null, ctx: Ctx): 
     }
 }
 
+/** Who a contract signature's write-back is credited to (src/app/api/contract/[id]/submit). */
+export const CONTRACT_SIGNER_ACTOR = 'contract-signed-via-invitation';
+
+/**
+ * A contract signature renamed the profile (the signer's own name, final fix
+ * S7): the rename's history row — credited to the signature, «Deshacer» for
+ * the owner's team — then the same notice as any rename, titled for the
+ * signature. The name and its alias already landed (contactUpdateOnSign);
+ * failures here are logged and never fail the signature.
+ */
+export async function recordSignerRename(db: Db, r: { adopterId: string; ownerEmail: string | null; from: string | null; to: string; aliasKept: boolean }): Promise<void> {
+    const ctx: Ctx = { op: 'recordSignerRename', adopterId: r.adopterId };
+    let historyId: string | null = crypto.randomUUID();
+    try {
+        await db.insert(adopterHistory).values({
+            id: historyId,
+            adopterId: r.adopterId,
+            changedBy: CONTRACT_SIGNER_ACTOR,
+            kind: await historyKindForOwner(CONTRACT_SIGNER_ACTOR, r.ownerEmail, ctx),
+            changes: JSON.stringify({ name: { from: r.from || null, to: r.to }, name_changed: { from: r.from || null, to: r.to, aliasKept: r.aliasKept } }),
+            changedAt: new Date(),
+        });
+    } catch (e) {
+        logger.error('recordSignerRename: rename history row failed (the name and its alias landed)', e, ctx);
+        historyId = null;
+    }
+    await notifyProfileRenamed(db, { adopterId: r.adopterId, actor: CONTRACT_SIGNER_ACTOR, ownerEmail: r.ownerEmail, from: r.from ?? '', to: r.to, historyId, viaContract: true });
+}
+
 /** The owner's team hears about a rename by someone outside it, with «Deshacer» (`metadata.undo`). */
-export async function notifyProfileRenamed(db: Db, n: { adopterId: string; actor: string; ownerEmail: string | null; from: string; to: string; historyId: string | null }): Promise<void> {
+export async function notifyProfileRenamed(db: Db, n: { adopterId: string; actor: string; ownerEmail: string | null; from: string; to: string; historyId: string | null; viaContract?: boolean }): Promise<void> {
     const ctx: Ctx = { op: 'notifyProfileRenamed', adopterId: n.adopterId, actor: n.actor };
     if (await actorOnTeam(n.actor, n.ownerEmail, ctx)) {
         logger.info('profileIdentity: renamed by the owner team — no notice', ctx);
@@ -296,8 +325,9 @@ export async function notifyProfileRenamed(db: Db, n: { adopterId: string; actor
     }
     await runAfterResponse('profileIdentity.renamed', async () => {
         try {
-            const actorName = await actorNameOf(n.actor, ctx);
-            const template: NotificationTemplate = { key: 'profile_renamed', params: { actorName, fromName: n.from || undefined, toName: n.to } };
+            // A signature names no rescuer: the signer (the new name) stands in for the actor.
+            const actorName = n.viaContract ? n.to : await actorNameOf(n.actor, ctx);
+            const template: NotificationTemplate = { key: 'profile_renamed', params: { actorName, fromName: n.from || undefined, toName: n.to, ...(n.viaContract ? { viaContract: '1' } : {}) } };
             const metadata = n.historyId ? { undo: { historyId: n.historyId } } : {};
             if (!realOwner(n.ownerEmail)) {
                 // Nobody owns it (imported / anonymous): the admins are its team — they can undo.
@@ -356,7 +386,8 @@ async function collapseRenameNotice(
         try { meta = prev.metadata ? JSON.parse(prev.metadata) as Record<string, unknown> : {}; } catch { meta = {}; }
         const params = ((meta.template as { params?: Record<string, unknown> } | undefined)?.params) ?? {};
         const firstFrom = typeof params.fromName === 'string' && params.fromName ? params.fromName : undefined;
-        const template: NotificationTemplate = { key: 'profile_renamed', params: { actorName: c.actorName, fromName: firstFrom, toName: c.to } };
+        const viaContract = typeof params.viaContract === 'string' ? { viaContract: params.viaContract } : {};
+        const template: NotificationTemplate = { key: 'profile_renamed', params: { actorName: c.actorName, fromName: firstFrom, toName: c.to, ...viaContract } };
         const content = notificationContent(template);
         const { undo: _oldUndo, ...rest } = meta;
         void _oldUndo;

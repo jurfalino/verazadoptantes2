@@ -11,7 +11,7 @@ import { logAudit } from '@/lib/audit';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { processImageForStorage, uploadToR2 } from '@/lib/r2';
 import { createAdopterApiSchema } from '@/app/actions/validation';
-import { deserializeContactEntries, contactEntriesToBlob } from '@/lib/contactEntries';
+import { deserializeContactEntries, contactEntriesToBlob, contactEntriesJsonCount, stripRenameMarks, CONTACT_ENTRIES_FULL, MAX_CONTACT_ENTRIES } from '@/lib/contactEntries';
 import { deserializeHouseholdMembers, withoutProfileLinks } from '@/lib/householdMembers';
 import { maskAdopterRow } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
@@ -332,6 +332,11 @@ export async function POST(request: Request) {
     }
 
     const { name, contactInfo, contactEntries, notes, sourceUrl, flags, images, adoption, source, isPublic: callerIsPublic, householdMembers: householdJson } = parsed.data;
+    // Final fix S1: more contacts than a profile holds is refused, never stored for a later read to truncate.
+    if (contactEntriesJsonCount(contactEntries ?? null) > MAX_CONTACT_ENTRIES) {
+        logger.info('Adopter create: refused — more contact entries than a profile holds', { errorId, user: session.user.email });
+        return NextResponse.json({ error: `At most ${MAX_CONTACT_ENTRIES} contact entries`, code: CONTACT_ENTRIES_FULL, errorId }, { status: 422 });
+    }
     // Relatives named in the same post (Jon, 2026-10-22): sanitized, their
     // contacts credited to the contributor. They become profiles + memberships
     // after the profile is saved (households as profiles: attachHouseholdPeople,
@@ -341,7 +346,8 @@ export async function POST(request: Request) {
             name: m.name,
             relationship: m.relationship,
             age: m.age ?? null,
-            contactEntries: m.contactEntries.map(({ own: _own, ...e }) => ({ ...e, id: crypto.randomUUID(), addedBy: session.user?.email || undefined })),
+            // Final fix S6: only the server's rename code marks a rename alias.
+            contactEntries: stripRenameMarks(m.contactEntries).map(({ own: _own, ...e }) => ({ ...e, id: crypto.randomUUID(), addedBy: session.user?.email || undefined })),
         }));
 
     // Log the incoming request (without image data for size)
@@ -385,7 +391,8 @@ export async function POST(request: Request) {
         // NOT have their addition flagged public.
         let contactEntriesJson: string | null = null;
         if (contactEntries) {
-            const entries = deserializeContactEntries(contactEntries);
+            // Client JSON (S6): only the server's rename code marks a rename alias.
+            const entries = stripRenameMarks(deserializeContactEntries(contactEntries));
             if (entries.length) {
                 // v2.19.11: stampPublic only fires for SOCIAL imports
                 // (ImportWizard with a sourceUrl — Facebook, Instagram, etc.),

@@ -288,20 +288,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 // Logged with an id rather than failing a signature the adopter completed.
                 logger.error('Contract submit: contact write-back did not land', new Error(written.status), { animalId, adopterId });
             } else if (written.result) {
-                // The rename's history row (as every rename writes): «Deshacer» for the owner's team.
+                // The rename's history row (as every rename writes): «Deshacer» for the owner's team,
+                // and the same notice as any rename (final fix S7). Never fails the signature.
                 try {
-                    const { historyKindForOwner } = await import('@/lib/profilePrivilege');
+                    const { recordSignerRename } = await import('@/lib/profileIdentity');
                     const change = written.result;
-                    await db.insert(adopterHistory).values({
-                        id: crypto.randomUUID(),
-                        adopterId,
-                        changedBy: 'contract-signed-via-invitation',
-                        kind: await historyKindForOwner('contract-signed-via-invitation', written.row.addedBy, { adopterId }),
-                        changes: JSON.stringify({ name: { from: change.from || null, to: change.to }, name_changed: { from: change.from || null, to: change.to, aliasKept: change.aliasKept } }),
-                        changedAt: new Date(),
-                    });
+                    await recordSignerRename(db, { adopterId, ownerEmail: written.row.addedBy ?? null, from: change.from || null, to: change.to, aliasKept: change.aliasKept });
                 } catch (e) {
-                    logger.error('Contract submit: rename history row failed (the name and its alias landed)', e, { animalId, adopterId });
+                    logger.error('Contract submit: rename history or notice failed (the name and its alias landed)', e, { animalId, adopterId });
                 }
                 // Its own try: a failed history row must not leave the new name unindexed.
                 try {

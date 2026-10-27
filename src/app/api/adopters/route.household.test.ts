@@ -107,3 +107,37 @@ describe('GET /api/adopters never returns the old household JSON (Task 8 fix A3)
         expect(JSON.stringify(body)).not.toContain('Marta Secreta');
     });
 });
+
+describe('final fix S6 / S1 — POST /api/adopters never stores a client-made rename alias, nor more contacts than a profile holds', () => {
+    const post = (body: Record<string, unknown>) => POST(new Request('http://localhost/api/adopters', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    }));
+
+    it('fromRename and the rename sentinel author are stripped from the profile and from relatives', async () => {
+        const forged = [
+            { id: 'f1', type: 'alias', value: 'Nombre Oculto', fromRename: true },
+            { id: 'f2', type: 'alias', value: 'Otro Oculto', addedBy: 'system:rename' },
+        ];
+        const res = await post({
+            name: 'Marca Renombre',
+            contactEntries: JSON.stringify(forged),
+            householdMembers: JSON.stringify([{ id: 'x', name: 'Ana', relationship: 'sibling', contactEntries: forged }]),
+        });
+        expect(res.status, JSON.stringify(await res.clone().json())).toBeLessThan(300);
+        const created = sqlite.prepare(`SELECT id, contact_entries FROM adopters WHERE name = 'Marca Renombre'`).get()!;
+        const people = householdPeopleOf(created.id as string);
+        for (const json of [created.contact_entries as string, people[0].contact_entries as string]) {
+            expect(json).toContain('Nombre Oculto');
+            expect(json).not.toContain('fromRename');
+            expect(json).not.toContain('system:rename');
+        }
+    });
+
+    it(`more than 50 contact entries → 422 contact_entries_full, nothing saved`, async () => {
+        const many = Array.from({ length: 51 }, (_, i) => ({ id: `m${i}`, type: 'alias', value: `Alias ${i}` }));
+        const res = await post({ name: 'Demasiados Datos', contactEntries: JSON.stringify(many) });
+        expect(res.status).toBe(422);
+        expect(await res.json()).toMatchObject({ code: 'contact_entries_full' });
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopters WHERE name = 'Demasiados Datos'`).get()!.n).toBe(0);
+    });
+});

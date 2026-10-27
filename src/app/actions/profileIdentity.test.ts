@@ -64,7 +64,7 @@ import { getAdopterApprovers } from './piiAccess';
 import { loadApprovers } from '@/lib/piiAccessRequest';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { insertRecord } from './_recordWrite';
-import { setProfileAge } from '@/lib/profileIdentity';
+import { setProfileAge, recordSignerRename } from '@/lib/profileIdentity';
 import { isMinorProfile } from '@/lib/minors';
 import { isProfileIsMinorError } from '@/domain/profileIdentity';
 import { deserializeContactEntries } from '@/lib/contactEntries';
@@ -600,5 +600,22 @@ describe('Final fix S5 — no rename email flood', () => {
         expect(await as(MATE, () => changeProfileName({ adopterId: 'lucas', name: 'Lucas Paez', expectedName: last }))).toMatchObject({ ok: true });
         sqlite.prepare('UPDATE adopter_history SET changed_at = changed_at - 3700').run();
         expect(await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' })).toMatchObject({ ok: true });
+    });
+});
+
+describe('Final fix S7 — a rename by signing a contract tells the owner team like any rename', () => {
+    it('the history row (with «Deshacer») and the profile_renamed notice to the owner team', async () => {
+        sqlite.prepare("UPDATE adopters SET name = 'Pedro Páez' WHERE id = 'pedro'").run();
+        await recordSignerRename(state.db as never, { adopterId: 'pedro', ownerEmail: OWNER, from: 'Pedro Paez', to: 'Pedro Páez', aliasKept: true });
+        const h = historyOf('pedro').at(-1)!;
+        expect(h).toMatchObject({ changed_by: 'contract-signed-via-invitation', kind: 'contribution' });
+        expect(h.changes.name_changed).toMatchObject({ from: 'Pedro Paez', to: 'Pedro Páez' });
+        const notices = noticesOfType('profile_renamed');
+        expect(notices.map(n => n.userId).sort()).toEqual([MATE, OWNER].sort());
+        expect(notices[0]).toMatchObject({
+            title: 'Al firmar el contrato, Pedro Paez cambió su nombre a Pedro Páez',
+            metadata: expect.objectContaining({ undo: { historyId: h.id }, profileId: 'pedro' }),
+        });
+        expect(await as(OWNER, () => getRenameUndoOption(h.id))).toMatchObject({ status: 'can_undo' });
     });
 });

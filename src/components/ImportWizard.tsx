@@ -17,7 +17,7 @@ import type { DuplicateMatch } from '@/app/actions';
 import { confidenceBand } from '@/lib/scoring';
 import type { ExtractedAdopterData } from '@/lib/gemini';
 import ContactEntriesInput from '@/components/ContactEntriesInput';
-import { buildContactEntries, contactEntriesToBlob, type ContactEntry } from '@/lib/contactEntries';
+import { buildContactEntries, contactEntriesToBlob, CONTACT_ENTRIES_FULL, type ContactEntry } from '@/lib/contactEntries';
 import { humanMatchSentence } from '@/lib/importMatch';
 import { dedupeImages } from '@/domain/facebookExtraction';
 import { WarningIcon, CloseIcon, CheckIcon, AttachIcon, UploadIcon, VideoIcon, SparkIcon, SaveIcon } from '@/components/ui/Glyph';
@@ -1149,16 +1149,18 @@ export default function ImportWizard() {
                 body: JSON.stringify(payload),
             });
 
-            const result = await response.json() as { id: string; error?: string; details?: string[]; errorId?: string };
+            const result = await response.json() as { id: string; error?: string; code?: string; details?: string[]; errorId?: string };
 
             if (!response.ok) {
                 // v2.19.66: surface the schema's per-field reason (`details`) and
                 // the server errorId instead of the bare "Invalid input". The
                 // 400 path already computes which field failed — show it so the
                 // rescuer (and we) can see *why* the save was rejected.
-                const base = result.details?.length
-                    ? `${result.error || 'Invalid input'}: ${result.details.join('; ')}`
-                    : (result.error || 'Failed to create adopter');
+                const base = result.code === CONTACT_ENTRIES_FULL
+                    ? t('adopter.ce_add_full')
+                    : result.details?.length
+                        ? `${result.error || 'Invalid input'}: ${result.details.join('; ')}`
+                        : (result.error || 'Failed to create adopter');
                 // "Error ID:" so resolveErrorId reuses the server's id instead of minting a second one.
                 throw new Error(result.errorId ? `${base} (Error ID: ${result.errorId})` : base);
             }
