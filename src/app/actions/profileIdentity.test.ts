@@ -12,7 +12,7 @@ import * as mocks from '@/test-utils/actionMocks';
 const { session, OWNER, MATE, STRANGER, ADMIN } = mocks;
 
 const { state, notify } = vi.hoisted(() => ({
-    state: { db: null as unknown },
+    state: { db: null as unknown, sqlite: null as unknown },
     notify: { create: [] as Array<Record<string, unknown>>, admins: [] as Array<Record<string, unknown>> },
 }));
 
@@ -37,7 +37,15 @@ vi.mock('@/lib/pendingSearchLog', () => ({ closePendingSearchesForAdopter: vi.fn
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 vi.mock('@/lib/background', () => ({ runAfterResponse: vi.fn(async (_n: string, task: () => Promise<unknown>) => { await task(); }) }));
 vi.mock('./notifications', () => ({
-    createNotification: vi.fn(async (d: Record<string, unknown>) => { notify.create.push(d); return 'n'; }),
+    createNotification: vi.fn(async (d: Record<string, unknown>) => {
+        notify.create.push(d);
+        // Stored like the real one (the rename notice collapse reads it back).
+        const id = `n-${notify.create.length}`;
+        (state.sqlite as { prepare: (q: string) => { run: (...a: unknown[]) => unknown } } | null)?.prepare(
+            'INSERT INTO notifications (id, user_id, type, title, body, url, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        ).run(id, d.userId, d.type ?? 'contract_result', d.title, d.body, d.url ?? null, JSON.stringify({ ...(d.metadata as object ?? {}), ...(d.template ? { template: d.template } : {}) }), Math.floor(Date.now() / 1000));
+        return id;
+    }),
     notifyAdmins: vi.fn(async (d: Record<string, unknown>) => { notify.admins.push(d); }),
     resolveDisplayName: vi.fn(async (email: string) => email.split('@')[0]),
     resolveDisplayNames: vi.fn(async (emails: string[]) => Object.fromEntries(emails.map(e => [e, e.split('@')[0]]))),
@@ -67,7 +75,7 @@ import { addContactEntry } from './addContactEntry';
 import { saveAdopter, appendToExistingAdopter, checkAdopterDeletable } from './adopters';
 import { mergeAdopters, unmergeAdopters } from '@/lib/adopterMerge';
 import { mergeContactEntries, CONTACT_ENTRIES_FULL, MAX_CONTACT_ENTRIES, RENAME_ALIAS_AUTHOR } from '@/lib/contactEntries';
-import { knownAsNames } from '@/domain/profileIdentity';
+import { knownAsNames, RENAME_NOTICE_WINDOW_MS, RENAME_RATE_LIMIT } from '@/domain/profileIdentity';
 import { preserveRenameAliases } from '@/domain/profileIdentity';
 
 type Row = Record<string, unknown>;
@@ -90,6 +98,7 @@ const findsByName = async (name: string) => (await as(MATE, () => findAdopters({
 beforeEach(async () => {
     const m = migratedDb();
     state.db = m.db;
+    state.sqlite = m.sqlite;
     sqlite = m.sqlite as unknown as typeof sqlite;
     notify.create.length = 0;
     notify.admins.length = 0;
@@ -546,5 +555,50 @@ describe('Final fix S1/S2 — the rename alias survives the contact cap and old 
         expect(e.addedBy).not.toBe(RENAME_ALIAS_AUTHOR);
         await as(OWNER, () => appendToExistingAdopter('lucas', { contactEntries: forged }));
         expect(entriesOf('lucas').find(x => x.type === 'alias')?.addedBy).not.toBe(RENAME_ALIAS_AUTHOR);
+    });
+});
+
+describe('Final fix S5 — no rename email flood', () => {
+    const bell = (userId: string) => sqlite.prepare("SELECT id, title, metadata, read FROM notifications WHERE user_id = ? AND type = 'profile_renamed'").all(userId)
+        .map(r => ({ ...r, metadata: JSON.parse(r.metadata as string) }));
+
+    it('two renames of one profile by one person within the window → one notice per teammate (one email), «Deshacer» on the latest', async () => {
+        await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' });
+        sqlite.prepare("UPDATE notifications SET read = 1").run();
+        await changeProfileName({ adopterId: 'pedro', name: 'Pepe Paez', expectedName: 'P. Paez' });
+        // createNotification (which sends the email twin) ran once per teammate.
+        expect(noticesOfType('profile_renamed').map(n => n.userId).sort()).toEqual([MATE, OWNER].sort());
+        const latest = historyOf('pedro').at(-1)!.id;
+        for (const who of [OWNER, MATE]) {
+            const rows = bell(who);
+            expect(rows).toHaveLength(1);
+            expect(rows[0]).toMatchObject({ read: 0, title: 'stranger cambió el nombre de Pedro Paez a Pepe Paez' });
+            expect(rows[0].metadata).toMatchObject({ undo: { historyId: latest }, profileId: 'pedro' });
+            expect(rows[0].metadata.template.params).toMatchObject({ fromName: 'Pedro Paez', toName: 'Pepe Paez' });
+        }
+    });
+
+    it('another person, another profile, or past the window → its own notice', async () => {
+        await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' });
+        await changeProfileName({ adopterId: 'lucas', name: 'L. Paez', expectedName: 'Lucas Paez' });
+        await as(ADMIN, () => changeProfileName({ adopterId: 'pedro', name: 'Pepe Paez', expectedName: 'P. Paez' }));
+        expect(bell(OWNER)).toHaveLength(3);
+        sqlite.prepare('UPDATE notifications SET created_at = created_at - ?').run(RENAME_NOTICE_WINDOW_MS / 1000 + 60);
+        await changeProfileName({ adopterId: 'pedro', name: 'Pedro Paez', expectedName: 'Pepe Paez' });
+        expect(bell(OWNER)).toHaveLength(4);
+    });
+
+    it(`a person renames at most ${RENAME_RATE_LIMIT} times an hour: then rate_limited, nothing changes`, async () => {
+        for (let i = 0; i < RENAME_RATE_LIMIT; i++) {
+            const from = i === 0 ? 'Lucas Paez' : `Lucas ${i - 1}`;
+            expect(await changeProfileName({ adopterId: 'lucas', name: `Lucas ${i}`, expectedName: from })).toMatchObject({ ok: true });
+        }
+        const last = `Lucas ${RENAME_RATE_LIMIT - 1}`;
+        expect(await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' })).toEqual({ ok: false, error: 'rate_limited' });
+        expect(pedro().name).toBe('Pedro Paez');
+        // Someone else is not limited; an hour later the person can rename again.
+        expect(await as(MATE, () => changeProfileName({ adopterId: 'lucas', name: 'Lucas Paez', expectedName: last }))).toMatchObject({ ok: true });
+        sqlite.prepare('UPDATE adopter_history SET changed_at = changed_at - 3700').run();
+        expect(await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' })).toMatchObject({ ok: true });
     });
 });

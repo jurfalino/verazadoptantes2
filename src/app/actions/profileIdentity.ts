@@ -6,7 +6,9 @@
  * writes and notices live in src/lib/profileIdentity.ts.
  *
  * What a stranger can do here (action-surface sign-off):
- * - `changeProfileName`: rename ANY live profile. Safeguards: the old name
+ * - `changeProfileName`: rename ANY live profile (at most RENAME_RATE_LIMIT an
+ *   hour per person; a teammate's notices of one person's renames of one
+ *   profile collapse within an hour). Safeguards: the old name
  *   stays a name token («Conocido/a como»), the write is a compare-and-set on
  *   the name the editor saw, the change is credited ('contribution' history
  *   for a stranger, never 'edit' — no approver standing), and the owner's team
@@ -25,14 +27,16 @@ import { isRealActorEmail } from '@/lib/piiAccess';
 import { adopterFieldAuthors } from '@/lib/collabAttribution';
 import { isPrivilegedOnProfile } from '@/lib/profilePrivilege';
 import {
-    notifyProfileAgeChanged, notifyProfileRenamed, renameProfile, renameUndoState, setProfileAge, undoRename,
+    notifyProfileAgeChanged, notifyProfileRenamed, renameProfile, renamesBySince, renameUndoState, setProfileAge, undoRename,
 } from '@/lib/profileIdentity';
-import { isValidAge, MAX_PROFILE_NAME_LEN } from '@/domain/profileIdentity';
+import { isValidAge, MAX_PROFILE_NAME_LEN, RENAME_RATE_LIMIT, RENAME_RATE_WINDOW_MS } from '@/domain/profileIdentity';
 import { canonField } from '@/domain/fieldCollab';
 
 export type ProfileIdentityError =
     | 'not_authenticated' | 'not_found' | 'invalid' | 'conflict' | 'busy' | 'failed'
-    | 'has_activity' | 'not_authorized' | 'not_undoable' | 'already_undone' | 'superseded';
+    | 'has_activity' | 'not_authorized' | 'not_undoable' | 'already_undone' | 'superseded'
+    /** Final fix S5: this person made RENAME_RATE_LIMIT renames within the last hour. */
+    | 'rate_limited';
 
 type Fail = { ok: false; error: ProfileIdentityError; errorId?: string };
 
@@ -82,6 +86,11 @@ export async function changeProfileName(input: {
     try {
         const db = await getDb();
         if (!db) throw new Error('No database');
+        // Final fix S5: a per-person ceiling, so nobody can flood a team with rename notices.
+        if (await renamesBySince(db, actor, new Date(Date.now() - RENAME_RATE_WINDOW_MS)) >= RENAME_RATE_LIMIT) {
+            logger.warn('changeProfileName: refused — rename rate limit reached', { ...ctx, limit: RENAME_RATE_LIMIT });
+            return { ok: false, error: 'rate_limited' };
+        }
         const res = await renameProfile(db, { adopterId, name, expectedName: expected, actor });
         switch (res.status) {
             case 'missing': return { ok: false, error: 'not_found' };

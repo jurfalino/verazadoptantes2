@@ -834,6 +834,10 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                 toast.error(t('toast.save_error_title'), t('collab.busy'), res.errorId);
                 return false;
             }
+            if (res.error === 'rate_limited') {
+                toast.warning(t('adopter.rename_rate_limited'));
+                return false;
+            }
             const errorId = res.errorId ?? await reportClientError({
                 message: `changeProfileName failed: ${res.error}`,
                 source: 'AdopterForm.saveName',

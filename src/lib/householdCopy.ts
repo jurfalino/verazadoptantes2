@@ -26,6 +26,7 @@ const REFUSALS: Record<string, string> = {
     has_activity: 'adopter.age_has_activity',
     not_authenticated: 'adopter.hh_err_not_authorized',
     [CONTACT_ENTRIES_FULL]: 'adopter.ce_add_full',
+    rate_limited: 'adopter.rename_rate_limited',
     [MINOR_SURVIVOR_HAS_ACTIVITY]: 'errors.merge_minor_survivor',
     [HOUSEHOLD_NOT_CONVERTED]: 'errors.merge_household_not_converted',
 };

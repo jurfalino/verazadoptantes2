@@ -29,6 +29,16 @@ export function isProfileIsMinorError(e: unknown): boolean {
 }
 
 export const MAX_PROFILE_NAME_LEN = 200;
+
+/** Renames one person may make in RENAME_RATE_WINDOW_MS, across all profiles (final fix S5); then `rate_limited`. */
+export const RENAME_RATE_LIMIT = 20;
+export const RENAME_RATE_WINDOW_MS = 60 * 60 * 1000;
+/**
+ * A teammate's «cambió el nombre» notice collapses with the same person's
+ * next renames of the same profile within this window (final fix S5): one
+ * notice and one email, updated in place, «Deshacer» on the latest rename.
+ */
+export const RENAME_NOTICE_WINDOW_MS = 60 * 60 * 1000;
 export const MAX_AGE = 120;
 
 /** Two names the token index can't tell apart (case, accents, spacing) are the same name here. */

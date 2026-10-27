@@ -12,8 +12,8 @@
  * - `setProfileAge`: compare-and-swap of age / age_as_of / is_minor + history.
  * - Notices run after the response and never throw.
  */
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
-import { adopterFlags, adopterHistory, adopters, adoptions } from '@/db/schema';
+import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
+import { adopterFlags, adopterHistory, adopters, adoptions, notifications } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
@@ -26,7 +26,7 @@ import { actorNameOf, teamsOf } from '@/lib/householdNotices';
 import { currentAge, isMinor } from '@/domain/households';
 import { countOpenAlerts } from '@/domain/householdLinks';
 import { realOwner } from '@/domain/dedupPair';
-import { ageColumns, parseNameChange, renameEntries, sameName } from '@/domain/profileIdentity';
+import { ageColumns, parseNameChange, renameEntries, sameName, RENAME_NOTICE_WINDOW_MS } from '@/domain/profileIdentity';
 import { notificationContent, type NotificationTemplate } from '@/domain/notificationTemplates';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -112,6 +112,19 @@ export async function renameProfile(db: Db, input: {
         others: { familyMembers: out.row.familyMembers ?? null, status: out.row.status ?? null },
         ...(warningErrorId ? { warningErrorId } : {}),
     };
+}
+
+/**
+ * How many renames `actor` made since `since` (final fix S5's per-person rate
+ * limit). Indexed on (changed_by, changed_at) — migration 0100.
+ */
+export async function renamesBySince(db: Db, actor: string, since: Date): Promise<number> {
+    const row = await db.select({ n: sql<number>`COUNT(*)` }).from(adopterHistory).where(and(
+        eq(adopterHistory.changedBy, actor),
+        gte(adopterHistory.changedAt, since),
+        sql`json_extract(${adopterHistory.changes}, '$.name_changed') IS NOT NULL`,
+    )).get() as { n: number } | undefined;
+    return Number(row?.n ?? 0);
 }
 
 export type UndoState =
@@ -297,11 +310,65 @@ export async function notifyProfileRenamed(db: Db, n: { adopterId: string; actor
                 return;
             }
             const recipients = await teamsOf(db, [n.adopterId], n.actor, new Set(), ctx);
-            await sendTo(recipients, 'profile_renamed', template, metadata, '✏️', ctx);
+            const renamerKey = await renamerKeyOf(n.actor);
+            // Final fix S5: the same person's next renames of this profile within the
+            // window update this teammate's notice in place — no second notice, no second email.
+            const fresh = new Map<string, string>();
+            await Promise.all([...recipients].map(async ([userId, profileId]) => {
+                if (!(await collapseRenameNotice(db, { userId, profileId, renamerKey, actorName, to: n.to, historyId: n.historyId }, ctx))) fresh.set(userId, profileId);
+            }));
+            await sendTo(fresh, 'profile_renamed', template, { ...metadata, renamerKey }, '✏️', ctx);
         } catch (e) {
             logger.warn('profileIdentity: rename notice failed', { ...ctx, error: errMsg(e) });
         }
     }, ctx);
+}
+
+/** A non-reversible key for who renamed (the notice's metadata never carries another rescuer's email). */
+async function renamerKeyOf(actor: string): Promise<string> {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`rename-notice:${actor.trim().toLowerCase()}`));
+    return [...new Uint8Array(buf)].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * The recipient's «cambió el nombre» notice of the same renamer and profile from
+ * the last RENAME_NOTICE_WINDOW_MS, updated in place: the name it was before the
+ * first of these renames → the latest name, «Deshacer» on the latest rename,
+ * unread again. True when collapsed. A failed read or write is logged and
+ * answered false (a fresh notice is sent: an extra one, never a missed one).
+ */
+async function collapseRenameNotice(
+    db: Db,
+    c: { userId: string; profileId: string; renamerKey: string; actorName: string; to: string; historyId: string | null },
+    ctx: Ctx,
+): Promise<boolean> {
+    try {
+        const since = new Date(Date.now() - RENAME_NOTICE_WINDOW_MS);
+        const prev = await db.select({ id: notifications.id, metadata: notifications.metadata }).from(notifications).where(and(
+            eq(notifications.userId, c.userId),
+            eq(notifications.type, 'profile_renamed'),
+            gte(notifications.createdAt, since),
+            sql`json_extract(${notifications.metadata}, '$.profileId') = ${c.profileId}`,
+            sql`json_extract(${notifications.metadata}, '$.renamerKey') = ${c.renamerKey}`,
+        )).orderBy(desc(notifications.createdAt)).limit(1).get() as { id: string; metadata: string | null } | undefined;
+        if (!prev) return false;
+        let meta: Record<string, unknown> = {};
+        try { meta = prev.metadata ? JSON.parse(prev.metadata) as Record<string, unknown> : {}; } catch { meta = {}; }
+        const params = ((meta.template as { params?: Record<string, unknown> } | undefined)?.params) ?? {};
+        const firstFrom = typeof params.fromName === 'string' && params.fromName ? params.fromName : undefined;
+        const template: NotificationTemplate = { key: 'profile_renamed', params: { actorName: c.actorName, fromName: firstFrom, toName: c.to } };
+        const content = notificationContent(template);
+        const { undo: _oldUndo, ...rest } = meta;
+        void _oldUndo;
+        const next = { ...rest, ...(c.historyId ? { undo: { historyId: c.historyId } } : {}), template };
+        await db.update(notifications).set({ title: content.title, body: content.body, metadata: JSON.stringify(next), read: 0, dismissed: 0 })
+            .where(eq(notifications.id, prev.id)).run();
+        logger.info('profileIdentity: profile_renamed collapsed into the recent notice', { ...ctx, notificationId: prev.id });
+        return true;
+    } catch (e) {
+        logger.warn('profileIdentity: rename notice collapse failed, a fresh notice is sent', { ...ctx, error: errMsg(e) });
+        return false;
+    }
 }
 
 /** The renamer hears their change was undone (unless they undid it themselves). */

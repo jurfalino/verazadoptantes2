@@ -781,6 +781,7 @@ export const es = {
         minor_refused_alert: 'Es menor de edad: las alertas se registran en los adultos de su hogar.',
         rename_hint: 'Si cambiás el nombre, el anterior queda como «Conocido/a como» y le avisamos a quien cargó el perfil.',
         rename_failed: 'No se pudo cambiar el nombre.',
+        rename_rate_limited: 'Cambiaste muchos nombres en la última hora. Probá de nuevo más tarde.',
         rename_undo: 'Deshacer',
         rename_undo_done: 'Listo: el perfil vuelve a llamarse «{name}».',
         rename_undo_already: 'Ese cambio ya se deshizo.',

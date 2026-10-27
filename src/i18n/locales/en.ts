@@ -782,6 +782,7 @@ export const en = {
         minor_refused_alert: 'A minor: alerts are recorded on the adults of their household.',
         rename_hint: 'If you change the name, the previous one is kept as “Also known as” and whoever added the profile is told.',
         rename_failed: 'Could not change the name.',
+        rename_rate_limited: 'You have changed many names in the last hour. Try again later.',
         rename_undo: 'Undo',
         rename_undo_done: 'Done: the profile is called “{name}” again.',
         rename_undo_already: 'That change was already undone.',
