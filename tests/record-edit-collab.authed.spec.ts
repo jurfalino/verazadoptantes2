@@ -178,8 +178,9 @@ test('household: a new person shows once; a rename a teammate beat is refused, n
         await page.getByTestId('hh-person-name').fill(ANA);
         await saveAsNew(page);
         await expect.poll(housemateNames, { timeout: 15_000 }).toEqual([ANA]);
-        // After the refresh lands: exactly one card.
-        await page.waitForTimeout(2_000);
+        // After the refresh lands (the form closed, her card shown): exactly one card.
+        await expect(page.getByTestId('hh-person-name')).toHaveCount(0, { timeout: 15_000 });
+        await expect(page.getByTestId('household-member').filter({ hasText: ANA })).toBeVisible({ timeout: 15_000 });
         await expect(page.getByTestId('household-member')).toHaveCount(1);
 
         // Tab B renames her first; tab A (never refreshed) renames too.
@@ -225,7 +226,10 @@ test("household: saving a name fix never reverts a teammate's newer age", async 
         await page.getByTestId('hh-person-name').fill('Tomás Lopez');
         await page.getByTestId('hh-form-save').click();
         await expect.poll(() => String(one(`SELECT name FROM adopters WHERE id = '${tomas}'`).name), { timeout: 15_000 }).toBe('Tomás Lopez');
-        await page.waitForTimeout(2_000);
+        // The save is over once the form closed and the rename's history row is in: no age write followed it.
+        await expect(page.getByTestId('hh-edit-form')).toHaveCount(0, { timeout: 15_000 });
+        await expect.poll(() => Number(one(`SELECT COUNT(*) AS n FROM adopter_history WHERE adopter_id = '${tomas}' AND changes LIKE '%name_changed%'`).n), { timeout: 15_000 }).toBe(1);
+        expect(Number(one(`SELECT COUNT(*) AS n FROM adopter_history WHERE adopter_id = '${tomas}' AND changes LIKE '%age_changed%'`).n), 'no age write').toBe(0);
         expect(Number(one(`SELECT age FROM adopters WHERE id = '${tomas}'`).age), "the teammate's age stands").toBe(8);
     } finally {
         cleanupProfiles([adopterId, tomas]);
