@@ -135,7 +135,8 @@ test('adopter profile in two tabs: the stale tab never reverts the other field',
         await expect.poll(() => row().name, { timeout: 15_000 }).toBe(`Renombrada ${stamp}`);
         expect(row().fam).toBe('Hijo y perro');
         await expect(tabB.getByTestId('adopter-familyMembers-updated-by')).toBeVisible();
-        await expect(tabB.getByText('Hijo y perro')).toBeVisible();
+        // In the form (a rename refreshes the page, so the history list below carries A's change too).
+        await expect(tabB.locator('form').getByText('Hijo y perro')).toBeVisible();
 
         // Same field: tab A (which never saw the rename) renames too — refused.
         await tabA.getByTestId('name-edit-btn').click();
