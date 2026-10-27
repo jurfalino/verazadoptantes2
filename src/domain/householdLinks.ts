@@ -47,10 +47,9 @@ export interface LinkedSummary {
     /** True when nothing on that profile is masked for this viewer. */
     canSeeContact: boolean;
     /**
-     * The viewer may say the person does not live with that host («No convive»,
-     * D48): a correction of the fact on both profiles, not a per-side hide.
-     * canReportNotLivingTogether against the LINKED profile — on the host's
-     * card that is the summarised profile, on «Convive con» the one viewed.
+     * The viewer may say the person does not live there («No vive acá», D48): a
+     * correction of the fact for everyone. One of «Quitar del hogar»'s answers,
+     * so the same people as `canRemove` (src/lib/households.ts).
      */
     canReportNotLiving: boolean;
 }
@@ -84,31 +83,6 @@ export function countOpenAlerts(flags: DuplicateFlagRow[]): number {
         else if (isOpenDuplicateFlag(f)) n++;
     }
     return n;
-}
-
-/**
- * A link row is live while the host still has that member and the member
- * still points at the linked profile (the host's JSON is the source of
- * truth; a row orphaned by an edit, a merge or an import is ignored).
- * `linkedIds`: the ids that count as the linked profile — after a merge moved
- * the link onto the survivor (D51), the member's own `profileId` may still
- * name the absorbed profile.
- */
-export function isLiveLink(
-    link: { memberId: string; linkedAdopterId: string },
-    hostMembers: ReadonlyArray<{ id: string; profileId?: string }>,
-    linkedIds: ReadonlySet<string> = new Set([link.linkedAdopterId]),
-): boolean {
-    return hostMembers.some(m => m.id === link.memberId && !!m.profileId && linkedIds.has(m.profileId));
-}
-
-/**
- * Who may say «No convive» (D48): the linked profile's owner, their team, or an
- * admin — the people who know that person. The host's own team removes the
- * member with its own tools.
- */
-export function canReportNotLivingTogether(p: { viewerIsAdmin: boolean; viewerIsLinkedOwnerTeam: boolean }): boolean {
-    return p.viewerIsAdmin || p.viewerIsLinkedOwnerTeam;
 }
 
 /** A rescuer as other people see them: their display name, else the email handle — never the address. */

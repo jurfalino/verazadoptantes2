@@ -1424,8 +1424,8 @@ export default function ImportWizard() {
             }
             // Relatives: households as profiles — each one becomes a profile (with their
             // own contacts) in the target's household, through the same add anyone signed
-            // in uses (D54: credited, granted, the target's team told). The «¿Es este
-            // perfil?» confirmation per relative comes with the household UI (Task 8).
+            // in uses (D54: credited, granted, the target's team told). A relative the
+            // rescuer recognised in «¿Es este perfil?» (ImportRelativeCheck) is linked instead.
             for (const m of members) {
                 await addRelative(mergeTarget.id, { ...m, existingProfileId: 'existingProfileId' in m ? m.existingProfileId : null });
             }

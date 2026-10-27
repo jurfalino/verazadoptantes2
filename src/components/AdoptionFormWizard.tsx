@@ -679,7 +679,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 t('errors.generic'),
                 isAnimalAlreadyPlacedError(err) ? animalAlreadyPlacedMessage(t, formData.animalName)
                     : isSaveBusyError(err) ? t('collab.busy')
-                    : isProfileIsMinorError(err) ? t('adopter.minor_refused_record')
+                    : isProfileIsMinorError(err) ? t('adopter.minor_note')
                     : t('errors.save_failed_generic'),
                 resolveErrorId(err, 'AdoptionFormWizard'),
             );

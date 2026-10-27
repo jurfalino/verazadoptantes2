@@ -9,7 +9,7 @@
  * logic is shared. See .agents/plans/2026-08-26-household-members-redesign.md.
  */
 
-import { deserializeContactEntries, normalizeEntryValue, type ContactEntry } from './contactEntries';
+import { deserializeContactEntries, type ContactEntry } from './contactEntries';
 
 export type Relationship =
     | 'partner' | 'child' | 'parent' | 'sibling' | 'other_relative' | 'housemate' | 'unknown';
@@ -182,86 +182,16 @@ export function serializeHouseholdMembers(
     return JSON.stringify(clean);
 }
 
-/**
- * Best-effort parse of the legacy free-text `family_members` into structured
- * members (name only). Powers the manual "Convertir a personas" affordance —
- * NOT an automatic migration (prose like "vive con su madre y 2 gatos" should be
- * reviewed, not mangled). Splits on line breaks / ; / , ; dedupes by lowercased
- * name; each fragment → a member with name, no relationship, no contacts.
- */
-export function parseLegacyFamilyText(text: string | null | undefined): HouseholdMember[] {
-    if (!text || !text.trim()) return [];
-    const out: HouseholdMember[] = [];
-    const seen = new Set<string>();
-    for (const raw of text.split(/[\n;,]+/)) {
-        const name = raw.trim();
-        if (name.length < 2) continue;
-        const key = name.toLowerCase();
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push({ id: deriveMemberId(name, '', out.length), name: name.slice(0, MAX_NAME_LEN), relationship: null, contactEntries: [] });
-        if (out.length >= MAX_MEMBERS) break;
-    }
-    return out;
-}
-
 /** Age today: the recorded age plus whole years elapsed since it was recorded (moved to src/domain/households.ts). */
 export { currentAge } from '@/domain/households';
 
-const memberKey = (m: HouseholdMember) =>
-    `${m.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()}|${m.relationship ?? ''}`;
-
-/**
- * A merge's household: the survivor's members plus the absorbed profile's,
- * minus exact (name + relationship) repeats. Nameless members are never
- * collapsed — "a son, phone X" twice may be two people.
- */
-export function mergeHouseholdMembers(survivor: HouseholdMember[], absorbed: HouseholdMember[]): HouseholdMember[] {
-    return mergeHouseholdMembersTracked(survivor, absorbed).members;
-}
-
-/** What a merge put on the survivor's household — exactly what its undo takes back. */
+/** What an OLD merge put on the survivor's household JSON (its undo payload) — exactly what undoHouseholdMerge takes back. */
 export type HouseholdMergeAdditions = {
     /** Absorbed members appended as new people. */
     memberIds: string[];
     /** The survivor's own members that gained what only the absorbed copy had. */
     enriched: Array<{ memberId: string; contactIds: string[]; giftRecipient: boolean }>;
 };
-
-const contactKey = (c: ContactEntry) => `${c.type}|${normalizeEntryValue(c.type, c.value)}`;
-
-/**
- * mergeHouseholdMembers, keeping what a repeat knows that the survivor's copy
- * doesn't: the gift-recipient mark and contacts it lacks (#4, 2026-10-13 —
- * before, the absorbed copy was dropped whole). Returns what was added, for undo.
- */
-export function mergeHouseholdMembersTracked(survivor: HouseholdMember[], absorbed: HouseholdMember[]): { members: HouseholdMember[]; added: HouseholdMergeAdditions } {
-    const byKey = new Map<string, number>();
-    survivor.forEach((m, i) => { if (m.name.trim() && !byKey.has(memberKey(m))) byKey.set(memberKey(m), i); });
-    const out = [...survivor];
-    const appended: string[] = [];
-    const enriched: HouseholdMergeAdditions['enriched'] = [];
-    for (const m of absorbed) {
-        const k = m.name.trim() ? memberKey(m) : null;
-        const at = k === null ? undefined : byKey.get(k);
-        if (at === undefined) {
-            if (k !== null) byKey.set(k, out.length);
-            out.push(m);
-            appended.push(m.id);
-            continue;
-        }
-        const own = out[at];
-        const known = new Set(own.contactEntries.map(contactKey));
-        const newContacts = m.contactEntries.filter(c => !known.has(contactKey(c)));
-        const markGift = m.giftRecipient === true && own.giftRecipient !== true;
-        if (!newContacts.length && !markGift) continue;
-        out[at] = { ...own, contactEntries: [...own.contactEntries, ...newContacts], ...(markGift ? { giftRecipient: true } : {}) };
-        enriched.push({ memberId: own.id, contactIds: newContacts.flatMap(c => (c.id ? [c.id] : [])), giftRecipient: markGift });
-    }
-    const members = out.slice(0, MAX_MEMBERS);
-    const kept = new Set(members.map(m => m.id));
-    return { members, added: { memberIds: appended.filter(id => kept.has(id)), enriched } };
-}
 
 /** Takes back exactly what a merge added; anyone's later edits stay. */
 export function undoHouseholdMerge(members: HouseholdMember[], added: HouseholdMergeAdditions): HouseholdMember[] {

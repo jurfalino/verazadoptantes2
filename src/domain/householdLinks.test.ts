@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { countOpenAlerts, isLiveLink, linkNoticeRecipients, personLabel, summaryContacts, canReportNotLivingTogether, MAX_SUMMARY_CONTACTS } from './householdLinks';
+import { countOpenAlerts, linkNoticeRecipients, personLabel, summaryContacts, MAX_SUMMARY_CONTACTS } from './householdLinks';
 import { KEPT_SEPARATE_FLAG_DETAILS_PREFIX } from './dedupPair';
 
 describe('countOpenAlerts', () => {
@@ -14,23 +14,6 @@ describe('countOpenAlerts', () => {
             { adopterId: 'a', reason: 'verified_address' },
         ])).toBe(3);
         expect(countOpenAlerts([])).toBe(0);
-    });
-});
-
-describe('isLiveLink', () => {
-    const link = { memberId: 'm1', linkedAdopterId: 'p1' };
-    it('is live while the host member still points at the profile', () => {
-        expect(isLiveLink(link, [{ id: 'm1', profileId: 'p1' }])).toBe(true);
-    });
-    it('is not live once the member is gone or points elsewhere', () => {
-        expect(isLiveLink(link, [])).toBe(false);
-        expect(isLiveLink(link, [{ id: 'm1' }])).toBe(false);
-        expect(isLiveLink(link, [{ id: 'm1', profileId: 'p2' }])).toBe(false);
-        expect(isLiveLink(link, [{ id: 'm2', profileId: 'p1' }])).toBe(false);
-    });
-    it('counts a profile merged into the linked one when the caller names it (D51)', () => {
-        expect(isLiveLink(link, [{ id: 'm1', profileId: 'absorbed' }], new Set(['p1', 'absorbed']))).toBe(true);
-        expect(isLiveLink(link, [{ id: 'm1', profileId: 'absorbed' }])).toBe(false);
     });
 });
 
@@ -60,13 +43,5 @@ describe('summaryContacts', () => {
         expect(out.shown).toHaveLength(MAX_SUMMARY_CONTACTS);
         expect(out.shown.every(e => e.type === 'phone')).toBe(true);
         expect(out.more).toBe(2);
-    });
-});
-
-describe('canReportNotLivingTogether', () => {
-    it('the linked profile team or an admin', () => {
-        expect(canReportNotLivingTogether({ viewerIsAdmin: false, viewerIsLinkedOwnerTeam: true })).toBe(true);
-        expect(canReportNotLivingTogether({ viewerIsAdmin: true, viewerIsLinkedOwnerTeam: false })).toBe(true);
-        expect(canReportNotLivingTogether({ viewerIsAdmin: false, viewerIsLinkedOwnerTeam: false })).toBe(false);
     });
 });

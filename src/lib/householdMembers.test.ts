@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
     deserializeHouseholdMembers,
     serializeHouseholdMembers,
-    parseLegacyFamilyText,
     isMeaningfulMember,
     MAX_MEMBERS,
     type HouseholdMember,
@@ -86,21 +85,6 @@ describe('serializeHouseholdMembers round-trip', () => {
     });
 });
 
-describe('parseLegacyFamilyText (manual "Convertir")', () => {
-    it('splits lines/commas/semicolons into name-only members, deduped', () => {
-        const out = parseLegacyFamilyText('María Gómez\nJuan Pérez, María Gómez; Pedro');
-        expect(out.map(m => m.name)).toEqual(['María Gómez', 'Juan Pérez', 'Pedro']);
-        expect(out.every(m => m.relationship === null && m.contactEntries.length === 0)).toBe(true);
-    });
-    it('returns [] for empty / whitespace', () => {
-        expect(parseLegacyFamilyText('')).toEqual([]);
-        expect(parseLegacyFamilyText('   ')).toEqual([]);
-    });
-    it('ignores 1-char fragments', () => {
-        expect(parseLegacyFamilyText('a, Bob').map(m => m.name)).toEqual(['Bob']);
-    });
-});
-
 describe('isMeaningfulMember', () => {
     it('true for name / relationship / contact; false for empty', () => {
         expect(isMeaningfulMember({ name: 'X' })).toBe(true);
@@ -110,7 +94,7 @@ describe('isMeaningfulMember', () => {
     });
 });
 
-import { currentAge, mergeHouseholdMembers, mergeHouseholdMembersTracked, undoHouseholdMerge } from './householdMembers';
+import { currentAge, undoHouseholdMerge } from './householdMembers';
 
 describe('member age', () => {
     it('round-trips age + ageAsOf and drops invalid ones', () => {
@@ -131,43 +115,22 @@ describe('member age', () => {
     });
 });
 
-describe('mergeHouseholdMembers', () => {
-    const m = (id: string, name: string, relationship: 'child' | 'partner') => ({ id, name, relationship, contactEntries: [] });
-    it('appends the absorbed members, skipping same name + relationship', () => {
-        const out = mergeHouseholdMembers([m('1', 'Tomás López', 'child')], [m('2', ' tomás  lópez ', 'child'), m('3', 'Ana Ruiz', 'partner')]);
-        expect(out.map(x => x.id)).toEqual(['1', '3']);
-    });
-});
-
-describe('combining profiles keeps what only the absorbed copy knows (#4, 2026-10-13)', () => {
+describe('undoHouseholdMerge — an old merge\'s payload (#4, 2026-10-13)', () => {
     const phone = (id: string, value: string) => ({ id, type: 'phone' as const, value });
-    const survivorLaura = { id: 's1', name: 'Laura Pérez', relationship: 'child' as const, contactEntries: [phone('c1', '11 4444 0000')] };
-    const absorbedLaura = { id: 'a1', name: 'laura  pérez', relationship: 'child' as const, giftRecipient: true, contactEntries: [phone('c2', '11 5555 1234'), phone('c3', '1144440000')] };
+    // What an old merge left: Laura enriched with the absorbed copy's phone c2 and its gift mark; Ana appended.
+    const laura = { id: 's1', name: 'Laura Pérez', relationship: 'child' as const, giftRecipient: true, contactEntries: [phone('c1', '11 4444 0000'), phone('c2', '11 5555 1234')] };
+    const ana = { id: 'a2', name: 'Ana Ruiz', relationship: 'partner' as const, contactEntries: [] };
+    const added = { memberIds: ['a2'], enriched: [{ memberId: 's1', contactIds: ['c2'], giftRecipient: true }] };
 
-    it("the survivor's Laura gains the gift mark and the phone she lacked — not a phone she already has", () => {
-        const { members, added } = mergeHouseholdMembersTracked([survivorLaura], [absorbedLaura]);
-        expect(members).toHaveLength(1);
-        expect(members[0].giftRecipient).toBe(true);
-        expect(members[0].contactEntries.map(c => c.value)).toEqual(['11 4444 0000', '11 5555 1234']);
-        expect(added).toEqual({ memberIds: [], enriched: [{ memberId: 's1', contactIds: ['c2'], giftRecipient: true }] });
-    });
-    it('undo takes back exactly that — and keeps a phone a teammate added since', () => {
-        const { members, added } = mergeHouseholdMembersTracked([survivorLaura], [absorbedLaura]);
-        const later = [{ ...members[0], contactEntries: [...members[0].contactEntries, phone('c9', '11 7777 7777')] }];
+    it('takes back exactly what it added — and keeps a phone a teammate added since', () => {
+        const later = [{ ...laura, contactEntries: [...laura.contactEntries, phone('c9', '11 7777 7777')] }, ana];
         const undone = undoHouseholdMerge(later, added);
+        expect(undone.map(m => m.id)).toEqual(['s1']);
         expect(undone[0].giftRecipient).toBeUndefined();
         expect(undone[0].contactEntries.map(c => c.id)).toEqual(['c1', 'c9']);
     });
     it('a survivor already marked keeps the mark through undo', () => {
-        const { members, added } = mergeHouseholdMembersTracked([{ ...survivorLaura, giftRecipient: true }], [absorbedLaura]);
-        expect(undoHouseholdMerge(members, added)[0].giftRecipient).toBe(true);
-    });
-    it('new people are still appended and removed by undo, as before', () => {
-        const ana = { id: 'a2', name: 'Ana Ruiz', relationship: 'partner' as const, contactEntries: [] };
-        const { members, added } = mergeHouseholdMembersTracked([survivorLaura], [ana]);
-        expect(members.map(m => m.id)).toEqual(['s1', 'a2']);
-        expect(added.memberIds).toEqual(['a2']);
-        expect(undoHouseholdMerge(members, added).map(m => m.id)).toEqual(['s1']);
+        expect(undoHouseholdMerge([laura], { memberIds: [], enriched: [{ memberId: 's1', contactIds: ['c2'], giftRecipient: false }] })[0].giftRecipient).toBe(true);
     });
 });
 
@@ -182,9 +145,5 @@ describe('profileId — a household member with their own profile (D35)', () => 
         ]);
         expect(deserializeHouseholdMembers(json).map(m => 'profileId' in m)).toEqual([false, false, false, false]);
         expect(serializeHouseholdMembers([{ ...linked, profileId: '  ' }])).not.toContain('profileId');
-    });
-    it('a merge carries an absorbed linked member over with its link', () => {
-        const out = mergeHouseholdMembers([{ id: 's', name: 'Tomás', relationship: 'child', contactEntries: [] }], [linked]);
-        expect(out[1]).toMatchObject({ id: 'hm-l', profileId: 'adopter-2' });
     });
 });

@@ -7,8 +7,9 @@
  * (LinkedProfileSummary). The menu holds what this viewer may do:
  * - «Editar»: everyone signed in, on every card (the same form for all — the
  *   anchor's card too, without a relationship field: its row has none);
- * - «Quitar del hogar»: whoever may take the person out (`canRemove`: the
- *   adder, the household's teams, admins);
+ * - «Quitar del hogar» («Quitar como destinatario» on a gift recipient):
+ *   whoever may take the person out (`canRemove`: the adder, the household's
+ *   teams, admins and moderators);
  * - «Eliminar perfil de X» / «Pedir eliminación»: today's deletion rules — the
  *   person's owner (delete when nobody else contributed, else ask the admins)
  *   or an admin (always delete). Which one is read when the menu opens

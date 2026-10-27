@@ -101,7 +101,7 @@ function PersonFields({ name, setName, rel, setRel, relativeName, age, setAge, m
                 <label className="block text-[11px] font-semibold text-stone-500 mb-1" htmlFor={ids.name}>{t('adopter.hh_name')}</label>
                 <input id={ids.name} autoFocus type="text" value={name} onChange={e => setName(e.target.value)} placeholder={t('adopter.hh_name_ph')}
                     data-testid="hh-person-name" className={FIELD} />
-                {renameHint && <p className="text-[11px] text-stone-500 mt-1">{t('adopter.hh_rename_hint')}</p>}
+                {renameHint && <p className="text-[11px] text-stone-500 mt-1">{t('adopter.rename_hint')}</p>}
             </div>
             <div className="flex gap-2 flex-wrap">
                 {showRelationship && (
