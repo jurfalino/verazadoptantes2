@@ -21,7 +21,7 @@ import { mergeSideParams } from '@/lib/mergeNotificationSides';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdminAsync } from '@/config/admins';
 import { addHouseholdMember } from './householdMembers';
-import { housematePairKeys, sameHousehold } from '@/lib/households';
+import { sharesHomeSql } from '@/lib/housemateSql';
 
 /**
  * Attach a just-signed contract's adoption to an existing matched adopter profile,
@@ -287,6 +287,9 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
                     eq(duplicateCandidates.adopter1Id, adopterId),
                     eq(duplicateCandidates.adopter2Id, adopterId),
                 ),
+                // A housemate is never a duplicate candidate (a pair detected before
+                // they shared a household). In SQL, so housemates can't fill the cap.
+                sql`NOT ${sharesHomeSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id)}`,
             ))
             // Strongest first, so weak pairs can't crowd a strong one out of the cap.
             .orderBy(sql`${duplicateCandidates.score} DESC`)
@@ -311,21 +314,7 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
             if (a) nameMap.set(a.id, a.name);
         }
 
-        // A housemate is never a duplicate candidate (a pair detected before they
-        // shared a household): ≤ 5 bounded lookups. A failed lookup keeps the pair.
-        const housemate = new Set<string>();
-        await Promise.all(otherIds.map(async (otherId: string) => {
-            try {
-                if (await sameHousehold(db, adopterId, otherId)) housemate.add(otherId);
-            } catch (e) {
-                logger.warn('getDuplicateCandidates: housemate check failed, pair kept', {
-                    adopterId, otherAdopterId: otherId, error: e instanceof Error ? e.message : String(e),
-                });
-            }
-        }));
-
         return candidates
-            .filter((c: { adopter1Id: string; adopter2Id: string }) => !housemate.has(c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id))
             .map((c: { id: string; adopter1Id: string; adopter2Id: string; matchTypes: string; score: number; confidence: string }) => {
                 const otherId = c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id;
                 return {
@@ -1070,10 +1059,12 @@ export async function getPendingDuplicatesForUser(
             score: duplicateCandidates.score,
             confidence: duplicateCandidates.confidence,
             detectedAt: duplicateCandidates.detectedAt,
+            // Housemates (indexed per row, no table scan): filtered below, once the requests are known.
+            housemates: sql<number>`${sharesHomeSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id)}`,
         })
             .from(duplicateCandidates)
             .where(eq(duplicateCandidates.status, 'pending'))
-            .all() as FeedCandidate[];
+            .all() as Array<FeedCandidate & { housemates?: number | null }>;
 
         if (candidates.length === 0 && requests.size === 0) return EMPTY;
 
@@ -1104,19 +1095,10 @@ export async function getPendingDuplicatesForUser(
         // leaves the list as soon as they do, before ranking so `total` agrees. A
         // person's flag or merge request is someone asking: those stay — a pair
         // with a request keeps its candidate row here, or the request check below
-        // would read the still-pending row as settled and drop the request. One query.
-        try {
-            if (mine.length > 0) {
-                const housemates = await housematePairKeys(db);
-                for (let i = mine.length - 1; i >= 0; i--) {
-                    const key = pairKey(mine[i].adopter1Id, mine[i].adopter2Id);
-                    if (housemates.has(key) && !requests.has(key)) mine.splice(i, 1);
-                }
-            }
-        } catch (e) {
-            logger.warn('getPendingDuplicatesForUser: housemate filter failed, pairs listed as detected', {
-                actorEmail: viewer, error: e instanceof Error ? e.message : String(e),
-            });
+        // would read the still-pending row as settled and drop the request.
+        for (let i = mine.length - 1; i >= 0; i--) {
+            const c = mine[i] as FeedCandidate & { housemates?: number | null };
+            if (Number(c.housemates ?? 0) === 1 && !requests.has(pairKey(c.adopter1Id, c.adopter2Id))) mine.splice(i, 1);
         }
 
         // Manually flagged duplicates (adopter_flags, reason='duplicate') join

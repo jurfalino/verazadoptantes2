@@ -23,9 +23,9 @@
  * Rules live in src/domain/households.ts. D1: no `IN (array)` — one bounded
  * query per profile / household, fanned out with Promise.all.
  */
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, or, sql, type SQLWrapper } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
-import { adopters, householdCorrections, householdMemberships, households } from '@/db/schema';
+import { adopters, duplicateCandidates, householdCorrections, householdMemberships, households } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { runBatch } from '@/lib/dbBatch';
@@ -352,7 +352,38 @@ export async function addMembership(db: Db, input: AddMembershipInput): Promise<
         .where(and(eq(householdMemberships.householdId, input.householdId), eq(householdMemberships.adopterId, input.adopterId)))
         .get();
     if (!row) throw new Error('addMembership: membership missing after insert');
-    return { membershipId: row.id, created: row.id === id };
+    const created = row.id === id;
+    if (created && !input.giftRecipient) await dropHousemateCandidates(db, input.householdId, input.adopterId);
+    return { membershipId: row.id, created };
+}
+
+/**
+ * Someone just joined a household: their pending duplicate pairs with the people
+ * already there leave «Pendientes de revisar» — housemates are never duplicates
+ * («alguien de su hogar» is already a recorded answer). Removed rather than
+ * marked dismissed: if they stop living together, the next scan may pair them
+ * again. A merge request on such a pair keeps standing on its own (the feed
+ * rebuilds a pair from its request when the candidate row is gone). Not in a
+ * gift household (not a home). One statement over this person's pending pairs
+ * (indexed), checked against a household held to MAX_HOUSEHOLD_MEMBERS. A
+ * failure is logged and never undoes the join.
+ */
+async function dropHousemateCandidates(db: Db, householdId: string, adopterId: string): Promise<void> {
+    const livesThere = (col: SQLWrapper) =>
+        sql`EXISTS (SELECT 1 FROM household_memberships m WHERE m.household_id = ${householdId} AND m.adopter_id = ${col})`;
+    try {
+        await db.delete(duplicateCandidates).where(and(
+            eq(duplicateCandidates.status, 'pending'),
+            sql`NOT EXISTS (SELECT 1 FROM household_memberships g WHERE g.household_id = ${householdId} AND g.gift_recipient = 1)`,
+            or(
+                and(eq(duplicateCandidates.adopter1Id, adopterId), livesThere(duplicateCandidates.adopter2Id)),
+                and(eq(duplicateCandidates.adopter2Id, adopterId), livesThere(duplicateCandidates.adopter1Id)),
+            ),
+        )).run();
+        logger.info('households: pending duplicate pairs with new housemates removed', { householdId, adopterId });
+    } catch (e) {
+        logger.warn('households: housemate duplicate pairs not removed (the feed and badge still hide them)', { householdId, adopterId, error: errMsg(e) });
+    }
 }
 
 /**
@@ -547,32 +578,27 @@ export async function getHouseholdsFor(
 
 // ─────────────────────────── Card lines (batched) ───────────────────────────
 
+/** Cards per page that get a household line (the rest of a long page go without). */
+export const HOUSEHOLD_LINE_CARDS = 20;
+
 /**
  * Search / «¿Es este perfil?» cards with their household line (`households`),
- * read in ONE batched `householdLinesFor` call for every card on the page.
- * Callers pass only the cards they return (never the whole recall set) and only
- * for a signed-in viewer: the line names people, and a logged-out visitor's
- * names are masked server-side. Never throws (a failed card gets []).
+ * read in ONE batched `householdLinesFor` call: one indexed lookup per card
+ * (most people have no household), more only for a card that has one. Only the
+ * first HOUSEHOLD_LINE_CARDS cards get a line — callers pass the cards in the
+ * order shown (main results first) — and only for a signed-in viewer: the line
+ * names people, and a logged-out visitor's names are masked server-side. Never
+ * throws (a failed card gets [], logged).
  */
 export async function withHouseholdLines<T extends { adopterId: string }>(
     db: Db,
     viewer: string,
     cards: T[],
-): Promise<Array<T & { households: HouseholdLine[] }>> {
+): Promise<Array<T & { households?: HouseholdLine[] }>> {
     if (cards.length === 0) return [];
-    // A page can hold ~100 cards and most people have no household: one indexed
-    // DISTINCT read tells which cards need a line, so the rest cost no query.
-    let ids = [...new Set(cards.map(c => c.adopterId))];
-    if (ids.length > 1) {
-        try {
-            const housed = new Set(((await db.selectDistinct({ id: householdMemberships.adopterId }).from(householdMemberships).all()) as Array<{ id: string }>).map(r => r.id));
-            ids = ids.filter(id => housed.has(id));
-        } catch (e) {
-            logger.warn('households: housed-profile read failed, every card reads its line', { viewer, cards: ids.length, error: errMsg(e) });
-        }
-    }
-    const lines = ids.length > 0 ? await householdLinesFor(db, viewer, ids) : {};
-    return cards.map(c => ({ ...c, households: lines[c.adopterId] ?? [] }));
+    const budget = cards.slice(0, HOUSEHOLD_LINE_CARDS);
+    const lines = await householdLinesFor(db, viewer, budget.map(c => c.adopterId));
+    return cards.map((c, i) => (i < HOUSEHOLD_LINE_CARDS ? { ...c, households: lines[c.adopterId] ?? [] } : c));
 }
 
 /**
@@ -622,7 +648,9 @@ export async function householdLinesFor(
             // Read only what the line shows: just enough profiles to fill it,
             // in membership order, never more than MAX_CARD_PROFILE_READS
             // (deleted housemates can't make a card read without end).
-            const candidates = [...mates.keys()];
+            // People who live there first: a gift-only housemate (left off the card)
+            // never takes a slot or a read from someone who does.
+            const candidates = [...mates.keys()].sort((x, y) => Number(!!mates.get(x)) - Number(!!mates.get(y)));
             if (candidates.length > MAX_CARD_PROFILE_READS) {
                 logger.info('households: card read cap, later housemates not read', { ...ctx, housemates: candidates.length, cap: MAX_CARD_PROFILE_READS });
             }

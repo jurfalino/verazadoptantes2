@@ -1448,13 +1448,15 @@ async function runDiscoveryMode(
         }).filter((r): r is DiscoveryMatch => r !== null)
         : list;
 
-    // The household line («Convive con Pedro ★1 · 1 alerta») of every card
+    // The household line («Convive con Pedro ★1 · 1 alerta») of the cards
     // returned — never of the whole recall set — in one batched read. Only for
     // a signed-in viewer in the app: it names people (a guest's names are
     // masked) and the API's response doesn't carry it.
     let shownMain: DiscoveryMatch[] = mainResults.slice(0, limit);
     let shownLow: DiscoveryMatch[] = lowRelevanceResults.slice(0, limit);
-    if (!isUnauthenticated && !isApi && shownMain.length + shownLow.length > 0) {
+    // enrich:false callers (AdopterFlagging) render no line, so read none. Main
+    // results come first: they take the line budget (HOUSEHOLD_LINE_CARDS).
+    if (shouldEnrich && !isUnauthenticated && !isApi && shownMain.length + shownLow.length > 0) {
         const withLines = await withHouseholdLines(db, user, [...shownMain, ...shownLow]);
         shownMain = withLines.slice(0, shownMain.length);
         shownLow = withLines.slice(shownMain.length);

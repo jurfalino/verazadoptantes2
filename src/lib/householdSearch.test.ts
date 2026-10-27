@@ -56,8 +56,11 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { tokenizeAdopter } from './adopterTokenize';
-import { addMembership, createHousehold } from './households';
-import { findAdopters } from '@/app/actions/findAdopters';
+import { addMembership, createHousehold, withHouseholdLines, HOUSEHOLD_LINE_CARDS } from './households';
+import { MAX_HOUSEHOLD_LINES } from '@/domain/households';
+import { enrichAdopters } from '@/app/actions/enrichAdopters';
+import { logger } from '@/lib/logger';
+import { findAdopters, findAdoptersAsViewer } from '@/app/actions/findAdopters';
 import { searchFormDuplicates } from './formDuplicates';
 import { getHouseholdMatchCandidates } from '@/app/actions/households';
 import { getDuplicateCandidates, getPendingDuplicatesForUser } from '@/app/actions/duplicates';
@@ -257,5 +260,108 @@ describe('API exact mode: the member is an ordinary profile match', () => {
         const hits = await findIdentifierHits(db(), { fullName: 'Marta Paez', phone: '11 6123-4455' }, 'req', 'AR');
         const outcome = decideExactOutcome('Marta Paez', hits.candidates);
         expect(outcome).toMatchObject({ result: 'ambiguous', reason: 'name_mismatch', profileIds: ['pedro'] });
+    });
+});
+
+// ─────────────────────────── Fix round 1 ───────────────────────────
+
+const candidate = (id: string, a: string, b: string, score = 60) =>
+    sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at) VALUES (?, ?, ?, '["phone"]', ?, 'high', 'pending', 1000)`)
+        .run(id, a < b ? a : b, a < b ? b : a, score);
+const pending = () => sqlite.prepare(`SELECT id FROM duplicate_candidates WHERE status = 'pending' ORDER BY id`).all().map(r => r.id);
+const addPeople = (n: number, prefix: string) => {
+    const ins = sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, country, created_at, updated_at) VALUES (?, ?, '5', ?, 'AR', 1000, 1000)`);
+    const ids: string[] = [];
+    for (let i = 0; i < n; i++) { const id = `${prefix}${String(i).padStart(2, '0')}`; ins.run(id, `Persona ${prefix} ${i}`, OTHER); ids.push(id); }
+    return ids;
+};
+
+describe('fix round 1 — banner, badge and joins never pair housemates', () => {
+    it('I1: five stronger housemate pairs cannot hide a real duplicate from the profile banner', async () => {
+        const mates = addPeople(3, 'hm');
+        for (const m of mates) await addMembership(db(), { householdId: 'hh-pedro', adopterId: m, addedBy: OWNER });
+        // Inserted before Pedro joined anyone? No: pairs left from before they lived together.
+        for (const [i, m] of ['marta', 'lucas', ...mates].entries()) candidate(`c-hm-${i}`, 'pedro', m, 90);
+        candidate('c-real', 'pedro', 'rosa', 40);
+        expect((await getDuplicateCandidates('pedro')).map(c => c.otherAdopterId)).toEqual(['rosa']);
+    });
+
+    it('I3: the «posible duplicado» badge (and the API\'s possible_duplicate) ignores a housemate pair', async () => {
+        candidate('c-hm', 'pedro', 'marta');
+        expect((await enrichAdopters(db(), ['pedro', 'marta'])).get('pedro')!.flags.systemDuplicate).toBe(false);
+        candidate('c-real', 'pedro', 'rosa');
+        expect((await enrichAdopters(db(), ['pedro'])).get('pedro')!.flags.systemDuplicate).toBe(true);
+    });
+
+    it('I3: joining a household removes the pending duplicate pairs with the new housemates only', async () => {
+        candidate('c-join-pedro', 'rosa', 'pedro');
+        candidate('c-join-marta', 'rosa', 'marta');
+        candidate('c-other', 'rosa', 'ana');
+        await addMembership(db(), { householdId: 'hh-pedro', adopterId: 'rosa', addedBy: OWNER });
+        expect(pending()).toEqual(['c-other']);
+    });
+
+    it('I3: a gift household is no home: joining it removes nothing', async () => {
+        candidate('c-gift', 'rosa', 'pedro');
+        await createHousehold(db(), OWNER, 'hh-gift-x');
+        await addMembership(db(), { householdId: 'hh-gift-x', adopterId: 'rosa', giftRecipient: true, relativeToAdopterId: 'pedro', addedBy: OWNER });
+        await addMembership(db(), { householdId: 'hh-gift-x', adopterId: 'pedro', addedBy: null });
+        expect(pending()).toEqual(['c-gift']);
+    });
+});
+
+describe('fix round 1 — household lines stay cheap', () => {
+    const countQueries = async <T>(run: () => Promise<T>) => {
+        const raw = sqlite as unknown as { prepare: (...a: unknown[]) => unknown };
+        const orig = raw.prepare;
+        let n = 0;
+        raw.prepare = function (this: unknown, ...a: unknown[]) { n++; return orig.apply(this, a); };
+        try { return { result: await run(), n }; } finally { raw.prepare = orig; }
+    };
+
+    it('I2: a 20-card page costs at most 1 + 20×6 queries for its lines', async () => {
+        const cards = [...['lucas', 'pedro', 'ana', 'rosa'], ...addPeople(16, 'pg')].map(adopterId => ({ adopterId }));
+        const { result, n } = await countQueries(() => withHouseholdLines(db(), OWNER, cards));
+        expect(result.find(c => c.adopterId === 'lucas')!.households!.map(l => l.profileId)).toEqual(['pedro', 'marta', 'ana']);
+        expect(n).toBeLessThanOrEqual(1 + 20 * 6);
+    });
+
+    it('I2: only the first HOUSEHOLD_LINE_CARDS cards get a line', async () => {
+        const ids = addPeople(HOUSEHOLD_LINE_CARDS + 5, 'cap');
+        const out = await withHouseholdLines(db(), OWNER, ids.map(adopterId => ({ adopterId })));
+        expect(out.filter(c => 'households' in c)).toHaveLength(HOUSEHOLD_LINE_CARDS);
+        expect('households' in out[HOUSEHOLD_LINE_CARDS]).toBe(false);
+    });
+
+    it('I2: enrich:false callers (AdopterFlagging) get no household line', async () => {
+        const res = await findAdopters({ raw: 'Lucas Paez' }, { mode: 'discovery', enrich: false });
+        expect((res.results as DiscoveryMatch[]).length).toBeGreaterThan(0);
+        for (const r of res.results as DiscoveryMatch[]) expect(r.households).toBeUndefined();
+    });
+
+    it('the API (findAdoptersAsViewer, origin api) gets no household line', async () => {
+        const res = await findAdoptersAsViewer({ raw: 'Lucas Paez' }, { enrich: true }, OWNER);
+        expect((res.results as DiscoveryMatch[]).map(r => r.adopterId)).toContain('lucas');
+        for (const r of [...res.results, ...(res.lowRelevanceResults ?? [])] as DiscoveryMatch[]) expect(r.households).toBeUndefined();
+    });
+
+    it('a household read failure leaves the card without a line (logged), never the search', async () => {
+        sqlite.prepare('DROP TABLE household_memberships').run();
+        vi.mocked(logger.warn).mockClear();
+        const res = await findAdopters({ raw: 'Rosa Diaz' }, { mode: 'discovery' });
+        expect((res.results as DiscoveryMatch[]).find(r => r.adopterId === 'rosa')!.households).toEqual([]);
+        expect(vi.mocked(logger.warn).mock.calls.some(([msg]) => String(msg).startsWith('households:'))).toBe(true);
+    });
+
+    it('gift-only housemates never take a slot from someone who lives there', async () => {
+        // Pedro's OLDEST household is a gift one; his home has 11 other people.
+        await createHousehold(db(), OWNER, 'hh-gift-old');
+        await addMembership(db(), { householdId: 'hh-gift-old', adopterId: 'rosa', giftRecipient: true, relativeToAdopterId: 'pedro', addedBy: OWNER, addedAt: new Date(1000) });
+        await addMembership(db(), { householdId: 'hh-gift-old', adopterId: 'pedro', addedBy: null, addedAt: new Date(1000) });
+        for (const m of addPeople(9, 'big')) await addMembership(db(), { householdId: 'hh-pedro', adopterId: m, addedBy: OWNER });
+        const out = await withHouseholdLines(db(), OWNER, [{ adopterId: 'pedro' }]);
+        const lines = out[0].households!;
+        expect(lines).toHaveLength(MAX_HOUSEHOLD_LINES);
+        expect(lines.every(l => !l.isGift)).toBe(true);
     });
 });
