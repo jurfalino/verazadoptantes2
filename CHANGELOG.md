@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.1] - 2026-10-27
+
+### Changed — compact «Familiares / Convivientes»
+- One compact row per person: name (opens their profile), rating, alerts or «Menor de edad», and their activity
+  counted exactly like their own «Actividad» (transits and returns included). Contact details open with «N datos».
+- One attribution line per person («agregado por vos» / «según …»); «Perfil cargado por» is gone from the rows.
+- No «Hogar con …» titles; a small divider appears only when someone lives in two homes, and «Agregar» asks
+  «¿En qué hogar?» only then. The section takes about half the height, so «Actividad» is no longer buried.
+
+### Fixed
+- «Actividad» says «1 observación» (singular) instead of «1 observaciones».
+
 ## [2.58.0] - 2026-10-27
 
 ### Changed — every person in a household is a profile
