@@ -1,6 +1,7 @@
 import { test, expect, type Page, type Browser } from '@playwright/test';
 import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { cleanupProfiles, insertHousehold, insertProfile, rows } from './householdFixtures';
 
 /**
  * Everyday record edits by two people at once (src/domain/fieldCollab.ts):
@@ -155,12 +156,17 @@ test('adopter profile in two tabs: the stale tab never reverts the other field',
     }
 });
 
-test('household: a new member shows once; a rename a teammate beat is refused, not overwritten', async ({ page, context }) => {
+test('household: a new person shows once; a rename a teammate beat is refused, not overwritten', async ({ page, context }) => {
     test.setTimeout(150_000);
     const stamp = Date.now();
     const adopterId = `test-adopter-hh-collab-${stamp}`;
-    execD1(`INSERT INTO adopters (id, name, status, household_members, added_by, country, created_at, updated_at) VALUES ('${adopterId}', 'Hogar ${stamp}', '5', '[]', '${ADMIN_EMAIL}', 'AR', strftime('%s','now'), strftime('%s','now'))`);
-    const stored = () => JSON.parse(String(one(`SELECT household_members AS h FROM adopters WHERE id = '${adopterId}'`).h ?? '[]')) as Array<{ name: string }>;
+    const ANA = `Ana Hija ${stamp}`;
+    execD1(`INSERT INTO adopters (id, name, status, added_by, country, created_at, updated_at) VALUES ('${adopterId}', 'Hogar ${stamp}', '5', '${ADMIN_EMAIL}', 'AR', strftime('%s','now'), strftime('%s','now'))`);
+    // Households as profiles: the person is a profile in the host's household.
+    const housemateNames = () => rows(
+        `SELECT a.name AS name FROM household_memberships m JOIN household_memberships o ON o.household_id = m.household_id AND o.adopter_id <> m.adopter_id ` +
+        `JOIN adopters a ON a.id = o.adopter_id WHERE m.adopter_id = '${adopterId}'`,
+    ).map(r => String(r.name));
     const open = async (p: Page) => {
         await p.goto(`/adopter/${adopterId}`);
         await dismissCountryBanner(p);
@@ -169,32 +175,34 @@ test('household: a new member shows once; a rename a teammate beat is refused, n
     try {
         await open(page);
         await page.getByTestId('household-add-member').click();
-        await page.getByTestId('household-member-name-input').fill('Ana Hija');
-        await page.getByTestId('household-member-save').click();
-        await expect.poll(() => stored().map(m => m.name), { timeout: 15_000 }).toEqual(['Ana Hija']);
-        // After the refresh lands: exactly one row, and it is editable as a saved member.
+        await page.getByTestId('hh-person-name').fill(ANA);
+        await page.getByTestId('hh-form-save').click();
+        const candidate = page.getByTestId('hh-candidate');
+        if (await candidate.isVisible({ timeout: 8_000 }).catch(() => false)) await candidate.getByTestId('hh-candidate-no').click();
+        await expect.poll(housemateNames, { timeout: 15_000 }).toEqual([ANA]);
+        // After the refresh lands: exactly one card.
         await page.waitForTimeout(2_000);
         await expect(page.getByTestId('household-member')).toHaveCount(1);
 
         // Tab B renames her first; tab A (never refreshed) renames too.
         const tabB = await context.newPage();
         await open(tabB);
-        await tabB.getByTestId('household-member-edit').click();
-        await tabB.getByTestId('household-member-name-input').fill('Ana María');
-        await tabB.getByTestId('household-member-save').click();
-        await expect.poll(() => stored().map(m => m.name), { timeout: 15_000 }).toEqual(['Ana María']);
+        await tabB.getByTestId('household-member-menu').click();
+        await tabB.getByTestId('household-member-menu-edit').click();
+        await tabB.getByTestId('hh-person-name').fill(`Ana María ${stamp}`);
+        await tabB.getByTestId('hh-form-save').click();
+        await expect.poll(housemateNames, { timeout: 15_000 }).toEqual([`Ana María ${stamp}`]);
 
-        await page.getByTestId('household-member-edit').click();
-        await page.getByTestId('household-member-name-input').fill('Anita');
-        await page.getByTestId('household-member-save').click();
-        await expect(page.getByText(/changed this while you were editing|cambió este dato mientras lo editabas/).first()).toBeVisible({ timeout: 30_000 });
-        expect(stored().map(m => m.name)).toEqual(['Ana María']);
+        await page.getByTestId('household-member-menu').click();
+        await page.getByTestId('household-member-menu-edit').click();
+        await page.getByTestId('hh-person-name').fill(`Anita ${stamp}`);
+        await page.getByTestId('hh-form-save').click();
+        await expect(page.getByText(/changed this while you were editing|cambió esto mientras lo editabas/).first()).toBeVisible({ timeout: 30_000 });
+        expect(housemateNames()).toEqual([`Ana María ${stamp}`]);
         await expect(page.getByTestId('household-member')).toHaveCount(1);
         await tabB.close();
     } finally {
-        execD1(`DELETE FROM adopter_history WHERE adopter_id = '${adopterId}'`);
-        execD1(`DELETE FROM duplicate_tokens WHERE adopter_id = '${adopterId}'`);
-        execD1(`DELETE FROM adopters WHERE id = '${adopterId}'`);
+        cleanupProfiles([adopterId]);
     }
 });
 
@@ -202,23 +210,26 @@ test("household: saving a name fix never reverts a teammate's newer age", async 
     test.setTimeout(150_000);
     const stamp = Date.now();
     const adopterId = `test-adopter-hh-age-${stamp}`;
+    const tomas = `test-adopter-hh-age-tomas-${stamp}`;
     const today = new Date().toISOString().slice(0, 10);
-    execD1(`INSERT INTO adopters (id, name, status, household_members, added_by, country, created_at, updated_at) VALUES ('${adopterId}', 'Hogar Edad ${stamp}', '5', '[{"id":"hm-t","name":"Tomás López","relationship":"child","contactEntries":[],"age":7,"ageAsOf":"${today}"}]', '${ADMIN_EMAIL}', 'AR', strftime('%s','now'), strftime('%s','now'))`);
-    const stored = () => JSON.parse(String(one(`SELECT household_members AS h FROM adopters WHERE id = '${adopterId}'`).h ?? '[]')) as Array<{ name: string; age?: number }>;
+    execD1(`INSERT INTO adopters (id, name, status, added_by, country, created_at, updated_at) VALUES ('${adopterId}', 'Hogar Edad ${stamp}', '5', '${ADMIN_EMAIL}', 'AR', strftime('%s','now'), strftime('%s','now'))`);
+    insertProfile({ id: tomas, name: 'Tomás López', owner: ADMIN_EMAIL, age: 7 });
+    insertHousehold(`test-hh-age-${stamp}`, adopterId, [{ id: `test-hh-age-${stamp}-t`, adopterId: tomas, relationship: 'child', addedBy: ADMIN_EMAIL }]);
     try {
         await page.goto(`/adopter/${adopterId}`);
         await dismissCountryBanner(page);
         await expect(page.getByTestId('household-member')).toHaveCount(1, { timeout: 30_000 });
-        await page.getByTestId('household-member-edit').click();
-        // Meanwhile a teammate corrects the age to 8.
-        execD1(`UPDATE adopters SET household_members = '[{"id":"hm-t","name":"Tomás López","relationship":"child","contactEntries":[],"age":8,"ageAsOf":"${today}"}]', updated_at = strftime('%s','now') WHERE id = '${adopterId}'`);
-        await page.getByTestId('household-member-name-input').fill('Tomás Lopez');
-        await page.getByTestId('household-member-save').click();
-        await page.waitForTimeout(3_000);
-        expect(stored()[0].age, "the teammate's age stands").toBe(8);
+        await page.getByTestId('household-member-menu').click();
+        await page.getByTestId('household-member-menu-edit').click();
+        await expect(page.getByTestId('hh-person-age')).toHaveValue('7');
+        // Meanwhile a teammate corrects the age to 8 (on his profile).
+        execD1(`UPDATE adopters SET age = 8, age_as_of = '${today}', updated_at = strftime('%s','now') WHERE id = '${tomas}'`);
+        await page.getByTestId('hh-person-name').fill('Tomás Lopez');
+        await page.getByTestId('hh-form-save').click();
+        await expect.poll(() => String(one(`SELECT name FROM adopters WHERE id = '${tomas}'`).name), { timeout: 15_000 }).toBe('Tomás Lopez');
+        await page.waitForTimeout(2_000);
+        expect(Number(one(`SELECT age FROM adopters WHERE id = '${tomas}'`).age), "the teammate's age stands").toBe(8);
     } finally {
-        execD1(`DELETE FROM adopter_history WHERE adopter_id = '${adopterId}'`);
-        execD1(`DELETE FROM duplicate_tokens WHERE adopter_id = '${adopterId}'`);
-        execD1(`DELETE FROM adopters WHERE id = '${adopterId}'`);
+        cleanupProfiles([adopterId, tomas]);
     }
 });

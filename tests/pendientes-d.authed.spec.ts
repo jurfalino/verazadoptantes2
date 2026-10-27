@@ -286,13 +286,12 @@ test.describe('Pendientes de revisar (layout D)', () => {
             await ask.getByTestId('dedup-identity-household').click();
             await expect(row).toHaveCount(0, { timeout: 30_000 });
 
-            // Her profile lists the other person, linked to their profile; theirs is untouched.
-            await expect.poll(() => {
-                const raw = rows(`SELECT household_members FROM adopters WHERE id = '${MINE}'`)[0]?.household_members;
-                if (isDbNull(raw)) return [];
-                return (JSON.parse(String(raw)) as Array<{ name?: string; profileId?: string }>).map(m => ({ name: m.name, profileId: m.profileId }));
-            }, { timeout: 30_000 }).toEqual([{ name: NAME_THEIRS, profileId: THEIRS }]);
-            expect(isDbNull(rows(`SELECT household_members FROM adopters WHERE id = '${THEIRS}'`)[0]?.household_members), 'the other rescuer\'s profile is never edited').toBe(true);
+            // Households as profiles: the other person joins her household (a group: they live together on
+            // both profiles), credited to her; neither profile's own data changes.
+            await expect.poll(() => rows(
+                `SELECT o.adopter_id AS id, o.added_by AS by FROM household_memberships m JOIN household_memberships o ON o.household_id = m.household_id AND o.adopter_id <> m.adopter_id WHERE m.adopter_id = '${MINE}'`,
+            ), { timeout: 30_000 }).toEqual([{ id: THEIRS, by: me.email }]);
+            expect(isDbNull(rows(`SELECT household_members FROM adopters WHERE id = '${THEIRS}'`)[0]?.household_members), 'no old household JSON is written').toBe(true);
             for (const id of [MINE, THEIRS]) {
                 const a = rows(`SELECT deleted_at, token_hash FROM adopters WHERE id = '${id}'`)[0];
                 expect(isDbNull(a?.deleted_at), `${id} not merged`).toBe(true);
@@ -301,6 +300,10 @@ test.describe('Pendientes de revisar (layout D)', () => {
             expect(rows(`SELECT status FROM duplicate_candidates WHERE id = '${CAND}'`)[0]?.status).not.toBe('pending');
             expect(rows(`SELECT COUNT(*) AS n FROM merge_requests WHERE candidate_id = '${CAND}'`)[0]?.n).toBe(0);
         } finally {
+            for (const r of rows(`SELECT household_id AS h FROM household_memberships WHERE adopter_id IN ('${MINE}', '${THEIRS}')`)) {
+                execD1(`DELETE FROM household_memberships WHERE household_id = '${String(r.h)}'`);
+                execD1(`DELETE FROM households WHERE id = '${String(r.h)}'`);
+            }
             await me.close();
         }
     });

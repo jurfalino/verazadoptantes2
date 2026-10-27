@@ -251,8 +251,13 @@ test.describe('form-results: linking to an existing profile', () => {
 
         await page.goto(`/adopter/${row.auto_adopter_id}`);
         await dismissCountryBanner(page);
-        await expect(page.getByText('Tomás López').first()).toBeVisible();
-        await expect(page.getByText(/3 years old|3 años|3 anos/).first()).toBeVisible();
+        // Households as profiles: Tomás is a profile in the applicant's household — his card links to it,
+        // says «Hijo/a · 3 años» and carries the minor tag (no rating, no alerts).
+        const tomas = page.getByTestId('household-member').filter({ hasText: 'Tomás López' });
+        await expect(tomas).toHaveCount(1, { timeout: 30_000 });
+        await expect(tomas.getByTestId('household-member-label')).toContainText(/3 years old|3 años|3 anos/);
+        await expect(tomas.getByTestId('minor-tag')).toBeVisible();
+        await expect(tomas.getByTestId('household-member-profile-link')).toHaveAttribute('href', /\/adopter\//);
         await expect(page.locator(`a[href="/form-results/${submissionId}"]`).first()).toBeVisible();
     });
 
@@ -295,10 +300,27 @@ test.describe('form-results: linking to an existing profile', () => {
             await expect(line.locator('[data-signal]')).toHaveCount(0);
         }
 
-        // The profile marks her as the person the animal is for.
+        // The giver's profile: «Destinatario del regalo (según el formulario)» exactly as the form gave it (P4) —
+        // never «Convive con» — and the giver's team may make her profile (P5).
         await page.goto(`/adopter/${row.auto_adopter_id}`);
         await dismissCountryBanner(page);
-        await expect(page.getByText(/Gift recipient|Destinatario\/a del regalo|Destinatário\/a do presente/).first()).toBeVisible();
+        const fromForm = page.getByTestId('household-gift-form');
+        await expect(fromForm).toHaveCount(1, { timeout: 30_000 });
+        await expect(fromForm.getByTestId('household-gift-form-data')).toContainText('Laura Pérez');
+        await expect(fromForm.getByTestId('household-gift-form-data')).toContainText('11 5555 1234');
+        await expect(page.getByTestId('household-member')).toHaveCount(0);
+        await fromForm.getByTestId('household-gift-create').click();
+        const gift = page.getByTestId('household-gift');
+        await expect(gift).toHaveCount(1, { timeout: 30_000 });
+        await expect(fromForm).toHaveCount(0);
+        await expect(gift.getByTestId('household-gift-recipient')).toContainText('Laura Pérez');
+        const laura = rows(`SELECT a.id, a.added_by, m.gift_recipient FROM household_memberships m JOIN adopters a ON a.id = m.adopter_id WHERE m.source_key = 'gift-${submissionId}'`);
+        expect(laura).toEqual([expect.objectContaining({ gift_recipient: 1 })]);
+        execD1(`DELETE FROM household_memberships WHERE household_id = 'hh-gift-${submissionId}'`);
+        execD1(`DELETE FROM households WHERE id = 'hh-gift-${submissionId}'`);
+        execD1(`DELETE FROM duplicate_tokens WHERE adopter_id = '${String(laura[0].id)}'`);
+        execD1(`DELETE FROM adopter_history WHERE adopter_id = '${String(laura[0].id)}'`);
+        execD1(`DELETE FROM adopters WHERE id = '${String(laura[0].id)}'`);
     });
 
     test('a submission without a phone is still stored — the server never refuses it (spec Part 3)', async ({ request }) => {

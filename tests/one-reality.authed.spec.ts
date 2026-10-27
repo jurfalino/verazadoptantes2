@@ -20,8 +20,9 @@ import { dismissCountryBanner } from './helpers';
  *     (The merge's own actor may not dispute it — decideMergeDisputeRaise —
  *     so the one who raises is the other side: here the survivor's owner, who
  *     is the one notified.)
- *   - D48: «No convive» by the linked profile's owner removes the member from
- *     the host's household and the link, on both profiles, with history on both.
+ *   - D48 (households as profiles): «Quitar del hogar» → «No vive acá» by the
+ *     other profile's owner takes the person out of the household, on both
+ *     profiles, with history on both and the host's owner told.
  *
  * Non-admin rescuers are per-test fixture users (onereal-*-<stamp>@example.com),
  * each in its own browser context with a NextAuth session cookie signed here
@@ -270,12 +271,12 @@ test.describe('One shared reality (D48–D52)', () => {
         }
     });
 
-    test('«No convive» by the linked profile\'s owner removes the member and the link on both profiles, with history on both', async ({ browser }) => {
+    test('«No vive acá» by the other profile\'s owner takes the person out of the household on both profiles, with history on both', async ({ browser }) => {
         test.setTimeout(300_000);
         const stamp = Date.now();
         const tail = String(stamp).slice(-3);
         const host = await rescuer(browser, 'h1', stamp);    // owns the host profile; links the other as a conviviente
-        const linked = await rescuer(browser, 'h2', stamp);  // owns the linked profile; says «No convive»
+        const linked = await rescuer(browser, 'h2', stamp);  // owns the other profile; says «No vive acá»
         const HOST = `test-onereal-fixture-hh-host-${stamp}`;      // older
         const LINKED = `test-onereal-fixture-hh-linked-${stamp}`;  // newer
         const CAND = `test-onereal-fixture-cand-hh-${stamp}`;
@@ -286,15 +287,22 @@ test.describe('One shared reality (D48–D52)', () => {
         // A contact match between different names: «¿Es la misma persona?» → «alguien de su hogar» (D35).
         seedCandidate(CAND, LINKED, HOST, '["phone"]');
 
-        const members = () => {
-            const raw = rows(`SELECT household_members FROM adopters WHERE id = '${HOST}'`)[0]?.household_members;
-            if (isDbNull(raw)) return [];
-            return (JSON.parse(String(raw)) as Array<{ name?: string; profileId?: string }>).map(m => ({ name: m.name, profileId: m.profileId }));
+        // Households as profiles: who lives with whom is household_memberships, nothing else.
+        const together = () => rows(
+            `SELECT m.household_id AS h FROM household_memberships m JOIN household_memberships o ON o.household_id = m.household_id ` +
+            `WHERE m.adopter_id = '${HOST}' AND o.adopter_id = '${LINKED}'`,
+        ).length > 0;
+        const cleanup = () => {
+            const hh = rows(`SELECT household_id AS h FROM household_memberships WHERE adopter_id IN ('${HOST}', '${LINKED}')`).map(r => String(r.h));
+            for (const h of hh) {
+                execD1(`DELETE FROM household_memberships WHERE household_id = '${h}'`);
+                execD1(`DELETE FROM household_corrections WHERE household_id = '${h}'`);
+                execD1(`DELETE FROM households WHERE id = '${h}'`);
+            }
         };
-        const links = () => rows(`SELECT id FROM household_links WHERE host_adopter_id = '${HOST}' AND linked_adopter_id = '${LINKED}'`);
 
         try {
-            // ── The host's owner links the other person as someone of the household.
+            // ── The host's owner says the other person is someone of the household.
             const hp = host.page;
             const row = await openRow(hp, HOST_NAME);
             await row.getByTestId('dedup-merge').click();
@@ -302,8 +310,7 @@ test.describe('One shared reality (D48–D52)', () => {
             await expect(ask).toBeVisible({ timeout: 15_000 });
             await ask.getByTestId('dedup-identity-household').click();
             await expect(row).toHaveCount(0, { timeout: 30_000 });
-            await expect.poll(members, { timeout: 30_000 }).toEqual([{ name: LINKED_NAME, profileId: LINKED }]);
-            await expect.poll(() => links().length, { timeout: 30_000 }).toBe(1);
+            await expect.poll(together, { timeout: 30_000 }).toBe(true);
 
             // Both profiles show it: the host's household links to the other profile…
             await hp.goto(`/adopter/${HOST}`);
@@ -311,31 +318,31 @@ test.describe('One shared reality (D48–D52)', () => {
             const memberLink = hp.locator(`[data-testid="household-member-profile-link"][href="/adopter/${encodeURIComponent(LINKED)}"]`);
             await expect(memberLink).toHaveCount(1, { timeout: 30_000 });
 
-            // …and the linked profile shows «Convive con» the host, where its owner says «No convive».
+            // …and the other profile lists the host, where its owner says «No vive acá».
             const lp = linked.page;
             await lp.goto(`/adopter/${LINKED}`);
             await dismissCountryBanner(lp);
-            const livesWith = lp.getByTestId('lives-with-row').filter({ hasText: HOST_NAME });
-            await expect(livesWith).toHaveCount(1, { timeout: 30_000 });
-            await livesWith.getByTestId('hh-not-living-together').click();
-            const dialog = lp.getByRole('dialog');
+            const hostCard = lp.getByTestId('household-member').filter({ hasText: HOST_NAME });
+            await expect(hostCard).toHaveCount(1, { timeout: 30_000 });
+            await hostCard.getByTestId('household-member-menu').click();
+            await hostCard.getByTestId('household-member-menu-remove').click();
+            const dialog = lp.getByTestId('hh-remove-dialog');
             await expect(dialog).toBeVisible({ timeout: 15_000 });
-            await dialog.getByRole('button').last().click(); // the confirm (Cancel comes first)
-            await expect(livesWith).toHaveCount(0, { timeout: 30_000 });
+            await dialog.getByTestId('hh-remove-why-not_living').click();
+            await dialog.getByTestId('hh-remove-confirm').click();
+            await expect(hostCard).toHaveCount(0, { timeout: 30_000 });
 
-            // ── Corrected for everyone: the member is gone from the host, the link from both.
-            await expect.poll(members, { timeout: 30_000 }).toEqual([]);
-            expect(links()).toHaveLength(0);
-            expect(rows(`SELECT corrected_by FROM household_link_corrections WHERE host_adopter_id = '${HOST}' AND linked_adopter_id = '${LINKED}'`))
-                .toEqual([{ corrected_by: linked.email }]);
+            // ── Corrected for everyone: they no longer live together, on either profile.
+            expect(together()).toBe(false);
+            expect(rows(`SELECT corrected_by FROM household_corrections WHERE adopter_id = '${HOST}'`)).toEqual([{ corrected_by: linked.email }]);
             // History on both profiles, by whoever corrected it.
-            expect(rows(`SELECT changed_by FROM adopter_history WHERE adopter_id = '${HOST}' AND changes LIKE '%not_living_together%'`))
+            expect(rows(`SELECT changed_by FROM adopter_history WHERE adopter_id = '${HOST}' AND changes LIKE '%household_not_living_together%'`))
                 .toEqual([{ changed_by: linked.email }]);
-            expect(rows(`SELECT changed_by FROM adopter_history WHERE adopter_id = '${LINKED}' AND changes LIKE '%household_not_living_together%'`))
+            expect(rows(`SELECT changed_by FROM adopter_history WHERE adopter_id = '${LINKED}' AND changes LIKE '%not_living_together%'`))
                 .toEqual([{ changed_by: linked.email }]);
             // The host's owner is told.
             await expect.poll(() => Number(rows(
-                `SELECT COUNT(*) AS n FROM notifications WHERE user_id = '${host.email}' AND type = 'household_link_removed'`,
+                `SELECT COUNT(*) AS n FROM notifications WHERE user_id = '${host.email}' AND type = 'household_member_removed'`,
             )[0]?.n ?? 0), { timeout: 30_000 }).toBe(1);
 
             // The host's own page no longer lists the person.
@@ -345,6 +352,7 @@ test.describe('One shared reality (D48–D52)', () => {
             await expect(memberLink).toHaveCount(0);
             for (const id of [HOST, LINKED]) expect(isLive(id), `${id} untouched otherwise`).toBe(true);
         } finally {
+            cleanup();
             await host.close();
             await linked.close();
         }
