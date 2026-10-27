@@ -110,6 +110,12 @@ export type AttachInput = {
      */
     sourceKey: string;
     requestId?: string;
+    /**
+     * New profiles are «público» like their host when they arrive with a public host (POST
+     * /api/adopters: a public social post — the relatives were readable on it before, as JSON
+     * of a public record). Default: protected.
+     */
+    isPublic?: boolean;
 };
 
 export type AttachSkipReason = 'no_identifier' | 'same_name_in_household' | 'same_as_anchor' | 'household_full' | 'too_many_households' | 'failed';
@@ -298,6 +304,7 @@ export async function attachHouseholdPeople(db: Db, input: AttachInput): Promise
                     contactEntries: entries,
                     age: p.age ?? null,
                     isMinor: p.isMinor,
+                    isPublic: input.isPublic === true,
                     historyKind: historyKind(await privilegedOn(input.ownerEmail)),
                     history: { created_in_household: { anchorId: anchor.id, anchorName: anchor.name, householdId: hh, gift: false, via: viaOf(input.sourceKey), ...(contactTypes.length ? { contactTypes } : {}) } },
                 });
@@ -366,7 +373,7 @@ export async function attachHouseholdPeople(db: Db, input: AttachInput): Promise
                 await findAndPersistDuplicateCandidates(db, createdId, {
                     name, phone, email, documentId,
                     socials: entries.filter(e => e.type === 'social').map(e => e.value),
-                }, { skipPair: async other => other === anchor.id || await sameHousehold(db, createdId!, other) });
+                }, { skipPair: async other => other === anchor.id || await sameHousehold(db, createdId!, other), ctx: out });
             }
 
             // Contacts typed for an existing profile: addContactEntry's semantics (deduped, credited, grants).

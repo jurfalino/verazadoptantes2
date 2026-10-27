@@ -666,10 +666,12 @@ export async function POST(request: Request) {
         // After the profile's own tokens, so its own scan never sees them. A failure keeps the profile.
         if (relatives.length && session.user.email) {
             try {
+                // Same visibility as before, when they were JSON of this record: the record's
+                // «público» covered them (maskHouseholdMembers), their entries were never stamped.
                 const { attachHouseholdPeople } = await import('@/lib/householdPeople');
                 await attachHouseholdPeople(db, {
                     anchorAdopterId: newId, people: relatives, actor: session.user.email, ownerEmail: session.user.email,
-                    sourceKey: `import:${newId}`, requestId: errorId,
+                    sourceKey: `import:${newId}`, requestId: errorId, isPublic: stampRecordPublic,
                 });
             } catch (e) {
                 logger.error('Adopter create: relatives not attached (the profile is saved)', e, { errorId, adopterId: newId, user: session.user.email });

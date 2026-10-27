@@ -58,7 +58,7 @@ vi.mock('@/lib/logger', () => ({
 import { POST as submitForm } from '@/app/api/form/[userId]/submit/route';
 import { POST as createAdopterApi } from '@/app/api/adopters/route';
 import { attachHouseholdPeople, resolveHouseholdPerson, giftRecipientsForViewer } from './householdPeople';
-import { giftRecipientsOf } from './giftRecipients';
+import { giftPhoneEntriesByGiver, giftRecipientTokenEntries, giftRecipientsOf } from './giftRecipients';
 import { createGiftRecipientProfile } from '@/app/actions/households';
 import { tokenizeAdopter } from './adopterTokenize';
 import { findIdentifierHits } from './api/profiles';
@@ -184,6 +184,8 @@ describe('the adoption form', () => {
         // Searching that phone finds the giver, as before (its tokens hold it).
         const hits = await findIdentifierHits(db(), { fullName: 'Jonathan Giver', phone: '11 5555 0101' }, 'r', 'AR');
         expect(hits.candidates.map(c => c.profileId)).toEqual([applicantId]);
+        // The admin rescan reads the same entries in one query per batch.
+        expect((await giftPhoneEntriesByGiver(db())).get(applicantId)).toEqual(await giftRecipientTokenEntries(db(), applicantId));
         // …and survives a re-index.
         await tokenizeAdopter(applicantId, { force: true });
         expect(tokensOf(applicantId).some(t => String(t.token_value).includes('55550101'))).toBe(true);
@@ -381,5 +383,18 @@ describe('POST /api/adopters (post importer)', () => {
         expect(members).toHaveLength(3);
         expect(members.map(m => m.adopter_id)).not.toContain('marta');
         expect(count('SELECT COUNT(*) AS n FROM household_links')).toBe(0);
+        // A private import: the relatives are protected like their host.
+        expect(laura.is_public).toBe(0);
+    });
+
+    it("a public post's relatives are «público» like their host (they were readable as its JSON before)", async () => {
+        const id = await postAdopter({
+            name: 'Pedro Publico', source: 'imported', sourceUrl: 'https://facebook.com/posts/1',
+            householdMembers: JSON.stringify([{ id: 'x', name: 'Laura Publica', relationship: 'partner', contactEntries: [{ id: 'c1', type: 'phone', value: '11 3333 4444' }] }]),
+        });
+        expect(sqlite.prepare('SELECT is_public FROM adopters WHERE id = ?').get(id)!.is_public).toBe(1);
+        const [laura] = profileNamed('Laura Publica');
+        expect(laura.is_public).toBe(1);
+        expect(laura.contact_entries as string).not.toContain('isPublic'); // never stamped per entry (the host's members weren't)
     });
 });

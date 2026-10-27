@@ -13,7 +13,7 @@
  * Plain server module (NOT 'use server'). Kept small on purpose: the
  * tokenizer imports it. D1: one bounded query per profile, no IN lists.
  */
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm';
 import { adopters, formSubmissions, householdMemberships } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { parseGiftRecipient, recipientFullName } from '@/domain/giftRecipient';
@@ -43,7 +43,7 @@ export type FormGiftRecipient = {
     profileId: string | null;
 };
 
-type SubmissionRow = { id: string; answersJson: string | null; createdAt: Date | null };
+export type SubmissionRow = { id: string; answersJson: string | null; createdAt: Date | null };
 
 function recipientOf(row: SubmissionRow): Omit<FormGiftRecipient, 'profileId'> | null {
     let answers: unknown;
@@ -96,8 +96,32 @@ export async function giftRecipientsOf(db: Db, adopterId: string): Promise<FormG
  * tokens rather than writing a set without these).
  */
 export async function giftRecipientTokenEntries(db: Db, adopterId: string): Promise<TokenEntry[]> {
-    const rows = await giftSubmissionsOf(db, adopterId);
-    return rows.map(recipientOf)
+    return giftPhoneEntriesFrom(await giftSubmissionsOf(db, adopterId));
+}
+
+/** Pure: the token entries of one giver's gift forms (newest first, ≤ MAX_GIFT_FORMS_PER_PROFILE) — shared by save-time and the admin rescan. */
+export function giftPhoneEntriesFrom(rows: SubmissionRow[]): TokenEntry[] {
+    const time = (d: Date | number | null) => (d == null ? 0 : d instanceof Date ? d.getTime() : Number(d) * 1000);
+    return [...rows].sort((a, b) => time(b.createdAt) - time(a.createdAt)).slice(0, MAX_GIFT_FORMS_PER_PROFILE)
+        .map(recipientOf)
         .filter((r): r is NonNullable<typeof r> => !!r?.phone)
         .map((r): TokenEntry => ({ type: 'phone', value: r.phone! }));
+}
+
+/**
+ * Every gift form linked to a profile, grouped by that profile — ONE query for
+ * the admin rescan (a whole-table re-tokenize must not read per record). Throws
+ * on a DB failure.
+ */
+export async function giftPhoneEntriesByGiver(db: Db): Promise<Map<string, TokenEntry[]>> {
+    const rows = await db.select({ id: formSubmissions.id, linkedAdopterId: formSubmissions.linkedAdopterId, answersJson: formSubmissions.answersJson, createdAt: formSubmissions.createdAt })
+        .from(formSubmissions)
+        .where(and(eq(formSubmissions.intent, 'gift'), isNotNull(formSubmissions.linkedAdopterId)))
+        .all() as Array<SubmissionRow & { linkedAdopterId: string }>;
+    const byGiver = new Map<string, SubmissionRow[]>();
+    for (const r of rows) {
+        const list = byGiver.get(r.linkedAdopterId);
+        if (list) list.push(r); else byGiver.set(r.linkedAdopterId, [r]);
+    }
+    return new Map([...byGiver].map(([id, list]) => [id, giftPhoneEntriesFrom(list)] as const));
 }

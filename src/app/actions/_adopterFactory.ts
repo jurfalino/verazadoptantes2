@@ -274,7 +274,7 @@ export async function findAndPersistDuplicateCandidates(
     db: NonNullable<Awaited<ReturnType<typeof import('@/lib/db').getDb>>>,
     adopterId: string,
     probe: DuplicateProbe,
-    opts: { skipLikeFallback?: boolean; skipPair?: (otherId: string) => Promise<boolean> } = {},
+    opts: { skipLikeFallback?: boolean; skipPair?: (otherId: string) => Promise<boolean>; ctx?: Record<string, unknown> } = {},
 ): Promise<DupCandidateSummary[]> {
     const PERSIST_THRESHOLD = 30;
     try {
@@ -351,7 +351,8 @@ export async function findAndPersistDuplicateCandidates(
             relevancePercent: m.relevancePercent,
         }));
     } catch (e) {
-        logger.warn('createAdopterFromSubmission: duplicate detection failed (continuing)', {
+        logger.warn('findAndPersistDuplicateCandidates: duplicate detection failed (continuing)', {
+            ...opts.ctx,
             adopterId,
             error: e instanceof Error ? e.message : String(e),
         });
@@ -372,6 +373,8 @@ export interface CreateHouseholdProfileInput {
     age?: number | null;
     /** «Es menor de edad» with no age known (an age decides by itself: <18 ⇒ minor). */
     isMinor?: boolean;
+    /** Record-level «público» — only for people who arrive with a public host (a public social post); default protected. */
+    isPublic?: boolean;
     /** profilePrivilege on the new profile: 'edit' only when the typist is on the owner's team (or staff). */
     historyKind: 'edit' | 'contribution';
     /** The creation line of the new profile's history (never raw contact values). */
@@ -414,7 +417,7 @@ export async function createHouseholdProfile(
         addedBy: input.ownerEmail,
         source: 'manual',
         country,
-        isPublic: 0,
+        isPublic: input.isPublic === true ? 1 : 0,
         age,
         ageAsOf: age === null ? null : now.toISOString().slice(0, 10),
         // The «Es menor de edad» box turns on by itself under 18 (spec «Children»).

@@ -9,7 +9,7 @@ import { isAdminAsync } from '@/config/admins';
 import { logger } from '@/lib/logger';
 import { extractTokens, computeTokenHash, type TokenEntry } from '@/lib/tokenizer';
 import { tokenInputsFor } from '@/lib/adopterTokenize';
-import { giftRecipientTokenEntries } from '@/lib/giftRecipients';
+import { giftPhoneEntriesByGiver } from '@/lib/giftRecipients';
 import { pairsOnSharedToken, scorePair, confidenceOf } from '@/domain/duplicatePairing';
 import { lockWaitMs } from '@/domain/scanResilience';
 import { computeAvgRating } from '@/domain/ratings';
@@ -491,10 +491,9 @@ export async function POST(request: Request) {
             type StaleRow = (typeof staleAdopters)[number];
             const toTokenize: StaleRow[] = staleAdopters.filter((a: StaleRow) => batchIds.has(a.id) && a.tokenHash !== computeTokenHash(a));
             // The gift recipients' phones its gift forms named (src/lib/giftRecipients.ts) — the
-            // same inputs save-time tokenizing reads. A failed read fails the batch (retried),
-            // never a token set written without them.
-            const giftPhones = new Map<string, TokenEntry[]>(await Promise.all(toTokenize.map(async (a: StaleRow) =>
-                [a.id, await giftRecipientTokenEntries(db, a.id)] as const)));
+            // same inputs save-time tokenizing reads, in ONE query per batch (like the adoptions
+            // above). A failed read fails the batch (retried), never a token set written without them.
+            const giftPhones: Map<string, TokenEntry[]> = toTokenize.length ? await giftPhoneEntriesByGiver(db) : new Map();
             const planned: Planned[] = [];
             for (const adopter of toTokenize) {
                 const newHash = computeTokenHash(adopter);
