@@ -2,6 +2,35 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.0] - 2026-10-27
+
+### Changed — every person in a household is a profile
+- Anyone named in a household is now their own profile: searchable, rateable, with their contact details stored
+  once. A household is a group of profiles that live together; a person can be in more than one.
+- Searching a person shows only that person's card, with a «Convive con …» line showing each housemate's
+  rating and alerts. Housemates are never flagged as duplicates of each other (unless they share an email
+  or ID number).
+- Adding someone to a household checks «¿Es este perfil?» first. The person's name is the link to their
+  profile, and a «⋯» menu offers «Editar», «Quitar del hogar» (by mistake / doesn't live here) and
+  «Eliminar perfil» or «Pedir eliminación» under today's deletion rules.
+- Forms, imports, the API and interviews reuse an existing profile only on the API's exact match (phone,
+  email or ID number, plus a fitting name); otherwise they create the person and let the duplicate review
+  decide. Re-sending the same form never creates anyone twice.
+- A gift recipient stays as the form gave it on the giver's profile, with «Crear perfil de …».
+
+### Added
+- Anyone signed in can change a profile's name or age. The old name is kept as «Conocido/a como» so search
+  still finds it, and the owner's team is told in the app and by email with «Deshacer».
+- Children: a profile under 18 (or marked «Es menor de edad») is tagged «Menor de edad». It gets no rating,
+  alerts or adoption records; those go on the adults in the household.
+- Owners can now see their own profile's change history (needed to reach «Deshacer»).
+
+### Notes for release
+- Names of people who were household members become fully visible to signed-in rescuers once they are
+  profiles (before, other rescuers saw initials).
+- After deploy: run the household conversion (admin), then Admin → Duplicates → Scan Now (tokenizer v8).
+  Checked on a copy of production: 19 homes, 29 people, nobody gains or loses sight of any contact detail.
+
 ## [2.57.3] - 2026-10-26
 
 ### Fixed
