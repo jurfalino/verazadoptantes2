@@ -34,7 +34,7 @@ import { adopters, householdCorrections, householdMemberships } from '@/db/schem
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { runBatch } from '@/lib/dbBatch';
-import { dropHousemateCandidates, hasCorrection, membershipById, membershipsOf, membershipsOfProfile, type MembershipRow } from '@/lib/households';
+import { dropHousemateCandidates, hasCorrection, membershipById, membershipIn, membershipsOf, membershipsOfProfile, type MembershipRow } from '@/lib/households';
 import { MAX_HOUSEHOLDS_PER_PROFILE } from '@/domain/households';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -134,14 +134,6 @@ const COLUMN: Record<ShapeKey, SQLWrapper> = {
     sourceKey: householdMemberships.sourceKey,
 };
 
-/** The survivor's membership in one household, or null. */
-async function rowIn(db: Db, householdId: string, adopterId: string): Promise<MembershipRow | null> {
-    const row = await db.select().from(householdMemberships)
-        .where(and(eq(householdMemberships.householdId, householdId), eq(householdMemberships.adopterId, adopterId)))
-        .limit(1).get() as MembershipRow | undefined;
-    return row ?? null;
-}
-
 /**
  * One absorbed row onto the survivor: moved when the survivor isn't in that
  * household, collapsed when it is. 'gone' when the row left meanwhile.
@@ -169,29 +161,38 @@ async function placeOnSurvivor(db: Db, a: MembershipRow, survivorId: string, abs
             logger.info('householdMerge: membership left before the merge reached it', c);
             return 'gone';
         }
-        const mine = await rowIn(db, a.householdId, survivorId);
+        const mine = await membershipIn(db, a.householdId, survivorId);
         if (!mine) continue; // the survivor left meanwhile: try the move again
+        // 1. Remove the absorbed row, only while the survivor's row is there.
+        //    RETURNING says whether THIS statement removed it: only then is
+        //    there a collapse to record (and to undo).
+        const removed = await db.delete(householdMemberships).where(and(
+            eq(householdMemberships.id, a.id),
+            eq(householdMemberships.adopterId, absorbedId),
+            sql`EXISTS (SELECT 1 FROM household_memberships o WHERE o.id = ${mine.id})`,
+        )).returning({ id: householdMemberships.id });
+        if (removed.length === 0) continue; // it left, or the survivor's row did: look again
+        // 2. Recorded at once: whatever fails from here, the revert re-inserts it.
+        const record: HouseholdMergeUndo['collapsed'][number] = { row: stored(now), survivorRowId: mine.id, survivorBefore: {}, survivorAfter: {} };
+        undo.collapsed.push(record);
+        // 3. The survivor's row takes the stronger shape — compare-and-set on the
+        //    values read, so a concurrent collapse into the same row (or an edit)
+        //    is never overwritten; then nothing is taken.
         const patch = collapsePatch(now, mine, survivorId);
-        const before: Partial<ShapeCols> = {};
-        for (const k of Object.keys(patch) as ShapeKey[]) (before as Record<ShapeKey, unknown>)[k] = (mine as Record<ShapeKey, unknown>)[k] ?? null;
-        // Delete first (source_key is unique), only while the survivor's row is there;
-        // the patch only once the absorbed row is gone — one batch, all or nothing.
-        const statements: [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]] = [
-            db.delete(householdMemberships).where(and(
-                eq(householdMemberships.id, a.id),
-                eq(householdMemberships.adopterId, absorbedId),
-                sql`EXISTS (SELECT 1 FROM household_memberships o WHERE o.id = ${mine.id})`,
-            )),
-        ];
-        if (Object.keys(patch).length) {
-            statements.push(db.update(householdMemberships).set(patch).where(and(
-                eq(householdMemberships.id, mine.id),
-                sql`NOT EXISTS (SELECT 1 FROM household_memberships o WHERE o.id = ${a.id})`,
-            )));
+        const keys = Object.keys(patch) as ShapeKey[];
+        if (keys.length) {
+            const before: Partial<ShapeCols> = {};
+            for (const k of keys) (before as Record<ShapeKey, unknown>)[k] = (mine as Record<ShapeKey, unknown>)[k] ?? null;
+            const patched = await db.update(householdMemberships).set(patch)
+                .where(and(eq(householdMemberships.id, mine.id), ...keys.map(k => isValue(COLUMN[k], (before as Record<ShapeKey, unknown>)[k]))))
+                .returning({ id: householdMemberships.id });
+            if (patched.length > 0) {
+                record.survivorBefore = before;
+                record.survivorAfter = patch;
+            } else {
+                logger.info('householdMerge: survivor row changed meanwhile, collapse took nothing from the absorbed row', { ...c, survivorRowId: mine.id });
+            }
         }
-        await runBatch(db, statements);
-        if (await membershipById(db, a.id)) continue; // the survivor's row went meanwhile: try again
-        undo.collapsed.push({ row: stored(now), survivorRowId: mine.id, survivorBefore: before, survivorAfter: patch });
         return 'collapsed';
     }
     throw new Error(`householdMerge: membership ${a.id} kept changing during the merge`);
@@ -211,17 +212,19 @@ export async function moveMembershipsOnMerge(
     ctx: Ctx,
 ): Promise<{ joined: string[]; disputes: MergeDispute[] }> {
     const { survivorId, absorbedId } = merge;
-    const [survivorRows, survivorCorrections] = await Promise.all([
+    const correctedIn = async (adopterId: string) => new Set((await db.select({ householdId: householdCorrections.householdId }).from(householdCorrections)
+        .where(eq(householdCorrections.adopterId, adopterId)).limit(MAX_MERGE_MEMBERSHIPS).all() as Array<{ householdId: string }>).map(r => r.householdId));
+    const [survivorRows, wasCorrected, absorbedWasCorrected] = await Promise.all([
         membershipsOfProfile(db, survivorId, MAX_MERGE_MEMBERSHIPS),
-        db.select({ householdId: householdCorrections.householdId }).from(householdCorrections)
-            .where(eq(householdCorrections.adopterId, survivorId)).limit(MAX_MERGE_MEMBERSHIPS).all() as Promise<Array<{ householdId: string }>>,
+        correctedIn(survivorId),
+        correctedIn(absorbedId),
     ]);
     const absorbedRows = await membershipsOfProfile(db, absorbedId, MAX_MERGE_MEMBERSHIPS);
     if (absorbedRows.length >= MAX_MERGE_MEMBERSHIPS) {
         logger.warn('householdMerge: membership cap hit, later memberships stay on the absorbed profile', { ...ctx, cap: MAX_MERGE_MEMBERSHIPS });
     }
     const wasThere = new Set(survivorRows.map(r => r.householdId));
-    const wasCorrected = new Set(survivorCorrections.map(r => r.householdId));
+    const absorbedWasThere = new Set(absorbedRows.map(r => r.householdId));
 
     const touched = new Set<string>();
     const joined = new Set<string>();
@@ -247,11 +250,13 @@ export async function moveMembershipsOnMerge(
     for (const c of corrections) touched.add(c.householdId);
 
     // D48: the survivor now lives where a correction says it doesn't — and that
-    // was not already the case before the merge (an earlier re-add was disputed then).
+    // was not already so before the merge for either profile (an earlier re-add
+    // of that same profile was disputed then).
     const disputes: MergeDispute[] = [];
     for (const householdId of touched) {
         if (wasThere.has(householdId) && wasCorrected.has(householdId)) continue;
-        const [mine, corrected] = await Promise.all([rowIn(db, householdId, survivorId), hasCorrection(db, householdId, survivorId)]);
+        if (absorbedWasThere.has(householdId) && absorbedWasCorrected.has(householdId)) continue;
+        const [mine, corrected] = await Promise.all([membershipIn(db, householdId, survivorId), hasCorrection(db, householdId, survivorId)]);
         if (mine && corrected) disputes.push({ householdId, membershipId: mine.id });
     }
 

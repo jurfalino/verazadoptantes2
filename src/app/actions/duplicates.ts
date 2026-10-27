@@ -23,6 +23,7 @@ import { isAdminAsync } from '@/config/admins';
 import { addHouseholdMember } from './householdMembers';
 import { sharesHomeSql } from '@/lib/housemateSql';
 import { MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
+import { minorSurvivorHasActivity } from '@/lib/minors';
 
 /**
  * Attach a just-signed contract's adoption to an existing matched adopter profile,
@@ -848,6 +849,10 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
             });
             return null;
         };
+
+        // A minor kept over a profile with records or alerts: refused now, not
+        // when someone answers the request (Task 6 ruling) — keep the other one.
+        if (await minorSurvivorHasActivity(db, primaryId, secondaryId)) return refuse(MINOR_SURVIVOR_HAS_ACTIVITY);
 
         if (chosen === 'dispute') {
             // D49/D50: the other owner rejected my team's request on the pair,

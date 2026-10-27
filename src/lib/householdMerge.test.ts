@@ -21,6 +21,10 @@ const { state, notify, faults } = vi.hoisted(() => ({
         beforeMergeCas: null as null | (() => void),
         /** Runs once, right after the merge read the absorbed profile's memberships. */
         afterAbsorbedRead: null as null | (() => void),
+        /** Runs once, right after the merge read the survivor's row in a household (before the collapse writes). */
+        afterSurvivorRowRead: null as null | (() => void),
+        /** Makes the Nth read of one membership by id throw (counting from 1). */
+        failReadOf: null as null | { id: string; nth: number; seen: number },
     },
     state: { db: null as unknown },
     notify: { create: [] as Array<Record<string, unknown>>, admins: [] as Array<Record<string, unknown>> },
@@ -69,6 +73,16 @@ vi.mock('@/lib/households', async (orig) => {
             const rows = await real.membershipsOfProfile(...args);
             if (args[1] === 'martadup' && faults.afterAbsorbedRead) { const hook = faults.afterAbsorbedRead; faults.afterAbsorbedRead = null; hook(); }
             return rows;
+        }),
+        membershipIn: vi.fn(async (...args: Parameters<typeof real.membershipIn>) => {
+            const row = await real.membershipIn(...args);
+            if (args[2] === 'marta' && faults.afterSurvivorRowRead) { const hook = faults.afterSurvivorRowRead; faults.afterSurvivorRowRead = null; hook(); }
+            return row;
+        }),
+        membershipById: vi.fn(async (...args: Parameters<typeof real.membershipById>) => {
+            const f = faults.failReadOf;
+            if (f && args[1] === f.id && ++f.seen === f.nth) throw new Error('injected: read failed');
+            return real.membershipById(...args);
         }),
     };
 });
@@ -141,7 +155,7 @@ beforeEach(() => {
     sqlite = m.sqlite as unknown as typeof sqlite;
     notify.create.length = 0;
     notify.admins.length = 0;
-    Object.assign(faults, { failReassign: false, beforeMergeCas: null, afterAbsorbedRead: null });
+    Object.assign(faults, { failReassign: false, beforeMergeCas: null, afterAbsorbedRead: null, afterSurvivorRowRead: null, failReadOf: null });
     vi.mocked(tokenizeAdopter).mockClear();
     session.user = ADMIN;
     person('pedro', 'Pedro Paez');
@@ -247,6 +261,40 @@ describe('merges re-point memberships (spec «Merges and undo»)', () => {
         expect(householdOf('hh-ana').map(r => r.adopter_id).sort()).toEqual(['ana', 'lucas', 'marta', 'martadup']);
     });
 
+    it('fix round 1 (1): a failed read right after a collapse never loses the absorbed row — reverted, or restored by undo', async () => {
+        const before = memberships();
+        faults.failReadOf = { id: 'hm-p3', nth: 2, seen: 0 };
+        const res = await mergeAdopters('marta', 'martadup', ADMIN);
+        faults.failReadOf = null; // the merge's reads only
+        if (res.success) await undo(res.auditId!);
+        expect(memberships()).toEqual(before);
+    });
+
+    it('fix round 1 (1): the collapse patch failing after the delete reverts the delete too', async () => {
+        const before = memberships();
+        sqlite.prepare(`CREATE TRIGGER fail_patch BEFORE UPDATE ON household_memberships WHEN NEW.id = 'hm-p2' AND NEW.source_key IS NOT OLD.source_key BEGIN SELECT RAISE(ABORT, 'injected'); END`).run();
+        expect((await mergeAdopters('marta', 'martadup', ADMIN)).success).toBe(false);
+        sqlite.prepare(`DROP TRIGGER fail_patch`).run();
+        expect(memberships()).toEqual(before);
+        expect(deletedAt('martadup')).toBeNull();
+    });
+
+    it('fix round 1 (2): the absorbed row removed by someone else just before the collapse: no patch, nothing re-inserted on undo', async () => {
+        faults.afterSurvivorRowRead = () => { sqlite.prepare(`DELETE FROM household_memberships WHERE id = 'hm-p3'`).run(); };
+        const auditId = await merge('marta', 'martadup');
+        expect(householdOf('hh-pedro').find(r => r.id === 'hm-p2')).toMatchObject({ source_key: null });
+        await undo(auditId);
+        expect(householdOf('hh-pedro').map(r => r.id)).toEqual(['hm-p1', 'hm-p2']);
+    });
+
+    it('fix round 1 (3): the survivor row changed between the read and the patch (a concurrent collapse): the first key stands', async () => {
+        faults.afterSurvivorRowRead = () => { sqlite.prepare(`UPDATE household_memberships SET source_key = 'other-key' WHERE id = 'hm-p2'`).run(); };
+        const auditId = await merge('marta', 'martadup');
+        expect(householdOf('hh-pedro').map(r => [r.id, r.source_key])).toEqual([['hm-p1', null], ['hm-p2', 'other-key']]);
+        await undo(auditId);
+        expect(householdOf('hh-pedro').map(r => [r.id, r.adopter_id, r.source_key])).toEqual([['hm-p1', 'pedro', null], ['hm-p2', 'marta', 'other-key'], ['hm-p3', 'martadup', 'form-sub1-0']]);
+    });
+
     it('a merge failing after it moved the memberships puts every row back, and both profiles stay live', async () => {
         correction('hc-1', 'hh-ana', 'martadup');
         const before = { m: memberships(), c: correctionsTable() };
@@ -317,6 +365,12 @@ describe('«No convive» memory follows merges (D48)', () => {
         correction('hc-1', 'hh-rosa', 'martadup');
         await merge('marta', 'martadup');
         expect(notify.admins).toEqual([expect.objectContaining({ type: 'household_member_disputed', metadata: expect.objectContaining({ householdId: 'hh-rosa', profileId: 'marta' }) })]);
+    });
+
+    it('fix round 1 (5): the absorbed profile\'s own dispute in that household already stood: no second notice', async () => {
+        correction('hc-1', 'hh-ana', 'martadup'); // Marta Dup was re-added to Ana's home after it: disputed back then
+        await merge('marta', 'martadup');
+        expect(notify.admins).toEqual([]);
     });
 
     it('a dispute that already stood before the merge is not raised again', async () => {

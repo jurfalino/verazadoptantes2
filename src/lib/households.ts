@@ -192,6 +192,14 @@ export async function membershipBySourceKey(db: Db, sourceKey: string): Promise<
     return row ?? null;
 }
 
+/** `adopterId`'s membership row in `householdId`, or null. */
+export async function membershipIn(db: Db, householdId: string, adopterId: string): Promise<MembershipRow | null> {
+    const row = await db.select().from(householdMemberships)
+        .where(and(eq(householdMemberships.householdId, householdId), eq(householdMemberships.adopterId, adopterId)))
+        .limit(1).get() as MembershipRow | undefined;
+    return row ?? null;
+}
+
 /** `adopterId` has a membership in `householdId`. */
 export async function isMemberOf(db: Db, householdId: string, adopterId: string): Promise<boolean> {
     const row = await db.select({ id: householdMemberships.id }).from(householdMemberships)

@@ -468,6 +468,16 @@ describe('admins choose freely (D24)', () => {
         expect(await as(ADMIN, () => mergePendingDedupPair('cand-adm', { keepId: 'adm-theirs' }))).toEqual({ success: true, outcome: 'merged' });
     });
 
+    it('fix round 1 (6): a request that would keep a minor whose other side has records is refused when filed, nothing filed', async () => {
+        sqlite.prepare(`UPDATE adopters SET age = 12, age_as_of = ? WHERE id = 'mine-old'`).run(new Date().toISOString().slice(0, 10));
+        sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES ('an-r', 'Luna', ?)`).run(OWNER);
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, rating) VALUES ('pl-r', 'an-r', 'theirs-new', 'adoption', 4)`).run();
+        expect(await mergePendingDedupPair('cand-a', { keepId: 'mine-old' }))
+            .toEqual({ success: false, error: 'minor_survivor_has_activity', errorId: 'gen12345' });
+        expect(requests()).toEqual([]);
+        expect(mergeSpy).not.toHaveBeenCalled();
+    });
+
     it('an admin may keep a profile with no real owner', async () => {
         expect(await as(ADMIN, () => mergePendingDedupPair('cand-adm-anon', { keepId: 'adm-anon' }))).toEqual({ success: true, outcome: 'merged' });
         expect(mergeSpy).toHaveBeenCalledWith('adm-anon', 'adm-mine', ADMIN);

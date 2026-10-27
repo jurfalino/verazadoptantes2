@@ -37,3 +37,15 @@ export async function assertNotMinor(db: Db, adopterId: string | null | undefine
         throw new ProfileIsMinorError(adopterId);
     }
 }
+
+/**
+ * A merge keeping `survivorId` would hand `absorbedId`'s records or open alerts
+ * to a minor (Task 6 ruling: refused, `minor_survivor_has_activity`). Shared by
+ * mergeAdopters, the automatic pair merge and filing a merge request. A failed
+ * read throws.
+ */
+export async function minorSurvivorHasActivity(db: Db, survivorId: string, absorbedId: string): Promise<boolean> {
+    if (!(await isMinorProfile(db, survivorId))) return false;
+    const { profileHasActivity } = await import('@/lib/profileIdentity');
+    return profileHasActivity(db, absorbedId);
+}

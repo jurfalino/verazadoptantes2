@@ -33,6 +33,7 @@ import {
     restoreMembershipsAfterMerge, type HouseholdMergeUndo, type MergeDispute,
 } from '@/lib/householdMerge';
 import { isMinor, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
+import { minorSurvivorHasActivity } from '@/lib/minors';
 
 export interface MergeAdoptersResult {
     success: boolean;
@@ -94,12 +95,9 @@ export async function mergeAdopters(
         // profile as the survivor merges (admins too: they pick the side).
         // Not atomic with the claim: a record landing on the absorbed profile in
         // between rides along (rare; every record/alert insert refuses a minor).
-        if (isMinor(primary)) {
-            const { profileHasActivity } = await import('@/lib/profileIdentity');
-            if (await profileHasActivity(db, secondaryId)) {
-                logger.warn('mergeAdopters: refused, the survivor is a minor and the absorbed profile has records or alerts', { primaryId, secondaryId, actor: actorEmail });
-                return { success: false, error: MINOR_SURVIVOR_HAS_ACTIVITY };
-            }
+        if (await minorSurvivorHasActivity(db, primaryId, secondaryId)) {
+            logger.warn('mergeAdopters: refused, the survivor is a minor and the absorbed profile has records or alerts', { primaryId, secondaryId, actor: actorEmail });
+            return { success: false, error: MINOR_SURVIVOR_HAS_ACTIVITY };
         }
 
         // TASK 7 CARRY: both profiles' inline households (household_members JSON,
@@ -532,10 +530,7 @@ export async function mergeCandidatePair(candidateId: string, actorEmail: string
         let secondary = primary.id === a1.id ? a2 : a1;
         // A minor survivor may not receive the other side's records or alerts
         // (mergeAdopters refuses it): nobody picks a side here, so keep the adult.
-        if (isMinor(primary) && !isMinor(secondary)) {
-            const { profileHasActivity } = await import('@/lib/profileIdentity');
-            if (await profileHasActivity(db, secondary.id)) [primary, secondary] = [secondary, primary];
-        }
+        if (!isMinor(secondary) && await minorSurvivorHasActivity(db, primary.id, secondary.id)) [primary, secondary] = [secondary, primary];
 
         const result = await mergeAdopters(primary.id, secondary.id, actorEmail);
         return { ...result, primaryId: primary.id, secondaryId: secondary.id };
