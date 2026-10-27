@@ -23,7 +23,7 @@
  * Rules live in src/domain/households.ts. D1: no `IN (array)` — one bounded
  * query per profile / household, fanned out with Promise.all.
  */
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { adopters, householdCorrections, householdMemberships, households } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -196,6 +196,23 @@ export async function isMemberOf(db: Db, householdId: string, adopterId: string)
 // ─────────────────────────── Writes ───────────────────────────
 
 /**
+ * Claim the add's own record for a membership (history, audit, notices,
+ * dispute check): true for exactly one caller (compare-and-set on
+ * recorded_at IS NULL). Two concurrent identical adds never record twice.
+ */
+export async function claimMembershipRecord(db: Db, membershipId: string): Promise<boolean> {
+    const won = await db.update(householdMemberships).set({ recordedAt: new Date() })
+        .where(and(eq(householdMemberships.id, membershipId), isNull(householdMemberships.recordedAt)))
+        .returning({ id: householdMemberships.id });
+    return won.length > 0;
+}
+
+/** The record could not be written: let the next add by the same person complete it. */
+export async function releaseMembershipRecord(db: Db, membershipId: string): Promise<void> {
+    await db.update(householdMemberships).set({ recordedAt: null }).where(eq(householdMemberships.id, membershipId));
+}
+
+/**
  * Change one membership's relationship, compare-and-swap on the value read
  * (`from`): false when someone changed it (or removed the membership) first.
  * A relationship outside RELATIONSHIPS is never written (callers validate).
@@ -225,11 +242,20 @@ export async function createHousehold(db: Db, actor: string | null, id: string =
     return id;
 }
 
-/** The anchor's oldest ordinary (non-gift) household, or null. */
+/**
+ * The anchor's own home: its oldest ordinary (non-gift) household in which it
+ * has its OWN anchor row (added next to nobody, by nobody — what
+ * ensureHousehold writes). Being linked into someone else's household (a row
+ * with a relative and an adder) never makes that household the default: a
+ * stranger linking Pedro into their profile's household must not decide where
+ * Pedro's team's next add lands. Null when it has none.
+ */
 async function ordinaryHouseholdOf(db: Db, anchorId: string): Promise<string | null> {
     const row = await db.select({ householdId: householdMemberships.householdId }).from(householdMemberships)
         .where(and(
             eq(householdMemberships.adopterId, anchorId),
+            isNull(householdMemberships.relativeToAdopterId),
+            isNull(householdMemberships.addedBy),
             sql`NOT EXISTS (SELECT 1 FROM household_memberships g WHERE g.household_id = ${householdMemberships.householdId} AND g.gift_recipient = 1)`,
         ))
         .orderBy(asc(householdMemberships.addedAt), asc(householdMemberships.id))
@@ -238,8 +264,9 @@ async function ordinaryHouseholdOf(db: Db, anchorId: string): Promise<string | n
 }
 
 /**
- * The household to add people next to `anchorId`: its oldest ordinary
- * (non-gift) household, else a new one with the anchor in it.
+ * The household to add people next to `anchorId`: its own home (its oldest
+ * ordinary household where it has its own anchor row — never one it was merely
+ * linked into, see ordinaryHouseholdOf), else a new one with the anchor in it.
  *
  * Usage: call it when adding someone next to a profile WITHOUT a chosen
  * household (`addHouseholdPerson` with no `householdId`), then

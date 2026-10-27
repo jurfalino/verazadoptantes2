@@ -20,6 +20,7 @@ const { state, notify, faults } = vi.hoisted(() => ({
     faults: {
         afterEnsure: null as null | ((householdId: string) => void),
         afterAdd: null as null | ((householdId: string) => void),
+        correctionThrows: false,
         /** Answer addContactEntry with this instead of running it. */
         contactFails: null as null | Record<string, unknown>,
     },
@@ -50,6 +51,10 @@ vi.mock('@/lib/households', async (orig) => {
             const id = await real.ensureHousehold(...args);
             const hook = faults.afterEnsure; faults.afterEnsure = null; hook?.(id);
             return id;
+        }),
+        hasCorrection: vi.fn(async (...args: Parameters<typeof real.hasCorrection>) => {
+            if (faults.correctionThrows) { faults.correctionThrows = false; throw new Error('D1 down'); }
+            return real.hasCorrection(...args);
         }),
         addMembership: vi.fn(async (...args: Parameters<typeof real.addMembership>) => {
             const out = await real.addMembership(...args);
@@ -137,6 +142,7 @@ beforeEach(() => {
     faults.afterEnsure = null;
     faults.afterAdd = null;
     faults.contactFails = null;
+    faults.correctionThrows = false;
     vi.mocked(logger.warn).mockClear();
     vi.mocked(logger.error).mockClear();
     vi.mocked(logAudit).mockClear();
@@ -586,6 +592,11 @@ describe('Task 2 fix round 1', () => {
     it('3: a membership that landed without its side effects gets them on the next add (not keyed on created)', async () => {
         const hh = await libEnsureHousehold(state.db as Parameters<typeof libEnsureHousehold>[0], 'pedro', null);
         await libAddMembership(state.db as Parameters<typeof libAddMembership>[0], { householdId: hh, adopterId: 'marta', relationship: 'partner', relativeToAdopterId: 'pedro', addedBy: STRANGER });
+        // Fix round 2 (B): someone else repeating the add is not credited and fires nothing.
+        expect(await as(MATE, () => addHouseholdPerson({ anchorAdopterId: 'pedro', existingProfileId: 'marta' }))).toMatchObject({ ok: true });
+        expect(historyOf('pedro').filter(h => 'household_member_added' in h.changes)).toHaveLength(0);
+        expect(notify.create).toEqual([]);
+        // The one who added it completes it.
         const res = await addHouseholdPerson({ anchorAdopterId: 'pedro', existingProfileId: 'marta' });
         expect(res).toMatchObject({ ok: true, createdProfile: false });
         expect(historyOf('pedro').filter(h => 'household_member_added' in h.changes)).toHaveLength(1);
@@ -640,5 +651,43 @@ describe('Task 2 fix round 1', () => {
         notify.create.length = 0;
         await as(MATE, () => addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Luz Paez' }));
         expect(notify.create).toEqual([]);
+    });
+});
+
+describe('Task 2 fix round 2', () => {
+    it("A: a stranger linking Pedro into their own profile's household doesn't make it Pedro's home (no standing over Marta)", async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('x', 'Xavier', '5', ?, 1000, 1000)`).run(STRANGER);
+        const linked = await addHouseholdPerson({ anchorAdopterId: 'x', existingProfileId: 'pedro' });
+        if (!linked.ok) throw new Error(linked.error);
+        const strangersHousehold = sqlite.prepare('SELECT household_id FROM household_memberships WHERE id = ?').get(linked.membershipId)!.household_id as string;
+        // Pedro's team adds Marta without choosing a household → Pedro's OWN household, not the stranger's.
+        const marta = await as(OWNER, () => addHouseholdPerson({ anchorAdopterId: 'pedro', existingProfileId: 'marta' }));
+        if (!marta.ok) throw new Error(marta.error);
+        const martasHousehold = sqlite.prepare('SELECT household_id FROM household_memberships WHERE id = ?').get(marta.membershipId)!.household_id as string;
+        expect(martasHousehold).not.toBe(strangersHousehold);
+        expect(membershipsIn(strangersHousehold).map(m => m.adopter_id)).toEqual(['x', 'pedro']);
+        expect(await removeHouseholdMembership({ membershipId: marta.membershipId, reason: 'not_living' })).toEqual({ ok: false, error: 'not_authorized' });
+    });
+
+    it('B: two concurrent identical adds by the same person record the link once', async () => {
+        await as(OWNER, () => addHouseholdPerson({ anchorAdopterId: 'pedro', existingProfileId: 'rosa' }));
+        notify.create.length = 0;
+        const [a, b] = await Promise.all([
+            addHouseholdPerson({ anchorAdopterId: 'pedro', existingProfileId: 'marta' }),
+            addHouseholdPerson({ anchorAdopterId: 'pedro', existingProfileId: 'marta' }),
+        ]);
+        expect(a).toMatchObject({ ok: true });
+        expect(b).toMatchObject({ ok: true });
+        expect(historyOf('pedro').filter(h => 'household_member_added' in h.changes && h.changes.household_member_added.profileId === 'marta')).toHaveLength(1);
+        expect(noticesOfType('household_linked').filter(n => n.userId === OTHER)).toHaveLength(1);
+    });
+
+    it('C: a failure after the person is placed answers ok (logged, errorId) — a retry never makes a second profile', async () => {
+        faults.correctionThrows = true;
+        const res = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Lucas Paez', contactEntries: [{ type: 'phone', value: LUCAS_PHONE }] });
+        expect(res).toMatchObject({ ok: true, createdProfile: true, warningErrorId: 'err12345' });
+        expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.stringContaining('after the person was placed'), expect.anything(), expect.objectContaining({ profileId: (res as { profileId: string }).profileId, actor: STRANGER }));
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopters WHERE name = 'Lucas Paez' AND deleted_at IS NULL`).get()!.n).toBe(1);
+        expect(membershipsIn('hh-pedro')).toHaveLength(2);
     });
 });

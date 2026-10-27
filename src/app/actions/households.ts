@@ -30,7 +30,7 @@
  * ('contribution' for anyone without standing on that profile). Errors are
  * codes (the UI translates them); a failure carries an errorId.
  */
-import { and, eq, like } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { adopterHistory, adopters } from '@/db/schema';
 import { logger } from '@/lib/logger';
@@ -44,8 +44,8 @@ import { RELATIONSHIPS, type Relationship } from '@/lib/householdMembers';
 import { insertContributionGrant, fileContributionAccessRequest, revokeContributionGrants } from '@/lib/contributionSideEffects';
 import { extractErrorId } from '@/lib/errorUtils';
 import {
-    addMembership, createHousehold, ensureHousehold, hasCorrection, householdExists, householdIdsOf,
-    householdLinesFor, isMemberOf, membershipById, membershipsOf, ownTeamOf, removeMembership, setMembershipRelationship,
+    addMembership, claimMembershipRecord, createHousehold, ensureHousehold, hasCorrection, householdExists, householdIdsOf,
+    householdLinesFor, isMemberOf, membershipById, membershipsOf, ownTeamOf, releaseMembershipRecord, removeMembership, setMembershipRelationship,
     type HouseholdLine,
 } from '@/lib/households';
 import {
@@ -93,7 +93,11 @@ export type AddHouseholdPersonInput = {
 };
 
 export type AddHouseholdPersonResult =
-    | { ok: true; profileId: string; membershipId: string; createdProfile: boolean; autoRequestFiled: boolean }
+    | {
+        ok: true; profileId: string; membershipId: string; createdProfile: boolean; autoRequestFiled: boolean;
+        /** The person is placed, but a later step (history, notices…) failed: logged under this id. */
+        warningErrorId?: string;
+    }
     | Fail;
 
 export type HouseholdMatchCandidate = DiscoveryMatch & { householdLine: HouseholdLine[] };
@@ -103,6 +107,9 @@ const MAX_CONTACTS = 20;
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const id64 = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 64) : '');
 const id200 = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 200) : '');
+
+const sameEmail = (a: string | null | undefined, b: string | null | undefined) =>
+    !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
 
 async function sessionActor(): Promise<string | null> {
     let actor = '';
@@ -164,14 +171,6 @@ async function capacityError(db: Db, householdId: string, adopterId: string | nu
 async function giftCapacityError(db: Db, anchorId: string, recipientId: string | null): Promise<'too_many_households' | null> {
     const counts = await Promise.all([anchorId, ...(recipientId ? [recipientId] : [])].map(id => householdIdsOf(db, id)));
     return counts.some(c => c.length >= MAX_HOUSEHOLDS_PER_PROFILE) ? 'too_many_households' : null;
-}
-
-/** The anchor's history already records this membership (its add's side effects ran). */
-async function addRecorded(db: Db, anchorId: string, membershipId: string): Promise<boolean> {
-    const row = await db.select({ id: adopterHistory.id }).from(adopterHistory)
-        .where(and(eq(adopterHistory.adopterId, anchorId), like(adopterHistory.changes, `%"household_member_added":{"id":"${membershipId}"%`)))
-        .limit(1).get();
-    return !!row;
 }
 
 /**
@@ -338,55 +337,71 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
         }
         const out = { ...ctx, householdId: placed.householdId, membershipId: placed.membershipId, profileId: person.id };
 
-        // D54 for a new profile, once it is placed: the typist sees what they typed.
-        if (createdProfile && !privilegedOnAnchor) {
-            for (const e of entries) {
-                if (e.type === 'alias') continue; // never masked: a grant would be inert
-                await insertContributionGrant(db, person.id, actor, e).catch((err: unknown) => {
-                    logger.error('addHouseholdPerson: contribution grant not written', err, { ...out, type: e.type });
-                });
+        // Everything after the placement is the add's side effects. The person IS placed: a
+        // failure here is logged with an errorId and answered ok — never `failed`, which
+        // would make a retry create the profile a second time.
+        let warningErrorId: string | undefined;
+        try {
+            // D54 for a new profile, once it is placed: the typist sees what they typed.
+            if (createdProfile && !privilegedOnAnchor) {
+                for (const e of entries) {
+                    if (e.type === 'alias') continue; // never masked: a grant would be inert
+                    await insertContributionGrant(db, person.id, actor, e).catch((err: unknown) => {
+                        logger.error('addHouseholdPerson: contribution grant not written', err, { ...out, type: e.type });
+                    });
+                }
+                if (entries.length > 0) {
+                    await runAfterResponse('addHouseholdPerson.autoAccessRequest',
+                        () => fileContributionAccessRequest('addHouseholdPerson', actor, person.id), out);
+                    autoRequestFiled = true;
+                }
             }
-            if (entries.length > 0) {
-                await runAfterResponse('addHouseholdPerson.autoAccessRequest',
-                    () => fileContributionAccessRequest('addHouseholdPerson', actor, person.id), out);
-                autoRequestFiled = true;
-            }
-        }
 
-        // The link's own record — history, audit, notices, dispute — right after it is placed,
-        // independent of the contacts below. Keyed on "not recorded yet", not on `created`,
-        // so a retry after a failure completes whatever is missing.
-        if (placed.created || !(await addRecorded(db, anchor.id, placed.membershipId))) {
-            const anchorKind = historyKind(privilegedOnAnchor);
-            const personKind = existing ? await historyKindForOwner(actor, existing.addedBy, out) : null;
-            const now = new Date();
-            await runBatch(db, [
-                db.insert(adopterHistory).values({
-                    id: crypto.randomUUID(), adopterId: anchor.id, changedBy: actor, kind: anchorKind, changedAt: now,
-                    changes: JSON.stringify({ household_member_added: { id: placed.membershipId, householdId: placed.householdId, profileId: person.id, relationship, ...(contactTypes.length ? { contactTypes } : {}) } }),
-                }),
-                ...(existing && personKind ? [db.insert(adopterHistory).values({
-                    id: crypto.randomUUID(), adopterId: existing.id, changedBy: actor, kind: personKind, changedAt: now,
-                    changes: JSON.stringify({ household_joined: { hostId: anchor.id, hostName: anchor.name, householdId: placed.householdId, relationship } }),
-                })] : []),
-            ]).catch((e: unknown) => {
-                // The person is in the household already; the next add completes the record.
-                logger.error('addHouseholdPerson: membership saved, history not written', e, out);
-            });
-            logAudit({ userEmail: actor, action: 'household_person_added', target: anchor.id, details: { membershipId: placed.membershipId, householdId: placed.householdId, profileId: person.id, createdProfile, relationship, contactTypes, gift, ...(privilegedOnAnchor ? {} : { contribution: true }) } });
-            logger.info('addHouseholdPerson: added', { ...out, createdProfile, completedLater: !placed.created });
-            await notifyHouseholdPersonAdded({
-                householdId: placed.householdId, membershipId: placed.membershipId,
-                anchor: { id: anchor.id, name: anchor.name, addedBy: anchor.addedBy },
-                person: { id: person.id, name: person.name },
-                actor, onAnchorTeam, existingProfile: !!existing,
-            });
-            if (await hasCorrection(db, placed.householdId, person.id)) {
-                logger.info('addHouseholdPerson: re-added after «No vive acá», dispute', out);
-                await notifyHouseholdReaddDisputed({ householdId: placed.householdId, membershipId: placed.membershipId, person: { id: person.id, name: person.name }, hostName: anchor.name, actor });
+            // The link's own record — history, audit, notices, dispute — right after it is
+            // placed, independent of the contacts below. Recorded once (a compare-and-set claim
+            // on the membership), and only by the one who added it: a retry by them completes a
+            // record a failure left missing; someone else repeating the add is not credited and
+            // fires nothing.
+            const mayRecord = placed.created || sameEmail((await membershipById(db, placed.membershipId))?.addedBy, actor);
+            if (mayRecord && await claimMembershipRecord(db, placed.membershipId)) {
+                const anchorKind = historyKind(privilegedOnAnchor);
+                const personKind = existing ? await historyKindForOwner(actor, existing.addedBy, out) : null;
+                const now = new Date();
+                try {
+                    await runBatch(db, [
+                        db.insert(adopterHistory).values({
+                            id: crypto.randomUUID(), adopterId: anchor.id, changedBy: actor, kind: anchorKind, changedAt: now,
+                            changes: JSON.stringify({ household_member_added: { id: placed.membershipId, householdId: placed.householdId, profileId: person.id, relationship, ...(contactTypes.length ? { contactTypes } : {}) } }),
+                        }),
+                        ...(existing && personKind ? [db.insert(adopterHistory).values({
+                            id: crypto.randomUUID(), adopterId: existing.id, changedBy: actor, kind: personKind, changedAt: now,
+                            changes: JSON.stringify({ household_joined: { hostId: anchor.id, hostName: anchor.name, householdId: placed.householdId, relationship } }),
+                        })] : []),
+                    ]);
+                } catch (e) {
+                    // Released, so the same person's next add completes the record.
+                    await releaseMembershipRecord(db, placed.membershipId).catch((re: unknown) => {
+                        logger.error('addHouseholdPerson: record claim not released', re, out);
+                    });
+                    throw e;
+                }
+                logAudit({ userEmail: actor, action: 'household_person_added', target: anchor.id, details: { membershipId: placed.membershipId, householdId: placed.householdId, profileId: person.id, createdProfile, relationship, contactTypes, gift, ...(privilegedOnAnchor ? {} : { contribution: true }) } });
+                logger.info('addHouseholdPerson: added', { ...out, createdProfile, completedLater: !placed.created });
+                await notifyHouseholdPersonAdded({
+                    householdId: placed.householdId, membershipId: placed.membershipId,
+                    anchor: { id: anchor.id, name: anchor.name, addedBy: anchor.addedBy },
+                    person: { id: person.id, name: person.name },
+                    actor, onAnchorTeam, existingProfile: !!existing,
+                });
+                if (await hasCorrection(db, placed.householdId, person.id)) {
+                    logger.info('addHouseholdPerson: re-added after «No vive acá», dispute', out);
+                    await notifyHouseholdReaddDisputed({ householdId: placed.householdId, membershipId: placed.membershipId, person: { id: person.id, name: person.name }, hostName: anchor.name, actor });
+                }
+            } else {
+                logger.info('addHouseholdPerson: already in that household and recorded, nothing added', { ...out, mayRecord });
             }
-        } else {
-            logger.info('addHouseholdPerson: already in that household, nothing added', out);
+        } catch (e) {
+            warningErrorId = logger.error('addHouseholdPerson: a step after the person was placed failed (the add stands)', e, out);
         }
 
         // Contacts typed for an existing profile: addContactEntry's semantics exactly. A failure
@@ -403,7 +418,7 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                 if (res.autoRequestFiled) autoRequestFiled = true;
             }
         }
-        return { ok: true, profileId: person.id, membershipId: placed.membershipId, createdProfile, autoRequestFiled };
+        return { ok: true, profileId: person.id, membershipId: placed.membershipId, createdProfile, autoRequestFiled, ...(warningErrorId ? { warningErrorId } : {}) };
     } catch (e) {
         const errorId = logger.error('addHouseholdPerson failed', e, ctx);
         return { ok: false, error: 'failed', errorId };

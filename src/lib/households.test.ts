@@ -86,6 +86,8 @@ describe('migration 0096', () => {
         expect(cols('households')).toEqual(['id', 'created_by', 'created_at']);
         expect(cols('household_memberships')).toEqual([
             'id', 'household_id', 'adopter_id', 'relationship', 'relative_to_adopter_id', 'gift_recipient', 'added_by', 'added_at', 'source_key',
+            // 0097 (Task 2 fix round 2): when the add's record (history, notices) was claimed.
+            'recorded_at',
         ]);
         expect(cols('household_corrections')).toEqual(['id', 'household_id', 'adopter_id', 'corrected_by', 'corrected_at', 'snapshot']);
         expect(cols('adopters')).toEqual(expect.arrayContaining(['age', 'age_as_of', 'is_minor']));
@@ -149,6 +151,18 @@ describe('write core', () => {
         expect(memberships().find(r => r.adopter_id === 'marta')).toMatchObject({ relationship: 'unknown', relative_to_adopter_id: null });
     });
 
+    it("being linked into someone else's household never becomes a profile's default home", async () => {
+        // STRANGER links Pedro into Rosa's household (Rosa is the anchor there).
+        const rosas = await ensureHousehold(db(), 'rosa', STRANGER);
+        await addMembership(db(), { householdId: rosas, adopterId: 'pedro', relationship: 'partner', relativeToAdopterId: 'rosa', addedBy: STRANGER });
+        const home = await ensureHousehold(db(), 'pedro', OWNER);
+        expect(home).not.toBe(rosas);
+        expect(home).toBe('hh-pedro');
+        expect(await ensureHousehold(db(), 'pedro', MATE)).toBe(home);
+        // Rosa's household is untouched, and Pedro is in both.
+        expect((await householdIdsOf(db(), 'pedro')).sort()).toEqual([home, rosas].sort());
+    });
+
     it('ensureHousehold creates one household with the anchor in it, and returns it again after', async () => {
         const a = await ensureHousehold(db(), 'pedro', OWNER);
         const b = await ensureHousehold(db(), 'pedro', MATE);
@@ -159,9 +173,11 @@ describe('write core', () => {
         expect(await householdIdsOf(db(), 'pedro')).toEqual([a]);
     });
 
-    it("ensureHousehold returns the household the anchor was added to, and never a gift household", async () => {
+    it("ensureHousehold returns the anchor's own home — never one it was only added to (Task 2 fix round 2), never a gift household", async () => {
         const hh = await pedrosHousehold();
-        expect(await ensureHousehold(db(), 'marta', MATE)).toBe(hh);
+        // Marta was added to Pedro's household: that is Pedro's home, not her default.
+        const martas = await ensureHousehold(db(), 'marta', MATE);
+        expect(martas).toBe('hh-marta');
         // Ana's only household is a gift one: a new ordinary household is made for her.
         sqlite.exec(`INSERT INTO households (id, created_by, created_at) VALUES ('gift1', '${OWNER}', 1)`);
         await addMembership(db(), { householdId: 'gift1', adopterId: 'ana', addedBy: OWNER });
@@ -169,7 +185,7 @@ describe('write core', () => {
         const own = await ensureHousehold(db(), 'ana', OWNER);
         expect(own).not.toBe('gift1');
         // With a gift household in the DB, everyone else's existing household is still found.
-        expect(await ensureHousehold(db(), 'marta', MATE)).toBe(hh);
+        expect(await ensureHousehold(db(), 'marta', MATE)).toBe(martas);
         expect(await ensureHousehold(db(), 'pedro', MATE)).toBe(hh);
         expect(await ensureHousehold(db(), 'ana', OWNER)).toBe(own);
         expect((await householdIdsOf(db(), 'ana')).sort()).toEqual(['gift1', own].sort());

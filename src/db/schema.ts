@@ -582,6 +582,8 @@ export const householdMemberships = sqliteTable("household_memberships", {
     addedBy: text("added_by"),
     addedAt: integer("added_at", { mode: "timestamp" }).notNull(),
     sourceKey: text("source_key"),
+    /** When the add's record (history, notices, dispute check) was claimed — compare-and-set (0097). */
+    recordedAt: integer("recorded_at", { mode: "timestamp" }),
 }, (table) => ({
     pairIdx: uniqueIndex("idx_household_memberships_pair").on(table.householdId, table.adopterId),
     adopterIdx: index("idx_household_memberships_adopter").on(table.adopterId),
