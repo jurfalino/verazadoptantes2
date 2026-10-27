@@ -274,11 +274,11 @@ export async function saveAdopter(data: SaveAdopterInput, opts?: { loaded?: Part
     // Derive the contactInfo blob from structured entries when the caller
     // provides them, so the blob (read by LIKE search, the tokenizer and the
     // profile display) stays consistent with contactEntries.
+    // S1: a list past the cap is refused (after the session check), never stored for a later read to truncate.
+    const overCap = contactEntriesJsonCount(data.contactEntries) > MAX_CONTACT_ENTRIES;
     if (data.contactEntries !== undefined && data.contactEntries !== null) {
         // Client JSON: only the server's rename code may mark a rename alias.
         const entries = stripRenameMarks(deserializeContactEntries(data.contactEntries));
-        // S1: a list past the cap is refused, never stored for a later read to truncate.
-        if (contactEntriesJsonCount(data.contactEntries) > MAX_CONTACT_ENTRIES) throw new Error(CONTACT_ENTRIES_FULL);
         data.contactEntries = entries.length ? JSON.stringify(entries) : null;
         data.contactInfo = contactEntriesToBlob(entries) || null;
     }
@@ -293,6 +293,11 @@ export async function saveAdopter(data: SaveAdopterInput, opts?: { loaded?: Part
         const errorId = generateErrorId();
         logger.warn('saveAdopter: refused — no session', { adopterId: data?.id, errorId });
         throw new Error(`Authentication required (Error ID: ${errorId})`);
+    }
+    if (overCap) {
+        const errorId = generateErrorId();
+        logger.info('saveAdopter: refused — more contact entries than a profile holds', { adopterId: data.id || null, changedBy, errorId });
+        return { success: false, error: CONTACT_ENTRIES_FULL, errorId };
     }
 
     try {

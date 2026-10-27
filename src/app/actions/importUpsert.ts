@@ -100,6 +100,7 @@ export async function upsertImportRecord(input: ImportUpsertInput): Promise<Impo
         for (const c of plan.contactsToAdd) {
             const res = await addContactEntry({ adopterId: input.adopterId, type: c.type as ContactEntry['type'], value: c.value, streetAndNumber: c.streetAndNumber, locality: c.locality, ...(c.type === 'social' ? { platform: detectSocialPlatform(c.value) ?? undefined } : {}) });
             if (res.ok && res.appended) addedContacts++;
+            else if (!res.ok) logger.warn('upsertImportRecord: a contact was not added', { adopterId: input.adopterId, actor, type: c.type, error: res.error });
         }
 
         let nameFilled = false, aliasAdded = false;
@@ -120,6 +121,7 @@ export async function upsertImportRecord(input: ImportUpsertInput): Promise<Impo
         } else if (plan.nameAction === 'alias' && plan.nameValue) {
             const res = await addContactEntry({ adopterId: input.adopterId, type: 'alias', value: plan.nameValue });
             aliasAdded = res.ok && res.appended;
+            if (!res.ok) logger.warn('upsertImportRecord: the incoming name was not added as an alias', { adopterId: input.adopterId, actor, error: res.error });
         }
 
         if (plan.addActivity) {

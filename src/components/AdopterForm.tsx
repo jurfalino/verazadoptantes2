@@ -679,6 +679,10 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                     toast.error(t('toast.save_error_title'), t('collab.busy'), res.errorId);
                     return;
                 }
+                if (res.error === CONTACT_ENTRIES_FULL) {
+                    toast.error(t('toast.save_error_title'), t('adopter.ce_add_full'), res.errorId);
+                    return;
+                }
                 const errorId = await reportClientError({
                     message: `saveAdopter returned success=false${res && 'error' in res && res.error ? `: ${res.error}` : ''}`,
                     source: 'AdopterForm.performActualSave',

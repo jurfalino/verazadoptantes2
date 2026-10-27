@@ -15,7 +15,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { adopters, userProfiles, users, importRunItems, importRuns } from '@/db/schema';
-import { deserializeContactEntries, contactEntriesToBlob, stripRenameMarks } from '@/lib/contactEntries';
+import { deserializeContactEntries, contactEntriesToBlob, stripRenameMarks, contactEntriesJsonCount, MAX_CONTACT_ENTRIES } from '@/lib/contactEntries';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { insertRecord } from './_recordWrite';
 import { importDateToNoon } from '@/domain/importRow';
@@ -177,6 +177,10 @@ export async function importAdoptersBatch(rows: ImportBatchRow[], runId: string)
                 } else {
                     out.push({ index: row.index, status: 'failed', id: row.matchedAdopterId, message: r.error || 'No se pudo actualizar' });
                 }
+            } else if (contactEntriesJsonCount(row.contactEntries) > MAX_CONTACT_ENTRIES) {
+                // S1: refused, never stored for a later read to truncate.
+                logger.info('importAdoptersBatch: row refused — more contact entries than a profile holds', { actorEmail: actor, index: row.index });
+                out.push({ index: row.index, status: 'failed', message: `Más de ${MAX_CONTACT_ENTRIES} datos de contacto: quitá los repetidos` });
             } else {
                 const id = await withDbRetry(() => createImportedAdopter(db, actor, country, row, runId));
                 out.push({ index: row.index, status: 'created', id });

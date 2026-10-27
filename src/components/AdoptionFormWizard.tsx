@@ -613,9 +613,17 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 };
                 try {
                     const { appendToExistingAdopter } = await import('@/app/actions');
-                    await appendToExistingAdopter(adopterId, {
+                    const appended = await appendToExistingAdopter(adopterId, {
                         contactEntries: JSON.stringify([newEntry]),
                     });
+                    // Refused (e.g. the profile holds the maximum contact entries): logged with an id, still non-blocking.
+                    if (!appended.success) {
+                        reportClientError({
+                            message: `AdoptionFormWizard: address contact-entry append refused: ${appended.error ?? 'unknown'}`,
+                            source: 'AdoptionFormWizard.delivered-to-home append',
+                            extra: { adopterId, recordType: formData.recordType },
+                        });
+                    }
                 } catch (e) {
                     // v2.19.44: was console.warn — silent in Axiom. Now goes
                     // through reportClientError so the contact-entry append

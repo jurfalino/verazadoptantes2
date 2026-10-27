@@ -64,7 +64,7 @@ import { saveApiActivity } from '@/lib/api/records';
 import { removeContactEntry } from './removeContactEntry';
 import { updateContactEntry } from './updateContactEntry';
 import { addContactEntry } from './addContactEntry';
-import { saveAdopter, appendToExistingAdopter } from './adopters';
+import { saveAdopter, appendToExistingAdopter, checkAdopterDeletable } from './adopters';
 import { mergeAdopters, unmergeAdopters } from '@/lib/adopterMerge';
 import { mergeContactEntries, CONTACT_ENTRIES_FULL, MAX_CONTACT_ENTRIES, RENAME_ALIAS_AUTHOR } from '@/lib/contactEntries';
 import { knownAsNames } from '@/domain/profileIdentity';
@@ -505,7 +505,8 @@ describe('Final fix S1/S2 — the rename alias survives the contact cap and old 
 
     it('S1: appendToExistingAdopter and saveAdopter refuse to grow a list past the cap', async () => {
         const many = (n: number, p = 'x') => JSON.stringify(Array.from({ length: n }, (_, i) => ({ id: `${p}${i}`, type: 'alias', value: `${p} ${i}` })));
-        await expect(as(OWNER, () => saveAdopter({ id: '', name: 'Nuevo', contactEntries: many(MAX_CONTACT_ENTRIES + 1) } as never))).rejects.toThrow(CONTACT_ENTRIES_FULL);
+        expect(await as(OWNER, () => saveAdopter({ id: '', name: 'Nuevo', contactEntries: many(MAX_CONTACT_ENTRIES + 1) } as never)))
+            .toEqual({ success: false, error: CONTACT_ENTRIES_FULL, errorId: expect.any(String) });
         sqlite.prepare("UPDATE adopters SET contact_entries = ? WHERE id = 'lucas'").run(many(MAX_CONTACT_ENTRIES - 1, 'l'));
         const r = await as(OWNER, () => appendToExistingAdopter('lucas', { contactEntries: many(2, 'n') }));
         expect(r).toMatchObject({ success: false, error: CONTACT_ENTRIES_FULL });
@@ -528,6 +529,13 @@ describe('Final fix S1/S2 — the rename alias survives the contact cap and old 
         expect(await removeContactEntry({ adopterId: 'pedro', entryId: alias.id! })).toMatchObject({ ok: false });
         expect(await updateContactEntry({ adopterId: 'pedro', entryId: alias.id!, value: 'Nadie' })).toMatchObject({ ok: false });
         expect(knownAsNames(entriesOf('pedro'), 'P. Paez')).toEqual(['Pedro Paez']);
+    });
+
+    it("S2: the sentinel author never blocks the owner's own delete; a stranger's rename still counts as someone else's edit", async () => {
+        await as(OWNER, () => changeProfileName({ adopterId: 'lucas', name: 'L. Paez', expectedName: 'Lucas Paez' }));
+        expect(await as(OWNER, () => checkAdopterDeletable('lucas'))).toMatchObject({ canDelete: true });
+        await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' });
+        expect(await as(OWNER, () => checkAdopterDeletable('pedro'))).toMatchObject({ canDelete: false, collaborators: expect.objectContaining({ edits: 1 }) });
     });
 
     it('S2: client JSON carrying the sentinel author is not a rename alias (create and append)', async () => {
