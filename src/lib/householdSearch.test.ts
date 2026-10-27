@@ -425,3 +425,17 @@ describe('final fix S3 — declaring two profiles housemates never erases a real
         expect(pending()).not.toContain('c-rosa-marta');
     });
 });
+
+describe('final fix P2 — «Pendientes de revisar» shows each side as every card does', () => {
+    it('the household line and «Menor de edad» on a pair side', async () => {
+        candidate('c-out', 'lucas', 'rosa');
+        const { pairs } = await getPendingDuplicatesForUser(1, 10, true);
+        const pair = pairs.find(p => p.candidateId === 'c-out')!;
+        const lucas = [pair.newAdopter, pair.existingAdopter].find(s => s.id === 'lucas')!;
+        expect(lucas.isMinor).toBe(true);
+        expect((lucas.households ?? []).map(l => l.profileId).sort()).toEqual(['ana', 'marta', 'pedro']);
+        const rosa = [pair.newAdopter, pair.existingAdopter].find(s => s.id === 'rosa')!;
+        expect(rosa.households ?? []).toEqual([]);
+        expect(rosa.isMinor).toBeFalsy();
+    });
+});

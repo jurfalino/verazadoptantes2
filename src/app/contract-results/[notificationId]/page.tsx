@@ -12,6 +12,8 @@ import { logger } from '@/lib/logger';
 import { isOrgMate } from '@/lib/orgMembership';
 import { isAdminAsync } from '@/config/admins';
 import { maskMatchCardsForViewer } from '@/lib/piiAccessServer';
+import { householdLinesFor, HOUSEHOLD_LINE_CARDS } from '@/lib/households';
+import { isMinor, type HouseholdLine } from '@/domain/households';
 import ContractResultsMatchCard from '@/components/ContractResultsMatchCard';
 import ContractResultsKeepNewButton from '@/components/ContractResultsKeepNewButton';
 
@@ -76,7 +78,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
     const metadata: NotificationMetadata = notification.metadata ? JSON.parse(notification.metadata) : {};
 
     // Fetch full adopter profiles for matches
-    let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; contactEntries: string | null; status: string | null }> = [];
+    let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; contactEntries: string | null; status: string | null; isMinor?: boolean; households?: HouseholdLine[] }> = [];
     if (metadata.matchedAdopters && metadata.matchedAdopters.length > 0) {
         const adopterIds = metadata.matchedAdopters.map(a => a.id);
         // Filter soft-deleted (merged-duplicate) adopters at read time so even legacy
@@ -85,6 +87,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
             id: string; name: string; status: string | null;
             addedBy: string | null; isPublic: number | null;
             contactInfo: string | null; contactEntries: string | null; addressInfo: string | null;
+            age: number | null; ageAsOf: string | null; isMinor: number | null;
         };
         const rows: Row[] = await db
             .select({
@@ -92,6 +95,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                 // Masking inputs only — never forwarded to the client.
                 addedBy: adopters.addedBy, isPublic: adopters.isPublic,
                 contactInfo: adopters.contactInfo, contactEntries: adopters.contactEntries, addressInfo: adopters.addressInfo,
+                age: adopters.age, ageAsOf: adopters.ageAsOf, isMinor: adopters.isMinor,
             })
             .from(adopters)
             .where(and(or(...adopterIds.map(id => eq(adopters.id, id)))!, isNull(adopters.deletedAt)))
@@ -112,7 +116,13 @@ export default async function ContractResultsPage({ params }: { params: Promise<
             contactInfo: masked.get(r.id)?.contactInfo ?? null,
             contactEntries: masked.get(r.id)?.contactEntries ?? null,
             status: r.status,
+            ...(isMinor(r) ? { isMinor: true } : {}),
         }));
+        // Final fix P2: who each one lives with, as on every card showing one person (never throws).
+        if (matchedProfiles.length) {
+            const lines = await householdLinesFor(db, currentUser, matchedProfiles.slice(0, HOUSEHOLD_LINE_CARDS).map(p => p.id));
+            matchedProfiles = matchedProfiles.map(p => (lines[p.id]?.length ? { ...p, households: lines[p.id] } : p));
+        }
     }
 
     const hasMatches = metadata.matchCount > 0;

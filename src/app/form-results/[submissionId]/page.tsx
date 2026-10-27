@@ -16,6 +16,8 @@ import Link from 'next/link';
 import { formLinkKind } from '@/domain/formLink';
 import { computeAvgRating } from '@/domain/ratings';
 import { maskMatchCardsForViewer } from '@/lib/piiAccessServer';
+import { householdLinesFor, HOUSEHOLD_LINE_CARDS } from '@/lib/households';
+import { isMinor, type HouseholdLine } from '@/domain/households';
 
 interface MatchedAdopter {
     id: string;
@@ -173,7 +175,11 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
     const matchIds = (metadata.matchedAdopters ?? []).map(a => a.id);
     const profileIds = [...new Set([...matchIds, ...(linkedId ? [linkedId] : [])])];
 
-    type ProfileRow = { id: string; name: string; contactInfo: string | null; contactEntries: string | null; addressInfo: string | null; status: string | null; profileImageUrl: string | null };
+    type ProfileRow = {
+        id: string; name: string; contactInfo: string | null; contactEntries: string | null; addressInfo: string | null; status: string | null; profileImageUrl: string | null;
+        /** Final fix P2: «Menor de edad» and the household line, as on every card showing one person. */
+        isMinor?: boolean; households?: HouseholdLine[];
+    };
     let matchedProfiles: ProfileRow[] = [];
     let linkedProfile: { id: string; name: string; profileImageUrl: string | null; avgRating: number | null } | null = null;
     if (profileIds.length > 0) {
@@ -187,6 +193,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
                     // Masking inputs only — never forwarded to the client.
                     addedBy: adopters.addedBy, isPublic: adopters.isPublic,
                     contactInfo: adopters.contactInfo, contactEntries: adopters.contactEntries, addressInfo: adopters.addressInfo,
+                    age: adopters.age, ageAsOf: adopters.ageAsOf, isMinor: adopters.isMinor,
                 })
                 .from(adopters)
                 .where(or(...profileIds.map(id => eq(adopters.id, id)))!)
@@ -222,6 +229,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
             id: string; name: string; status: string | null; deletedAt: Date | null;
             addedBy: string | null; isPublic: number | null;
             contactInfo: string | null; contactEntries: string | null; addressInfo: string | null;
+            age: number | null; ageAsOf: string | null; isMinor: number | null;
         };
         // Another rescuer's protected profile must not reach this page raw
         // (props are serialized into the RSC payload): contact and address go
@@ -243,6 +251,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
             addressInfo: masked.get(r.id)?.addressInfo ?? null,
             status: r.status,
             profileImageUrl: imageByAdopter.get(r.id) ?? null,
+            ...(isMinor(r) ? { isMinor: true } : {}),
         });
 
         // Soft-deleted (merged-away) matches are dropped at read time, so a
@@ -257,6 +266,11 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
                 const bc = order.get(b.id) ?? { count: 0, index: 999 };
                 return bc.count !== ac.count ? bc.count - ac.count : ac.index - bc.index;
             });
+        // Who each one lives with (never throws; the first HOUSEHOLD_LINE_CARDS cards).
+        if (matchedProfiles.length) {
+            const lines = await householdLinesFor(db, currentUser, matchedProfiles.slice(0, HOUSEHOLD_LINE_CARDS).map(p => p.id));
+            matchedProfiles = matchedProfiles.map(p => (lines[p.id]?.length ? { ...p, households: lines[p.id] } : p));
+        }
 
         // A form linked to a profile that was later merged away (before merges
         // carried form links along, v2.56.129) has no live profile to name —

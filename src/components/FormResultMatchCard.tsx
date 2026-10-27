@@ -13,6 +13,9 @@ import { useState } from 'react';
 import { CheckCircle2, ArrowRight } from 'lucide-react';
 import { en } from '@/i18n/locales/en';
 import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
+import { MinorTag } from '@/components/MinorTag';
+import { CardHouseholdLine } from '@/components/CardHouseholdLine';
+import type { HouseholdLine } from '@/domain/households';
 
 // Single source of truth: fallbacks from English locale
 const formResultsFallbacks = en.formResults as Record<string, string>;
@@ -23,7 +26,11 @@ function proxyImageUrl(url: string): string {
 
 export interface FormResultMatchCardProps {
     applicant: { name: string; email?: string; phone?: string; address?: string };
-    profile: { id: string; name: string; contactInfo: string | null; contactEntries?: string | null; addressInfo: string | null; status: string | null; profileImageUrl?: string | null };
+    profile: {
+        id: string; name: string; contactInfo: string | null; contactEntries?: string | null; addressInfo: string | null; status: string | null; profileImageUrl?: string | null;
+        /** Final fix P2: the same «Menor de edad» tag and household line as every card showing one person. */
+        isMinor?: boolean; households?: HouseholdLine[];
+    };
     applicantSelfieUrl?: string | null;
     matchTypes: string[];
     /** Search score — admins only. */
@@ -173,6 +180,8 @@ export default function FormResultMatchCard({
                     bare
                     t={t}
                 />
+                {profile.isMinor && <div className="mt-2"><MinorTag /></div>}
+                <CardHouseholdLine lines={profile.households} />
             </div>
 
             {/* Actions. The decision pair sits together — "Es la misma persona"

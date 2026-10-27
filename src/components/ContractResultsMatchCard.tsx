@@ -9,6 +9,9 @@ import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
 import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
+import { MinorTag } from '@/components/MinorTag';
+import { CardHouseholdLine } from '@/components/CardHouseholdLine';
+import type { HouseholdLine } from '@/domain/households';
 
 interface ContractResultsMatchCardProps {
     matchId: string;
@@ -20,6 +23,9 @@ interface ContractResultsMatchCardProps {
         /** Masked like contactInfo, as typed entries. */
         contactEntries?: string | null;
         status: string | null;
+        /** Final fix P2: the same «Menor de edad» tag and household line as every card showing one person. */
+        isMinor?: boolean;
+        households?: HouseholdLine[];
     };
     matchTypes: string[];
     score?: number;
@@ -77,6 +83,8 @@ export default function ContractResultsMatchCard({
                 <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-stone-800 line-clamp-2 break-words" title={profile.name}>{profile.name}</p>
+                        {profile.isMinor && <div className="mt-1"><MinorTag /></div>}
+                        <CardHouseholdLine lines={profile.households} />
                         {/* What matches and what doesn't, field by field (Jon, 2026-10-25).
                             Replaces the match chips, which were always in Spanish. */}
                         <MatchCompare

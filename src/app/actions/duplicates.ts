@@ -22,7 +22,7 @@ import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdminAsync } from '@/config/admins';
 import { addHouseholdPerson } from './households';
 import { hiddenAsHousematesSql } from '@/lib/housemateSql';
-import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
+import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY, isMinor as minorNow, type HouseholdLine } from '@/domain/households';
 import { minorSurvivorHasActivity } from '@/lib/minors';
 
 /**
@@ -379,7 +379,10 @@ function redactInexactValue(type: string, value: string): string {
  * the blob that gets masked.
  */
 /** The adopter columns the pair builder needs before visibility is applied. */
-type PairRow = { id: string; name: string; contactInfo: string | null; source: string; addedBy: string | null; createdAt: Date | null };
+type PairRow = {
+    id: string; name: string; contactInfo: string | null; source: string; addedBy: string | null; createdAt: Date | null;
+    age?: number | null; ageAsOf?: string | null; isMinor?: number | null;
+};
 
 async function buildPairSide(
     viewerEmail: string | null | undefined,
@@ -422,6 +425,7 @@ async function buildPairSide(
         canSeeContact,
         isMine: !!realOwner(row.addedBy) && normEmail(row.addedBy) === normEmail(viewerEmail),
         ...creatorLabel(viewerEmail, row.addedBy, names),
+        ...(minorNow(row) ? { isMinor: true } : {}),
     };
 }
 
@@ -701,6 +705,10 @@ export interface PendingDedupSide {
     isMine: boolean;
     /** The viewer or a teammate created it: keeping the other side moves nothing to another rescuer's list (D25). */
     teamOwned: boolean;
+    /** «Menor de edad» (final fix P2: the same tag as every card showing one person). */
+    isMinor?: boolean;
+    /** Who they live with, with live ratings (final fix P2: the same line as search and «¿Es este perfil?»). */
+    households?: HouseholdLine[];
 }
 
 /**
@@ -1313,6 +1321,9 @@ export async function getPendingDuplicatesForUser(
             addedBy: adopters.addedBy,
             createdAt: adopters.createdAt,
             deletedAt: adopters.deletedAt,
+            age: adopters.age,
+            ageAsOf: adopters.ageAsOf,
+            isMinor: adopters.isMinor,
         }).from(adopters).where(eq(adopters.id, id)).get()));
         const byId = new Map<string, PairRow & { deletedAt: Date | null }>();
         for (const r of rows) if (r) byId.set(r.id, r as PairRow & { deletedAt: Date | null });
@@ -1423,6 +1434,15 @@ export async function getPendingDuplicatesForUser(
                     && needsIdentityChoice({ matchTypes, nameA: a.name ?? '', nameB: b.name ?? '' }),
                 request: request ? requestView(request, viewer, teamKeys, names) : null,
             });
+        }
+
+        // Final fix P2: each side's household line, as on search cards (one read per call, the
+        // first HOUSEHOLD_LINE_CARDS sides in the order shown; never throws).
+        const sidesShown = [...new Set(pairs.flatMap(p => [p.newAdopter.id, p.existingAdopter.id]))];
+        if (sidesShown.length) {
+            const { householdLinesFor, HOUSEHOLD_LINE_CARDS } = await import('@/lib/households');
+            const lines = await householdLinesFor(db, viewer, sidesShown.slice(0, HOUSEHOLD_LINE_CARDS));
+            for (const built of sideCache.values()) if (lines[built.id]?.length) built.households = lines[built.id];
         }
 
         return { pairs, total, lowHidden };

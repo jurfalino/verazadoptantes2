@@ -20,6 +20,8 @@ import { ChevronDown, Copy, ExternalLink, Inbox, Mail, Send, XCircle } from 'luc
 import type { PendingDedupPair, PendingDedupSide } from '@/app/actions/duplicates';
 import MatchCompare, { AdminScore, entriesAsShown } from '@/components/MatchCompare';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
+import { MinorTag } from '@/components/MinorTag';
+import { CardHouseholdLine } from '@/components/CardHouseholdLine';
 import {
     AbsorbedBadge, ACCENT_SECONDARY, KeptBadge, PRIMARY, SECONDARY, T_MUTED, T_PRIMARY,
     combineTheirsSide, fill, otherSide, ownerName, sideById, sideOf, movesToOtherList, type KeepSide, type T,
@@ -205,6 +207,9 @@ function SideHead({ side, badge, t, formatShortDate, onRequestAccess }: {
                     </button>
                 )}
             </div>
+            {/* The same person signs as everywhere (final fix P2): «Menor de edad» and who they live with. */}
+            {side.isMinor && <div><MinorTag /></div>}
+            <CardHouseholdLine lines={side.households} className="mt-1" />
         </div>
     );
 }
