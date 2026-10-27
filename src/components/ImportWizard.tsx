@@ -1387,7 +1387,8 @@ export default function ImportWizard() {
                     })),
                     fromImport: { sourceUrl: sourceUrl || null, slot: m.slot },
                 });
-                if (!res.ok) {
+                // 'already_there': someone of that name already lives there — nothing to add.
+                if (!res.ok && res.error !== 'already_there') {
                     toast.error(t('errors.generic'), t('import.relative_failed'), res.errorId);
                     break;
                 }

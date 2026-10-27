@@ -73,7 +73,13 @@ export type HouseholdContactInput = {
 
 export type HouseholdActionError =
     | 'not_authenticated' | 'not_found' | 'invalid' | 'identifier_required'
-    | 'household_full' | 'too_many_households' | 'not_authorized' | 'conflict' | 'failed';
+    | 'household_full' | 'too_many_households' | 'not_authorized' | 'conflict' | 'failed'
+    /**
+     * An imported relative (`fromImport`) of that name already lives in that household and the
+     * caller has no standing on that person: nothing is added, and who it is stays unsaid. Not a
+     * failure for the importer — the relative is there.
+     */
+    | 'already_there';
 type Fail = { ok: false; error: HouseholdActionError; errorId?: string };
 
 export type AddHouseholdPersonInput = {
@@ -244,20 +250,34 @@ async function importSourceKey(actor: string, anchorId: string, from: { sourceUr
     return `import-post:${hex.slice(0, 16)}-${from.slot}`;
 }
 
+type ImportedAlready =
+    /** This post's re-merge placed them in THIS household before (its source key: the caller added it). */
+    | { kind: 'here'; profileId: string; membershipId: string }
+    /** Placed by this post before, but in another household (the anchor moved): the same person joins this one. */
+    | { kind: 'elsewhere'; profileId: string }
+    /** Someone of the same name lives in this household (the interview's rule). */
+    | { kind: 'same_name'; profileId: string; membershipId: string; addedBy: string | null; ownerEmail: string | null };
+
 /**
- * An imported relative who is already in this household: the membership this
- * post's re-merge wrote before (its source key), or someone of the same name
- * (householdNameKey: case, accents, spacing) living there — the interview's rule. Null = add them.
+ * An imported relative who may already be there: the membership this post's
+ * re-merge wrote before (its source key — in this household, or elsewhere
+ * when the anchor moved), or someone of the same name (householdNameKey:
+ * case, accents, spacing) living in this household. Null = add them. Called
+ * only once the caller's add is allowed (anchor live, household theirs).
  */
 async function importedAlready(
     db: Db,
     p: { householdId: string; anchorId: string; importKey: string | null; name: string; ctx: Record<string, unknown> },
-): Promise<{ profileId: string; membershipId: string } | null> {
+): Promise<ImportedAlready | null> {
     if (p.importKey) {
         const m = await membershipBySourceKey(db, p.importKey);
         if (m && await liveProfile(db, m.adopterId)) {
-            logger.info('addHouseholdPerson: this post\'s relative is already there, reused', { ...p.ctx, membershipId: m.id });
-            return { profileId: m.adopterId, membershipId: m.id };
+            if (m.householdId === p.householdId) {
+                logger.info('addHouseholdPerson: this post\'s relative is already there, reused', { ...p.ctx, membershipId: m.id });
+                return { kind: 'here', profileId: m.adopterId, membershipId: m.id };
+            }
+            logger.info('addHouseholdPerson: this post\'s relative lives in another household of the anchor\'s past, linked here', { ...p.ctx, membershipId: m.id });
+            return { kind: 'elsewhere', profileId: m.adopterId };
         }
     }
     const key = householdNameKey(p.name);
@@ -267,7 +287,7 @@ async function importedAlready(
         const prof = await liveProfile(db, m.adopterId);
         if (prof?.name && householdNameKey(prof.name) === key) {
             logger.info('addHouseholdPerson: someone of that name already lives there, not added again (import)', { ...p.ctx, membershipId: m.id });
-            return { profileId: prof.id, membershipId: m.id };
+            return { kind: 'same_name', profileId: prof.id, membershipId: m.id, addedBy: m.addedBy, ownerEmail: prof.addedBy };
         }
     }
     return null;
@@ -288,7 +308,7 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
     if (!anchorId) return { ok: false, error: 'invalid' };
     const fromImport = input?.fromImport ?? null;
     if (fromImport && (typeof fromImport.slot !== 'string' || !/^[a-z0-9]{1,8}$/.test(fromImport.slot))) return { ok: false, error: 'invalid' };
-    const importKey = fromImport && !gift ? await importSourceKey(actor, anchorId, fromImport) : null;
+    let importKey = fromImport && !gift ? await importSourceKey(actor, anchorId, fromImport) : null;
     if (input.relationship !== undefined && input.relationship !== null && !REL_SET.has(input.relationship)) return { ok: false, error: 'invalid' };
     const relationship: Relationship = input.relationship && REL_SET.has(input.relationship) ? input.relationship : 'unknown';
     const age = input.age;
@@ -305,7 +325,7 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
         if (!db) throw new Error('No database');
         const anchor = await liveProfile(db, anchorId);
         if (!anchor) return { ok: false, error: 'not_found' };
-        const existing = existingId ? await liveProfile(db, existingId) : null;
+        let existing = existingId ? await liveProfile(db, existingId) : null;
         if (existingId && (!existing || existing.id === anchor.id)) {
             logger.info('addHouseholdPerson: existing profile missing, deleted or the anchor itself', ctx);
             return { ok: false, error: 'not_found' };
@@ -333,9 +353,26 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
             }
             householdId = resolved;
             // An imported relative already there (same post re-merged, or the same name in that household).
-            if (fromImport) {
-                const there = await importedAlready(db, { householdId, anchorId: anchor.id, importKey, name: existing ? '' : name, ctx });
-                if (there) return { ok: true, profileId: there.profileId, membershipId: there.membershipId, createdProfile: false, autoRequestFiled: false };
+            // Checked only now: the add itself is allowed (anchor live, the household is the anchor's).
+            if (fromImport && !existing) {
+                const there = await importedAlready(db, { householdId, anchorId: anchor.id, importKey, name, ctx });
+                if (there?.kind === 'here') {
+                    return { ok: true, profileId: there.profileId, membershipId: there.membershipId, createdProfile: false, autoRequestFiled: false };
+                }
+                if (there?.kind === 'elsewhere') {
+                    // The same person joins this household (their key stays on the first membership).
+                    existing = await liveProfile(db, there.profileId);
+                    importKey = null;
+                } else if (there?.kind === 'same_name') {
+                    // Who it is is said only to someone with standing on that person or this household,
+                    // or who added them — anyone else learns nothing beyond «already there».
+                    const standing = sameEmail(there.addedBy, actor)
+                        || privilegedOnAnchor
+                        || await isPrivilegedOnProfile(actor, there.ownerEmail);
+                    return standing
+                        ? { ok: true, profileId: there.profileId, membershipId: there.membershipId, createdProfile: false, autoRequestFiled: false }
+                        : { ok: false, error: 'already_there' };
+                }
             }
             const full = await capacityError(db, householdId, existing?.id ?? null);
             if (full) {

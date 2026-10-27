@@ -33,7 +33,7 @@ import {
     isMemberOf, membershipBySourceKey, membershipsOf, releaseMembershipRecord,
 } from '@/lib/households';
 import { notifyHouseholdPersonAdded, notifyHouseholdReaddDisputed } from '@/lib/householdNotices';
-import { FORM_SENTINEL, giftProfileOf, giftRecipientsOf, giftSourceKey, type FormGiftRecipient } from '@/lib/giftRecipients';
+import { FORM_SENTINEL, giftRecipientsOf, giftSourceKey, type FormGiftRecipient } from '@/lib/giftRecipients';
 import { decideExactOutcome, isFullName, isUsableDocumentId } from '@/domain/apiExactMatch';
 import { hasMinimumIdentifier } from '@/domain/adopterIdentity';
 import { MAX_HOUSEHOLD_MEMBERS, MAX_HOUSEHOLDS_PER_PROFILE, householdNameKey } from '@/domain/households';
@@ -515,24 +515,50 @@ export async function createGiftRecipientFromForm(
     if (!recipient || !name) return { ok: false, error: 'not_found' };
 
     const sourceKey = giftSourceKey(sub.id);
+    const householdId = `hh-gift-${sub.id}`;
+    // The recipient profile made for this form, while it is live (the source key is unique, 0098).
     const already = async (): Promise<CreateGiftRecipientResult | null> => {
         const m = await membershipBySourceKey(db, sourceKey);
-        const live = m ? await giftProfileOf(db, sub.id) : null;
-        return m && live ? { ok: true, profileId: m.adopterId, householdId: m.householdId, membershipId: m.id, created: false } : null;
+        return m && await liveRow(db, m.adopterId)
+            ? { ok: true, profileId: m.adopterId, householdId: m.householdId, membershipId: m.id, created: false }
+            : null;
     };
-    const done = await already();
-    if (done) return done;
-    const householdId = `hh-gift-${sub.id}`;
-    // A recipient profile made earlier and since deleted is absent: its stale gift household
-    // goes, so «Crear perfil» works again (the source key is unique, 0098).
-    const stale = await membershipBySourceKey(db, sourceKey);
-    if (stale && !(await liveRow(db, stale.adopterId))) {
-        const staleHousehold = stale.householdId;
+    const keyed = await membershipBySourceKey(db, sourceKey);
+    if (keyed && await liveRow(db, keyed.adopterId)) {
+        return { ok: true, profileId: keyed.adopterId, householdId: keyed.householdId, membershipId: keyed.id, created: false };
+    }
+    // A recipient profile made earlier and since deleted is absent, so «Crear perfil» works again:
+    // ITS row goes (by id, while it still points at that deleted profile), and its gift household
+    // with the giver's row — but only while that household still carries the mark we read BEFORE
+    // deleting and holds no recipient. A click that claimed it in between changed the mark: its
+    // rows are never touched. One batch.
+    if (keyed) {
+        const h = keyed.householdId === householdId
+            ? await db.select({ createdAt: households.createdAt }).from(households).where(eq(households.id, householdId)).get() as { createdAt: Date | null } | undefined
+            : undefined;
+        const unchanged = h?.createdAt
+            ? sql`EXISTS (SELECT 1 FROM households h WHERE h.id = ${householdId} AND h.created_at = ${Math.floor(new Date(h.createdAt).getTime() / 1000)})`
+            : sql`0`;
         await runBatch(db, [
-            db.delete(householdMemberships).where(eq(householdMemberships.householdId, staleHousehold)),
-            db.delete(households).where(eq(households.id, staleHousehold)),
+            db.delete(householdMemberships).where(and(
+                eq(householdMemberships.id, keyed.id),
+                eq(householdMemberships.adopterId, keyed.adopterId),
+                sql`EXISTS (SELECT 1 FROM adopters a WHERE a.id = ${householdMemberships.adopterId} AND a.deleted_at IS NOT NULL)`,
+            )),
+            db.delete(householdMemberships).where(and(
+                eq(householdMemberships.householdId, householdId),
+                eq(householdMemberships.adopterId, giver.id),
+                eq(householdMemberships.giftRecipient, 0),
+                unchanged,
+                sql`NOT EXISTS (SELECT 1 FROM household_memberships r WHERE r.household_id = ${householdId} AND r.gift_recipient = 1)`,
+            )),
+            db.delete(households).where(and(
+                eq(households.id, householdId),
+                unchanged,
+                sql`NOT EXISTS (SELECT 1 FROM household_memberships m WHERE m.household_id = ${householdId})`,
+            )),
         ]);
-        logger.info('createGiftRecipientFromForm: the earlier recipient profile is deleted, its gift household removed', { ...ctx, householdId: staleHousehold, profileId: stale.adopterId });
+        logger.info('createGiftRecipientFromForm: the earlier recipient profile is deleted, its gift household cleared', { ...ctx, householdId: keyed.householdId, profileId: keyed.adopterId });
     }
     if ((await householdIdsOf(db, giver.id)).length >= MAX_HOUSEHOLDS_PER_PROFILE) {
         logger.info('createGiftRecipientFromForm: refused, the giver is in too many households', ctx);
@@ -549,15 +575,16 @@ export async function createGiftRecipientFromForm(
         const again = await already();
         if (again) return again;
         const row = await db.select({ createdAt: households.createdAt }).from(households).where(eq(households.id, householdId)).get() as { createdAt: Date | null } | undefined;
-        const abandoned = !!row?.createdAt && Date.now() - new Date(row.createdAt).getTime() > ABANDONED_GIFT_CLAIM_MS;
+        const mark = row?.createdAt ? new Date(row.createdAt).getTime() : null;
+        const abandoned = mark !== null && Date.now() - mark > ABANDONED_GIFT_CLAIM_MS;
         if (abandoned && row?.createdAt) {
-            // Take it over with a compare-and-set on the mark we read, while it holds nobody:
+            // Take it over with a compare-and-set on the mark we read, while it holds no recipient:
             // of two requests taking over at once, exactly one wins, and nothing is deleted.
             const took = await db.update(households).set({ createdBy: input.actor, createdAt: claimedAt })
                 .where(and(
                     eq(households.id, householdId),
                     eq(households.createdAt, row.createdAt),
-                    sql`NOT EXISTS (SELECT 1 FROM household_memberships m WHERE m.household_id = ${households.id})`,
+                    sql`NOT EXISTS (SELECT 1 FROM household_memberships m WHERE m.household_id = ${households.id} AND m.gift_recipient = 1)`,
                 ))
                 .returning({ id: households.id });
             won = took.length > 0;
@@ -615,9 +642,15 @@ export async function createGiftRecipientFromForm(
                 eq(households.createdBy, input.actor),
                 sql`NOT EXISTS (SELECT 1 FROM household_memberships m WHERE m.household_id = ${households.id})`,
             ));
-            if (profileId) await undoCreated(db, profileId, ctx);
+            if (profileId) await undoCreated(db, profileId, ctx, 'lost_race');
         } catch (ce) {
             logger.error('createGiftRecipientFromForm: claim not taken back', ce, { ...ctx, profileId });
+        }
+        // Our claim was taken over while we stalled and the other request made the profile: that one stands.
+        const winner = await already();
+        if (winner) {
+            logger.info('createGiftRecipientFromForm: another request made this profile first, ours dropped', { ...ctx, profileId: winner.ok ? winner.profileId : null });
+            return winner;
         }
         throw e;
     }

@@ -17,7 +17,11 @@ const OTHER = 'other-rescuer@example.com';
 
 const { state, notify, deferred, faults } = vi.hoisted(() => ({
     deferred: { on: false, tasks: [] as Array<{ name: string; task: () => Promise<unknown> }> },
-    faults: { beforeAdd: null as null | ((input: { householdId: string; sourceKey?: string | null }) => void) },
+    faults: {
+        beforeAdd: null as null | ((input: { householdId: string; sourceKey?: string | null }) => void | Promise<void>),
+        /** Runs before the next runBatch (once): another request finishing in between. */
+        beforeBatch: null as null | (() => Promise<void>),
+    },
     state: { db: null as unknown },
     notify: { create: [] as Array<Record<string, unknown>>, admins: [] as Array<Record<string, unknown>> },
 }));
@@ -56,8 +60,18 @@ vi.mock('@/lib/households', async (orig) => {
     return {
         ...real,
         addMembership: vi.fn(async (...args: Parameters<typeof real.addMembership>) => {
-            const hook = faults.beforeAdd; faults.beforeAdd = null; hook?.(args[1]);
+            const hook = faults.beforeAdd; faults.beforeAdd = null; await hook?.(args[1]);
             return real.addMembership(...args);
+        }),
+    };
+});
+vi.mock('@/lib/dbBatch', async (orig) => {
+    const real = await orig<typeof import('@/lib/dbBatch')>();
+    return {
+        ...real,
+        runBatch: vi.fn(async (...args: Parameters<typeof real.runBatch>) => {
+            const hook = faults.beforeBatch; faults.beforeBatch = null; await hook?.();
+            return real.runBatch(...args);
         }),
     };
 });
@@ -80,12 +94,13 @@ vi.mock('@/lib/logger', () => ({
 
 import { POST as submitForm } from '@/app/api/form/[userId]/submit/route';
 import { POST as createAdopterApi } from '@/app/api/adopters/route';
-import { attachHouseholdPeople, resolveHouseholdPerson, giftRecipientsForViewer } from './householdPeople';
+import { attachHouseholdPeople, createGiftRecipientFromForm, resolveHouseholdPerson, giftRecipientsForViewer } from './householdPeople';
 import { giftPhoneEntriesByGiver, giftRecipientTokenEntries, giftRecipientsOf } from './giftRecipients';
 import { createGiftRecipientProfile } from '@/app/actions/households';
 import { tokenizeAdopter } from './adopterTokenize';
 import { findIdentifierHits } from './api/profiles';
 import { addMembership, ensureHousehold } from './households';
+import { households as householdsTable } from '@/db/schema';
 import { addHouseholdPerson } from '@/app/actions/households';
 import { logger } from '@/lib/logger';
 import { findAdopters } from '@/app/actions/findAdopters';
@@ -133,6 +148,7 @@ beforeEach(async () => {
     deferred.on = false;
     deferred.tasks.length = 0;
     faults.beforeAdd = null;
+    faults.beforeBatch = null;
     vi.mocked(findAdopters).mockClear();
     session.user = OWNER;
     // The form link's owner, in Argentina: phones are read as Argentine ones.
@@ -560,5 +576,134 @@ describe('Task 4 fix round 1', () => {
         expect(pairs.some(p => (p.a === zoe && p.b === 'outsider') || (p.b === zoe && p.a === 'outsider'))).toBe(true);
         const housemates = new Set(membershipsOf('pedro').length ? sqlite.prepare(`SELECT adopter_id FROM household_memberships WHERE household_id = 'hh-pedro'`).all().map(r => r.adopter_id) : []);
         expect(pairs.some(p => (p.a === zoe && housemates.has(p.b)) || (p.b === zoe && housemates.has(p.a)))).toBe(false);
+    });
+});
+
+describe('Task 4 fix round 2', () => {
+    const live = (name: string) => count('SELECT COUNT(*) AS n FROM adopters WHERE name = ? AND deleted_at IS NULL', name);
+    async function giftWithDeletedRecipient(email: string) {
+        const { submissionId, applicantId } = await postForm({
+            name: 'Jonathan Giver', email, phone: '11 6123 2424', intent: 'gift',
+            giftRecipient: { relationship: 'child', firstName: 'Sofía', lastName: 'Gómez', phone: '11 5555 0101' },
+        });
+        const first = await createGiftRecipientProfile({ giverAdopterId: applicantId, submissionId });
+        if (!first.ok) throw new Error(first.error);
+        sqlite.prepare('UPDATE adopters SET deleted_at = 5 WHERE id = ?').run(first.profileId);
+        return { submissionId, applicantId };
+    }
+
+    it('gift: a request cleaning up a deleted recipient never wipes the rows a faster click just made', async () => {
+        const { submissionId, applicantId } = await giftWithDeletedRecipient('jg20@example.com');
+        let a: Awaited<ReturnType<typeof createGiftRecipientProfile>> | null = null;
+        // B has read the stale recipient; before its cleanup lands, A makes the profile.
+        faults.beforeBatch = async () => { a = await createGiftRecipientProfile({ giverAdopterId: applicantId, submissionId }); };
+        const b = await createGiftRecipientProfile({ giverAdopterId: applicantId, submissionId });
+        expect(a).toMatchObject({ ok: true, created: true });
+        expect(live('Sofía Gómez')).toBe(1);
+        const members = householdOf(`hh-gift-${submissionId}`);
+        expect(members.map(m => m.gift_recipient)).toEqual([1, 0]);
+        const sofia = sqlite.prepare(`SELECT id FROM adopters WHERE name = 'Sofía Gómez' AND deleted_at IS NULL`).get()!.id;
+        expect(members[0].adopter_id).toBe(sofia);
+        if (b.ok) expect(b.profileId).toBe(sofia); else expect(b.error).toBe('conflict');
+    });
+
+    it('gift: a slow request whose abandoned claim was taken over leaves the new owner\'s rows alone', async () => {
+        const { submissionId, applicantId } = await postForm({
+            name: 'Jonathan Giver', email: 'jg21@example.com', phone: '11 6123 2525', intent: 'gift',
+            giftRecipient: { relationship: 'child', firstName: 'Lola', lastName: 'Paz' },
+        });
+        let b = null as Awaited<ReturnType<typeof createGiftRecipientProfile>> | null;
+        // A claimed and is about to place the recipient; it stalls past the abandon window and B takes over.
+        faults.beforeAdd = async () => {
+            sqlite.prepare(`UPDATE households SET created_at = 1000 WHERE id = ?`).run(`hh-gift-${submissionId}`);
+            b = await createGiftRecipientProfile({ giverAdopterId: applicantId, submissionId });
+        };
+        const a = await createGiftRecipientProfile({ giverAdopterId: applicantId, submissionId });
+        expect(b).toMatchObject({ ok: true, created: true });
+        const bRes = b as unknown as { ok: true; profileId: string };
+        expect(a.ok ? a.profileId : a.error).toBe(bRes.profileId);
+        expect(live('Lola Paz')).toBe(1);
+        expect(householdOf(`hh-gift-${submissionId}`).map(m => m.gift_recipient)).toEqual([1, 0]);
+    });
+
+    it('gift: of two requests taking over an abandoned claim, the one whose read went stale never takes it (compare-and-set)', async () => {
+        const { submissionId, applicantId } = await postForm({
+            name: 'Jonathan Giver', email: 'jg22@example.com', phone: '11 6123 2626', intent: 'gift',
+            giftRecipient: { relationship: 'child', firstName: 'Nina', lastName: 'Vera' },
+        });
+        const hh = `hh-gift-${submissionId}`;
+        sqlite.prepare(`INSERT INTO households (id, created_by, created_at) VALUES (?, 'crashed@example.com', 1000)`).run(hh);
+        // B has read the abandoned claim; before its takeover lands, A takes it over and finishes.
+        const real = db();
+        let fired = false;
+        const slowDb = new Proxy(real, {
+            get(target, prop) {
+                if (prop === 'update') {
+                    return (table: unknown) => {
+                        const chain = (target.update as (t: unknown) => { set: (v: unknown) => { where: (w: unknown) => { returning: (r: unknown) => Promise<unknown[]> } } })(table);
+                        if (fired || table !== householdsTable) return chain;
+                        fired = true;
+                        return {
+                            set: (v: unknown) => ({
+                                where: (w: unknown) => ({
+                                    returning: async (r: unknown) => {
+                                        await createGiftRecipientFromForm(real, { giverAdopterId: applicantId, submissionId, actor: ADMIN });
+                                        return chain.set(v).where(w).returning(r);
+                                    },
+                                }),
+                            }),
+                        };
+                    };
+                }
+                const v = Reflect.get(target, prop);
+                return typeof v === 'function' ? v.bind(target) : v;
+            },
+        }) as typeof real;
+        const b = await createGiftRecipientFromForm(slowDb, { giverAdopterId: applicantId, submissionId, actor: OWNER });
+        expect(fired).toBe(true);
+        expect(b).toEqual({ ok: false, error: 'conflict' });
+        // B never made a profile, and the household stays A's.
+        expect(count(`SELECT COUNT(*) AS n FROM adopters WHERE name = 'Nina Vera'`)).toBe(1);
+        expect(sqlite.prepare('SELECT created_by FROM households WHERE id = ?').get(hh)!.created_by).toBe(ADMIN);
+        expect(householdOf(hh).map(m => m.gift_recipient)).toEqual([1, 0]);
+    });
+
+    it('addHouseholdPerson: losing the import key to a racing re-merge answers that person and drops ours', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('winner', 'Laura Paez', '5', ?, 1, 1)`).run(OWNER);
+        faults.beforeAdd = (m) => {
+            sqlite.prepare(`INSERT INTO household_memberships (id, household_id, adopter_id, relationship, relative_to_adopter_id, added_by, added_at, source_key) VALUES ('hm-w', ?, 'winner', 'partner', 'pedro', ?, 1, ?)`)
+                .run(m.householdId, OWNER, m.sourceKey);
+        };
+        const res = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Laura Paez', relationship: 'partner', fromImport: { sourceUrl: 'https://facebook.com/posts/77', slot: 'r0' } });
+        expect(res).toMatchObject({ ok: true, profileId: 'winner', membershipId: 'hm-w', createdProfile: false });
+        expect(live('Laura Paez')).toBe(1);
+    });
+
+    it("the import name rule tells a caller without standing only «already there» — never the housemate's profile", async () => {
+        const hh = await ensureHousehold(db(), 'pedro', null);
+        await addMembership(db(), { householdId: hh, adopterId: 'marta', relationship: 'partner', relativeToAdopterId: 'pedro', addedBy: OWNER });
+        session.user = STRANGER;
+        const res = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'marta paez', relationship: 'partner', fromImport: { sourceUrl: null, slot: 'r0' } });
+        expect(res).toEqual({ ok: false, error: 'already_there' });
+        expect(JSON.stringify(res)).not.toContain('marta');
+        expect(live('marta paez') + live('Marta Paez')).toBe(1);
+        // Pedro's team may know who it is.
+        session.user = OWNER;
+        expect(await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Marta Paez', fromImport: { sourceUrl: null, slot: 'r0' } }))
+            .toMatchObject({ ok: true, profileId: 'marta', createdProfile: false });
+    });
+
+    it('a re-merge after the anchor moved to a new home puts the same person in the CURRENT household', async () => {
+        const url = 'https://facebook.com/posts/88';
+        const first = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Laura Paez', relationship: 'partner', fromImport: { sourceUrl: url, slot: 'r0' } });
+        if (!first.ok) throw new Error('add failed');
+        // Pedro leaves that household (his own row goes); his next add makes a new home.
+        sqlite.prepare(`DELETE FROM household_memberships WHERE adopter_id = 'pedro'`).run();
+        const again = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Laura Paez', relationship: 'partner', fromImport: { sourceUrl: url, slot: 'r0' } });
+        expect(again).toMatchObject({ ok: true, profileId: first.profileId, createdProfile: false });
+        expect(live('Laura Paez')).toBe(1);
+        const home = sqlite.prepare(`SELECT household_id FROM household_memberships WHERE adopter_id = 'pedro'`).get()!.household_id;
+        expect(home).not.toBe('hh-pedro');
+        expect(householdOf(home as string).map(m => m.adopter_id)).toEqual(['pedro', first.profileId]);
     });
 });
