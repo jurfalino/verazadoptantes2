@@ -171,6 +171,9 @@ export function demoAdopterRow(f: DemoFixture): AdopterRow {
         source: f.source,
         isPublic: f.isPublic ? 1 : 0,
         isDemo: 1,
+        age: null,
+        ageAsOf: null,
+        isMinor: 0,
     };
 }
 

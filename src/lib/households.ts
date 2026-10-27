@@ -1,0 +1,462 @@
+/**
+ * Households as profiles (spec 2026-10-26-households-as-profiles-design) —
+ * the read/write core. Every person in a household is an adopter profile; a
+ * household is a group of profiles (households / household_memberships), the
+ * only record of who lives with whom. NOT a 'use server' module: every export
+ * is called by server code only, so none of it is a browser-callable endpoint.
+ *
+ * Writes (throw on a DB failure — the calling action logs and answers with an errorId):
+ * - `ensureHousehold`: the anchor's household, created (with the anchor in it) when it has none.
+ * - `createHousehold`: a new, empty household (gift households: add the recipient first).
+ * - `addMembership`: idempotent on (household, adopter).
+ * - `removeMembership`: optionally remembering a correction («No vive acá», D48).
+ * Reads:
+ * - `householdIdsOf`, `sameHousehold`, `hasCorrection`, `membershipsOf`.
+ * - `getHouseholdsFor`: the profile page's households — each member's live
+ *   summary masked exactly as that member's profile is for this viewer (the
+ *   same helpers as getLinkedSummaries, src/lib/profileSummary.ts). Never throws.
+ * - `householdLinesFor`: the household line of search / «¿Es este perfil?»
+ *   cards, batched. Never throws.
+ *
+ * Rules live in src/domain/households.ts. D1: no `IN (array)` — one bounded
+ * query per profile / household, fanned out with Promise.all.
+ */
+import { and, asc, eq, sql } from 'drizzle-orm';
+import { adopters, householdCorrections, householdMemberships, households } from '@/db/schema';
+import type { getDb } from '@/lib/db';
+import { logger } from '@/lib/logger';
+import { runBatch } from '@/lib/dbBatch';
+import { RELATIONSHIPS, type Relationship } from '@/lib/householdMembers';
+import { isPrivilegedOnProfile } from '@/lib/profilePrivilege';
+import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility } from '@/lib/piiAccessServer';
+import { EMPTY_COUNTS, countsFor, namesFor, viewerContacts, type ProfileCounts } from '@/lib/profileSummary';
+import { personLabel, type LinkedSummary } from '@/domain/householdLinks';
+import {
+    MAX_HOUSEHOLDS_PER_PROFILE,
+    MAX_HOUSEHOLD_LINES,
+    MAX_HOUSEHOLD_MEMBERS,
+    canRemoveMembership,
+    currentAge,
+    isGiftHousehold,
+    isMinor,
+    membershipLabel,
+    type MembershipLabel,
+} from '@/domain/households';
+
+type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+export type MembershipRow = typeof householdMemberships.$inferSelect;
+const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const REL_SET: ReadonlySet<string> = new Set(RELATIONSHIPS);
+
+/** One member as the profile page shows them. `linkId` (from LinkedSummary) = `membershipId`. */
+export type HouseholdMemberView = LinkedSummary & {
+    membershipId: string;
+    /** «pareja» / «pareja de Pedro» — an i18n key + params (params.rel is itself a key); null = no label. */
+    label: MembershipLabel | null;
+    /** Who added this membership («según …»): display name or handle, never an email. */
+    addedByName: string | null;
+    /** canRemoveMembership: the adder, the team of anyone in the household, admins/moderators. */
+    canRemove: boolean;
+    relationship: Relationship;
+    relativeToAdopterId: string | null;
+    giftRecipient: boolean;
+    isMinor: boolean;
+    /** Current age (goes up by itself), null when unknown. */
+    age: number | null;
+};
+
+export type HouseholdView = { id: string; isGift: boolean; members: HouseholdMemberView[] };
+
+/** A housemate on a search / «¿Es este perfil?» card: «Convive con Pedro ★1». */
+export type HouseholdLine = {
+    name: string;
+    profileId: string;
+    rating: number | null;
+    openAlerts: number;
+    isMinor: boolean;
+    /** Every household the two share is a gift household (never «Convive con»). */
+    isGift: boolean;
+};
+
+export type AddMembershipInput = {
+    householdId: string;
+    adopterId: string;
+    /** Outside RELATIONSHIPS → 'unknown'. */
+    relationship?: string | null;
+    /** The person they were added next to («pareja de Pedro»). Never themselves. */
+    relativeToAdopterId?: string | null;
+    giftRecipient?: boolean;
+    /** The typist (credit, «según …»). */
+    addedBy: string | null;
+    /** Where it came from: inline:{hostId}:{memberId}, link:{linkId}, form-{submissionId}-{i}, interview:{id}:{i}, import:{batch}:{row}. */
+    sourceKey?: string | null;
+    addedAt?: Date;
+};
+
+// ─────────────────────────── Reads (small) ───────────────────────────
+
+/** Memberships of one household, oldest first, bounded. */
+export async function membershipsOf(db: Db, householdId: string, limit: number = MAX_HOUSEHOLD_MEMBERS): Promise<MembershipRow[]> {
+    return await db.select().from(householdMemberships)
+        .where(eq(householdMemberships.householdId, householdId))
+        .orderBy(asc(householdMemberships.addedAt), asc(householdMemberships.id))
+        .limit(limit).all() as MembershipRow[];
+}
+
+/** This profile's own memberships, oldest first, bounded. */
+async function ownMemberships(db: Db, adopterId: string, limit: number): Promise<MembershipRow[]> {
+    return await db.select().from(householdMemberships)
+        .where(eq(householdMemberships.adopterId, adopterId))
+        .orderBy(asc(householdMemberships.addedAt), asc(householdMemberships.id))
+        .limit(limit).all() as MembershipRow[];
+}
+
+/** The households a profile is in (gift ones included), oldest membership first. */
+export async function householdIdsOf(db: Db, adopterId: string): Promise<string[]> {
+    return (await ownMemberships(db, adopterId, MAX_HOUSEHOLDS_PER_PROFILE * 10)).map(m => m.householdId);
+}
+
+/**
+ * Two different profiles share an ordinary household. Gift households do not
+ * count: the form can't tell whose name and phone it gave, so the giver and
+ * the recipient may be one person and the duplicate scan must still pair them.
+ */
+export async function sameHousehold(db: Db, a: string, b: string): Promise<boolean> {
+    if (!a || !b || a === b) return false;
+    const row = await db.select({ one: sql<number>`1` }).from(householdMemberships)
+        .where(and(
+            eq(householdMemberships.adopterId, a),
+            sql`EXISTS (SELECT 1 FROM household_memberships o WHERE o.household_id = ${householdMemberships.householdId} AND o.adopter_id = ${b})`,
+            sql`NOT EXISTS (SELECT 1 FROM household_memberships g WHERE g.household_id = ${householdMemberships.householdId} AND g.gift_recipient = 1)`,
+        )).limit(1).get();
+    return !!row;
+}
+
+/** Someone said this person does not live in this household («No vive acá»): re-adding is a dispute (D48). */
+export async function hasCorrection(db: Db, householdId: string, adopterId: string): Promise<boolean> {
+    const row = await db.select({ id: householdCorrections.id }).from(householdCorrections)
+        .where(and(eq(householdCorrections.householdId, householdId), eq(householdCorrections.adopterId, adopterId)))
+        .limit(1).get();
+    return !!row;
+}
+
+// ─────────────────────────── Writes ───────────────────────────
+
+let lastIdMs = 0;
+/**
+ * Time-ordered membership id: the tie-break of memberships added in the same
+ * second (added_at is in seconds), so a household lists people in the order
+ * they were added. Monotonic within an isolate.
+ */
+function membershipId(): string {
+    lastIdMs = Math.max(Date.now(), lastIdMs + 1);
+    return `hm-${lastIdMs.toString(36).padStart(9, '0')}-${crypto.randomUUID()}`;
+}
+
+/** A new household with nobody in it yet. For a gift household add the recipient (gift) first. */
+export async function createHousehold(db: Db, actor: string | null, id: string = `hh-${crypto.randomUUID()}`): Promise<string> {
+    await db.insert(households).values({ id, createdBy: actor, createdAt: new Date() }).onConflictDoNothing().run();
+    return id;
+}
+
+/** The anchor's oldest ordinary (non-gift) household, or null. */
+async function ordinaryHouseholdOf(db: Db, anchorId: string): Promise<string | null> {
+    const row = await db.select({ householdId: householdMemberships.householdId }).from(householdMemberships)
+        .where(and(
+            eq(householdMemberships.adopterId, anchorId),
+            sql`NOT EXISTS (SELECT 1 FROM household_memberships g WHERE g.household_id = ${householdMemberships.householdId} AND g.gift_recipient = 1)`,
+        ))
+        .orderBy(asc(householdMemberships.addedAt), asc(householdMemberships.id))
+        .limit(1).get();
+    return row?.householdId ?? null;
+}
+
+/**
+ * The household to add people next to `anchorId`: its oldest ordinary
+ * (non-gift) household, else a new one with the anchor in it. The first one
+ * gets the deterministic id `hh-{anchorId}` so two concurrent first adds
+ * converge on one household (no cross-await transaction on D1). If that id is
+ * taken (the anchor was removed from it once), a fresh one is made — never
+ * putting the anchor back into a household they were taken out of.
+ */
+export async function ensureHousehold(db: Db, anchorId: string, actor: string | null): Promise<string> {
+    const existing = await ordinaryHouseholdOf(db, anchorId);
+    if (existing) return existing;
+    const preferred = `hh-${anchorId}`;
+    const taken = await db.select({ id: households.id }).from(households).where(eq(households.id, preferred)).get();
+    const id = taken ? `hh-${anchorId}-${crypto.randomUUID().slice(0, 8)}` : preferred;
+    await createHousehold(db, actor, id);
+    await addMembership(db, { householdId: id, adopterId: anchorId, relationship: 'unknown', relativeToAdopterId: null, addedBy: actor });
+    return (await ordinaryHouseholdOf(db, anchorId)) ?? id;
+}
+
+/**
+ * Put `adopterId` in `householdId`. Idempotent on the (household, adopter)
+ * pair: a second add returns the existing membership unchanged, `created: false`.
+ */
+export async function addMembership(db: Db, input: AddMembershipInput): Promise<{ membershipId: string; created: boolean }> {
+    const id = membershipId();
+    const relationship = input.relationship && REL_SET.has(input.relationship) ? input.relationship : 'unknown';
+    const relative = input.relativeToAdopterId && input.relativeToAdopterId !== input.adopterId ? input.relativeToAdopterId : null;
+    await db.insert(householdMemberships).values({
+        id,
+        householdId: input.householdId,
+        adopterId: input.adopterId,
+        relationship,
+        relativeToAdopterId: relative,
+        giftRecipient: input.giftRecipient ? 1 : 0,
+        addedBy: input.addedBy,
+        addedAt: input.addedAt ?? new Date(),
+        sourceKey: input.sourceKey ?? null,
+    }).onConflictDoNothing().run();
+    const row = await db.select({ id: householdMemberships.id }).from(householdMemberships)
+        .where(and(eq(householdMemberships.householdId, input.householdId), eq(householdMemberships.adopterId, input.adopterId)))
+        .get();
+    if (!row) throw new Error('addMembership: membership missing after insert');
+    return { membershipId: row.id, created: row.id === id };
+}
+
+/**
+ * Take one person out of one household, for everyone. With `correction`
+ * («No vive acá», D48) the fact is remembered per (household, person) with
+ * the removed row as the snapshot, in the same batch. The household itself
+ * and everyone else in it stay (corrections are keyed on the household id).
+ * Returns the removed row (null when it was already gone).
+ */
+export async function removeMembership(
+    db: Db,
+    membershipId: string,
+    actor: string,
+    opts: { correction: boolean },
+): Promise<{ removed: MembershipRow | null; correctionId: string | null }> {
+    const row = await db.select().from(householdMemberships).where(eq(householdMemberships.id, membershipId)).get() as MembershipRow | undefined;
+    if (!row) return { removed: null, correctionId: null };
+    const del = db.delete(householdMemberships).where(eq(householdMemberships.id, membershipId));
+    if (!opts.correction) {
+        await runBatch(db, [del]);
+        return { removed: row, correctionId: null };
+    }
+    const correctionId = `hc-${crypto.randomUUID()}`;
+    await runBatch(db, [
+        del,
+        db.insert(householdCorrections).values({
+            id: correctionId,
+            householdId: row.householdId,
+            adopterId: row.adopterId,
+            correctedBy: actor,
+            correctedAt: new Date(),
+            snapshot: JSON.stringify(row),
+        }),
+    ]);
+    return { removed: row, correctionId };
+}
+
+// ─────────────────────────── Profile page read ───────────────────────────
+
+type ProfileRow = {
+    id: string; name: string; addedBy: string | null; contactEntries: string | null; contactInfo: string | null;
+    isPublic: number | boolean | null; deletedAt: Date | null; age: number | null; ageAsOf: string | null; isMinor: number | null;
+};
+
+const PROFILE_COLS = {
+    id: adopters.id, name: adopters.name, addedBy: adopters.addedBy, contactEntries: adopters.contactEntries,
+    contactInfo: adopters.contactInfo, isPublic: adopters.isPublic, deletedAt: adopters.deletedAt,
+    age: adopters.age, ageAsOf: adopters.ageAsOf, isMinor: adopters.isMinor,
+};
+
+/** The profile when it is live (merges re-point memberships, Task 6 — a soft-deleted row is skipped, not followed). */
+async function liveProfile(db: Db, id: string): Promise<ProfileRow | null> {
+    const row = await db.select(PROFILE_COLS).from(adopters).where(eq(adopters.id, id)).get() as ProfileRow | undefined;
+    return row && !row.deletedAt ? row : null;
+}
+
+const asRelationship = (r: string | null | undefined): Relationship => (r && REL_SET.has(r) ? r as Relationship : 'unknown');
+
+export type GetHouseholdsOptions = {
+    /**
+     * Runs before anything is read (Task 7 converts the profile's old inline
+     * household here). A failure is logged and the read goes on.
+     */
+    beforeRead?: (db: Db, adopterId: string) => Promise<void>;
+};
+
+/**
+ * The households of `adopterId` as `viewer` may see them: one view per
+ * household (oldest membership first), each with the OTHER live members'
+ * summaries — contacts masked exactly as that member's profile masks them for
+ * this viewer, never more. Soft-deleted profiles are skipped; a household with
+ * nobody else live is left out. Bounded (MAX_HOUSEHOLDS_PER_PROFILE,
+ * MAX_HOUSEHOLD_MEMBERS). Never throws: a failure yields [] and is logged.
+ */
+export async function getHouseholdsFor(
+    db: Db,
+    viewer: string | null | undefined,
+    adopterId: string,
+    opts: GetHouseholdsOptions = {},
+): Promise<HouseholdView[]> {
+    const ctx = { adopterId, viewer: viewer ?? null };
+    if (opts.beforeRead) {
+        try {
+            await opts.beforeRead(db, adopterId);
+        } catch (e) {
+            logger.warn('households: pre-read hook failed, households read as they are', { ...ctx, error: errMsg(e) });
+        }
+    }
+    try {
+        const self = await liveProfile(db, adopterId);
+        if (!self) return [];
+        const mine = await ownMemberships(db, adopterId, MAX_HOUSEHOLDS_PER_PROFILE + 1);
+        if (mine.length === 0) return [];
+        if (mine.length > MAX_HOUSEHOLDS_PER_PROFILE) {
+            logger.warn('households: household cap hit, newer households not shown', { ...ctx, cap: MAX_HOUSEHOLDS_PER_PROFILE });
+        }
+        const own = mine.slice(0, MAX_HOUSEHOLDS_PER_PROFILE);
+        const groups = await Promise.all(own.map(m => membershipsOf(db, m.householdId, MAX_HOUSEHOLD_MEMBERS + 1)));
+        groups.forEach((g, i) => {
+            if (g.length > MAX_HOUSEHOLD_MEMBERS) {
+                logger.warn('households: member cap hit, newer members not shown', { ...ctx, householdId: own[i].householdId, cap: MAX_HOUSEHOLD_MEMBERS });
+            }
+        });
+        const capped = groups.map(g => g.slice(0, MAX_HOUSEHOLD_MEMBERS));
+
+        const otherIds = [...new Set(capped.flat().map(m => m.adopterId).filter(id => id !== adopterId))];
+        const loaded = await Promise.all(otherIds.map(async id => [id, await liveProfile(db, id)] as const));
+        const profiles = new Map<string, ProfileRow>();
+        for (const [id, p] of loaded) if (p) profiles.set(id, p);
+        if (profiles.size === 0) return [];
+
+        const viewerEmail = viewer ?? null;
+        const everyone = [self, ...profiles.values()];
+        const [gatingOn, publicFlag, visibilities, counts, viewerIsStaff, privileged] = await Promise.all([
+            isPiiGatingEnabled(),
+            isPublicProfilesEnabled(),
+            resolveAdoptersVisibility(viewerEmail, [...profiles.values()].map(p => ({ id: p.id, addedBy: p.addedBy }))),
+            Promise.all([...profiles.keys()].map(async id => [id, await countsFor(db, id, ctx)] as const)).then(e => new Map(e)),
+            viewerEmail
+                ? (async () => (await import('@/config/admins')).isModeratorOrAdminAsync(viewerEmail))()
+                : Promise.resolve(false),
+            Promise.all(everyone.map(async p => [p.id, await isPrivilegedOnProfile(viewerEmail, p.addedBy)] as const)).then(e => new Map(e)),
+        ]);
+        const rescuerNames = await namesFor([
+            ...[...profiles.values()].map(p => p.addedBy),
+            ...capped.flat().map(m => m.addedBy),
+        ], ctx);
+        const today = new Date();
+
+        const views: HouseholdView[] = [];
+        own.forEach((selfMembership, i) => {
+            const group = capped[i];
+            const live = group.filter(m => m.adopterId === adopterId || profiles.has(m.adopterId));
+            const liveIds = live.map(m => m.adopterId);
+            const names: Record<string, string> = {};
+            for (const m of live) names[m.adopterId] = m.adopterId === adopterId ? self.name : profiles.get(m.adopterId)!.name;
+            const members: HouseholdMemberView[] = [];
+            for (const m of live) {
+                if (m.adopterId === adopterId) continue;
+                const p = profiles.get(m.adopterId)!;
+                const c: ProfileCounts = counts.get(p.id) ?? EMPTY_COUNTS;
+                const { contacts, more, canSeeContact } = viewerContacts(p, gatingOn, publicFlag, visibilities.get(p.id));
+                const canRemove = canRemoveMembership(
+                    { email: viewerEmail, isAdmin: !!viewerIsStaff, privilegedOn: id => !!privileged.get(id) },
+                    m,
+                    liveIds,
+                );
+                members.push({
+                    linkId: m.id,
+                    membershipId: m.id,
+                    profileId: p.id,
+                    name: p.name,
+                    ownerName: personLabel(p.addedBy, rescuerNames),
+                    rating: c.rating,
+                    openAlerts: c.openAlerts,
+                    adoptions: c.adoptions,
+                    records: c.records,
+                    contacts,
+                    moreContacts: more,
+                    canSeeContact,
+                    // «No vive acá» is one of «Quitar del hogar»'s answers: the same people (spec §Removing).
+                    canReportNotLiving: canRemove,
+                    canRemove,
+                    label: membershipLabel(adopterId, m, names, selfMembership),
+                    addedByName: personLabel(m.addedBy, rescuerNames),
+                    relationship: asRelationship(m.relationship),
+                    relativeToAdopterId: m.relativeToAdopterId ?? null,
+                    giftRecipient: !!m.giftRecipient,
+                    isMinor: isMinor(p, today),
+                    age: currentAge(p, today),
+                });
+            }
+            if (members.length === 0) return;
+            views.push({ id: selfMembership.householdId, isGift: isGiftHousehold(group), members });
+        });
+        return views;
+    } catch (e) {
+        logger.warn('households: read failed, profile shows no households', { ...ctx, error: errMsg(e) });
+        return [];
+    }
+}
+
+// ─────────────────────────── Card lines (batched) ───────────────────────────
+
+/**
+ * The household line of each profile in `adopterIds` (search results,
+ * «¿Es este perfil?»): every live housemate, once, with their live rating and
+ * open alerts. `isGift` when every household the two share is a gift one.
+ * Every requested id gets an entry ([] when none). Profiles, households and
+ * counts are read once per call however many cards share them. Bounded per
+ * card (MAX_HOUSEHOLD_LINES). Never throws: a failed card gets [] (logged).
+ * `viewer` is for the log only — the line carries no contact data.
+ */
+export async function householdLinesFor(
+    db: Db,
+    viewer: string | null | undefined,
+    adopterIds: string[],
+): Promise<Record<string, HouseholdLine[]>> {
+    const memo = <T>(m: Map<string, Promise<T>>, key: string, load: () => Promise<T>): Promise<T> => {
+        let p = m.get(key);
+        if (!p) { p = load(); m.set(key, p); }
+        return p;
+    };
+    const groupMemo = new Map<string, Promise<MembershipRow[]>>();
+    const profileMemo = new Map<string, Promise<ProfileRow | null>>();
+    const countMemo = new Map<string, Promise<ProfileCounts>>();
+    const today = new Date();
+    const ids = [...new Set(adopterIds)];
+
+    const entries = await Promise.all(ids.map(async (adopterId): Promise<[string, HouseholdLine[]]> => {
+        const ctx = { adopterId, viewer: viewer ?? null };
+        try {
+            const mine = await ownMemberships(db, adopterId, MAX_HOUSEHOLDS_PER_PROFILE);
+            if (mine.length === 0) return [adopterId, []];
+            const groups = await Promise.all(mine.map(m => memo(groupMemo, m.householdId, () => membershipsOf(db, m.householdId))));
+            // Each housemate once; gift only when every shared household is a gift one.
+            const mates = new Map<string, boolean>();
+            groups.forEach(group => {
+                const gift = isGiftHousehold(group);
+                for (const m of group) {
+                    if (m.adopterId === adopterId) continue;
+                    mates.set(m.adopterId, (mates.get(m.adopterId) ?? true) && gift);
+                }
+            });
+            const live = (await Promise.all([...mates.keys()].map(id => memo(profileMemo, id, () => liveProfile(db, id)))))
+                .filter((p): p is ProfileRow => !!p);
+            if (live.length > MAX_HOUSEHOLD_LINES) {
+                logger.info('households: card line cap reached', { ...ctx, housemates: live.length, cap: MAX_HOUSEHOLD_LINES });
+            }
+            const shown = live.slice(0, MAX_HOUSEHOLD_LINES);
+            const counts = await Promise.all(shown.map(p => memo(countMemo, p.id, () => countsFor(db, p.id, ctx))));
+            return [adopterId, shown.map((p, i) => ({
+                name: p.name,
+                profileId: p.id,
+                rating: counts[i].rating,
+                openAlerts: counts[i].openAlerts,
+                isMinor: isMinor(p, today),
+                isGift: !!mates.get(p.id),
+            }))];
+        } catch (e) {
+            logger.warn('households: card line read failed, card shows no household', { ...ctx, error: errMsg(e) });
+            return [adopterId, []];
+        }
+    }));
+    return Object.fromEntries(entries);
+}

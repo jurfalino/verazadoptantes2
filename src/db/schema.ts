@@ -59,6 +59,14 @@ export const adopters = sqliteTable("adopters", {
     // free; the walkthrough + the /admin/walkthrough panel fetch them by this
     // marker (ignoring deletedAt). Never tokenized, never in real search.
     isDemo: integer("is_demo").notNull().default(0),
+
+    // Age lives on the profile (drizzle/0096, households as profiles): the age
+    // as given on `ageAsOf` (YYYY-MM-DD); show currentAge(), never this raw.
+    // isMinor: the «Es menor de edad» checkbox — see isMinor() in
+    // src/domain/households.ts for the rule (a known age decides).
+    age: integer("age"),
+    ageAsOf: text("age_as_of"),
+    isMinor: integer("is_minor").notNull().default(0),
 }, (table) => ({
     nameIdx: index("name_idx").on(table.name),
 }));
@@ -547,6 +555,50 @@ export const householdLinkCorrections = sqliteTable("household_link_corrections"
 }, (table) => ({
     pairIdx: index("idx_household_link_corrections_pair").on(table.hostAdopterId, table.linkedAdopterId),
     linkedIdx: index("idx_household_link_corrections_linked").on(table.linkedAdopterId),
+}));
+
+// households / household_memberships / household_corrections — households as
+// profiles (drizzle/0096). A household is a group of adopter profiles; the
+// memberships are the only record of who lives with whom. relationship is
+// relative to relativeToAdopterId; giftRecipient marks a gift household;
+// sourceKey names where the membership came from (inline:{hostId}:{memberId},
+// link:{linkId}, form-{submissionId}-{i}, interview:{id}:{i},
+// import:{batch}:{row}). A correction («No vive acá», D48) is remembered per
+// (household, person); snapshot is the removed membership row (JSON).
+// Reads and writes: src/lib/households.ts. Rules: src/domain/households.ts.
+export const households = sqliteTable("households", {
+    id: text("id").primaryKey(),
+    createdBy: text("created_by"),
+    createdAt: integer("created_at", { mode: "timestamp" }),
+});
+
+export const householdMemberships = sqliteTable("household_memberships", {
+    id: text("id").primaryKey(),
+    householdId: text("household_id").notNull(),
+    adopterId: text("adopter_id").notNull(),
+    relationship: text("relationship").notNull().default("unknown"),
+    relativeToAdopterId: text("relative_to_adopter_id"),
+    giftRecipient: integer("gift_recipient").notNull().default(0),
+    addedBy: text("added_by"),
+    addedAt: integer("added_at", { mode: "timestamp" }).notNull(),
+    sourceKey: text("source_key"),
+}, (table) => ({
+    pairIdx: uniqueIndex("idx_household_memberships_pair").on(table.householdId, table.adopterId),
+    adopterIdx: index("idx_household_memberships_adopter").on(table.adopterId),
+    householdIdx: index("idx_household_memberships_household").on(table.householdId),
+    sourceKeyIdx: index("idx_household_memberships_source_key").on(table.sourceKey),
+}));
+
+export const householdCorrections = sqliteTable("household_corrections", {
+    id: text("id").primaryKey(),
+    householdId: text("household_id").notNull(),
+    adopterId: text("adopter_id").notNull(),
+    correctedBy: text("corrected_by").notNull(),
+    correctedAt: integer("corrected_at", { mode: "timestamp" }).notNull(),
+    snapshot: text("snapshot"),
+}, (table) => ({
+    pairIdx: index("idx_household_corrections_pair").on(table.householdId, table.adopterId),
+    adopterIdx: index("idx_household_corrections_adopter").on(table.adopterId),
 }));
 
 // pii_access_grants — the access facts. A live (non-revoked) row means

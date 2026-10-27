@@ -205,16 +205,8 @@ export function parseLegacyFamilyText(text: string | null | undefined): Househol
     return out;
 }
 
-/** Age today: the recorded age plus whole years elapsed since it was recorded. */
-export function currentAge(m: { age?: number; ageAsOf?: string }, today: Date = new Date()): number | null {
-    if (typeof m.age !== 'number') return null;
-    if (!m.ageAsOf) return m.age;
-    const [y, mo, d] = m.ageAsOf.split('-').map(Number);
-    let years = today.getUTCFullYear() - y;
-    const month = today.getUTCMonth() + 1;
-    if (month < mo || (month === mo && today.getUTCDate() < d)) years--;
-    return m.age + Math.max(0, years);
-}
+/** Age today: the recorded age plus whole years elapsed since it was recorded (moved to src/domain/households.ts). */
+export { currentAge } from '@/domain/households';
 
 const memberKey = (m: HouseholdMember) =>
     `${m.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()}|${m.relationship ?? ''}`;

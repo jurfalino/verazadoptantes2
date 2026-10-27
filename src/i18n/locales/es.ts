@@ -1049,6 +1049,8 @@ export const es = {
         hh_rel_sibling: 'Hermano/a',
         hh_rel_other_relative: 'Otro familiar',
         hh_rel_housemate: 'Conviviente',
+        // «pareja de Pedro»: {rel} is the translated relationship word (adopter.hh_rel_*), lower-cased by the caller when it follows a name.
+        hh_rel_of: '{rel} de {name}',
         hh_gift_recipient: 'Destinatario/a del regalo',
         hh_rel_unknown: 'Desconocida',
         notes: 'Notas',

@@ -16,7 +16,8 @@
  *   `notifyDisputesAfterMerge`: links and corrections follow a merge and
  *   come back on undo (D51); a merge that carries a corrected person back is
  *   a dispute (D48).
- * - `getLinkedSummaries`: the live summaries for a profile page (D46) — the
+ * - `getLinkedSummaries`: the live summaries for a profile page (D46; the read
+ *   helpers live in src/lib/profileSummary.ts, shared with households) — the
  *   host's linked members and the linked profile's «Convive con» rows — with
  *   each profile's contacts masked exactly as `getAdopter` would mask them
  *   for this viewer (same resolver, same flags), never more.
@@ -24,31 +25,27 @@
  * Decisions live in src/domain/householdLinks.ts. D1: no `IN (array)` —
  * one bounded query set per profile, fanned out with Promise.all.
  */
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { adopterHistory, adopters, householdLinkCorrections, householdLinks } from '@/db/schema';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
-import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
 import { deserializeHouseholdMembers, serializeHouseholdMembers, type HouseholdMember } from '@/lib/householdMembers';
 import { casAdopterLists } from '@/lib/adopterListCas';
 import { runBatch } from '@/lib/dbBatch';
 import { historyKindFor } from '@/lib/profilePrivilege';
-import { maskContactEntries, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
-import { isPiiGatingEnabled, isPublicProfilesEnabled, maskOptionsFor, resolveAdoptersVisibility } from '@/lib/piiAccessServer';
+import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility } from '@/lib/piiAccessServer';
+import { EMPTY_COUNTS, countsFor, namesFor, viewerContacts } from '@/lib/profileSummary';
 import { notificationContent } from '@/domain/notificationTemplates';
-import { RECORD_TYPES } from '@/domain/constants';
 import { realOwner } from '@/domain/dedupPair';
 import {
     EMPTY_LINKED_SUMMARIES,
     MAX_LINKED_SUMMARIES,
     MAX_LINK_ROWS,
     canReportNotLivingTogether,
-    countOpenAlerts,
     isLiveLink,
     linkNoticeRecipients,
     personLabel,
-    summaryContacts,
     type LinkedSummaries,
     type LinkedSummary,
     type LivesWithRow,
@@ -115,19 +112,6 @@ export async function deleteHouseholdLink(
     });
     logger.info('householdLinks: member removed by the host, linked profile history written', { ...ctx, linkedId: linked.id });
     return linked.id;
-}
-
-/** Display names keyed by the email as stored; a lookup failure falls back to handles. */
-async function namesFor(emails: Array<string | null | undefined>, ctx: Record<string, unknown>): Promise<Record<string, string>> {
-    const real = [...new Set(emails.map(e => realOwner(e ?? null)).filter((e): e is string => !!e))];
-    if (real.length === 0) return {};
-    try {
-        const { resolveUserNames } = await import('@/app/actions/userNames');
-        return await resolveUserNames(real);
-    } catch (e) {
-        logger.warn('householdLinks: name lookup failed, showing handles', { ...ctx, error: errMsg(e) });
-        return {};
-    }
 }
 
 /**
@@ -564,63 +548,6 @@ async function liveProfile(db: Db, id: string, ctx: Record<string, unknown>): Pr
     }
 }
 
-type Counts = { rating: number | null; openAlerts: number; adoptions: number; records: number };
-
-/**
- * Rating (same source as the profile page: AVG over the adoptions view), open
- * alerts, adoptions and records — ONE query per profile (scalar subqueries,
- * the id bound as a parameter). Flags come back as a JSON array so the open-alert rule stays in
- * src/domain (countOpenAlerts), not in SQL. A failure degrades to an empty
- * summary line and is logged.
- */
-async function countsFor(db: Db, id: string, ctx: Record<string, unknown>): Promise<Counts> {
-    type Raw = { avg: number | null; adopted: number | null; records: number | null; flags: string | null };
-    let raw: Raw | undefined;
-    try {
-        // `await` whether the driver returns a promise (D1) or a value (better-sqlite3 in dev/tests).
-        raw = await db.select({
-            avg: sql<number | null>`(SELECT AVG(rating) FROM adoptions WHERE adopter_id = ${id})`,
-            adopted: sql<number>`(SELECT COUNT(*) FROM placements WHERE adopter_id = ${id} AND record_type = ${RECORD_TYPES.ADOPTION})`,
-            records: sql<number>`(SELECT COUNT(*) FROM adopter_events WHERE adopter_id = ${id})`,
-            flags: sql<string | null>`(SELECT json_group_array(json_object('reason', reason, 'targetAdopterId', target_adopter_id, 'details', details)) FROM adopter_flags WHERE adopter_id = ${id})`,
-        }).from(adopters).where(eq(adopters.id, id)).get() as Raw | undefined;
-    } catch (e) {
-        logger.warn('householdLinks: counts D1 fallback hit', { ...ctx, profileId: id, error: errMsg(e) });
-        return { rating: null, openAlerts: 0, adoptions: 0, records: 0 };
-    }
-    let flags: Array<{ reason?: string | null; targetAdopterId?: string | null; details?: string | null }> = [];
-    try {
-        const parsed: unknown = JSON.parse(raw?.flags || '[]');
-        if (Array.isArray(parsed)) flags = parsed;
-    } catch (e) {
-        logger.warn('householdLinks: unreadable flags, no alerts counted', { ...ctx, profileId: id, error: errMsg(e) });
-    }
-    const avg = raw?.avg ?? null;
-    return {
-        rating: avg == null ? null : Number(avg),
-        openAlerts: countOpenAlerts(flags.map(f => ({ adopterId: id, ...f }))),
-        adoptions: Number(raw?.adopted ?? 0),
-        records: Number(raw?.records ?? 0),
-    };
-}
-
-/** Contacts as this viewer may see them on that profile — the same rule getAdopter applies. */
-function viewerContacts(
-    p: ProfileRow,
-    gatingOn: boolean,
-    publicFlag: boolean,
-    visibility: Visibility | undefined,
-): { contacts: LinkedSummary['contacts']; more: number; canSeeContact: boolean } {
-    const parsed = deserializeContactEntries(p.contactEntries);
-    const source = parsed.length > 0 ? parsed : parseBlobToContactEntries(p.contactInfo);
-    const opts = maskOptionsFor(publicFlag, p);
-    const fully = !gatingOn || !!opts.adopterIsPublic || !!visibility?.nothingMasked;
-    // No verdict (the resolver failed) masks everything: fail closed.
-    const entries = fully ? source : maskContactEntries(source, visibility ?? NO_ACCESS_VISIBILITY, opts).entries;
-    const { shown, more } = summaryContacts(entries);
-    return { contacts: shown, more, canSeeContact: fully };
-}
-
 /**
  * Live summaries for the profile page of `adopterId`, as `viewer` may see them:
  * - `members`: for each of this profile's household members linked to a
@@ -725,7 +652,7 @@ export async function getLinkedSummaries(
         ], ctx);
 
         const summarize = (p: ProfileRow, linkId: string, viewerOnLinkedTeam: boolean): LinkedSummary => {
-            const c = countMap.get(p.id) ?? { rating: null, openAlerts: 0, adoptions: 0, records: 0 };
+            const c = countMap.get(p.id) ?? EMPTY_COUNTS;
             const { contacts, more, canSeeContact } = viewerContacts(p, gatingOn, publicFlag, visibilities.get(p.id));
             return {
                 linkId,

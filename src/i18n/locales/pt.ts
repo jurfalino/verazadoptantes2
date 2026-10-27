@@ -1049,6 +1049,8 @@ export const pt = {
         hh_rel_sibling: 'Irmão/ã',
         hh_rel_other_relative: 'Outro familiar',
         hh_rel_housemate: 'Convivente',
+        // «parceiro/a de Pedro»: {rel} is the translated relationship word (adopter.hh_rel_*).
+        hh_rel_of: '{rel} de {name}',
         hh_gift_recipient: 'Destinatário/a do presente',
         hh_rel_unknown: 'Desconhecida',
         notes: 'Notas',
