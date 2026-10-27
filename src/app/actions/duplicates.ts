@@ -22,6 +22,7 @@ import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdminAsync } from '@/config/admins';
 import { addHouseholdMember } from './householdMembers';
 import { sharesHomeSql } from '@/lib/housemateSql';
+import { MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
 
 /**
  * Attach a just-signed contract's adoption to an existing matched adopter profile,
@@ -871,6 +872,9 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
         }
 
         const result = await mergeAdopters(primaryId, secondaryId, actor);
+        // The kept profile is a minor and the other has records or alerts: the
+        // row can be combined keeping the other profile (Task 6 ruling).
+        if (!result.success && result.error === MINOR_SURVIVOR_HAS_ACTIVITY) return refuse(MINOR_SURVIVOR_HAS_ACTIVITY);
         if (!result.success) {
             const errorId = logger.error('mergePendingDedupPair: merge failed', new Error(result.error ?? 'merge failed'), {
                 candidateId, actorEmail, primaryId, secondaryId,

@@ -1,7 +1,7 @@
 /**
  * Linked convivientes (spec 2026-10-25 pendientes D, D44–D46, D48, D51). Real
  * SQL, real addHouseholdMember / removeHouseholdMember / reportNotLivingTogether,
- * the real mergeAdopters / unmergeAdopters and the real visibility resolver;
+ * the real unmergeAdopters (old-shape merge payloads) and the real visibility resolver;
  * the session is the only source of the actor.
  * STRANGER owns the host profile; OWNER (team: MATE) owns the linked profile.
  */
@@ -14,7 +14,7 @@ import * as mocks from '@/test-utils/actionMocks';
 const { session, OWNER, MATE, STRANGER, ADMIN } = mocks;
 
 const { state, notify, faults } = vi.hoisted(() => ({
-    faults: { casBusy: false, beforeCas: null as null | (() => void), beforeMergeCas: null as null | (() => void), failReassign: false },
+    faults: { casBusy: false, beforeCas: null as null | (() => void) },
     state: { db: null as unknown },
     notify: { create: [] as Array<Record<string, unknown>>, admins: [] as Array<Record<string, unknown>> },
 }));
@@ -31,8 +31,8 @@ vi.mock('@/config/features', async (orig) => ({
     ...(await orig()),
     getFeatureFlag: vi.fn(async (flag: string) => flag === 'ENABLE_PII_ACCESS_GATING'),
 }));
-// Fault injection for «No convive»'s CAS (busy; someone removed the member first)
-// and for a merge failing after it moved the links. Everything else is real.
+// Fault injection for «No convive»'s CAS (busy; someone removed the member first).
+// Everything else is real.
 vi.mock('@/lib/adopterListCas', async (orig) => {
     const real = await orig<typeof import('@/lib/adopterListCas')>();
     return {
@@ -43,20 +43,7 @@ vi.mock('@/lib/adopterListCas', async (orig) => {
                 if (faults.casBusy) return { status: 'busy', errorId: 'busy1234' };
                 const hook = faults.beforeCas; faults.beforeCas = null; hook?.();
             }
-            if (ctx?.op === 'mergeAdopters') {
-                const hook = faults.beforeMergeCas; faults.beforeMergeCas = null; hook?.();
-            }
             return real.casAdopterLists(...args);
-        }),
-    };
-});
-vi.mock('@/app/actions/_recordWrite', async (orig) => {
-    const real = await orig<typeof import('@/app/actions/_recordWrite')>();
-    return {
-        ...real,
-        reassignAdopterRecords: vi.fn(async (...args: Parameters<typeof real.reassignAdopterRecords>) => {
-            if (faults.failReassign) throw new Error('injected: re-point failed');
-            return real.reassignAdopterRecords(...args);
         }),
     };
 });
@@ -77,7 +64,7 @@ vi.mock('@/lib/logger', () => ({
 
 import { addHouseholdMember, removeHouseholdMember } from './householdMembers';
 import { reportNotLivingTogether } from './householdLinks';
-import { mergeAdopters, unmergeAdopters } from '@/lib/adopterMerge';
+import { unmergeAdopters } from '@/lib/adopterMerge';
 import { getLinkedSummaries, recordHouseholdLink } from '@/lib/householdLinks';
 import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
@@ -99,7 +86,7 @@ beforeEach(() => {
     sqlite = m.sqlite as unknown as typeof sqlite;
     notify.create.length = 0;
     notify.admins.length = 0;
-    Object.assign(faults, { casBusy: false, beforeCas: null, beforeMergeCas: null, failReassign: false });
+    Object.assign(faults, { casBusy: false, beforeCas: null });
     vi.mocked(tokenizeAdopter).mockClear();
     session.user = STRANGER;
     sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, contact_entries) VALUES
@@ -417,80 +404,6 @@ describe('«No convive» (D48): a correction of the fact for everyone', () => {
     });
 });
 
-describe('links follow merges (D51)', () => {
-    beforeEach(() => {
-        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
-            ('host2', 'Pedro A. Paez', '5', ?, 500, 500),
-            ('linked2', 'Jonathan U.', '5', ?, 600, 600)`).run(STRANGER, OWNER);
-    });
-
-    it('the host merged into another profile: the member summary and «Convive con» follow the survivor; undo puts them back', async () => {
-        await link();
-        const merged = await mergeAdopters('host2', 'host', ADMIN);
-        expect(merged.success).toBe(true);
-
-        const survivor = await getLinkedSummaries(STRANGER, 'host2');
-        const [memberId] = Object.keys(survivor.members);
-        expect(survivor.members[memberId]).toMatchObject({ profileId: 'linked', name: 'Jonathan Urfalino' });
-        expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host2', linked_adopter_id: 'linked', member_id: memberId })]);
-        expect((await getLinkedSummaries(OWNER, 'linked')).livesWith.map(r => r.profileId)).toEqual(['host2']);
-
-        expect((await unmergeAdopters(merged.auditId!, ADMIN)).success).toBe(true);
-        expect((await getLinkedSummaries(STRANGER, 'host2')).members).toEqual({});
-        const back = await getLinkedSummaries(STRANGER, 'host');
-        expect(Object.values(back.members).map(s => s.profileId)).toEqual(['linked']);
-        expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host', member_id: hostMembers()[0].id })]);
-        expect((await getLinkedSummaries(OWNER, 'linked')).livesWith.map(r => r.profileId)).toEqual(['host']);
-    });
-
-    it('the linked profile merged into another: both sides show the survivor; undo puts them back', async () => {
-        const memberId = await link();
-        const merged = await mergeAdopters('linked2', 'linked', ADMIN);
-        expect(merged.success).toBe(true);
-
-        expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked2', member_id: memberId })]);
-        expect((await getLinkedSummaries(STRANGER, 'host')).members[memberId]).toMatchObject({ profileId: 'linked2' });
-        expect((await getLinkedSummaries(OWNER, 'linked2')).livesWith.map(r => r.profileId)).toEqual(['host']);
-
-        expect((await unmergeAdopters(merged.auditId!, ADMIN)).success).toBe(true);
-        expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked', member_id: memberId })]);
-        expect((await getLinkedSummaries(STRANGER, 'host')).members[memberId]).toMatchObject({ profileId: 'linked' });
-        expect((await getLinkedSummaries(OWNER, 'linked')).livesWith.map(r => r.profileId)).toEqual(['host']);
-        expect((await getLinkedSummaries(OWNER, 'linked2')).livesWith).toEqual([]);
-    });
-
-    it('after the linked profile is merged, its survivor owner can say «No convive»', async () => {
-        await link();
-        expect((await mergeAdopters('linked2', 'linked', ADMIN)).success).toBe(true);
-        expect((await getLinkedSummaries(OWNER, 'linked2')).livesWith[0].canReportNotLiving).toBe(true);
-        expect(await as(OWNER, () => reportNotLivingTogether(links()[0].id as string))).toEqual({ success: true });
-        expect(hostMembers()).toEqual([]);
-        expect(corrections()).toEqual([{ host_adopter_id: 'host', linked_adopter_id: 'linked2', corrected_by: OWNER }]);
-    });
-
-    it('merging the host with the person it lists moves no link onto itself', async () => {
-        await link();
-        expect((await mergeAdopters('linked', 'host', ADMIN)).success).toBe(true);
-        expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked' })]);
-        expect(await getLinkedSummaries(OWNER, 'linked')).toEqual({ members: {}, livesWith: [] });
-    });
-
-    it('(M2) the survivor never lists itself as a conviviente; undo gives the absorbed host its member back', async () => {
-        const other = await addHouseholdMember({ adopterId: 'host', name: 'Ana', relationship: 'sibling' });
-        if (!other.ok) throw new Error(other.error);
-        const memberId = await link();
-        const merged = await mergeAdopters('linked', 'host', ADMIN);
-        expect(merged.success).toBe(true);
-        const survivorMembers = JSON.parse((sqlite.prepare(`SELECT household_members FROM adopters WHERE id = 'linked'`).get()!.household_members as string) || '[]') as Array<Record<string, unknown>>;
-        expect(survivorMembers.map(m => m.name)).toEqual(['Ana']);
-        expect(survivorMembers.some(m => m.profileId === 'linked')).toBe(false);
-        expect((await unmergeAdopters(merged.auditId!, ADMIN)).success).toBe(true);
-        expect(hostMembers().map(m => m.id)).toEqual([other.memberId, memberId]);
-        expect(links()).toEqual([expect.objectContaining({ id: `hl-host-${memberId}`, host_adopter_id: 'host', linked_adopter_id: 'linked' })]);
-        expect(JSON.parse((sqlite.prepare(`SELECT household_members FROM adopters WHERE id = 'linked'`).get()!.household_members as string) || '[]')).toEqual([]);
-    });
-});
-
 describe('«No convive» — writes and races (review round 1)', () => {
     it('the correction keeps the removed member as it was, so an admin can put it back', async () => {
         const memberId = await link();
@@ -527,153 +440,104 @@ describe('«No convive» — writes and races (review round 1)', () => {
     });
 });
 
-describe('corrections follow merges (review round 1)', () => {
+/**
+ * Merges recorded BEFORE households as profiles carried the household JSON and
+ * moved household_links / corrections (D51); since Task 6 a merge moves only
+ * memberships (src/lib/householdMerge.test.ts). Their audit rows still carry the
+ * old undo payload, and undo must still reverse it. `oldShapeMerge` writes the
+ * state such a merge left: the survivor's JSON with the copied member, the moved
+ * link / correction rows, the absorbed profile soft-deleted, the audit row.
+ */
+describe('undo of a merge recorded before households as profiles (old payload)', () => {
     beforeEach(() => {
         sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
-            ('host2', 'Pedro A. Paez', '5', ?, 500, 500),
-            ('linked2', 'Jonathan U.', '5', ?, 600, 600)`).run(STRANGER, OWNER);
+            ('host2', 'Pedro A. Paez', '5', ?, 500, 500)`).run(STRANGER);
     });
-    const correct = async () => {
+    const survivorMembers = () => JSON.parse((sqlite.prepare(`SELECT household_members FROM adopters WHERE id = 'host2'`).get()!.household_members as string) || '[]') as Array<Record<string, unknown>>;
+
+    function oldShapeMerge(o: { survivorMembersAfter: unknown[]; undo: Record<string, unknown> }): string {
+        const snap = sqlite.prepare(`SELECT contact_info, contact_entries, address_info, family_members, source_url, is_public FROM adopters WHERE id = 'host2'`).get()!;
+        sqlite.prepare(`UPDATE adopters SET household_members = ? WHERE id = 'host2'`).run(JSON.stringify(o.survivorMembersAfter));
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 5000, token_hash = 'MERGED' WHERE id = 'host'`).run();
+        const undo = {
+            primarySnapshot: {
+                contactInfo: snap.contact_info, contactEntries: snap.contact_entries, addressInfo: snap.address_info,
+                familyMembers: snap.family_members, sourceUrl: snap.source_url, isPublic: snap.is_public,
+            },
+            placementIds: [], adopterEventIds: [], imageIds: [], flagIds: [], historyIds: [], statsIds: [], formSubmissionIds: [],
+            candidates: [], annotatedFlags: [],
+            ...o.undo,
+        };
+        sqlite.prepare(`INSERT INTO audit_log (id, user_id, user_email, action, target, details, created_at) VALUES ('audit-old', ?, ?, 'adopter_merge', 'host2', ?, 5000)`)
+            .run(ADMIN, ADMIN, JSON.stringify({ primaryId: 'host2', secondaryId: 'host', secondaryName: 'Pedro Paez', mergeDetails: {}, undo }));
+        return 'audit-old';
+    }
+
+    it('the host merged into another profile (D51): undo takes the copied member off the survivor and puts the link back on the host', async () => {
+        const memberId = await link();
+        const [member] = hostMembers();
+        // A member the survivor had of its own, which that merge enriched (gift mark + a phone).
+        const own = { id: 'own-ana', name: 'Ana', relationship: 'sibling', contactEntries: [{ id: 'c-own', type: 'phone', value: '+54 11 4000 0000' }] };
+        sqlite.prepare(`UPDATE adopters SET household_members = ? WHERE id = 'host2'`).run(JSON.stringify([own]));
+        const copied = { ...member, id: 'copied-1' };
+        const enriched = { ...own, giftRecipient: true, contactEntries: [...own.contactEntries, { id: 'c-carried', type: 'phone', value: '+54 11 4000 1111' }] };
+        sqlite.prepare(`UPDATE household_links SET host_adopter_id = 'host2', member_id = 'copied-1' WHERE id = ?`).run(`hl-host-${memberId}`);
+        const auditId = oldShapeMerge({
+            survivorMembersAfter: [enriched, copied],
+            undo: {
+                addedHouseholdMemberIds: ['copied-1'],
+                enrichedHouseholdMembers: [{ memberId: 'own-ana', contactIds: ['c-carried'], giftRecipient: true }],
+                householdLinks: [{ id: `hl-host-${memberId}`, hostAdopterId: 'host', linkedAdopterId: 'linked', memberId }],
+                householdLinkCorrections: [],
+            },
+        });
+
+        expect((await unmergeAdopters(auditId, ADMIN)).success).toBe(true);
+        expect(survivorMembers()).toEqual([own]);
+        expect(hostMembers().map(m => m.id)).toEqual([memberId]);
+        expect(links()).toEqual([expect.objectContaining({ id: `hl-host-${memberId}`, host_adopter_id: 'host', linked_adopter_id: 'linked', member_id: memberId })]);
+        expect((await getLinkedSummaries(OWNER, 'linked')).livesWith.map(r => r.profileId)).toEqual(['host']);
+        // Nothing was written to the new tables for an old merge.
+        expect(sqlite.prepare('SELECT COUNT(*) AS n FROM household_memberships').get()!.n).toBe(0);
+    });
+
+    it('a correction that merge moved goes back; one made on the survivor afterwards stays; a link removed since is written again (I1)', async () => {
         await link();
         expect(await as(OWNER, () => reportNotLivingTogether(links()[0].id as string))).toEqual({ success: true });
-        notify.create.length = 0;
-        notify.admins.length = 0;
-    };
+        const memberId = await link(); // the host team re-adds the person
+        const [member] = hostMembers();
+        const [correctionRow] = sqlite.prepare('SELECT id FROM household_link_corrections').all();
+        // The old merge moved the link and the correction onto host2…
+        sqlite.prepare(`UPDATE household_links SET host_adopter_id = 'host2', member_id = 'copied-1' WHERE id = ?`).run(`hl-host-${memberId}`);
+        sqlite.prepare(`UPDATE household_link_corrections SET host_adopter_id = 'host2' WHERE id = ?`).run(correctionRow.id);
+        const auditId = oldShapeMerge({
+            survivorMembersAfter: [{ ...member, id: 'copied-1' }],
+            undo: {
+                addedHouseholdMemberIds: ['copied-1'],
+                householdLinks: [{ id: `hl-host-${memberId}`, hostAdopterId: 'host', linkedAdopterId: 'linked', memberId }],
+                householdLinkCorrections: [{ id: correctionRow.id, hostAdopterId: 'host', linkedAdopterId: 'linked' }],
+            },
+        });
+        // …and after it the linked team said «No convive» again on the survivor.
+        sqlite.prepare(`DELETE FROM household_links`).run();
+        sqlite.prepare(`INSERT INTO household_link_corrections (id, host_adopter_id, linked_adopter_id, member_id, corrected_by, created_at) VALUES ('later', 'host2', 'linked', 'copied-1', ?, 9999999999)`).run(OWNER);
+        const notices = { admins: notify.admins.length, create: notify.create.length };
 
-    it('(a) a re-add on the survivor finds the correction made on the absorbed profile — host side and linked side', async () => {
-        await correct();
-        expect((await mergeAdopters('host2', 'host', ADMIN)).success).toBe(true);
-        expect(corrections()).toEqual([expect.objectContaining({ host_adopter_id: 'host2', linked_adopter_id: 'linked' })]);
-        expect(notify.admins).toEqual([]); // nothing carried back: no dispute
-        const res = await addHouseholdMember({ adopterId: 'host2', name: 'Jonathan Urfalino', relationship: 'unknown', profileId: 'linked' });
-        expect(res.ok).toBe(true);
-        expect(notify.admins).toEqual([expect.objectContaining({ type: 'household_link_disputed', url: '/adopter/host2' })]);
-
-        notify.admins.length = 0;
-        expect((await mergeAdopters('linked2', 'linked', ADMIN)).success).toBe(true);
-        expect(corrections()).toEqual([expect.objectContaining({ host_adopter_id: 'host2', linked_adopter_id: 'linked2' })]);
-    });
-
-    it('(a, linked side) the corrected person merged into another profile: re-adding the survivor is a dispute', async () => {
-        await correct();
-        expect((await mergeAdopters('linked2', 'linked', ADMIN)).success).toBe(true);
-        expect(corrections()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked2' })]);
-        await addHouseholdMember({ adopterId: 'host', name: 'Jonathan U.', relationship: 'unknown', profileId: 'linked2' });
-        expect(notify.admins).toEqual([expect.objectContaining({ type: 'household_link_disputed', metadata: expect.objectContaining({ hostId: 'host', linkedId: 'linked2' }) })]);
-    });
-
-    it('(b) a merge that carries the person back onto the corrected host keeps the link and tells the admins', async () => {
-        await correct();
-        // A duplicate host profile still lists the person.
-        const dup = await addHouseholdMember({ adopterId: 'host2', name: 'Jonathan Urfalino', relationship: 'unknown', profileId: 'linked' });
-        if (!dup.ok) throw new Error(dup.error);
-        notify.admins.length = 0;
-        expect((await mergeAdopters('host', 'host2', ADMIN)).success).toBe(true);
-        expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked' })]);
-        expect(Object.values((await getLinkedSummaries(STRANGER, 'host')).members).map(m => m.profileId)).toEqual(['linked']);
-        expect(notify.admins).toEqual([expect.objectContaining({
-            actorEmail: ADMIN, type: 'household_link_disputed', url: '/adopter/host',
-            metadata: expect.objectContaining({ hostId: 'host', linkedId: 'linked' }),
-        })]);
-        expect(notify.admins[0].body).toContain('combinar');
-    });
-
-    it('(b, other direction) the corrected host absorbed into the duplicate that still lists the person: also a dispute', async () => {
-        await correct();
-        await addHouseholdMember({ adopterId: 'host2', name: 'Jonathan Urfalino', relationship: 'unknown', profileId: 'linked' });
-        notify.admins.length = 0;
-        expect((await mergeAdopters('host2', 'host', ADMIN)).success).toBe(true);
-        expect(corrections()).toEqual([expect.objectContaining({ host_adopter_id: 'host2', linked_adopter_id: 'linked' })]);
-        expect(notify.admins).toEqual([expect.objectContaining({ type: 'household_link_disputed', url: '/adopter/host2' })]);
-    });
-
-    it('(c) undo: a correction from before the merge goes back; one made after stays on the survivor; the absorbed host gets its own member back', async () => {
-        await correct(); // correction #1 on (host, linked), before the merge
-        await link(); // the host team re-adds the person (a dispute already)
-        const original = hostMembers();
-        const merged = await mergeAdopters('host2', 'host', ADMIN);
-        expect(merged.success).toBe(true);
-        // After the merge, the linked team corrects it again — on the survivor.
-        expect(await as(OWNER, () => reportNotLivingTogether(links()[0].id as string))).toEqual({ success: true });
-        expect(corrections().map(c => c.host_adopter_id)).toEqual(['host2', 'host2']);
-
-        const noticesBeforeUndo = { admins: notify.admins.length, create: notify.create.length };
-        expect((await unmergeAdopters(merged.auditId!, ADMIN)).success).toBe(true);
+        expect((await unmergeAdopters(auditId, ADMIN)).success).toBe(true);
         expect(corrections()).toEqual([
             expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked' }),
             expect.objectContaining({ host_adopter_id: 'host2', linked_adopter_id: 'linked' }),
         ]);
-        // The absorbed host keeps its own, unchanged member; no extra correction is made for it.
-        expect(hostMembers()).toEqual(original);
-        // ...and its link (I1): the post-merge «No convive» deleted the moved row, so undo writes it again.
-        const [member] = original;
-        expect(links()).toEqual([expect.objectContaining({
-            id: `hl-host-${member.id}`, host_adopter_id: 'host', linked_adopter_id: 'linked', member_id: member.id, created_by: STRANGER,
-        })]);
-        expect((await getLinkedSummaries(OWNER, 'linked')).livesWith).toEqual([expect.objectContaining({ profileId: 'host', canReportNotLiving: true })]);
-        // A restore, not a new link: nobody is told.
-        expect({ admins: notify.admins.length, create: notify.create.length }).toEqual(noticesBeforeUndo);
-        // ...so the linked team can correct it on the restored host too.
-        expect(await as(OWNER, () => reportNotLivingTogether(`hl-host-${member.id}`))).toEqual({ success: true });
-        expect(hostMembers()).toEqual([]);
-        expect(links()).toEqual([]);
-    });
-
-    it('(c, I1) undo after the survivor team removed the landed member: the absorbed host gets its link back', async () => {
-        const memberId = await link();
-        const merged = await mergeAdopters('host2', 'host', ADMIN);
-        expect(merged.success).toBe(true);
-        const [moved] = links();
-        expect(moved).toMatchObject({ host_adopter_id: 'host2' });
-        expect(await removeHouseholdMember({ adopterId: 'host2', memberId: moved.member_id as string })).toEqual({ ok: true });
-        expect(links()).toEqual([]);
-
-        expect((await unmergeAdopters(merged.auditId!, ADMIN)).success).toBe(true);
         expect(hostMembers().map(m => m.id)).toEqual([memberId]);
-        expect(links()).toEqual([expect.objectContaining({ id: `hl-host-${memberId}`, host_adopter_id: 'host', linked_adopter_id: 'linked', member_id: memberId })]);
-        expect((await getLinkedSummaries(OWNER, 'linked')).livesWith.map(r => r.profileId)).toEqual(['host']);
-        expect(Object.values((await getLinkedSummaries(STRANGER, 'host')).members).map(s => s.profileId)).toEqual(['linked']);
+        expect(links()).toEqual([expect.objectContaining({ id: `hl-host-${memberId}`, host_adopter_id: 'host', linked_adopter_id: 'linked', member_id: memberId, created_by: STRANGER })]);
+        // A restore, not a new link: nobody is told.
+        expect({ admins: notify.admins.length, create: notify.create.length }).toEqual(notices);
     });
 
-    it('(I1) undo never links a profileId planted in the JSON without a link', async () => {
-        sqlite.prepare(`UPDATE adopters SET household_members = ? WHERE id = 'host'`).run(JSON.stringify([{ id: 'planted', name: 'X', profileId: 'linked' }]));
-        const merged = await mergeAdopters('host2', 'host', ADMIN);
-        expect(merged.success).toBe(true);
-        expect((await unmergeAdopters(merged.auditId!, ADMIN)).success).toBe(true);
-        expect(links()).toEqual([]);
-    });
-
-    it('a merge failing after it moved the links puts the links and corrections back', async () => {
-        await correct();
-        const memberId = await link();
-        faults.failReassign = true;
-        const res = await mergeAdopters('host2', 'host', ADMIN);
-        expect(res.success).toBe(false);
-        expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked', member_id: memberId })]);
-        expect(corrections()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked' })]);
-        expect(sqlite.prepare(`SELECT deleted_at FROM adopters WHERE id = 'host'`).get()!.deleted_at).toBeNull();
-        expect(notify.admins.filter(n => (n.body as string).includes('combinar'))).toEqual([]);
-    });
-
-    it('(M4) a failed merge re-tokenizes the profile it gives back instead of trusting its old token hash', async () => {
-        sqlite.prepare(`UPDATE adopters SET token_hash = 'old-hash' WHERE id = 'host'`).run();
-        faults.failReassign = true;
-        expect((await mergeAdopters('host2', 'host', ADMIN)).success).toBe(false);
-        expect(sqlite.prepare(`SELECT deleted_at, token_hash FROM adopters WHERE id = 'host'`).get()).toEqual({ deleted_at: null, token_hash: null });
-        expect(vi.mocked(tokenizeAdopter)).toHaveBeenCalledWith('host');
-    });
-
-    it('(M3) the survivor merged away meanwhile (S→P while P→Q): nothing written onto it, the absorbed profile comes back', async () => {
-        await link();
-        const before = sqlite.prepare(`SELECT household_members, contact_entries FROM adopters WHERE id = 'host2'`).get();
-        faults.beforeMergeCas = () => {
-            sqlite.prepare(`UPDATE adopters SET deleted_at = 9000, token_hash = 'MERGED' WHERE id = 'host2'`).run();
-        };
-        const res = await mergeAdopters('host2', 'host', ADMIN);
-        expect(res).toMatchObject({ success: false, error: expect.stringContaining('Merge failed') });
-        expect(sqlite.prepare(`SELECT household_members, contact_entries FROM adopters WHERE id = 'host2'`).get()).toEqual(before);
-        expect(sqlite.prepare(`SELECT deleted_at FROM adopters WHERE id = 'host'`).get()!.deleted_at).toBeNull();
-        expect(links()).toEqual([expect.objectContaining({ host_adopter_id: 'host', linked_adopter_id: 'linked' })]);
-        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action = 'adopter_merge'`).get()!.n).toBe(0);
+    it('a second undo of the same old merge is refused', async () => {
+        const auditId = oldShapeMerge({ survivorMembersAfter: [], undo: { addedHouseholdMemberIds: [], householdLinks: [], householdLinkCorrections: [] } });
+        expect((await unmergeAdopters(auditId, ADMIN)).success).toBe(true);
+        expect(await unmergeAdopters(auditId, ADMIN)).toMatchObject({ success: false, error: 'This merge was already undone' });
     });
 });
+

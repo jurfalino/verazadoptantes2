@@ -1770,6 +1770,7 @@ export const es = {
         pending_d_err_declined_before: 'Ya te rechazaron este pedido. Podés escribirle o pedir revisión a un administrador.',
         pending_d_err_request_pending: 'Ya hay un pedido abierto sobre estos perfiles. Actualizamos la lista.',
         pending_d_err_keep_not_allowed: 'Ese perfil ya no se puede conservar. Actualizamos la lista.',
+        pending_d_err_minor_survivor: 'No se puede conservar el perfil de un menor de edad: el otro tiene registros o alertas, que van en un adulto. Elegí conservar el otro perfil.',
         pending_d_err_identity_not_applicable: 'Estos perfiles cambiaron. Actualizamos la lista.',
         // Source attribution pill (v2.14.10-20)
         source_form: 'Formulario',

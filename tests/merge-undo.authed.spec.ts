@@ -25,6 +25,11 @@ const NAME_A = 'MassMergeFixture Alpha';
 const NAME_B = 'MassMergeFixture Beta';
 const NAME_C = 'MassMergeFixture Gamma';
 const CAND_AB = 'test-cand-massmerge-ab';
+const T = 'test-massmerge-fixture-tomas';
+const M = 'test-massmerge-fixture-marta';
+const L = 'test-massmerge-fixture-laura';
+const HH_B = 'test-hh-massmerge-b';
+const HH_M = 'test-hh-massmerge-m';
 const CAND_BC = 'test-cand-massmerge-bc';
 
 function execD1(sql: string): string {
@@ -77,12 +82,33 @@ test.describe('Duplicate mass-merge and undo', () => {
         // survivor (public status travels with the absorbed evidence), and
         // undo must take it back off.
         execD1(`UPDATE adopters SET is_public = 1 WHERE id = '${B}'`);
-        // B lists a household member (e.g. from an adoption form): the merge
-        // must carry it onto A, and undo must take it back off.
-        // B also knows Marta (A has her too) as a gift recipient with a phone A
-        // lacks: the merge must add the mark and phone to A's Marta, undo remove them.
-        execD1(`UPDATE adopters SET household_members = '[{"id":"hm-b","name":"Tomás López","relationship":"child","contactEntries":[],"age":7,"ageAsOf":"2026-10-04"},{"id":"hm-b2","name":"Marta Gil","relationship":"sibling","giftRecipient":true,"contactEntries":[{"id":"ce-marta-b","type":"phone","value":"11 5555 9876"}]}]' WHERE id = '${B}'`);
-        execD1(`UPDATE adopters SET household_members = '[{"id":"hm-a-marta","name":"Marta Gil","relationship":"sibling","contactEntries":[]}]' WHERE id = '${A}'`);
+        // Households as profiles: B's own household holds Tomás (his son, a
+        // profile). The merge must move B's membership onto A (Tomás now «hijo
+        // de A»), and undo must give it back to B.
+        // A and B both live in Marta's household (B's row carries a form's
+        // source key): they collapse into A's one row, which keeps the key; undo
+        // puts B's row back exactly.
+        seedAdopter(T, 'MassMergeFixture Tomas', 'tomas-contact');
+        seedAdopter(M, 'MassMergeFixture Marta', 'marta-contact');
+        seedAdopter(L, 'MassMergeFixture Laura', 'laura-contact');
+        execD1(`DELETE FROM household_memberships WHERE household_id IN ('${HH_B}', '${HH_M}')`);
+        execD1(`INSERT OR REPLACE INTO households (id, created_by, created_at) VALUES ('${HH_B}', NULL, 1000), ('${HH_M}', NULL, 1000)`);
+        execD1(
+            `INSERT INTO household_memberships (id, household_id, adopter_id, relationship, relative_to_adopter_id, gift_recipient, added_by, added_at, source_key) VALUES ` +
+            `('test-hm-mm-b', '${HH_B}', '${B}', 'unknown', NULL, 0, NULL, 1000, NULL), ` +
+            `('test-hm-mm-t', '${HH_B}', '${T}', 'child', '${B}', 0, 'gatitosolivos@gmail.com', 1001, NULL), ` +
+            `('test-hm-mm-m', '${HH_M}', '${M}', 'unknown', NULL, 0, NULL, 1000, NULL), ` +
+            `('test-hm-mm-ma', '${HH_M}', '${A}', 'sibling', '${M}', 0, 'gatitosolivos@gmail.com', 1001, NULL), ` +
+            `('test-hm-mm-mb', '${HH_M}', '${B}', 'sibling', '${M}', 0, 'gatitosolivos@gmail.com', 1002, 'test-massmerge-key')`,
+        );
+        const membershipRows = () => parseD1Rows(execD1(
+            `SELECT id, household_id, adopter_id, relative_to_adopter_id, source_key FROM household_memberships WHERE household_id IN ('${HH_B}', '${HH_M}') ORDER BY id`,
+        )).map(r => ({
+            id: String(r.id), household_id: String(r.household_id), adopter_id: String(r.adopter_id),
+            relative_to_adopter_id: isDbNull(r.relative_to_adopter_id) ? null : String(r.relative_to_adopter_id),
+            source_key: isDbNull(r.source_key) ? null : String(r.source_key),
+        }));
+        const seededMemberships = membershipRows();
 
         // ── Mass-merge B and C into A through the real endpoint (admin session).
         const mergeRes = await page.request.post('/api/admin/duplicates/merge', {
@@ -109,12 +135,14 @@ test.describe('Duplicate mass-merge and undo', () => {
         }
 
         const survivor = parseD1Rows(execD1(
-            `SELECT contact_info, contact_entries, deleted_at, is_public, household_members FROM adopters WHERE id = '${A}'`,
+            `SELECT contact_info, contact_entries, deleted_at, is_public FROM adopters WHERE id = '${A}'`,
         ))[0];
-        expect(String(survivor.household_members), 'household members travel with the absorbed profile').toContain('Tomás López');
-        const martaAfterMerge = JSON.parse(String(survivor.household_members)).find((m: { name: string }) => m.name === 'Marta Gil');
-        expect(martaAfterMerge, "A's Marta gains B's gift mark").toMatchObject({ id: 'hm-a-marta', giftRecipient: true });
-        expect(JSON.stringify(martaAfterMerge.contactEntries), "…and B's phone for her").toContain('11 5555 9876');
+        expect(membershipRows(), "B's households move to A: one row per person, Tomás now next to A, the form's key kept").toEqual([
+            { id: 'test-hm-mm-b', household_id: HH_B, adopter_id: A, relative_to_adopter_id: null, source_key: null },
+            { id: 'test-hm-mm-m', household_id: HH_M, adopter_id: M, relative_to_adopter_id: null, source_key: null },
+            { id: 'test-hm-mm-ma', household_id: HH_M, adopter_id: A, relative_to_adopter_id: M, source_key: 'test-massmerge-key' },
+            { id: 'test-hm-mm-t', household_id: HH_B, adopter_id: T, relative_to_adopter_id: A, source_key: null },
+        ]);
         expect(isDbNull(survivor.deleted_at), 'survivor must stay live').toBe(true);
         expect(Number(survivor.is_public), 'public flag travels with absorbed B').toBe(1);
         // Absorbed contact blobs appended; absorbed names carried as aliases.
@@ -133,11 +161,9 @@ test.describe('Duplicate mass-merge and undo', () => {
             expect(row.status, `${row.id} should be resolved by the merge`).toBe('merged');
         }
 
-        // A teammate adds someone to the survivor after the merge: undo must
-        // take back only what the merge brought, never their later edit.
-        const withLaura = JSON.parse(String(parseD1Rows(execD1(`SELECT household_members FROM adopters WHERE id = '${A}'`))[0].household_members));
-        withLaura.push({ id: 'hm-laura', name: 'Laura Ruiz', relationship: 'partner', contactEntries: [] });
-        execD1(`UPDATE adopters SET household_members = '${JSON.stringify(withLaura)}' WHERE id = '${A}'`);
+        // A teammate adds someone to that household after the merge: undo must
+        // take back only what the merge moved, never their later add.
+        execD1(`INSERT INTO household_memberships (id, household_id, adopter_id, relationship, relative_to_adopter_id, gift_recipient, added_by, added_at) VALUES ('test-hm-mm-l', '${HH_B}', '${L}', 'partner', '${A}', 0, 'gatitosolivos@gmail.com', 2000)`);
 
         // ── An absorbed profile's old link lands on the survivor, query kept.
         const redirected = await page.goto(`/adopter/${B}?q=merge-redirect-check`);
@@ -169,15 +195,12 @@ test.describe('Duplicate mass-merge and undo', () => {
         await expect(page).toHaveURL(new RegExp(`/adopter/${B}$`));
 
         const restored = parseD1Rows(execD1(
-            `SELECT contact_info, contact_entries, is_public, household_members FROM adopters WHERE id = '${A}'`,
+            `SELECT contact_info, contact_entries, is_public FROM adopters WHERE id = '${A}'`,
         ))[0];
         expect(restored.contact_info).toBe('alpha-contact-original');
-        expect(String(restored.household_members ?? ''), 'undo takes the absorbed members back off').not.toContain('Tomás López');
-        expect(String(restored.household_members ?? ''), "undo keeps a teammate's later household edit").toContain('Laura Ruiz');
-        const martaAfterUndo = JSON.parse(String(restored.household_members)).find((m: { name: string }) => m.name === 'Marta Gil');
-        expect(martaAfterUndo, "undo leaves A's own Marta").toBeTruthy();
-        expect(martaAfterUndo.giftRecipient, 'undo takes the gift mark back off').toBeUndefined();
-        expect(JSON.stringify(martaAfterUndo.contactEntries), '…and the phone').not.toContain('11 5555 9876');
+        // Every seeded membership exactly as it was; the teammate's later add stays.
+        expect(membershipRows().filter(r => r.id !== 'test-hm-mm-l'), 'undo restores the memberships exactly').toEqual(seededMemberships);
+        expect(membershipRows().find(r => r.id === 'test-hm-mm-l'), "undo keeps a teammate's later household add").toBeTruthy();
         expect(Number(restored.is_public), 'undo reverts the inherited public flag').toBe(0);
         // The auto-aliases came with the merge; undo must take them back out.
         expect(String(restored.contact_entries ?? '')).not.toContain(NAME_B);

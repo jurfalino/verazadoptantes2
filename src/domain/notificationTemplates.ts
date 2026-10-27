@@ -96,7 +96,7 @@ export interface NotificationTemplateParams {
     /** The household's teams: `actorName` took `personName` out of `hostName`'s household. `reason`: mistake | not_living. */
     household_member_removed: { actorName: string; personName?: string; hostName?: string; reason: string };
     /** Admins only (D48): `actorName` put `personName` back in `hostName`'s household after someone said they don't live there. */
-    household_member_disputed: { actorName: string; personName?: string; hostName?: string };
+    household_member_disputed: { actorName: string; personName?: string; hostName?: string; viaMerge?: string };
     /**
      * Households as profiles, Task 3 — the owner's team: `actorName` renamed one of their profiles
      * from `fromName` to `toName`. The old name stays as «Conocido/a como»; the notice carries
@@ -661,9 +661,9 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
     },
     household_member_disputed: {
         required: ['actorName'],
-        es: p => ({ title: `Convivencia en disputa: ${plainName(p.personName, 'es')}`, body: `${p.actorName} volvió a agregar a ${plainName(p.personName, 'es')} al grupo familiar ${householdOf(p.hostName, 'es')}, después de que alguien indicara que no vive ahí. Revisá quién tiene razón.` }),
-        en: p => ({ title: `Household disputed: ${plainName(p.personName, 'en')}`, body: `${p.actorName} added ${plainName(p.personName, 'en')} back to ${householdOf(p.hostName, 'en')} household after someone said they don't live there. Please review who is right.` }),
-        pt: p => ({ title: `Convivência em disputa: ${plainName(p.personName, 'pt')}`, body: `${p.actorName} adicionou de novo ${plainName(p.personName, 'pt')} ao grupo familiar ${householdOf(p.hostName, 'pt')}, depois que alguém indicou que não mora lá. Revise quem tem razão.` }),
+        es: p => ({ title: `Convivencia en disputa: ${plainName(p.personName, 'es')}`, body: `${p.viaMerge === '1' ? `Al combinar perfiles, ${p.actorName} volvió a dejar a ${plainName(p.personName, 'es')} en el` : `${p.actorName} volvió a agregar a ${plainName(p.personName, 'es')} al`} grupo familiar ${householdOf(p.hostName, 'es')}, después de que alguien indicara que no vive ahí. Revisá quién tiene razón.` }),
+        en: p => ({ title: `Household disputed: ${plainName(p.personName, 'en')}`, body: `${p.viaMerge === '1' ? `By merging profiles, ${p.actorName} put ${plainName(p.personName, 'en')} back in` : `${p.actorName} added ${plainName(p.personName, 'en')} back to`} ${householdOf(p.hostName, 'en')} household after someone said they don't live there. Please review who is right.` }),
+        pt: p => ({ title: `Convivência em disputa: ${plainName(p.personName, 'pt')}`, body: `${p.viaMerge === '1' ? `Ao combinar perfis, ${p.actorName} colocou de novo ${plainName(p.personName, 'pt')} no` : `${p.actorName} adicionou de novo ${plainName(p.personName, 'pt')} ao`} grupo familiar ${householdOf(p.hostName, 'pt')}, depois que alguém indicou que não mora lá. Revise quem tem razão.` }),
     },
 };
 

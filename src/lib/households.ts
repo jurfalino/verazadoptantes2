@@ -111,6 +111,11 @@ async function ownMemberships(db: Db, adopterId: string, limit: number): Promise
         .limit(limit).all() as MembershipRow[];
 }
 
+/** This profile's own membership rows (gift ones included), oldest first, bounded — for merges (src/lib/householdMerge.ts). */
+export async function membershipsOfProfile(db: Db, adopterId: string, limit: number): Promise<MembershipRow[]> {
+    return ownMemberships(db, adopterId, limit);
+}
+
 /** The households a profile is in (gift ones included), oldest membership first. */
 export async function householdIdsOf(db: Db, adopterId: string): Promise<string[]> {
     return (await ownMemberships(db, adopterId, MAX_HOUSEHOLDS_PER_PROFILE * 10)).map(m => m.householdId);
@@ -366,9 +371,10 @@ export async function addMembership(db: Db, input: AddMembershipInput): Promise<
  * rebuilds a pair from its request when the candidate row is gone). Not in a
  * gift household (not a home). One statement over this person's pending pairs
  * (indexed), checked against a household held to MAX_HOUSEHOLD_MEMBERS. A
- * failure is logged and never undoes the join.
+ * failure is logged and never undoes the join. Also run by a merge that moves
+ * someone into a household (src/lib/householdMerge.ts).
  */
-async function dropHousemateCandidates(db: Db, householdId: string, adopterId: string): Promise<void> {
+export async function dropHousemateCandidates(db: Db, householdId: string, adopterId: string): Promise<void> {
     const livesThere = (col: SQLWrapper) =>
         sql`EXISTS (SELECT 1 FROM household_memberships m WHERE m.household_id = ${householdId} AND m.adopter_id = ${col})`;
     try {

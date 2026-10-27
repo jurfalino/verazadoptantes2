@@ -14,7 +14,7 @@
  *   including the person added ('household_linked', D45); the teams of any
  *   other household the person already lives in ('household_also_lives_with').
  * - `notifyHouseholdReaddDisputed`: a person put back where someone said
- *   they don't live (a correction exists) — the admins decide (D48).
+ *   they don't live (a correction exists), by hand or by a merge — the admins decide (D48).
  * - `notifyHouseholdRelationshipChanged` / `notifyHouseholdMemberRemoved`:
  *   the household's teams.
  *
@@ -160,11 +160,11 @@ export async function notifyHouseholdPersonAdded(n: PersonAddedNotice): Promise<
     }, ctx);
 }
 
-/** D48: `person` is back in a household after a «No vive acá» there — the admins decide. */
+/** D48: `person` is back in a household after a «No vive acá» there — the admins decide. `viaMerge`: a merge carried them back (Task 6). */
 export async function notifyHouseholdReaddDisputed(n: {
-    householdId: string; membershipId: string; person: { id: string; name: string }; hostName: string | null; actor: string;
+    householdId: string; membershipId: string; person: { id: string; name: string }; hostName: string | null; actor: string; viaMerge?: boolean;
 }): Promise<void> {
-    const ctx: Ctx = { householdId: n.householdId, membershipId: n.membershipId, profileId: n.person.id, actor: n.actor };
+    const ctx: Ctx = { householdId: n.householdId, membershipId: n.membershipId, profileId: n.person.id, actor: n.actor, viaMerge: !!n.viaMerge };
     await runAfterResponse('household.readd_disputed', async () => {
         const { notifyAdmins } = await import('@/app/actions/notifications');
         const actorName = await actorNameOf(n.actor, ctx);
@@ -173,7 +173,7 @@ export async function notifyHouseholdReaddDisputed(n: {
             type: 'household_member_disputed',
             ...notificationContent({
                 key: 'household_member_disputed',
-                params: { actorName, personName: n.person.name, ...(n.hostName ? { hostName: n.hostName } : {}) },
+                params: { actorName, personName: n.person.name, ...(n.hostName ? { hostName: n.hostName } : {}), ...(n.viaMerge ? { viaMerge: '1' } : {}) },
             }),
             url: `/adopter/${n.person.id}`,
             icon: '🏠',

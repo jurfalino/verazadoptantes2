@@ -1765,6 +1765,7 @@ export const en = {
         pending_d_err_declined_before: 'This request was already declined. You can write to them or ask an administrator to review it.',
         pending_d_err_request_pending: 'There is already an open request on these profiles. We refreshed the list.',
         pending_d_err_keep_not_allowed: 'That profile can no longer be kept. We refreshed the list.',
+        pending_d_err_minor_survivor: "A minor's profile can't be the one kept: the other has records or alerts, which go on an adult. Choose to keep the other profile.",
         pending_d_err_identity_not_applicable: 'These profiles changed. We refreshed the list.',
         // Source attribution pill (v2.14.10-20)
         source_form: 'Form',

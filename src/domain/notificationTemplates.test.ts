@@ -113,6 +113,14 @@ describe('renderNotification', () => {
         expect(renderNotification({ key: 'household_member_removed', params: { actorName: 'Ana', reason: 'moved' } }, 'es')).toBeNull();
         expect(renderNotification({ key: 'household_member_disputed', params: { actorName: 'Jon', personName: 'Marta Paez' } }, 'es')!.body)
             .toBe('Jon volvió a agregar a Marta Paez al grupo familiar del adoptante, después de que alguien indicara que no vive ahí. Revisá quién tiene razón.');
+        // A merge carried the person back (Task 6): said so, in every locale.
+        const viaMerge = { actorName: 'Jon', personName: 'Marta Paez', hostName: 'Pedro Paez', viaMerge: '1' };
+        expect(renderNotification({ key: 'household_member_disputed', params: viaMerge }, 'es')!.body)
+            .toBe('Al combinar perfiles, Jon volvió a dejar a Marta Paez en el grupo familiar de Pedro Paez, después de que alguien indicara que no vive ahí. Revisá quién tiene razón.');
+        expect(renderNotification({ key: 'household_member_disputed', params: viaMerge }, 'en')!.body)
+            .toBe("By merging profiles, Jon put Marta Paez back in Pedro Paez's household after someone said they don't live there. Please review who is right.");
+        expect(renderNotification({ key: 'household_member_disputed', params: viaMerge }, 'pt')!.body)
+            .toBe('Ao combinar perfis, Jon colocou de novo Marta Paez no grupo familiar de Pedro Paez, depois que alguém indicou que não mora lá. Revise quem tem razão.');
     });
 
     it('household_contribution: a member or a contact on one, per locale (D54)', () => {

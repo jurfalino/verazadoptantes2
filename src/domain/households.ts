@@ -17,6 +17,13 @@ export const MAX_HOUSEHOLD_LINES = 10;
 /** Under this current age a profile is a minor. */
 export const MINOR_AGE_LIMIT = 18;
 
+/**
+ * A merge refused because its survivor is a minor and the absorbed profile has
+ * records or open alerts: those belong on the adults (Task 6 ruling). Keeping
+ * the other profile as the survivor merges.
+ */
+export const MINOR_SURVIVOR_HAS_ACTIVITY = 'minor_survivor_has_activity';
+
 /** The only relationships shown back from the other side (no gender recorded, so no «padre de»). */
 const SYMMETRIC: ReadonlySet<string> = new Set<Relationship>(['partner', 'sibling']);
 const LABELLED: ReadonlySet<string> = new Set<Relationship>(['partner', 'child', 'parent', 'sibling', 'other_relative', 'housemate']);

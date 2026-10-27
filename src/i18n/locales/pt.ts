@@ -1770,6 +1770,7 @@ export const pt = {
         pending_d_err_declined_before: 'Este pedido já foi recusado. Você pode escrever ou pedir revisão a um administrador.',
         pending_d_err_request_pending: 'Já existe um pedido aberto sobre estes perfis. Atualizamos a lista.',
         pending_d_err_keep_not_allowed: 'Esse perfil não pode mais ficar. Atualizamos a lista.',
+        pending_d_err_minor_survivor: 'Não dá para manter o perfil de um menor de idade: o outro tem registros ou alertas, que ficam em um adulto. Escolha manter o outro perfil.',
         pending_d_err_identity_not_applicable: 'Estes perfis mudaram. Atualizamos a lista.',
         // Source attribution pill (v2.14.10-20)
         source_form: 'Formulário',
