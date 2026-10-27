@@ -138,6 +138,10 @@ describe('write core', () => {
         await addMembership(db(), { householdId: 'gift1', adopterId: 'rosa', giftRecipient: true, addedBy: OWNER });
         const own = await ensureHousehold(db(), 'ana', OWNER);
         expect(own).not.toBe('gift1');
+        // With a gift household in the DB, everyone else's existing household is still found.
+        expect(await ensureHousehold(db(), 'marta', MATE)).toBe(hh);
+        expect(await ensureHousehold(db(), 'pedro', MATE)).toBe(hh);
+        expect(await ensureHousehold(db(), 'ana', OWNER)).toBe(own);
         expect((await householdIdsOf(db(), 'ana')).sort()).toEqual(['gift1', own].sort());
     });
 
@@ -175,6 +179,12 @@ describe('write core', () => {
         await addMembership(db(), { householdId: 'gift1', adopterId: 'ana', addedBy: OWNER });
         await addMembership(db(), { householdId: 'gift1', adopterId: 'rosa', giftRecipient: true, addedBy: OWNER });
         expect(await sameHousehold(db(), 'ana', 'rosa')).toBe(false);
+        // A gift household elsewhere never hides ordinary ones (the NOT EXISTS is correlated to each household).
+        expect(await sameHousehold(db(), 'marta', 'lucas')).toBe(true);
+        const rosas = await ensureHousehold(db(), 'rosa', STRANGER);
+        await addMembership(db(), { householdId: rosas, adopterId: 'lucas', addedBy: STRANGER });
+        expect(await sameHousehold(db(), 'rosa', 'lucas')).toBe(true);
+        expect(await sameHousehold(db(), 'pedro', 'rosa')).toBe(false);
     });
 });
 
