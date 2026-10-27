@@ -54,7 +54,7 @@ async function ownerOf(db: Db, adopterId: string, ctx: Ctx): Promise<string | nu
  * recipient mapped to the FIRST profile of theirs in the list. Recipients in
  * `skip` are left out.
  */
-async function teamsOf(db: Db, profileIds: readonly string[], actor: string, skip: ReadonlySet<string>, ctx: Ctx): Promise<Map<string, string>> {
+export async function teamsOf(db: Db, profileIds: readonly string[], actor: string, skip: ReadonlySet<string>, ctx: Ctx): Promise<Map<string, string>> {
     const ids = [...new Set(profileIds)];
     const owners = await Promise.all(ids.map(id => ownerOf(db, id, ctx)));
     const teamByOwner = new Map<string, Promise<string[]>>();
@@ -82,7 +82,7 @@ async function teamsOf(db: Db, profileIds: readonly string[], actor: string, ski
     return out;
 }
 
-async function actorNameOf(actor: string, ctx: Ctx): Promise<string> {
+export async function actorNameOf(actor: string, ctx: Ctx): Promise<string> {
     return personLabel(actor, await namesFor([actor], ctx)) ?? '';
 }
 

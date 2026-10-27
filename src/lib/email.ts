@@ -125,21 +125,24 @@ function escapeHtml(s: string): string {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-const NOTIFICATION_CHROME: Record<EmailLocale, { cta: string; settings: string; unsubscribe: string; staging: string }> = {
+const NOTIFICATION_CHROME: Record<EmailLocale, { cta: string; undo: string; settings: string; unsubscribe: string; staging: string }> = {
     es: {
         cta: 'Ver en BuenAdoptante',
+        undo: 'Deshacer',
         settings: 'Configurar avisos por email',
         unsubscribe: 'Dejar de recibir estos avisos',
         staging: 'Este mensaje viene del entorno de pruebas (staging) de BuenAdoptante, no del sitio real.',
     },
     en: {
         cta: 'View on BuenAdoptante',
+        undo: 'Undo',
         settings: 'Email notification settings',
         unsubscribe: 'Stop receiving these notices',
         staging: 'This message comes from the BuenAdoptante test environment (staging), not the real site.',
     },
     pt: {
         cta: 'Ver no BuenAdoptante',
+        undo: 'Desfazer',
         settings: 'Configurar avisos por email',
         unsubscribe: 'Deixar de receber estes avisos',
         staging: 'Esta mensagem vem do ambiente de testes (staging) do BuenAdoptante, não do site real.',
@@ -154,12 +157,14 @@ const NOTIFICATION_CHROME: Record<EmailLocale, { cta: string; settings: string; 
  * subject is prefixed «[Staging]» and a banner tops the message (D37).
  */
 export function buildNotificationEmail(
-    n: { title: string; body: string; url: string | null },
+    /** `undoUrl`: a second, outlined «Deshacer» button (a path; it opens a confirmation, never acts on the click). */
+    n: { title: string; body: string; url: string | null; undoUrl?: string | null },
     links: { appBaseUrl: string; unsubscribeUrl: string | null },
     opts: { locale: EmailLocale; staging: boolean },
 ): { subject: string; html: string; text: string } {
     const c = NOTIFICATION_CHROME[opts.locale] ?? NOTIFICATION_CHROME.es;
     const target = n.url ? `${links.appBaseUrl}${n.url}` : links.appBaseUrl;
+    const undo = n.undoUrl ? `${links.appBaseUrl}${n.undoUrl}` : null;
     const settings = `${links.appBaseUrl}/settings`;
     const unsub = links.unsubscribeUrl;
     const banner = opts.staging
@@ -168,9 +173,9 @@ export function buildNotificationEmail(
     const html = `<div style="font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1c1917;">${banner}
   <h2 style="color:#134e4a;margin:0 0 16px;">${escapeHtml(n.title)}</h2>
   <p style="margin:0 0 20px;white-space:pre-line;">${escapeHtml(n.body)}</p>
-  <p style="margin:0 0 24px;"><a href="${escapeHtml(target)}" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;">${c.cta}</a></p>
+  <p style="margin:0 0 24px;"><a href="${escapeHtml(target)}" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;">${c.cta}</a>${undo ? `<a href="${escapeHtml(undo)}" style="display:inline-block;margin-left:8px;background:#ffffff;color:#0f766e;text-decoration:none;padding:11px 19px;border-radius:8px;font-weight:600;border:1px solid #0f766e;">${c.undo}</a>` : ''}</p>
   <p style="margin:0;font-size:12px;color:#78716c;"><a href="${escapeHtml(settings)}" style="color:#78716c;">${c.settings}</a>${unsub ? ` · <a href="${escapeHtml(unsub)}" style="color:#78716c;">${c.unsubscribe}</a>` : ''}</p>
 </div>`;
-    const text = `${opts.staging ? `[Staging] ${c.staging}\n\n` : ''}${n.title}\n\n${n.body}\n\n${c.cta}: ${target}\n\n${c.settings}: ${settings}\n${unsub ? `${c.unsubscribe}: ${unsub}\n` : ''}`;
+    const text = `${opts.staging ? `[Staging] ${c.staging}\n\n` : ''}${n.title}\n\n${n.body}\n\n${c.cta}: ${target}\n${undo ? `${c.undo}: ${undo}\n` : ''}\n${c.settings}: ${settings}\n${unsub ? `${c.unsubscribe}: ${unsub}\n` : ''}`;
     return { subject: opts.staging ? `[Staging] ${n.title}` : n.title, html, text };
 }

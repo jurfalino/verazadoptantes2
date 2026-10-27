@@ -150,6 +150,15 @@ export interface ContactEntry {
      */
     own?: boolean;
     /**
+     * Alias-only: the profile's previous NAME, kept automatically when someone
+     * renamed it (households as profiles, Task 3). Still a name token (search
+     * and duplicate detection find the old name), but not listed among the
+     * contacts — the header shows it as «Conocido/a como». Persisted; only
+     * the rename path sets it (deserialize keeps it on aliases only, and the
+     * contact actions build entries from typed input, never from it).
+     */
+    fromRename?: true;
+    /**
      * Address-only structured fields (additive — `value` stays the joined
      * source of truth). `streetAndNumber` is the PII-gated half; `locality`
      * is the non-gated half (locality + city + province + cp combined as a
@@ -613,6 +622,7 @@ export function deserializeContactEntries(
                 ...readPhoneApps(e),
                 ...(e.masked === true ? { masked: true } : {}),
                 ...(viewMarks && e.own === true ? { own: true } : {}),
+                ...(e.type === 'alias' && e.fromRename === true ? { fromRename: true as const } : {}),
                 // Per-entry contributor attribution (v2.16.0-9+). Length-capped
                 // defensively; undefined if absent (most pre-existing rows).
                 ...(typeof e.addedBy === 'string' && e.addedBy.trim()
@@ -663,6 +673,11 @@ export function contactEntryFromInput(
     const platform = input.type === 'social' ? (detectSocialPlatform(value) ?? input.platform ?? undefined) : undefined;
     const apps = input.type === 'phone' && input.apps?.length ? [...new Set(input.apps)] : undefined;
     return { id, type: input.type, value, addedBy, ...(platform ? { platform } : {}), ...(apps ? { apps } : {}) };
+}
+
+/** A previous name kept by a rename: a name token, never listed with the contacts. */
+export function isRenameAlias(e: Pick<ContactEntry, 'type' | 'fromRename'>): boolean {
+    return e.type === 'alias' && e.fromRename === true;
 }
 
 /** Merge two entry lists, de-duplicating on normalized value. */

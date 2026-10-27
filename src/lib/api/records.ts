@@ -105,6 +105,15 @@ export async function saveApiActivity(
         await recordProgress(ctx, { profileCreated: true, profileIds: [profileId] });
     }
 
+    // A minor's profile gets no records (households as profiles): refused before
+    // anything is written, so the externalId stays free for the right person.
+    if (!profileCreated) {
+        const { isMinorProfile } = await import('@/lib/minors');
+        if (await isMinorProfile(db, profileId)) {
+            throw new ApiError(422, 'profile_is_minor', 'the matched profile belongs to a minor: records go on the adults of their household', {}, { profileId });
+        }
+    }
+
     const activityDate = save.date ? dayAtNoon(save.date) : new Date();
     // Age as the app stores it: an estimated birth date, counted back from the activity date.
     const age = parseAgeText(save.age);

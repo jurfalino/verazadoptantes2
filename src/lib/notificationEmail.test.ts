@@ -279,3 +279,30 @@ describe('buildNotificationEmail', () => {
         expect(pt.html).toContain('ambiente de testes');
     });
 });
+
+describe('profile_renamed email: a second «Deshacer» button (households as profiles, Task 3)', () => {
+    const metadata = {
+        adopterId: 'pedro', profileId: 'pedro', undo: { historyId: 'h-1' },
+        template: { key: 'profile_renamed', params: { actorName: 'Jonathan U', fromName: 'Pedro Paez', toName: 'P. Paez' } },
+    };
+    it('links «Deshacer» to the confirmation on the profile, next to «Ver en BuenAdoptante»', async () => {
+        const id = addNotif('profile_renamed');
+        expect(await sendNotificationEmail({ id, userId: EMAIL, type: 'profile_renamed', title: 'T', body: 'B', url: '/adopter/pedro', metadata })).toBe('sent');
+        const msg = send.mock.calls[0][0] as { subject: string; html: string; text: string };
+        expect(msg.subject).toBe('[Staging] Jonathan U cambió el nombre de Pedro Paez a P. Paez');
+        expect(msg.html).toMatch(/Ver en BuenAdoptante<\/a><a href="[^"]*\/adopter\/pedro\?undoRename=h-1"[^>]*>Deshacer<\/a>/);
+        expect(msg.text).toMatch(/Deshacer: \S*\/adopter\/pedro\?undoRename=h-1/);
+    });
+    it('no undo in the metadata (or another type) → one button only', async () => {
+        const id = addNotif('profile_renamed');
+        await sendNotificationEmail({ id, userId: EMAIL, type: 'profile_renamed', title: 'T', body: 'B', url: '/adopter/pedro', metadata: { ...metadata, undo: undefined } });
+        await sendNotificationEmail({ id: addNotif('household_linked'), userId: EMAIL, type: 'household_linked', title: 'T', body: 'B', url: '/x', metadata });
+        for (const [m] of send.mock.calls) expect((m as { html: string }).html).not.toContain('Deshacer');
+    });
+    it('buildNotificationEmail localizes the label', () => {
+        const m = buildNotificationEmail({ title: 'T', body: 'B', url: '/a', undoUrl: '/a?undoRename=h' }, { appBaseUrl: 'https://x.org', unsubscribeUrl: null }, { locale: 'pt', staging: false });
+        expect(m.html).toContain('>Desfazer</a>');
+        expect(m.html).toContain('href="https://x.org/a?undoRename=h"');
+    });
+});
+

@@ -18,6 +18,7 @@ import { buildNotificationEmail, sendEmailViaResend } from '@/lib/email';
 import { unsubscribeUrl } from '@/lib/emailUnsubscribe';
 import { resolveAuthSecret } from '@/lib/otp';
 import { localizedNotification } from '@/domain/notificationTemplates';
+import { renameUndoPath } from '@/domain/profileIdentity';
 import type { EmailLocale } from '@/lib/email';
 
 export type NotificationEmailResult =
@@ -101,7 +102,9 @@ export async function sendNotificationEmail(n: {
     }
     // Subject and body from the template in that language; the stored Spanish text otherwise.
     const text = localizedNotification({ title: n.title, body: n.body, metadata: n.metadata }, locale);
-    const message = buildNotificationEmail({ title: text.title, body: text.body, url: n.url ?? null }, { appBaseUrl: base, unsubscribeUrl: unsub },
+    // A rename notice carries «Deshacer» (metadata.undo): a second button that opens the confirmation on the profile.
+    const undoUrl = n.type === 'profile_renamed' ? renameUndoPath(n.metadata) : null;
+    const message = buildNotificationEmail({ title: text.title, body: text.body, url: n.url ?? null, undoUrl }, { appBaseUrl: base, unsubscribeUrl: unsub },
         { locale, staging: isStagingEnvironment() });
     // Only «Escribirle» messages carry a reply-to: the sender chose to be reachable.
     const replyTo = replyToFor(n.type, n.metadata);

@@ -29,6 +29,9 @@ describe('categoryForType', () => {
         ['household_relationship_changed', 'profile_changes'],
         ['household_member_removed', 'profile_changes'],
         ['household_member_disputed', 'other'],
+        ['profile_renamed', 'profile_changes'],
+        ['profile_rename_undone', 'profile_changes'],
+        ['profile_age_changed', 'profile_changes'],
         ['api_record', 'api'],
         ['member_joined', 'other'],
     ] as const)('%s -> %s', (type, cat) => {
@@ -75,6 +78,7 @@ describe('visibleCategories', () => {
 
 describe('emailThrottleKey', () => {
     it('merge_request is never throttled', () => expect(emailThrottleKey('merge_request')).toBeNull());
+    it('profile_renamed is never throttled (its «Deshacer» must arrive)', () => expect(emailThrottleKey('profile_renamed')).toBeNull());
     it('pii_access_request throttles against itself only, not the rest of its always-on category', () => {
         expect(emailThrottleKey('pii_access_request')).not.toBeNull();
         expect(emailThrottleKey('pii_access_request')).not.toBe(emailThrottleKey('merge_request'));

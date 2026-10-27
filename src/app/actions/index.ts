@@ -49,6 +49,8 @@ export { getDuplicateCandidates, checkTokenDuplicates, countAdoptersBySocialHand
 export { addHouseholdMember, updateHouseholdMember, removeHouseholdMember, addMemberContactEntry, updateMemberContactEntry, removeMemberContactEntry } from './householdMembers';
 export { reportNotLivingTogether } from './householdLinks';
 export { addHouseholdPerson, updateHouseholdMembership, removeHouseholdMembership, getHouseholdMatchCandidates } from './households';
+export { changeProfileName, changeProfileAge, undoProfileRename, getRenameUndoOption } from './profileIdentity';
+export type { ChangeProfileNameResult, ChangeProfileAgeResult, UndoProfileRenameResult, RenameUndoOption, ProfileIdentityError } from './profileIdentity';
 export type { DuplicateCandidate, TokenMatchResult } from './duplicates';
 export { flagAdopterAsDuplicate } from './flagAdopterAsDuplicate';
 

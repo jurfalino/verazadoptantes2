@@ -93,6 +93,15 @@ const MUST_NOT_BE_ACTIONS = [
     'notifyHouseholdReaddDisputed',
     'notifyHouseholdRelationshipChanged',
     'notifyHouseholdMemberRemoved',
+    // Profile name / age (src/lib/profileIdentity.ts): the actor is an argument; the browser
+    // goes through src/app/actions/profileIdentity.ts (session).
+    'renameProfile',
+    'undoRename',
+    'setProfileAge',
+    'notifyProfileRenamed',
+    'notifyRenameUndone',
+    'notifyProfileAgeChanged',
+    'assertNotMinor',
     // The duplicate check with server-only options (contact-only search): findFormDuplicates never takes them.
     'searchFormDuplicates',
 ];

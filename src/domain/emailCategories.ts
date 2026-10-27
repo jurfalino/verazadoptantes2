@@ -56,6 +56,9 @@ const TYPE_TO_CATEGORY: Readonly<Record<string, EmailCategory>> = {
     household_also_lives_with: 'profile_changes',
     household_relationship_changed: 'profile_changes',
     household_member_removed: 'profile_changes',
+    profile_renamed: 'profile_changes',
+    profile_rename_undone: 'profile_changes',
+    profile_age_changed: 'profile_changes',
     // Admins only (D48): no switch of its own.
     household_link_disputed: 'other',
     household_member_disputed: 'other',
@@ -67,8 +70,13 @@ export function categoryForType(type: string): EmailCategory {
     return Object.prototype.hasOwnProperty.call(TYPE_TO_CATEGORY, type) ? TYPE_TO_CATEGORY[type] : 'other';
 }
 
-/** Each one is its own question (merge_request) or a person writing to a person (pair_message): every one is emailed. */
-const NEVER_THROTTLED_TYPES: ReadonlySet<string> = new Set(['merge_request', 'pair_message']);
+/**
+ * Each one is its own question (merge_request), a person writing to a person
+ * (pair_message), or the safeguard of an open edit (profile_renamed: anyone
+ * signed in can rename a profile, and the owner's «Deshacer» rides in that
+ * email — a household notice minutes earlier must not swallow it): every one is emailed.
+ */
+const NEVER_THROTTLED_TYPES: ReadonlySet<string> = new Set(['merge_request', 'pair_message', 'profile_renamed']);
 
 /**
  * What a recently emailed notification must share for this one to be

@@ -66,6 +66,9 @@ const KNOWN_TYPES: Record<string, { label: string; description: string }> = {
     'household_also_lives_with': { label: 'También vive en otro hogar', description: 'A los equipos de un grupo familiar cuando alguien anota que una persona de ese hogar también vive con otro adoptante.' },
     'household_relationship_changed': { label: 'Parentesco cambiado', description: 'A los equipos de los perfiles de un grupo familiar cuando alguien cambia el parentesco de una persona.' },
     'household_member_removed': { label: 'Quitado del grupo familiar', description: 'A los equipos de los perfiles de un grupo familiar cuando alguien quita a una persona: «Lo cargué por error» o «No vive acá».' },
+    'profile_renamed': { label: 'Nombre cambiado', description: 'Al equipo del dueño de un perfil cuando alguien le cambia el nombre (con «Deshacer»).' },
+    'profile_rename_undone': { label: 'Cambio de nombre deshecho', description: 'A quien cambió el nombre de un perfil cuando el equipo del dueño lo deshace.' },
+    'profile_age_changed': { label: 'Edad cambiada', description: 'Al equipo del dueño de un perfil cuando alguien cambia la edad o lo marca como menor de edad.' },
     'household_member_disputed': { label: 'Grupo familiar en disputa', description: 'A los administradores cuando alguien vuelve a agregar a una persona a un grupo familiar después de que se indicó que no vive ahí.' },
     'form_attached': { label: 'Solicitud vinculada', description: 'Al creador de un perfil cuando otra persona le vincula una solicitud de adopción del formulario.' },
     'follow_up_due': { label: 'Follow-up Reminders', description: 'Daily cron reminder when an adoption/transit follow-up slot is due.' }

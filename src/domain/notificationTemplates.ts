@@ -97,6 +97,16 @@ export interface NotificationTemplateParams {
     household_member_removed: { actorName: string; personName?: string; hostName?: string; reason: string };
     /** Admins only (D48): `actorName` put `personName` back in `hostName`'s household after someone said they don't live there. */
     household_member_disputed: { actorName: string; personName?: string; hostName?: string };
+    /**
+     * Households as profiles, Task 3 — the owner's team: `actorName` renamed one of their profiles
+     * from `fromName` to `toName`. The old name stays as «Conocido/a como»; the notice carries
+     * `metadata.undo` («Deshacer»).
+     */
+    profile_renamed: { actorName: string; fromName?: string; toName: string };
+    /** The renamer: `actorName` (the owner's team) undid their rename — back to `restoredName`; `revertedName` stays as «Conocido/a como». */
+    profile_rename_undone: { actorName: string; restoredName?: string; revertedName?: string };
+    /** The owner's team: `actorName` set `personName`'s age (`age`, digits) and/or marked them a minor (`minor: '1'`). */
+    profile_age_changed: { actorName: string; personName?: string; age?: string; minor?: string };
 }
 
 export type NotificationTemplateKey = keyof NotificationTemplateParams;
@@ -588,6 +598,66 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
             : p.reason === 'mistake'
                 ? { title: `Removido do grupo familiar: ${plainName(p.personName, 'pt')}`, body: `${p.actorName} removeu ${plainName(p.personName, 'pt')} do grupo familiar ${householdOf(p.hostName, 'pt')} porque tinha sido adicionado por engano.` }
                 : null,
+    },
+    profile_renamed: {
+        required: ['actorName', 'toName'],
+        es: p => ({
+            title: `${p.actorName} cambió el nombre de ${plainName(p.fromName, 'es')} a ${p.toName}`,
+            body: p.fromName?.trim()
+                ? `El nombre anterior quedó como «Conocido/a como», así que buscar «${p.fromName.trim()}» lo sigue encontrando. Si el cambio no corresponde, deshacelo.`
+                : 'Si el cambio no corresponde, deshacelo.',
+        }),
+        en: p => ({
+            title: `${p.actorName} renamed ${plainName(p.fromName, 'en')} to ${p.toName}`,
+            body: p.fromName?.trim()
+                ? `The previous name is kept as “Also known as”, so searching “${p.fromName.trim()}” still finds them. If the change is wrong, undo it.`
+                : 'If the change is wrong, undo it.',
+        }),
+        pt: p => ({
+            title: `${p.actorName} mudou o nome de ${plainName(p.fromName, 'pt')} para ${p.toName}`,
+            body: p.fromName?.trim()
+                ? `O nome anterior ficou como «Também conhecido/a como», então buscar «${p.fromName.trim()}» continua encontrando. Se a mudança não estiver certa, desfaça.`
+                : 'Se a mudança não estiver certa, desfaça.',
+        }),
+    },
+    profile_rename_undone: {
+        required: ['actorName'],
+        es: p => ({
+            title: `Se deshizo tu cambio de nombre: ${plainName(p.restoredName, 'es')}`,
+            body: `${p.actorName} deshizo el cambio: el perfil vuelve a llamarse ${plainName(p.restoredName, 'es')}.${p.revertedName?.trim() ? ` «${p.revertedName.trim()}» quedó como «Conocido/a como».` : ''}`,
+        }),
+        en: p => ({
+            title: `Your name change was undone: ${plainName(p.restoredName, 'en')}`,
+            body: `${p.actorName} undid the change: the profile is called ${plainName(p.restoredName, 'en')} again.${p.revertedName?.trim() ? ` “${p.revertedName.trim()}” is kept as “Also known as”.` : ''}`,
+        }),
+        pt: p => ({
+            title: `Sua mudança de nome foi desfeita: ${plainName(p.restoredName, 'pt')}`,
+            body: `${p.actorName} desfez a mudança: o perfil volta a se chamar ${plainName(p.restoredName, 'pt')}.${p.revertedName?.trim() ? ` «${p.revertedName.trim()}» ficou como «Também conhecido/a como».` : ''}`,
+        }),
+    },
+    profile_age_changed: {
+        required: ['actorName'],
+        es: p => {
+            const who = plainName(p.personName, 'es');
+            const minor = p.minor === '1' ? ' Figura como menor de edad: los pedidos y las adopciones se registran en los adultos de su hogar.' : '';
+            if (p.age !== undefined && !/^\d{1,3}$/.test(p.age)) return null;
+            const body = p.age !== undefined ? `${p.actorName} indicó que ${who} tiene ${p.age} años.` : p.minor === '1' ? `${p.actorName} indicó que ${who} es menor de edad.` : `${p.actorName} quitó la edad de ${who}.`;
+            return { title: `Edad cambiada: ${who}`, body: `${body}${minor}` };
+        },
+        en: p => {
+            const who = plainName(p.personName, 'en');
+            const minor = p.minor === '1' ? ' They show as a minor: requests and adoptions are recorded on the adults of their household.' : '';
+            if (p.age !== undefined && !/^\d{1,3}$/.test(p.age)) return null;
+            const body = p.age !== undefined ? `${p.actorName} said ${who} is ${p.age} years old.` : p.minor === '1' ? `${p.actorName} said ${who} is a minor.` : `${p.actorName} removed ${who}'s age.`;
+            return { title: `Age changed: ${who}`, body: `${body}${minor}` };
+        },
+        pt: p => {
+            const who = plainName(p.personName, 'pt');
+            const minor = p.minor === '1' ? ' Aparece como menor de idade: os pedidos e as adoções são registrados nos adultos do seu lar.' : '';
+            if (p.age !== undefined && !/^\d{1,3}$/.test(p.age)) return null;
+            const body = p.age !== undefined ? `${p.actorName} indicou que ${who} tem ${p.age} anos.` : p.minor === '1' ? `${p.actorName} indicou que ${who} é menor de idade.` : `${p.actorName} removeu a idade de ${who}.`;
+            return { title: `Idade alterada: ${who}`, body: `${body}${minor}` };
+        },
     },
     household_member_disputed: {
         required: ['actorName'],

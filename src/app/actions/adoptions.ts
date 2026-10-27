@@ -3,7 +3,7 @@
 import { adoptions, adopterHistory, adopterFlags, adopterImages, animals, placements } from '@/db/schema';
 import { eq, sql, and, or } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
-import { logger } from '@/lib/logger';
+import { logger, generateErrorId } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
@@ -19,6 +19,7 @@ import { decideAnimalFate, NO_LINKS, type AnimalLinks } from '@/domain/animalDel
 import { closePendingSearchesForAdopter } from '@/lib/pendingSearchLog';
 import { animalPrimaryFirst } from '@/lib/showcase';
 import { historyKindFor } from '@/lib/profilePrivilege';
+import { PROFILE_IS_MINOR, isProfileIsMinorError } from '@/domain/profileIdentity';
 
 export type RecordFieldConflict = { field: string; by: string; value: unknown };
 export type RecordSaveResult = { success: true; id: string; saved?: string[]; conflicts?: RecordFieldConflict[]; updatedByOthers?: RecordFieldConflict[] };
@@ -189,6 +190,12 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert, opts?: {
         }
     } catch (error) {
         if (error instanceof Error && error.message.startsWith(SAVE_BUSY)) throw error; // already logged, keeps its id
+        if (isProfileIsMinorError(error)) {
+            // A minor's profile gets no records: the wizard shows «Es menor de edad…».
+            const errorId = generateErrorId();
+            logger.warn('saveAdoption: refused — the profile is a minor', { adoptionId: data.id, adopterId: data.adopterId, errorId });
+            throw new Error(`${PROFILE_IS_MINOR} (Error ID: ${errorId})`);
+        }
         if (isActivePlacementConflict(error)) {
             // Someone adopted or fostered this animal between our read and our
             // write — one active placement per animal (drizzle/0078). The

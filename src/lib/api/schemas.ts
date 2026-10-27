@@ -97,7 +97,7 @@ export type ApiErrorCode =
     | 'invalid_document_id' | 'invalid_email' | 'fuzzy_requires_a_field'
     | 'activity_requires_exact' | 'activity_required' | 'external_id_required' | 'form_content_requires_adoption_request'
     | 'species_required' | 'animal_details_require_placement' | 'invalid_age' | 'example_data'
-    | 'contract_not_allowed' | 'contract_exists' | 'unsupported_media_type'
+    | 'contract_not_allowed' | 'contract_exists' | 'unsupported_media_type' | 'profile_is_minor'
     | 'dry_run_not_allowed' | 'external_id_reused' | 'external_id_expired' | 'request_in_progress' | 'partially_saved'
     | 'daily_cap_reached' | 'daily_call_ceiling_reached' | 'api_disabled' | 'payload_too_large' | 'record_changed'
     | 'temporarily_unavailable' | 'server_error';
@@ -110,7 +110,7 @@ export const API_ERROR_CODES: PublicApiErrorCode[] = [
     'invalid_document_id', 'invalid_email', 'fuzzy_requires_a_field',
     'activity_requires_exact', 'activity_required', 'external_id_required', 'form_content_requires_adoption_request',
     'species_required', 'animal_details_require_placement', 'invalid_age', 'example_data',
-    'contract_not_allowed', 'contract_exists', 'unsupported_media_type',
+    'contract_not_allowed', 'contract_exists', 'unsupported_media_type', 'profile_is_minor',
     'dry_run_not_allowed', 'external_id_reused', 'external_id_expired', 'request_in_progress', 'partially_saved',
     'daily_cap_reached', 'daily_call_ceiling_reached', 'api_disabled', 'payload_too_large', 'record_changed',
     'temporarily_unavailable', 'server_error',

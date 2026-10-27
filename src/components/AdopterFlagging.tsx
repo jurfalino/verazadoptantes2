@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { isProfileIsMinorError } from '@/domain/profileIdentity';
 import { flagAdopter, findAdopters, getDuplicateCandidates } from '@/app/actions';
 import type { DuplicateCandidate, DiscoveryMatch } from '@/app/actions';
 import { useRouter } from 'next/navigation';
@@ -185,7 +186,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                 }
             } catch (e) {
                 console.error(e);
-                toast.error(t('errors.generic'), t('errors.report_error'), resolveErrorId(e, 'AdopterFlagging'));
+                toast.error(t('errors.generic'), isProfileIsMinorError(e) ? t('adopter.minor_refused_alert') : t('errors.report_error'), resolveErrorId(e, 'AdopterFlagging'));
             } finally {
                 setSubmitLoading(false);
             }
@@ -237,7 +238,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             }
         } catch (e) {
             console.error(e);
-            toast.error(t('errors.generic'), t('errors.report_error'), resolveErrorId(e, 'AdopterFlagging'));
+            toast.error(t('errors.generic'), isProfileIsMinorError(e) ? t('adopter.minor_refused_alert') : t('errors.report_error'), resolveErrorId(e, 'AdopterFlagging'));
         } finally {
             setSubmitLoading(false);
         }

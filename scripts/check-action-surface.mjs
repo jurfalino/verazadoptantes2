@@ -307,7 +307,26 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                                      (names, rating, alert counts — no contacts).
 // The notice workers that take the actor (src/lib/householdNotices.ts) are plain lib code.
 // 170 = 166 + 4.
-const EXPECTED_ACTIONS = 170;
+// Households as profiles, Task 3: +4 in src/app/actions/profileIdentity.ts, exported from
+// the barrel. What a stranger can do with arguments they choose (session required; the
+// actor is the session; errors are codes, failures carry an errorId):
+//   changeProfileName(input)     open by design (Jon, 2026-10-27): renames ANY live profile,
+//                                but only while the stored name equals `expectedName`
+//                                (compare-and-set, else `conflict`); ≤200 chars, never empty.
+//                                The old name stays a name token (hidden rename alias), history
+//                                is 'contribution' for a stranger (never an approver), and the
+//                                owner's team is told in-app + by email with «Deshacer».
+//   changeProfileAge(input)      open by design: integer 0–120 or null + the «menor» box;
+//                                credited, history, owner's team told. Marking a profile that
+//                                has records or open alerts as a minor is refused.
+//   undoProfileRename(historyId) owner ∨ org-mate ∨ admin ∨ moderator of the profile, else
+//                                not_authorized; only a rename row (never an undo), only while
+//                                the profile still carries that rename's name, once.
+//   getRenameUndoOption(id)      read-only; the same gate — anyone else gets a bare status,
+//                                no names.
+// The writers and notice workers that take the actor (src/lib/profileIdentity.ts) are plain lib code.
+// 174 = 170 + 4.
+const EXPECTED_ACTIONS = 174;
 
 let manifest;
 try {

@@ -53,6 +53,9 @@ const SAMPLES: { [K in NotificationTemplate['key']]: Extract<NotificationTemplat
     household_relationship_changed: { actorName: 'Ana', personName: 'Marta Paez', relationship: 'partner', relativeName: 'Pedro Paez' },
     household_member_removed: { actorName: 'María', personName: 'Marta Paez', hostName: 'Pedro Paez', reason: 'not_living' },
     household_member_disputed: { actorName: 'Jon', personName: 'Marta Paez', hostName: 'Pedro Paez' },
+    profile_renamed: { actorName: 'Jonathan U', fromName: 'Pedro Paez', toName: 'P. Paez' },
+    profile_rename_undone: { actorName: 'Ana', restoredName: 'Pedro Paez', revertedName: 'P. Paez' },
+    profile_age_changed: { actorName: 'Ana', personName: 'Lucas Paez', age: '12', minor: '1' },
 };
 
 const LOCALES: NotificationLocale[] = ['es', 'en', 'pt'];
@@ -220,5 +223,20 @@ describe('Spanish without a name (final review M2)', () => {
         expect(renderNotification({ key: 'contact_entry_added', params: { actorName: 'Ana', entryType: 'phone' } }, 'es')!.body).toMatch(/ al adoptante\.$/);
         expect(renderNotification({ key: 'pii_access_request', params: { requesterName: 'Ana', kind: 'contribution' } }, 'es')!.body).toContain('un dato al adoptante y');
         expect(renderNotification({ key: 'pii_access_request', params: { requesterName: 'Ana', kind: 'direct' } }, 'es')!.body).toMatch(/de contacto del adoptante\.$/);
+    });
+});
+
+describe('profile identity notices (households as profiles, Task 3)', () => {
+    it('profile_renamed reads like the approved notice (N2/N3)', () => {
+        const es = renderNotification({ key: 'profile_renamed', params: { actorName: 'Jonathan U', fromName: 'Pedro Paez', toName: 'P. Paez' } }, 'es')!;
+        expect(es.title).toBe('Jonathan U cambió el nombre de Pedro Paez a P. Paez');
+        expect(es.body).toBe('El nombre anterior quedó como «Conocido/a como», así que buscar «Pedro Paez» lo sigue encontrando. Si el cambio no corresponde, deshacelo.');
+        expect(renderNotification({ key: 'profile_renamed', params: { actorName: 'Ana', toName: 'Lucas' } }, 'en')!.title).toBe('Ana renamed no name to Lucas');
+    });
+    it('profile_age_changed: an age must be digits; a minor says where records go', () => {
+        expect(renderNotification({ key: 'profile_age_changed', params: { actorName: 'Ana', personName: 'Lucas', age: 'doce' } }, 'es')).toBeNull();
+        expect(renderNotification({ key: 'profile_age_changed', params: { actorName: 'Ana', personName: 'Lucas', age: '12', minor: '1' } }, 'es')!.body)
+            .toBe('Ana indicó que Lucas tiene 12 años. Figura como menor de edad: los pedidos y las adopciones se registran en los adultos de su hogar.');
+        expect(renderNotification({ key: 'profile_age_changed', params: { actorName: 'Ana', personName: 'Lucas' } }, 'pt')!.body).toBe('Ana removeu a idade de Lucas.');
     });
 });

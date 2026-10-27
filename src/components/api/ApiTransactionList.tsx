@@ -26,7 +26,7 @@ export interface TransactionRow {
 
 /** Error codes worth filtering by (the API's published codes). */
 const ERROR_CODES = ['invalid_request', 'activity_required', 'external_id_required', 'external_id_reused', 'request_in_progress', 'partially_saved',
-    'example_data', 'unauthorized', 'access_blocked', 'forbidden', 'daily_cap_reached', 'daily_call_ceiling_reached', 'temporarily_unavailable', 'server_error'] as const;
+    'example_data', 'profile_is_minor', 'unauthorized', 'access_blocked', 'forbidden', 'daily_cap_reached', 'daily_call_ceiling_reached', 'temporarily_unavailable', 'server_error'] as const;
 
 const OUTCOMES = ['found', 'not_found', 'ambiguous', 'results', 'voided', 'replayed', 'error'] as const;
 
