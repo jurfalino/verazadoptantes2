@@ -32,7 +32,7 @@ import { createGiftRecipientProfile } from '@/app/actions';
 import type { HouseholdView } from '@/lib/households';
 import type { ProfileHouseholds } from '@/domain/profileHouseholds';
 import { fill, firstName, joinNames } from '@/lib/householdCopy';
-import { householdForAdd } from '@/domain/households';
+import { householdForAdd, titledHomes } from '@/domain/households';
 
 function AddMemberButton({ onClick }: { onClick: () => void }) {
     const { t } = useLanguage();
@@ -101,7 +101,7 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
     const gifts = data.views.filter(v => v.isGift);
     const hostFirst = firstName(hostName) || hostName;
     const canAdd = signedIn;
-    const titled = homes.length >= 2;
+    const titled = titledHomes(homes);
 
     /** «Parentesco de Pedro»: who a member's relationship points at. */
     const relativeNameOf = (view: HouseholdView, relativeTo: string | null) => {
@@ -122,8 +122,8 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
         if (!canAdd) return null;
         const key = view?.id ?? '';
         if (adding === key) {
-            // Only a home this profile anchors, or a block the rescuer picked, is named (Task 2 fix A).
-            const target = householdForAdd(view, titled);
+            // A block adds into ITS household; only a profile-level add (no household yet) names none.
+            const target = householdForAdd(view);
             const targetView = target ? view : null;
             return (
                 <AddPersonForm

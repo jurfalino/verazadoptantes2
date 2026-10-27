@@ -205,14 +205,23 @@ export function householdLineGroups(lines: ReadonlyArray<HouseholdLine> | null |
 }
 
 /**
- * Which household «Agregar familiar / conviviente» names (Task 8). An explicit
- * id is honoured by the server, so it is sent only when the viewed profile
- * anchors that home, or when the rescuer picked a titled block (2+ homes).
- * A single home the profile was only linked into (someone else's) gets none:
- * the server's own-home default applies (Task 2 fix A — being linked into X's
- * home never makes X's team the household of everyone added later).
+ * Which household a block's «Agregar familiar / conviviente» names (Task 8,
+ * coordinator ruling): THAT block's household, always — the block's title
+ * («Hogar con …», anchor first) says whose home it is. Only a profile-level add
+ * (the profile is in no household yet) names none, so the server's own-home
+ * default applies (Task 2 fix A: being linked into X's home never makes X the
+ * default of a profile-level add).
  */
-export function householdForAdd(view: { id: string; self: { isAnchor: boolean } } | null, titled: boolean): string | undefined {
-    if (!view) return undefined;
-    return titled || view.self.isAnchor ? view.id : undefined;
+export function householdForAdd(view: { id: string } | null): string | undefined {
+    return view ? view.id : undefined;
+}
+
+/**
+ * The household blocks carry titles («Hogar con Pedro Paez y Marta Paez»)
+ * when the profile lives in 2+ homes, and also when its only home is one it
+ * was linked into (someone else's): an add there goes into that home, so it
+ * must say whose home it is. One home the profile anchors: no title (P1).
+ */
+export function titledHomes(homes: ReadonlyArray<{ self: { isAnchor: boolean } }>): boolean {
+    return homes.length >= 2 || (homes.length === 1 && !homes[0].self.isAnchor);
 }

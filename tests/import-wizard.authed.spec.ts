@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { cleanupProfiles, createProfileViaApi, housemates, rows } from './householdFixtures';
 
 test.setTimeout(90000);
 
@@ -116,6 +117,49 @@ test.describe('Import wizard', () => {
         await page.waitForURL(/\/adopter\/test-import-fixture-2/, { timeout: 30000 });
         const members = JSON.parse(sent.householdMembers ?? '[]') as Array<{ name: string; relationship: string }>;
         expect(members.map(m => [m.name, m.relationship])).toEqual([['Ana Pareja', 'partner']]);
+    });
+
+    test('«¿Es este perfil?» per relative: «Sí» links the existing profile, «No, es otra persona» makes a new one (Task 8)', async ({ page }) => {
+        test.setTimeout(180_000);
+        const stamp = Date.now();
+        const phone = `11 7${String(stamp).slice(-3)}-${String(stamp).slice(-7, -3)}`;
+        const ANA = await createProfileViaApi(page.request, { name: `Ana Existe ${stamp}`, phone });
+        const LEO = await createProfileViaApi(page.request, { name: `Leo Duplicado ${stamp}`, email: `leo-${stamp}@example.com` });
+        let created = '';
+        try {
+            await stubAi(page, {
+                name: `Fixture Titular Rel ${stamp}`, phones: [],
+                otherPeople: [
+                    { name: `Ana Pareja ${stamp}`, relationship: 'partner', phones: [phone] },
+                    { name: `Leo Duplicado ${stamp}`, relationship: 'sibling' },
+                ],
+            });
+            await pasteAndContinue(page, 'Cuidado con este, su pareja Ana y su hermano Leo');
+            const list = page.getByTestId('import-relatives');
+            const ana = list.locator('li').filter({ hasText: `Ana Pareja ${stamp}` });
+            const anaAsk = ana.getByTestId('import-relative-candidate').filter({ hasText: `Ana Existe ${stamp}` });
+            await expect(anaAsk).toBeVisible({ timeout: 60_000 });
+            await anaAsk.getByTestId('import-relative-candidate-yes').click();
+            await expect(ana.getByTestId('import-relative-linked')).toBeVisible();
+            const leo = list.locator('li').filter({ hasText: `Leo Duplicado ${stamp}` });
+            const leoAsk = leo.getByTestId('import-relative-candidate');
+            await expect(leoAsk).toBeVisible({ timeout: 60_000 });
+            for (let i = 0; i < 3 && await leoAsk.isVisible(); i++) await leoAsk.getByTestId('import-relative-candidate-no').click();
+            await expect(leoAsk).toHaveCount(0);
+
+            await page.getByRole('button', { name: /Save Adopter|Guardar Adoptante/i }).click();
+            await page.waitForURL(/\/adopter\/(?!create)[^/?]+/, { timeout: 60_000 });
+            created = decodeURIComponent(new URL(page.url()).pathname.split('/').pop()!);
+            await expect.poll(() => housemates(created).map(h => h.profileId).sort().join(','), { timeout: 30_000 }).toContain(ANA);
+            const mates = housemates(created).map(h => String(h.profileId));
+            expect(mates).toContain(ANA); // «Sí»: the existing profile, linked
+            expect(mates).not.toContain(LEO); // «No»: someone else …
+            const leos = rows(`SELECT id FROM adopters WHERE name = 'Leo Duplicado ${stamp}' AND deleted_at IS NULL`).map(r => String(r.id));
+            expect(leos.filter(id => id !== LEO).some(id => mates.includes(id))).toBe(true); // … made as a new profile
+            expect(rows(`SELECT id FROM adopters WHERE name = 'Ana Pareja ${stamp}'`)).toHaveLength(0);
+        } finally {
+            cleanupProfiles([created, ANA, LEO].filter(Boolean));
+        }
     });
 
     test('extraction hints: only real problems, each with its fix', async ({ page }) => {

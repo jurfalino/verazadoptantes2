@@ -14,8 +14,8 @@ import {
  *      and her profile shows Pedro.
  *   2. Searching Marta's phone shows only Marta's card, with Pedro's rating line.
  *   3. Adding a person whose phone matches an existing profile offers
- *      «¿Es este perfil?»; «Sí» links that profile (no new one). From that
- *      profile (only linked into Pedro's home), an add starts its own home.
+ *      «¿Es este perfil?»; «Sí» links that profile (no new one). On that
+ *      profile's page the block says «Hogar con Pedro …» and its add goes there.
  *   4. A stranger's rename: the owner is told and «Deshacer» puts the name back.
  *   5. A minor's profile has no «¿Qué pasó con …?».
  *   6. «Quitar del hogar» → «No vive acá» removes the person on every profile.
@@ -98,6 +98,16 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         const pedroCard = card(page, PEDRO_NAME);
         await expect(pedroCard).toHaveCount(1, { timeout: 30_000 });
         await expect(pedroCard.getByTestId('linked-summary')).toContainText('1.0');
+        // «Editar» on everyone's card, the anchor's too — no relationship field there (his row has none);
+        // taking Pedro out of his own home is not this viewer's to do.
+        await memberMenu(pedroCard, 'edit');
+        const edit = page.getByTestId('hh-edit-form');
+        await expect(edit.getByTestId('hh-person-name')).toHaveValue(PEDRO_NAME);
+        await expect(edit.getByTestId('hh-person-rel')).toHaveCount(0);
+        await edit.getByTestId('hh-form-cancel').click();
+        await pedroCard.getByTestId('household-member-menu').click();
+        await expect(pedroCard.getByTestId('household-member-menu-remove')).toHaveCount(0);
+        await page.mouse.click(5, 300);
     });
 
     test('2. searching Marta\'s phone shows only Marta\'s card, with Pedro\'s rating line', async ({ page }) => {
@@ -133,19 +143,18 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         expect(profileNamed(`Rosa ${stamp}`), 'no second profile').toBeUndefined();
     });
 
-    test("3b. from Rosa's page (linked into Pedro's home only) an add starts Rosa's own home, never Pedro's", async ({ page }) => {
+    test("3b. from Rosa's page (linked into Pedro's home only) the titled block says whose home it is, and its «Agregar» adds there", async ({ page }) => {
         test.setTimeout(150_000);
         await page.goto(`/adopter/${ROSA}`);
         await dismissCountryBanner(page);
-        await expect(card(page, PEDRO_NAME)).toHaveCount(1, { timeout: 30_000 });
+        const block = page.getByTestId('household-block');
+        await expect(block).toHaveCount(1, { timeout: 30_000 });
+        await expect(block.locator('h4')).toContainText(PEDRO_NAME); // «Hogar con Pedro Paez …», the anchor first
         await fillAddForm(page, { name: HUGO_NAME, relationship: 'sibling' });
         await saveAsNew(page);
         const hugo = String(profileNamed(HUGO_NAME)!.id);
-        expect(housemates(PEDRO).map(h => h.profileId)).not.toContain(hugo);
-        expect(housemates(ROSA).map(h => h.profileId)).toContain(hugo);
-        // Two homes now: one block each, labelled by who is there.
-        await expect(page.getByTestId('household-block')).toHaveCount(2, { timeout: 30_000 });
-        await expect(page.getByTestId('household-block').filter({ hasText: HUGO_NAME })).not.toContainText(PEDRO_NAME);
+        expect(housemates(PEDRO).map(h => h.profileId)).toContain(hugo);
+        await expect(card(page, HUGO_NAME)).toHaveCount(1, { timeout: 30_000 });
     });
 
     test('4. a stranger renames Marta: her owner is told and «Deshacer» puts the name back', async ({ page, browser }) => {

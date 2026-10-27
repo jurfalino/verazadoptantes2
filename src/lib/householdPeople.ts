@@ -564,7 +564,8 @@ export async function createGiftRecipientFromForm(
         logger.info('createGiftRecipientFromForm: recipient profile made', { ...ctx, profileId, householdId });
     };
 
-    // A recipient profile made earlier and since deleted is absent, so «Crear perfil» works again.
+    // A recipient profile made earlier and since deleted is absent, so «Crear perfil» works again —
+    // soft-deleted or deleted for good (no row at all) alike: «not live» is what the guards check.
     // The gift household is never deleted or re-claimed for it: the deleted recipient's row is
     // REPLACED by the new one in one batch (delete by id while it still points at the deleted
     // profile + insert under the same unique source key). Two clicks at once: one insert lands,
@@ -577,7 +578,7 @@ export async function createGiftRecipientFromForm(
                 db.delete(householdMemberships).where(and(
                     eq(householdMemberships.id, keyed.id),
                     eq(householdMemberships.adopterId, keyed.adopterId),
-                    sql`EXISTS (SELECT 1 FROM adopters a WHERE a.id = ${householdMemberships.adopterId} AND a.deleted_at IS NOT NULL)`,
+                    sql`NOT EXISTS (SELECT 1 FROM adopters a WHERE a.id = ${householdMemberships.adopterId} AND a.deleted_at IS NULL)`,
                 )),
                 db.insert(householdMemberships).values({
                     id: newId, householdId, adopterId: profileId, relationship: recipient.relationship, relativeToAdopterId: giver.id,
@@ -606,7 +607,7 @@ export async function createGiftRecipientFromForm(
         // A row under this form's key outside its gift household (never written that way): it goes, by id.
         await db.delete(householdMemberships).where(and(
             eq(householdMemberships.id, keyed.id),
-            sql`EXISTS (SELECT 1 FROM adopters a WHERE a.id = ${householdMemberships.adopterId} AND a.deleted_at IS NOT NULL)`,
+            sql`NOT EXISTS (SELECT 1 FROM adopters a WHERE a.id = ${householdMemberships.adopterId} AND a.deleted_at IS NULL)`,
         ));
         logger.warn('createGiftRecipientFromForm: a deleted recipient\'s row outside the gift household removed', { ...ctx, householdId: keyed.householdId });
     }

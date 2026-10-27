@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canRemoveMembership, currentAge, householdForAdd, householdLineGroups, householdNameKey, isMinor, membershipLabel } from './households';
+import { canRemoveMembership, currentAge, householdForAdd, householdLineGroups, titledHomes, householdNameKey, isMinor, membershipLabel } from './households';
 
 // Pedro's household: Marta is Pedro's partner, Lucas is Pedro's child. Pedro is
 // the person the relationships point at (his own row has none).
@@ -159,18 +159,19 @@ describe('householdLineGroups (the card line: «Convive con» / «En otro hogar,
     });
 });
 
-describe('householdForAdd (Task 8: where «Agregar familiar / conviviente» puts someone)', () => {
+describe('household add target and titles (Task 8, coordinator ruling)', () => {
     const home = (id: string, isAnchor: boolean) => ({ id, self: { isAnchor } });
-    it('one home this profile anchors → that home', () => {
-        expect(householdForAdd(home('hh-pedro', true), false)).toBe('hh-pedro');
+    it('a block\'s «Agregar» adds into THAT household, always (explicit id)', () => {
+        expect(householdForAdd(home('hh-pedro', true))).toBe('hh-pedro');
+        expect(householdForAdd(home('hh-x', false))).toBe('hh-x');
     });
-    it("one home this profile was only linked into (someone else's) → none: the server's own-home default applies (Task 2 fix A)", () => {
-        expect(householdForAdd(home('hh-x', false), false)).toBeUndefined();
+    it('a profile-level add (no household of any kind) names none: the server starts the profile\'s own home', () => {
+        expect(householdForAdd(null)).toBeUndefined();
     });
-    it('a titled block the rescuer picked (2+ homes) → that home', () => {
-        expect(householdForAdd(home('hh-x', false), true)).toBe('hh-x');
-    });
-    it('no home yet → none', () => {
-        expect(householdForAdd(null, false)).toBeUndefined();
+    it('blocks are titled for 2+ homes, and for a single home the profile does not anchor (so the user sees whose home it is)', () => {
+        expect(titledHomes([home('a', true)])).toBe(false);
+        expect(titledHomes([])).toBe(false);
+        expect(titledHomes([home('x', false)])).toBe(true);
+        expect(titledHomes([home('a', true), home('b', false)])).toBe(true);
     });
 });

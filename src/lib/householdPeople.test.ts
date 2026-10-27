@@ -531,6 +531,24 @@ describe('Task 4 fix round 1', () => {
         expect(count(`SELECT COUNT(*) AS n FROM household_memberships WHERE source_key = ?`, `gift-${submissionId}`)).toBe(1);
     });
 
+    it('gift (Task 8 ruling): a recipient profile deleted for good (no row at all) is treated like a soft-deleted one — replaced in place, the stale row gone', async () => {
+        const { submissionId, applicantId } = await postForm({
+            name: 'Jonathan Giver', email: 'jg10@example.com', phone: '11 6123 1414', intent: 'gift',
+            giftRecipient: { relationship: 'child', firstName: 'Sofía', lastName: 'Gómez', phone: '11 5555 0101' },
+        });
+        const first = await createGiftRecipientProfile({ giverAdopterId: applicantId, submissionId });
+        if (!first.ok) throw new Error(first.error);
+        sqlite.prepare('DELETE FROM adopters WHERE id = ?').run(first.profileId); // a hard delete; its gift row stays
+        const again = await createGiftRecipientProfile({ giverAdopterId: applicantId, submissionId });
+        expect(again).toMatchObject({ ok: true, created: true });
+        if (again.ok) expect(again.profileId).not.toBe(first.profileId);
+        expect(live('Sofía Gómez')).toBe(1);
+        expect(count(`SELECT COUNT(*) AS n FROM household_memberships WHERE source_key = ?`, `gift-${submissionId}`)).toBe(1);
+        expect(count(`SELECT COUNT(*) AS n FROM household_memberships WHERE adopter_id = ?`, first.profileId)).toBe(0);
+        // The gift household keeps exactly the new recipient and the giver.
+        expect(count(`SELECT COUNT(*) AS n FROM household_memberships WHERE household_id = ?`, `hh-gift-${submissionId}`)).toBe(2);
+    });
+
     it('gift: two requests taking over an abandoned claim at once → one profile, nobody deletes the winner', async () => {
         const { submissionId, applicantId } = await postForm({
             name: 'Jonathan Giver', email: 'jg8@example.com', phone: '11 6123 1313', intent: 'gift',

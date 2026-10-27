@@ -5,9 +5,10 @@
  * the initial, the name — the link to their profile — with «Menor de edad»,
  * «pareja de Pedro · 16 años», then the «⋯» menu, then the live summary
  * (LinkedProfileSummary). The menu holds what this viewer may do:
- * - «Editar» and «Quitar del hogar»: whoever may take the person out
- *   (`canRemove`: the adder, the household's teams, admins); no «Editar» on a
- *   household's own anchor row — the person relationships point at;
+ * - «Editar»: everyone signed in, on every card (the same form for all — the
+ *   anchor's card too, without a relationship field: its row has none);
+ * - «Quitar del hogar»: whoever may take the person out (`canRemove`: the
+ *   adder, the household's teams, admins);
  * - «Eliminar perfil de X» / «Pedir eliminación»: today's deletion rules — the
  *   person's owner (delete when nobody else contributed, else ask the admins)
  *   or an admin (always delete). Which one is read when the menu opens
@@ -68,7 +69,9 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
     const [deletion, setDeletion] = useState<Deletion | 'loading' | 'none'>('none');
 
     const name = member.name?.trim() || t('adopter.nameless');
-    const canEdit = !preview && signedIn && member.canRemove && !member.isAnchor && !gift;
+    // «Editar» is the same form for everyone signed in (spec «Editing (revised)»): name, age, minor and,
+    // where the row has one, the relationship — open, credited, the owner's team told.
+    const canEdit = !preview && signedIn;
     const canRemove = !preview && signedIn && member.canRemove;
     const mayDelete = !preview && signedIn && (member.ownerIsViewer || isAdmin);
     const hasMenu = canEdit || canRemove || mayDelete;

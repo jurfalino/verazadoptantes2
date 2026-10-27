@@ -9,7 +9,7 @@ import { cleanupProfiles, execD1, fillAddForm, housemates, insertHousehold, inse
  *
  *   - D54: anyone signed in adds a person (with a phone): a profile owned by
  *     the host's owner, the add and the phone credited to them; on what the
- *     owner added they get no ⋯ menu at all (prototype P3).
+ *     owner added they get only «Editar» (no «Quitar del hogar», no deletion).
  *   - D55: «Agregar dato de contacto» on a housemate's card saves on THAT
  *     person's profile, never on the host's.
  *
@@ -62,9 +62,15 @@ test.describe('household contributions by a non-owner (D54, D55)', () => {
         const cards = page.getByTestId('household-member');
         await expect(cards).toHaveCount(2, { timeout: 30_000 });
 
-        // ── What the owner added: not this viewer's — no ⋯ at all, contacts masked.
+        // ── What the owner added: «Editar» (the same form for everyone signed in), but not theirs to take
+        // out or delete; contacts masked.
         const martaCard = cards.filter({ hasText: MARTA_NAME });
-        await expect(martaCard.getByTestId('household-member-menu')).toHaveCount(0);
+        await martaCard.getByTestId('household-member-menu').click();
+        await expect(martaCard.getByTestId('household-member-menu-edit')).toBeVisible();
+        await expect(martaCard.getByTestId('household-member-menu-remove')).toHaveCount(0);
+        await expect(martaCard.getByTestId('household-member-menu-delete')).toHaveCount(0);
+        await expect(martaCard.getByTestId('household-member-menu-request')).toHaveCount(0);
+        await page.mouse.click(5, 300);
         await expect(martaCard.getByTestId('linked-summary')).not.toContainText('11 4200-0002');
 
         // ── D54: anyone signed in adds someone, with a phone.
