@@ -94,3 +94,16 @@ describe('profileId only through the household actions', () => {
         expect(storedJson(out.adopterId)).toBeNull();
     });
 });
+
+describe('GET /api/adopters never returns the old household JSON (Task 8 fix A3)', () => {
+    it('a person match comes back with householdMembers null', async () => {
+        sqlite.prepare(`UPDATE adopters SET household_members = ? WHERE id = 'someone-else'`)
+            .run(JSON.stringify([{ id: 'hm1', name: 'Marta Secreta', relationship: 'partner', contactEntries: [{ id: 'c', type: 'phone', value: '11 5555 0000' }] }]));
+        const { GET } = await import('./route');
+        const res = await GET(new Request('http://x/api/adopters?matchName=Jonathan'));
+        const body = await res.json() as { matches: Array<Record<string, unknown>> };
+        expect(body.matches.length).toBeGreaterThan(0);
+        expect(body.matches.every(m => m.householdMembers === null)).toBe(true);
+        expect(JSON.stringify(body)).not.toContain('Marta Secreta');
+    });
+});

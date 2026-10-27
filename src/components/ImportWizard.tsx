@@ -47,6 +47,7 @@ import { resolveErrorId, reportClientError } from '@/lib/clientErrorReporter';
 import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, recordDateFrom, aliasForMerge, cleanOtherPeople, extractionQuality, type PostPerson, type ExtractionIssue } from '@/domain/importInput';
 import { needsIdentityChoice as needsIdentityChoiceFor } from '@/domain/identityChoice';
 import { ImportRelativeCheck, type RelativeChoice } from '@/components/import/ImportRelativeCheck';
+import { householdErrorCopy } from '@/lib/householdCopy';
 import type { HouseholdContactInput } from '@/app/actions/households';
 import DatePicker from '@/components/ui/DatePicker';
 import MatchCompare from '@/components/MatchCompare';
@@ -1168,15 +1169,7 @@ export default function ImportWizard() {
             for (const [i, p] of relatives.entries()) {
                 const existingProfileId = linkedProfileOf(p);
                 if (!existingProfileId) continue;
-                const res = await addHouseholdPerson({
-                    anchorAdopterId: adopterId, existingProfileId, relationship: p.relationship,
-                    contactEntries: asHouseholdContacts(toMember(p).contactEntries),
-                    fromImport: { sourceUrl: sourceUrl || null, slot: `r${i}` },
-                });
-                if (!res.ok && res.error !== 'already_there') {
-                    toast.error(t('errors.generic'), t('import.relative_failed'), res.errorId ?? resolveErrorId(new Error(`addHouseholdPerson (import, linked): ${res.error}`), 'ImportWizard'));
-                    break;
-                }
+                await addRelative(adopterId, { ...toMember(p), slot: `r${i}`, existingProfileId });
             }
 
             // Upload any pending video files via FormData (they were excluded from JSON body)
@@ -1249,6 +1242,30 @@ export default function ImportWizard() {
         ...(e.streetAndNumber ? { streetAndNumber: e.streetAndNumber } : {}),
         ...(e.locality ? { locality: e.locality } : {}),
     }));
+    /**
+     * One relative into the profile's household. A relative the rescuer recognised is linked; if that
+     * link fails, they are added as a new person instead — never lost. Each failure says why
+     * (householdErrorCopy) and the others still go in. 'already_there' is not a failure.
+     */
+    const addRelative = async (anchorAdopterId: string, m: { name: string; relationship: PostPerson['relationship']; contactEntries: ContactEntry[]; slot: string; existingProfileId?: string | null }) => {
+        const base = { anchorAdopterId, relationship: m.relationship, contactEntries: asHouseholdContacts(m.contactEntries), fromImport: { sourceUrl: sourceUrl || null, slot: m.slot } };
+        const report = (res: { error: string; errorId?: string }) => {
+            const copy = householdErrorCopy(t, res.error);
+            if (copy.refused) toast.warning(`${t('import.relative_failed')}: ${m.name}`, copy.message);
+            else toast.error(t('errors.generic'), `${t('import.relative_failed')}: ${m.name}`, res.errorId ?? resolveErrorId(new Error(`addHouseholdPerson (import): ${res.error}`), 'ImportWizard'));
+        };
+        try {
+            if (m.existingProfileId) {
+                const linked = await addHouseholdPerson({ ...base, existingProfileId: m.existingProfileId });
+                if (linked.ok || linked.error === 'already_there') return;
+                logUxIssue('import: recognised relative not linked, added as new instead', { reason: linked.error });
+            }
+            const res = await addHouseholdPerson({ ...base, name: m.name });
+            if (!res.ok && res.error !== 'already_there') report(res);
+        } catch (e) {
+            if (!handledAsStale(e)) toast.error(t('errors.generic'), `${t('import.relative_failed')}: ${m.name}`, resolveErrorId(e, 'ImportWizard.relative'));
+        }
+    };
     /** A relative's «¿Es este perfil?» answer is kept under who they are, not their place in the list. */
     const relativeKey = (p: PostPerson) => JSON.stringify([p.name, p.phones, p.socialProfiles]);
     const linkedProfileOf = (p: PostPerson): string | null => {
@@ -1408,19 +1425,7 @@ export default function ImportWizard() {
             // in uses (D54: credited, granted, the target's team told). The «¿Es este
             // perfil?» confirmation per relative comes with the household UI (Task 8).
             for (const m of members) {
-                const linked = 'existingProfileId' in m && m.existingProfileId ? m.existingProfileId : null;
-                const res = await addHouseholdPerson({
-                    anchorAdopterId: mergeTarget.id,
-                    ...(linked ? { existingProfileId: linked } : { name: m.name }),
-                    relationship: m.relationship,
-                    contactEntries: asHouseholdContacts(m.contactEntries),
-                    fromImport: { sourceUrl: sourceUrl || null, slot: m.slot },
-                });
-                // 'already_there': someone of that name already lives there — nothing to add.
-                if (!res.ok && res.error !== 'already_there') {
-                    toast.error(t('errors.generic'), t('import.relative_failed'), res.errorId ?? resolveErrorId(new Error(`addHouseholdPerson (import): ${res.error}`), 'ImportWizard'));
-                    break;
-                }
+                await addRelative(mergeTarget.id, { ...m, existingProfileId: 'existingProfileId' in m ? m.existingProfileId : null });
             }
 
             // Upload any pending video files via FormData (they were excluded from JSON body)

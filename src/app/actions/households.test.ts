@@ -267,6 +267,17 @@ describe('addHouseholdPerson — a new person', () => {
         expect(membershipsIn('hh-pedro').map(m => m.adopter_id)).toEqual(['pedro', profileId, 'rosa']);
     });
 
+    it('Task 8 fix A1: a gift household is never a target for an ordinary add (a crafted householdId → not_found, nothing written)', async () => {
+        const gift = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Ana Regalo', giftRecipient: true });
+        if (!gift.ok) throw new Error(gift.error);
+        const giftHousehold = sqlite.prepare('SELECT household_id FROM household_memberships WHERE adopter_id = ?').get(gift.profileId)!.household_id as string;
+        const before = membershipsIn(giftHousehold).length;
+        expect(await addHouseholdPerson({ anchorAdopterId: 'pedro', householdId: giftHousehold, name: 'Intruso Falso' })).toEqual({ ok: false, error: 'not_found' });
+        expect(await addHouseholdPerson({ anchorAdopterId: 'pedro', householdId: giftHousehold, existingProfileId: 'rosa' })).toEqual({ ok: false, error: 'not_found' });
+        expect(membershipsIn(giftHousehold)).toHaveLength(before);
+        expect(profileNamed('Intruso Falso')).toBeUndefined();
+    });
+
     it('a gift recipient gets a gift household of its own (recipient first), never the ordinary one', async () => {
         await strangerAddsLucas();
         const res = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Ana Regalo', giftRecipient: true, householdId: 'hh-pedro' });
@@ -539,6 +550,16 @@ describe('getHouseholdMatchCandidates — «¿Es este perfil?»', () => {
     it('nothing to match on, or no session → no candidates', async () => {
         expect(await getHouseholdMatchCandidates({ name: 'M' })).toEqual({ results: [] });
         expect(await as(null, () => getHouseholdMatchCandidates({ name: 'Marta Paez' }))).toEqual({ results: [] });
+    });
+
+    it('Task 8 fix B6: a failed check says so (failed + errorId), so the form never adds silently', async () => {
+        // The database is unavailable for the check (the per-token lookups inside degrade quietly by design).
+        const saved = state.db;
+        state.db = null;
+        const res = await getHouseholdMatchCandidates({ name: 'Marta Paez', contactEntries: [{ type: 'phone', value: MARTA_PHONE }], anchorAdopterId: 'pedro' });
+        expect(res).toMatchObject({ results: [], failed: true });
+        expect(typeof (res as { errorId?: string }).errorId).toBe('string');
+        state.db = saved;
     });
 });
 

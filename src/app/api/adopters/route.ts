@@ -39,14 +39,16 @@ async function maskMatchesForViewer<T extends MaskableRow>(
     rows: T[],
     viewerEmail: string | null | undefined,
 ): Promise<T[]> {
-    if (rows.length === 0 || !(await isPiiGatingEnabled())) return rows;
+    // Households as profiles (Task 8): the old household JSON never leaves the server.
+    const withoutHousehold = (r: T): T => ({ ...r, householdMembers: null });
+    if (rows.length === 0 || !(await isPiiGatingEnabled())) return rows.map(withoutHousehold);
     const visMap = await resolveAdoptersVisibility(viewerEmail, rows.map(r => ({ id: r.id, addedBy: r.addedBy })));
     const publicProfilesFlag = await isPublicProfilesEnabled();
     return rows.map(r => {
         const vis = visMap.get(r.id);
         const maskOpts = maskOptionsFor(publicProfilesFlag, r);
-        if (!vis || vis.nothingMasked || maskOpts.adopterIsPublic) return r;
-        return maskAdopterRow(r, vis, maskOpts);
+        if (!vis || vis.nothingMasked || maskOpts.adopterIsPublic) return withoutHousehold(r);
+        return withoutHousehold(maskAdopterRow(r, vis, maskOpts));
     });
 }
 

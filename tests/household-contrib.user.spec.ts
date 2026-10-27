@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissCountryBanner } from './helpers';
-import { cleanupProfiles, execD1, fillAddForm, housemates, insertHousehold, insertProfile, profileNamed, rows } from './householdFixtures';
+import { cleanupProfiles, execD1, fillAddForm, housemates, insertHousehold, insertProfile, profileNamed, rows, saveAsNew } from './householdFixtures';
 
 /**
  * Household contributions (D54 + D55) on households as profiles (Task 8), as a
@@ -52,7 +52,7 @@ test.describe('household contributions by a non-owner (D54, D55)', () => {
         execD1(`DELETE FROM app_config WHERE key = 'ENABLE_PII_ACCESS_GATING'`);
     });
 
-    test('adds a person with a phone, gets no menu on what the owner added, and adds a phone to a housemate\'s own profile', async ({ page }) => {
+    test('adds a person with a phone, gets only «Editar» on what the owner added, and adds a phone to a housemate\'s own profile', async ({ page }) => {
         test.setTimeout(180_000);
         const hostContactsBefore = contactsOf(HOST);
         expect(hostContactsBefore.map(e => e.value)).toEqual(['11 4100-0001']);
@@ -74,10 +74,8 @@ test.describe('household contributions by a non-owner (D54, D55)', () => {
         await expect(martaCard.getByTestId('linked-summary')).not.toContainText('11 4200-0002');
 
         // ── D54: anyone signed in adds someone, with a phone.
-        const form = await fillAddForm(page, { name: NEW_MEMBER, relationship: 'child', phone: NEW_MEMBER_PHONE });
-        await form.getByTestId('hh-form-save').click();
-        const candidate = form.getByTestId('hh-candidate');
-        if (await candidate.isVisible({ timeout: 10_000 }).catch(() => false)) await candidate.getByTestId('hh-candidate-no').click();
+        await fillAddForm(page, { name: NEW_MEMBER, relationship: 'child', phone: NEW_MEMBER_PHONE });
+        await saveAsNew(page);
         const mine = cards.filter({ hasText: NEW_MEMBER });
         await expect(mine).toHaveCount(1, { timeout: 30_000 });
         const made = profileNamed(NEW_MEMBER)!;

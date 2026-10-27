@@ -397,6 +397,20 @@ describe('«¿Es la misma persona?» (D35)', () => {
         expect(household('hh-caps')).toEqual([expect.objectContaining({ profileId: 'hh-mine' })]);
     });
 
+    it('Task 8 fix A4: «alguien de su hogar» on a full household is an expected refusal — warn, the reason passed on, never «merge failed»', async () => {
+        sqlite.prepare(`INSERT INTO households (id, created_by, created_at) VALUES ('hh-full', NULL, 1)`).run();
+        const add = sqlite.prepare(`INSERT INTO household_memberships (id, household_id, adopter_id, relationship, relative_to_adopter_id, gift_recipient, added_by, added_at) VALUES (?, 'hh-full', ?, 'unknown', ?, 0, ?, ?)`);
+        add.run('full-anchor', 'hh-mine', null, null, 1);
+        for (let i = 0; i < 29; i++) add.run(`full-${i}`, `someone-${i}`, 'hh-mine', STRANGER, 2 + i);
+        const { logger } = await import('@/lib/logger');
+        vi.mocked(logger.error).mockClear();
+        const res = await mergePendingDedupPair('cand-hh', { identity: 'household' });
+        expect(res).toEqual({ success: false, error: 'household_refused', reason: 'household_full', errorId: 'gen12345' });
+        expect(logger.error).not.toHaveBeenCalled();
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('alguien de su hogar'), expect.objectContaining({ reason: 'household_full', errorId: 'gen12345' }));
+        expect(candidate('cand-hh')).toBe('pending');
+    });
+
     it('a stranger to both sides cannot use the household path either', async () => {
         expect(await as('nobody@example.com', () => mergePendingDedupPair('cand-hh', { identity: 'household' }))).toMatchObject({ success: false, error: 'not_yours' });
         expect(household('hh-mine')).toEqual([]);

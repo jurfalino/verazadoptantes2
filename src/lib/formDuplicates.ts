@@ -30,14 +30,14 @@ export async function searchFormDuplicates(
     input: FormDuplicateInput,
     opts: { minRelevance?: number; limit?: number; allowContactOnly?: boolean },
     viewer: () => Promise<string>,
-): Promise<{ results: DiscoveryMatch[] }> {
+): Promise<{ results: DiscoveryMatch[]; failed?: true }> {
     const name = (input?.name || '').trim();
     const hasContact = [input?.phones, input?.emails, input?.socials].some(list => (list ?? []).some(v => typeof v === 'string' && v.trim()));
     if (name.length < 2 && !(opts.allowContactOnly === true && hasContact)) return { results: [] };
 
     try {
         const db = await getDb();
-        if (!db) return { results: [] };
+        if (!db) return { results: [], failed: true };
 
         // 1. Detection via the proven duplicate engine (fuzzy + phone-suffix).
         const dup = await findAdopters(
@@ -66,6 +66,7 @@ export async function searchFormDuplicates(
         logger.warn('findFormDuplicates failed — form falls back to no-suggestion', {
             error: e instanceof Error ? e.message : String(e),
         });
-        return { results: [] };
+        // `failed`: a caller that must not treat "no suggestions" as "nobody like this" can tell.
+        return { results: [], failed: true };
     }
 }

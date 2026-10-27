@@ -727,6 +727,18 @@ export async function checkAdopterDeletable(adopterId: string) {
     }
 }
 
+/** After a profile row is deleted for good: its ordinary household memberships go too (logged, never thrown). */
+async function dropHouseholdRows(adopterId: string, actorEmail: string): Promise<void> {
+    try {
+        const db = await getDb();
+        if (!db) return;
+        const { dropMembershipsOfDeletedProfile } = await import('@/lib/households');
+        await dropMembershipsOfDeletedProfile(db, adopterId);
+    } catch (e) {
+        logger.warn('deleteAdopter: household memberships of the deleted profile not removed (readers skip them)', { adopterId, actorEmail, error: e instanceof Error ? e.message : String(e) });
+    }
+}
+
 export async function deleteOwnAdopter(adopterId: string) {
     try {
         const db = await getDb();
@@ -786,12 +798,11 @@ export async function deleteOwnAdopter(adopterId: string) {
             db.update(formSubmissions).set({ linkedAdopterId: null }).where(eq(formSubmissions.linkedAdopterId, adopterId)),
         ]);
 
-        // Households as profiles: the person leaves the households they lived in («deja de figurar en el hogar»).
-        const { dropMembershipsOfDeletedProfile } = await import('@/lib/households');
-        await dropMembershipsOfDeletedProfile(db, adopterId);
-
         await db.delete(adopters).where(eq(adopters.id, adopterId));
         await closeRequestsForDeletedAdopter(db, adopterId, user);
+        // Households as profiles: once the row is gone, the person leaves the households they lived in
+        // («deja de figurar en el hogar»). A failure only leaves rows every reader already skips.
+        await dropHouseholdRows(adopterId, user);
 
         logger.info('Adopter deleted by owner', { adopterId, deletedBy: user });
         logAudit({ userEmail: user, action: 'adopter_deleted', target: adopterId });

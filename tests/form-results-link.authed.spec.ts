@@ -309,18 +309,25 @@ test.describe('form-results: linking to an existing profile', () => {
         await expect(fromForm.getByTestId('household-gift-form-data')).toContainText('Laura Pérez');
         await expect(fromForm.getByTestId('household-gift-form-data')).toContainText('11 5555 1234');
         await expect(page.getByTestId('household-member')).toHaveCount(0);
-        await fromForm.getByTestId('household-gift-create').click();
-        const gift = page.getByTestId('household-gift');
-        await expect(gift).toHaveCount(1, { timeout: 30_000 });
-        await expect(fromForm).toHaveCount(0);
-        await expect(gift.getByTestId('household-gift-recipient')).toContainText('Laura Pérez');
-        const laura = rows(`SELECT a.id, a.added_by, m.gift_recipient FROM household_memberships m JOIN adopters a ON a.id = m.adopter_id WHERE m.source_key = 'gift-${submissionId}'`);
-        expect(laura).toEqual([expect.objectContaining({ gift_recipient: 1 })]);
-        execD1(`DELETE FROM household_memberships WHERE household_id = 'hh-gift-${submissionId}'`);
-        execD1(`DELETE FROM households WHERE id = 'hh-gift-${submissionId}'`);
-        execD1(`DELETE FROM duplicate_tokens WHERE adopter_id = '${String(laura[0].id)}'`);
-        execD1(`DELETE FROM adopter_history WHERE adopter_id = '${String(laura[0].id)}'`);
-        execD1(`DELETE FROM adopters WHERE id = '${String(laura[0].id)}'`);
+        try {
+            await fromForm.getByTestId('household-gift-create').click();
+            const gift = page.getByTestId('household-gift');
+            await expect(gift).toHaveCount(1, { timeout: 30_000 });
+            await expect(fromForm).toHaveCount(0);
+            await expect(gift.getByTestId('household-gift-recipient')).toContainText('Laura Pérez');
+            const laura = rows(`SELECT a.id, a.added_by, m.gift_recipient FROM household_memberships m JOIN adopters a ON a.id = m.adopter_id WHERE m.source_key = 'gift-${submissionId}'`);
+            expect(laura).toEqual([expect.objectContaining({ gift_recipient: 1 })]);
+        } finally {
+            // Laura's profile and the gift household, whatever happened above.
+            for (const r of rows(`SELECT adopter_id AS a FROM household_memberships WHERE household_id = 'hh-gift-${submissionId}' AND gift_recipient = 1`)) {
+                const id = String(r.a);
+                execD1(`DELETE FROM duplicate_tokens WHERE adopter_id = '${id}'`);
+                execD1(`DELETE FROM adopter_history WHERE adopter_id = '${id}'`);
+                execD1(`DELETE FROM adopters WHERE id = '${id}'`);
+            }
+            execD1(`DELETE FROM household_memberships WHERE household_id = 'hh-gift-${submissionId}'`);
+            execD1(`DELETE FROM households WHERE id = 'hh-gift-${submissionId}'`);
+        }
     });
 
     test('a submission without a phone is still stored — the server never refuses it (spec Part 3)', async ({ request }) => {

@@ -1,7 +1,7 @@
 import { test, expect, request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
 import { dismissCountryBanner } from './helpers';
 import {
-    ADMIN_EMAIL, USER_EMAIL, cleanupProfiles, createProfileViaApi, execD1, fillAddForm, housemates, memberMenu, profileNamed, rows,
+    ADMIN_EMAIL, USER_EMAIL, cleanupProfiles, createProfileViaApi, execD1, fillAddForm, housemates, memberMenu, profileNamed, rows, saveAsNew,
 } from './householdFixtures';
 
 /**
@@ -20,6 +20,8 @@ import {
  *   5. A minor's profile has no «¿Qué pasó con …?».
  *   6. «Quitar del hogar» → «No vive acá» removes the person on every profile.
  *   7. At 390px nothing scrolls sideways.
+ *   8. On the viewer's own household: «Eliminar perfil», «Pedir eliminación»
+ *      and «Quitar del hogar» → «Lo cargué por error».
  *
  * Own rows (made through the app so search finds them, names carry a stamp),
  * removed after. Selectors are data-testids: Chromium renders English.
@@ -41,21 +43,6 @@ let ROSA = '';
 let admin: APIRequestContext;
 
 const card = (page: Page, name: string) => page.getByTestId('household-member').filter({ hasText: name });
-
-/** «Guardar» on the add form; a weak «¿Es este perfil?» on someone unrelated is answered «No». */
-async function saveAsNew(page: Page) {
-    const form = page.getByTestId('hh-add-form');
-    await form.getByTestId('hh-form-save').click();
-    for (let i = 0; i < 4; i++) {
-        const candidate = form.getByTestId('hh-candidate');
-        const done = form.waitFor({ state: 'detached', timeout: 20_000 }).then(() => 'done' as const).catch(() => 'timeout' as const);
-        const asked = candidate.waitFor({ state: 'visible', timeout: 20_000 }).then(() => 'asked' as const).catch(() => 'timeout' as const);
-        const first = await Promise.race([done, asked]);
-        if (first !== 'asked') break;
-        await candidate.getByTestId('hh-candidate-no').click();
-    }
-    await expect(form).toHaveCount(0, { timeout: 30_000 });
-}
 
 test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
     test.beforeAll(async ({ baseURL }) => {
@@ -150,7 +137,7 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         const block = page.getByTestId('household-block');
         await expect(block).toHaveCount(1, { timeout: 30_000 });
         await expect(block.locator('h4')).toContainText(PEDRO_NAME); // «Hogar con Pedro Paez …», the anchor first
-        await fillAddForm(page, { name: HUGO_NAME, relationship: 'sibling' });
+        await fillAddForm(page, { name: HUGO_NAME, relationship: 'sibling' }, block);
         await saveAsNew(page);
         const hugo = String(profileNamed(HUGO_NAME)!.id);
         expect(housemates(PEDRO).map(h => h.profileId)).toContain(hugo);
@@ -232,6 +219,61 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         await dismissCountryBanner(page);
         await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible({ timeout: 30_000 });
         await expect(card(page, PEDRO_NAME)).toHaveCount(0);
+    });
+
+    test('8. member card on the viewer\'s own household: «Eliminar perfil» (D2), «Pedir eliminación» (D1), «Lo cargué por error» (Q1)', async ({ page }) => {
+        test.setTimeout(240_000);
+        const OWN = await createProfileViaApi(page.request, { name: `Duena Propia ${stamp}` });
+        const [UNO, DOS, TRES] = ['Borrar Uno', 'Pedir Dos', 'Error Tres'].map(n => `${n} ${stamp}`);
+        let dos = '';
+        try {
+            await page.goto(`/adopter/${OWN}`);
+            await dismissCountryBanner(page);
+            for (const n of [UNO, DOS, TRES]) {
+                await fillAddForm(page, { name: n });
+                await saveAsNew(page);
+                await expect(card(page, n)).toHaveCount(1, { timeout: 30_000 });
+            }
+            const uno = String(profileNamed(UNO)!.id);
+            dos = String(profileNamed(DOS)!.id);
+            const tres = String(profileNamed(TRES)!.id);
+
+            // D2 — nobody else contributed to Uno: the owner deletes the profile; it leaves the household.
+            await memberMenu(card(page, UNO), 'delete');
+            const del = page.getByTestId('hh-delete-dialog');
+            await expect(del).toBeVisible();
+            await del.getByTestId('hh-delete-confirm').click();
+            await expect(card(page, UNO)).toHaveCount(0, { timeout: 30_000 });
+            expect(rows(`SELECT id FROM adopters WHERE id = '${uno}'`)).toHaveLength(0);
+            expect(rows(`SELECT id FROM household_memberships WHERE adopter_id = '${uno}'`)).toHaveLength(0);
+
+            // D1 — another rescuer edited Dos: the owner may only ask the admins.
+            execD1(`INSERT INTO adopter_history (id, adopter_id, changed_by, changes, changed_at) VALUES ('test-hh-fixture-h-${stamp}', '${dos}', 'otra-${stamp}@example.com', '{"notes":{"from":"","to":"x"}}', strftime('%s','now'))`);
+            await page.reload();
+            await dismissCountryBanner(page);
+            await memberMenu(card(page, DOS), 'request');
+            const req = page.getByTestId('hh-request-dialog');
+            await expect(req).toContainText('1');
+            await req.getByTestId('hh-request-confirm').click();
+            await expect(req).toHaveCount(0, { timeout: 30_000 });
+            await expect.poll(() => rows(`SELECT status FROM data_requests WHERE adopter_id = '${dos}' AND request_type = 'deletion'`).map(r => r.status), { timeout: 15_000 }).toEqual(['pending']);
+            await expect(card(page, DOS)).toHaveCount(1);
+
+            // Q1 «Lo cargué por error»: out of the household, no correction remembered.
+            await memberMenu(card(page, TRES), 'remove');
+            const dialog = page.getByTestId('hh-remove-dialog');
+            await dialog.getByTestId('hh-remove-why-mistake').click();
+            await expect(dialog.getByTestId('hh-remove-why-mistake').locator('[data-checked="true"]')).toHaveCount(1);
+            await dialog.getByTestId('hh-remove-confirm').click();
+            await expect(card(page, TRES)).toHaveCount(0, { timeout: 30_000 });
+            expect(housemates(OWN).map(h => h.profileId)).not.toContain(tres);
+            expect(rows(`SELECT id FROM household_corrections WHERE adopter_id = '${tres}'`)).toHaveLength(0);
+            expect(rows(`SELECT id FROM adopters WHERE id = '${tres}' AND deleted_at IS NULL`)).toHaveLength(1); // the profile stays
+        } finally {
+            if (dos) execD1(`DELETE FROM data_requests WHERE adopter_id = '${dos}'`);
+            const made = [UNO, DOS, TRES].map(n => profileNamed(n)?.id).filter(Boolean).map(String);
+            cleanupProfiles([OWN, ...made]);
+        }
     });
 
     test('7. at 390px the household (with the add form open) never scrolls sideways', async ({ page }) => {

@@ -1,7 +1,7 @@
 import { test, expect, type Page, type Browser } from '@playwright/test';
 import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
-import { cleanupProfiles, insertHousehold, insertProfile, rows } from './householdFixtures';
+import { cleanupProfiles, insertHousehold, insertProfile, rows, saveAsNew } from './householdFixtures';
 
 /**
  * Everyday record edits by two people at once (src/domain/fieldCollab.ts):
@@ -176,9 +176,7 @@ test('household: a new person shows once; a rename a teammate beat is refused, n
         await open(page);
         await page.getByTestId('household-add-member').click();
         await page.getByTestId('hh-person-name').fill(ANA);
-        await page.getByTestId('hh-form-save').click();
-        const candidate = page.getByTestId('hh-candidate');
-        if (await candidate.isVisible({ timeout: 8_000 }).catch(() => false)) await candidate.getByTestId('hh-candidate-no').click();
+        await saveAsNew(page);
         await expect.poll(housemateNames, { timeout: 15_000 }).toEqual([ANA]);
         // After the refresh lands: exactly one card.
         await page.waitForTimeout(2_000);

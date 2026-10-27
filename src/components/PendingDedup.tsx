@@ -29,6 +29,7 @@ import { handledAsStale } from '@/lib/errorMessage';
 import { formatRelativeTime } from '@/lib/dates';
 import { pairKey } from '@/domain/dedupPair';
 import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
+import { householdErrorCopy } from '@/lib/householdCopy';
 import { resolveMergeRequest, cancelMergeRequest } from '@/app/actions/mergeRequests';
 import { sendPairMessage } from '@/app/actions/pairMessages';
 import {
@@ -218,6 +219,9 @@ export default function PendingDedup() {
             toast.error(t('errors.generic') || 'Error',
                 t('myAdopters.pending_d_err_minor_survivor') || 'No se puede conservar el perfil de un menor de edad: el otro tiene registros o alertas, que van en un adulto. Elegí conservar el otro perfil.',
                 result.errorId ?? resolveErrorId(new Error(`mergePendingDedupPair: ${result.error}`), 'PendingDedup'));
+        } else if (result.error === 'household_refused') {
+            // «alguien de su hogar» refused by the household rules (full, too many homes…): say why; the row stays.
+            toast.warning(householdErrorCopy(t, result.reason).message, result.errorId ? `ID: ${result.errorId}` : undefined);
         } else if (result.error === HOUSEHOLD_NOT_CONVERTED) {
             // Retryable: some old household data of the two isn't in the new shape yet. The row stays.
             toast.error(t('errors.generic') || 'Error', t('errors.merge_household_not_converted'),

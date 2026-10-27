@@ -743,7 +743,8 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
     | { success: true; outcome: 'household' }
     | { success: true; outcome: 'requested'; toName: string | null; toAdmins: boolean }
     | { success: true; outcome: 'disputed' }
-    | { success: false; error: string; errorId?: string }
+    /** `reason`: with error 'household_refused', the household rule that said no (householdErrorCopy). */
+    | { success: false; error: string; errorId?: string; reason?: string }
 > {
     let actorEmail: string | null = null;
     // From the browser: only a string keepId and a known identity answer count.
@@ -950,6 +951,9 @@ function parseMatchTypes(raw: string | null, candidateId: string): string[] {
     }
 }
 
+/** addHouseholdPerson answers that are the household rules saying no (not a failure). */
+const HOUSEHOLD_REFUSALS: ReadonlySet<string> = new Set(['household_full', 'too_many_households', 'not_found', 'not_authorized', 'invalid', 'identifier_required']);
+
 /**
  * «No, es alguien de su hogar» (D35): nothing is merged. The two profiles now
  * live together: the other person joins the household of the first side the
@@ -968,13 +972,20 @@ async function keepAsHousehold(
     actor: string,
     a: DedupSide & { name: string },
     b: DedupSide & { name: string },
-): Promise<{ success: true; outcome: 'household' } | { success: false; error: string; errorId: string }> {
+): Promise<{ success: true; outcome: 'household' } | { success: false; error: string; errorId: string; reason?: string }> {
     const ctx = { candidateId, actorEmail: actor, primaryId: a.id, secondaryId: b.id };
     const pair = ([[a, b], [b, a]] as const).find(([own]) => own.teamOwned);
     if (pair) {
         const [own, other] = pair;
         const res = await addHouseholdPerson({ anchorAdopterId: own.id, existingProfileId: other.id, relationship: 'unknown' });
         if (!res.ok && res.error !== 'already_there') {
+            // An expected refusal (a full household, too many households, the profile gone…): the row
+            // stays and the rescuer is told why — never «No se pudieron combinar los perfiles».
+            if (HOUSEHOLD_REFUSALS.has(res.error)) {
+                const errorId = generateErrorId();
+                logger.warn('mergePendingDedupPair: «alguien de su hogar» refused by the household rules', { ...ctx, adopterId: own.id, reason: res.error, errorId });
+                return { success: false, error: 'household_refused', reason: res.error, errorId };
+            }
             const errorId = res.errorId
                 ?? logger.error('mergePendingDedupPair: household member not added', new Error(res.error), { ...ctx, adopterId: own.id });
             return { success: false, error: 'household_failed', errorId };

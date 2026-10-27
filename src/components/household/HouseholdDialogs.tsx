@@ -83,7 +83,13 @@ export function RemoveFromHomeDialog({ person, host, gift = false, busy, onCance
         const on = why === v;
         return (
             <label className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition-colors ${on ? 'border-teal-400 bg-teal-50' : 'border-stone-200 hover:bg-stone-50'}`} data-testid={`hh-remove-why-${v}`}>
-                <input type="radio" name="hh-remove-why" checked={on} onChange={() => setWhy(v)} className="mt-1 w-4 h-4 accent-teal-600 shrink-0" />
+                {/* A drawn radio: the native one paints its own (white) fill in dark mode; this one is teal when chosen. */}
+                <input type="radio" name="hh-remove-why" checked={on} onChange={() => setWhy(v)} className="sr-only peer" />
+                <span aria-hidden="true" data-checked={on ? 'true' : 'false'}
+                    className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 peer-focus-visible:ring-2 peer-focus-visible:ring-teal-500 peer-focus-visible:ring-offset-1 ${on ? 'border-teal-600 bg-teal-600' : ''}`}
+                    style={on ? undefined : { borderColor: 'var(--text-muted)' }}>
+                    {on && <span className="w-2 h-2 rounded-full" style={{ background: '#fff' }} />}
+                </span>
                 <span className="min-w-0">
                     <span className="block text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</span>
                     <span className="block text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>{desc}</span>

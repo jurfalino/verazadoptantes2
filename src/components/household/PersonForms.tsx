@@ -19,7 +19,7 @@
  * The «Es menor de edad» box is always shown; with an age typed it follows the
  * age and is locked (ticked under 18, unticked from 18 — a known age decides).
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, X, Phone, Mail, AtSign, IdCard, MapPin, User } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -36,7 +36,8 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
 import { householdErrorCopy, fill, joinNames } from '@/lib/householdCopy';
 
-const FIELD = 'w-full px-2.5 py-1.5 border border-stone-300 rounded outline-none focus:border-teal-500';
+/** One field style for every input and select here: ≥ 44px, the same text size (16px: no zoom on iOS), theme-remapped colours. */
+const FIELD = 'w-full min-h-[44px] px-3 border border-stone-200 rounded-lg bg-white text-base text-stone-900 outline-none focus:border-teal-500';
 const ICON: Partial<Record<ContactEntryType, typeof Phone>> = { phone: Phone, email: Mail, social: AtSign, id: IdCard, address: MapPin, alias: User };
 
 type Fail = { error: string; errorId?: string };
@@ -91,31 +92,34 @@ function PersonFields({ name, setName, rel, setRel, relativeName, age, setAge, m
     showRelationship?: boolean;
 }) {
     const { t } = useLanguage();
+    // Unique per form: the add form and a card's «Editar» can be open at once.
+    const uid = useId();
+    const ids = { name: `${uid}-name`, rel: `${uid}-rel`, age: `${uid}-age` };
     return (
         <>
             <div>
-                <label className="block text-[11px] font-semibold text-stone-500 mb-1" htmlFor="hh-person-name">{t('adopter.hh_name')}</label>
-                <input id="hh-person-name" autoFocus type="text" value={name} onChange={e => setName(e.target.value)} placeholder={t('adopter.hh_name_ph')}
-                    data-testid="hh-person-name" className={`${FIELD} text-sm`} />
+                <label className="block text-[11px] font-semibold text-stone-500 mb-1" htmlFor={ids.name}>{t('adopter.hh_name')}</label>
+                <input id={ids.name} autoFocus type="text" value={name} onChange={e => setName(e.target.value)} placeholder={t('adopter.hh_name_ph')}
+                    data-testid="hh-person-name" className={FIELD} />
                 {renameHint && <p className="text-[11px] text-stone-500 mt-1">{t('adopter.hh_rename_hint')}</p>}
             </div>
             <div className="flex gap-2 flex-wrap">
                 {showRelationship && (
                     <div className="flex-1 min-w-[140px]">
-                        <label className="block text-[11px] font-semibold text-stone-500 mb-1" htmlFor="hh-person-rel">
+                        <label className="block text-[11px] font-semibold text-stone-500 mb-1" htmlFor={ids.rel}>
                             {relativeName ? fill(t('adopter.hh_rel_of_label'), { name: relativeName }) : t('adopter.hh_rel')}
                         </label>
-                        <select id="hh-person-rel" value={rel} onChange={e => setRel(e.target.value as Relationship | '')} data-testid="hh-person-rel"
-                            className={`${FIELD} text-sm bg-white`}>
+                        <select id={ids.rel} value={rel} onChange={e => setRel(e.target.value as Relationship | '')} data-testid="hh-person-rel"
+                            className={FIELD}>
                             <option value="">{t('adopter.hh_rel_choose')}</option>
                             {RELATIONSHIPS.filter(r => r !== 'unknown').map(r => <option key={r} value={r}>{t(`adopter.hh_rel_${r}`)}</option>)}
                         </select>
                     </div>
                 )}
                 <div className="w-24">
-                    <label className="block text-[11px] font-semibold text-stone-500 mb-1" htmlFor="hh-person-age">{t('adopter.hh_age')}</label>
-                    <input id="hh-person-age" type="number" inputMode="numeric" min={0} max={120} step={1} value={age} onChange={e => setAge(e.target.value)}
-                        data-testid="hh-person-age" className={`${FIELD} text-base`} />
+                    <label className="block text-[11px] font-semibold text-stone-500 mb-1" htmlFor={ids.age}>{t('adopter.hh_age')}</label>
+                    <input id={ids.age} type="number" inputMode="numeric" min={0} max={120} step={1} value={age} onChange={e => setAge(e.target.value)}
+                        data-testid="hh-person-age" className={FIELD} />
                 </div>
             </div>
             <MinorCheckbox age={age} value={minor} onChange={setMinor} />
@@ -228,6 +232,8 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
     const [checking, setChecking] = useState(false);
     /** null = not checked yet; [] = checked, nobody (left). */
     const [candidates, setCandidates] = useState<HouseholdMatchCandidate[] | null>(null);
+    /** The «¿Es este perfil?» check failed (its errorId): the rescuer retries or adds as new, knowingly. */
+    const [checkFailed, setCheckFailed] = useState<string | null>(null);
 
     const hasIdentifier = !!name.trim() || drafts.length > 0;
     const contactInputs = (): HouseholdContactInput[] => drafts.map(({ key: _key, ...c }) => c);
@@ -267,13 +273,24 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
     async function save() {
         if (!hasIdentifier) return;
         setChecking(true);
+        setCheckFailed(null);
         let found: HouseholdMatchCandidate[] = [];
         try {
             const res = await getHouseholdMatchCandidates({ name: name.trim() || undefined, contactEntries: contactInputs(), anchorAdopterId });
+            if (res.failed) {
+                // Never a silent «new»: say the check failed (with its id) and let the rescuer choose.
+                const errorId = res.errorId ?? resolveErrorId(new Error('getHouseholdMatchCandidates: failed'), 'AddPersonForm.candidates');
+                toast.warning(t('adopter.hh_add_check_failed'), `ID: ${errorId}`);
+                setCheckFailed(errorId);
+                return;
+            }
             found = res.results.filter(r => r.adopterId !== anchorAdopterId && !excludeIds.includes(r.adopterId)).slice(0, 3);
         } catch (e) {
-            // The check is a help, not a gate: without it the person is added as new (logged).
-            resolveErrorId(e, 'AddPersonForm.candidates');
+            if (handledAsStale(e)) return;
+            const errorId = resolveErrorId(e, 'AddPersonForm.candidates');
+            toast.warning(t('adopter.hh_add_check_failed'), `ID: ${errorId}`);
+            setCheckFailed(errorId);
+            return;
         } finally {
             setChecking(false);
         }
@@ -333,6 +350,16 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
                 </div>
                 {!hasIdentifier && <p className="text-xs text-stone-500">{t('adopter.hh_add_hint')}</p>}
                 {checking && <p className="text-xs text-stone-500" role="status">{t('adopter.hh_add_checking')}</p>}
+                {checkFailed && !checking && (
+                    <div role="alert" data-testid="hh-add-check-failed" className="rounded-lg border px-3 py-2 text-xs space-y-2"
+                        style={{ background: 'var(--status-info-bg)', borderColor: 'var(--status-info-border)', color: 'var(--status-info-text)' }}>
+                        <p className="break-words">{t('adopter.hh_add_check_failed')} {t('adopter.hh_add_check_failed_hint')} (ID: {checkFailed})</p>
+                        <button type="button" disabled={busy} onClick={() => { setCheckFailed(null); void add(); }} data-testid="hh-add-anyway"
+                            className="inline-flex min-h-[44px] items-center px-3 text-sm font-semibold rounded-md border border-stone-200 bg-white text-stone-800 hover:bg-teal-50 disabled:opacity-50">
+                            {t('adopter.hh_add_anyway')}
+                        </button>
+                    </div>
+                )}
                 {current && (
                     <HouseholdCandidateCard candidate={current} busy={busy} onYes={() => { void add(current.adopterId); }} onNo={() => { void no(); }} />
                 )}

@@ -200,6 +200,14 @@ export async function deleteAdopter(adopterId: string) {
         await db.delete(adopters).where(eq(adopters.id, adopterId));
         await closeRequestsForDeletedAdopter(db, adopterId, session.user.email);
 
+        // 9. Households as profiles: the person leaves the households they lived in (as deleteOwnAdopter).
+        try {
+            const { dropMembershipsOfDeletedProfile } = await import('@/lib/households');
+            await dropMembershipsOfDeletedProfile(db, adopterId);
+        } catch (e) {
+            logger.warn('deleteAdopter (admin): household memberships of the deleted profile not removed (readers skip them)', { adopterId, actorEmail: session.user.email, error: e instanceof Error ? e.message : String(e) });
+        }
+
         logger.info('Adopter deleted', { adopterId, deletedBy: session.user.email });
         logAudit({ userEmail: session.user.email || undefined, action: 'adopter_deleted', target: adopterId });
 

@@ -51,7 +51,7 @@ import {
 import {
     notifyHouseholdMemberRemoved, notifyHouseholdPersonAdded, notifyHouseholdReaddDisputed, notifyHouseholdRelationshipChanged,
 } from '@/lib/householdNotices';
-import { canRemoveMembership, householdNameKey, MAX_HOUSEHOLD_MEMBERS, MAX_HOUSEHOLDS_PER_PROFILE } from '@/domain/households';
+import { canRemoveMembership, householdNameKey, isGiftHousehold, MAX_HOUSEHOLD_MEMBERS, MAX_HOUSEHOLDS_PER_PROFILE } from '@/domain/households';
 import { hasMinimumIdentifier } from '@/domain/adopterIdentity';
 import { householdContactSchema } from './validation';
 import { addContactEntry } from './addContactEntry';
@@ -120,7 +120,6 @@ export type HouseholdMatchCandidate = DiscoveryMatch & { householdLine: Househol
 
 const REL_SET: ReadonlySet<string> = new Set(RELATIONSHIPS);
 const MAX_CONTACTS = 20;
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const id64 = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 64) : '');
 const id200 = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 200) : '');
 
@@ -165,7 +164,13 @@ function parseContacts(raw: unknown): HouseholdContactInput[] | null {
  */
 async function resolveHousehold(db: Db, anchorId: string, chosen: string, actor: string, ctx: Record<string, unknown>): Promise<string | 'not_found'> {
     if (chosen) {
-        return (await householdExists(db, chosen)) && (await isMemberOf(db, chosen, anchorId)) ? chosen : 'not_found';
+        if (!(await householdExists(db, chosen)) || !(await isMemberOf(db, chosen, anchorId))) return 'not_found';
+        // A gift household is never a home to add people to (Task 8 fix A1): only «Crear perfil» fills it.
+        if (isGiftHousehold(await membershipsOf(db, chosen, MAX_HOUSEHOLD_MEMBERS + 1))) {
+            logger.warn('addHouseholdPerson: a gift household was chosen as the target, refused', { ...ctx, householdId: chosen });
+            return 'not_found';
+        }
+        return chosen;
     }
     for (let attempt = 0; attempt < 2; attempt++) {
         const householdId = await ensureHousehold(db, anchorId, actor);
@@ -673,7 +678,7 @@ export async function removeHouseholdMembership(
  */
 export async function getHouseholdMatchCandidates(
     input: { name?: string; contactEntries?: HouseholdContactInput[]; anchorAdopterId?: string },
-): Promise<{ results: HouseholdMatchCandidate[] }> {
+): Promise<{ results: HouseholdMatchCandidate[]; failed?: true; errorId?: string }> {
     const actor = await sessionActor();
     if (!actor) return { results: [] };
     const anchorId = id64(input?.anchorAdopterId);
@@ -685,11 +690,12 @@ export async function getHouseholdMatchCandidates(
             .filter(e => e && e.type === t && typeof e.value === 'string')
             .map(e => e.value.trim().slice(0, 500))
             .filter(Boolean);
-        const { results } = await searchFormDuplicates(
+        const { results, failed } = await searchFormDuplicates(
             { name, phones: pick('phone'), emails: pick('email'), socials: pick('social'), ...(anchorId ? { excludeAdopterId: anchorId } : {}) },
             { minRelevance: 15, allowContactOnly: true },
             async () => actor,
         );
+        if (failed) throw new Error('duplicate check failed');
         const matches = results.filter(r => r.adopter.id !== anchorId);
         if (matches.length === 0) return { results: [] };
         const db = await getDb();
@@ -700,8 +706,9 @@ export async function getHouseholdMatchCandidates(
         const lines = missing.length > 0 ? await householdLinesFor(db, actor, missing) : {};
         return { results: matches.map(r => ({ ...r, householdLine: r.households ?? lines[r.adopter.id] ?? [] })) };
     } catch (e) {
-        logger.warn('getHouseholdMatchCandidates failed — the form shows no suggestions', { ...ctx, error: errMsg(e) });
-        return { results: [] };
+        // The form says the check failed (with this id) and lets the rescuer decide — never a silent «new».
+        const errorId = logger.error('getHouseholdMatchCandidates failed — the form shows no suggestions', e, ctx);
+        return { results: [], failed: true, errorId };
     }
 }
 

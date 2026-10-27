@@ -53,7 +53,7 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
     isAdmin: boolean;
     /** «Ver como desconocido»: no menu, no own-line. */
     preview: boolean;
-    /** A gift recipient (P5): «Quitar como destinatario», no «Editar». */
+    /** A gift recipient (P5): «Quitar como destinatario» instead of «Quitar del hogar» («Editar» as on every card). */
     gift?: boolean;
     testId?: string;
 }) {

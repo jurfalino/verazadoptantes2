@@ -1,5 +1,5 @@
 import { execSync } from 'child_process';
-import { expect, type APIRequestContext, type Browser, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Browser, type Locator, type Page } from '@playwright/test';
 
 /**
  * Shared fixture helpers for the households-as-profiles e2e specs (Task 8).
@@ -142,9 +142,14 @@ export async function memberMenu(card: ReturnType<Page['getByTestId']>, item: 'e
     await pick.click();
 }
 
-/** The add form: name, relationship, age, one phone; then «Guardar» (the «¿Es este perfil?» check runs). */
-export async function fillAddForm(page: Page, p: { name?: string; relationship?: string; age?: number; phone?: string }) {
-    await page.getByTestId('household-add-member').first().click();
+/**
+ * The add form: name, relationship, age, one phone. `within`: the household block whose
+ * «Agregar familiar / conviviente» to use (several homes → several buttons); default: the only one.
+ */
+export async function fillAddForm(page: Page, p: { name?: string; relationship?: string; age?: number; phone?: string }, within?: Locator) {
+    const button = (within ?? page).getByTestId('household-add-member');
+    await expect(button).toHaveCount(1);
+    await button.click();
     const form = page.getByTestId('hh-add-form');
     await expect(form).toBeVisible({ timeout: 15_000 });
     if (p.name) await form.getByTestId('hh-person-name').fill(p.name);
@@ -158,4 +163,19 @@ export async function fillAddForm(page: Page, p: { name?: string; relationship?:
         await expect(form.getByTestId('hh-add-draft')).toHaveCount(1);
     }
     return form;
+}
+
+/** «Guardar» on the add form; a weak «¿Es este perfil?» on someone unrelated is answered «No» (a race, never a fixed wait). */
+export async function saveAsNew(page: Page) {
+    const form = page.getByTestId('hh-add-form');
+    await form.getByTestId('hh-form-save').click();
+    for (let i = 0; i < 4; i++) {
+        const candidate = form.getByTestId('hh-candidate');
+        const done = form.waitFor({ state: 'detached', timeout: 20_000 }).then(() => 'done' as const).catch(() => 'timeout' as const);
+        const asked = candidate.waitFor({ state: 'visible', timeout: 20_000 }).then(() => 'asked' as const).catch(() => 'timeout' as const);
+        const first = await Promise.race([done, asked]);
+        if (first !== 'asked') break;
+        await candidate.getByTestId('hh-candidate-no').click();
+    }
+    await expect(form).toHaveCount(0, { timeout: 30_000 });
 }
