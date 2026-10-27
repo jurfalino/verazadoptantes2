@@ -54,7 +54,7 @@ Going forward each person's contacts follow their own profile (owner, team, gran
 ### Adding someone to a household
 Anyone signed in can do it (D54). Fields: name, relationship, age, contacts. **The profile rule applies (Jon): a name or at least one contact detail** (`hasMinimumIdentifier`); a relationship alone isn't enough. Before saving, the existing duplicate check runs (as on «Nuevo adoptante»):
 - **A likely match** → «¿Es este perfil?» Choosing it links the existing profile, and the contacts typed are added to it through `addContactEntry` (credited, grants, no double copies).
-- **No match, or "no, es otra persona"** → a new profile owned by the adder, with the contacts on it. Then the membership.
+- **No match, or "no, es otra persona"** → a new profile owned by the host's owner (see «Who owns…»), with the contacts on it credited to the adder. Then the membership.
 
 Credit, history and notices are the same as today's contribution model (D54). The membership row records `added_by`.
 
@@ -75,33 +75,6 @@ Credit, history and notices are the same as today's contribution model (D54). Th
 - **Search returns the people who match, nothing else (Jon).** Searching the son's name and a phone registered only on the son shows **only the son's card**. Pedro gets no card of his own from that search. The son's card carries his household like any profile («Convive con Pedro» with Pedro's live rating and alerts, D46), so a dangerous relative is visible on the card. That line is Claude's reading.
 - **Tokens:** each profile tokenizes only itself (name, aliases, contacts). A host's tokens no longer include its members'. Aliases («Conocido/a como») stay name tokens of their own profile.
 - **Duplicate detection** never pairs two profiles in the same household («alguien de su hogar» is already a recorded answer). The «¿Es este perfil?» card on «Nuevo adoptante» and on adding a household member shows the candidate's household line, so a relative of a flagged person is recognised before saving.
-
-### Privacy carried over (decided by Claude)
-Going forward each person's contacts follow their own profile (owner, team, grants). At the migration nobody loses or gains sight: each new member profile copies the host's `is_public`, and every grant that unlocked the host's contacts (`all_contact` and `entry`) is copied to the member profiles it covered.
-
-### Adding someone to a household
-Anyone signed in can do it (D54). Fields: name, relationship, age, contacts. **The profile rule applies (Jon): a name or at least one contact detail** (`hasMinimumIdentifier`); a relationship alone isn't enough. Before saving, the existing duplicate check runs (as on «Nuevo adoptante»):
-- **A likely match** → «¿Es este perfil?» Choosing it links the existing profile, and the contacts typed are added to it through `addContactEntry` (credited, grants, no double copies).
-- **No match, or "no, es otra persona"** → a new profile owned by the adder, with the contacts on it. Then the membership.
-
-Credit, history and notices are the same as today's contribution model (D54). The membership row records `added_by`.
-
-### Removing / correcting
-- **«No convive»** (D48) removes that person's membership from that household, for everyone. History goes on the affected profiles and the household's other teams are notified. If the same pair is linked again after a correction, admins are notified (dispute), as today.
-- **Editing (Jon, 2026-10-27):** «⋯» → «Editar» opens one small form.
-  - **Relationship:** editable by whoever added the person, the teams of anyone in the household, and admins.
-  - **Name and age:** belong to the person's PROFILE and are editable by whoever can edit that profile (owner, team, admins). Others see these fields greyed out with «Lo puede cambiar quien cargó su perfil».
-- **Age lives on the profile (Jon, 2026-10-27):** new adopter columns `age` + `age_as_of`. The age goes up by itself as today (`currentAge`) and shows on the person's own profile too. The membership no longer has its own age.
-- **Children (Jon, 2026-10-27):** a minor is a profile marked «Menor de edad». Minor means current age under 18, or the «Es menor de edad» checkbox (`is_minor`). The checkbox is always visible and turns on by itself when the age entered is under 18. Such a profile is searchable (so the family is found) and shows the tag. It gets **no rating, no alerts and no adoption records**: those go on the adults. The «¿Qué pasó con …?» actions and rating controls are hidden on it. At 18 (by age) the tag drops and it becomes a normal profile.
-- **Member card (Jon, 2026-10-27):** the person's name is the link to their profile (no «Ver perfil completo» row). A «⋯» menu next to the name holds «Editar», «Quitar del hogar» and «Eliminar perfil de {nombre}» / «Pedir eliminación».
-  - **«Quitar del hogar»** asks why. «Lo cargué por error» removes the membership with no record. «No vive acá» is «No convive»: it writes a correction, and a re-add is a dispute.
-  - **«Eliminar perfil»** follows today's deletion rules exactly. The owner can delete only when nobody else contributed (no one else's records, photos, edits or contacts, no alerts, no linked forms). Otherwise the owner gets «Pedir eliminación» (admins decide; it goes to the Papelera, restorable). Admins can always delete. Nobody else sees it.
-- **Who may remove a membership:** whoever added it; the team (owner, org-mates) of any profile in that household; admins and moderators. Others get «No convive» only through the dispute path.
-
-### Search and duplicate detection (abuse detection)
-- **Search:** a match on any profile also returns the households it belongs to. The result names the matched person and shows «Convive con Pedro (★1)». Searching a household member's name or phone still lands on the main person's record, as today.
-- **Tokens:** today a host's tokens include its members' names and contacts. After the change, each profile tokenizes itself only. Household expansion happens at match time: candidate matches pull in the matched profile's household. Duplicate detection never pairs two profiles that share a household («alguien de su hogar» is already a recorded answer).
-- **Pre-save check** on «Nuevo adoptante» and on adding a household member: a match against any household member shows that person's household in the «¿Es este perfil?» card, so an abuser's relative is recognised.
 
 ### Privacy
 Each person's contacts follow their own profile's protection and grants. A household card shows each member's live summary exactly as the viewer would see that profile (D46). It never shows more.
