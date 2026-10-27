@@ -2538,6 +2538,8 @@ export const en = {
         view_profile_btn: 'View profile',
         add_interaction_to: 'Add a new interaction to {name}',
         relative_failed: 'Could not add as a relative',
+        relative_link_fell_back: 'Could not link {name} to the profile you chose: added as a new person instead.',
+        relative_check_failed: 'We couldn’t check whether {name} already has a profile: they are added as a new person.',
         relative_linked: "Linked to {name}'s profile.",
         relative_unlink: 'Undo',
         possible_match_title: 'This person may already exist',

@@ -47,7 +47,7 @@ import { resolveErrorId, reportClientError } from '@/lib/clientErrorReporter';
 import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, recordDateFrom, aliasForMerge, cleanOtherPeople, extractionQuality, type PostPerson, type ExtractionIssue } from '@/domain/importInput';
 import { needsIdentityChoice as needsIdentityChoiceFor } from '@/domain/identityChoice';
 import { ImportRelativeCheck, type RelativeChoice } from '@/components/import/ImportRelativeCheck';
-import { householdErrorCopy } from '@/lib/householdCopy';
+import { fill, householdErrorCopy } from '@/lib/householdCopy';
 import type { HouseholdContactInput } from '@/app/actions/households';
 import DatePicker from '@/components/ui/DatePicker';
 import MatchCompare from '@/components/MatchCompare';
@@ -1261,6 +1261,9 @@ export default function ImportWizard() {
                 const linked = await addHouseholdPerson({ ...base, existingProfileId: m.existingProfileId });
                 if (linked.ok || linked.error === 'already_there') return;
                 logUxIssue('import: recognised relative not linked, added as new instead', { reason: linked.error });
+                // Final fix P5: the rescuer chose that profile — say it didn't link, and why.
+                const why = householdErrorCopy(t, linked.error);
+                toast.warning(fill(t('import.relative_link_fell_back'), { name: m.name }), why.refused ? why.message : `ID: ${('errorId' in linked && linked.errorId) || resolveErrorId(new Error(`addHouseholdPerson (import link): ${linked.error}`), 'ImportWizard.relativeLink')}`);
             }
             const res = await addHouseholdPerson({ ...base, name: m.name });
             if (!res.ok && res.error !== 'already_there') report(res);

@@ -15,7 +15,8 @@ import { useLanguage } from '@/context/LanguageContext';
 import { getHouseholdMatchCandidates } from '@/app/actions';
 import type { HouseholdContactInput, HouseholdMatchCandidate } from '@/app/actions/households';
 import { HouseholdCandidateCard } from '@/components/household/HouseholdCandidateCard';
-import { reportClientError } from '@/lib/clientErrorReporter';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { handledAsStale } from '@/lib/errorMessage';
 import { fill } from '@/lib/householdCopy';
 
 /** The relative's answer: a profile id to link, 'new', or undefined (not answered → new). */
@@ -31,16 +32,27 @@ export function ImportRelativeCheck({ name, contactEntries, excludeIds, choice, 
 }) {
     const { t } = useLanguage();
     const [candidates, setCandidates] = useState<HouseholdMatchCandidate[] | null>(null);
+    /** The check failed (its errorId): said, never a silent «new» (final fix P5, like AddPersonForm). */
+    const [checkFailed, setCheckFailed] = useState<string | null>(null);
     const key = JSON.stringify([name, contactEntries.map(c => c.value)]);
 
     useEffect(() => {
         let live = true;
+        setCheckFailed(null);
         getHouseholdMatchCandidates({ name: name.trim() || undefined, contactEntries })
-            .then(res => { if (live) setCandidates(res.results.filter(r => !excludeIds.includes(r.adopterId)).slice(0, 3)); })
+            .then(res => {
+                if (!live) return;
+                if (res.failed) {
+                    setCheckFailed(res.errorId ?? resolveErrorId(new Error('getHouseholdMatchCandidates (import relative): failed'), 'ImportRelativeCheck'));
+                    setCandidates([]);
+                    return;
+                }
+                setCandidates(res.results.filter(r => !excludeIds.includes(r.adopterId)).slice(0, 3));
+            })
             .catch((e: unknown) => {
-                // A help, not a gate: without it the relative is added as new.
-                void reportClientError({ message: 'import: relative «¿Es este perfil?» check failed', source: 'ImportRelativeCheck', level: 'warn', extra: { error: e instanceof Error ? e.message : String(e) } });
-                if (live) setCandidates([]);
+                // A help, not a gate: without it the relative is added as new — and the rescuer is told.
+                if (handledAsStale(e)) return;
+                if (live) { setCheckFailed(resolveErrorId(e, 'ImportRelativeCheck')); setCandidates([]); }
             });
         return () => { live = false; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -52,6 +64,14 @@ export function ImportRelativeCheck({ name, contactEntries, excludeIds, choice, 
             <p className="text-xs text-teal-800 px-3 pb-2" data-testid="import-relative-linked">
                 {fill(t('import.relative_linked'), { name: picked?.adopter.name || name })}{' '}
                 <button type="button" onClick={() => onChoose(undefined)} className="inline-flex min-h-[44px] items-center font-semibold underline">{t('import.relative_unlink')}</button>
+            </p>
+        );
+    }
+    if (checkFailed && choice !== 'new') {
+        return (
+            <p role="alert" data-testid="import-relative-check-failed" className="mx-3 mb-2 rounded-lg border px-3 py-2 text-xs break-words"
+                style={{ background: 'var(--status-warning-bg)', borderColor: 'var(--status-warning-border)', color: 'var(--status-warning-text)' }}>
+                {fill(t('import.relative_check_failed'), { name: name.trim() || t('adopter.nameless') })} (ID: {checkFailed})
             </p>
         );
     }

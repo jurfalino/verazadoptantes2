@@ -375,7 +375,7 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
                 {checking && <p className="text-xs text-stone-500" role="status">{t('adopter.hh_add_checking')}</p>}
                 {checkFailed && !checking && (
                     <div role="alert" data-testid="hh-add-check-failed" className="rounded-lg border px-3 py-2 text-xs space-y-2"
-                        style={{ background: 'var(--status-info-bg)', borderColor: 'var(--status-info-border)', color: 'var(--status-info-text)' }}>
+                        style={{ background: 'var(--status-warning-bg)', borderColor: 'var(--status-warning-border)', color: 'var(--status-warning-text)' }}>
                         <p className="break-words">{t('adopter.hh_add_check_failed')} {t('adopter.hh_add_check_failed_hint')} (ID: {checkFailed})</p>
                         <button type="button" disabled={busy} onClick={() => { setCheckFailed(null); void add(); }} data-testid="hh-add-anyway"
                             className="inline-flex min-h-[44px] items-center px-3 text-sm font-semibold rounded-md border border-stone-200 bg-white text-stone-800 hover:bg-teal-50 disabled:opacity-50">

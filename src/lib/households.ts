@@ -73,7 +73,7 @@ export type HouseholdMemberView = LinkedSummary & {
     age: number | null;
     /** The household's own anchor row (added next to nobody): the person relationships point at — no «Editar» there. */
     isAnchor: boolean;
-    /** The viewer added this membership («Lo agregaste vos»). */
+    /** The viewer added this membership («Vos agregaste a esta persona»). */
     addedByViewer: boolean;
     /** The viewer owns this member's profile (the deletion items: «Eliminar perfil» / «Pedir eliminación»). */
     ownerIsViewer: boolean;

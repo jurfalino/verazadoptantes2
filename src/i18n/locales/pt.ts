@@ -2543,6 +2543,8 @@ export const pt = {
         view_profile_btn: 'Ver perfil',
         add_interaction_to: 'Adicionar uma nova interação a {name}',
         relative_failed: 'Não foi possível adicionar como familiar',
+        relative_link_fell_back: 'Não foi possível vincular {name} ao perfil escolhido: foi adicionado como pessoa nova.',
+        relative_check_failed: 'Não conseguimos verificar se {name} já tem perfil: é adicionado como pessoa nova.',
         relative_linked: 'Vinculado ao perfil de {name}.',
         relative_unlink: 'Desfazer',
         possible_match_title: 'Esta pessoa pode já existir',
