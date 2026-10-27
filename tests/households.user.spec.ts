@@ -313,7 +313,7 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
             const which = page.getByTestId('household-add-which');
             await expect(which.getByTestId('household-add-which-option')).toHaveCount(2);
             await expect(which.locator(`[data-household-id="${HH_DAD}"]`)).toContainText('Pablo');
-            await page.getByTestId('household-add-member').click(); // closes it again
+            await page.mouse.click(5, 300); // outside: it closes
             await expect(which).toHaveCount(0);
 
             await fillAddForm(page, { name: NEW }, HH_DAD);

@@ -241,11 +241,12 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
                                             <>
                                                 {locked && <Lock className="w-3 h-3 opacity-70" aria-label={t('adopter.ce_masked')} data-testid="household-member-contacts-locked" />}
                                                 {dataCount === 1 ? t('adopter.hh_data_one') : fill(t('adopter.hh_data_many'), { n: dataCount })}
+                                                <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${contactsOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
                                             </>
                                         ) : (
+                                            // Nothing to show yet: the way to add one (D55), not a list to open.
                                             <><Plus className="w-3 h-3" aria-hidden="true" />{t('adopter.hh_data_add')}</>
                                         )}
-                                        <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${contactsOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
                                     </button>
                                 </>
                             )}
