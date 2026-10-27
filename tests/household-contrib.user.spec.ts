@@ -107,19 +107,19 @@ test.describe('household contributions by a non-owner (D54, D55)', () => {
         // ── D55: a phone added on a housemate's card goes to THEIR profile.
         const brunoCard = cards.filter({ hasText: BRUNO_NAME });
         await brunoCard.getByTestId('household-member-contacts-toggle').click();
-        await brunoCard.getByTestId('linked-add-contact').click();
+        await brunoCard.getByTestId('linked-contact-add-trigger').click();
         await brunoCard.getByTestId('linked-contact-type-phone').click();
-        await brunoCard.getByTestId('linked-contact-input').fill(BRUNO_PHONE);
-        await brunoCard.getByTestId('linked-contact-save').click();
+        await brunoCard.getByTestId('linked-contact-composer-input').fill(BRUNO_PHONE);
+        await brunoCard.getByTestId('linked-contact-composer-submit').click();
         await expect.poll(() => contactsOf(BRUNO).map(e => [e.value, e.addedBy]), { timeout: 15_000 }).toContainEqual([BRUNO_PHONE, VIEWER]);
         await expect(brunoCard.getByTestId('linked-summary')).toContainText(BRUNO_PHONE, { timeout: 30_000 });
         expect(contactsOf(HOST)).toEqual(hostContactsBefore);
 
         // It fits a phone: no sideways scroll with the composer open; the ⋯ target is ≥ 44px.
         await page.setViewportSize({ width: 390, height: 844 });
-        await brunoCard.getByTestId('linked-add-contact').click();
+        await brunoCard.getByTestId('linked-contact-add-trigger').click();
         await brunoCard.getByTestId('linked-contact-type-phone').click();
-        await expect(brunoCard.getByTestId('linked-contact-input')).toBeVisible();
+        await expect(brunoCard.getByTestId('linked-contact-composer-input')).toBeVisible();
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
         expect(overflow).toBeLessThanOrEqual(0);
         const menuBox = await mine.getByTestId('household-member-menu').boundingBox();

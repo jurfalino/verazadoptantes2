@@ -1009,7 +1009,10 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     const hasLegacyFamilyText = !!data.familyMembers?.trim();
 
     return (
-        <div className={`bg-white rounded-2xl shadow-sm border border-stone-200 relative group transition-all duration-300 overflow-hidden ${isEditing ? 'ring-4 ring-teal-50/50' : ''}`}>
+        // `overflow-x-clip`, not `overflow-hidden`: still nothing wider than the card on a phone, but a menu
+        // opened near the bottom («¿En qué hogar?», a household row's ⋯) may hang below the card instead of
+        // being cut off by it — with `overflow-hidden` «¿En qué hogar?» was invisible.
+        <div className={`bg-white rounded-2xl shadow-sm border border-stone-200 relative group transition-all duration-300 overflow-x-clip ${isEditing ? 'ring-4 ring-teal-50/50' : ''}`}>
 
             {/* Hoisted hidden file input — triggered by both the empty-state camera button
                 AND the "Cambiar foto" action inside the profile-photo lightbox. Single ref,
@@ -1661,6 +1664,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                     data={households}
                                     // Anyone signed in adds (a stranger too, so also in the preview).
                                     signedIn={!!isAuthenticated}
+                                    currentUser={previewAsStranger ? undefined : currentUser}
                                     isAdmin={isAdmin && !previewAsStranger}
                                     preview={previewAsStranger}
                                     hasLegacyText={hasLegacyFamilyText}

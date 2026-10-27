@@ -311,12 +311,12 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
             await dismissCountryBanner(page);
             await expect(page.getByTestId('household-member')).toHaveCount(2, { timeout: 30_000 });
             await expect(page.getByTestId('household-home-divider')).toHaveCount(2);
-            // Ana has no contacts: «+ Agregar dato» opens straight at the composer's types.
+            // Ana has no contacts: «0 datos ▾» opens her (empty) list with the one «Agregar dato de contacto».
             const mom = page.locator(`[data-testid="household-member"][data-profile-id="${MOM}"]`);
             await mom.getByTestId('household-member-contacts-toggle').click();
-            await expect(mom.getByTestId('linked-contact-type-phone')).toBeVisible();
+            await expect(mom.getByTestId('linked-contact-add-trigger')).toBeVisible();
             await mom.getByTestId('household-member-contacts-toggle').click();
-            await expect(mom.getByTestId('linked-contact-type-phone')).toHaveCount(0);
+            await expect(mom.getByTestId('linked-contact-add-trigger')).toHaveCount(0);
             // The chooser lists both homes, each by its people.
             await page.getByTestId('household-add-member').click();
             const which = page.getByTestId('household-add-which');

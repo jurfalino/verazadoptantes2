@@ -158,11 +158,12 @@ export async function fillAddForm(page: Page, p: { name?: string; relationship?:
     if (p.relationship) await form.getByTestId('hh-person-rel').selectOption(p.relationship);
     if (typeof p.age === 'number') await form.getByTestId('hh-person-age').fill(String(p.age));
     if (p.phone) {
-        await form.getByTestId('hh-add-contact').click();
+        // The profile's own contact list (ContactEntriesSection, prefix «hh-add-contact»).
+        await form.getByTestId('hh-add-contact-add-trigger').click();
         await form.getByTestId('hh-add-contact-type-phone').click();
-        await form.getByTestId('hh-add-contact-input').fill(p.phone);
-        await form.getByTestId('hh-add-contact-save').click();
-        await expect(form.getByTestId('hh-add-draft')).toHaveCount(1);
+        await form.getByTestId('hh-add-contact-composer-input').fill(p.phone);
+        await form.getByTestId('hh-add-contact-composer-submit').click();
+        await expect(form.getByTestId('hh-add-contact-chip')).toHaveCount(1);
     }
     return form;
 }

@@ -13,7 +13,8 @@ import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { MinorTag } from '@/components/MinorTag';
 import { CardHouseholdLine } from '@/components/CardHouseholdLine';
-import { SummaryContactRow, MatchesPill } from '@/components/LinkedProfileSummary';
+import { MatchesPill } from '@/components/LinkedProfileSummary';
+import { ContactRow } from '@/components/ContactRow';
 import { deserializeContactEntries, type ContactEntry } from '@/lib/contactEntries';
 import { SUMMARY_CONTACT_TYPES, MAX_SUMMARY_CONTACTS } from '@/domain/householdLinks';
 import { householdLineGroups } from '@/domain/households';
@@ -98,7 +99,7 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
                         {shown.length > 0 && (
                             <ul className="mt-3 pt-3 border-t border-dashed border-stone-200 space-y-1.5">
                                 {shown.map((c, i) => (
-                                    <SummaryContactRow key={`${c.id ?? c.type}-${i}`} c={c} trailing={contactMatched(c, candidate.matchValues) ? <MatchesPill /> : undefined} />
+                                    <ContactRow key={`${c.id ?? c.type}-${i}`} entry={c} testId="hh-candidate-contact" trailing={contactMatched(c, candidate.matchValues) ? <MatchesPill /> : undefined} />
                                 ))}
                             </ul>
                         )}

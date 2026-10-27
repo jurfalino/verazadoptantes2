@@ -21,7 +21,7 @@
  * Nothing here reads or writes the old `household_members` JSON: the data is
  * `getHouseholdsFor` (src/lib/households.ts) via the page.
  */
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, Gift, Plus, UserPlus } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -36,11 +36,11 @@ import { fill, firstName, joinNames } from '@/lib/householdCopy';
 import { householdForAdd, separateHomes } from '@/domain/households';
 
 /** «+ Agregar» — a slim text button; with 2+ homes it opens «¿En qué hogar?» (the ▾). */
-function AddMemberButton({ onClick, expanded }: { onClick: () => void; expanded?: boolean }) {
+function AddMemberButton({ onClick, expanded, buttonRef }: { onClick: () => void; expanded?: boolean; buttonRef?: Ref<HTMLButtonElement> }) {
     const { t } = useLanguage();
     return (
         // The visible «Agregar» sits under the «Familiares / Convivientes» heading; the accessible name says the whole thing.
-        <button type="button" data-testid="household-add-member" onClick={onClick} aria-label={t('adopter.hh_cta_add')}
+        <button ref={buttonRef} type="button" data-testid="household-add-member" onClick={onClick} aria-label={t('adopter.hh_cta_add')}
             aria-expanded={expanded} aria-haspopup={expanded === undefined ? undefined : 'menu'}
             className="inline-flex min-h-[44px] items-center gap-1 text-sm font-semibold text-teal-700 hover:underline">
             <Plus className="w-4 h-4" aria-hidden="true" />{t('adopter.hh_add_short')}
@@ -74,12 +74,14 @@ function GiftShell({ title, body, children, testId }: { title: string; body: str
     );
 }
 
-export default function HouseholdSection({ adopterId, hostName, data, signedIn, isAdmin, preview = false, hasLegacyText = false }: {
+export default function HouseholdSection({ adopterId, hostName, data, signedIn, currentUser, isAdmin, preview = false, hasLegacyText = false }: {
     adopterId: string;
     /** This profile's name. */
     hostName: string;
     data: ProfileHouseholds;
     signedIn: boolean;
+    /** The viewer's email: the contacts they added to a member stay editable there, as on the profile. */
+    currentUser?: string;
     /** Admin (false in «Ver como desconocido»): deletes any member's profile. */
     isAdmin: boolean;
     /** «Ver como desconocido»: what a stranger sees — no menus, no own markers, no «Crear perfil». */
@@ -97,6 +99,20 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
     /** «¿En qué hogar?» is open (2+ homes). */
     const [choosing, setChoosing] = useState(false);
     const [creating, setCreating] = useState<string | null>(null);
+    /** Focus goes back to «+ Agregar» when the form closes (cancelled or saved), as the contact list does. */
+    const addButtonRef = useRef<HTMLButtonElement>(null);
+    const wasAdding = useRef(false);
+    useEffect(() => {
+        if (wasAdding.current && adding === null) addButtonRef.current?.focus();
+        wasAdding.current = adding !== null;
+    }, [adding]);
+    /** «¿En qué hogar?» closes on Escape, back on its button. */
+    useEffect(() => {
+        if (!choosing) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setChoosing(false); addButtonRef.current?.focus(); } };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [choosing]);
 
     const homes = data.views.filter(v => !v.isGift);
     const gifts = data.views.filter(v => v.isGift);
@@ -131,7 +147,7 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
                 .filter(m => !gift || m.giftRecipient)
                 .map(m => (
                     <MemberCard key={m.membershipId} member={m} hostName={hostName} relativeName={relativeNameOf(view, m.relativeToAdopterId)}
-                        signedIn={signedIn} isAdmin={isAdmin} preview={preview} gift={gift} testId={gift ? 'household-gift-recipient' : 'household-member'} />
+                        signedIn={signedIn} currentUser={currentUser} isAdmin={isAdmin} preview={preview} gift={gift} testId={gift ? 'household-gift-recipient' : 'household-member'} />
                 ))}
         </ul>
     );
@@ -144,7 +160,7 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
             // Always an explicit household when the profile has one; only a profile-level add names none.
             const target = householdForAdd(view);
             return (
-                <div className="pt-2">
+                <div className="pt-1">
                     <AddPersonForm
                         anchorAdopterId={adopterId}
                         householdId={target}
@@ -157,19 +173,19 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
                 </div>
             );
         }
-        if (!separate) return <AddMemberButton onClick={() => setAdding(homes[0]?.id ?? '')} />;
+        if (!separate) return <AddMemberButton buttonRef={addButtonRef} onClick={() => setAdding(homes[0]?.id ?? '')} />;
         return (
             <span className="relative inline-flex">
-                <AddMemberButton onClick={() => setChoosing(c => !c)} expanded={choosing} />
+                <AddMemberButton buttonRef={addButtonRef} onClick={() => setChoosing(c => !c)} expanded={choosing} />
                 {choosing && (
                     <>
                         <span className="fixed inset-0 z-40" onClick={() => setChoosing(false)} />
                         <span role="menu" data-testid="household-add-which"
-                            className="absolute left-0 top-full mt-1 w-64 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-xl border border-stone-200 z-50 overflow-hidden flex flex-col">
+                            className="absolute left-0 top-full mt-2 w-64 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-xl border border-stone-200 z-50 overflow-hidden flex flex-col animate-in fade-in slide-in-from-top-2 duration-150">
                             <span className="px-4 pt-3 pb-1 text-xs font-semibold text-stone-500">{t('adopter.hh_add_which')}</span>
                             {homes.map(v => (
                                 <button key={v.id} type="button" role="menuitem" data-testid="household-add-which-option" data-household-id={v.id}
-                                    className="px-4 py-3 min-h-[44px] text-left text-sm font-semibold text-stone-900 hover:bg-stone-100 break-words"
+                                    className="px-4 py-3 min-h-[44px] text-left text-sm font-semibold text-stone-900 hover:bg-stone-50 transition-colors border-t border-stone-100 break-words"
                                     onClick={() => { setChoosing(false); setAdding(v.id); }}>
                                     {fill(t('adopter.hh_with_names'), { names: peopleOf(v) })}
                                 </button>
@@ -190,7 +206,7 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
                 fail.refused(res);
                 return;
             }
-            toast.success(fill(t('adopter.hh_gift_created'), { name }));
+            toast.success('✓', fill(t('adopter.hh_gift_created'), { name }));
             router.refresh();
         } catch (e) {
             fail.thrown(e);

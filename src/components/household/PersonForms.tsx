@@ -21,13 +21,14 @@
  */
 import { useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, X, Phone, Mail, AtSign, IdCard, MapPin, User } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { ContactComposer, draftPlatform, type ComposerDraft } from '@/components/ContactComposer';
+import ContactEntriesSection from '@/components/ContactEntriesSection';
+import { INLINE_CANCEL_BTN, INLINE_SAVE_BTN } from '@/components/ui/inlineFormButtons';
 import { HouseholdCandidateCard } from '@/components/household/HouseholdCandidateCard';
 import { RELATIONSHIPS, type Relationship } from '@/lib/householdMembers';
-import type { ContactEntryType } from '@/lib/contactEntries';
+import type { ContactEntry } from '@/lib/contactEntries';
 import { MINOR_AGE_LIMIT } from '@/domain/households';
 import { isValidAge } from '@/domain/profileIdentity';
 import { addHouseholdPerson, changeProfileAge, changeProfileName, checkHouseholdPersonEdit, getHouseholdMatchCandidates, updateHouseholdMembership } from '@/app/actions';
@@ -37,9 +38,13 @@ import { handledAsStale } from '@/lib/errorMessage';
 import { householdErrorCopy, fill, joinNames } from '@/lib/householdCopy';
 import { MinorCheckbox } from '@/components/MinorCheckbox';
 
-/** One field style for every input and select here: ≥ 44px, the same text size (16px: no zoom on iOS), theme-remapped colours. */
-const FIELD = 'w-full min-h-[44px] px-3 border border-stone-200 rounded-lg bg-white text-base text-stone-900 outline-none focus:border-teal-500';
-const ICON: Partial<Record<ContactEntryType, typeof Phone>> = { phone: Phone, email: Mail, social: AtSign, id: IdCard, address: MapPin, alias: User };
+/**
+ * The inputs of the profile's own inline forms (ContactEntriesSection's composer): these fields sit right
+ * above that composer in the same form, so they look like it — 16px on a phone (no iOS zoom), 14px from `sm:`.
+ */
+const FIELD = 'w-full px-2 py-1.5 border border-stone-300 rounded bg-white text-base sm:text-sm text-stone-900 outline-none focus:border-teal-500';
+/** A field's label: the composer's own small label (ce_phone_apps / ce_social_which). */
+const LABEL = 'block text-xs font-semibold text-stone-500 mb-1';
 
 type Fail = { error: string; errorId?: string };
 
@@ -84,15 +89,15 @@ function PersonFields({ name, setName, rel, setRel, relativeName, age, setAge, m
     return (
         <>
             <div>
-                <label className="block text-[11px] font-semibold text-stone-500 mb-1" htmlFor={ids.name}>{t('adopter.hh_name')}</label>
+                <label className={LABEL} htmlFor={ids.name}>{t('adopter.hh_name')}</label>
                 <input id={ids.name} autoFocus type="text" value={name} onChange={e => setName(e.target.value)} placeholder={t('adopter.hh_name_ph')}
                     data-testid="hh-person-name" className={FIELD} />
-                {renameHint && <p className="text-[11px] text-stone-500 mt-1">{t('adopter.rename_hint')}</p>}
+                {renameHint && <p className="text-xs text-stone-500 mt-1">{t('adopter.rename_hint')}</p>}
             </div>
             <div className="flex gap-2 flex-wrap">
                 {showRelationship && (
                     <div className="flex-1 min-w-[140px]">
-                        <label className="block text-[11px] font-semibold text-stone-500 mb-1" htmlFor={ids.rel}>
+                        <label className={LABEL} htmlFor={ids.rel}>
                             {relativeName ? fill(t('adopter.hh_rel_of_label'), { name: relativeName }) : t('adopter.hh_rel')}
                         </label>
                         <select id={ids.rel} value={rel} onChange={e => setRel(e.target.value as Relationship | '')} data-testid="hh-person-rel"
@@ -103,7 +108,7 @@ function PersonFields({ name, setName, rel, setRel, relativeName, age, setAge, m
                     </div>
                 )}
                 <div className="w-24">
-                    <label className="block text-[11px] font-semibold text-stone-500 mb-1" htmlFor={ids.age}>{t('adopter.hh_age')}</label>
+                    <label className={LABEL} htmlFor={ids.age}>{t('adopter.hh_age')}</label>
                     <input id={ids.age} type="number" inputMode="numeric" min={0} max={120} step={1} value={age} onChange={e => setAge(e.target.value)}
                         data-testid="hh-person-age" className={FIELD} />
                 </div>
@@ -117,14 +122,12 @@ function FormButtons({ busy, onCancel, onSave, canSave = true }: { busy: boolean
     const { t } = useLanguage();
     return (
         <div className="flex items-center gap-2 justify-end">
-            <button type="button" onClick={onCancel} disabled={busy} data-testid="hh-form-cancel"
-                className="min-h-[44px] text-xs font-medium px-3 py-1.5 rounded text-stone-700 bg-stone-100 hover:bg-stone-200 disabled:opacity-50">
-                <X className="w-3.5 h-3.5 inline" /> {t('adopter.ce_edit_cancel')}
+            <button type="button" onClick={onCancel} disabled={busy} data-testid="hh-form-cancel" className={INLINE_CANCEL_BTN}>
+                <X className="w-3.5 h-3.5" /> {t('adopter.ce_edit_cancel')}
             </button>
             {onSave && (
-                <button type="button" onClick={onSave} disabled={busy || !canSave} data-testid="hh-form-save"
-                    className="min-h-[44px] text-xs font-semibold px-3.5 py-1.5 rounded bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40">
-                    <Check className="w-3.5 h-3.5 inline" /> {t('adopter.ce_edit_save')}
+                <button type="button" onClick={onSave} disabled={busy || !canSave} data-testid="hh-form-save" className={INLINE_SAVE_BTN}>
+                    <Check className="w-3.5 h-3.5" /> {t('adopter.ce_edit_save')}
                 </button>
             )}
         </div>
@@ -194,7 +197,7 @@ export function EditMemberForm({ member, relativeName, onDone }: {
                 if (!res.ok) { fail.refused(res); if (res.error === 'conflict') onDone(); return; }
                 fail.partial(res.warningErrorId);
             }
-            toast.success(t('adopter.hh_edit_saved'));
+            toast.success('✓', t('adopter.hh_edit_saved'));
             onDone();
             router.refresh();
         } catch (e) {
@@ -205,7 +208,7 @@ export function EditMemberForm({ member, relativeName, onDone }: {
     }
 
     return (
-        <div className="space-y-2" data-testid="hh-edit-form">
+        <div className="space-y-3" data-testid="hh-edit-form">
             <PersonFields name={name} setName={setName} rel={rel} setRel={setRel} relativeName={relativeName} age={age} setAge={setAge}
                 minor={minor} setMinor={setMinor} renameHint showRelationship={showRelationship} />
             <FormButtons busy={busy} onCancel={onDone} onSave={save} canSave={!!name.trim()} />
@@ -213,7 +216,14 @@ export function EditMemberForm({ member, relativeName, onDone }: {
     );
 }
 
-type Draft = HouseholdContactInput & { key: string };
+/** A contact as the server takes it (the list's local ids stay here). */
+const asInput = (c: ContactEntry): HouseholdContactInput => ({
+    type: c.type, value: c.value,
+    ...(c.streetAndNumber ? { streetAndNumber: c.streetAndNumber } : {}),
+    ...(c.locality ? { locality: c.locality } : {}),
+    ...(c.platform ? { platform: c.platform } : {}),
+    ...(c.apps?.length ? { apps: c.apps } : {}),
+});
 
 /** «Agregar familiar / conviviente»: the person, then «¿Es este perfil?», then the add. */
 export function AddPersonForm({ anchorAdopterId, householdId, hostName, relativeName, othersInHome, excludeIds, onDone }: {
@@ -236,7 +246,9 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
     const [rel, setRel] = useState<Relationship | ''>('');
     const [age, setAge] = useState('');
     const [minor, setMinor] = useState(false);
-    const [drafts, setDrafts] = useState<Draft[]>([]);
+    const [drafts, setDrafts] = useState<ContactEntry[]>([]);
+    /** A contact is being written: its own «Cancelar / Guardar» are the only pair on screen. */
+    const [composing, setComposing] = useState(false);
     const [busy, setBusy] = useState(false);
     const [checking, setChecking] = useState(false);
     /** null = not checked yet; [] = checked, nobody (left). */
@@ -245,13 +257,20 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
     const [checkFailed, setCheckFailed] = useState<string | null>(null);
 
     const hasIdentifier = !!name.trim() || drafts.length > 0;
-    const contactInputs = (): HouseholdContactInput[] => drafts.map(({ key: _key, ...c }) => c);
+    const contactInputs = (): HouseholdContactInput[] => drafts.map(asInput);
     // Anything typed after the check makes it stale.
     const edited = <T,>(set: (v: T) => void) => (v: T) => { set(v); setCandidates(null); };
 
-    async function add(existingProfileId?: string) {
+    /** The typed age, or undefined (after the warning) when it is not a valid one. */
+    function validAge(): number | null | undefined {
         const n = age.trim() === '' ? null : Number(age);
-        if (n !== null && !isValidAge(n)) { toast.warning(t('adopter.age_invalid')); return; }
+        if (n !== null && !isValidAge(n)) { toast.warning(t('adopter.age_invalid')); return undefined; }
+        return n;
+    }
+
+    async function add(existingProfileId?: string) {
+        const n = validAge();
+        if (n === undefined) return;
         setBusy(true);
         try {
             const res = await addHouseholdPerson({
@@ -281,24 +300,23 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
 
     async function save() {
         if (!hasIdentifier) return;
+        // The age is checked BEFORE «¿Es este perfil?»: never ask about a form that then can't be saved.
+        if (validAge() === undefined) return;
         setChecking(true);
         setCheckFailed(null);
         let found: HouseholdMatchCandidate[] = [];
         try {
             const res = await getHouseholdMatchCandidates({ name: name.trim() || undefined, contactEntries: contactInputs(), anchorAdopterId });
             if (res.failed) {
-                // Never a silent «new»: say the check failed (with its id) and let the rescuer choose.
-                const errorId = res.errorId ?? resolveErrorId(new Error('getHouseholdMatchCandidates: failed'), 'AddPersonForm.candidates');
-                toast.warning(t('adopter.hh_add_check_failed'), `ID: ${errorId}`);
-                setCheckFailed(errorId);
+                // Never a silent «new»: the panel below says the check failed (with its id) and lets the rescuer choose.
+                // One message, in the form — not a toast repeating it.
+                setCheckFailed(res.errorId ?? resolveErrorId(new Error('getHouseholdMatchCandidates: failed'), 'AddPersonForm.candidates'));
                 return;
             }
             found = res.results.filter(r => r.adopterId !== anchorAdopterId && !excludeIds.includes(r.adopterId)).slice(0, 3);
         } catch (e) {
             if (handledAsStale(e)) return;
-            const errorId = resolveErrorId(e, 'AddPersonForm.candidates');
-            toast.warning(t('adopter.hh_add_check_failed'), `ID: ${errorId}`);
-            setCheckFailed(errorId);
+            setCheckFailed(resolveErrorId(e, 'AddPersonForm.candidates'));
             return;
         } finally {
             setChecking(false);
@@ -317,44 +335,25 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
     const current = candidates && candidates.length > 0 ? candidates[0] : null;
 
     return (
-        <div className="border border-stone-200 rounded-xl p-3.5 bg-stone-50" data-testid="hh-add-form">
-            <div className="space-y-2">
+        // A row being written, like the profile's composer: no grey card (it read as a dark hole in Azul
+        // Noche), aligned with the names above it, the list's own separator on top.
+        <div className="pl-10 pt-3 border-t border-stone-100" data-testid="hh-add-form">
+            <div className="space-y-3">
                 <PersonFields name={name} setName={edited(setName)} rel={rel} setRel={setRel} relativeName={relativeName}
                     age={age} setAge={setAge} minor={minor} setMinor={setMinor} />
-                <div className="pt-1">
-                    <div className="block text-[11px] font-semibold text-stone-500 mb-1">{t('adopter.hh_contacts_label')}</div>
-                    {drafts.length > 0 && (
-                        <ul className="space-y-1.5 mb-1">
-                            {drafts.map(c => {
-                                const Icon = ICON[c.type] ?? AtSign;
-                                return (
-                                    <li key={c.key} className="flex items-center gap-2 text-sm min-w-0" data-testid="hh-add-draft">
-                                        <Icon className="w-4 h-4 shrink-0 text-teal-600" aria-hidden="true" />
-                                        <span className="w-20 shrink-0 text-stone-500 text-xs">{t(`adopter.ce_type_${c.type}`)}</span>
-                                        <span className="flex-1 min-w-0 truncate text-stone-800">{c.value}</span>
-                                        <button type="button" aria-label={t('adopter.ce_remove')} disabled={busy}
-                                            onClick={() => { setDrafts(prev => prev.filter(d => d.key !== c.key)); setCandidates(null); }}
-                                            className="inline-flex min-w-[44px] min-h-[44px] items-center justify-center text-stone-500 hover:text-red-600 rounded">
-                                            <X className="w-3.5 h-3.5" />
-                                        </button>
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    )}
-                    <ContactComposer
-                        disabled={busy}
-                        onSubmit={async (d: ComposerDraft) => {
-                            const platform = draftPlatform(d);
-                            setDrafts(prev => [...prev, {
-                                key: `d${Date.now()}-${prev.length}`, type: d.type, value: d.value.trim(),
-                                ...(platform ? { platform } : {}), ...(d.type === 'phone' && d.apps.length ? { apps: d.apps } : {}),
-                            }]);
-                            setCandidates(null);
-                            return true;
-                        }}
-                        triggerTestId="hh-add-contact"
+                <div>
+                    <div className={LABEL}>{t('adopter.hh_contacts_label')}</div>
+                    {/* The profile's own contact list, in local mode (as the new-adopter form and the import
+                        wizard): same rows, same «Agregar dato de contacto», same composer. */}
+                    <ContactEntriesSection
+                        entries={drafts}
+                        onChange={next => { setDrafts(next); setCandidates(null); }}
+                        canEditAll
+                        hideVisibilityMicrocopy
+                        emptyMessage={null}
+                        startComposer="closed"
                         testIdPrefix="hh-add-contact"
+                        onComposerOpenChange={setComposing}
                     />
                 </div>
                 {!hasIdentifier && <p className="text-xs text-stone-500">{t('adopter.hh_add_hint')}</p>}
@@ -372,7 +371,9 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
                 {current && (
                     <HouseholdCandidateCard candidate={current} busy={busy} onYes={() => { void add(current.adopterId); }} onNo={() => { void no(); }} />
                 )}
-                <FormButtons busy={busy || checking} onCancel={onDone} onSave={current ? undefined : save} canSave={hasIdentifier} />
+                {/* One «Cancelar / Guardar» pair at a time: while a contact is being written its own pair
+                    is the one that acts, so a typed phone can't be dropped by saving the person. */}
+                {!composing && <FormButtons busy={busy || checking} onCancel={onDone} onSave={current ? undefined : save} canSave={hasIdentifier} />}
             </div>
         </div>
     );

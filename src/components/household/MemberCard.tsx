@@ -12,8 +12,8 @@
  * counts it (ActivityCountsLine — for a minor only when they have any); then one line with the relationship, the
  * age, ONE attribution («agregado por vos» / «según {quien lo agregó}») and
  * the contacts collapsed behind «N datos ▾» (a padlock when some are
- * protected), which open to the contact rows + «Agregar dato de contacto»
- * (MemberContacts). The «⋯» menu holds what this viewer may do:
+ * protected; «0 datos ▾» when there are none), which open to that person's
+ * contact list — the profile's own (MemberContacts → ContactEntriesSection). The «⋯» menu holds what this viewer may do:
  * - «Editar»: everyone signed in, on every row (the same form for all — the
  *   anchor's row too, without a relationship field: its row has none);
  * - «Quitar del hogar» («Quitar como destinatario» on a gift recipient):
@@ -27,7 +27,7 @@
  */
 import { useId, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, Lock, Pencil, Plus, Trash2, UserMinus } from 'lucide-react';
+import { ChevronDown, Lock, Pencil, Trash2, UserMinus } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { MinorTag } from '@/components/MinorTag';
@@ -57,13 +57,15 @@ export function useMemberLabel() {
     };
 }
 
-export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, preview, gift = false, testId = 'household-member' }: {
+export function MemberCard({ member, hostName, relativeName, signedIn, currentUser, isAdmin, preview, gift = false, testId = 'household-member' }: {
     member: HouseholdMemberView;
     /** The viewed profile's name («del hogar de Pedro Paez»). */
     hostName: string;
     /** «Parentesco de Pedro» in «Editar». */
     relativeName: string;
     signedIn: boolean;
+    /** The viewer's email: the contacts they added stay editable, as on the profile. */
+    currentUser?: string;
     isAdmin: boolean;
     /** «Ver como desconocido»: no menu, no «agregado por vos». */
     preview: boolean;
@@ -99,8 +101,10 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
     const attribution = own ? t('adopter.hh_added_by_you') : member.addedByName ? fill(t('adopter.hh_lives_with_by'), { name: member.addedByName }) : null;
     const dataCount = member.contacts.length + member.moreContacts;
     const locked = member.contacts.some(c => c.masked);
-    // No contacts yet: a signed-in viewer still gets the way to add one (D55).
+    // No contacts yet: a signed-in viewer still opens the list — empty, with «Agregar dato de contacto» (D55).
     const hasContactsToggle = dataCount > 0 || signedIn;
+    // As on that person's own profile: its owner or an admin edits every contact, anyone their own.
+    const canEditContacts = !preview && (member.ownerIsViewer || isAdmin);
 
     async function openMenu() {
         const next = !menuOpen;
@@ -129,7 +133,7 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
         try {
             const res = await removeHouseholdMembership({ membershipId: member.membershipId, reason });
             if (!res.ok) { fail.refused(res); setDialog(null); return; }
-            toast.success(fill(t('adopter.hh_remove_done'), { name }));
+            toast.success('✓', fill(t('adopter.hh_remove_done'), { name }));
             setDialog(null);
             router.refresh();
         } catch (e) {
@@ -143,7 +147,7 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
         setBusy(true);
         try {
             await deleteOwnAdopter(member.profileId);
-            toast.success(fill(t('adopter.hh_delete_done'), { name }));
+            toast.success('✓', fill(t('adopter.hh_delete_done'), { name }));
             setDialog(null);
             router.refresh();
         } catch (e) {
@@ -169,7 +173,8 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
     if (editing) {
         return (
             <li className="py-2" data-testid={testId}>
-                <div className="border border-stone-200 rounded-xl p-3.5 bg-stone-50">
+                {/* Edited in place, like a contact row: no grey card (it reads as a dark hole in Azul Noche), aligned with the names. */}
+                <div className="pl-10">
                     <EditMemberForm member={member} relativeName={relativeName} onDone={() => setEditing(false)} />
                 </div>
             </li>
@@ -177,21 +182,21 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
     }
 
     const items: Array<{ id: 'edit' | 'remove' | 'delete' | 'request'; icon: ReactNode; title: string; desc?: string; danger?: boolean; disabled?: boolean }> = [];
-    if (canEdit) items.push({ id: 'edit', icon: <Pencil className="w-4 h-4 mt-0.5 shrink-0 text-teal-700" aria-hidden="true" />, title: t('adopter.hh_menu_edit') });
+    if (canEdit) items.push({ id: 'edit', icon: <Pencil className="w-5 h-5 mt-0.5 shrink-0 text-teal-700" aria-hidden="true" />, title: t('adopter.hh_menu_edit') });
     if (canRemove) items.push({
-        id: 'remove', icon: <UserMinus className="w-4 h-4 mt-0.5 shrink-0 text-teal-700" aria-hidden="true" />,
+        id: 'remove', icon: <UserMinus className="w-5 h-5 mt-0.5 shrink-0 text-teal-700" aria-hidden="true" />,
         title: t(gift ? 'adopter.hh_menu_remove_gift' : 'adopter.hh_menu_remove'), desc: t('adopter.hh_menu_remove_desc'),
     });
-    if (mayDelete && deletion === 'loading') items.push({ id: 'delete', icon: <Trash2 className="w-4 h-4 mt-0.5 shrink-0 text-stone-400" aria-hidden="true" />, title: t('adopter.hh_menu_checking'), disabled: true });
+    if (mayDelete && deletion === 'loading') items.push({ id: 'delete', icon: <Trash2 className="w-5 h-5 mt-0.5 shrink-0 text-stone-400" aria-hidden="true" />, title: t('adopter.hh_menu_checking'), disabled: true });
     if (mayDelete && deletion && typeof deletion === 'object') {
         items.push(deletion.kind === 'delete'
             ? {
-                id: 'delete', danger: true, icon: <Trash2 className="w-4 h-4 mt-0.5 shrink-0 text-rose-600" aria-hidden="true" />,
+                id: 'delete', danger: true, icon: <Trash2 className="w-5 h-5 mt-0.5 shrink-0 text-rose-700" aria-hidden="true" />,
                 title: fill(t('adopter.hh_menu_delete'), { name: firstName(name) || name }),
                 desc: t(deletion.others > 0 ? 'adopter.hh_menu_delete_admin_desc' : 'adopter.hh_menu_delete_desc'),
             }
             : {
-                id: 'request', danger: true, icon: <Trash2 className="w-4 h-4 mt-0.5 shrink-0 text-rose-600" aria-hidden="true" />,
+                id: 'request', danger: true, icon: <Trash2 className="w-5 h-5 mt-0.5 shrink-0 text-rose-700" aria-hidden="true" />,
                 title: t('adopter.hh_menu_request'), desc: t('adopter.hh_menu_request_desc'),
             });
     }
@@ -228,32 +233,29 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
                     </div>
                     {(sub || attribution || hasContactsToggle) && (
                         <div className="text-xs text-stone-500 mt-1 break-words">
-                            {sub && <span data-testid="household-member-label">{sub}</span>}
+                            {/* Each piece keeps together («según Test Admin», «4 datos ▾»); the line wraps between them. */}
+                            {sub && <span className="inline-block max-w-full" data-testid="household-member-label">{sub}</span>}
                             {attribution && (
-                                <>
+                                // The «·» travels with the piece it introduces, so a piece («según Test Admin», «4 datos ▾») never splits across lines.
+                                <span className="inline-block max-w-full">
                                     {sub && <span className="text-stone-400 mx-1" aria-hidden="true">·</span>}
                                     <span data-testid={own ? 'household-member-own' : 'household-member-by'}>{attribution}</span>
-                                </>
+                                </span>
                             )}
                             {hasContactsToggle && (
-                                <>
+                                <span className="inline-block">
                                     {(sub || attribution) && <span className="text-stone-400 mx-1" aria-hidden="true">·</span>}
                                     {/* Inline, so the name keeps the row's width; the ::after pads the hit area to 44px. */}
                                     <button type="button" onClick={() => setContactsOpen(o => !o)} aria-expanded={contactsOpen} aria-controls={contactsId}
                                         data-testid="household-member-contacts-toggle"
                                         className="relative inline-flex items-center gap-1 leading-5 font-semibold text-teal-700 hover:underline whitespace-nowrap after:absolute after:-inset-x-2 after:-inset-y-3 after:content-['']">
-                                        {dataCount > 0 ? (
-                                            <>
-                                                {locked && <Lock className="w-3 h-3 opacity-70" aria-label={t('adopter.ce_masked')} data-testid="household-member-contacts-locked" />}
-                                                {dataCount === 1 ? t('adopter.hh_data_one') : fill(t('adopter.hh_data_many'), { n: dataCount })}
-                                                <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${contactsOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
-                                            </>
-                                        ) : (
-                                            // Nothing to show yet: the way to add one (D55), not a list to open.
-                                            <><Plus className="w-3 h-3" aria-hidden="true" />{t('adopter.hh_data_add')}</>
-                                        )}
+                                        {/* Always the same disclosure, «0 datos» included: adding is the list's own
+                                            «Agregar dato de contacto», as on the profile — never a second, inline control. */}
+                                        {locked && <Lock className="w-3 h-3 opacity-70" aria-label={t('adopter.ce_masked')} data-testid="household-member-contacts-locked" />}
+                                        {dataCount === 1 ? t('adopter.hh_data_one') : fill(t('adopter.hh_data_many'), { n: dataCount })}
+                                        <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${contactsOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
                                     </button>
-                                </>
+                                </span>
                             )}
                         </div>
                     )}
@@ -262,21 +264,24 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
                     <div className="relative shrink-0">
                         <button type="button" onClick={() => { void openMenu(); }} aria-label={t('adopter.hh_menu_more')} aria-haspopup="menu" aria-expanded={menuOpen}
                             data-testid="household-member-menu"
-                            className="inline-flex min-w-[44px] min-h-[44px] items-center justify-center rounded-lg text-stone-500 hover:text-stone-600 hover:bg-stone-100 transition-all duration-150">
-                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
+                            className="group inline-flex min-w-[44px] min-h-[44px] items-center justify-center text-stone-500 hover:text-stone-600">
+                            {/* The profile header's ⋯ (profile-overflow), in a 44px tap area. */}
+                            <span className="flex items-center p-1.5 rounded-lg bg-stone-50 group-hover:bg-stone-100 transition-all duration-150">
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
+                            </span>
                         </button>
                         {menuOpen && (
                             <>
                                 <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-                                <div role="menu" data-testid="household-member-menu-panel" className="absolute right-0 mt-1 w-64 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-xl border border-stone-200 z-50 overflow-hidden">
+                                <div role="menu" data-testid="household-member-menu-panel" className="absolute right-0 mt-2 w-64 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-xl border border-stone-200 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
                                     {items.map((i, n) => (
                                         <div key={i.id}>
                                             {n > 0 && <div className="border-t border-stone-100" />}
                                             <button type="button" role="menuitem" disabled={i.disabled} onClick={() => pick(i.id)} data-testid={`household-member-menu-${i.id}`}
-                                                className="w-full flex items-start gap-3 px-4 py-3 min-h-[44px] hover:bg-stone-100 transition-colors text-left disabled:cursor-wait">
+                                                className="w-full flex items-start gap-3 px-4 py-3 min-h-[44px] hover:bg-stone-50 transition-colors text-left disabled:cursor-wait">
                                                 {i.icon}
                                                 <div className="min-w-0">
-                                                    <div className={`text-sm font-semibold ${i.danger ? 'text-rose-600' : i.disabled ? 'text-stone-500' : 'text-stone-900'}`}>{i.title}</div>
+                                                    <div className={`text-sm font-semibold ${i.danger ? 'text-rose-700' : i.disabled ? 'text-stone-500' : 'text-stone-900'}`}>{i.title}</div>
                                                     {i.desc && <div className="text-xs text-stone-500 mt-0.5">{i.desc}</div>}
                                                 </div>
                                             </button>
@@ -290,9 +295,7 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
             </div>
             {contactsOpen && (
                 <div className="pl-10 pr-2 pt-1" id={contactsId}>
-                    {/* No contacts yet: «+ Agregar dato» goes straight to the composer; «Cancelar» closes it again. */}
-                    <MemberContacts summary={member} canAddContact={signedIn} startComposing={dataCount === 0}
-                        onCancelCompose={dataCount === 0 ? () => setContactsOpen(false) : undefined} />
+                    <MemberContacts summary={member} canAddContact={signedIn} canEditAll={canEditContacts} currentUser={preview ? undefined : currentUser} />
                 </div>
             )}
             {dialog === 'remove' && (
