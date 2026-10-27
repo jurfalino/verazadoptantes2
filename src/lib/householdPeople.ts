@@ -189,6 +189,14 @@ export async function attachHouseholdPeople(db: Db, input: AttachInput): Promise
         logger.warn('attachHouseholdPeople: anchor missing or deleted, nobody attached', ctx);
         return result;
     }
+    // Today's inline household first (Task 7): the anchor's home and the same-name rule must see it.
+    try {
+        const { ensureProfileConverted } = await import('@/lib/householdConversion');
+        const { failed } = await ensureProfileConverted(db, anchor.id);
+        if (failed) logger.warn('attachHouseholdPeople: some of the anchor\'s old household was not converted yet', { ...ctx, failed });
+    } catch (e) {
+        logger.warn('attachHouseholdPeople: old household conversion failed, attaching anyway', { ...ctx, error: errMsg(e) });
+    }
     const realActor = isRealActorEmail(input.actor);
     // Notices need a person: a form's sentinel acts for the form's owner.
     const noticeActor = realActor ? input.actor : input.ownerEmail;

@@ -101,6 +101,13 @@ const MUST_NOT_BE_ACTIONS = [
     'notifyHouseholdReaddDisputed',
     'notifyHouseholdRelationshipChanged',
     'notifyHouseholdMemberRemoved',
+    // Conversion of today's household data (src/lib/householdConversion.ts, Task 7): the actor is an
+    // argument; the browser has no way in (the bulk run is the admin route /api/admin/households/convert).
+    'convertInlineHouseholds',
+    'convertHost',
+    'ensureHostConverted',
+    'ensureProfileConverted',
+    'reverseConvertedOldMerge',
     // Profile name / age (src/lib/profileIdentity.ts): the actor is an argument; the browser
     // goes through src/app/actions/profileIdentity.ts (session).
     'renameProfile',

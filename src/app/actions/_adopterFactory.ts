@@ -386,6 +386,10 @@ export interface CreateHouseholdProfileInput {
     isPublic?: boolean;
     /** The caller tokenizes later (the public form does it after the response). */
     skipTokenize?: boolean;
+    /** A fixed id (the conversion derives it from the source key, so a crashed run never makes the person twice). */
+    id?: string;
+    /** The day the age was given (YYYY-MM-DD), when it isn't today (the conversion moves a member's dated age). */
+    ageAsOf?: string | null;
     /** profilePrivilege on the new profile: 'edit' only when the typist is on the owner's team (or staff). */
     historyKind: 'edit' | 'contribution';
     /** The creation line of the new profile's history (never raw contact values). */
@@ -418,8 +422,9 @@ export async function createHouseholdProfile(
     const { MINOR_AGE_LIMIT } = await import('@/domain/households');
     const age = typeof input.age === 'number' && Number.isInteger(input.age) && input.age >= 0 && input.age <= 120 ? input.age : null;
     const country = await ownerCountry(input.ownerEmail, 'createHouseholdProfile');
-    const adopterId = crypto.randomUUID();
+    const adopterId = input.id ?? crypto.randomUUID();
     const now = new Date();
+    const ageAsOf = input.ageAsOf && /^\d{4}-\d{2}-\d{2}$/.test(input.ageAsOf) ? input.ageAsOf : now.toISOString().slice(0, 10);
     await db.insert(adopters).values({
         id: adopterId,
         name,
@@ -430,8 +435,8 @@ export async function createHouseholdProfile(
         country,
         isPublic: input.isPublic === true ? 1 : 0,
         age,
-        ageAsOf: age === null ? null : now.toISOString().slice(0, 10),
-        // The «Es menor de edad» box turns on by itself under 18 (spec «Children»).
+        ageAsOf: age === null ? null : ageAsOf,
+        // The «Es menor de edad» box turns on by itself under 18 (spec «Children»), by the age as given.
         isMinor: (age !== null ? age < MINOR_AGE_LIMIT : input.isMinor === true) ? 1 : 0,
         createdAt: now,
         updatedAt: now,

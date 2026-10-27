@@ -604,6 +604,32 @@ export const householdCorrections = sqliteTable("household_corrections", {
     adopterIdx: index("idx_household_corrections_adopter").on(table.adopterId),
 }));
 
+// household_conversions — the conversion ledger (drizzle/0099, Task 7): one row
+// per inline member (inline:{hostId}:{memberId}), household_links row
+// (link:{linkId}) or «No convive» correction (correction:{id}) the conversion
+// handled, written with the membership it produced and never deleted — a row
+// here is what "converted" means (a membership removed since must not come
+// back from the old JSON). src/lib/householdConversion.ts. No PII.
+export const householdConversions = sqliteTable("household_conversions", {
+    sourceKey: text("source_key").primaryKey(),
+    hostAdopterId: text("host_adopter_id").notNull(),
+    memberId: text("member_id"),
+    linkId: text("link_id"),
+    outcome: text("outcome").notNull(), // 'converted' | 'skipped'
+    reason: text("reason"),
+    fingerprint: text("fingerprint"),
+    householdId: text("household_id"),
+    membershipId: text("membership_id"),
+    profileId: text("profile_id"),
+    createdProfile: integer("created_profile").notNull().default(0),
+    ownerEmail: text("owner_email"),
+    actor: text("actor"),
+    convertedAt: integer("converted_at", { mode: "timestamp" }).notNull(),
+}, (table) => ({
+    hostIdx: index("idx_household_conversions_host").on(table.hostAdopterId),
+    profileIdx: index("idx_household_conversions_profile").on(table.profileId),
+}));
+
 // pii_access_grants — the access facts. A live (non-revoked) row means
 // `grantee_email` can see some/all of `adopter_id`'s contact info.
 //   scope='entry'       — one entry, unlocked by a search match.

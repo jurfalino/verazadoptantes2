@@ -100,15 +100,22 @@ export async function mergeAdopters(
             return { success: false, error: MINOR_SURVIVOR_HAS_ACTIVITY };
         }
 
-        // TASK 7 CARRY: both profiles' inline households (household_members JSON,
-        // household_links) must be converted to memberships HERE, before the claim
-        // (ensureHostConverted on primaryId and secondaryId): the merge moves only
-        // memberships, so an unconverted absorbed host would keep its people on a
-        // deleted row. Also: a THIRD host's JSON may name the absorbed profile as a
-        // member's profileId (old D51 merges left it so; merges from here on move
-        // neither JSON nor links) — the conversion must follow profileId through
-        // resolveMergedAdopterId (or prefer the link row's linked_adopter_id), or
-        // it writes a membership for a deleted profile and the person vanishes.
+        // Both profiles' old inline households (household_members JSON,
+        // household_links, Task 7) become memberships HERE, before the claim:
+        // the merge moves only memberships, so an unconverted absorbed host would
+        // keep its people on a deleted row nobody views. A conversion that failed
+        // (a DB error, retried) refuses the merge rather than lose them. A THIRD
+        // host's JSON naming the absorbed profile converts later and follows the
+        // merge (resolveMergedAdopterId), so it needs nothing here.
+        {
+            const { ensureHostConverted } = await import('@/lib/householdConversion');
+            let failed = 0;
+            for (const id of [primaryId, secondaryId]) failed += (await ensureHostConverted(db, id)).failed;
+            if (failed) {
+                const errorId = logger.error('mergeAdopters: refused, part of a household could not be converted first', new Error('household conversion incomplete'), { primaryId, secondaryId, actor: actorEmail, failed });
+                return { success: false, error: `Merge failed (Error ID: ${errorId})` };
+            }
+        }
 
         // 0. Claim the pair before moving anything: ONE statement soft-deletes
         // the secondary only while it AND the primary are still live. Two merges
@@ -756,10 +763,8 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
 
         // 3b. OLD SHAPE (merges recorded before households as profiles): take
         //     back only the household members the merge added — never the
-        //     survivor's own list, which may have been edited since.
-        //     TASK 7 CARRY: after the conversion these JSON members / links are
-        //     memberships too (source_key inline:{hostId}:{memberId} / link:{linkId});
-        //     reversing only the JSON leaves the survivor's converted copies in place.
+        //     survivor's own list, which may have been edited since. (3e moves
+        //     their converted memberships, when the conversion ran since.)
         const householdAdded = { memberIds: undo.addedHouseholdMemberIds ?? [], enriched: undo.enrichedHouseholdMembers ?? [] };
         if (householdAdded.memberIds.length || householdAdded.enriched.length) {
             const out = await casAdopterLists(db, primaryId, (row) => {
@@ -782,6 +787,17 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
         //     the member) did not come back above; the absorbed host still lists
         //     that person, so the link is written again (I1).
         await relinkRestoredHost(db, secondaryId, movedLinks, { auditId, actor: actorEmail });
+        // 3e. OLD SHAPE, after the conversion (Task 7): the survivor's copies of the
+        //     absorbed host's members, and the links this merge moved, became
+        //     memberships — they go back to the absorbed profile's home (the same
+        //     profiles; grants and owner follow), and the corrections with them.
+        if (undo.householdMemberships === undefined && (householdAdded.memberIds.length || movedLinks.length || (undo.householdLinkCorrections?.length ?? 0))) {
+            const { reverseConvertedOldMerge } = await import('@/lib/householdConversion');
+            await reverseConvertedOldMerge(db, {
+                survivorId: primaryId, absorbedId: secondaryId, addedMemberIds: householdAdded.memberIds, movedLinks,
+                movedCorrections: Array.isArray(undo.householdLinkCorrections) ? undo.householdLinkCorrections : [],
+            }, actorEmail, { op: 'unmergeAdopters', auditId });
+        }
 
         // 4. Put the touched duplicate candidates back to their prior status —
         //    grouped by target status so each group is a few chunked updates.

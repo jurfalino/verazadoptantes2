@@ -283,6 +283,11 @@ async function ordinaryHouseholdOf(db: Db, anchorId: string): Promise<string | n
     return row?.householdId ?? null;
 }
 
+/** The anchor's own home without creating one (read-only — the conversion's dry run). */
+export async function ownHomeOf(db: Db, anchorId: string): Promise<string | null> {
+    return ordinaryHouseholdOf(db, anchorId);
+}
+
 /**
  * The household to add people next to `anchorId`: its own home (its oldest
  * ordinary household where it has its own anchor row — never one it was merely
@@ -468,11 +473,21 @@ const asRelationship = (r: string | null | undefined): Relationship => (r && REL
 
 export type GetHouseholdsOptions = {
     /**
-     * Runs before anything is read (Task 7 converts the profile's old inline
-     * household here). A failure is logged and the read goes on.
+     * Runs before anything is read. Default (undefined): the lazy conversion
+     * of today's data (Task 7, ensureProfileConverted — the profile's own
+     * inline household and the hosts that link to it), so a profile is right
+     * from its first view after the release. `null`: nothing. A failure is
+     * logged and the read goes on.
      */
-    beforeRead?: (db: Db, adopterId: string) => Promise<void>;
+    beforeRead?: ((db: Db, adopterId: string) => Promise<unknown>) | null;
 };
+
+/** The default pre-read hook: convert what still sits in the old shape (dynamic import: the conversion imports this module). */
+async function convertBeforeRead(db: Db, adopterId: string): Promise<void> {
+    const { ensureProfileConverted } = await import('@/lib/householdConversion');
+    const { failed } = await ensureProfileConverted(db, adopterId);
+    if (failed) logger.warn('households: some of the old household data was not converted yet (retried on the next view)', { adopterId, failed });
+}
 
 /**
  * The households of `adopterId` as `viewer` may see them: one view per
@@ -489,9 +504,10 @@ export async function getHouseholdsFor(
     opts: GetHouseholdsOptions = {},
 ): Promise<HouseholdView[]> {
     const ctx = { adopterId, viewer: viewer ?? null };
-    if (opts.beforeRead) {
+    const beforeRead = opts.beforeRead === undefined ? convertBeforeRead : opts.beforeRead;
+    if (beforeRead) {
         try {
-            await opts.beforeRead(db, adopterId);
+            await beforeRead(db, adopterId);
         } catch (e) {
             logger.warn('households: pre-read hook failed, households read as they are', { ...ctx, error: errMsg(e) });
         }

@@ -295,6 +295,17 @@ async function importedAlready(
 
 // ─────────────────────────── Add ───────────────────────────
 
+/** The lazy conversion of a profile's old inline household before a write reads it. Never fails the add (logged). */
+async function convertFirst(db: Db, adopterId: string, ctx: Record<string, unknown>): Promise<void> {
+    try {
+        const { ensureProfileConverted } = await import('@/lib/householdConversion');
+        const { failed } = await ensureProfileConverted(db, adopterId);
+        if (failed) logger.warn('addHouseholdPerson: some of the anchor\'s old household was not converted yet', { ...ctx, failed });
+    } catch (e) {
+        logger.warn('addHouseholdPerson: old household conversion failed, the add goes on', { ...ctx, error: e instanceof Error ? e.message : String(e) });
+    }
+}
+
 export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promise<AddHouseholdPersonResult> {
     const actor = await sessionActor();
     if (!actor) return { ok: false, error: 'not_authenticated' };
@@ -346,6 +357,8 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                 return { ok: false, error: full };
             }
         } else {
+            // Today's inline household first (Task 7): the anchor's home and the same-name rule must see it.
+            await convertFirst(db, anchor.id, ctx);
             const resolved = await resolveHousehold(db, anchor.id, chosen, actor, ctx);
             if (resolved === 'not_found') {
                 logger.warn('addHouseholdPerson: chosen household missing or not the anchor\'s', ctx);
