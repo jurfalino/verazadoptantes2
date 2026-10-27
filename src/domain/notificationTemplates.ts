@@ -602,19 +602,19 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
     profile_renamed: {
         required: ['actorName', 'toName'],
         es: p => ({
-            title: `${p.actorName} cambió el nombre de ${plainName(p.fromName, 'es')} a ${p.toName}`,
+            title: p.fromName?.trim() ? `${p.actorName} cambió el nombre de ${p.fromName.trim()} a ${p.toName}` : `${p.actorName} le puso nombre a un perfil: ${p.toName}`,
             body: p.fromName?.trim()
                 ? `El nombre anterior quedó como «Conocido/a como», así que buscar «${p.fromName.trim()}» lo sigue encontrando. Si el cambio no corresponde, deshacelo.`
                 : 'Si el cambio no corresponde, deshacelo.',
         }),
         en: p => ({
-            title: `${p.actorName} renamed ${plainName(p.fromName, 'en')} to ${p.toName}`,
+            title: p.fromName?.trim() ? `${p.actorName} renamed ${p.fromName.trim()} to ${p.toName}` : `${p.actorName} named a profile ${p.toName}`,
             body: p.fromName?.trim()
                 ? `The previous name is kept as “Also known as”, so searching “${p.fromName.trim()}” still finds them. If the change is wrong, undo it.`
                 : 'If the change is wrong, undo it.',
         }),
         pt: p => ({
-            title: `${p.actorName} mudou o nome de ${plainName(p.fromName, 'pt')} para ${p.toName}`,
+            title: p.fromName?.trim() ? `${p.actorName} mudou o nome de ${p.fromName.trim()} para ${p.toName}` : `${p.actorName} deu nome a um perfil: ${p.toName}`,
             body: p.fromName?.trim()
                 ? `O nome anterior ficou como «Também conhecido/a como», então buscar «${p.fromName.trim()}» continua encontrando. Se a mudança não estiver certa, desfaça.`
                 : 'Se a mudança não estiver certa, desfaça.',

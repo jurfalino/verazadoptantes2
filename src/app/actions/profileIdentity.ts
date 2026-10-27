@@ -10,7 +10,8 @@
  *   stays a name token («Conocido/a como»), the write is a compare-and-set on
  *   the name the editor saw, the change is credited ('contribution' history
  *   for a stranger, never 'edit' — no approver standing), and the owner's team
- *   is told in-app and by email with «Deshacer».
+ *   is told in-app and by email with «Deshacer» (a change by the owner's own
+ *   team is not news to it: no notice, as D54).
  * - `changeProfileAge`: set the age / «Es menor de edad» of any live profile;
  *   credited, notified. Marking a profile with records or alerts as a minor
  *   is refused (it would hide the «¿Qué pasó con …?» actions on an adult).
@@ -90,7 +91,7 @@ export async function changeProfileName(input: {
                 return { ok: false, error: 'conflict', theirs: res.theirs, by };
             }
             case 'renamed': {
-                await notifyProfileRenamed(db, { adopterId, actor, from: res.from, to: res.to, historyId: res.historyId });
+                await notifyProfileRenamed(db, { adopterId, actor, ownerEmail: res.ownerEmail, from: res.from, to: res.to, historyId: res.historyId });
                 revalidatePath(`/adopter/${adopterId}`);
                 const updatedByOthers = await othersChanged(db, adopterId, input?.loaded, res.others);
                 return {
@@ -137,7 +138,7 @@ export async function changeProfileAge(input: { adopterId: string; age: number |
             case 'has_activity': return { ok: false, error: 'has_activity' };
             case 'unchanged': return { ok: true, age, isMinor: age !== null ? age < 18 : input.isMinor };
             case 'changed':
-                await notifyProfileAgeChanged(db, { adopterId, actor, name: res.name, age: res.to.age, minor: res.to.minor });
+                await notifyProfileAgeChanged(db, { adopterId, actor, ownerEmail: res.ownerEmail, name: res.name, age: res.to.age, minor: res.to.minor });
                 revalidatePath(`/adopter/${adopterId}`);
                 return { ok: true, age: res.to.age, isMinor: res.to.minor, ...(res.warningErrorId ? { warningErrorId: res.warningErrorId } : {}) };
         }

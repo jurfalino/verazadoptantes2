@@ -134,6 +134,14 @@ describe('changeProfileName — open to anyone signed in', () => {
         expect([owner, ...editors]).not.toContain(STRANGER);
     });
 
+    it("the owner's own team renames or changes the age → no notice (D54); an admin from outside the team → the team is told", async () => {
+        await as(MATE, () => changeProfileName({ adopterId: 'pedro', name: 'Pedro A. Paez', expectedName: 'Pedro Paez' }));
+        await as(OWNER, () => changeProfileAge({ adopterId: 'pedro', age: 40, isMinor: false }));
+        expect(notify.create).toHaveLength(0);
+        await as(ADMIN, () => changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro A. Paez' }));
+        expect(noticesOfType('profile_renamed').map(n => n.userId).sort()).toEqual([MATE, OWNER].sort());
+    });
+
     it('a stale expectedName → conflict with the stored name and who wrote it; nothing changes', async () => {
         await as(MATE, () => changeProfileName({ adopterId: 'pedro', name: 'Pedro A. Paez', expectedName: 'Pedro Paez' }));
         notify.create.length = 0;
