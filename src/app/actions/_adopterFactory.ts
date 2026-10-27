@@ -33,7 +33,7 @@
 
 import { logger } from '@/lib/logger';
 import { serializeHouseholdMembers, withoutProfileLinks, type HouseholdMember } from '@/lib/householdMembers';
-import type { SocialPlatform } from '@/lib/contactEntries';
+import type { ContactEntry, SocialPlatform } from '@/lib/contactEntries';
 
 export type AdopterSource = 'manual' | 'form' | 'contract' | 'imported' | 'api';
 
@@ -84,6 +84,44 @@ function bucketConfidence(relevancePercent: number): 'high' | 'medium' | 'low' {
 }
 
 /**
+ * The country stamped on a new profile, the same way saveAdopter /
+ * /api/adopters do (v2.19.4 — before, the factory was a silent bypass:
+ * form-submission and contract-submit auto-creates landed with country=null,
+ * then got filtered out of the discovery search). Two-tier lookup: the
+ * owner's user_profiles.country, then CF-IPCountry on the inbound request.
+ * Best-effort; null is still tolerated and falls out to the residual the
+ * admin backfill can sweep later.
+ */
+async function ownerCountry(ownerEmail: string | null | undefined, op: string): Promise<string | null> {
+    let country: string | null = null;
+    try {
+        const { getRequestContext } = await import('@/lib/requestContext');
+        const { env } = getRequestContext();
+        const owner = (ownerEmail || '').trim();
+        if (env?.DB && owner && owner !== 'anonymous') {
+            const row = await env.DB.prepare(
+                `SELECT up.country FROM user_profiles up
+                 JOIN user u ON u.id = up.user_id
+                 WHERE u.email = ? LIMIT 1`
+            ).bind(owner).first<{ country: string | null }>();
+            country = row?.country?.trim() || null;
+        }
+    } catch (e) {
+        logger.warn(`${op}: country lookup failed (continuing)`, {
+            error: e instanceof Error ? e.message : String(e),
+        });
+    }
+    if (!country) {
+        try {
+            const { headers } = await import('next/headers');
+            const h = await headers();
+            country = h?.get?.('cf-ipcountry') || null;
+        } catch { /* headers() not always available — fine, leave null */ }
+    }
+    return country;
+}
+
+/**
  * Create an adopter row from an anonymous submission, log history, tokenize,
  * and persist any pending duplicate candidates. Returns the new adopterId and
  * a summary of matches for the caller to include in its notification payload.
@@ -116,38 +154,7 @@ export async function createAdopterFromSubmission(
     const contactInfo = contactEntriesToBlob(contactEntries);
     const now = new Date();
 
-    // v2.19.4: stamp country the same way saveAdopter / /api/adopters do.
-    // Before this fix the factory was a silent bypass — form-submission and
-    // contract-submit auto-creates landed with country=null, then got
-    // filtered out of the discovery search. Two-tier lookup: rescuer's
-    // user_profiles.country, then CF-IPCountry header on the inbound
-    // submission request. Best-effort; null is still tolerated and falls
-    // out to the residual the admin backfill can sweep later.
-    let country: string | null = null;
-    try {
-        const { getRequestContext } = await import('@/lib/requestContext');
-        const { env } = getRequestContext();
-        const owner = (input.addedBy || '').trim();
-        if (env?.DB && owner && owner !== 'anonymous') {
-            const row = await env.DB.prepare(
-                `SELECT up.country FROM user_profiles up
-                 JOIN user u ON u.id = up.user_id
-                 WHERE u.email = ? LIMIT 1`
-            ).bind(owner).first<{ country: string | null }>();
-            country = row?.country?.trim() || null;
-        }
-    } catch (e) {
-        logger.warn('createAdopterFromSubmission: country lookup failed (continuing)', {
-            error: e instanceof Error ? e.message : String(e),
-        });
-    }
-    if (!country) {
-        try {
-            const { headers } = await import('next/headers');
-            const h = await headers();
-            country = h?.get?.('cf-ipcountry') || null;
-        } catch { /* headers() not always available — fine, leave null */ }
-    }
+    const country = await ownerCountry(input.addedBy, 'createAdopterFromSubmission');
 
     // 1. Insert adopter
     await db.insert(adopters).values({
@@ -311,4 +318,83 @@ export async function createAdopterFromSubmission(
     });
 
     return { adopterId, dupCandidates };
+}
+
+export interface CreateHouseholdProfileInput {
+    /** The anchor's owner (spec «Who owns the profile a household add creates»): owns the row. */
+    ownerEmail: string;
+    /** Who typed it: the history row's author. */
+    actor: string;
+    /** May be empty when a contact identifies the person (hasMinimumIdentifier). */
+    name: string;
+    /** Already built and credited (`addedBy` = the typist, src/lib/contactEntries contactEntryFromInput). */
+    contactEntries: ContactEntry[];
+    /** A whole 0–120, dated today so the profile shows the CURRENT age; null/undefined = unknown. */
+    age?: number | null;
+    /** profilePrivilege on the new profile: 'edit' only when the typist is on the owner's team (or staff). */
+    historyKind: 'edit' | 'contribution';
+    /** The creation line of the new profile's history (never raw contact values). */
+    history: Record<string, unknown>;
+}
+
+/**
+ * Create the profile of a person added to someone's household (households as
+ * profiles, Task 2). Same steps as any new profile here: insert, one history
+ * row, tokenize synchronously (so the next duplicate check sees it). Owned by
+ * the anchor's owner, contacts credited to the typist, protected (is_public 0
+ * — a household add never unmasks anything). No duplicate_candidates rows:
+ * the person was just shown «¿Es este perfil?» and said no, exactly like the
+ * manual «Nuevo adoptante» save, which persists none either (and a pairing
+ * with the person they live with is the spec's anti-goal).
+ * Throws on a DB failure; the action logs it with an errorId.
+ */
+export async function createHouseholdProfile(
+    db: NonNullable<Awaited<ReturnType<typeof import('@/lib/db').getDb>>>,
+    input: CreateHouseholdProfileInput,
+): Promise<string> {
+    const name = (input.name ?? '').trim();
+    const { hasMinimumIdentifier } = await import('@/domain/adopterIdentity');
+    const entriesJson = input.contactEntries.length ? JSON.stringify(input.contactEntries) : null;
+    if (!hasMinimumIdentifier({ name, contactEntries: entriesJson })) {
+        throw new Error('createHouseholdProfile: a name or at least one contact is required');
+    }
+    const { adopters, adopterHistory } = await import('@/db/schema');
+    const { contactEntriesToBlob } = await import('@/lib/contactEntries');
+    const { MINOR_AGE_LIMIT } = await import('@/domain/households');
+    const age = typeof input.age === 'number' && Number.isInteger(input.age) && input.age >= 0 && input.age <= 120 ? input.age : null;
+    const country = await ownerCountry(input.ownerEmail, 'createHouseholdProfile');
+    const adopterId = crypto.randomUUID();
+    const now = new Date();
+    await db.insert(adopters).values({
+        id: adopterId,
+        name,
+        contactInfo: contactEntriesToBlob(input.contactEntries) || null,
+        contactEntries: entriesJson,
+        addedBy: input.ownerEmail,
+        source: 'manual',
+        country,
+        isPublic: 0,
+        age,
+        ageAsOf: age === null ? null : now.toISOString().slice(0, 10),
+        // The «Es menor de edad» box turns on by itself under 18 (spec «Children»).
+        isMinor: age !== null && age < MINOR_AGE_LIMIT ? 1 : 0,
+        createdAt: now,
+        updatedAt: now,
+    });
+    await db.insert(adopterHistory).values({
+        id: crypto.randomUUID(),
+        adopterId,
+        changedBy: input.actor,
+        kind: input.historyKind,
+        changes: JSON.stringify(input.history),
+        changedAt: now,
+    });
+    try {
+        const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
+        await tokenizeAdopter(adopterId);
+    } catch (e) {
+        logger.error('createHouseholdProfile: tokenize failed (continuing)', e, { adopterId, actor: input.actor });
+    }
+    logger.info('Adopter created from a household add', { adopterId, actor: input.actor, contacts: input.contactEntries.length });
+    return adopterId;
 }

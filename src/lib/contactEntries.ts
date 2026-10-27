@@ -639,6 +639,32 @@ export function deserializeContactEntries(
     }
 }
 
+/**
+ * A new entry from what someone typed, credited to `addedBy` — built the way
+ * addContactEntry builds one: an address with parts gets its joined value,
+ * a social profile its network (detected from the value, else the one
+ * chosen), a phone its messaging apps. The caller validates the input.
+ */
+export function contactEntryFromInput(
+    input: { type: ContactEntryType; value: string; streetAndNumber?: string; locality?: string; platform?: SocialPlatform | null; apps?: MessagingApp[] },
+    addedBy: string,
+): ContactEntry {
+    const id = crypto.randomUUID();
+    const value = (input.value ?? '').trim();
+    if (input.type === 'address' && (input.streetAndNumber || input.locality)) {
+        return {
+            id, type: 'address',
+            value: joinedAddressValue(input.streetAndNumber ?? '', input.locality ?? '') || value,
+            streetAndNumber: input.streetAndNumber || undefined,
+            locality: input.locality || undefined,
+            addedBy,
+        };
+    }
+    const platform = input.type === 'social' ? (detectSocialPlatform(value) ?? input.platform ?? undefined) : undefined;
+    const apps = input.type === 'phone' && input.apps?.length ? [...new Set(input.apps)] : undefined;
+    return { id, type: input.type, value, addedBy, ...(platform ? { platform } : {}), ...(apps ? { apps } : {}) };
+}
+
 /** Merge two entry lists, de-duplicating on normalized value. */
 export function mergeContactEntries(a: ContactEntry[], b: ContactEntry[]): ContactEntry[] {
     return dedupe([...a, ...b]);

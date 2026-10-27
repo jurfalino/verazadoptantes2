@@ -276,7 +276,34 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // resolveMergeDispute (MergeDisputesSection, admin «Disputas»). MEASURED (npm run build: 166).
 // No other new action: the admin lists are read by the page (lib), «No convive» was already
 // counted, and the D52 confirmation row calls nothing new. 166 = 163 + 3.
-const EXPECTED_ACTIONS = 166;
+// Households as profiles, Task 2: +4 in src/app/actions/households.ts, exported from the
+// barrel. MEASURED (npm run build: 170) — the barrel export alone makes Next record them.
+// What a stranger can do with arguments they choose (every door needs a session; the
+// actor is the session, never an argument; errors are codes, failures carry an errorId):
+//   addHouseholdPerson(input)          anchor must be a live profile; a chosen householdId
+//                                      must exist AND hold the anchor (else not_found), so a
+//                                      guessed id puts nobody anywhere; existingProfileId must
+//                                      be live and not the anchor. A new profile is owned by the
+//                                      ANCHOR's owner (never the caller), protected (is_public 0),
+//                                      needs a name or a contact; contacts are zod-checked as
+//                                      addContactEntry's (≤20) and credited to the caller, who
+//                                      gets entry grants only on what they typed. Caps: 30 people
+//                                      per household, 10 households per profile. Writes history as
+//                                      'contribution' for anyone without standing (never an editor).
+//   updateHouseholdMembership(input)   open to anyone signed in by design (spec «Editing»):
+//                                      only the relationship, checked against RELATIONSHIPS,
+//                                      compare-and-swap; credited + history + the household's
+//                                      teams told, so every change is visible to the owners.
+//   removeHouseholdMembership(input)   canRemoveMembership on the STORED row (the adder, any
+//                                      household profile's team, admins/moderators), else
+//                                      not_authorized; reason checked against mistake|not_living;
+//                                      never deletes a profile.
+//   getHouseholdMatchCandidates(input) the same masked duplicate check «Nuevo adoptante»
+//                                      already exposes (findFormDuplicates) plus each match's
+//                                      household line (names, rating, alert counts — no contacts).
+// The notice workers that take the actor (src/lib/householdNotices.ts) are plain lib code.
+// 170 = 166 + 4.
+const EXPECTED_ACTIONS = 170;
 
 let manifest;
 try {

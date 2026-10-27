@@ -41,7 +41,10 @@ export async function findFormDuplicates(
     opts: { minRelevance?: number; limit?: number } = {},
 ): Promise<{ results: DiscoveryMatch[] }> {
     const name = (input.name || '').trim();
-    if (name.length < 2) return { results: [] };
+    // A contact alone is enough to look (a household add may carry no name);
+    // AdopterForm gates on the name itself before calling, so its behaviour is unchanged.
+    const hasContact = [input.phones, input.emails, input.socials].some(list => (list ?? []).some(v => v.trim()));
+    if (name.length < 2 && !hasContact) return { results: [] };
 
     try {
         const db = await getDb();
@@ -50,7 +53,7 @@ export async function findFormDuplicates(
         // 1. Detection via the proven duplicate engine (fuzzy + phone-suffix).
         const dup = await findAdopters(
             {
-                name,
+                name: name.length < 2 ? '' : name,
                 phones: input.phones ?? [],
                 emails: input.emails ?? [],
                 socials: input.socials ?? [],

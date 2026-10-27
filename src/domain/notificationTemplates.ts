@@ -86,6 +86,17 @@ export interface NotificationTemplateParams {
      * `entryType` is its ContactEntry type).
      */
     household_contribution: { actorName: string; adopterName?: string; what: string; entryType?: string };
+    /**
+     * Households as profiles: the teams of a household `personName` already lived in hear that
+     * `actorName` recorded them as also living with `hostName` (nothing changes in their household).
+     */
+    household_also_lives_with: { actorName: string; personName?: string; hostName?: string };
+    /** The household's teams: `actorName` set `personName`'s relationship (a RELATIONSHIPS code) relative to `relativeName`. */
+    household_relationship_changed: { actorName: string; personName?: string; relationship: string; relativeName?: string };
+    /** The household's teams: `actorName` took `personName` out of `hostName`'s household. `reason`: mistake | not_living. */
+    household_member_removed: { actorName: string; personName?: string; hostName?: string; reason: string };
+    /** Admins only (D48): `actorName` put `personName` back in `hostName`'s household after someone said they don't live there. */
+    household_member_disputed: { actorName: string; personName?: string; hostName?: string };
 }
 
 export type NotificationTemplateKey = keyof NotificationTemplateParams;
@@ -152,6 +163,14 @@ const ENTRY_TYPE: Record<NotificationLocale, Record<string, string>> = {
     pt: { phone: 'um telefone', email: 'um e-mail', social: 'uma rede social', id: 'um documento', address: 'um endereço', alias: 'um nome alternativo', other: 'um dado de contato' },
 };
 /** «de Pedro» / «del adoptante»: whose household (D54); never a hole when the name is missing. */
+/** A relationship code as a word, lower case (the RELATIONSHIPS of src/lib/householdMembers). */
+const RELATIONSHIP_WORD: Record<NotificationLocale, Record<string, string>> = {
+    es: { partner: 'pareja', child: 'hijo/a', parent: 'padre/madre', sibling: 'hermano/a', other_relative: 'otro familiar', housemate: 'conviviente', unknown: 'sin parentesco' },
+    en: { partner: 'partner', child: 'child', parent: 'parent', sibling: 'sibling', other_relative: 'other relative', housemate: 'housemate', unknown: 'no relationship' },
+    pt: { partner: 'parceiro/a', child: 'filho/a', parent: 'pai/mãe', sibling: 'irmão/irmã', other_relative: 'outro familiar', housemate: 'convivente', unknown: 'sem parentesco' },
+};
+const relationshipWord = (code: string, l: NotificationLocale): string | null =>
+    Object.hasOwn(RELATIONSHIP_WORD[l], code) ? RELATIONSHIP_WORD[l][code] : null;
 const householdOf = (name: string | undefined, l: NotificationLocale): string => {
     const n = name?.trim();
     if (l === 'en') return n ? `${n}'s` : "the adopter's";
@@ -524,6 +543,57 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
             : p.what === 'contact'
                 ? { title: 'Novo dado de um convivente', body: `${p.actorName} adicionou ${entryTypeLabel(p.entryType ?? '', 'pt')} de alguém do grupo familiar ${householdOf(p.adopterName, 'pt')}.` }
                 : null,
+    },
+    household_also_lives_with: {
+        required: ['actorName'],
+        es: p => ({ title: `${plainName(p.personName, 'es')} también vive en otro hogar`, body: `${p.actorName} indicó que ${plainName(p.personName, 'es')} también vive con ${plainName(p.hostName, 'es')}. Sigue apareciendo en el grupo familiar de tu perfil.` }),
+        en: p => ({ title: `${plainName(p.personName, 'en')} also lives elsewhere`, body: `${p.actorName} noted that ${plainName(p.personName, 'en')} also lives with ${plainName(p.hostName, 'en')}. They still show in your profile's household.` }),
+        pt: p => ({ title: `${plainName(p.personName, 'pt')} também mora em outro lar`, body: `${p.actorName} indicou que ${plainName(p.personName, 'pt')} também mora com ${plainName(p.hostName, 'pt')}. Continua aparecendo no grupo familiar do seu perfil.` }),
+    },
+    household_relationship_changed: {
+        required: ['actorName', 'relationship'],
+        es: p => {
+            const word = relationshipWord(p.relationship, 'es');
+            if (!word) return null;
+            const to = p.relativeName?.trim() ? ` (respecto de ${p.relativeName.trim()})` : '';
+            return { title: `Parentesco cambiado: ${plainName(p.personName, 'es')}`, body: `${p.actorName} cambió el parentesco de ${plainName(p.personName, 'es')} a «${word}»${to}.` };
+        },
+        en: p => {
+            const word = relationshipWord(p.relationship, 'en');
+            if (!word) return null;
+            const to = p.relativeName?.trim() ? ` (relative to ${p.relativeName.trim()})` : '';
+            return { title: `Relationship changed: ${plainName(p.personName, 'en')}`, body: `${p.actorName} changed ${plainName(p.personName, 'en')}'s relationship to “${word}”${to}.` };
+        },
+        pt: p => {
+            const word = relationshipWord(p.relationship, 'pt');
+            if (!word) return null;
+            const to = p.relativeName?.trim() ? ` (em relação a ${p.relativeName.trim()})` : '';
+            return { title: `Parentesco alterado: ${plainName(p.personName, 'pt')}`, body: `${p.actorName} mudou o parentesco de ${plainName(p.personName, 'pt')} para «${word}»${to}.` };
+        },
+    },
+    household_member_removed: {
+        required: ['actorName', 'reason'],
+        es: p => p.reason === 'not_living'
+            ? { title: `No vive ahí: ${plainName(p.personName, 'es')}`, body: `${p.actorName} indicó que ${plainName(p.personName, 'es')} no vive con ${plainName(p.hostName, 'es')}. Se quitó de ese grupo familiar y queda en el historial. Si no es así, podés volver a agregarlo y un administrador lo revisa.` }
+            : p.reason === 'mistake'
+                ? { title: `Quitado del grupo familiar: ${plainName(p.personName, 'es')}`, body: `${p.actorName} quitó a ${plainName(p.personName, 'es')} del grupo familiar ${householdOf(p.hostName, 'es')} porque se había cargado por error.` }
+                : null,
+        en: p => p.reason === 'not_living'
+            ? { title: `Doesn't live there: ${plainName(p.personName, 'en')}`, body: `${p.actorName} said ${plainName(p.personName, 'en')} doesn't live with ${plainName(p.hostName, 'en')}. They were removed from that household; the history shows it. If that's wrong, you can add them again and an administrator will review it.` }
+            : p.reason === 'mistake'
+                ? { title: `Removed from a household: ${plainName(p.personName, 'en')}`, body: `${p.actorName} removed ${plainName(p.personName, 'en')} from ${householdOf(p.hostName, 'en')} household because they were added by mistake.` }
+                : null,
+        pt: p => p.reason === 'not_living'
+            ? { title: `Não mora lá: ${plainName(p.personName, 'pt')}`, body: `${p.actorName} indicou que ${plainName(p.personName, 'pt')} não mora com ${plainName(p.hostName, 'pt')}. Foi removido desse grupo familiar e fica no histórico. Se não for assim, você pode adicioná-lo de novo e um administrador vai revisar.` }
+            : p.reason === 'mistake'
+                ? { title: `Removido do grupo familiar: ${plainName(p.personName, 'pt')}`, body: `${p.actorName} removeu ${plainName(p.personName, 'pt')} do grupo familiar ${householdOf(p.hostName, 'pt')} porque tinha sido adicionado por engano.` }
+                : null,
+    },
+    household_member_disputed: {
+        required: ['actorName'],
+        es: p => ({ title: `Convivencia en disputa: ${plainName(p.personName, 'es')}`, body: `${p.actorName} volvió a agregar a ${plainName(p.personName, 'es')} al grupo familiar ${householdOf(p.hostName, 'es')}, después de que alguien indicara que no vive ahí. Revisá quién tiene razón.` }),
+        en: p => ({ title: `Household disputed: ${plainName(p.personName, 'en')}`, body: `${p.actorName} added ${plainName(p.personName, 'en')} back to ${householdOf(p.hostName, 'en')} household after someone said they don't live there. Please review who is right.` }),
+        pt: p => ({ title: `Convivência em disputa: ${plainName(p.personName, 'pt')}`, body: `${p.actorName} adicionou de novo ${plainName(p.personName, 'pt')} ao grupo familiar ${householdOf(p.hostName, 'pt')}, depois que alguém indicou que não mora lá. Revise quem tem razão.` }),
     },
 };
 

@@ -10,8 +10,10 @@
  * - `createHousehold`: a new, empty household (gift households: add the recipient first).
  * - `addMembership`: idempotent on (household, adopter).
  * - `removeMembership`: optionally remembering a correction («No vive acá», D48).
+ * - `setMembershipRelationship`: compare-and-swap on the relationship read.
  * Reads:
- * - `householdIdsOf`, `sameHousehold`, `hasCorrection`, `membershipsOf`.
+ * - `householdIdsOf`, `sameHousehold`, `hasCorrection`, `membershipsOf`,
+ *   `householdExists`, `membershipById`, `isMemberOf`.
  * - `getHouseholdsFor`: the profile page's households — each member's live
  *   summary masked exactly as that member's profile is for this viewer (the
  *   same helpers as getLinkedSummaries, src/lib/profileSummary.ts). Never throws.
@@ -143,7 +145,40 @@ export async function hasCorrection(db: Db, householdId: string, adopterId: stri
     return !!row;
 }
 
+/** The household row is there (a racing ensureHousehold may have dropped an anchor-only one). */
+export async function householdExists(db: Db, householdId: string): Promise<boolean> {
+    const row = await db.select({ id: households.id }).from(households).where(eq(households.id, householdId)).limit(1).get();
+    return !!row;
+}
+
+/** One membership by id, or null. */
+export async function membershipById(db: Db, membershipId: string): Promise<MembershipRow | null> {
+    const row = await db.select().from(householdMemberships).where(eq(householdMemberships.id, membershipId)).limit(1).get() as MembershipRow | undefined;
+    return row ?? null;
+}
+
+/** `adopterId` has a membership in `householdId`. */
+export async function isMemberOf(db: Db, householdId: string, adopterId: string): Promise<boolean> {
+    const row = await db.select({ id: householdMemberships.id }).from(householdMemberships)
+        .where(and(eq(householdMemberships.householdId, householdId), eq(householdMemberships.adopterId, adopterId)))
+        .limit(1).get();
+    return !!row;
+}
+
 // ─────────────────────────── Writes ───────────────────────────
+
+/**
+ * Change one membership's relationship, compare-and-swap on the value read
+ * (`from`): false when someone changed it (or removed the membership) first.
+ * A relationship outside RELATIONSHIPS is never written (callers validate).
+ */
+export async function setMembershipRelationship(db: Db, membershipId: string, from: string, to: Relationship): Promise<boolean> {
+    if (!REL_SET.has(to)) throw new Error('setMembershipRelationship: unknown relationship');
+    const won = await db.update(householdMemberships).set({ relationship: to })
+        .where(and(eq(householdMemberships.id, membershipId), eq(householdMemberships.relationship, from)))
+        .returning({ id: householdMemberships.id });
+    return won.length > 0;
+}
 
 let lastIdMs = 0;
 /**

@@ -49,6 +49,10 @@ const SAMPLES: { [K in NotificationTemplate['key']]: Extract<NotificationTemplat
     household_link_removed: { actorName: 'María', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
     household_link_disputed: { actorName: 'Jon', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
     household_contribution: { actorName: 'Ana', adopterName: 'Pedro Paez', what: 'contact', entryType: 'phone' },
+    household_also_lives_with: { actorName: 'Jon', personName: 'Marta Paez', hostName: 'Pedro Paez' },
+    household_relationship_changed: { actorName: 'Ana', personName: 'Marta Paez', relationship: 'partner', relativeName: 'Pedro Paez' },
+    household_member_removed: { actorName: 'María', personName: 'Marta Paez', hostName: 'Pedro Paez', reason: 'not_living' },
+    household_member_disputed: { actorName: 'Jon', personName: 'Marta Paez', hostName: 'Pedro Paez' },
 };
 
 const LOCALES: NotificationLocale[] = ['es', 'en', 'pt'];
@@ -91,6 +95,21 @@ describe('renderNotification', () => {
         // merge request declined: «rechazó» (D30)
         expect(renderNotification({ key: 'merge_request_declined', params: { actorName: 'owner', survivorName: 'A', absorbedName: 'B' } }, 'es')!.title)
             .toBe('owner rechazó combinar dos perfiles');
+    });
+
+    it('households as profiles: relationship words per locale, removal reasons, unknown codes render nothing', () => {
+        expect(renderNotification({ key: 'household_relationship_changed', params: { actorName: 'Ana', personName: 'Marta Paez', relationship: 'partner', relativeName: 'Pedro Paez' } }, 'es')!.body)
+            .toBe('Ana cambió el parentesco de Marta Paez a «pareja» (respecto de Pedro Paez).');
+        expect(renderNotification({ key: 'household_relationship_changed', params: { actorName: 'Ana', personName: 'Marta Paez', relationship: 'child' } }, 'en')!.body)
+            .toBe("Ana changed Marta Paez's relationship to “child”.");
+        expect(renderNotification({ key: 'household_relationship_changed', params: { actorName: 'Ana', relationship: 'cousin' } }, 'pt')).toBeNull();
+        expect(renderNotification({ key: 'household_member_removed', params: { actorName: 'Ana', personName: 'Lucas', hostName: 'Pedro Paez', reason: 'mistake' } }, 'es')!.body)
+            .toBe('Ana quitó a Lucas del grupo familiar de Pedro Paez porque se había cargado por error.');
+        expect(renderNotification({ key: 'household_member_removed', params: { actorName: 'Ana', personName: 'Lucas', reason: 'not_living' } }, 'en')!.title)
+            .toBe("Doesn't live there: Lucas");
+        expect(renderNotification({ key: 'household_member_removed', params: { actorName: 'Ana', reason: 'moved' } }, 'es')).toBeNull();
+        expect(renderNotification({ key: 'household_member_disputed', params: { actorName: 'Jon', personName: 'Marta Paez' } }, 'es')!.body)
+            .toBe('Jon volvió a agregar a Marta Paez al grupo familiar del adoptante, después de que alguien indicara que no vive ahí. Revisá quién tiene razón.');
     });
 
     it('household_contribution: a member or a contact on one, per locale (D54)', () => {

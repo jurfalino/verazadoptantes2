@@ -63,6 +63,10 @@ const KNOWN_TYPES: Record<string, { label: string; description: string }> = {
     'household_link_removed': { label: 'No conviven', description: 'Al dueño (y su equipo) del perfil anfitrión cuando el equipo del perfil vinculado indica que esa persona no convive: se quita de los dos perfiles.' },
     'household_contribution': { label: 'Aporte al grupo familiar', description: 'Al dueño (y editores) cuando otra persona agrega un conviviente, o un dato de contacto de un conviviente, a su registro.' },
     'household_link_disputed': { label: 'Convivencia en disputa', description: 'A los administradores cuando alguien vuelve a agregar como conviviente a una persona cuyo equipo ya indicó que no conviven.' },
+    'household_also_lives_with': { label: 'También vive en otro hogar', description: 'A los equipos de un grupo familiar cuando alguien anota que una persona de ese hogar también vive con otro adoptante.' },
+    'household_relationship_changed': { label: 'Parentesco cambiado', description: 'A los equipos de los perfiles de un grupo familiar cuando alguien cambia el parentesco de una persona.' },
+    'household_member_removed': { label: 'Quitado del grupo familiar', description: 'A los equipos de los perfiles de un grupo familiar cuando alguien quita a una persona: «Lo cargué por error» o «No vive acá».' },
+    'household_member_disputed': { label: 'Grupo familiar en disputa', description: 'A los administradores cuando alguien vuelve a agregar a una persona a un grupo familiar después de que se indicó que no vive ahí.' },
     'form_attached': { label: 'Solicitud vinculada', description: 'Al creador de un perfil cuando otra persona le vincula una solicitud de adopción del formulario.' },
     'follow_up_due': { label: 'Follow-up Reminders', description: 'Daily cron reminder when an adoption/transit follow-up slot is due.' }
 };

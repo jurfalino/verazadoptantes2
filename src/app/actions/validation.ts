@@ -42,6 +42,9 @@ export const addContactEntrySchema = z.object({
     apps: z.array(z.enum(['whatsapp', 'telegram'])).optional(),
 });
 
+/** One contact typed with a household add (households as profiles): addContactEntry's fields, no adopterId. */
+export const householdContactSchema = addContactEntrySchema.omit({ adopterId: true });
+
 // updateContactEntry — owner+admin only. Mutates an existing entry identified
 // by its stable id. Type is not editable (change-of-type is a delete + add).
 export const updateContactEntrySchema = z.object({
