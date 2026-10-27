@@ -116,3 +116,10 @@ Behind the existing flag `ENABLE_HOUSEHOLD_MEMBERS`. Staging first: Jon checks P
 ## Left to the builder
 
 Table and column names; how the search join stays cheap on D1 (no `IN(array)`); the exact migration mechanism (SQL plus a script, or a one-off admin action); test plan; whether «¿Es este perfil?» reuses the «Nuevo adoptante» component directly.
+
+## Addendum 2026-10-27 — compact household section (Jon, after staging review of 2.58.0)
+Jon: the section took too much space and buried «Actividad»; «Hogar con …» titles were unnecessary; «0 adopciones · 0 registros» didn't count transits; «Vos agregaste a esta persona» + «Perfil cargado por …» contradicted each other. Three variants were prototyped (branch prototype/households-compact, screenshots in proto-shots/households-compact/); **Jon chose A «compact rows»**:
+- One dense row per person: avatar initial, name (link to their profile), rating + alerts / «Menor de edad» tag, the person's activity counted exactly like that person's «Actividad» summary (incl. transits, returns), «⋯» menu (unchanged items).
+- Second line: relationship (· age) · ONE attribution («agregado por vos» or «según {who added them}») · contacts collapsed behind «N datos ▾» (lock icon when some are protected); «Perfil cargado por …» is gone from household rows.
+- No «Hogar con …» titles; a second home appears only when the person lives in 2+ homes, as a small divider; «+ Agregar» is a slim text button and asks «¿En qué hogar?» only with 2+ homes.
+- Gift recipient block, «¿Es este perfil?», «Editar» and dialogs unchanged in behaviour.
