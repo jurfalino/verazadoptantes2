@@ -52,7 +52,7 @@ The person the adopter gives the animal to (form flow, `giftRecipient`) does not
 Going forward each person's contacts follow their own profile (owner, team, grants). At the migration nobody loses or gains sight: each new member profile copies the host's `is_public`, and every grant that unlocked the host's contacts (`all_contact` and `entry`) is copied to the member profiles it covered.
 
 ### Adding someone to a household
-Anyone signed in can do it (D54). Fields: **name (required**, Claude's call: production has no nameless members, and a profile needs a name), relationship, age, contacts. Before saving, the existing duplicate check runs (as on «Nuevo adoptante»):
+Anyone signed in can do it (D54). Fields: name, relationship, age, contacts. **The profile rule applies (Jon): a name or at least one contact detail** (`hasMinimumIdentifier`); a relationship alone isn't enough. Before saving, the existing duplicate check runs (as on «Nuevo adoptante»):
 - **A likely match** → «¿Es este perfil?» Choosing it links the existing profile, and the contacts typed are added to it through `addContactEntry` (credited, grants, no double copies).
 - **No match, or "no, es otra persona"** → a new profile owned by the adder, with the contacts on it. Then the membership.
 
@@ -71,7 +71,7 @@ Credit, history and notices are the same as today's contribution model (D54). Th
 Going forward each person's contacts follow their own profile (owner, team, grants). At the migration nobody loses or gains sight: each new member profile copies the host's `is_public`, and every grant that unlocked the host's contacts (`all_contact` and `entry`) is copied to the member profiles it covered.
 
 ### Adding someone to a household
-Anyone signed in can do it (D54). Fields: **name (required**, Claude's call: production has no nameless members, and a profile needs a name), relationship, age, contacts. Before saving, the existing duplicate check runs (as on «Nuevo adoptante»):
+Anyone signed in can do it (D54). Fields: name, relationship, age, contacts. **The profile rule applies (Jon): a name or at least one contact detail** (`hasMinimumIdentifier`); a relationship alone isn't enough. Before saving, the existing duplicate check runs (as on «Nuevo adoptante»):
 - **A likely match** → «¿Es este perfil?» Choosing it links the existing profile, and the contacts typed are added to it through `addContactEntry` (credited, grants, no double copies).
 - **No match, or "no, es otra persona"** → a new profile owned by the adder, with the contacts on it. Then the membership.
 
@@ -95,8 +95,8 @@ Converting an existing inline member: their contacts move to the new profile tog
 - Merging two profiles moves the absorbed profile's memberships to the survivor. If the survivor is already in that household, the two collapse into one membership. Undo restores them, through the existing audit payload.
 - Merging two profiles that are in the same household removes the self-membership.
 
-### When nobody can answer «¿Es este perfil?» (decided by Claude)
-Forms, the importer and the API never link automatically on a fuzzy match: they create the profile and the membership, and the normal duplicate scan puts any match in «Pendientes de revisar» (the same rule as the migration). Only an exact match on a profile already in that same household is reused (re-sending a form doesn't duplicate people).
+### When nobody can answer «¿Es este perfil?» (Jon, 2026-10-26)
+Forms, imports (sheet, social) and the API use **the same matching as the API's exact mode** (`findIdentifierHits` + `decideExactOutcome`, src/lib/api/search.ts, src/domain/apiExactMatch.ts). If the person's name fits AND an identifier matches exactly one consistent profile (phone, email, document, address with street and number, social profile), that **existing profile is used** («Marta Paez» with the same phone → the existing Marta joins the household). Anything ambiguous creates a new profile, and the normal duplicate scan sends any likely match to «Pendientes de revisar». Re-sending the same form never creates the person twice. Exact mode's `nameMatchedAs: 'household_member'` becomes an ordinary profile match.
 
 ### «No convive» memory (decided by Claude)
 A correction is stored per (household, person). Re-adding that person to that household, or a merge that brings them back into it, is a dispute: admins are notified (as D48).
