@@ -51,7 +51,8 @@ import {
 import {
     notifyHouseholdMemberRemoved, notifyHouseholdPersonAdded, notifyHouseholdReaddDisputed, notifyHouseholdRelationshipChanged,
 } from '@/lib/householdNotices';
-import { canRemoveMembership, householdNameKey, isGiftHousehold, MAX_HOUSEHOLD_MEMBERS, MAX_HOUSEHOLDS_PER_PROFILE } from '@/domain/households';
+import { canRemoveMembership, currentAge, householdNameKey, isGiftHousehold, isMinor, MAX_HOUSEHOLD_MEMBERS, MAX_HOUSEHOLDS_PER_PROFILE } from '@/domain/households';
+import { sameName } from '@/domain/profileIdentity';
 import { hasMinimumIdentifier } from '@/domain/adopterIdentity';
 import { householdContactSchema } from './validation';
 import { addContactEntry } from './addContactEntry';
@@ -576,6 +577,49 @@ export async function updateHouseholdMembership(
         return { ok: true };
     } catch (e) {
         const errorId = logger.error('updateHouseholdMembership failed', e, ctx);
+        return { ok: false, error: 'failed', errorId };
+    }
+}
+
+/**
+ * «⋯ → Editar» checks every field BEFORE saving any (final fix P1: no partial
+ * save): which of name, relationship and age/«menor» changed since the form
+ * opened. Read-only; answers field names only — never the stored values (the
+ * form then refreshes to show them, as the per-field conflicts do). Anyone
+ * signed in (they can see these on the profile anyway).
+ */
+export async function checkHouseholdPersonEdit(input: {
+    profileId: string; membershipId?: string;
+    expected: { name?: string; relationship?: Relationship; age?: number | null; isMinor?: boolean };
+}): Promise<{ ok: true; conflicts: Array<'name' | 'relationship' | 'age'> } | Fail> {
+    const actor = await sessionActor();
+    if (!actor) return { ok: false, error: 'not_authenticated' };
+    const profileId = id64(input?.profileId);
+    const membershipId = id200(input?.membershipId);
+    const exp = input?.expected;
+    if (!profileId || !exp || typeof exp !== 'object') return { ok: false, error: 'invalid' };
+    const ctx: Record<string, unknown> = { profileId, membershipId: membershipId || null, actor };
+    try {
+        const db = await getDb();
+        if (!db) throw new Error('No database');
+        const row = await db.select({ name: adopters.name, age: adopters.age, ageAsOf: adopters.ageAsOf, isMinor: adopters.isMinor, deletedAt: adopters.deletedAt })
+            .from(adopters).where(eq(adopters.id, profileId)).get() as { name: string | null; age: number | null; ageAsOf: string | null; isMinor: number | null; deletedAt: Date | null } | undefined;
+        if (!row || row.deletedAt) return { ok: false, error: 'not_found' };
+        const conflicts: Array<'name' | 'relationship' | 'age'> = [];
+        if (typeof exp.name === 'string' && !sameName(row.name, exp.name)) conflicts.push('name');
+        if (membershipId && exp.relationship !== undefined) {
+            const m = await membershipById(db, membershipId);
+            if (!m || m.adopterId !== profileId) return { ok: false, error: 'not_found' };
+            if (m.relationship !== exp.relationship) conflicts.push('relationship');
+        }
+        if (exp.age !== undefined || exp.isMinor !== undefined) {
+            const today = new Date();
+            if ((exp.age !== undefined && (exp.age ?? null) !== currentAge(row, today)) || (exp.isMinor !== undefined && exp.isMinor !== isMinor(row, today))) conflicts.push('age');
+        }
+        if (conflicts.length) logger.info('checkHouseholdPersonEdit: changed since the form opened', { ...ctx, conflicts });
+        return { ok: true, conflicts };
+    } catch (e) {
+        const errorId = logger.error('checkHouseholdPersonEdit failed', e, ctx);
         return { ok: false, error: 'failed', errorId };
     }
 }

@@ -196,6 +196,8 @@ export type AgeResult =
     | { status: 'unchanged' }
     | { status: 'missing' }
     | { status: 'has_activity' }
+    /** Final fix P1: the age / box shown when the form opened is no longer what is stored. */
+    | { status: 'conflict' }
     | { status: 'busy'; errorId: string };
 
 /**
@@ -210,7 +212,11 @@ export type AgeResult =
  * and alert insert refuses a minor (src/lib/minors.ts), so nothing new lands
  * on a minor once the mark is in.
  */
-export async function setProfileAge(db: Db, input: { adopterId: string; age: number | null; isMinor: boolean; actor: string; today?: Date }): Promise<AgeResult> {
+export async function setProfileAge(db: Db, input: {
+    adopterId: string; age: number | null; isMinor: boolean; actor: string; today?: Date;
+    /** What the form showed (the age counted up to then, and «menor»); a different stored value is a conflict. */
+    expected?: { age: number | null; isMinor: boolean };
+}): Promise<AgeResult> {
     const { adopterId, actor } = input;
     const today = input.today ?? new Date();
     const ctx: Ctx = { op: 'setProfileAge', adopterId, actor };
@@ -221,6 +227,11 @@ export async function setProfileAge(db: Db, input: { adopterId: string; age: num
         if (!row || row.deletedAt) return { status: 'missing' };
         const was = { age: currentAge(row, today), minor: isMinor(row, today) };
         if (was.age === next.age && was.minor === nextMinor && (next.age !== null || !!row.isMinor === !!next.isMinor)) return { status: 'unchanged' };
+        // A birthday passing while the form is open reads as a change too: the safe side (shown, never overwritten).
+        if (input.expected && (input.expected.age !== was.age || input.expected.isMinor !== was.minor)) {
+            logger.info('setProfileAge: conflict — the age changed since the form opened', ctx);
+            return { status: 'conflict' };
+        }
         if (nextMinor && !was.minor && await profileHasActivity(db, adopterId)) {
             logger.info('setProfileAge: refused — the profile has records or alerts', ctx);
             return { status: 'has_activity' };

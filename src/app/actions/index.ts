@@ -46,7 +46,7 @@ export { runAdminQuery, deleteAdopter, resolveDataRequest, listDeletedAdopters, 
 
 // Duplicates
 export { getDuplicateCandidates, checkTokenDuplicates, countAdoptersBySocialHandle } from './duplicates';
-export { addHouseholdPerson, updateHouseholdMembership, removeHouseholdMembership, getHouseholdMatchCandidates, createGiftRecipientProfile } from './households';
+export { addHouseholdPerson, updateHouseholdMembership, removeHouseholdMembership, getHouseholdMatchCandidates, createGiftRecipientProfile, checkHouseholdPersonEdit } from './households';
 export { changeProfileName, changeProfileAge, undoProfileRename, getRenameUndoOption } from './profileIdentity';
 export type { ChangeProfileNameResult, ChangeProfileAgeResult, UndoProfileRenameResult, RenameUndoOption, ProfileIdentityError } from './profileIdentity';
 export type { DuplicateCandidate, TokenMatchResult } from './duplicates';

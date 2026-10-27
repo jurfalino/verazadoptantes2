@@ -344,7 +344,13 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //   reportNotLivingTogether (src/app/actions/householdLinks.ts — «No vive acá» is now
 //   removeHouseholdMembership(…, 'not_living')). No action added. MEASURED (npm run build): 168.
 // 168 = 175 − 7.
-const EXPECTED_ACTIONS = 168;
+// Households as profiles, final fix P1: +1 checkHouseholdPersonEdit (src/app/actions/households.ts)
+// — «⋯ → Editar» checks name, relationship and age for changes since the form opened BEFORE saving
+// any (no partial save). Signed-in only, read-only, answers field NAMES only (never the stored
+// values); a stranger learns nothing they couldn't see on the profile. (S4 removed a branch of
+// addHouseholdPerson, not an action.)
+// 169 = 168 + 1.
+const EXPECTED_ACTIONS = 169;
 
 let manifest;
 try {

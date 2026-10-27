@@ -36,8 +36,15 @@ export default function ProfileAgeEditor({ adopterId, identity, onClose }: { ado
         setProblem(null);
         setBusy(true);
         try {
-            const res = await changeProfileAge({ adopterId, age: n, isMinor: checked });
+            // What this form showed: changed since (a teammate) → conflict, nothing written (final fix P1).
+            const res = await changeProfileAge({ adopterId, age: n, isMinor: checked, expected: { age: identity.age, isMinor: identity.isMinor } });
             if (res.ok) {
+                onClose();
+                router.refresh();
+                return;
+            }
+            if (res.error === 'conflict') {
+                toast.warning(t('adopter.hh_err_conflict'));
                 onClose();
                 router.refresh();
                 return;

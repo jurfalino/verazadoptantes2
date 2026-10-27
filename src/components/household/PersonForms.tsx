@@ -30,7 +30,7 @@ import { RELATIONSHIPS, type Relationship } from '@/lib/householdMembers';
 import type { ContactEntryType } from '@/lib/contactEntries';
 import { MINOR_AGE_LIMIT } from '@/domain/households';
 import { isValidAge } from '@/domain/profileIdentity';
-import { addHouseholdPerson, changeProfileAge, changeProfileName, getHouseholdMatchCandidates, updateHouseholdMembership } from '@/app/actions';
+import { addHouseholdPerson, changeProfileAge, changeProfileName, checkHouseholdPersonEdit, getHouseholdMatchCandidates, updateHouseholdMembership } from '@/app/actions';
 import type { HouseholdContactInput, HouseholdMatchCandidate } from '@/app/actions/households';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
@@ -168,21 +168,44 @@ export function EditMemberForm({ member, relativeName, onDone }: {
         const n = age.trim() === '' ? null : Number(age);
         if (n !== null && !isValidAge(n)) { toast.warning(t('adopter.age_invalid')); return; }
         const boxNow = n !== null ? n < MINOR_AGE_LIMIT : minor;
+        const relNow = rel || 'unknown';
+        const nameChanged = !!name.trim() && name.trim() !== member.name.trim();
+        const relChanged = showRelationship && relNow !== member.relationship;
+        const ageChanged = n !== member.age || boxNow !== member.isMinor;
         setBusy(true);
         try {
-            if (name.trim() && name.trim() !== member.name.trim()) {
+            // Final fix P1: every field is checked BEFORE any is saved — a teammate's change to
+            // one of them closes the form and shows how it is now, nothing half-saved.
+            if (nameChanged || relChanged || ageChanged) {
+                const check = await checkHouseholdPersonEdit({
+                    profileId: member.profileId,
+                    ...(relChanged ? { membershipId: member.membershipId } : {}),
+                    expected: {
+                        ...(nameChanged ? { name: member.name } : {}),
+                        ...(relChanged ? { relationship: member.relationship } : {}),
+                        ...(ageChanged ? { age: member.age, isMinor: member.isMinor } : {}),
+                    },
+                });
+                if (!check.ok) { fail.refused(check); return; }
+                if (check.conflicts.length) {
+                    toast.warning(t('adopter.hh_err_conflict'));
+                    onDone();
+                    router.refresh();
+                    return;
+                }
+            }
+            if (nameChanged) {
                 const res = await changeProfileName({ adopterId: member.profileId, name: name.trim(), expectedName: member.name });
-                if (!res.ok) { fail.refused(res as Fail); return; }
+                if (!res.ok) { fail.refused(res as Fail); if (res.error === 'conflict') onDone(); return; }
                 fail.partial(res.warningErrorId);
             }
-            const relNow = rel || 'unknown';
-            if (showRelationship && relNow !== member.relationship) {
+            if (relChanged) {
                 const res = await updateHouseholdMembership({ membershipId: member.membershipId, relationship: relNow, expected: member.relationship });
-                if (!res.ok) { fail.refused(res); return; }
+                if (!res.ok) { fail.refused(res); if (res.error === 'conflict') onDone(); return; }
             }
-            if (n !== member.age || boxNow !== member.isMinor) {
-                const res = await changeProfileAge({ adopterId: member.profileId, age: n, isMinor: boxNow });
-                if (!res.ok) { fail.refused(res); return; }
+            if (ageChanged) {
+                const res = await changeProfileAge({ adopterId: member.profileId, age: n, isMinor: boxNow, expected: { age: member.age, isMinor: member.isMinor } });
+                if (!res.ok) { fail.refused(res); if (res.error === 'conflict') onDone(); return; }
                 fail.partial(res.warningErrorId);
             }
             toast.success(t('adopter.hh_edit_saved'));

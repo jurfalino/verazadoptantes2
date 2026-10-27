@@ -70,6 +70,7 @@ import { isProfileIsMinorError } from '@/domain/profileIdentity';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { saveApiActivity } from '@/lib/api/records';
 import { removeContactEntry } from './removeContactEntry';
+import { checkHouseholdPersonEdit } from './households';
 import { updateContactEntry } from './updateContactEntry';
 import { addContactEntry } from './addContactEntry';
 import { saveAdopter, appendToExistingAdopter, checkAdopterDeletable } from './adopters';
@@ -617,5 +618,33 @@ describe('Final fix S7 — a rename by signing a contract tells the owner team l
             metadata: expect.objectContaining({ undo: { historyId: h.id }, profileId: 'pedro' }),
         });
         expect(await as(OWNER, () => getRenameUndoOption(h.id))).toMatchObject({ status: 'can_undo' });
+    });
+});
+
+describe('Final fix P1 — age edits have a conflict check, and «Editar» checks every field before saving any', () => {
+    it('changeProfileAge with the age shown when the form opened: a different stored age → conflict, nothing written', async () => {
+        expect(await as(OWNER, () => changeProfileAge({ adopterId: 'pedro', age: 40, isMinor: false }))).toMatchObject({ ok: true });
+        const before = pedro();
+        expect(await changeProfileAge({ adopterId: 'pedro', age: 41, isMinor: false, expected: { age: 30, isMinor: false } }))
+            .toEqual({ ok: false, error: 'conflict' });
+        expect(pedro()).toMatchObject({ age: before.age, age_as_of: before.age_as_of, is_minor: before.is_minor });
+        // The age shown is the stored one → saved.
+        expect(await changeProfileAge({ adopterId: 'pedro', age: 41, isMinor: false, expected: { age: 40, isMinor: false } })).toMatchObject({ ok: true, age: 41 });
+        // The box with no age is part of what was shown.
+        // (Lucas: no age, box off. The form showed the box on — someone unticked it since.)
+        expect(await changeProfileAge({ adopterId: 'lucas', age: 15, isMinor: true, expected: { age: null, isMinor: true } })).toEqual({ ok: false, error: 'conflict' });
+    });
+
+    it('checkHouseholdPersonEdit names the fields changed since the form opened (never their values); signed out is refused', async () => {
+        expect(await as(OWNER, () => changeProfileAge({ adopterId: 'lucas', age: 12, isMinor: true }))).toMatchObject({ ok: true });
+        const shown = { name: 'Lucas Paez', age: 12, isMinor: true };
+        expect(await checkHouseholdPersonEdit({ profileId: 'lucas', expected: shown })).toEqual({ ok: true, conflicts: [] });
+        await as(MATE, () => changeProfileName({ adopterId: 'lucas', name: 'Lucas A. Paez', expectedName: 'Lucas Paez' }));
+        await as(MATE, () => changeProfileAge({ adopterId: 'lucas', age: 13, isMinor: true }));
+        const res = await checkHouseholdPersonEdit({ profileId: 'lucas', expected: shown });
+        expect(res).toEqual({ ok: true, conflicts: ['name', 'age'] });
+        expect(JSON.stringify(res)).not.toContain('Lucas A.');
+        expect(await as(null, () => checkHouseholdPersonEdit({ profileId: 'lucas', expected: shown }))).toEqual({ ok: false, error: 'not_authenticated' });
+        expect(await checkHouseholdPersonEdit({ profileId: 'nobody', expected: shown })).toEqual({ ok: false, error: 'not_found' });
     });
 });

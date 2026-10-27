@@ -31,6 +31,7 @@ import {
 } from '@/lib/profileIdentity';
 import { isValidAge, MAX_PROFILE_NAME_LEN, RENAME_RATE_LIMIT, RENAME_RATE_WINDOW_MS } from '@/domain/profileIdentity';
 import { canonField } from '@/domain/fieldCollab';
+import { MINOR_AGE_LIMIT } from '@/domain/households';
 
 export type ProfileIdentityError =
     | 'not_authenticated' | 'not_found' | 'invalid' | 'conflict' | 'busy' | 'failed'
@@ -134,22 +135,29 @@ async function othersChanged(
     return fields.map(f => ({ field: f, by: by[f] ?? '', value: stored[f] }));
 }
 
-export async function changeProfileAge(input: { adopterId: string; age: number | null; isMinor: boolean }): Promise<ChangeProfileAgeResult> {
+export async function changeProfileAge(input: {
+    adopterId: string; age: number | null; isMinor: boolean;
+    /** Final fix P1: the age and «menor» the form showed when it opened; changed since → `conflict`, nothing written. */
+    expected?: { age: number | null; isMinor: boolean };
+}): Promise<ChangeProfileAgeResult> {
     const actor = await sessionActor('changeProfileAge');
     if (!actor) return { ok: false, error: 'not_authenticated' };
     const adopterId = id64(input?.adopterId);
     const age = input?.age === null ? null : input?.age;
     if (!adopterId || (age !== null && !isValidAge(age)) || typeof input?.isMinor !== 'boolean') return { ok: false, error: 'invalid' };
+    const exp = input?.expected;
+    if (exp !== undefined && (!exp || typeof exp !== 'object' || typeof exp.isMinor !== 'boolean' || (exp.age !== null && !isValidAge(exp.age)))) return { ok: false, error: 'invalid' };
     const ctx = { adopterId, actor };
     try {
         const db = await getDb();
         if (!db) throw new Error('No database');
-        const res = await setProfileAge(db, { adopterId, age, isMinor: input.isMinor, actor });
+        const res = await setProfileAge(db, { adopterId, age, isMinor: input.isMinor, actor, ...(exp ? { expected: { age: exp.age, isMinor: exp.isMinor } } : {}) });
         switch (res.status) {
             case 'missing': return { ok: false, error: 'not_found' };
             case 'busy': return { ok: false, error: 'busy', errorId: res.errorId };
             case 'has_activity': return { ok: false, error: 'has_activity' };
-            case 'unchanged': return { ok: true, age, isMinor: age !== null ? age < 18 : input.isMinor };
+            case 'conflict': return { ok: false, error: 'conflict' };
+            case 'unchanged': return { ok: true, age, isMinor: age !== null ? age < MINOR_AGE_LIMIT : input.isMinor };
             case 'changed':
                 await notifyProfileAgeChanged(db, { adopterId, actor, ownerEmail: res.ownerEmail, name: res.name, age: res.to.age, minor: res.to.minor });
                 revalidatePath(`/adopter/${adopterId}`);
