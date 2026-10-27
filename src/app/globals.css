@@ -1178,6 +1178,21 @@ button {
   background-color: rgba(10, 22, 40, 0.4) !important; /* surface-base @ 40% */
 }
 
+/* Final fix P7: stone hovers on dark surfaces (household forms, member menu and
+   every other stone hover) lift to the elevated surface instead of flashing a
+   light grey; a stone hover text reads as primary. */
+[data-theme="dark"] .hover\:bg-stone-100:hover,
+[data-theme="dark"] .hover\:bg-stone-200:hover {
+  background-color: var(--surface-elevated) !important;
+}
+[data-theme="dark"] .hover\:text-stone-600:hover {
+  color: var(--text-primary) !important;
+}
+/* A native checkbox's unchecked box follows the theme (not the browser's white). */
+[data-theme="dark"] .themed-checkbox {
+  color-scheme: dark;
+}
+
 [data-theme="dark"] .bg-stone-50\/50,
 [data-theme="dark"] .hover\:bg-stone-50\/50:hover {
   background-color: rgba(10, 22, 40, 0.5) !important; /* surface-base @ 50% */

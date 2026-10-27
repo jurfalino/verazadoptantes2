@@ -62,7 +62,7 @@ export function KnownAsLine({ adopterId, entries, canRemove }: {
                     {canRemove && e.ids.length > 0 && (
                         <button type="button" onClick={() => setTarget(e)} data-testid="profile-known-as-remove"
                             aria-label={fill(t('adopter.known_as_remove'), { name: e.name })} title={fill(t('adopter.known_as_remove'), { name: e.name })}
-                            className="inline-flex min-w-[44px] min-h-[44px] -my-3 items-center justify-center rounded text-stone-500 hover:text-red-600 hover:bg-red-50">
+                            className="inline-flex min-w-[44px] min-h-[44px] -my-3 items-center justify-center rounded text-stone-500 hover:text-rose-600 hover:bg-rose-50">
                             <X className="w-3 h-3" aria-hidden="true" />
                         </button>
                     )}

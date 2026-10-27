@@ -35,6 +35,7 @@ import type { HouseholdContactInput, HouseholdMatchCandidate } from '@/app/actio
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
 import { householdErrorCopy, fill, joinNames } from '@/lib/householdCopy';
+import { MinorCheckbox } from '@/components/MinorCheckbox';
 
 /** One field style for every input and select here: ≥ 44px, the same text size (16px: no zoom on iOS), theme-remapped colours. */
 const FIELD = 'w-full min-h-[44px] px-3 border border-stone-200 rounded-lg bg-white text-base text-stone-900 outline-none focus:border-teal-500';
@@ -65,21 +66,6 @@ export function useHouseholdFailure(source: string) {
             if (warningErrorId) toast.warning(t('adopter.hh_err_partial'), `ID: ${warningErrorId}`);
         },
     };
-}
-
-/** «Es menor de edad»: always shown; with an age typed it follows the age and is locked. */
-function MinorCheckbox({ age, value, onChange }: { age: string; value: boolean; onChange: (v: boolean) => void }) {
-    const { t } = useLanguage();
-    const n = age.trim() === '' ? null : Number(age);
-    const byAge = n !== null && Number.isFinite(n);
-    return (
-        <label className="inline-flex min-h-[44px] items-center gap-2 text-sm text-stone-700 cursor-pointer" data-testid="hh-minor-checkbox">
-            {/* Follows a typed age and can't be changed then — kept readable (teal, as the approved A5/E1), not greyed out. */}
-            <input type="checkbox" checked={byAge ? (n as number) < MINOR_AGE_LIMIT : value} aria-readonly={byAge || undefined}
-                onChange={e => { if (!byAge) onChange(e.target.checked); }} className="w-4 h-4 accent-teal-600" />
-            {t('adopter.age_minor_box')}
-        </label>
-    );
 }
 
 function PersonFields({ name, setName, rel, setRel, relativeName, age, setAge, minor, setMinor, renameHint = false, showRelationship = true }: {
@@ -122,7 +108,7 @@ function PersonFields({ name, setName, rel, setRel, relativeName, age, setAge, m
                         data-testid="hh-person-age" className={FIELD} />
                 </div>
             </div>
-            <MinorCheckbox age={age} value={minor} onChange={setMinor} />
+            <MinorCheckbox age={age} value={minor} onChange={setMinor} testId="hh-minor-checkbox" />
         </>
     );
 }

@@ -14,7 +14,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { changeProfileAge } from '@/app/actions';
 import { resolveErrorId, reportClientError } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
-import { MINOR_AGE_LIMIT } from '@/domain/households';
+import { MinorCheckbox, minorShown } from '@/components/MinorCheckbox';
 import { isValidAge, type ProfileIdentityView } from '@/domain/profileIdentity';
 
 export default function ProfileAgeEditor({ adopterId, identity, onClose }: { adopterId: string; identity: ProfileIdentityView; onClose: () => void }) {
@@ -28,8 +28,7 @@ export default function ProfileAgeEditor({ adopterId, identity, onClose }: { ado
 
     const typed = age.trim();
     const n = typed === '' ? null : Number(typed);
-    const byAge = n !== null && Number.isFinite(n);
-    const checked = byAge ? (n as number) < MINOR_AGE_LIMIT : box;
+    const { checked } = minorShown(age, box);
 
     async function save() {
         if (n !== null && !isValidAge(n)) { setProblem(t('adopter.age_invalid')); return; }
@@ -67,12 +66,9 @@ export default function ProfileAgeEditor({ adopterId, identity, onClose }: { ado
                     <span className="block text-[11px] font-semibold text-stone-500 mb-1">{t('adopter.age_label')}</span>
                     <input type="number" inputMode="numeric" min={0} max={120} value={age} onChange={e => setAge(e.target.value)}
                         data-testid="profile-age-input"
-                        className="w-24 px-2.5 py-2 border border-stone-300 rounded bg-white text-base outline-none focus:border-teal-500" />
+                        className="w-24 min-h-[44px] px-2.5 border border-stone-200 rounded-lg bg-white text-base text-stone-900 outline-none focus:border-teal-500" />
                 </label>
-                <label className="inline-flex min-h-[44px] items-center gap-2 text-sm text-stone-700 cursor-pointer" data-testid="profile-minor-box">
-                    <input type="checkbox" checked={checked} disabled={byAge} onChange={e => setBox(e.target.checked)} className="w-4 h-4 accent-teal-600" />
-                    {t('adopter.age_minor_box')}
-                </label>
+                <MinorCheckbox age={age} value={box} onChange={setBox} testId="profile-minor-box" />
             </div>
             <p className="text-[11px] text-stone-500">{t('adopter.age_hint')}</p>
             {problem && <p className="text-xs text-rose-700" role="alert">{problem}</p>}

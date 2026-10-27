@@ -1510,7 +1510,8 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                             {/* Verdict — the rating is the single most important at-a-glance
                                 signal on a vetting tool, so it's promoted (md, with label) to its
                                 own prominent row right under the name, not buried in the meta row. */}
-                            {!isNew && avgRating !== null && avgRating !== undefined && (
+                            {/* A minor's tag replaces the rating (final fix P7): a legacy rating from before the mark stays off the header. */}
+                            {!isNew && !identity?.isMinor && avgRating !== null && avgRating !== undefined && (
                                 <div className="mt-2">
                                     <div
                                         role="button"
