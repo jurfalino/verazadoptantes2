@@ -1053,6 +1053,8 @@ export const en = {
         hh_link_locked_note: 'Some details are protected. You can ask for access from their profile.',
         hh_link_summary_aria: 'Summary of {name}’s profile',
         hh_lives_with_title: 'Lives with',
+        hh_other_home_title: 'In another home, with',
+        hh_card_aria: 'Who they live with',
         hh_lives_with_by: 'according to {name}',
         hh_not_living: 'Doesn’t live here',
         hh_not_living_title: '{person} doesn’t live with {host}?',

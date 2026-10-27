@@ -5,7 +5,7 @@ import {
 } from './apiExactMatch';
 
 const cand = (profileId: string, name: string, extra: Partial<CandidateNames> = {}): CandidateNames =>
-    ({ profileId, name, aliases: [], householdNames: [], ...extra });
+    ({ profileId, name, aliases: [], ...extra });
 
 describe('isFullName', () => {
     it('needs two real words', () => {
@@ -44,11 +44,15 @@ describe('decideExactOutcome', () => {
         expect(decideExactOutcome('María Pérez', [cand('a', 'María José Pérez')]))
             .toEqual({ result: 'found', profileId: 'a', nameMatchedAs: 'profile', otherProfileIds: [] });
     });
-    it('one profile, the name is an alias or a household member → found, says which', () => {
+    it('one profile, the name is an alias → found, says which', () => {
         expect(decideExactOutcome('Mery Pérez', [cand('a', 'María Pérez', { aliases: ['Mery Pérez'] })]))
             .toMatchObject({ result: 'found', nameMatchedAs: 'alias' });
-        expect(decideExactOutcome('Carlos Pérez', [cand('a', 'María Pérez', { householdNames: ['Carlos Pérez'] })]))
-            .toMatchObject({ result: 'found', nameMatchedAs: 'household_member' });
+    });
+    it('a housemate\'s name is never a match on the host (households as profiles: no household_member)', () => {
+        // The housemate is a profile of its own; the identifier finds THEM, as `profile`.
+        const housemateOnHost = { ...cand('a', 'María Pérez'), householdNames: ['Carlos Pérez'] } as Parameters<typeof decideExactOutcome>[1][number];
+        expect(decideExactOutcome('Carlos Pérez', [housemateOnHost]))
+            .toEqual({ result: 'ambiguous', reason: 'name_mismatch', profileIds: ['a'], compatible: [] });
     });
     it('one profile, unrelated name (shared family phone) → ambiguous name_mismatch', () => {
         expect(decideExactOutcome('Laura Gómez', [cand('a', 'María Pérez')]))

@@ -24,6 +24,7 @@
  * query per profile / household, fanned out with Promise.all.
  */
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
 import { adopters, householdCorrections, householdMemberships, households } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -42,8 +43,10 @@ import {
     isGiftHousehold,
     isMinor,
     membershipLabel,
+    type HouseholdLine,
     type MembershipLabel,
 } from '@/domain/households';
+import { pairKey } from '@/domain/dedupPair';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 export type MembershipRow = typeof householdMemberships.$inferSelect;
@@ -72,16 +75,8 @@ export type HouseholdMemberView = LinkedSummary & {
 
 export type HouseholdView = { id: string; isGift: boolean; members: HouseholdMemberView[] };
 
-/** A housemate on a search / «¿Es este perfil?» card: «Convive con Pedro ★1». */
-export type HouseholdLine = {
-    name: string;
-    profileId: string;
-    rating: number | null;
-    openAlerts: number;
-    isMinor: boolean;
-    /** Every household the two share is a gift household (never «Convive con»). */
-    isGift: boolean;
-};
+/** A housemate on a search / «¿Es este perfil?» card — defined in the domain so client components can import it. */
+export type { HouseholdLine };
 
 export type AddMembershipInput = {
     householdId: string;
@@ -553,6 +548,34 @@ export async function getHouseholdsFor(
 // ─────────────────────────── Card lines (batched) ───────────────────────────
 
 /**
+ * Search / «¿Es este perfil?» cards with their household line (`households`),
+ * read in ONE batched `householdLinesFor` call for every card on the page.
+ * Callers pass only the cards they return (never the whole recall set) and only
+ * for a signed-in viewer: the line names people, and a logged-out visitor's
+ * names are masked server-side. Never throws (a failed card gets []).
+ */
+export async function withHouseholdLines<T extends { adopterId: string }>(
+    db: Db,
+    viewer: string,
+    cards: T[],
+): Promise<Array<T & { households: HouseholdLine[] }>> {
+    if (cards.length === 0) return [];
+    // A page can hold ~100 cards and most people have no household: one indexed
+    // DISTINCT read tells which cards need a line, so the rest cost no query.
+    let ids = [...new Set(cards.map(c => c.adopterId))];
+    if (ids.length > 1) {
+        try {
+            const housed = new Set(((await db.selectDistinct({ id: householdMemberships.adopterId }).from(householdMemberships).all()) as Array<{ id: string }>).map(r => r.id));
+            ids = ids.filter(id => housed.has(id));
+        } catch (e) {
+            logger.warn('households: housed-profile read failed, every card reads its line', { viewer, cards: ids.length, error: errMsg(e) });
+        }
+    }
+    const lines = ids.length > 0 ? await householdLinesFor(db, viewer, ids) : {};
+    return cards.map(c => ({ ...c, households: lines[c.adopterId] ?? [] }));
+}
+
+/**
  * The household line of each profile in `adopterIds` (search results,
  * «¿Es este perfil?»): every live housemate, once, with their live rating and
  * open alerts. `isGift` when every household the two share is a gift one.
@@ -584,12 +607,16 @@ export async function householdLinesFor(
             if (mine.length === 0) return [adopterId, []];
             const groups = await Promise.all(mine.map(m => memo(groupMemo, m.householdId, () => membershipsOf(db, m.householdId))));
             // Each housemate once; gift only when every shared household is a gift one.
+            // Their home on the card: the first ordinary household the two share.
             const mates = new Map<string, boolean>();
-            groups.forEach(group => {
+            const homeOf = new Map<string, string>();
+            groups.forEach((group, gi) => {
                 const gift = isGiftHousehold(group);
                 for (const m of group) {
                     if (m.adopterId === adopterId) continue;
-                    mates.set(m.adopterId, (mates.get(m.adopterId) ?? true) && gift);
+                    const wasGiftOnly = mates.get(m.adopterId) ?? true;
+                    mates.set(m.adopterId, wasGiftOnly && gift);
+                    if (!homeOf.has(m.adopterId) || (wasGiftOnly && !gift)) homeOf.set(m.adopterId, mine[gi].householdId);
                 }
             });
             // Read only what the line shows: just enough profiles to fill it,
@@ -615,6 +642,7 @@ export async function householdLinesFor(
                 openAlerts: counts[i].openAlerts,
                 isMinor: isMinor(p, today),
                 isGift: !!mates.get(p.id),
+                householdId: homeOf.get(p.id) ?? '',
             }))];
         } catch (e) {
             logger.warn('households: card line read failed, card shows no household', { ...ctx, error: errMsg(e) });
@@ -622,4 +650,22 @@ export async function householdLinesFor(
         }
     }));
     return Object.fromEntries(entries);
+}
+
+/**
+ * Every pair of profiles that share an ordinary household, as `pairKey`s — for
+ * the duplicate scan and «Pendientes de revisar», which never pair housemates
+ * («alguien de su hogar» is already a recorded answer). ONE self-join over the
+ * memberships (never a query per pair: the scan runs near the subrequest
+ * ceiling). Gift households don't count, exactly as in `sameHousehold`. Throws
+ * on a DB failure (the caller decides how to degrade).
+ */
+export async function housematePairKeys(db: Db): Promise<Set<string>> {
+    const other = alias(householdMemberships, 'o');
+    const rows = await db.select({ a: householdMemberships.adopterId, b: other.adopterId })
+        .from(householdMemberships)
+        .innerJoin(other, and(eq(other.householdId, householdMemberships.householdId), sql`${other.adopterId} > ${householdMemberships.adopterId}`))
+        .where(sql`NOT EXISTS (SELECT 1 FROM household_memberships g WHERE g.household_id = ${householdMemberships.householdId} AND g.gift_recipient = 1)`)
+        .all() as Array<{ a: string; b: string }>;
+    return new Set(rows.map(r => pairKey(r.a, r.b)));
 }

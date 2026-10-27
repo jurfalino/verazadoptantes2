@@ -9,6 +9,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { saveAdopter, saveImage, findFormDuplicates, appendToExistingAdopter, changeProfileName } from "@/app/actions";
 import type { ProfileIdentityView } from "@/domain/profileIdentity";
 import ProfileAgeEditor from "@/components/ProfileAgeEditor";
+import { MinorTag } from "@/components/MinorTag";
+import { CardHouseholdLine } from "@/components/CardHouseholdLine";
 import { hasStrongMatch } from "@/lib/matchChips";
 import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
 import DuplicatePeek from "@/components/DuplicatePeek";
@@ -1347,10 +1349,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                 <div className="flex items-center justify-end gap-2 flex-shrink-0">
                                     {/* «Menor de edad» (K1): top-right, beside ⋯ — no rating, alerts or records on this profile. */}
                                     {!isNew && identity?.isMinor && !isEditing && (
-                                        <span data-testid="minor-tag" className="flex-none inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded whitespace-nowrap"
-                                            style={{ backgroundColor: 'var(--status-purple-bg)', color: 'var(--status-purple-text)' }}>
-                                            {t('adopter.minor_tag')}
-                                        </span>
+                                        <MinorTag />
                                     )}
                                     {isEditing ? (
                                         // Desktop: inline Cancel/Save in the header. On mobile these
@@ -1734,6 +1733,8 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                             {t('import.saveModal_use_existing') || 'Use existing profile'}
                                         </a>
                                     </div>
+                                    {result.isMinor && <div className="mt-2"><MinorTag /></div>}
+                                    <CardHouseholdLine lines={result.households} />
                                     {/* Full row width: beside the button it squeezes to a sliver on a phone. */}
                                     <MatchCompare
                                         adopterId={result.adopter.id}

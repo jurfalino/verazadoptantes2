@@ -163,3 +163,34 @@ export function isGiftHousehold(memberships: ReadonlyArray<{ giftRecipient?: num
 export function householdNameKey(name: string | null | undefined): string {
     return (name ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
+
+/**
+ * A housemate on a search / «¿Es este perfil?» card: «Convive con Pedro ★1».
+ * Live summary data only (name, rating, open alerts, minor) — never contacts.
+ */
+export type HouseholdLine = {
+    name: string;
+    profileId: string;
+    rating: number | null;
+    openAlerts: number;
+    isMinor: boolean;
+    /** Every household the two share is a gift household (never «Convive con»). */
+    isGift: boolean;
+    /** The home the line belongs to (the first ordinary one the two share): the card groups by it — «Convive con» / «En otro hogar, con». */
+    householdId: string;
+};
+
+/**
+ * The card's household line grouped by home, in order: the first home is
+ * «Convive con», every later one «En otro hogar, con». Gift-only lines are
+ * left out (a gift recipient doesn't live there).
+ */
+export function householdLineGroups(lines: ReadonlyArray<HouseholdLine> | null | undefined): HouseholdLine[][] {
+    const groups = new Map<string, HouseholdLine[]>();
+    for (const l of lines ?? []) {
+        if (l.isGift) continue;
+        const g = groups.get(l.householdId);
+        if (g) g.push(l); else groups.set(l.householdId, [l]);
+    }
+    return [...groups.values()];
+}

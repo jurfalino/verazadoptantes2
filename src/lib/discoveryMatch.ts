@@ -16,6 +16,7 @@ import type { AdopterFlags } from '@/types/adopter';
 import type { DiscoveryMatch, MatchSnippet } from '@/app/actions/types';
 import { maskAdopterContact, renderName, type Visibility, type MaskContactOptions } from './piiAccess';
 import { computeVisibilityBadge } from '@/domain/visibilityBadge';
+import { isMinor } from '@/domain/households';
 
 type AdopterRow = typeof adopters.$inferSelect;
 
@@ -101,5 +102,6 @@ export function assembleDiscoveryMatch(
         thumbnail: enrichment.thumbnail,
         stats: enrichment.stats,
         flags: enrichment.flags,
+        isMinor: isMinor(adopter),
     };
 }

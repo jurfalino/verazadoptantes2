@@ -371,7 +371,9 @@ export function isMultiWordName(normalizedName: string): boolean {
     return normalizedName.trim().split(/\s+/).filter(Boolean).length > 1;
 }
 
-const TOKENIZER_VERSION = 'v7'; // v7: contact tokens come from typed entries only (phones read by country, social stoplist, household per entry, address entries)
+// v7: contact tokens come from typed entries only (phones read by country, social stoplist, household per entry, address entries)
+// v8: households as profiles — a profile tokenizes only itself; the host's inline household JSON adds nothing
+const TOKENIZER_VERSION = 'v8';
 
 /** Compute a simple hash of all tokenizable fields for freshness tracking */
 export function computeTokenHash(adopter: {
@@ -380,7 +382,6 @@ export function computeTokenHash(adopter: {
     contactEntries?: string | null;
     addressInfo?: string | null;
     familyMembers?: string | null;
-    householdMembers?: string | null;
     sourceUrl?: string | null;
     country?: string | null;
 }): string {
@@ -391,7 +392,6 @@ export function computeTokenHash(adopter: {
         adopter.contactEntries || '',
         adopter.addressInfo || '',
         adopter.familyMembers || '',
-        adopter.householdMembers || '',
         adopter.sourceUrl || '',
         adopter.country || '',
     ].join('|');
@@ -419,7 +419,7 @@ interface AdoptionData {
     onBehalfOf?: string | null;
 }
 
-/** One typed contact entry, as stored in `contactEntries` (titular or household). */
+/** One typed contact entry, as stored in `contactEntries`. */
 export interface TokenEntry {
     type: string;
     value: string;
@@ -427,8 +427,6 @@ export interface TokenEntry {
     streetAndNumber?: string | null;
     locality?: string | null;
 }
-
-type HouseholdTokenInput = Array<{ name: string; contactEntries: TokenEntry[] }>;
 
 /** Address entries carry structured halves; older ones only `value`. */
 function addressText(e: TokenEntry): string {
@@ -448,22 +446,18 @@ function addressText(e: TokenEntry): string {
  * `contactEntries` (falling back to parsing the legacy blob) to avoid the
  * tokenizer → contactEntries circular import.
  *
- * Aliases (aka) AND family/household members are treated as FIRST-CLASS names —
- * emitted as both name_full (exact, high-weight) and name_word — because an
- * abuser may try to adopt under a relative's or an alias name, so those names
- * must be searchable and must raise duplicate matches exactly like the record's
- * own name.
+ * A profile tokenizes ONLY itself (households as profiles, v8): its name,
+ * aliases («Conocido/a como», rename aliases included) and contacts. Each
+ * housemate is a profile with its own tokens; search and the duplicate check
+ * bring the household in at match time. Aliases and the legacy free-text
+ * `familyMembers` stay FIRST-CLASS names — emitted as both name_full (exact,
+ * high-weight) and name_word — because an abuser may adopt under an alias.
  */
-export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], entries?: TokenEntry[], household?: HouseholdTokenInput): Token[] {
-    const titularEntries = entries ?? [];
-    const householdMembers = household ?? [];
-    const allEntries = [...titularEntries, ...householdMembers.flatMap(m => m.contactEntries)];
+export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], entries?: TokenEntry[]): Token[] {
+    const allEntries = entries ?? [];
     const ofType = (type: string) => allEntries.filter(e => e.type === type && (e.value || e.streetAndNumber || e.locality));
 
-    const aliases = titularEntries.filter(e => e.type === 'alias').map(e => e.value).filter(Boolean);
-    const householdNames = householdMembers.map(m => m.name).filter(Boolean);
-    // A member's alias-type contact is an alternate NAME (like the titular's aliases).
-    const householdAliasNames = householdMembers.flatMap(m => m.contactEntries.filter(e => e.type === 'alias').map(e => e.value)).filter(Boolean);
+    const aliases = allEntries.filter(e => e.type === 'alias').map(e => e.value).filter(Boolean);
     const tokens: Token[] = [];
     const seen = new Set<string>();
 
@@ -475,10 +469,10 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], 
         }
     }
 
-    // 1. Full normalized name(s) — the canonical name PLUS aliases and family
-    //    members, all treated as first-class names (an abuser may adopt under a
-    //    relative's or alias name). name_full = exact, high-weight match.
-    const fullNameSources = [adopter.name, adopter.familyMembers, ...aliases, ...householdNames, ...householdAliasNames];
+    // 1. Full normalized name(s) — the canonical name PLUS aliases and the
+    //    legacy family text, all treated as first-class names (an abuser may
+    //    adopt under an alias name). name_full = exact, high-weight match.
+    const fullNameSources = [adopter.name, adopter.familyMembers, ...aliases];
     for (const src of fullNameSources) {
         if (!src) continue;
         const fullName = normalizeText(src);
@@ -512,10 +506,6 @@ export function extractTokens(adopter: AdopterData, adoptions?: AdoptionData[], 
         }
     }
     for (const alias of aliases) nameSources.push(alias);
-    // Household member names are first-class name tokens too (a relative's name
-    // is a real abuse vector — a household phone/handle links records).
-    for (const hn of householdNames) nameSources.push(hn);
-    for (const ha of householdAliasNames) nameSources.push(ha);
     for (const source of nameSources) {
         if (source) {
             for (const word of extractNameWords(source)) {

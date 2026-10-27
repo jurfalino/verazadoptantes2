@@ -281,25 +281,31 @@ test.describe('Duplicate mass-merge and undo', () => {
         await expect(page.getByText(ACC_NAME).first()).toBeVisible({ timeout: 30000 });
     });
 
-    test('searching a household member name surfaces the titular record in the MAIN list', async ({ page }) => {
-        // Regression for the recall/score source mismatch (v2.55.9): household
-        // member and onBehalfOf names emit recall tokens, but the scorer never
-        // read those fields — the record surfaced with no score, no match chip
-        // and no snippet, demoted to the weak tier. A perfect relative-name
-        // match must land in the main list, scored via the family branch.
+    test("searching a housemate's name shows only THEIR card, with the household line naming the other person", async ({ page }) => {
+        // Households as profiles (Jon, 2026-10-26): a search returns only the
+        // people who match. The relative is a profile of their own; their card
+        // carries «Convive con» with the housemate's live rating, so a
+        // dangerous relative stays visible without a card of their own.
         const HH = 'test-household-fixture-1';
         const HH_NAME = 'HouseholdFixture Titular';
+        const REL = 'test-household-fixture-2';
+        const REL_NAME = 'RelativeFixture Ondina';
         seedAdopter(HH, HH_NAME, 'household-fixture-contact');
+        seedAdopter(REL, REL_NAME, 'relative-fixture-contact');
+        execD1(`INSERT OR REPLACE INTO households (id, created_by, created_at) VALUES ('test-hh-fixture-1', NULL, strftime('%s','now'))`);
         execD1(
-            `UPDATE adopters SET household_members = '[{"id":"hm-test-0001","name":"RelativeFixture Ondina","relationship":"partner","contactEntries":[]}]' WHERE id = '${HH}'`,
+            `INSERT OR REPLACE INTO household_memberships (id, household_id, adopter_id, relationship, gift_recipient, added_by, added_at) VALUES ` +
+            `('test-hm-fixture-1', 'test-hh-fixture-1', '${HH}', 'unknown', 0, NULL, strftime('%s','now')), ` +
+            `('test-hm-fixture-2', 'test-hh-fixture-1', '${REL}', 'partner', 0, NULL, strftime('%s','now'))`,
         );
-        // Tokens as extractTokens writes them: household names → name_words.
-        const toks: Array<[string, string]> = [
-            ['test-tok-hh-1', 'relativefixture'],
-            ['test-tok-hh-2', 'ondina'],
+        // Tokens as extractTokens writes them: the relative's own name, on the relative.
+        const toks: Array<[string, string, string]> = [
+            ['test-tok-hh-1', 'name_word', 'relativefixture'],
+            ['test-tok-hh-2', 'name_word', 'ondina'],
+            ['test-tok-hh-3', 'name_full', 'relativefixture ondina'],
         ];
-        for (const [id, value] of toks) {
-            execD1(`INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES ('${id}', '${HH}', 'name_word', '${value}')`);
+        for (const [id, type, value] of toks) {
+            execD1(`INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES ('${id}', '${REL}', '${type}', '${value}')`);
         }
 
         await page.goto('/');
@@ -307,10 +313,10 @@ test.describe('Duplicate mass-merge and undo', () => {
         await page.fill('input#search', 'relativefixture ondina');
         await page.getByRole('button', { name: /search records|buscar registros/i }).click();
         await expect(page.getByText(/found \d+ match|resultados encontrados/i)).toBeVisible({ timeout: 30000 });
-        // The titular's card in the MAIN list (no expander click) ...
-        await expect(page.getByText(HH_NAME).first()).toBeVisible({ timeout: 30000 });
-        // ... and the card explains WHY: family-circle match, relative visible.
-        await expect(page.getByText(/RelativeFixture Ondina/).first()).toBeVisible({ timeout: 30000 });
+        // The relative's card in the MAIN list ...
+        await expect(page.getByText(REL_NAME).first()).toBeVisible({ timeout: 30000 });
+        // ... carrying the household line that names the titular.
+        await expect(page.getByTestId('card-household-line').filter({ hasText: HH_NAME }).first()).toBeVisible({ timeout: 30000 });
     });
     test("a record added to a merged-away profile (import wizard) lands on the profile it was merged into", async ({ page }) => {
         const P = 'test-addrec-fixture-survivor';

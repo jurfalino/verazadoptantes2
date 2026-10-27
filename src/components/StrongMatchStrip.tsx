@@ -16,6 +16,8 @@ import { hasStrongMatch } from '@/lib/matchChips';
 import { useLanguage } from '@/context/LanguageContext';
 import { AdopterName } from '@/components/AdopterName';
 import MatchCompare, { entriesAsShown, type MatchSourceKind } from '@/components/MatchCompare';
+import { MinorTag } from '@/components/MinorTag';
+import { CardHouseholdLine } from '@/components/CardHouseholdLine';
 
 interface Props {
     /** What the rescuer has typed — their side of «Qué coincide y qué no». */
@@ -58,6 +60,8 @@ export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onC
                             )}
                             <div className="min-w-0 flex-1">
                                 <AdopterName adopter={result.adopter} className="font-semibold text-stone-900 text-sm truncate block" title />
+                                {result.isMinor && <div className="mt-1"><MinorTag /></div>}
+                                <CardHouseholdLine lines={result.households} />
                                 <div className="flex gap-2 mt-2.5">
                                     <a
                                         href={`/adopter/${result.adopter.id}`}

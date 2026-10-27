@@ -9,8 +9,8 @@ import { categorizeContactText } from './contactEntries';
  * production failure; values are invented with the same shapes.
  */
 const adopter = { name: 'Lorena Núñez', addressInfo: null, familyMembers: null, sourceUrl: null, country: 'AR' };
-const of = (entries: TokenEntry[], household: Array<{ name: string; contactEntries: TokenEntry[] }> = []) =>
-    extractTokens(adopter, [], entries, household).map(t => `${t.type}:${t.value}`);
+const of = (entries: TokenEntry[]) =>
+    extractTokens(adopter, [], entries).map(t => `${t.type}:${t.value}`);
 
 describe('a Facebook profile link never becomes a phone', () => {
     // The reported record: three real phones and a profile.php link.
@@ -67,11 +67,11 @@ describe('Facebook / Instagram / TikTok links that are not profiles', () => {
     });
 });
 
-describe('household members are indexed entry by entry', () => {
-    const tokens = of([], [{ name: 'Carlos Núñez', contactEntries: [
+describe('a phone and an id are indexed entry by entry', () => {
+    const tokens = of([
         { type: 'phone', value: '11 2345-6789' },
         { type: 'id', value: '30.123.456' },
-    ] }]);
+    ]);
     it('the phone and the DNI are not merged into one number', () => {
         expect(tokens).toContain('phone:541123456789');
         expect(tokens).toContain('id_number:30123456');

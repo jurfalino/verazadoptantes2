@@ -26,6 +26,8 @@ import { useLanguage } from '@/context/LanguageContext';
 import { AdopterName } from '@/components/AdopterName';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
 import MatchCompare, { entriesAsShown, type MatchSourceKind } from '@/components/MatchCompare';
+import { MinorTag } from '@/components/MinorTag';
+import { CardHouseholdLine } from '@/components/CardHouseholdLine';
 
 const NAME_HL_TYPES = ['name_full', 'name_word'];
 
@@ -186,6 +188,8 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
                                                             {highlightMatches(result.adopter.name, result.matchValues, NAME_HL_TYPES)}
                                                         </p>
                                                     )}
+                                                {result.isMinor && <div className="mt-1"><MinorTag /></div>}
+                                                <CardHouseholdLine lines={result.households} />
                                                 <MatchCompare
                                                     adopterId={result.adopter.id}
                                                     matchTypes={result.matchTypes}

@@ -1,6 +1,7 @@
 import type { adopters } from '@/db/schema';
 import type { AdopterFlags } from '@/types/adopter';
 import type { VisibilityBadge } from '@/domain/visibilityBadge';
+import type { HouseholdLine } from '@/domain/households';
 
 export type SnippetField = 'name' | 'contact' | 'address' | 'family' | 'adoption' | 'history';
 
@@ -108,6 +109,14 @@ export interface DiscoveryMatch {
     stats: { searchHits: number; profileViews: number; requests: number; adoptions: number };
     /** Always populated. Defaults to all-false when enrich=false. */
     flags: AdopterFlags;
+    /** «Menor de edad» (domain `isMinor`: current age under 18, or the box with no age). */
+    isMinor?: boolean;
+    /**
+     * The card's household line: each housemate's live rating, open alerts and
+     * minor tag (households as profiles). Signed-in, in-app viewers only;
+     * absent for a logged-out visitor and the API.
+     */
+    households?: HouseholdLine[];
 }
 
 /** Discriminated union for generic consumer code. Prefer the concrete type when mode is known at the call site. */

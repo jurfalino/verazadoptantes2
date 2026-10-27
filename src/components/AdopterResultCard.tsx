@@ -14,6 +14,8 @@ import { AdopterName } from './AdopterName';
 import { useLanguage } from '@/context/LanguageContext';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
+import { MinorTag } from './MinorTag';
+import { CardHouseholdLine } from './CardHouseholdLine';
 
 const SNIPPET_ICONS: Record<SnippetField, string> = {
     name: '👤', contact: '📞', address: '📍',
@@ -222,6 +224,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                                 {t('search.protected_label')}
                             </span>
                         ) : null}
+                        {res.isMinor && <MinorTag />}
                     </div>
                     {/* Desktop: contact stays in the middle column under the name.
                         Full string, always wrapped (never truncated), matched tokens
@@ -365,6 +368,9 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                     </div>
                 );
             })()}
+
+            {/* «Convive con …»: each housemate's live rating and alerts (households as profiles). */}
+            <CardHouseholdLine lines={res.households} />
 
             {/* Dates Row - bottom right */}
             {showMetadata && (addedDate || updatedDate) && (

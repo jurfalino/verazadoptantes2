@@ -369,7 +369,7 @@ describe('getHouseholdsFor', () => {
 
 describe('householdLinesFor', () => {
     it("each profile's housemates with live rating and alerts; gift and minors flagged; no household → []", async () => {
-        await pedrosHousehold();
+        const hh = await pedrosHousehold();
         sqlite.exec(`INSERT INTO households (id, created_by, created_at) VALUES ('gift1', '${OWNER}', 1)`);
         await addMembership(db(), { householdId: 'gift1', adopterId: 'ana', addedBy: OWNER });
         await addMembership(db(), { householdId: 'gift1', adopterId: 'rosa', giftRecipient: true, addedBy: OWNER });
@@ -377,12 +377,12 @@ describe('householdLinesFor', () => {
         const lines = await householdLinesFor(db(), STRANGER, ['lucas', 'marta', 'ana', 'gone', 'nobody']);
         expect(Object.keys(lines).sort()).toEqual(['ana', 'gone', 'lucas', 'marta', 'nobody']);
         expect(lines.lucas).toEqual(expect.arrayContaining([
-            { name: 'Pedro Paez', profileId: 'pedro', rating: 1, openAlerts: 1, isMinor: false, isGift: false },
-            { name: 'Marta Paez', profileId: 'marta', rating: null, openAlerts: 0, isMinor: false, isGift: false },
+            { name: 'Pedro Paez', profileId: 'pedro', rating: 1, openAlerts: 1, isMinor: false, isGift: false, householdId: hh },
+            { name: 'Marta Paez', profileId: 'marta', rating: null, openAlerts: 0, isMinor: false, isGift: false, householdId: hh },
         ]));
         expect(lines.lucas).toHaveLength(2);
-        expect(lines.marta.find(l => l.profileId === 'lucas')).toEqual({ name: 'Lucas Paez', profileId: 'lucas', rating: null, openAlerts: 0, isMinor: true, isGift: false });
-        expect(lines.ana).toEqual([{ name: 'Rosa Diaz', profileId: 'rosa', rating: null, openAlerts: 0, isMinor: false, isGift: true }]);
+        expect(lines.marta.find(l => l.profileId === 'lucas')).toEqual({ name: 'Lucas Paez', profileId: 'lucas', rating: null, openAlerts: 0, isMinor: true, isGift: false, householdId: hh });
+        expect(lines.ana).toEqual([{ name: 'Rosa Diaz', profileId: 'rosa', rating: null, openAlerts: 0, isMinor: false, isGift: true, householdId: 'gift1' }]);
         expect(lines.nobody).toEqual([]);
         expect(lines.gone).toEqual([]);
     });

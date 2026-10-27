@@ -343,7 +343,7 @@ function matchedOn(req: ScenarioDef['person'], p: Registered): Identifier[] {
 function answer(def: ScenarioDef, origin: string, n: number, now: Date, cfg: AlertConfig) {
     const url = (id: string) => `${origin}/adopter/${id}`;
     const hits = def.profiles.filter(p => matchedOn(def.person, p).length > 0);
-    const outcome = decideExactOutcome(def.person.fullName, hits.map(p => ({ profileId: p.id, name: p.name, aliases: [], householdNames: [] })));
+    const outcome = decideExactOutcome(def.person.fullName, hits.map(p => ({ profileId: p.id, name: p.name, aliases: [] })));
     const byId = new Map(hits.map(p => [p.id, p]));
     const summary = (p: Registered) => {
         const c = computed(p, now, cfg);

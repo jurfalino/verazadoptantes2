@@ -56,10 +56,9 @@ export type UnattendedPerson = { name: string; phone?: string | null; email?: st
  * full name («Nombre Apellido», isFullName) and at least one identifier
  * (phone, email, a usable ID number); otherwise no lookup at all.
  *
- * Only the person's OWN names count (profile name, aliases): a profile the
- * identifier hit whose HOUSEMATE carries the name is somebody else — that is
- * the API's `household_member` match, which here would put the host in their
- * own household. Phones are read with `ownerCountry` (the form's / importer's
+ * Only the person's OWN names count (profile name, aliases), as in the API's
+ * exact mode: a profile the identifier hit whose HOUSEMATE carries the name is
+ * somebody else (it would put the host in their own household). Phones are read with `ownerCountry` (the form's / importer's
  * owner), as the API reads them with the key owner's. Throws on a DB failure.
  */
 export async function resolveHouseholdPerson(
@@ -75,8 +74,8 @@ export async function resolveHouseholdPerson(
     const doc = person.documentId?.trim() && isUsableDocumentId(person.documentId) ? person.documentId.trim() : undefined;
     if (!phone && !email && !doc) return null;
     const hits = await findIdentifierHits(db, { fullName: name, phone, email, ...(doc ? { documentId: { value: doc } } : {}) }, requestId, ownerCountry);
-    const outcome = decideExactOutcome(name, hits.candidates.map(c => ({ ...c, householdNames: [] })));
-    if (outcome.result !== 'found' || outcome.nameMatchedAs === 'household_member') return null;
+    const outcome = decideExactOutcome(name, hits.candidates);
+    if (outcome.result !== 'found') return null;
     return { profileId: outcome.profileId };
 }
 

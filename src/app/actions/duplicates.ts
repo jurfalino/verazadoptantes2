@@ -21,6 +21,7 @@ import { mergeSideParams } from '@/lib/mergeNotificationSides';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdminAsync } from '@/config/admins';
 import { addHouseholdMember } from './householdMembers';
+import { housematePairKeys, sameHousehold } from '@/lib/households';
 
 /**
  * Attach a just-signed contract's adoption to an existing matched adopter profile,
@@ -310,7 +311,21 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
             if (a) nameMap.set(a.id, a.name);
         }
 
+        // A housemate is never a duplicate candidate (a pair detected before they
+        // shared a household): ≤ 5 bounded lookups. A failed lookup keeps the pair.
+        const housemate = new Set<string>();
+        await Promise.all(otherIds.map(async (otherId: string) => {
+            try {
+                if (await sameHousehold(db, adopterId, otherId)) housemate.add(otherId);
+            } catch (e) {
+                logger.warn('getDuplicateCandidates: housemate check failed, pair kept', {
+                    adopterId, otherAdopterId: otherId, error: e instanceof Error ? e.message : String(e),
+                });
+            }
+        }));
+
         return candidates
+            .filter((c: { adopter1Id: string; adopter2Id: string }) => !housemate.has(c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id))
             .map((c: { id: string; adopter1Id: string; adopter2Id: string; matchTypes: string; score: number; confidence: string }) => {
                 const otherId = c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id;
                 return {
@@ -1083,6 +1098,23 @@ export async function getPendingDuplicatesForUser(
         const listed = (a: string, b: string) => ownIds.has(a) || ownIds.has(b) || requests.has(pairKey(a, b));
         const hasRequest = (c: { adopter1Id: string; adopter2Id: string }) => requests.has(pairKey(c.adopter1Id, c.adopter2Id));
         const mine = candidates.filter(c => listed(c.adopter1Id, c.adopter2Id));
+
+        // Detected pairs of housemates are not duplicates («alguien de su hogar» is
+        // already a recorded answer): one detected before they shared a household
+        // leaves the list as soon as they do, before ranking so `total` agrees. A
+        // person's flag or merge request is someone asking: those stay. One query.
+        try {
+            if (mine.length > 0) {
+                const housemates = await housematePairKeys(db);
+                for (let i = mine.length - 1; i >= 0; i--) {
+                    if (housemates.has(pairKey(mine[i].adopter1Id, mine[i].adopter2Id))) mine.splice(i, 1);
+                }
+            }
+        } catch (e) {
+            logger.warn('getPendingDuplicatesForUser: housemate filter failed, pairs listed as detected', {
+                actorEmail: viewer, error: e instanceof Error ? e.message : String(e),
+            });
+        }
 
         // Manually flagged duplicates (adopter_flags, reason='duplicate') join
         // the same queue — they were visible only on /admin/duplicates, the one

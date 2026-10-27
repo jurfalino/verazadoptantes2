@@ -502,7 +502,7 @@ describe('getHouseholdMatchCandidates — «¿Es este perfil?»', () => {
         sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'rosa'`).run(JSON.stringify([{ id: 'rc', type: 'phone', value: '+54 11 7777 0909', addedBy: OTHER }]));
         const { results } = await getHouseholdMatchCandidates({ name: 'Marta Paez', contactEntries: [{ type: 'phone', value: MARTA_PHONE }] });
         const line = results.find(r => r.adopter.id === 'marta')!.householdLine;
-        expect(line.map(l => Object.keys(l).sort())).toEqual([['isGift', 'isMinor', 'name', 'openAlerts', 'profileId', 'rating']]);
+        expect(line.map(l => Object.keys(l).sort())).toEqual([['householdId', 'isGift', 'isMinor', 'name', 'openAlerts', 'profileId', 'rating']]);
         const { getHouseholdsFor } = await import('@/lib/households');
         const onProfile = await getHouseholdsFor(state.db as Parameters<typeof getHouseholdsFor>[0], STRANGER, 'marta');
         const rosa = onProfile[0].members.find(m => m.profileId === 'rosa')!;

@@ -186,7 +186,8 @@ export const profileSummarySchema = ratingSchema.extend({
     profileId: z.string(),
     url: z.string().meta({ description: 'The profile page. Opens for logged-in BuenAdoptante users, with their own access rules.' }),
     matchedOn: z.array(z.enum(['email', 'phone', 'documentId'])).optional(),
-    nameMatchedAs: z.enum(['profile', 'alias', 'household_member']).optional(),
+    nameMatchedAs: z.enum(['profile', 'alias', 'household_member']).optional()
+        .meta({ description: 'Which of the profile\'s names fits the name you sent: its own name (profile) or one it is also known by (alias). household_member is no longer returned: each person in a household is a profile of their own.' }),
     flags: z.array(z.enum(PROFILE_FLAGS)).meta({ description: 'Marks on the profile: inaccurate, duplicate, possible_duplicate (bad signs) and verified_identity, verified_address (good signs).' }),
     alerts: z.array(alertSchema).meta({ description: 'Activity alerts BuenAdoptante computed for this person: too_many_requests, too_many_adoptions. Empty when none.' }),
     records: z.partialRecord(z.enum(API_CONTEXTS), z.number().int()).meta({ description: 'Number of records per type.' }),
@@ -262,7 +263,7 @@ export const exactResponseSchema = z.object({
     reason: z.enum(['multiple_profiles', 'name_mismatch']).optional().meta({ description: 'match = ambiguous. multiple_profiles: several profiles fit the name. name_mismatch: the email / phone / document belongs to someone with another name.' }),
     candidates: z.array(z.object({
         profileId: z.string(), url: z.string(),
-        nameMatchedAs: z.enum(['profile', 'alias', 'household_member']).nullable().meta({ description: 'Which of the profile\'s names fits the name you sent; null when none does.' }),
+        nameMatchedAs: z.enum(['profile', 'alias', 'household_member']).nullable().meta({ description: 'Which of the profile\'s names fits the name you sent; null when none does. household_member is no longer returned: each person in a household is a profile of their own.' }),
     })).optional().meta({ description: 'match = ambiguous: the profiles the email / phone / document belongs to. Their ratings and alerts are in `risk`.' }),
     risk: riskSchema,
     saved: savedSchema.meta({ description: 'Always present: what this call did.' }),

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canRemoveMembership, currentAge, householdNameKey, isMinor, membershipLabel } from './households';
+import { canRemoveMembership, currentAge, householdLineGroups, householdNameKey, isMinor, membershipLabel } from './households';
 
 // Pedro's household: Marta is Pedro's partner, Lucas is Pedro's child. Pedro is
 // the person the relationships point at (his own row has none).
@@ -143,5 +143,18 @@ describe('householdNameKey', () => {
         expect(householdNameKey('  laura   PÁEZ ')).toBe(householdNameKey('Laura Paez'));
         expect(householdNameKey('Laura Paez')).not.toBe(householdNameKey('Laura Pérez'));
         expect(householdNameKey(null)).toBe('');
+    });
+});
+
+describe('householdLineGroups (the card line: «Convive con» / «En otro hogar, con»)', () => {
+    const line = (profileId: string, householdId: string, isGift = false) =>
+        ({ name: profileId, profileId, rating: null, openAlerts: 0, isMinor: false, isGift, householdId });
+    it('groups by home in order and leaves gift-only lines out', () => {
+        expect(householdLineGroups([line('pedro', 'h1'), line('ana', 'h2'), line('marta', 'h1'), line('rosa', 'g1', true)]))
+            .toEqual([[line('pedro', 'h1'), line('marta', 'h1')], [line('ana', 'h2')]]);
+    });
+    it('nothing → no groups', () => {
+        expect(householdLineGroups(undefined)).toEqual([]);
+        expect(householdLineGroups([line('rosa', 'g1', true)])).toEqual([]);
     });
 });

@@ -45,7 +45,7 @@ import { toGuestMatch } from '@/lib/guestMatch';
 import { getFeatureFlag } from '@/config/features';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
 import { deserializeContactEntries, parseBlobToContactEntries, TYPE_LABEL } from '@/lib/contactEntries';
-import { deserializeHouseholdMembers } from '@/lib/householdMembers';
+import { withHouseholdLines } from '@/lib/households';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -1152,15 +1152,14 @@ async function runDiscoveryMode(
             if (s && w > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = w; }
         }
 
-        // Family circle: legacy familyMembers blob + structured household
-        // members (name + their contacts) + adoptions' onBehalfOf names.
-        // Every one of these emits recall tokens (extractTokens), so every
-        // one must be scoreable and snippetable here — a source that can
-        // recall but not score produces the "why did this match?" result.
+        // Family circle: the legacy familyMembers free text + adoptions'
+        // onBehalfOf names. Both emit recall tokens (extractTokens), so both
+        // must be scoreable and snippetable here — a source that can recall
+        // but not score produces the "why did this match?" result. A
+        // housemate is a profile of its own (households as profiles): it is
+        // never scored on its host; the host's card shows it in `households`.
         const familyText = [
             a.familyMembers,
-            ...deserializeHouseholdMembers(a.householdMembers).map(m =>
-                [m.name, ...m.contactEntries.map(e2 => e2.value)].filter(Boolean).join(' ')),
             ...(onBehalfByAdopter.get(a.id) ?? []),
         ].filter(Boolean).join('\n');
         const familyNorm = normalizeText(familyText);
@@ -1449,9 +1448,21 @@ async function runDiscoveryMode(
         }).filter((r): r is DiscoveryMatch => r !== null)
         : list;
 
+    // The household line («Convive con Pedro ★1 · 1 alerta») of every card
+    // returned — never of the whole recall set — in one batched read. Only for
+    // a signed-in viewer in the app: it names people (a guest's names are
+    // masked) and the API's response doesn't carry it.
+    let shownMain: DiscoveryMatch[] = mainResults.slice(0, limit);
+    let shownLow: DiscoveryMatch[] = lowRelevanceResults.slice(0, limit);
+    if (!isUnauthenticated && !isApi && shownMain.length + shownLow.length > 0) {
+        const withLines = await withHouseholdLines(db, user, [...shownMain, ...shownLow]);
+        shownMain = withLines.slice(0, shownMain.length);
+        shownLow = withLines.slice(shownMain.length);
+    }
+
     const response: FindAdoptersResponse = {
-        results: forViewer(mainResults.slice(0, limit)),
-        ...(lowRelevanceResults.length > 0 && { lowRelevanceResults: forViewer(lowRelevanceResults.slice(0, limit)) }),
+        results: forViewer(shownMain),
+        ...(shownLow.length > 0 && { lowRelevanceResults: forViewer(shownLow) }),
         ...(singleTokenResultCount !== undefined && { singleTokenResultCount }),
         ...(guestNameMasked && { guestNameMasked: true }),
     };

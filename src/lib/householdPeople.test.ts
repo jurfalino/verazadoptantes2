@@ -362,9 +362,9 @@ describe('the exact match (API exact mode)', () => {
     it('a housemate\'s name on a profile\'s phone is NOT that profile (no household_member reuse)', async () => {
         const hh = await ensureHousehold(db(), 'pedro', null);
         await addMembership(db(), { householdId: hh, adopterId: 'marta', relationship: 'partner', relativeToAdopterId: 'pedro', addedBy: OWNER });
-        // API v1's householdNames now come from memberships…
+        // The identifier finds Pedro alone, matched on his own names only (no household_member)…
         const hits = await findIdentifierHits(db(), { fullName: 'Marta Paez', phone: '11 6123 4455' }, 'r', 'AR');
-        expect(hits.candidates).toEqual([expect.objectContaining({ profileId: 'pedro', householdNames: ['Marta Paez'] })]);
+        expect(hits.candidates).toEqual([{ profileId: 'pedro', name: 'Pedro Paez', aliases: [] }]);
         // …but Pedro's phone with Marta's name never resolves to Pedro.
         expect(await resolveHouseholdPerson(db(), { name: 'Marta Paez', phone: '11 6123 4455' }, 'AR', 'r')).toBeNull();
         expect(await resolveHouseholdPerson(db(), { name: 'Marta Paez', phone: MARTA_PHONE_TYPED }, 'AR', 'r')).toEqual({ profileId: 'marta' });
@@ -382,7 +382,7 @@ describe('the exact match (API exact mode)', () => {
         expect(count('SELECT COUNT(*) AS n FROM household_memberships')).toBe(0);
     });
 
-    it('a gift household is not a home: its members are not householdNames', async () => {
+    it('a gift recipient\'s profile is never part of the giver\'s exact match', async () => {
         const { submissionId, applicantId } = await postForm({
             name: 'Jonathan Giver', email: 'jg3@example.com', phone: '11 6123 5555', intent: 'gift',
             giftRecipient: { relationship: 'child', firstName: 'Sofía', lastName: 'Gómez', phone: '11 5555 0101' },
@@ -390,7 +390,7 @@ describe('the exact match (API exact mode)', () => {
         const made = await createGiftRecipientProfile({ giverAdopterId: applicantId, submissionId });
         expect(made.ok).toBe(true);
         const hits = await findIdentifierHits(db(), { fullName: 'Jonathan Giver', phone: '11 6123 5555' }, 'r', 'AR');
-        expect(hits.candidates).toEqual([expect.objectContaining({ profileId: applicantId, householdNames: [] })]);
+        expect(hits.candidates).toEqual([{ profileId: applicantId, name: 'Jonathan Giver', aliases: [] }]);
     });
 });
 

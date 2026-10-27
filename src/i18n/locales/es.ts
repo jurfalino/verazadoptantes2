@@ -1060,6 +1060,8 @@ export const es = {
         hh_link_locked_note: 'Algunos datos están protegidos. Podés pedir acceso desde su perfil.',
         hh_link_summary_aria: 'Resumen del perfil de {name}',
         hh_lives_with_title: 'Convive con',
+        hh_other_home_title: 'En otro hogar, con',
+        hh_card_aria: 'Con quién vive',
         hh_lives_with_by: 'según {name}',
         hh_not_living: 'No convive',
         hh_not_living_title: '¿{person} no convive con {host}?',

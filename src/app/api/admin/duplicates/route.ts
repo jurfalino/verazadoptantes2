@@ -10,6 +10,7 @@ import { logger } from '@/lib/logger';
 import { extractTokens, computeTokenHash, type TokenEntry } from '@/lib/tokenizer';
 import { tokenInputsFor } from '@/lib/adopterTokenize';
 import { giftPhoneEntriesByGiver } from '@/lib/giftRecipients';
+import { housematePairKeys } from '@/lib/households';
 import { pairsOnSharedToken, scorePair, confidenceOf } from '@/domain/duplicatePairing';
 import { lockWaitMs } from '@/domain/scanResilience';
 import { computeAvgRating } from '@/domain/ratings';
@@ -216,7 +217,6 @@ export async function GET(request: Request) {
                 contactInfo: adopters.contactInfo,
                 addressInfo: adopters.addressInfo,
                 familyMembers: adopters.familyMembers,
-                householdMembers: adopters.householdMembers,
                 sourceUrl: adopters.sourceUrl,
                 contactEntries: adopters.contactEntries,
                 country: adopters.country,
@@ -426,7 +426,6 @@ export async function POST(request: Request) {
                 contactEntries: adopters.contactEntries,
                 addressInfo: adopters.addressInfo,
                 familyMembers: adopters.familyMembers,
-                householdMembers: adopters.householdMembers,
                 sourceUrl: adopters.sourceUrl,
                 country: adopters.country,
                 tokenHash: adopters.tokenHash,
@@ -501,10 +500,10 @@ export async function POST(request: Request) {
                 // Fetch adoptions for onBehalfOf
                 const adopterAdoptions = adoptionsByAdopter.get(adopter.id) ?? [];
 
-                // Typed entries only (titular + each household member) — the same
-                // inputs save-time tokenizing uses (tokenInputsFor).
-                const { entries, household } = tokenInputsFor(adopter, giftPhones.get(adopter.id) ?? []);
-                planned.push({ id: adopter.id, hash: newHash, tokens: extractTokens(adopter, adopterAdoptions, entries, household) });
+                // Typed entries only, the record's own — the same inputs
+                // save-time tokenizing uses (tokenInputsFor).
+                const { entries } = tokenInputsFor(adopter, giftPhones.get(adopter.id) ?? []);
+                planned.push({ id: adopter.id, hash: newHash, tokens: extractTokens(adopter, adopterAdoptions, entries) });
             }
 
             let rawD1: D1Database | undefined;
@@ -639,6 +638,19 @@ export async function POST(request: Request) {
 
             const dismissedKeys = new Set(existingPairs.map((p: typeof existingPairs[number]) => `${p.adopter1Id}|${p.adopter2Id}`));
 
+            // Housemates are never a duplicate pair («alguien de su hogar» is already a
+            // recorded answer). ONE query for every household, not one per pair. If it
+            // fails the scan goes on and «Pendientes de revisar» drops such pairs at read.
+            let housemates = new Set<string>();
+            try {
+                housemates = await housematePairKeys(db);
+            } catch (e) {
+                logger.warn('Duplicate scan: housemate pairs unavailable, the feed filters them instead', {
+                    user: session.user.email, error: e instanceof Error ? e.message : String(e),
+                });
+            }
+            let skippedHousemates = 0;
+
             // Build the new candidate set under a staging status, then swap it in
             // at the end (see the swap below). Previously this deleted `pending`
             // up front and re-inserted over the following ~1,150 statements — so
@@ -659,6 +671,7 @@ export async function POST(request: Request) {
 
             for (const [pairKey, signal] of pairSignals) {
                 if (dismissedKeys.has(pairKey)) continue;
+                if (housemates.has(pairKey)) { skippedHousemates++; continue; }
 
                 // Weights and the address rule live in scorePair
                 // (src/domain/duplicatePairing.ts).
@@ -757,6 +770,7 @@ export async function POST(request: Request) {
                 sharedTokenGroups: sharedTokens.length,
                 newCandidates,
                 skippedSharedHandles, // high-count social handles excluded (shared/rescuer contacts)
+                skippedHousemates,
                 user: session.user.email,
             });
 

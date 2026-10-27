@@ -678,8 +678,11 @@ export async function getHouseholdMatchCandidates(
         if (matches.length === 0) return { results: [] };
         const db = await getDb();
         if (!db) throw new Error('No database');
-        const lines = await householdLinesFor(db, actor, matches.map(r => r.adopter.id));
-        return { results: matches.map(r => ({ ...r, householdLine: lines[r.adopter.id] ?? [] })) };
+        // The household line already rides on each candidate (hydrateDuplicateMatches);
+        // read it here only for one that came without it.
+        const missing = matches.filter(r => !r.households).map(r => r.adopter.id);
+        const lines = missing.length > 0 ? await householdLinesFor(db, actor, missing) : {};
+        return { results: matches.map(r => ({ ...r, householdLine: r.households ?? lines[r.adopter.id] ?? [] })) };
     } catch (e) {
         logger.warn('getHouseholdMatchCandidates failed — the form shows no suggestions', { ...ctx, error: errMsg(e) });
         return { results: [] };

@@ -9,6 +9,12 @@
  * index did find (Jon, 2026-10-09).
  */
 
+/**
+ * Which of a profile's names the input fits. `household_member` is never
+ * produced since households are profiles (2026-10-26): a housemate is a
+ * profile of its own, matched as `profile`. It stays in the type (and the API
+ * schema) so clients that switch on it keep compiling.
+ */
 export type NameMatchedAs = 'profile' | 'alias' | 'household_member';
 
 export type ExactOutcome =
@@ -87,18 +93,17 @@ export function namesCompatible(a: string | null | undefined, b: string | null |
     return true;
 }
 
+/** A profile's OWN names: its name and aliases («Conocido/a como», rename aliases included). Never a housemate's. */
 export interface CandidateNames {
     profileId: string;
     name: string;
     aliases: string[];
-    householdNames: string[];
 }
 
-/** Which of a profile's names the input name is consistent with, if any. */
+/** Which of a profile's own names the input name is consistent with, if any. */
 export function matchNameAgainstProfile(inputName: string, c: CandidateNames): NameMatchedAs | null {
     if (namesCompatible(inputName, c.name)) return 'profile';
     if (c.aliases.some(a => namesCompatible(inputName, a))) return 'alias';
-    if (c.householdNames.some(h => namesCompatible(inputName, h))) return 'household_member';
     return null;
 }
 
