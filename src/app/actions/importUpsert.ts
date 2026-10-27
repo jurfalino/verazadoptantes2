@@ -11,7 +11,7 @@
  * added as an alias).
  */
 
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { adopters } from '@/db/schema';
 import { deserializeContactEntries, detectSocialPlatform, stripRenameMarks, type ContactEntry } from '@/lib/contactEntries';
@@ -110,8 +110,13 @@ export async function upsertImportRecord(input: ImportUpsertInput): Promise<Impo
             // an overwrite of another contributor's value. Any authenticated importer
             // may do it, consistent with the collaborative "adds are open" model. A
             // record that already has a name gets the incoming one as an alias instead.
-            await db.update(adopters).set({ name: plan.nameValue }).where(eq(adopters.id, input.adopterId));
-            nameFilled = true;
+            // Compare-and-set on «still blank»: a rename landing since the read is never overwritten
+            // (it would lose that name without its alias). Lost → nothing filled.
+            const won = await db.update(adopters).set({ name: plan.nameValue, updatedAt: new Date() })
+                .where(and(eq(adopters.id, input.adopterId), sql`trim(coalesce(${adopters.name}, '')) = ''`))
+                .returning({ id: adopters.id });
+            nameFilled = won.length > 0;
+            if (!nameFilled) logger.info('upsertImportRecord: name no longer blank, fill skipped', { adopterId: input.adopterId, actor });
         } else if (plan.nameAction === 'alias' && plan.nameValue) {
             const res = await addContactEntry({ adopterId: input.adopterId, type: 'alias', value: plan.nameValue });
             aliasAdded = res.ok && res.appended;

@@ -66,6 +66,8 @@ import { updateContactEntry } from './updateContactEntry';
 import { addContactEntry } from './addContactEntry';
 import { saveAdopter, appendToExistingAdopter } from './adopters';
 import { mergeAdopters, unmergeAdopters } from '@/lib/adopterMerge';
+import { mergeContactEntries } from '@/lib/contactEntries';
+import { preserveRenameAliases } from '@/domain/profileIdentity';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -386,6 +388,65 @@ describe('Task 3 fix round 1', () => {
         sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('orphan', 'Ana Gómez', '5', 'anonymous', 1000, 1000)`).run();
         expect(await changeProfileName({ adopterId: 'orphan', name: 'A. Gómez', expectedName: 'Ana Gómez' })).toMatchObject({ ok: true });
         expect(notify.admins).toEqual([expect.objectContaining({ type: 'profile_renamed', actorEmail: STRANGER, metadata: expect.objectContaining({ undo: { historyId: expect.any(String) } }) })]);
+    });
+});
+
+describe('Task 3 fix round 2 — no path makes an old name unfindable', () => {
+    const aliasNamed = (id: string, v: string) => entriesOf(id).find(e => e.type === 'alias' && e.value === v);
+    const tokensOf = (id: string) => sqlite.prepare('SELECT token_value AS v FROM duplicate_tokens WHERE adopter_id = ?').all(id).map(r => r.v);
+
+    it('merge dedupe: the absorbed profile’s rename alias beats a plain copy on the survivor (marker kept; the plain copy’s contributor cannot erase it)', async () => {
+        expect(mergeContactEntries(
+            [{ id: 'p', type: 'alias', value: 'Pedro Paez', addedBy: STRANGER }],
+            [{ id: 'r', type: 'alias', value: 'pedro paez', fromRename: true }],
+        )).toEqual([expect.objectContaining({ fromRename: true })]);
+
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, contact_entries) VALUES ('abs', 'P. Paez', '5', ?, 1000, 1000, ?)`)
+            .run(OWNER, JSON.stringify([{ id: 'r1', type: 'alias', value: 'Viejo Nombre', fromRename: true, addedBy: MATE }]));
+        expect(await addContactEntry({ adopterId: 'pedro', type: 'alias', value: 'Viejo Nombre' })).toMatchObject({ ok: true });
+        expect((await mergeAdopters('pedro', 'abs', OWNER)).success).toBe(true);
+        const alias = aliasNamed('pedro', 'Viejo Nombre')!;
+        expect(alias).toMatchObject({ fromRename: true });
+        expect(await removeContactEntry({ adopterId: 'pedro', entryId: alias.id! })).toMatchObject({ ok: false });
+    });
+
+    it('merge: the absorbed profile’s name carried over is a rename-protected alias', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('abs', 'Pedro P.', '5', ?, 1000, 1000)`).run(OWNER);
+        expect((await mergeAdopters('pedro', 'abs', STRANGER)).success).toBe(true);
+        const alias = aliasNamed('pedro', 'Pedro P.')!;
+        expect(alias).toMatchObject({ fromRename: true });
+        expect(await removeContactEntry({ adopterId: 'pedro', entryId: alias.id! })).toMatchObject({ ok: false });
+    });
+
+    it('unmerge: rename aliases that came from the absorbed profile (and its carried name) leave with it; the survivor’s own later rename stays', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, contact_entries) VALUES ('abs', 'Pedro P.', '5', ?, 1000, 1000, ?)`)
+            .run(OWNER, JSON.stringify([{ id: 'r1', type: 'alias', value: 'Nombre Absorbido', fromRename: true, addedBy: MATE }]));
+        const merged = await mergeAdopters('pedro', 'abs', OWNER);
+        await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' });
+        expect((await unmergeAdopters(merged.auditId!, ADMIN)).success).toBe(true);
+        expect(aliasNamed('pedro', 'Nombre Absorbido')).toBeUndefined();
+        expect(aliasNamed('pedro', 'Pedro P.')).toBeUndefined();
+        expect(aliasNamed('pedro', 'Pedro Paez')).toMatchObject({ fromRename: true });
+        expect(tokensOf('pedro')).toContain('pedro paez');
+    });
+
+    it('unmerge: a plain alias in the snapshot that a later rename upgraded comes back as the rename alias', async () => {
+        expect(await addContactEntry({ adopterId: 'pedro', type: 'alias', value: 'Pedro Paez' })).toMatchObject({ ok: true });
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('abs', 'Pedro P.', '5', ?, 1000, 1000)`).run(OWNER);
+        const merged = await mergeAdopters('pedro', 'abs', OWNER);
+        await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' });
+        expect((await unmergeAdopters(merged.auditId!, ADMIN)).success).toBe(true);
+        const alias = aliasNamed('pedro', 'Pedro Paez')!;
+        expect(alias).toMatchObject({ fromRename: true });
+        expect(entriesOf('pedro').filter(e => e.type === 'alias' && e.value === 'Pedro Paez')).toHaveLength(1);
+        expect(await removeContactEntry({ adopterId: 'pedro', entryId: alias.id! })).toMatchObject({ ok: false });
+    });
+
+    it('preserveRenameAliases: a wholesale replacement keeps every rename alias (upgrading a plain copy)', () => {
+        const prev = [{ id: 'a', type: 'alias' as const, value: 'Old', fromRename: true as const }, { id: 'p', type: 'phone' as const, value: '1' }];
+        expect(preserveRenameAliases(prev, [{ id: 'e', type: 'email', value: 'x@y.com' }]))
+            .toEqual([{ id: 'e', type: 'email', value: 'x@y.com' }, prev[0]]);
+        expect(preserveRenameAliases(prev, [{ id: 'b', type: 'alias', value: 'old' }])).toEqual([{ id: 'b', type: 'alias', value: 'old', fromRename: true }]);
     });
 });
 

@@ -371,12 +371,18 @@ export function contactEntryKey(e: Pick<ContactEntry, 'type' | 'value' | 'platfo
 }
 
 function dedupe(entries: ContactEntry[]): ContactEntry[] {
-    const seen = new Set<string>();
+    const at = new Map<string, number>();
     const out: ContactEntry[] = [];
     for (const e of entries) {
         const key = contactEntryKey(e);
-        if (seen.has(key)) continue;
-        seen.add(key);
+        const i = at.get(key);
+        if (i !== undefined) {
+            // Two copies of one name: the rename alias wins (with its marker) — a
+            // plain copy would let its contributor delete the only copy of an old name.
+            if (e.type === 'alias' && e.fromRename === true && out[i].fromRename !== true) out[i] = e;
+            continue;
+        }
+        at.set(key, out.length);
         out.push(e);
     }
     return out;

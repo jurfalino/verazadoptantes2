@@ -202,3 +202,30 @@ export function profileIdentityView(
 ): ProfileIdentityView {
     return { knownAs: knownAsNames(entries, p.name), age: currentAge(p, today), isMinor: isMinor(p, today), minorBox: !!p.isMinor };
 }
+
+/**
+ * `base` with every one of `renameAliases` in it: one already there as a plain
+ * alias (same name, case/accents aside) is marked a rename alias in place;
+ * one missing is appended. Never drops anything from `base`.
+ */
+export function withRenameAliases<T extends ContactEntry>(base: readonly T[], renameAliases: readonly ContactEntry[]): Array<T | ContactEntry> {
+    const out: Array<T | ContactEntry> = [...base];
+    for (const a of renameAliases) {
+        if (!isRenameAlias(a)) continue;
+        const k = aliasKey(a.value);
+        const idx = out.findIndex(e => e.type === 'alias' && aliasKey(e.value) === k);
+        if (idx < 0) out.push(a);
+        else if (!isRenameAlias(out[idx])) out[idx] = { ...out[idx], fromRename: true as const };
+    }
+    return out;
+}
+
+/**
+ * THE rule for every write that replaces a profile's contact list wholesale
+ * (contract overwrite, unmerge restore, …): the previous list's rename aliases
+ * — the names a rename kept so search still finds them — are carried into the
+ * new one. Without it, any such write silently makes an old name unfindable.
+ */
+export function preserveRenameAliases<T extends ContactEntry>(prev: readonly ContactEntry[], next: readonly T[]): Array<T | ContactEntry> {
+    return withRenameAliases(next, prev.filter(isRenameAlias));
+}

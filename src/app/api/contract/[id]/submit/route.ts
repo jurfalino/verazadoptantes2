@@ -264,26 +264,47 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 socials: socialNetworks ? [socialNetworks] : [],
                 addresses: address ? [address] : [],
             });
+            // A new name is a rename (households as profiles): the old name is kept as a
+            // rename alias, and the list's rename aliases always survive the overwrite.
             const written = await casAdopterLists(db, adopterId, (row) => {
                 const update = contactUpdateOnSign(
-                    { contactInfo: row.contactInfo, contactEntries: row.contactEntries, addressInfo: row.addressInfo },
-                    { entries: contactEntries, address: address || null },
+                    { name: row.name, contactInfo: row.contactInfo, contactEntries: row.contactEntries, addressInfo: row.addressInfo },
+                    { entries: contactEntries, address: address || null, name: fullName },
                     signOverwrite,
+                    'contract-signed-via-invitation',
                 );
                 return {
                     write: {
-                        ...(update.replaceName ? { name: fullName } : {}),
+                        ...(update.name !== undefined ? { name: update.name } : {}),
                         contactInfo: update.contactInfo,
                         contactEntries: update.contactEntries,
                         addressInfo: update.addressInfo,
                     },
-                    result: null,
+                    result: update.nameChange ?? null,
                 };
             }, { op: 'contractSubmit', animalId });
             if (written.status !== 'done') {
                 // The adoption is recorded; only the contact write-back failed.
                 // Logged with an id rather than failing a signature the adopter completed.
                 logger.error('Contract submit: contact write-back did not land', new Error(written.status), { animalId, adopterId });
+            } else if (written.result) {
+                // The rename's history row (as every rename writes): «Deshacer» for the owner's team.
+                try {
+                    const { historyKindForOwner } = await import('@/lib/profilePrivilege');
+                    const change = written.result;
+                    await db.insert(adopterHistory).values({
+                        id: crypto.randomUUID(),
+                        adopterId,
+                        changedBy: 'contract-signed-via-invitation',
+                        kind: await historyKindForOwner('contract-signed-via-invitation', written.row.addedBy, { adopterId }),
+                        changes: JSON.stringify({ name: { from: change.from || null, to: change.to }, name_changed: { from: change.from || null, to: change.to, aliasKept: change.aliasKept } }),
+                        changedAt: new Date(),
+                    });
+                    const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
+                    await tokenizeAdopter(adopterId);
+                } catch (e) {
+                    logger.error('Contract submit: rename history / re-index failed (the name and its alias landed)', e, { animalId, adopterId });
+                }
             }
 
             await db.insert(adopterHistory).values({

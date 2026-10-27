@@ -16,8 +16,8 @@ import { logger } from '@/lib/logger';
 import { getDb } from '@/lib/db';
 import { reassignAdopterRecords } from '@/app/actions/_recordWrite';
 import { normalizeText } from '@/lib/tokenizer';
-import { deserializeContactEntries, mergeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, isRenameAlias } from '@/lib/contactEntries';
-import { knownAsNames, sameName } from '@/domain/profileIdentity';
+import { deserializeContactEntries, mergeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, isRenameAlias, type ContactEntry } from '@/lib/contactEntries';
+import { knownAsNames, preserveRenameAliases, withRenameAliases } from '@/domain/profileIdentity';
 import { deserializeHouseholdMembers, serializeHouseholdMembers, mergeHouseholdMembers, mergeHouseholdMembersTracked, undoHouseholdMerge } from '@/lib/householdMembers';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { casAdopterLists } from '@/lib/adopterListCas';
@@ -160,6 +160,8 @@ export async function mergeAdopters(
             newMemberIds.set(m.id, id);
             return { ...m, id, contactEntries: m.contactEntries.map(c => ({ ...c, id: crypto.randomUUID() })) };
         });
+        // Set by the last run of mergedFields (the one whose write landed).
+        let carriedAliasIds: string[] = [];
         const mergedFields = (p: typeof primary) => {
             const updates: Partial<typeof adopters.$inferInsert> = {};
 
@@ -199,17 +201,20 @@ export async function mergeAdopters(
             // this the absorbed record's name stops being a NAME token — a person
             // recorded under that spelling elsewhere would silently stop matching
             // the survivor (aliases tokenize as name_words; see extractTokens).
-            const mergedEntries = mergeContactEntries(
+            let mergedEntries = mergeContactEntries(
                 deserializeContactEntries(p.contactEntries),
                 deserializeContactEntries(secondary.contactEntries),
             );
             const secondaryName = (secondary.name || '').trim();
-            const knownNames = new Set(
-                [p.name || '', ...mergedEntries.filter(e => e.type === 'alias').map(e => e.value)]
-                    .map(n => normalizeText(n)),
-            );
-            if (secondaryName && !knownNames.has(normalizeText(secondaryName))) {
-                mergedEntries.push({ id: crypto.randomUUID(), type: 'alias', value: secondaryName, addedBy: actorEmail });
+            // The absorbed name is a previous name of the same person: a rename-protected
+            // alias (households as profiles) — only the survivor's team may drop it. An
+            // existing plain copy is upgraded in place; unmerge reverts exactly these ids.
+            carriedAliasIds = [];
+            if (secondaryName && normalizeText(secondaryName) !== normalizeText(p.name || '')) {
+                const carried: ContactEntry = { id: crypto.randomUUID(), type: 'alias', value: secondaryName, addedBy: actorEmail, fromRename: true };
+                const before = new Map(mergedEntries.map(e => [e.id, e.fromRename === true]));
+                mergedEntries = withRenameAliases(mergedEntries, [carried]);
+                carriedAliasIds = mergedEntries.filter(e => e.fromRename === true && before.get(e.id) !== true).map(e => e.id ?? '').filter(Boolean);
             }
             if (mergedEntries.length > 0) {
                 updates.contactEntries = JSON.stringify(mergedEntries);
@@ -236,6 +241,7 @@ export async function mergeAdopters(
         const written = await casAdopterLists(db, primaryId, (row) => ({ write: mergedFields(row as typeof primary), result: null }), { op: 'mergeAdopters', secondaryId }, { requireLive: true });
         if (written.status === 'missing') throw new Error('Primary adopter was deleted or merged away during the merge');
         if (written.status === 'busy') throw new Error(`Merge collided with concurrent edits (Error ID: ${written.errorId})`);
+        undo.renameAliasIdsAddedByMerge = carriedAliasIds;
         undo.primarySnapshot = {
             contactInfo: written.row.contactInfo,
             contactEntries: written.row.contactEntries,
@@ -542,16 +548,16 @@ export async function mergeCandidatePair(candidateId: string, actorEmail: string
 function withRenameAliasesKept(
     snapshot: { contactInfo: string | null; contactEntries: string | null },
     current: { name: string | null; contactEntries: string | null },
+    leaving: ReadonlySet<string>,
 ): { contactInfo: string | null; contactEntries: string | null } {
-    const renameAliases = deserializeContactEntries(current.contactEntries).filter(isRenameAlias);
-    if (!renameAliases.length) return snapshot;
+    // The survivor's OWN rename aliases (not the absorbed profile's, not the name the
+    // merge carried over), except one equal to its current name.
+    const keep = deserializeContactEntries(current.contactEntries)
+        .filter(e => isRenameAlias(e) && !(e.id && leaving.has(e.id)) && knownAsNames([e], current.name).length > 0);
+    if (!keep.length) return snapshot;
     const snapEntries = deserializeContactEntries(snapshot.contactEntries);
     const base = snapEntries.length ? snapEntries : parseBlobToContactEntries(snapshot.contactInfo).map(e => ({ id: crypto.randomUUID(), ...e }));
-    const known = knownAsNames(renameAliases, current.name);
-    const missing = renameAliases.filter(a => known.includes(a.value.trim())
-        && !base.some(e => e.type === 'alias' && sameName(normalizeText(e.value), normalizeText(a.value))));
-    if (!missing.length) return snapshot;
-    const merged = [...base, ...missing];
+    const merged = preserveRenameAliases(keep, base);
     return { contactEntries: JSON.stringify(merged), contactInfo: contactEntriesToBlob(merged) || null };
 }
 
@@ -577,6 +583,8 @@ interface MergeUndoPayload {
      * mark or contacts) — undo takes back exactly those. Absent before 2026-10-13.
      */
     enrichedHouseholdMembers?: Array<{ memberId: string; contactIds: string[]; giftRecipient: boolean }>;
+    /** Alias ids this merge marked as rename aliases (the absorbed name). Absent before households-as-profiles. */
+    renameAliasIdsAddedByMerge?: string[];
     placementIds: string[];
     adopterEventIds: string[];
     imageIds: string[];
@@ -708,7 +716,12 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
         //    Previous names a rename kept since (households as profiles) stay:
         //    the snapshot predates them, and dropping them would make an old
         //    name unfindable while the profile keeps its new one.
-        const restoredContacts = withRenameAliasesKept(undo.primarySnapshot, primary);
+        // Leaving with the absorbed profile: its own entries (by id) and the name this merge carried over.
+        const leaving = new Set<string>([
+            ...deserializeContactEntries(secondary.contactEntries).map(e => e.id ?? '').filter(Boolean),
+            ...(undo.renameAliasIdsAddedByMerge ?? []),
+        ]);
+        const restoredContacts = withRenameAliasesKept(undo.primarySnapshot, primary, leaving);
         await db.update(adopters).set({
             contactInfo: restoredContacts.contactInfo,
             contactEntries: restoredContacts.contactEntries,
