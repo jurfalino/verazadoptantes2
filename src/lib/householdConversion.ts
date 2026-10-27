@@ -98,7 +98,8 @@ export type ConversionSkipReason =
 
 const PERMANENT: ReadonlySet<ConversionSkipReason> = new Set(['no_identifier', 'self_link', 'gift_on_form', 'gift_without_form']);
 
-export type MemberOutcome = 'created' | 'reused' | 'already' | 'skipped';
+/** `updated`: converted before; an old tab added contacts to the member since, and those were carried over now. */
+export type MemberOutcome = 'created' | 'reused' | 'updated' | 'already' | 'skipped';
 
 /** One member (or correction) in the report: ids and reasons only, never names or contacts. */
 export type MemberReport = {
@@ -141,6 +142,8 @@ export type ConversionReport = {
     createdProfiles: number;
     reusedProfiles: number;
     alreadyConverted: number;
+    /** Converted members an old tab added contacts to since: those contacts carried over now. */
+    updatedMembers: number;
     grantsCopied: number;
     corrections: number;
     skipped: Array<{ hostId: string; memberId: string | null; reason: string }>;
@@ -192,6 +195,19 @@ function storedEntries(entries: ContactEntry[]): ContactEntry[] {
 /** Entry refs (pii_access_grants.entry_ref) of the values a member's contacts carry. Aliases are never masked. */
 function refsOf(entries: ReadonlyArray<Pick<ContactEntry, 'type' | 'value'>>): Set<string> {
     return new Set(entries.filter(e => e.type !== 'alias').map(e => hashEntryValue(e.type, e.value)));
+}
+
+/** The ledger's record of which of a member's contacts were carried over (aliases included). */
+function contactRefsJson(entries: ReadonlyArray<Pick<ContactEntry, 'type' | 'value'>>, plus: Iterable<string> = []): string {
+    return JSON.stringify([...new Set([...plus, ...entries.map(e => hashEntryValue(e.type, e.value))])].sort());
+}
+function recordedRefs(json: string | null | undefined): Set<string> {
+    try {
+        const v = JSON.parse(json ?? '[]');
+        return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+    } catch {
+        return new Set(); // our own column; unreadable = nothing recorded (every contact is offered again, deduped by value)
+    }
 }
 
 type HostRow = { id: string; name: string; addedBy: string | null; isPublic: number | null; householdMembers: string | null; deletedAt: Date | null };
@@ -432,7 +448,7 @@ async function appendContacts(db: Db, profileId: string, entries: ContactEntry[]
 async function place(
     db: Db,
     st: HostState,
-    p: { key: string; memberId: string; linkId: string | null; profileId: string; relationship: string | null; addedBy: string | null; fingerprint: string; createdProfile: boolean; ownerEmail: string | null; reason: string },
+    p: { key: string; memberId: string; linkId: string | null; profileId: string; relationship: string | null; addedBy: string | null; fingerprint: string; contactRefs: string; createdProfile: boolean; ownerEmail: string | null; reason: string },
     ctx: Record<string, unknown>,
 ): Promise<{ householdId: string; membershipId: string | null }> {
     const home = (await homeOf(db, st))!;
@@ -444,12 +460,12 @@ async function place(
     const now = new Date();
     const ledger = db.insert(householdConversions).values({
         sourceKey: p.key, hostAdopterId: st.host.id, memberId: p.memberId, linkId: p.linkId, outcome: 'converted', reason: p.reason,
-        fingerprint: p.fingerprint, householdId: home, membershipId, profileId: p.profileId, createdProfile: p.createdProfile ? 1 : 0,
+        fingerprint: p.fingerprint, contactRefs: p.contactRefs, householdId: home, membershipId, profileId: p.profileId, createdProfile: p.createdProfile ? 1 : 0,
         ownerEmail: p.ownerEmail, actor: st.actor, convertedAt: now,
     }).onConflictDoUpdate({
         // A permanent skip recorded earlier, whose member has changed since: it is converted now.
         target: householdConversions.sourceKey,
-        set: { outcome: 'converted', reason: p.reason, fingerprint: p.fingerprint, householdId: home, membershipId, profileId: p.profileId, createdProfile: p.createdProfile ? 1 : 0, ownerEmail: p.ownerEmail, actor: st.actor, convertedAt: now },
+        set: { outcome: 'converted', reason: p.reason, fingerprint: p.fingerprint, contactRefs: p.contactRefs, householdId: home, membershipId, profileId: p.profileId, createdProfile: p.createdProfile ? 1 : 0, ownerEmail: p.ownerEmail, actor: st.actor, convertedAt: now },
         setWhere: sql`${householdConversions.outcome} = 'skipped'`,
     });
     if (existing) {
@@ -495,6 +511,46 @@ async function scanDuplicates(db: Db, hostId: string, profileId: string, m: Hous
     }, ctx);
 }
 
+/**
+ * A member converted before whose JSON changed since — an old tab (deploy
+ * skew) edited it. The contacts it gained are carried over: appended to the
+ * person's profile (credited as the old tab wrote them) with the grants the
+ * host's data gives on those values (the typist's contribution grant among
+ * them). Only values the ledger has not recorded: a contact the owner removed
+ * from the profile since stays removed. Other edits (name, relationship, a
+ * removed member) are the profile's business now — not replayed (the JSON
+ * is retired). Never throws (logged, retried next time).
+ */
+async function syncEditedMember(db: Db, st: HostState, m: HouseholdMember, row: LedgerRow, fingerprint: string, base: MemberReport): Promise<MemberReport> {
+    const report: MemberReport = { ...base, linkId: row.linkId, sourceKey: row.sourceKey, outcome: 'already', reason: row.reason ?? undefined, profileId: row.profileId };
+    const ctx = { hostId: st.host.id, memberId: m.id, sourceKey: row.sourceKey, profileId: row.profileId, actor: st.actor, dryRun: st.dryRun };
+    try {
+        const recorded = recordedRefs(row.contactRefs);
+        const entries = storedEntries(m.contactEntries);
+        const fresh = entries.filter(e => !recorded.has(hashEntryValue(e.type, e.value)));
+        const profileLive = row.profileId ? (await profileRow(db, row.profileId)) : null;
+        if (fresh.length && profileLive && !profileLive.deletedAt) {
+            const appended = await appendContacts(db, profileLive.id, fresh, st.dryRun, ctx);
+            const grants = await grantsFor(st.host, await accessOf(db, st), profileLive.id, refsOf(fresh), !!row.createdProfile, st.actor);
+            report.grantsCopied = await writeGrants(db, grants, st.dryRun);
+            if (appended && !st.dryRun) {
+                const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
+                await tokenizeAdopter(profileLive.id, { force: true });
+            }
+            report.outcome = 'updated';
+            logger.info('householdConversion: contacts an old tab added to a converted member carried over', { ...ctx, contacts: fresh.length, appended, grants: report.grantsCopied });
+        }
+        if (!st.dryRun) {
+            await db.update(householdConversions).set({ fingerprint, contactRefs: contactRefsJson(entries, recorded) })
+                .where(and(eq(householdConversions.sourceKey, row.sourceKey), eq(householdConversions.outcome, 'converted'))).run();
+        }
+        return report;
+    } catch (e) {
+        const errorId = logger.error('householdConversion: an old tab\'s edit to a converted member not carried over (retried next time)', e, ctx);
+        return { ...report, outcome: 'skipped', reason: 'failed', errorId };
+    }
+}
+
 async function convertMember(db: Db, st: HostState, m: HouseholdMember, links: LinkRow[]): Promise<MemberReport> {
     const host = st.host;
     const fingerprint = await memberFingerprint(m);
@@ -504,9 +560,10 @@ async function convertMember(db: Db, st: HostState, m: HouseholdMember, links: L
     // reverse). Checked before anything is read: a converted host costs no query per member.
     const anyLink = links.find(l => l.memberId === m.id) ?? null;
     const prior = st.ledger.get(inlineKey(host.id, m.id)) ?? (anyLink ? st.ledger.get(linkKey(anyLink.id)) : undefined);
-    if (prior?.outcome === 'converted' || (prior?.outcome === 'skipped' && prior.fingerprint === fingerprint)) {
+    if ((prior?.outcome === 'converted' || prior?.outcome === 'skipped') && prior.fingerprint === fingerprint) {
         return { ...base, linkId: prior.linkId, sourceKey: prior.sourceKey, outcome: 'already', reason: prior.reason ?? undefined, profileId: prior.profileId };
     }
+    if (prior?.outcome === 'converted') return await syncEditedMember(db, st, m, prior, fingerprint, base);
 
     let key = base.sourceKey;
     let link: LinkRow | null = null;
@@ -528,7 +585,8 @@ async function convertMember(db: Db, st: HostState, m: HouseholdMember, links: L
         // Converted under this key from another host (an old merge moved the link, its undo moved it back).
         const elsewhere = st.ledger.get(key) ?? await ledgerRow(db, key);
         if (elsewhere?.outcome === 'converted') {
-            return { ...report, outcome: 'already', reason: elsewhere.reason ?? undefined, profileId: elsewhere.profileId };
+            if (elsewhere.fingerprint === fingerprint) return { ...report, outcome: 'already', reason: elsewhere.reason ?? undefined, profileId: elsewhere.profileId };
+            return await syncEditedMember(db, st, m, elsewhere, fingerprint, report);
         }
         if (m.giftRecipient) {
             return await skip((await giftNames(db, st)).has(householdNameKey(m.name)) ? 'gift_on_form' : 'gift_without_form');
@@ -603,7 +661,7 @@ async function convertMember(db: Db, st: HostState, m: HouseholdMember, links: L
         await namesInHome(db, st);
         const placed = await place(db, st, {
             key, memberId: m.id, linkId: link?.id ?? null, profileId, relationship: m.relationship, addedBy: credit,
-            fingerprint, createdProfile: created, ownerEmail: created ? owner : null, reason: created ? 'created' : reason!,
+            fingerprint, contactRefs: contactRefsJson(entries), createdProfile: created, ownerEmail: created ? owner : null, reason: created ? 'created' : reason!,
         }, ctx);
         if (m.name.trim()) st.byName?.set(householdNameKey(m.name), profileId);
         st.touched = true;
@@ -736,7 +794,7 @@ export async function convertInlineHouseholds(
     const limit = Math.max(1, Math.min(CONVERSION_MAX_LIMIT, Math.floor(opts.limit ?? CONVERSION_DEFAULT_LIMIT)));
     const cursor = opts.cursor ?? '';
     const report: ConversionReport = {
-        dryRun: opts.dryRun, hosts: 0, members: 0, createdProfiles: 0, reusedProfiles: 0, alreadyConverted: 0, grantsCopied: 0,
+        dryRun: opts.dryRun, hosts: 0, members: 0, createdProfiles: 0, reusedProfiles: 0, alreadyConverted: 0, updatedMembers: 0, grantsCopied: 0,
         corrections: 0, skipped: [], failed: 0, deletedHostsSkipped: 0, next: null, details: [],
     };
     const hasJson = sql`${adopters.householdMembers} IS NOT NULL AND trim(${adopters.householdMembers}) NOT IN ('', '[]')`;
@@ -777,12 +835,13 @@ export async function convertInlineHouseholds(
             if (r.outcome === 'created') report.createdProfiles++;
             else if (r.outcome === 'reused') report.reusedProfiles++;
             else if (r.outcome === 'already') report.alreadyConverted++;
+            else if (r.outcome === 'updated') report.updatedMembers++;
             else report.skipped.push({ hostId, memberId: r.memberId, reason: r.reason ?? 'failed' });
         }
     }
     logger.info('convertInlineHouseholds: page done', {
         actor: opts.actor, dryRun: opts.dryRun, cursor: cursor || null, hosts: report.hosts, members: report.members,
-        created: report.createdProfiles, reused: report.reusedProfiles, already: report.alreadyConverted,
+        created: report.createdProfiles, reused: report.reusedProfiles, already: report.alreadyConverted, updated: report.updatedMembers,
         skipped: report.skipped.length, failed: report.failed, grants: report.grantsCopied, next: report.next,
     });
     return report;
@@ -918,7 +977,7 @@ export async function reverseConvertedOldMerge(db: Db, undo: OldMergeHouseholdUn
         await writeGrants(db, await grantsFor(absorbed, await access(), row.profileId, refsOf(storedEntries(original.contactEntries)), !!row.createdProfile, actor), false);
         await runBatch(db, [db.insert(householdConversions).values({
             sourceKey: targetKey, hostAdopterId: A, memberId: original.id, outcome: 'converted',
-            reason: r === 'gone' ? 'removed_while_merged' : 'undo_moved', fingerprint: row.fingerprint, householdId: hh,
+            reason: r === 'gone' ? 'removed_while_merged' : 'undo_moved', fingerprint: row.fingerprint, contactRefs: row.contactRefs, householdId: hh,
             membershipId: r === 'moved' ? row.membershipId : null, profileId: row.profileId, createdProfile: row.createdProfile,
             ownerEmail, actor, convertedAt: new Date(),
         }).onConflictDoNothing()]);

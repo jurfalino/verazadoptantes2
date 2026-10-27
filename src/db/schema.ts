@@ -618,6 +618,7 @@ export const householdConversions = sqliteTable("household_conversions", {
     outcome: text("outcome").notNull(), // 'converted' | 'skipped'
     reason: text("reason"),
     fingerprint: text("fingerprint"),
+    contactRefs: text("contact_refs"), // JSON string[]: entry refs of the member's contacts carried over
     householdId: text("household_id"),
     membershipId: text("membership_id"),
     profileId: text("profile_id"),

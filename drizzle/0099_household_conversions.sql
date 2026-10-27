@@ -10,8 +10,12 @@
 -- a self link, a gift recipient — retried only when the member's content
 -- changes, i.e. its fingerprint). fingerprint: hash of the member's content
 -- without ids (an old merge copied members under new ids; undo matches them
--- back by it). owner_email: the owner a created profile got (undo of an old
--- merge re-owns it compare-and-set on this value). No PII here.
+-- back by it). contact_refs: JSON array of the entry refs (hashEntryValue, the
+-- same non-reversible hash grants store) of the member's contacts already
+-- carried over — an old tab that adds a contact to a converted member gets
+-- just that one appended next time, and a contact the owner removed from the
+-- profile since is not brought back. owner_email: the owner a created profile
+-- got (undo of an old merge re-owns it compare-and-set on this value). No PII.
 CREATE TABLE IF NOT EXISTS household_conversions (
     source_key TEXT PRIMARY KEY,
     host_adopter_id TEXT NOT NULL,
@@ -20,6 +24,7 @@ CREATE TABLE IF NOT EXISTS household_conversions (
     outcome TEXT NOT NULL,
     reason TEXT,
     fingerprint TEXT,
+    contact_refs TEXT,
     household_id TEXT,
     membership_id TEXT,
     profile_id TEXT,

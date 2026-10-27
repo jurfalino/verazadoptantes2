@@ -103,11 +103,11 @@ function dump(): string {
 }
 
 async function runAll(dryRun: boolean, actor = ADMIN): Promise<ConversionReport> {
-    const total: ConversionReport = { dryRun, hosts: 0, members: 0, createdProfiles: 0, reusedProfiles: 0, alreadyConverted: 0, grantsCopied: 0, corrections: 0, skipped: [], failed: 0, deletedHostsSkipped: 0, next: null, details: [] };
+    const total: ConversionReport = { dryRun, hosts: 0, members: 0, createdProfiles: 0, reusedProfiles: 0, alreadyConverted: 0, updatedMembers: 0, grantsCopied: 0, corrections: 0, skipped: [], failed: 0, deletedHostsSkipped: 0, next: null, details: [] };
     let cursor: string | null = null;
     for (let page = 0; page < 50; page++) {
         const r = await convertInlineHouseholds(db(), { dryRun, actor, cursor });
-        for (const k of ['hosts', 'members', 'createdProfiles', 'reusedProfiles', 'alreadyConverted', 'grantsCopied', 'corrections', 'failed'] as const) total[k] += r[k];
+        for (const k of ['hosts', 'members', 'createdProfiles', 'reusedProfiles', 'alreadyConverted', 'updatedMembers', 'grantsCopied', 'corrections', 'failed'] as const) total[k] += r[k];
         total.skipped.push(...r.skipped);
         total.details.push(...r.details);
         if (page === 0) total.deletedHostsSkipped = r.deletedHostsSkipped;
@@ -290,6 +290,27 @@ describe('the bulk conversion on production-shaped data', () => {
         expect(profile(late)).toMatchObject({ name: 'Recién Llegada', added_by: OWNER });
     });
 
+    it('a contact an old tab adds to a converted member arrives on the profile; one the owner removed since stays gone', async () => {
+        await runAll(false);
+        const id = await convertedProfileId(inlineKey('h01', 'm-h01-0'));
+        // The owner removes the phone from the new profile…
+        sqlite.prepare(`UPDATE adopters SET contact_entries = '[]', contact_info = NULL WHERE id = ?`).run(id);
+        // …then an old tab (deploy skew) adds an email to the member in the JSON, with D54's contribution grant on the host.
+        const NEW_EMAIL = 'late-email@example.org';
+        const members = hostMembersJson('h01');
+        members[0].contactEntries.push({ id: 'c-late', type: 'email', value: NEW_EMAIL, addedBy: STRANGER });
+        sqlite.prepare('UPDATE adopters SET household_members = ? WHERE id = ?').run(JSON.stringify(members), 'h01');
+        grant('g-late', 'h01', STRANGER, 'entry', ref('email', NEW_EMAIL), 'contribution');
+        const r = await runAll(false);
+        expect(r).toMatchObject({ updatedMembers: 1, createdProfiles: 0, failed: 0 });
+        expect(deserializeContactEntries(profile(id)!.contact_entries as string)).toEqual([expect.objectContaining({ type: 'email', value: NEW_EMAIL, addedBy: STRANGER })]);
+        expect(liveGrantsOn(id)).toContainEqual({ grantee_email: STRANGER, scope: 'entry', entry_ref: ref('email', NEW_EMAIL), origin: 'contribution' });
+        // Recorded: the next run has nothing to do.
+        const after = dump();
+        expect(await runAll(false)).toMatchObject({ updatedMembers: 0, alreadyConverted: 29 });
+        expect(dump()).toBe(after);
+    });
+
     it('the first view of a host converts it (lazily, no notices), and shows its people', async () => {
         const views = await getHouseholdsFor(db(), STRANGER, 'h02');
         expect(views).toHaveLength(1);
@@ -400,6 +421,12 @@ describe('linked members and «No convive» corrections', () => {
         expect(await seen(GRANTEE)).toEqual([JON_NEW_PHONE]);
         expect(await seen(MATE)).toEqual([JON_NEW_PHONE]);
         expect(await seen(STRANGER)).toEqual([]);
+        // ACCEPTED EXCEPTION (reported for Jon): an EXISTING profile's own team and grantees now also see the phone
+        // that was only on Pedro's household — as for any contact added to an existing profile (addContactEntry).
+        // Created profiles (all of production's 29) have no such gain: see the per-viewer test above.
+        grant('g-jon-all', 'jonathan', ENTRY_V, 'all_contact');
+        expect(await seen(OTHER_OWNER)).toEqual([JON_PHONE, 'jon@example.org', JON_NEW_PHONE]);
+        expect(await seen(ENTRY_V)).toEqual([JON_PHONE, 'jon@example.org', JON_NEW_PHONE]);
     });
 
     it('a member whose profile was merged follows the merge (old D51 merges left the JSON id on the absorbed profile)', async () => {
