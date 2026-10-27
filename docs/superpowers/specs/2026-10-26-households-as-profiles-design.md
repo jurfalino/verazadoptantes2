@@ -115,7 +115,7 @@ One-time and idempotent. For each of the 29 inline members:
 3. Move the grants that pointed at those contact values on the host to the new profile.
 4. Run the normal duplicate check. Matches go to «Pendientes de revisar» like any new profile.
 
-Dry-run on a copy of production first, with a per-member report. It is applied by the deploy pipeline; Jon approves the production run.
+Each profile also converts itself the first time it is viewed after the release, so nothing looks empty before the bulk run, and anything an old tab writes in the old shape is picked up on the next view. Dry-run on a copy of production first, with a per-member report. It is applied by the deploy pipeline; Jon approves the production run.
 
 `household_members` stays readable, but nothing writes it after the release. It's dropped in a later release once the data has been verified. `household_links` and `household_link_corrections` are migrated into memberships and corrections, then retired.
 
