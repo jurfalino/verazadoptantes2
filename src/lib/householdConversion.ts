@@ -513,7 +513,7 @@ async function place(
         if (theirs) await db.update(householdConversions).set({ membershipId: theirs.id }).where(eq(householdConversions.sourceKey, p.key));
         return { householdId: home, membershipId: theirs?.id ?? null };
     }
-    await dropHousemateCandidates(db, home, p.profileId);
+    await dropHousemateCandidates(db, home, p.profileId, { force: true });
     return { householdId: home, membershipId };
 }
 

@@ -11,6 +11,7 @@ import { extractTokens, computeTokenHash, type TokenEntry } from '@/lib/tokenize
 import { tokenInputsFor } from '@/lib/adopterTokenize';
 import { giftPhoneEntriesByGiver } from '@/lib/giftRecipients';
 import { housematePairKeys } from '@/lib/households';
+import { sharesPersonalIdentifier } from '@/domain/households';
 import { pairsOnSharedToken, scorePair, confidenceOf } from '@/domain/duplicatePairing';
 import { lockWaitMs } from '@/domain/scanResilience';
 import { computeAvgRating } from '@/domain/ratings';
@@ -671,7 +672,8 @@ export async function POST(request: Request) {
 
             for (const [pairKey, signal] of pairSignals) {
                 if (dismissedKeys.has(pairKey)) continue;
-                if (housemates.has(pairKey)) { skippedHousemates++; continue; }
+                // Housemates sharing an email or an ID number still pair (final fix S3).
+                if (housemates.has(pairKey) && !sharesPersonalIdentifier(signal.types)) { skippedHousemates++; continue; }
 
                 // Weights and the address rule live in scorePair
                 // (src/domain/duplicatePairing.ts).

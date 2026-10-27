@@ -62,8 +62,8 @@ import { enrichAdopters } from '@/app/actions/enrichAdopters';
 import { logger } from '@/lib/logger';
 import { findAdopters, findAdoptersAsViewer } from '@/app/actions/findAdopters';
 import { searchFormDuplicates } from './formDuplicates';
-import { getHouseholdMatchCandidates } from '@/app/actions/households';
-import { getDuplicateCandidates, getPendingDuplicatesForUser } from '@/app/actions/duplicates';
+import { addHouseholdPerson, getHouseholdMatchCandidates } from '@/app/actions/households';
+import { getDuplicateCandidates, getPendingDuplicatesForUser, mergePendingDedupPair } from '@/app/actions/duplicates';
 import { findIdentifierHits } from './api/profiles';
 import { decideExactOutcome } from '@/domain/apiExactMatch';
 import { POST as scan } from '@/app/api/admin/duplicates/route';
@@ -297,15 +297,16 @@ describe('fix round 1 — banner, badge and joins never pair housemates', () => 
         candidate('c-join-pedro', 'rosa', 'pedro');
         candidate('c-join-marta', 'rosa', 'marta');
         candidate('c-other', 'rosa', 'ana');
-        await addMembership(db(), { householdId: 'hh-pedro', adopterId: 'rosa', addedBy: OWNER });
+        // Final fix S3: only when the caller may clear them (here: forced, as a merge / D35 does).
+        await addMembership(db(), { householdId: 'hh-pedro', adopterId: 'rosa', addedBy: OWNER, clearPairs: { force: true } });
         expect(pending()).toEqual(['c-other']);
     });
 
     it('I3: a gift household is no home: joining it removes nothing', async () => {
         candidate('c-gift', 'rosa', 'pedro');
         await createHousehold(db(), OWNER, 'hh-gift-x');
-        await addMembership(db(), { householdId: 'hh-gift-x', adopterId: 'rosa', giftRecipient: true, relativeToAdopterId: 'pedro', addedBy: OWNER });
-        await addMembership(db(), { householdId: 'hh-gift-x', adopterId: 'pedro', addedBy: null });
+        await addMembership(db(), { householdId: 'hh-gift-x', adopterId: 'rosa', giftRecipient: true, relativeToAdopterId: 'pedro', addedBy: OWNER, clearPairs: { force: true } });
+        await addMembership(db(), { householdId: 'hh-gift-x', adopterId: 'pedro', addedBy: null, clearPairs: { force: true } });
         expect(pending()).toEqual(['c-gift']);
     });
 });
@@ -363,5 +364,64 @@ describe('fix round 1 — household lines stay cheap', () => {
         const lines = out[0].households!;
         expect(lines).toHaveLength(MAX_HOUSEHOLD_LINES);
         expect(lines.every(l => !l.isGift)).toBe(true);
+    });
+});
+
+// ─────────────────────────── Final fix S3 ───────────────────────────
+
+const typedCandidate = (id: string, a: string, b: string, types: string[]) =>
+    sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at) VALUES (?, ?, ?, ?, 80, 'high', 'pending', 1000)`)
+        .run(id, a < b ? a : b, a < b ? b : a, JSON.stringify(types));
+
+describe('final fix S3 — declaring two profiles housemates never erases a real duplicate pair', () => {
+    it('a stranger linking someone into a home leaves the pending pairs (not privileged on both)', async () => {
+        candidate('c-rosa-pedro', 'rosa', 'pedro');
+        session.user = mocks.STRANGER;
+        expect(await addHouseholdPerson({ anchorAdopterId: 'pedro', existingProfileId: 'rosa', relationship: 'unknown' })).toMatchObject({ ok: true });
+        expect(pending()).toContain('c-rosa-pedro');
+    });
+
+    it("someone privileged on only one side leaves the pair; privileged on both removes it", async () => {
+        candidate('c-rosa-pedro', 'rosa', 'pedro');
+        session.user = OWNER; // owns Pedro, not Rosa (OTHER's)
+        expect(await addHouseholdPerson({ anchorAdopterId: 'pedro', existingProfileId: 'rosa', relationship: 'unknown' })).toMatchObject({ ok: true });
+        expect(pending()).toContain('c-rosa-pedro');
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, country, created_at, updated_at) VALUES ('mine', 'Mía Paez', '5', ?, 'AR', 1000, 1000)`).run(OWNER);
+        candidate('c-mine-lucas', 'mine', 'lucas');
+        expect(await addHouseholdPerson({ anchorAdopterId: 'lucas', existingProfileId: 'mine', relationship: 'unknown', householdId: 'hh-pedro' } as never)).toMatchObject({ ok: true });
+        expect(pending()).not.toContain('c-mine-lucas');
+    });
+
+    it('a pair sharing an email or an ID number is never hidden as housemates (banner, badge, Pendientes, scan); a shared phone still is', async () => {
+        typedCandidate('c-email', 'pedro', 'marta', ['email', 'name_word']);
+        typedCandidate('c-phone', 'lucas', 'marta', ['phone']);
+        typedCandidate('c-id', 'ana', 'lucas', ['id_number']);
+        expect((await getDuplicateCandidates('pedro')).map(c => c.otherAdopterId)).toEqual(['marta']);
+        expect((await getDuplicateCandidates('lucas')).map(c => c.otherAdopterId)).toEqual(['ana']);
+        expect((await enrichAdopters(db(), ['pedro'])).get('pedro')!.flags.systemDuplicate).toBe(true);
+        const { pairs } = await getPendingDuplicatesForUser(1, 10, true);
+        expect(pairs.map(p => p.candidateId).sort()).toEqual(['c-email', 'c-id']);
+    });
+
+    it('the scan pairs housemates who share an email', async () => {
+        const mail = (id: string, by: string) => ({ id, type: 'email', value: 'paez.familia@example.com', addedBy: by });
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'pedro'`).run(JSON.stringify([{ id: 'pc', type: 'phone', value: HOME_PHONE, addedBy: OWNER }, mail('pm', OWNER)]));
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'marta'`).run(JSON.stringify([mail('mm', OTHER)]));
+        await tokenizeAdopter('pedro');
+        await tokenizeAdopter('marta');
+        session.user = ADMIN;
+        await scan(new Request('http://localhost/api/admin/duplicates?limit=200', { method: 'POST' }));
+        const pairs = sqlite.prepare(`SELECT adopter1_id || '|' || adopter2_id AS k FROM duplicate_candidates WHERE status = 'pending'`).all().map(r => r.k);
+        expect(pairs).toContain('marta|pedro');
+    });
+
+    it('«alguien de su hogar» (D35) removes the pair even across teams', async () => {
+        // hh-pedro is Pedro's own home (his anchor row), so the answer puts Rosa there, with Marta.
+        sqlite.prepare("UPDATE household_memberships SET added_by = NULL WHERE household_id = 'hh-pedro' AND adopter_id = 'pedro'").run();
+        candidate('c-rosa-pedro', 'rosa', 'pedro');
+        candidate('c-rosa-marta', 'rosa', 'marta');
+        session.user = OWNER;
+        expect(await mergePendingDedupPair('c-rosa-pedro', { identity: 'household' })).toMatchObject({ success: true, outcome: 'household' });
+        expect(pending()).not.toContain('c-rosa-marta');
     });
 });

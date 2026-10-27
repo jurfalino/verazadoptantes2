@@ -105,7 +105,22 @@ export type AddMembershipInput = {
     /** Where it came from: inline:{hostId}:{memberId}, link:{linkId}, form-{submissionId}-{i}, interview:{id}:{i}, import:{batch}:{row}. */
     sourceKey?: string | null;
     addedAt?: Date;
+    /**
+     * Remove the newcomer's pending duplicate pairs with the people already
+     * there (final fix S3). Omitted: nothing is removed (the read-side
+     * exclusion still hides housemate pairs that share no email / ID number).
+     */
+    clearPairs?: PairClear;
 };
+
+/**
+ * Who may clear a newcomer's pending duplicate pairs on a join (final fix S3):
+ * `{ actor }` — only the pairs where the actor is privileged on BOTH profiles
+ * (owner team, admin, moderator); `{ force: true }` — the «alguien de su hogar»
+ * answer (D35), a merge, the conversion of existing household data. Never a
+ * pair that shares an email or an ID number.
+ */
+export type PairClear = { actor: string } | { force: true };
 
 // ─────────────────────────── Reads (small) ───────────────────────────
 
@@ -385,37 +400,62 @@ export async function addMembership(db: Db, input: AddMembershipInput): Promise<
         .get();
     if (!row) throw new Error('addMembership: membership missing after insert');
     const created = row.id === id;
-    if (created && !input.giftRecipient) await dropHousemateCandidates(db, input.householdId, input.adopterId);
+    if (created && !input.giftRecipient && input.clearPairs) await dropHousemateCandidates(db, input.householdId, input.adopterId, input.clearPairs);
     return { membershipId: row.id, created };
 }
 
 /**
  * Someone just joined a household: their pending duplicate pairs with the people
- * already there leave «Pendientes de revisar» — housemates are never duplicates
- * («alguien de su hogar» is already a recorded answer). Removed rather than
- * marked dismissed: if they stop living together, the next scan may pair them
- * again. A merge request on such a pair keeps standing on its own (the feed
- * rebuilds a pair from its request when the candidate row is gone). Not in a
- * gift household (not a home). One statement over this person's pending pairs
- * (indexed), checked against a household held to MAX_HOUSEHOLD_MEMBERS. A
- * failure is logged and never undoes the join. Also run by a merge that moves
- * someone into a household (src/lib/householdMerge.ts).
+ * already there leave «Pendientes de revisar» — but only as `how` allows
+ * (final fix S3: declaring two profiles housemates must not let anyone erase a
+ * real duplicate pair): with `{ actor }` only the pairs where the actor is
+ * privileged on both profiles; `{ force: true }` for «alguien de su hogar»
+ * (D35), merges and the conversion. A pair sharing an email or an ID number is
+ * never removed (it isn't hidden either). Removed rather than marked
+ * dismissed: if they stop living together, the next scan may pair them again.
+ * A merge request on such a pair keeps standing on its own. Not in a gift
+ * household (not a home). Reads this person's pending pairs (indexed, held to
+ * a household of MAX_HOUSEHOLD_MEMBERS), deletes each by id. A failure is
+ * logged and never undoes the join.
  */
-export async function dropHousemateCandidates(db: Db, householdId: string, adopterId: string): Promise<void> {
+export async function dropHousemateCandidates(db: Db, householdId: string, adopterId: string, how: PairClear): Promise<void> {
     const livesThere = (col: SQLWrapper) =>
         sql`EXISTS (SELECT 1 FROM household_memberships m WHERE m.household_id = ${householdId} AND m.adopter_id = ${col})`;
+    const ctx = { householdId, adopterId, ...('actor' in how ? { actor: how.actor } : { forced: true }) };
     try {
-        await db.delete(duplicateCandidates).where(and(
-            eq(duplicateCandidates.status, 'pending'),
-            sql`NOT EXISTS (SELECT 1 FROM household_memberships g WHERE g.household_id = ${householdId} AND g.gift_recipient = 1)`,
-            or(
-                and(eq(duplicateCandidates.adopter1Id, adopterId), livesThere(duplicateCandidates.adopter2Id)),
-                and(eq(duplicateCandidates.adopter2Id, adopterId), livesThere(duplicateCandidates.adopter1Id)),
-            ),
-        )).run();
-        logger.info('households: pending duplicate pairs with new housemates removed', { householdId, adopterId });
+        const { sharesPersonalIdSql } = await import('@/lib/housemateSql');
+        const rows = await db.select({ id: duplicateCandidates.id, a: duplicateCandidates.adopter1Id, b: duplicateCandidates.adopter2Id })
+            .from(duplicateCandidates).where(and(
+                eq(duplicateCandidates.status, 'pending'),
+                sql`NOT EXISTS (SELECT 1 FROM household_memberships g WHERE g.household_id = ${householdId} AND g.gift_recipient = 1)`,
+                sql`NOT ${sharesPersonalIdSql(duplicateCandidates.matchTypes)}`,
+                or(
+                    and(eq(duplicateCandidates.adopter1Id, adopterId), livesThere(duplicateCandidates.adopter2Id)),
+                    and(eq(duplicateCandidates.adopter2Id, adopterId), livesThere(duplicateCandidates.adopter1Id)),
+                ),
+            )).limit(MAX_HOUSEHOLD_MEMBERS * 2).all() as Array<{ id: string; a: string; b: string }>;
+        if (!rows.length) return;
+        let drop = rows;
+        if ('actor' in how) {
+            const privileged = new Map<string, Promise<boolean>>();
+            const onProfile = (id: string) => {
+                const known = privileged.get(id);
+                if (known) return known;
+                const p: Promise<boolean> = (async () => {
+                    const row = await db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, id)).get() as { addedBy: string | null } | undefined;
+                    return isPrivilegedOnProfile(how.actor, row?.addedBy ?? null);
+                })();
+                privileged.set(id, p);
+                return p;
+            };
+            const ok = await Promise.all(rows.map(async r => (await onProfile(r.a)) && (await onProfile(r.b))));
+            drop = rows.filter((_, i) => ok[i]);
+        }
+        await Promise.all(drop.map(r => db.delete(duplicateCandidates)
+            .where(and(eq(duplicateCandidates.id, r.id), eq(duplicateCandidates.status, 'pending'))).run()));
+        logger.info('households: pending duplicate pairs with new housemates removed', { ...ctx, removed: drop.length, kept: rows.length - drop.length });
     } catch (e) {
-        logger.warn('households: housemate duplicate pairs not removed (the feed and badge still hide them)', { householdId, adopterId, error: errMsg(e) });
+        logger.warn('households: housemate duplicate pairs not removed (the feed and badge still hide them)', { ...ctx, error: errMsg(e) });
     }
 }
 

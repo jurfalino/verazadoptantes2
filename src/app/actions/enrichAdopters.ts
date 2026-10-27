@@ -4,7 +4,7 @@
 // from a client component.
 
 import { adoptions, adopterFlags, adopterStats, adopterImages, duplicateCandidates } from '@/db/schema';
-import { sharesHomeSql } from '@/lib/housemateSql';
+import { hiddenAsHousematesSql } from '@/lib/housemateSql';
 import { eq, sql, and, isNull, ne, or } from 'drizzle-orm';
 import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
 import type { AdopterFlags } from '@/types/adopter';
@@ -115,7 +115,7 @@ async function _enrichAdoptersImpl(
                     ne(duplicateCandidates.confidence, 'low'),
                     sql`(${duplicateCandidates.adopter1Id} IN (${inList}) OR ${duplicateCandidates.adopter2Id} IN (${inList}))`,
                     // Housemates are never duplicates: a pair left from before they shared a household never shows.
-                    sql`NOT ${sharesHomeSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id)}`,
+                    sql`NOT ${hiddenAsHousematesSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id, duplicateCandidates.matchTypes)}`,
                 )).catch(riskRead('dupCandidates', chunk.length)),
         ]);
         adoptionRows.push(...(a as AdoptionRow[]));

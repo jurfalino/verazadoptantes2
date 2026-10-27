@@ -327,6 +327,8 @@ export async function attachHouseholdPeople(db: Db, input: AttachInput): Promise
                 placed = await addMembership(db, {
                     householdId: hh, adopterId: personId, relationship: p.relationship ?? 'unknown', relativeToAdopterId: anchor.id,
                     addedBy: input.actor, sourceKey: key,
+                    // S3: a signed-in typist clears only the pairs they're privileged on both sides of.
+                    ...(realActor ? { clearPairs: { actor: input.actor } } : {}),
                 });
             } catch (e) {
                 // The source key is unique (0098): a run of the same source placed its person

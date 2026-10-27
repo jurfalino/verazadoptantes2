@@ -232,6 +232,8 @@ async function joinHousehold(
     for (let attempt = 0; attempt < 2; attempt++) {
         const out = await addMembership(db, {
             householdId, adopterId: p.adopterId, relationship: p.relationship, relativeToAdopterId: p.anchorId, addedBy: p.actor, sourceKey: p.sourceKey ?? null,
+            // S3: only pairs the adder is privileged on BOTH sides of leave «Pendientes».
+            clearPairs: { actor: p.actor },
         });
         if (await householdExists(db, householdId)) return { householdId, ...out };
         logger.warn('addHouseholdPerson: household gone after the membership landed (lost race), membership taken back', { ...ctx, householdId, membershipId: out.membershipId, attempt });

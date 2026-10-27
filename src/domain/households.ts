@@ -18,6 +18,21 @@ export const MAX_HOUSEHOLD_LINES = 10;
 export const MINOR_AGE_LIMIT = 18;
 
 /**
+ * Duplicate-pair match types that are PERSONAL identifiers (final fix S3): a
+ * pair sharing one of these is never hidden or removed as «housemates» — two
+ * people of one home share a phone, never an email or an ID number. Exactly
+ * the tokenizer's `email` and `id_number` token types.
+ */
+export const PERSONAL_ID_MATCH_TYPES = ['email', 'id_number'] as const;
+
+/** Does a duplicate pair's match types include a personal identifier? */
+export function sharesPersonalIdentifier(types: Iterable<string> | null | undefined): boolean {
+    if (!types) return false;
+    for (const t of types) if ((PERSONAL_ID_MATCH_TYPES as readonly string[]).includes(t)) return true;
+    return false;
+}
+
+/**
  * A merge refused because its survivor is a minor and the absorbed profile has
  * records or open alerts: those belong on the adults (Task 6 ruling). Keeping
  * the other profile as the survivor merges.

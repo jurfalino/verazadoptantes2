@@ -21,7 +21,7 @@ import { mergeSideParams } from '@/lib/mergeNotificationSides';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdminAsync } from '@/config/admins';
 import { addHouseholdPerson } from './households';
-import { sharesHomeSql } from '@/lib/housemateSql';
+import { hiddenAsHousematesSql } from '@/lib/housemateSql';
 import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
 import { minorSurvivorHasActivity } from '@/lib/minors';
 
@@ -294,7 +294,7 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
                 ),
                 // A housemate is never a duplicate candidate (a pair detected before
                 // they shared a household). In SQL, so housemates can't fill the cap.
-                sql`NOT ${sharesHomeSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id)}`,
+                sql`NOT ${hiddenAsHousematesSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id, duplicateCandidates.matchTypes)}`,
             ))
             // Strongest first, so weak pairs can't crowd a strong one out of the cap.
             .orderBy(sql`${duplicateCandidates.score} DESC`)
@@ -990,6 +990,9 @@ async function keepAsHousehold(
                 ?? logger.error('mergePendingDedupPair: household member not added', new Error(res.error), { ...ctx, adopterId: own.id });
             return { success: false, error: 'household_failed', errorId };
         }
+        // The answer itself (D35) says they live together: their pending pairs with
+        // everyone in the shared home go, whoever owns them (final fix S3).
+        await dropPairsInSharedHomes(db, own.id, other.id, ctx);
     }
     await keepSeparate(db, { a: a.id, b: b.id }, actor, `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}household`, ctx);
     try {
@@ -999,6 +1002,18 @@ async function keepAsHousehold(
     }
     logger.info('mergePendingDedupPair: kept as household', ctx);
     return { success: true, outcome: 'household' };
+}
+
+/** «Alguien de su hogar»: `other`'s pending pairs in every ordinary home it now shares with `own` go (never an email / ID pair). */
+async function dropPairsInSharedHomes(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, ownId: string, otherId: string, ctx: Record<string, unknown>): Promise<void> {
+    try {
+        const { householdIdsOf, dropHousemateCandidates } = await import('@/lib/households');
+        const [mine, theirs] = await Promise.all([householdIdsOf(db, ownId), householdIdsOf(db, otherId)]);
+        const shared = mine.filter(h => theirs.includes(h));
+        for (const h of shared) await dropHousemateCandidates(db, h, otherId, { force: true });
+    } catch (e) {
+        logger.warn('mergePendingDedupPair: housemate pairs after «alguien de su hogar» not removed (the feed still hides them)', { ...ctx, error: e instanceof Error ? e.message : String(e) });
+    }
 }
 
 /** A row the feed ranks and pages: a detected candidate, a duplicate flag, or a pair rebuilt from a request. */
@@ -1087,7 +1102,7 @@ export async function getPendingDuplicatesForUser(
             confidence: duplicateCandidates.confidence,
             detectedAt: duplicateCandidates.detectedAt,
             // Housemates (indexed per row, no table scan): filtered below, once the requests are known.
-            housemates: sql<number>`${sharesHomeSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id)}`,
+            housemates: sql<number>`${hiddenAsHousematesSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id, duplicateCandidates.matchTypes)}`,
         })
             .from(duplicateCandidates)
             .where(eq(duplicateCandidates.status, 'pending'))
