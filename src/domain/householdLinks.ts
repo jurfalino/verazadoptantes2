@@ -32,8 +32,6 @@ export interface LinkedSummary {
     /** The profile this summary describes (the linked member's, or the host's for «Convive con»). */
     profileId: string;
     name: string;
-    /** Who loaded that profile: display name, else email handle; null for anonymous/system rows. */
-    ownerName: string | null;
     /** Average of the profile's ratings (same source as the profile page); null = not rated. */
     rating: number | null;
     openAlerts: number;

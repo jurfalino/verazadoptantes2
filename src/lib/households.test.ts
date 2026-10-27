@@ -36,6 +36,7 @@ import {
 import { logger } from '@/lib/logger';
 import { MAX_HOUSEHOLD_LINES, currentAge } from '@/domain/households';
 import { countActivity } from '@/domain/activityCounts';
+import { countsFor } from '@/lib/profileSummary';
 
 type Row = Record<string, unknown>;
 type Sqlite = {
@@ -256,7 +257,8 @@ describe('getHouseholdsFor', () => {
         expect(view.members.map(m => m.profileId).sort()).toEqual(['marta', 'pedro']);
         const pedro = view.members.find(m => m.profileId === 'pedro')!;
         const marta = view.members.find(m => m.profileId === 'marta')!;
-        expect(pedro).toMatchObject({ name: 'Pedro Paez', rating: 1, openAlerts: 1, activity: { adoption: 1 }, label: null, ownerName: 'Gatitos Olivos', addedByName: null, isMinor: false });
+        expect(pedro).toMatchObject({ name: 'Pedro Paez', rating: 1, openAlerts: 1, activity: { adoption: 1 }, label: null, addedByName: null, isMinor: false });
+        expect(pedro).not.toHaveProperty('ownerName'); // «Perfil cargado por …» is not on household rows (addendum 2026-10-27)
         // ↑ Pedro's own (anchor) row has no adder (Task 2 fix 1): no «según …» on it.
         expect(pedro.linkId).toBe(pedro.membershipId);
         expect(marta.label).toEqual({ key: 'adopter.hh_rel_of', params: { rel: 'adopter.hh_rel_partner', name: 'Pedro Paez' } });
@@ -289,6 +291,9 @@ describe('getHouseholdsFor', () => {
         // The very rows the profile's own «Actividad» lists (getAdoptions reads the `adoptions` view).
         const own = sqlite.prepare(`SELECT record_type AS recordType FROM adoptions WHERE adopter_id = 'marta'`).all() as Array<{ recordType: string }>;
         expect(countActivity(own)).toEqual(marta.activity);
+        // Card lines read rating and alerts only: no activity listed, the rating from the same pass.
+        expect(await countsFor(db(), 'pedro', {}, { activity: false })).toEqual({ rating: 1, openAlerts: 1, activity: {} });
+        expect(await countsFor(db(), 'marta', {})).toEqual({ rating: null, openAlerts: 0, activity: marta.activity });
     });
 
     it("Task 8: the viewed profile's own place («Lucas figura como hijo/a de Pedro · según …»), anchor rows, the viewer's own adds and profiles", async () => {

@@ -47,18 +47,25 @@ export const EMPTY_COUNTS: ProfileCounts = { rating: null, openAlerts: 0, activi
  * «Actividad» lists (getAdoptions reads the `adoptions` view) counted by the
  * same rule (countActivity), so fosters and returns count and an ended
  * placement doesn't. ONE query per profile (scalar subqueries, the id bound
- * as a parameter). Flags come back as a JSON array so the open-alert rule stays in
- * src/domain (countOpenAlerts), not in SQL. A failure degrades to an empty
- * summary line and is logged.
+ * as a parameter), and ONE pass over that profile's activity rows: the
+ * average and the record types come out of the same subquery. Flags come back
+ * as a JSON array so the open-alert rule stays in src/domain
+ * (countOpenAlerts), not in SQL. A failure degrades to an empty summary line
+ * and is logged.
+ *
+ * `activity: false` (search-card household lines, «¿Es este perfil?»: they show
+ * rating and alerts only) skips listing the record types; `activity` is {}.
  */
-export async function countsFor(db: Db, id: string, ctx: Record<string, unknown>): Promise<ProfileCounts> {
-    type Raw = { avg: number | null; kinds: string | null; flags: string | null };
+export async function countsFor(db: Db, id: string, ctx: Record<string, unknown>, opts: { activity?: boolean } = {}): Promise<ProfileCounts> {
+    const withActivity = opts.activity !== false;
+    type Raw = { act: string | null; flags: string | null };
     let raw: Raw | undefined;
     try {
         // `await` whether the driver returns a promise (D1) or a value (better-sqlite3 in dev/tests).
         raw = await db.select({
-            avg: sql<number | null>`(SELECT AVG(rating) FROM adoptions WHERE adopter_id = ${id})`,
-            kinds: sql<string | null>`(SELECT json_group_array(record_type) FROM adoptions WHERE adopter_id = ${id})`,
+            act: withActivity
+                ? sql<string | null>`(SELECT json_object('avg', AVG(rating), 'kinds', json_group_array(record_type)) FROM adoptions WHERE adopter_id = ${id})`
+                : sql<string | null>`(SELECT json_object('avg', AVG(rating)) FROM adoptions WHERE adopter_id = ${id})`,
             flags: sql<string | null>`(SELECT json_group_array(json_object('reason', reason, 'targetAdopterId', target_adopter_id, 'details', details)) FROM adopter_flags WHERE adopter_id = ${id})`,
         }).from(adopters).where(eq(adopters.id, id)).get() as Raw | undefined;
     } catch (e) {
@@ -72,18 +79,19 @@ export async function countsFor(db: Db, id: string, ctx: Record<string, unknown>
     } catch (e) {
         logger.warn('profileSummary: unreadable flags, no alerts counted', { ...ctx, profileId: id, error: errMsg(e) });
     }
+    let avg: number | null = null;
     let kinds: Array<string | null> = [];
     try {
-        const parsed: unknown = JSON.parse(raw?.kinds || '[]');
-        if (Array.isArray(parsed)) kinds = parsed.map(k => (typeof k === 'string' ? k : null));
+        const parsed = JSON.parse(raw?.act || '{}') as { avg?: unknown; kinds?: unknown };
+        avg = typeof parsed.avg === 'number' ? parsed.avg : null;
+        if (Array.isArray(parsed.kinds)) kinds = parsed.kinds.map(k => (typeof k === 'string' ? k : null));
     } catch (e) {
-        logger.warn('profileSummary: unreadable activity, none counted', { ...ctx, profileId: id, error: errMsg(e) });
+        logger.warn('profileSummary: unreadable rating/activity, none shown', { ...ctx, profileId: id, error: errMsg(e) });
     }
-    const avg = raw?.avg ?? null;
     return {
-        rating: avg == null ? null : Number(avg),
+        rating: avg,
         openAlerts: countOpenAlerts(flags.map(f => ({ adopterId: id, ...f }))),
-        activity: countActivity(kinds.map(recordType => ({ recordType }))),
+        activity: withActivity ? countActivity(kinds.map(recordType => ({ recordType }))) : {},
     };
 }
 

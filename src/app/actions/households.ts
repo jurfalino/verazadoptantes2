@@ -744,7 +744,7 @@ export async function getHouseholdMatchCandidates(
         const missing = matches.filter(r => !r.households).map(r => r.adopter.id);
         const [lines, counts] = await Promise.all([
             missing.length > 0 ? householdLinesFor(db, actor, missing) : Promise.resolve({} as Record<string, HouseholdLine[]>),
-            Promise.all(matches.map(r => countsFor(db, r.adopter.id, { ...ctx, profileId: r.adopter.id }))),
+            Promise.all(matches.map(r => countsFor(db, r.adopter.id, { ...ctx, profileId: r.adopter.id }, { activity: false }))),
         ]);
         return { results: matches.map((r, i) => ({ ...r, householdLine: r.households ?? lines[r.adopter.id] ?? [], openAlerts: counts[i].openAlerts })) };
     } catch (e) {

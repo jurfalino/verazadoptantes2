@@ -80,8 +80,12 @@ export function ContactDraftEditor({ draft, onChange, onSave, onCancel, busy, no
  * when it was saved (the composer then closes) — on false it stays open with
  * what was typed, so nothing is lost on an error.
  */
-export function ContactComposer({ onSubmit, disabled = false, note, triggerTestId, testIdPrefix = 'contact-composer', className = '' }: {
+export function ContactComposer({ onSubmit, disabled = false, note, triggerTestId, testIdPrefix = 'contact-composer', className = '', startOpen = false, onCancel }: {
     onSubmit: (draft: ComposerDraft) => Promise<boolean>;
+    /** Mount already at the type pills (the caller's own button was the trigger). */
+    startOpen?: boolean;
+    /** «Cancelar» was pressed (not called after a save). */
+    onCancel?: () => void;
     disabled?: boolean;
     note?: string;
     triggerTestId?: string;
@@ -89,12 +93,13 @@ export function ContactComposer({ onSubmit, disabled = false, note, triggerTestI
     className?: string;
 }) {
     const { t } = useLanguage();
-    const [stage, setStage] = useState<'closed' | 'pick' | 'edit'>('closed');
+    const [stage, setStage] = useState<'closed' | 'pick' | 'edit'>(startOpen ? 'pick' : 'closed');
     const [draft, setDraft] = useState<ComposerDraft>({ type: 'phone', value: '', platform: null, apps: [] });
     const [saving, setSaving] = useState(false);
     const busy = disabled || saving;
 
     const close = () => { setStage('closed'); setDraft({ type: 'phone', value: '', platform: null, apps: [] }); };
+    const cancel = () => { close(); onCancel?.(); };
     async function save() {
         setSaving(true);
         try {
@@ -119,7 +124,7 @@ export function ContactComposer({ onSubmit, disabled = false, note, triggerTestI
                     })}
                 </div>
                 <div className="flex justify-end">
-                    <button type="button" onClick={close} className="min-h-[44px] text-xs px-3 rounded text-stone-500 hover:text-stone-700">{t('adopter.ce_edit_cancel')}</button>
+                    <button type="button" onClick={cancel} className="min-h-[44px] text-xs px-3 rounded text-stone-500 hover:text-stone-700">{t('adopter.ce_edit_cancel')}</button>
                 </div>
             </div>
         );
@@ -127,7 +132,7 @@ export function ContactComposer({ onSubmit, disabled = false, note, triggerTestI
     if (stage === 'edit') {
         return (
             <div className={className}>
-                <ContactDraftEditor draft={draft} onChange={up => setDraft(d => ({ ...d, ...up }))} onSave={() => { void save(); }} onCancel={close} busy={busy} note={note} testIdPrefix={testIdPrefix} />
+                <ContactDraftEditor draft={draft} onChange={up => setDraft(d => ({ ...d, ...up }))} onSave={() => { void save(); }} onCancel={cancel} busy={busy} note={note} testIdPrefix={testIdPrefix} />
             </div>
         );
     }

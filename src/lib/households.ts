@@ -659,10 +659,8 @@ export async function getHouseholdsFor(
             Promise.all(everyone.map(async p => [p.id, await isPrivilegedOnProfile(viewerEmail, p.addedBy)] as const)).then(e => new Map(e)),
         ]);
         const isOwnTeam = await ownTeamOf(viewerEmail, capped.flat().map(m => m.addedBy), ctx);
-        const rescuerNames = await namesFor([
-            ...[...profiles.values()].map(p => p.addedBy),
-            ...capped.flat().map(m => m.addedBy),
-        ], ctx);
+        // Only the adders are named («según …»): who owns a profile is not shown on its row.
+        const rescuerNames = await namesFor(capped.flat().map(m => m.addedBy), ctx);
         const today = new Date();
         const me = viewerEmail?.trim().toLowerCase() || null;
         const isViewer = (email: string | null | undefined) => !!me && !!email && email.trim().toLowerCase() === me;
@@ -690,7 +688,6 @@ export async function getHouseholdsFor(
                     membershipId: m.id,
                     profileId: p.id,
                     name: p.name,
-                    ownerName: personLabel(p.addedBy, rescuerNames),
                     rating: c.rating,
                     openAlerts: c.openAlerts,
                     activity: c.activity,
@@ -820,7 +817,8 @@ export async function householdLinesFor(
                     shown.push(p);
                 });
             }
-            const counts = await Promise.all(shown.map(p => memo(countMemo, p.id, () => countsFor(db, p.id, ctx))));
+            // The card line shows rating and alerts only: no activity read.
+            const counts = await Promise.all(shown.map(p => memo(countMemo, p.id, () => countsFor(db, p.id, ctx, { activity: false }))));
             return [adopterId, shown.map((p, i) => ({
                 name: p.name,
                 profileId: p.id,

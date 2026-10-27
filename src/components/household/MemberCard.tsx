@@ -7,9 +7,9 @@
  *       pareja · 16 años · según Refugio Patitas · 2 datos ▾
  *
  * The initial; the name — the link to their profile; the rating and open
- * alerts («Menor de edad» instead, and no activity: a minor carries none);
+ * alerts («Menor de edad» instead: a minor carries no rating or alerts);
  * the person's activity counted exactly as their own «Actividad» header
- * counts it (ActivityCountsLine); then one line with the relationship, the
+ * counts it (ActivityCountsLine — for a minor only when they have any); then one line with the relationship, the
  * age, ONE attribution («agregado por vos» / «según {quien lo agregó}») and
  * the contacts collapsed behind «N datos ▾» (a padlock when some are
  * protected), which open to the contact rows + «Agregar dato de contacto»
@@ -197,13 +197,15 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
     }
 
     const alerts = member.openAlerts;
+    const hasActivity = activityParts(member.activity).length > 0;
     return (
         <li className="py-2" data-testid={testId} data-profile-id={member.profileId}>
             <div className="flex items-start gap-2">
                 <span className="mt-1.5 w-8 h-8 rounded-full bg-teal-600 text-white font-bold text-xs flex items-center justify-center shrink-0" aria-hidden="true">{(name[0] || '?').toUpperCase()}</span>
                 <div className="min-w-0 flex-1 py-1">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                        <a href={`/adopter/${encodeURIComponent(member.profileId)}`} data-testid="household-member-profile-link" className="font-semibold text-[15px] text-teal-700 hover:underline min-w-0 break-words">{name}</a>
+                        {/* `relative z-10`: the contacts toggle's padded hit area (below) reaches up into this line; the name always wins. */}
+                        <a href={`/adopter/${encodeURIComponent(member.profileId)}`} data-testid="household-member-profile-link" className="relative z-10 font-semibold text-[15px] text-teal-700 hover:underline min-w-0 break-words">{name}</a>
                         {member.isMinor ? <MinorTag /> : (
                             <>
                                 {member.rating != null && member.rating >= 1 && <RatingBadge rating={member.rating} variant="inline" size="sm" />}
@@ -212,13 +214,16 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
                                         {alerts === 1 ? t('adopter.hh_link_alerts_one') : fill(t('adopter.hh_link_alerts_many'), { n: alerts })}
                                     </span>
                                 )}
-                                {/* What their own «Actividad» counts (fosters and returns too); a minor carries none. */}
-                                <span className="inline-flex flex-wrap items-baseline gap-x-1 text-xs text-stone-600" data-testid="household-member-activity">
-                                    {activityParts(member.activity).length > 0
-                                        ? <ActivityCountsLine counts={member.activity} separated />
-                                        : <span className="text-stone-500">{t('adopter.hh_no_activity')}</span>}
-                                </span>
                             </>
+                        )}
+                        {/* What their own «Actividad» counts (fosters and returns too). A minor with none says nothing:
+                            their records go on the adults, so «sin actividad» would be noise; any they do have shows, as on their profile. */}
+                        {hasActivity ? (
+                            <span className="inline-flex flex-wrap items-baseline gap-x-1 text-xs text-stone-600" data-testid="household-member-activity">
+                                <ActivityCountsLine counts={member.activity} separated />
+                            </span>
+                        ) : !member.isMinor && (
+                            <span className="text-xs text-stone-500" data-testid="household-member-activity">{t('adopter.hh_no_activity')}</span>
                         )}
                     </div>
                     {(sub || attribution || hasContactsToggle) && (
@@ -268,7 +273,7 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
                                         <div key={i.id}>
                                             {n > 0 && <div className="border-t border-stone-100" />}
                                             <button type="button" role="menuitem" disabled={i.disabled} onClick={() => pick(i.id)} data-testid={`household-member-menu-${i.id}`}
-                                                className="w-full flex items-start gap-3 px-4 py-3 min-h-[44px] hover:bg-stone-50 transition-colors text-left disabled:cursor-wait">
+                                                className="w-full flex items-start gap-3 px-4 py-3 min-h-[44px] hover:bg-stone-100 transition-colors text-left disabled:cursor-wait">
                                                 {i.icon}
                                                 <div className="min-w-0">
                                                     <div className={`text-sm font-semibold ${i.danger ? 'text-rose-600' : i.disabled ? 'text-stone-500' : 'text-stone-900'}`}>{i.title}</div>
@@ -285,7 +290,9 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
             </div>
             {contactsOpen && (
                 <div className="pl-10 pr-2 pt-1" id={contactsId}>
-                    <MemberContacts summary={member} canAddContact={signedIn} />
+                    {/* No contacts yet: «+ Agregar dato» goes straight to the composer; «Cancelar» closes it again. */}
+                    <MemberContacts summary={member} canAddContact={signedIn} startComposing={dataCount === 0}
+                        onCancelCompose={dataCount === 0 ? () => setContactsOpen(false) : undefined} />
                 </div>
             )}
             {dialog === 'remove' && (

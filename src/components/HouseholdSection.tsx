@@ -169,7 +169,7 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
                             <span className="px-4 pt-3 pb-1 text-xs font-semibold text-stone-500">{t('adopter.hh_add_which')}</span>
                             {homes.map(v => (
                                 <button key={v.id} type="button" role="menuitem" data-testid="household-add-which-option" data-household-id={v.id}
-                                    className="px-4 py-3 min-h-[44px] text-left text-sm font-semibold text-stone-900 hover:bg-stone-50 break-words"
+                                    className="px-4 py-3 min-h-[44px] text-left text-sm font-semibold text-stone-900 hover:bg-stone-100 break-words"
                                     onClick={() => { setChoosing(false); setAdding(v.id); }}>
                                     {fill(t('adopter.hh_with_names'), { names: peopleOf(v) })}
                                 </button>

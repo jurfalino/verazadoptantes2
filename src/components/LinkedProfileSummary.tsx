@@ -65,11 +65,15 @@ export function MatchesPill() {
     );
 }
 
-export function MemberContacts({ summary, testId = 'linked-summary', canAddContact = false }: {
+export function MemberContacts({ summary, testId = 'linked-summary', canAddContact = false, startComposing = false, onCancelCompose }: {
     summary: LinkedSummary;
     testId?: string;
     /** Signed in: «Agregar dato de contacto» adds to this person's own profile (D55). */
     canAddContact?: boolean;
+    /** Open straight at the composer (the row's «+ Agregar dato», no contacts yet). */
+    startComposing?: boolean;
+    /** The composer was cancelled. */
+    onCancelCompose?: () => void;
 }) {
     const { t } = useLanguage();
     const toast = useShowToast();
@@ -114,7 +118,8 @@ export function MemberContacts({ summary, testId = 'linked-summary', canAddConta
             )}
             {anyLocked && <p className="text-xs text-stone-500 mt-2">{t('adopter.hh_link_locked_note')}</p>}
             {canAddContact && (
-                <ContactComposer onSubmit={addToProfile} triggerTestId="linked-add-contact" testIdPrefix="linked-contact" className={summary.contacts.length > 0 ? 'mt-1' : ''} />
+                <ContactComposer onSubmit={addToProfile} triggerTestId="linked-add-contact" testIdPrefix="linked-contact" className={summary.contacts.length > 0 ? 'mt-1' : ''}
+                    startOpen={startComposing} onCancel={onCancelCompose} />
             )}
         </div>
     );

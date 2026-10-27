@@ -90,7 +90,10 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         expect(JSON.parse(String(marta!.contact_entries))).toEqual([expect.objectContaining({ type: 'phone', addedBy: USER_EMAIL })]);
 
         // Her profile shows the household: Pedro, rated, with his alert.
-        await card(page, MARTA_NAME).getByTestId('household-member-profile-link').click();
+        // Its bottom edge too: the contacts toggle's padded hit area sits just below and must never take the tap.
+        const link = card(page, MARTA_NAME).getByTestId('household-member-profile-link');
+        const box = (await link.boundingBox())!;
+        await link.click({ position: { x: Math.min(10, box.width / 2), y: box.height - 2 } });
         await expect(page).toHaveURL(new RegExp(`/adopter/${marta!.id}`), { timeout: 30_000 });
         const pedroCard = card(page, PEDRO_NAME);
         await expect(pedroCard).toHaveCount(1, { timeout: 30_000 });
@@ -308,6 +311,12 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
             await dismissCountryBanner(page);
             await expect(page.getByTestId('household-member')).toHaveCount(2, { timeout: 30_000 });
             await expect(page.getByTestId('household-home-divider')).toHaveCount(2);
+            // Ana has no contacts: «+ Agregar dato» opens straight at the composer's types.
+            const mom = page.locator(`[data-testid="household-member"][data-profile-id="${MOM}"]`);
+            await mom.getByTestId('household-member-contacts-toggle').click();
+            await expect(mom.getByTestId('linked-contact-type-phone')).toBeVisible();
+            await mom.getByTestId('household-member-contacts-toggle').click();
+            await expect(mom.getByTestId('linked-contact-type-phone')).toHaveCount(0);
             // The chooser lists both homes, each by its people.
             await page.getByTestId('household-add-member').click();
             const which = page.getByTestId('household-add-which');
@@ -331,7 +340,8 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
             await expect(page.getByTestId('hh-add-form')).toBeVisible({ timeout: 15_000 });
             await expect(page.getByTestId('household-add-which')).toHaveCount(0);
         } finally {
-            cleanupProfiles([KID, MOM, DAD]);
+            const made = profileNamed(NEW)?.id;
+            cleanupProfiles([KID, MOM, DAD, ...(made ? [String(made)] : [])]);
         }
     });
 
