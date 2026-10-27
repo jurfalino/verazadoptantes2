@@ -38,13 +38,11 @@ interface FormDuplicateInput {
 
 export async function findFormDuplicates(
     input: FormDuplicateInput,
-    opts: { minRelevance?: number; limit?: number } = {},
+    opts: { minRelevance?: number; limit?: number; /** Look with a contact and no name (the household add form). Off for every other caller. */ allowContactOnly?: boolean } = {},
 ): Promise<{ results: DiscoveryMatch[] }> {
     const name = (input.name || '').trim();
-    // A contact alone is enough to look (a household add may carry no name);
-    // AdopterForm gates on the name itself before calling, so its behaviour is unchanged.
     const hasContact = [input.phones, input.emails, input.socials].some(list => (list ?? []).some(v => v.trim()));
-    if (name.length < 2 && !hasContact) return { results: [] };
+    if (name.length < 2 && !(opts.allowContactOnly && hasContact)) return { results: [] };
 
     try {
         const db = await getDb();

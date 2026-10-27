@@ -473,6 +473,27 @@ describe('getHouseholdMatchCandidates — «¿Es este perfil?»', () => {
         expect(results.some(r => r.adopter.id === 'pedro')).toBe(false);
     });
 
+    it("the line shows a stranger no more than Rosa's own profile does: her name (profile names are not masked), never a contact", async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'rosa'`).run(JSON.stringify([{ id: 'rc', type: 'phone', value: '+54 11 7777 0909', addedBy: OTHER }]));
+        const { results } = await getHouseholdMatchCandidates({ name: 'Marta Paez', contactEntries: [{ type: 'phone', value: MARTA_PHONE }] });
+        const line = results.find(r => r.adopter.id === 'marta')!.householdLine;
+        expect(line.map(l => Object.keys(l).sort())).toEqual([['isGift', 'isMinor', 'name', 'openAlerts', 'profileId', 'rating']]);
+        const { getHouseholdsFor } = await import('@/lib/households');
+        const onProfile = await getHouseholdsFor(state.db as Parameters<typeof getHouseholdsFor>[0], STRANGER, 'marta');
+        const rosa = onProfile[0].members.find(m => m.profileId === 'rosa')!;
+        expect(line[0].name).toBe(rosa.name);
+        // Her phone stays masked for the stranger on the profile; the line carries none at all.
+        expect(rosa.contacts.length).toBeGreaterThan(0);
+        expect(rosa.contacts.every(c => c.masked)).toBe(true);
+        expect(JSON.stringify(line)).not.toContain('7777');
+    });
+
+    it('the contact-only search is opt-in: findFormDuplicates without a name still finds nothing for other callers', async () => {
+        const { findFormDuplicates } = await import('./findFormDuplicates');
+        expect(await findFormDuplicates({ name: '', phones: [MARTA_PHONE] })).toEqual({ results: [] });
+        expect((await findFormDuplicates({ name: '', phones: [MARTA_PHONE] }, { allowContactOnly: true })).results.map(r => r.adopter.id)).toContain('marta');
+    });
+
     it('a phone alone finds her (no name typed)', async () => {
         const { results } = await getHouseholdMatchCandidates({ contactEntries: [{ type: 'phone', value: MARTA_PHONE }], anchorAdopterId: 'pedro' });
         expect(results.map(r => r.adopter.id)).toContain('marta');

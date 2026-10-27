@@ -493,7 +493,7 @@ export async function getHouseholdMatchCandidates(
             .filter(Boolean);
         const { results } = await findFormDuplicates(
             { name, phones: pick('phone'), emails: pick('email'), socials: pick('social'), ...(anchorId ? { excludeAdopterId: anchorId } : {}) },
-            { minRelevance: 15 },
+            { minRelevance: 15, allowContactOnly: true },
         );
         const matches = results.filter(r => r.adopter.id !== anchorId);
         if (matches.length === 0) return { results: [] };
