@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canRemoveMembership, currentAge, householdForAdd, householdLineGroups, titledHomes, householdNameKey, isMinor, membershipLabel } from './households';
+import { canRemoveMembership, currentAge, householdForAdd, householdLineGroups, separateHomes, householdNameKey, isMinor, membershipLabel } from './households';
 
 // Pedro's household: Marta is Pedro's partner, Lucas is Pedro's child. Pedro is
 // the person the relationships point at (his own row has none).
@@ -159,7 +159,7 @@ describe('householdLineGroups (the card line: «Convive con» / «En otro hogar,
     });
 });
 
-describe('household add target and titles (Task 8, coordinator ruling)', () => {
+describe('household add target and home dividers (Task 8; addendum 2026-10-27)', () => {
     const home = (id: string, isAnchor: boolean) => ({ id, self: { isAnchor } });
     it('a block\'s «Agregar» adds into THAT household, always (explicit id)', () => {
         expect(householdForAdd(home('hh-pedro', true))).toBe('hh-pedro');
@@ -168,10 +168,10 @@ describe('household add target and titles (Task 8, coordinator ruling)', () => {
     it('a profile-level add (no household of any kind) names none: the server starts the profile\'s own home', () => {
         expect(householdForAdd(null)).toBeUndefined();
     });
-    it('blocks are titled for 2+ homes, and for a single home the profile does not anchor (so the user sees whose home it is)', () => {
-        expect(titledHomes([home('a', true)])).toBe(false);
-        expect(titledHomes([])).toBe(false);
-        expect(titledHomes([home('x', false)])).toBe(true);
-        expect(titledHomes([home('a', true), home('b', false)])).toBe(true);
+    it('homes are told apart (divider, «¿En qué hogar?») only with 2+ — never a title for a single home, anchored or not', () => {
+        expect(separateHomes([home('a', true)])).toBe(false);
+        expect(separateHomes([])).toBe(false);
+        expect(separateHomes([home('x', false)])).toBe(false);
+        expect(separateHomes([home('a', true), home('b', false)])).toBe(true);
     });
 });

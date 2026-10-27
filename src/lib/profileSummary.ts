@@ -4,7 +4,8 @@
  * (src/lib/householdLinks.ts, getLinkedSummaries) and households as profiles
  * (src/lib/households.ts). Plain server module, never 'use server'.
  *
- * - `countsFor`: rating, open alerts, adoptions, records — one query per profile.
+ * - `countsFor`: rating, open alerts and activity by record type (what that
+ *   profile's own «Actividad» header counts) — one query per profile.
  * - `viewerContacts`: the profile's contacts masked exactly as getAdopter would
  *   mask them for this viewer (same masking, fail closed), capped.
  * - `namesFor`: rescuers' display names (a failure falls back to handles).
@@ -16,7 +17,7 @@ import { logger } from '@/lib/logger';
 import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
 import { maskContactEntries, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
 import { maskOptionsFor } from '@/lib/piiAccessServer';
-import { RECORD_TYPES } from '@/domain/constants';
+import { countActivity, type ActivityCounts } from '@/domain/activityCounts';
 import { realOwner } from '@/domain/dedupPair';
 import { countOpenAlerts, summaryContacts, type LinkedSummary } from '@/domain/householdLinks';
 
@@ -36,26 +37,28 @@ export async function namesFor(emails: Array<string | null | undefined>, ctx: Re
     }
 }
 
-export type ProfileCounts = { rating: number | null; openAlerts: number; adoptions: number; records: number };
+export type ProfileCounts = { rating: number | null; openAlerts: number; activity: ActivityCounts };
 
-export const EMPTY_COUNTS: ProfileCounts = { rating: null, openAlerts: 0, adoptions: 0, records: 0 };
+export const EMPTY_COUNTS: ProfileCounts = { rating: null, openAlerts: 0, activity: {} };
 
 /**
  * Rating (same source as the profile page: AVG over the adoptions view), open
- * alerts, adoptions and records — ONE query per profile (scalar subqueries,
- * the id bound as a parameter). Flags come back as a JSON array so the open-alert rule stays in
+ * alerts, and activity by record type — the same rows the profile's own
+ * «Actividad» lists (getAdoptions reads the `adoptions` view) counted by the
+ * same rule (countActivity), so fosters and returns count and an ended
+ * placement doesn't. ONE query per profile (scalar subqueries, the id bound
+ * as a parameter). Flags come back as a JSON array so the open-alert rule stays in
  * src/domain (countOpenAlerts), not in SQL. A failure degrades to an empty
  * summary line and is logged.
  */
 export async function countsFor(db: Db, id: string, ctx: Record<string, unknown>): Promise<ProfileCounts> {
-    type Raw = { avg: number | null; adopted: number | null; records: number | null; flags: string | null };
+    type Raw = { avg: number | null; kinds: string | null; flags: string | null };
     let raw: Raw | undefined;
     try {
         // `await` whether the driver returns a promise (D1) or a value (better-sqlite3 in dev/tests).
         raw = await db.select({
             avg: sql<number | null>`(SELECT AVG(rating) FROM adoptions WHERE adopter_id = ${id})`,
-            adopted: sql<number>`(SELECT COUNT(*) FROM placements WHERE adopter_id = ${id} AND record_type = ${RECORD_TYPES.ADOPTION})`,
-            records: sql<number>`(SELECT COUNT(*) FROM adopter_events WHERE adopter_id = ${id})`,
+            kinds: sql<string | null>`(SELECT json_group_array(record_type) FROM adoptions WHERE adopter_id = ${id})`,
             flags: sql<string | null>`(SELECT json_group_array(json_object('reason', reason, 'targetAdopterId', target_adopter_id, 'details', details)) FROM adopter_flags WHERE adopter_id = ${id})`,
         }).from(adopters).where(eq(adopters.id, id)).get() as Raw | undefined;
     } catch (e) {
@@ -69,12 +72,18 @@ export async function countsFor(db: Db, id: string, ctx: Record<string, unknown>
     } catch (e) {
         logger.warn('profileSummary: unreadable flags, no alerts counted', { ...ctx, profileId: id, error: errMsg(e) });
     }
+    let kinds: Array<string | null> = [];
+    try {
+        const parsed: unknown = JSON.parse(raw?.kinds || '[]');
+        if (Array.isArray(parsed)) kinds = parsed.map(k => (typeof k === 'string' ? k : null));
+    } catch (e) {
+        logger.warn('profileSummary: unreadable activity, none counted', { ...ctx, profileId: id, error: errMsg(e) });
+    }
     const avg = raw?.avg ?? null;
     return {
         rating: avg == null ? null : Number(avg),
         openAlerts: countOpenAlerts(flags.map(f => ({ adopterId: id, ...f }))),
-        adoptions: Number(raw?.adopted ?? 0),
-        records: Number(raw?.records ?? 0),
+        activity: countActivity(kinds.map(recordType => ({ recordType }))),
     };
 }
 

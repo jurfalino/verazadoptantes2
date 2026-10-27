@@ -22,6 +22,8 @@ import { actorLabel } from '@/lib/userDisplay';
 import { formatAge } from '@/lib/ageUtils';
 import { isAdmin as isAdminEmail } from '@/config/admins-shared';
 import { MediaLightbox, MediaThumbnail } from '@/components/ui/MediaLightbox';
+import { ActivityCountsLine } from '@/components/ActivityCountsLine';
+import { countActivity } from '@/domain/activityCounts';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 
 interface Adoption {
@@ -124,11 +126,8 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
     };
 
     // G — Activity summary above the timeline
-    const summaryCounts = initialAdoptions.reduce((acc, a) => {
-        const rt = a.recordType || 'adoption';
-        acc[rt] = (acc[rt] || 0) + 1;
-        return acc;
-    }, {} as Record<string, number>);
+    // The same rule (and words) as each person in «Familiares / Convivientes».
+    const summaryCounts = countActivity(initialAdoptions);
     const ratedAdoptions = initialAdoptions.filter(a => a.rating != null && Number(a.rating) > 0);
     const avgRating = ratedAdoptions.length > 0
         ? (ratedAdoptions.reduce((s, a) => s + Number(a.rating), 0) / ratedAdoptions.length)
@@ -238,24 +237,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
 
             {/* G — Activity summary: counts + avg rating */}
             <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-600">
-                {summaryCounts.adoption > 0 && (
-                    <span><strong className="text-teal-700">{summaryCounts.adoption}</strong> {t('stats.adoptions') || 'adopciones'}</span>
-                )}
-                {summaryCounts.adoption_request > 0 && (
-                    <span><strong className="text-sky-700">{summaryCounts.adoption_request}</strong> {t('stats.requests') || 'solicitudes'}</span>
-                )}
-                {summaryCounts.observation > 0 && (
-                    <span><strong className="text-amber-700">{summaryCounts.observation}</strong> {t('stats.observations') || 'observaciones'}</span>
-                )}
-                {summaryCounts.follow_up > 0 && (
-                    <span><strong className="text-violet-700">{summaryCounts.follow_up}</strong> {t('stats.follow_ups') || 'seguimientos'}</span>
-                )}
-                {summaryCounts.returned_pet > 0 && (
-                    <span><strong className="text-rose-700">{summaryCounts.returned_pet}</strong> {t('stats.returns') || 'devoluciones'}</span>
-                )}
-                {summaryCounts.foster > 0 && (
-                    <span><strong className="text-indigo-700">{summaryCounts.foster}</strong> {t('stats.fosters') || 'tránsitos'}</span>
-                )}
+                <ActivityCountsLine counts={summaryCounts} />
                 {avgRating != null && (
                     <span className="ml-auto inline-flex items-center gap-1 font-semibold">
                         <StarIcon className={`w-3 h-3 ${getRatingColors(avgRating).text}`} />

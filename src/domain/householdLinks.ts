@@ -6,6 +6,7 @@
  */
 import type { ContactEntry, ContactEntryType } from '@/lib/contactEntries';
 import { FLAG_REASONS } from './constants';
+import type { ActivityCounts } from './activityCounts';
 import { isOpenDuplicateFlag, realOwner, type DuplicateFlagRow } from './dedupPair';
 
 /** At most this many linked summaries per side of a profile page (bounded reads). */
@@ -36,10 +37,8 @@ export interface LinkedSummary {
     /** Average of the profile's ratings (same source as the profile page); null = not rated. */
     rating: number | null;
     openAlerts: number;
-    /** Adoption placements (fosters are not counted as adoptions). */
-    adoptions: number;
-    /** Activity records (adopter_events: requests, observations, follow-ups, returns). */
-    records: number;
+    /** Activity by record type, exactly as that profile's own «Actividad» header counts it (fosters and returns included). */
+    activity: ActivityCounts;
     /** Contacts after the viewer's masking: a hidden one carries `masked: true`. */
     contacts: ContactEntry[];
     /** Contacts left out of `contacts` by MAX_SUMMARY_CONTACTS. */

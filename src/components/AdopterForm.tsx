@@ -1652,7 +1652,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
 
                     {/* Family Members (Full Width) */}
                     <div className="md:col-span-2 min-w-0">
-                        <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.family_members')}</h3>
+                        <h3 className="text-sm font-semibold text-teal-800 mb-2 uppercase tracking-wider">{t('adopter.family_members')}</h3>
                         {!isNew && enableHousehold && adopterId ? (
                             <div className="space-y-3">
                                 <HouseholdSection

@@ -35,6 +35,7 @@ import {
 } from './households';
 import { logger } from '@/lib/logger';
 import { MAX_HOUSEHOLD_LINES, currentAge } from '@/domain/households';
+import { countActivity } from '@/domain/activityCounts';
 
 type Row = Record<string, unknown>;
 type Sqlite = {
@@ -255,7 +256,7 @@ describe('getHouseholdsFor', () => {
         expect(view.members.map(m => m.profileId).sort()).toEqual(['marta', 'pedro']);
         const pedro = view.members.find(m => m.profileId === 'pedro')!;
         const marta = view.members.find(m => m.profileId === 'marta')!;
-        expect(pedro).toMatchObject({ name: 'Pedro Paez', rating: 1, openAlerts: 1, adoptions: 1, label: null, ownerName: 'Gatitos Olivos', addedByName: null, isMinor: false });
+        expect(pedro).toMatchObject({ name: 'Pedro Paez', rating: 1, openAlerts: 1, activity: { adoption: 1 }, label: null, ownerName: 'Gatitos Olivos', addedByName: null, isMinor: false });
         // ↑ Pedro's own (anchor) row has no adder (Task 2 fix 1): no «según …» on it.
         expect(pedro.linkId).toBe(pedro.membershipId);
         expect(marta.label).toEqual({ key: 'adopter.hh_rel_of', params: { rel: 'adopter.hh_rel_partner', name: 'Pedro Paez' } });
@@ -265,6 +266,29 @@ describe('getHouseholdsFor', () => {
         const lucas = onMarta.find(m => m.profileId === 'lucas')!;
         expect(lucas).toMatchObject({ isMinor: true, age: currentAge({ age: 12, ageAsOf: '2026-01-01' }), relationship: 'child', relativeToAdopterId: 'pedro', addedByName: 'stranger' });
         expect(lucas.label).toEqual({ key: 'adopter.hh_rel_of', params: { rel: 'adopter.hh_rel_child', name: 'Pedro Paez' } });
+    });
+
+    it("a member's activity is counted as their own «Actividad» counts it: active fosters and every event kind, not an ended placement", async () => {
+        await pedrosHousehold();
+        const animal = sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES (?, ?, ?)`);
+        animal.run('an2', 'Michi', OWNER);
+        animal.run('an3', 'Tom', OWNER);
+        animal.run('an4', 'Gone', OWNER);
+        sqlite.exec(`UPDATE animals SET deleted_at = 5000 WHERE id = 'an4'`);
+        const place = sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, ended_at) VALUES (?, ?, 'marta', ?, ?)`);
+        place.run('p2', 'an2', 'foster', null);        // Marta fosters Michi now: counted
+        place.run('p3', 'an3', 'adoption', 4000);      // an adoption that ended: not on «Actividad», not counted
+        place.run('p4', 'an4', 'adoption', null);      // a deleted animal: not on «Actividad», not counted
+        const ev = sqlite.prepare(`INSERT INTO adopter_events (id, adopter_id, event_type) VALUES (?, 'marta', ?)`);
+        ev.run('e1', 'adoption_request');
+        ev.run('e2', 'adoption_request');
+        ev.run('e3', 'returned_pet');
+        ev.run('e4', 'observation');
+        const marta = (await getHouseholdsFor(db(), OWNER, 'pedro'))[0].members.find(m => m.profileId === 'marta')!;
+        expect(marta.activity).toEqual({ foster: 1, adoption_request: 2, returned_pet: 1, observation: 1 });
+        // The very rows the profile's own «Actividad» lists (getAdoptions reads the `adoptions` view).
+        const own = sqlite.prepare(`SELECT record_type AS recordType FROM adoptions WHERE adopter_id = 'marta'`).all() as Array<{ recordType: string }>;
+        expect(countActivity(own)).toEqual(marta.activity);
     });
 
     it("Task 8: the viewed profile's own place («Lucas figura como hijo/a de Pedro · según …»), anchor rows, the viewer's own adds and profiles", async () => {

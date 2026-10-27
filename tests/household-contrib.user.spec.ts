@@ -71,6 +71,11 @@ test.describe('household contributions by a non-owner (D54, D55)', () => {
         await expect(martaCard.getByTestId('household-member-menu-delete')).toHaveCount(0);
         await expect(martaCard.getByTestId('household-member-menu-request')).toHaveCount(0);
         await page.mouse.click(5, 300);
+        // Her contacts sit behind «1 dato ▾», with a padlock: masked for this viewer.
+        const martaToggle = martaCard.getByTestId('household-member-contacts-toggle');
+        await expect(martaToggle.getByTestId('household-member-contacts-locked')).toHaveCount(1);
+        await martaToggle.click();
+        await expect(martaCard.getByTestId('linked-summary')).toBeVisible();
         await expect(martaCard.getByTestId('linked-summary')).not.toContainText('11 4200-0002');
 
         // ── D54: anyone signed in adds someone, with a phone.
@@ -87,7 +92,8 @@ test.describe('household contributions by a non-owner (D54, D55)', () => {
         await page.reload();
         await dismissCountryBanner(page);
         await expect(cards).toHaveCount(3, { timeout: 30_000 });
-        await expect(mine).toContainText(NEW_MEMBER_PHONE);
+        await mine.getByTestId('household-member-contacts-toggle').click();
+        await expect(mine.getByTestId('linked-summary')).toContainText(NEW_MEMBER_PHONE);
         await expect(mine.getByTestId('household-member-own')).toBeVisible();
         await mine.getByTestId('household-member-menu').click();
         await expect(mine.getByTestId('household-member-menu-edit')).toBeVisible();
@@ -100,6 +106,7 @@ test.describe('household contributions by a non-owner (D54, D55)', () => {
 
         // ── D55: a phone added on a housemate's card goes to THEIR profile.
         const brunoCard = cards.filter({ hasText: BRUNO_NAME });
+        await brunoCard.getByTestId('household-member-contacts-toggle').click();
         await brunoCard.getByTestId('linked-add-contact').click();
         await brunoCard.getByTestId('linked-contact-type-phone').click();
         await brunoCard.getByTestId('linked-contact-input').fill(BRUNO_PHONE);

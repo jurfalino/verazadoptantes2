@@ -1,5 +1,5 @@
 import { execSync } from 'child_process';
-import { expect, type APIRequestContext, type Browser, type Locator, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Browser, type Page } from '@playwright/test';
 
 /**
  * Shared fixture helpers for the households-as-profiles e2e specs (Task 8).
@@ -143,13 +143,15 @@ export async function memberMenu(card: ReturnType<Page['getByTestId']>, item: 'e
 }
 
 /**
- * The add form: name, relationship, age, one phone. `within`: the household block whose
- * «Agregar familiar / conviviente» to use (several homes → several buttons); default: the only one.
+ * The add form: name, relationship, age, one phone. «+ Agregar» is one button
+ * per section; with 2+ homes it asks «¿En qué hogar?» first — `home` is the
+ * household id to pick there (required then, ignored otherwise).
  */
-export async function fillAddForm(page: Page, p: { name?: string; relationship?: string; age?: number; phone?: string }, within?: Locator) {
-    const button = (within ?? page).getByTestId('household-add-member');
+export async function fillAddForm(page: Page, p: { name?: string; relationship?: string; age?: number; phone?: string }, home?: string) {
+    const button = page.getByTestId('household-add-member');
     await expect(button).toHaveCount(1);
     await button.click();
+    if (home) await page.getByTestId('household-add-which').locator(`[data-household-id="${home}"]`).click();
     const form = page.getByTestId('hh-add-form');
     await expect(form).toBeVisible({ timeout: 15_000 });
     if (p.name) await form.getByTestId('hh-person-name').fill(p.name);

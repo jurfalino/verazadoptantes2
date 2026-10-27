@@ -1,12 +1,21 @@
 'use client';
 
 /**
- * One person in a household (households as profiles, prototype P1–P3, M1):
- * the initial, the name — the link to their profile — with «Menor de edad»,
- * «pareja de Pedro · 16 años», then the «⋯» menu, then the live summary
- * (LinkedProfileSummary). The menu holds what this viewer may do:
- * - «Editar»: everyone signed in, on every card (the same form for all — the
- *   anchor's card too, without a relationship field: its row has none);
+ * One person in a household — a compact row (addendum 2026-10-27, variant A):
+ *
+ *   (M) Marta Paez ★4.0 · 1 alerta   1 adopción · 1 tránsito          ⋯
+ *       pareja · 16 años · según Refugio Patitas · 2 datos ▾
+ *
+ * The initial; the name — the link to their profile; the rating and open
+ * alerts («Menor de edad» instead, and no activity: a minor carries none);
+ * the person's activity counted exactly as their own «Actividad» header
+ * counts it (ActivityCountsLine); then one line with the relationship, the
+ * age, ONE attribution («agregado por vos» / «según {quien lo agregó}») and
+ * the contacts collapsed behind «N datos ▾» (a padlock when some are
+ * protected), which open to the contact rows + «Agregar dato de contacto»
+ * (MemberContacts). The «⋯» menu holds what this viewer may do:
+ * - «Editar»: everyone signed in, on every row (the same form for all — the
+ *   anchor's row too, without a relationship field: its row has none);
  * - «Quitar del hogar» («Quitar como destinatario» on a gift recipient):
  *   whoever may take the person out (`canRemove`: the adder, the household's
  *   teams, admins and moderators);
@@ -14,14 +23,18 @@
  *   person's owner (delete when nobody else contributed, else ask the admins)
  *   or an admin (always delete). Which one is read when the menu opens
  *   (checkAdopterDeletable), as the profile's own delete button does.
+ * Rendered as an `<li>`: the caller's `<ul>` divides the rows.
  */
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { Pencil, Trash2, UserMinus } from 'lucide-react';
+import { ChevronDown, Lock, Pencil, Plus, Trash2, UserMinus } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { MinorTag } from '@/components/MinorTag';
-import { LinkedProfileSummary } from '@/components/LinkedProfileSummary';
+import { MemberContacts } from '@/components/LinkedProfileSummary';
+import { RatingBadge } from '@/components/RatingBadge';
+import { ActivityCountsLine } from '@/components/ActivityCountsLine';
+import { activityParts } from '@/domain/activityCounts';
 import { EditMemberForm, useHouseholdFailure } from '@/components/household/PersonForms';
 import { RemoveFromHomeDialog, RequestDeletionDialog, DeleteProfileDialog, type DeletionCollaborators, type RemoveReason } from '@/components/household/HouseholdDialogs';
 import { checkAdopterDeletable, deleteOwnAdopter, removeHouseholdMembership, requestAdopterDeletion } from '@/app/actions';
@@ -52,7 +65,7 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
     relativeName: string;
     signedIn: boolean;
     isAdmin: boolean;
-    /** «Ver como desconocido»: no menu, no own-line. */
+    /** «Ver como desconocido»: no menu, no «agregado por vos». */
     preview: boolean;
     /** A gift recipient (P5): «Quitar como destinatario» instead of «Quitar del hogar» («Editar» as on every card). */
     gift?: boolean;
@@ -68,6 +81,8 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
     const [dialog, setDialog] = useState<'remove' | 'delete' | 'request' | null>(null);
     const [busy, setBusy] = useState(false);
     const [deletion, setDeletion] = useState<Deletion | 'loading' | 'none'>('none');
+    const [contactsOpen, setContactsOpen] = useState(false);
+    const contactsId = useId();
 
     const name = member.name?.trim() || t('adopter.nameless');
     // «Editar» is the same form for everyone signed in (spec «Editing (revised)»): name, age, minor and,
@@ -76,8 +91,16 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
     const canRemove = !preview && signedIn && member.canRemove;
     const mayDelete = !preview && signedIn && (member.ownerIsViewer || isAdmin);
     const hasMenu = canEdit || canRemove || mayDelete;
-    const sub = [labelOf(member.label), member.age != null ? fill(t('adopter.hh_years'), { n: member.age }) : null].filter(Boolean).join(' · ');
-    const ownLine = !preview && member.addedByViewer && !member.ownerIsViewer ? t('adopter.hh_added_by_you') : null;
+    const rel = labelOf(member.label);
+    // Mid-sentence on the row: «pareja de Pedro · 16 años».
+    const sub = [rel ? rel.charAt(0).toLowerCase() + rel.slice(1) : null, member.age != null ? fill(t('adopter.hh_years'), { n: member.age }) : null].filter(Boolean).join(' · ');
+    // ONE attribution: the viewer's own add, else who added them (an anchor row has no adder: none).
+    const own = !preview && member.addedByViewer;
+    const attribution = own ? t('adopter.hh_added_by_you') : member.addedByName ? fill(t('adopter.hh_lives_with_by'), { name: member.addedByName }) : null;
+    const dataCount = member.contacts.length + member.moreContacts;
+    const locked = member.contacts.some(c => c.masked);
+    // No contacts yet: a signed-in viewer still gets the way to add one (D55).
+    const hasContactsToggle = dataCount > 0 || signedIn;
 
     async function openMenu() {
         const next = !menuOpen;
@@ -145,9 +168,11 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
 
     if (editing) {
         return (
-            <div className="border border-stone-200 rounded-xl p-3.5 bg-stone-50" data-testid={testId}>
-                <EditMemberForm member={member} relativeName={relativeName} onDone={() => setEditing(false)} />
-            </div>
+            <li className="py-2" data-testid={testId}>
+                <div className="border border-stone-200 rounded-xl p-3.5 bg-stone-50">
+                    <EditMemberForm member={member} relativeName={relativeName} onDone={() => setEditing(false)} />
+                </div>
+            </li>
         );
     }
 
@@ -171,17 +196,61 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
             });
     }
 
+    const alerts = member.openAlerts;
     return (
-        <div className="border border-stone-200 rounded-xl p-3.5 bg-stone-50" data-testid={testId} data-profile-id={member.profileId}>
-            <div className="flex items-start gap-2.5">
-                <div className="w-9 h-9 rounded-lg bg-teal-600 text-white font-bold text-sm flex items-center justify-center shrink-0" aria-hidden="true">{(name[0] || '?').toUpperCase()}</div>
-                <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-semibold text-[15px] text-stone-900 break-words">
-                        <a href={`/adopter/${encodeURIComponent(member.profileId)}`} data-testid="household-member-profile-link" className="text-teal-700 hover:underline min-w-0 break-words">{name}</a>
-                        {member.isMinor && <MinorTag />}
+        <li className="py-2" data-testid={testId} data-profile-id={member.profileId}>
+            <div className="flex items-start gap-2">
+                <span className="mt-1.5 w-8 h-8 rounded-full bg-teal-600 text-white font-bold text-xs flex items-center justify-center shrink-0" aria-hidden="true">{(name[0] || '?').toUpperCase()}</span>
+                <div className="min-w-0 flex-1 py-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                        <a href={`/adopter/${encodeURIComponent(member.profileId)}`} data-testid="household-member-profile-link" className="font-semibold text-[15px] text-teal-700 hover:underline min-w-0 break-words">{name}</a>
+                        {member.isMinor ? <MinorTag /> : (
+                            <>
+                                {member.rating != null && member.rating >= 1 && <RatingBadge rating={member.rating} variant="inline" size="sm" />}
+                                {alerts > 0 && (
+                                    <span className="text-xs font-semibold text-rose-700 whitespace-nowrap" data-testid="household-member-alerts">
+                                        {alerts === 1 ? t('adopter.hh_link_alerts_one') : fill(t('adopter.hh_link_alerts_many'), { n: alerts })}
+                                    </span>
+                                )}
+                                {/* What their own «Actividad» counts (fosters and returns too); a minor carries none. */}
+                                <span className="inline-flex flex-wrap items-baseline gap-x-1 text-xs text-stone-600" data-testid="household-member-activity">
+                                    {activityParts(member.activity).length > 0
+                                        ? <ActivityCountsLine counts={member.activity} separated />
+                                        : <span className="text-stone-500">{t('adopter.hh_no_activity')}</span>}
+                                </span>
+                            </>
+                        )}
                     </div>
-                    {sub && <div className="text-xs text-stone-500" data-testid="household-member-label">{sub}</div>}
-                    {ownLine && <div className="text-xs text-stone-500" data-testid="household-member-own">{ownLine}</div>}
+                    {(sub || attribution || hasContactsToggle) && (
+                        <div className="text-xs text-stone-500 mt-1 break-words">
+                            {sub && <span data-testid="household-member-label">{sub}</span>}
+                            {attribution && (
+                                <>
+                                    {sub && <span className="text-stone-400 mx-1" aria-hidden="true">·</span>}
+                                    <span data-testid={own ? 'household-member-own' : 'household-member-by'}>{attribution}</span>
+                                </>
+                            )}
+                            {hasContactsToggle && (
+                                <>
+                                    {(sub || attribution) && <span className="text-stone-400 mx-1" aria-hidden="true">·</span>}
+                                    {/* Inline, so the name keeps the row's width; the ::after pads the hit area to 44px. */}
+                                    <button type="button" onClick={() => setContactsOpen(o => !o)} aria-expanded={contactsOpen} aria-controls={contactsId}
+                                        data-testid="household-member-contacts-toggle"
+                                        className="relative inline-flex items-center gap-1 leading-5 font-semibold text-teal-700 hover:underline whitespace-nowrap after:absolute after:-inset-x-2 after:-inset-y-3 after:content-['']">
+                                        {dataCount > 0 ? (
+                                            <>
+                                                {locked && <Lock className="w-3 h-3 opacity-70" aria-label={t('adopter.ce_masked')} data-testid="household-member-contacts-locked" />}
+                                                {dataCount === 1 ? t('adopter.hh_data_one') : fill(t('adopter.hh_data_many'), { n: dataCount })}
+                                            </>
+                                        ) : (
+                                            <><Plus className="w-3 h-3" aria-hidden="true" />{t('adopter.hh_data_add')}</>
+                                        )}
+                                        <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${contactsOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    )}
                 </div>
                 {hasMenu && (
                     <div className="relative shrink-0">
@@ -213,7 +282,11 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
                     </div>
                 )}
             </div>
-            <LinkedProfileSummary summary={member} canAddContact={signedIn} minor={member.isMinor} />
+            {contactsOpen && (
+                <div className="pl-10 pr-2 pt-1" id={contactsId}>
+                    <MemberContacts summary={member} canAddContact={signedIn} />
+                </div>
+            )}
             {dialog === 'remove' && (
                 <RemoveFromHomeDialog person={name} host={hostName} gift={gift} busy={busy} onCancel={() => setDialog(null)} onConfirm={reason => { void remove(reason); }} />
             )}
@@ -224,6 +297,6 @@ export function MemberCard({ member, hostName, relativeName, signedIn, isAdmin, 
             {dialog === 'delete' && (
                 <DeleteProfileDialog name={name} host={hostName} busy={busy} onCancel={() => setDialog(null)} onConfirm={() => { void deleteProfile(); }} />
             )}
-        </div>
+        </li>
     );
 }

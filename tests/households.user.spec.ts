@@ -1,7 +1,7 @@
 import { test, expect, request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
 import { dismissCountryBanner } from './helpers';
 import {
-    ADMIN_EMAIL, USER_EMAIL, cleanupProfiles, createProfileViaApi, execD1, fillAddForm, housemates, memberMenu, profileNamed, rows, saveAsNew,
+    ADMIN_EMAIL, USER_EMAIL, cleanupProfiles, createProfileViaApi, execD1, fillAddForm, housemates, insertHousehold, insertProfile, memberMenu, profileNamed, rows, saveAsNew,
 } from './householdFixtures';
 
 /**
@@ -14,14 +14,19 @@ import {
  *      and her profile shows Pedro.
  *   2. Searching Marta's phone shows only Marta's card, with Pedro's rating line.
  *   3. Adding a person whose phone matches an existing profile offers
- *      «¿Es este perfil?»; «Sí» links that profile (no new one). On that
- *      profile's page the block says «Hogar con Pedro …» and its add goes there.
+ *      «¿Es este perfil?»; «Sí» links that profile (no new one), and its row
+ *      counts its active foster as «Actividad» does. On that profile's page
+ *      (one home, someone else's) there is no «Hogar con …» title and no
+ *      «¿En qué hogar?»; its add goes into that home.
  *   4. A stranger's rename: the owner is told and «Deshacer» puts the name back.
  *   5. A minor's profile has no «¿Qué pasó con …?».
  *   6. «Quitar del hogar» → «No vive acá» removes the person on every profile.
  *   7. At 390px nothing scrolls sideways.
  *   8. On the viewer's own household: «Eliminar perfil», «Pedir eliminación»
  *      and «Quitar del hogar» → «Lo cargué por error».
+ *   9. A person in two homes: a small divider per home, and «+ Agregar» asks
+ *      «¿En qué hogar?» and adds into the home picked (compact section,
+ *      addendum 2026-10-27).
  *
  * Own rows (made through the app so search finds them, names carry a stamp),
  * removed after. Selectors are data-testids: Chromium renders English.
@@ -38,6 +43,7 @@ const PEDRO_PHONE = `11 4${s.slice(-3)}-${s.slice(-7, -3)}`;
 const MARTA_PHONE = `11 5${s.slice(-3)}-${s.slice(-7, -3)}`;
 const ROSA_PHONE = `11 6${s.slice(-3)}-${s.slice(-7, -3)}`;
 
+const FOSTER_ANIMAL = `test-hh-fixture-an-${stamp}`;
 let PEDRO = '';
 let ROSA = '';
 let admin: APIRequestContext;
@@ -52,10 +58,14 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         // Pedro is rated 1 with an open alert: the line a relative's card carries.
         execD1(`INSERT INTO adopter_events (id, adopter_id, event_type, rating, recorded_by, created_at) VALUES ('test-hh-fixture-ev-${stamp}', '${PEDRO}', 'observation', 1, '${ADMIN_EMAIL}', strftime('%s','now','-3 days'))`);
         execD1(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, created_at) VALUES ('test-hh-fixture-fl-${stamp}', '${PEDRO}', '${ADMIN_EMAIL}', 'inaccurate_information', strftime('%s','now','-3 days'))`);
+        // Rosa fosters an animal right now: a transit on her «Actividad», so on her household row too.
+        execD1(`INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('${FOSTER_ANIMAL}', 'Michi ${stamp}', 'cat', '${ADMIN_EMAIL}', strftime('%s','now','-3 days'), strftime('%s','now','-3 days'))`);
+        execD1(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, recorded_by) VALUES ('test-hh-fixture-pl-${stamp}', '${FOSTER_ANIMAL}', '${ROSA}', 'foster', strftime('%s','now','-2 days'), '${ADMIN_EMAIL}')`);
     });
     test.afterAll(async () => {
         const made = [MARTA_NAME, `Marta P. ${stamp}`, TOMAS_NAME, HUGO_NAME].map(n => profileNamed(n)?.id).filter(Boolean) as string[];
         cleanupProfiles([PEDRO, ROSA, ...made]);
+        execD1(`DELETE FROM animals WHERE id = '${FOSTER_ANIMAL}'`);
         execD1(`DELETE FROM notifications WHERE type = 'profile_renamed' AND body LIKE '%${stamp}%'`);
         await admin?.dispose();
     });
@@ -84,7 +94,10 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         await expect(page).toHaveURL(new RegExp(`/adopter/${marta!.id}`), { timeout: 30_000 });
         const pedroCard = card(page, PEDRO_NAME);
         await expect(pedroCard).toHaveCount(1, { timeout: 30_000 });
-        await expect(pedroCard.getByTestId('linked-summary')).toContainText('1.0');
+        // His row: rating and his open alert, no «Perfil cargado por …»; one attribution at most.
+        await expect(pedroCard).toContainText('1.0');
+        await expect(pedroCard.getByTestId('household-member-alerts')).toBeVisible();
+        await expect(pedroCard.locator('[data-activity="observation"]')).toHaveAttribute('data-count', '1');
         // «Editar» on everyone's card, the anchor's too — no relationship field there (his row has none);
         // taking Pedro out of his own home is not this viewer's to do.
         await memberMenu(pedroCard, 'edit');
@@ -127,17 +140,20 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         await expect(form).toHaveCount(0, { timeout: 30_000 });
         await expect(card(page, ROSA_NAME)).toHaveCount(1, { timeout: 30_000 });
         expect(housemates(PEDRO).map(h => h.profileId)).toContain(ROSA);
+        // Her row counts what her own «Actividad» counts: the foster too.
+        await expect(card(page, ROSA_NAME).locator('[data-activity="foster"]')).toHaveAttribute('data-count', '1');
         expect(profileNamed(`Rosa ${stamp}`), 'no second profile').toBeUndefined();
     });
 
-    test("3b. from Rosa's page (linked into Pedro's home only) the titled block says whose home it is, and its «Agregar» adds there", async ({ page }) => {
+    test("3b. from Rosa's page (linked into Pedro's home only): no «Hogar con …» title, no «¿En qué hogar?», and «Agregar» adds into Pedro's home", async ({ page }) => {
         test.setTimeout(150_000);
         await page.goto(`/adopter/${ROSA}`);
         await dismissCountryBanner(page);
-        const block = page.getByTestId('household-block');
-        await expect(block).toHaveCount(1, { timeout: 30_000 });
-        await expect(block.locator('h4')).toContainText(PEDRO_NAME); // «Hogar con Pedro Paez …», the anchor first
-        await fillAddForm(page, { name: HUGO_NAME, relationship: 'sibling' }, block);
+        await expect(card(page, PEDRO_NAME)).toHaveCount(1, { timeout: 30_000 });
+        await expect(page.getByTestId('household-home-divider')).toHaveCount(0);
+        await expect(page.getByTestId('household-section').locator('h4')).toHaveCount(0);
+        await fillAddForm(page, { name: HUGO_NAME, relationship: 'sibling' });
+        await expect(page.getByTestId('household-add-which')).toHaveCount(0);
         await saveAsNew(page);
         const hugo = String(profileNamed(HUGO_NAME)!.id);
         expect(housemates(PEDRO).map(h => h.profileId)).toContain(hugo);
@@ -273,6 +289,49 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
             if (dos) execD1(`DELETE FROM data_requests WHERE adopter_id = '${dos}'`);
             const made = [UNO, DOS, TRES].map(n => profileNamed(n)?.id).filter(Boolean).map(String);
             cleanupProfiles([OWN, ...made]);
+        }
+    });
+
+    test('9. a person in two homes: a divider per home; «+ Agregar» asks «¿En qué hogar?» and adds into the home picked', async ({ page }) => {
+        test.setTimeout(150_000);
+        const [KID, MOM, DAD] = ['kid', 'mom', 'dad'].map(r => `test-hh-fixture-two-${r}-${stamp}`);
+        const [HH_MOM, HH_DAD] = [`test-hh-fixture-two-hm-${stamp}`, `test-hh-fixture-two-hd-${stamp}`];
+        const NEW = `Nuevo Dos ${stamp}`;
+        try {
+            insertProfile({ id: KID, name: `Lucas Dos ${stamp}`, owner: ADMIN_EMAIL, age: 16 });
+            insertProfile({ id: MOM, name: `Ana Dos ${stamp}`, owner: ADMIN_EMAIL });
+            insertProfile({ id: DAD, name: `Pablo Dos ${stamp}`, owner: ADMIN_EMAIL });
+            insertHousehold(HH_MOM, MOM, [{ id: `${HH_MOM}-k`, adopterId: KID, relationship: 'child', addedBy: ADMIN_EMAIL }]);
+            insertHousehold(HH_DAD, DAD, [{ id: `${HH_DAD}-k`, adopterId: KID, relationship: 'child', addedBy: ADMIN_EMAIL }]);
+
+            await page.goto(`/adopter/${KID}`);
+            await dismissCountryBanner(page);
+            await expect(page.getByTestId('household-member')).toHaveCount(2, { timeout: 30_000 });
+            await expect(page.getByTestId('household-home-divider')).toHaveCount(2);
+            // The chooser lists both homes, each by its people.
+            await page.getByTestId('household-add-member').click();
+            const which = page.getByTestId('household-add-which');
+            await expect(which.getByTestId('household-add-which-option')).toHaveCount(2);
+            await expect(which.locator(`[data-household-id="${HH_DAD}"]`)).toContainText('Pablo');
+            await page.getByTestId('household-add-member').click(); // closes it again
+            await expect(which).toHaveCount(0);
+
+            await fillAddForm(page, { name: NEW }, HH_DAD);
+            await saveAsNew(page);
+            await expect(card(page, NEW)).toHaveCount(1, { timeout: 30_000 });
+            const made = String(profileNamed(NEW)!.id);
+            expect(housemates(made).map(h => String(h.householdId))).toEqual([HH_DAD, HH_DAD]);
+
+            // On Ana's page (one home): no divider, and «+ Agregar» goes straight to the form.
+            await page.goto(`/adopter/${MOM}`);
+            await dismissCountryBanner(page);
+            await expect(card(page, `Lucas Dos ${stamp}`)).toHaveCount(1, { timeout: 30_000 });
+            await expect(page.getByTestId('household-home-divider')).toHaveCount(0);
+            await page.getByTestId('household-add-member').click();
+            await expect(page.getByTestId('hh-add-form')).toBeVisible({ timeout: 15_000 });
+            await expect(page.getByTestId('household-add-which')).toHaveCount(0);
+        } finally {
+            cleanupProfiles([KID, MOM, DAD]);
         }
     });
 

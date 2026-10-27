@@ -220,23 +220,22 @@ export function householdLineGroups(lines: ReadonlyArray<HouseholdLine> | null |
 }
 
 /**
- * Which household a block's «Agregar familiar / conviviente» names (Task 8,
- * coordinator ruling): THAT block's household, always — the block's title
- * («Hogar con …», anchor first) says whose home it is. Only a profile-level add
- * (the profile is in no household yet) names none, so the server's own-home
- * default applies (Task 2 fix A: being linked into X's home never makes X the
- * default of a profile-level add).
+ * Which household «+ Agregar» names (Task 8, coordinator ruling; compact
+ * section, addendum 2026-10-27): the home it adds into, always — the one home
+ * the profile is in, or the one picked in «¿En qué hogar?». Only a
+ * profile-level add (the profile is in no household yet) names none, so the
+ * server's own-home default applies (Task 2 fix A: being linked into X's home
+ * never makes X the default of a profile-level add).
  */
 export function householdForAdd(view: { id: string } | null): string | undefined {
     return view ? view.id : undefined;
 }
 
 /**
- * The household blocks carry titles («Hogar con Pedro Paez y Marta Paez»)
- * when the profile lives in 2+ homes, and also when its only home is one it
- * was linked into (someone else's): an add there goes into that home, so it
- * must say whose home it is. One home the profile anchors: no title (P1).
+ * The homes are told apart — a small divider per home and «¿En qué hogar?»
+ * before adding — only when the profile lives in 2+ (addendum 2026-10-27:
+ * no «Hogar con …» titles otherwise; one home's rows say who lives there).
  */
-export function titledHomes(homes: ReadonlyArray<{ self: { isAnchor: boolean } }>): boolean {
-    return homes.length >= 2 || (homes.length === 1 && !homes[0].self.isAnchor);
+export function separateHomes(homes: ReadonlyArray<unknown>): boolean {
+    return homes.length >= 2;
 }

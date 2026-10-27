@@ -1,27 +1,25 @@
 'use client';
 
 /**
- * A household member's live summary (D46, households as profiles): rating and
- * alerts first («★2 · 1 alerta»), then «3 adopciones · 5 registros», then
- * «Perfil cargado por …», then the contacts exactly as the server masked them
- * for this viewer (a locked one shows the partial value with a padlock, as on
- * the profile). A minor shows none of the rating / activity lines — a minor
- * carries no rating, alerts or records (the card's name row has the tag).
+ * A household member's contacts (D46, households as profiles; compact rows,
+ * addendum 2026-10-27): the panel a member row opens from «N datos ▾». The
+ * contacts are exactly as the server masked them for this viewer (a locked
+ * one shows the partial value with a padlock, as on the profile). Rating,
+ * alerts and activity live on the row itself (household/MemberCard).
  *
  * A signed-in viewer adds a contact here (D55): it is saved on THAT person's
  * profile through `addContactEntry` — stored once, same rules as on that
- * profile — and the summary refreshes in place. The name above the summary is
- * the link to the profile (no «Ver perfil completo» row any more).
+ * profile — and the panel refreshes in place.
  *
- * Also used by «¿Es este perfil?» in the add form, with the contact that
- * matched what was typed marked «coincide».
+ * `SummaryContactRow` / `MatchesPill` are also used by «¿Es este perfil?»
+ * (HouseholdCandidateCard), with the contact that matched what was typed
+ * marked «coincide».
  */
 import { type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { Phone, Mail, AtSign, IdCard, MapPin, Lock, Check } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { RatingBadge } from '@/components/RatingBadge';
 import { SocialLogo } from '@/components/SocialLogo';
 import { handledAsStale } from '@/lib/errorMessage';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
@@ -67,20 +65,15 @@ export function MatchesPill() {
     );
 }
 
-export function LinkedProfileSummary({ summary, testId = 'linked-summary', canAddContact = false, minor = false, isMatch }: {
+export function MemberContacts({ summary, testId = 'linked-summary', canAddContact = false }: {
     summary: LinkedSummary;
     testId?: string;
     /** Signed in: «Agregar dato de contacto» adds to this person's own profile (D55). */
     canAddContact?: boolean;
-    /** «Menor de edad»: no rating / alerts / activity lines. */
-    minor?: boolean;
-    /** «¿Es este perfil?»: true for the contact that matched what was typed («coincide»). */
-    isMatch?: (c: ContactEntry) => boolean;
 }) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
-    const count = (n: number, one: string, many: string) => (n === 1 ? t(one) : fill(t(many), { n }));
     const anyLocked = summary.contacts.some(c => c.masked);
 
     /** Saves on the person's profile; true closes the composer, false keeps what was typed. */
@@ -93,7 +86,7 @@ export function LinkedProfileSummary({ summary, testId = 'linked-summary', canAd
             });
             if (!res.ok) {
                 toast.error(t('errors.generic'), res.error === 'busy' ? t('collab.busy') : res.error === CONTACT_ENTRIES_FULL ? t('adopter.ce_add_full') : t('adopter.ce_add_error'),
-                    'errorId' in res ? res.errorId : resolveErrorId(new Error(`addContactEntry (household member): ${res.error}`), 'LinkedProfileSummary'));
+                    'errorId' in res ? res.errorId : resolveErrorId(new Error(`addContactEntry (household member): ${res.error}`), 'MemberContacts'));
                 return false;
             }
             // As on the profile itself (ContactEntriesSection): say when an access request was filed for them.
@@ -104,53 +97,24 @@ export function LinkedProfileSummary({ summary, testId = 'linked-summary', canAd
             router.refresh();
             return true;
         } catch (e) {
-            if (!handledAsStale(e)) toast.error(t('errors.generic'), t('adopter.ce_add_error'), resolveErrorId(e, 'LinkedProfileSummary'));
+            if (!handledAsStale(e)) toast.error(t('errors.generic'), t('adopter.ce_add_error'), resolveErrorId(e, 'MemberContacts'));
             return false;
         }
     }
 
     return (
-        <div className="min-w-0" data-testid={testId} aria-label={fill(t('adopter.hh_link_summary_aria'), { name: summary.name })}>
-            <div className="mt-2 space-y-0.5">
-                {!minor && (
-                    <>
-                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
-                            {summary.rating != null && summary.rating >= 1
-                                ? <RatingBadge rating={summary.rating} variant="inline" size="md" />
-                                : <span className="text-stone-500">{t('adopter.hh_link_unrated')}</span>}
-                            <span className="text-stone-400" aria-hidden="true">·</span>
-                            {summary.openAlerts > 0
-                                ? <span className="font-semibold text-rose-700">{count(summary.openAlerts, 'adopter.hh_link_alerts_one', 'adopter.hh_link_alerts_many')}</span>
-                                : <span className="text-stone-500">{t('adopter.hh_link_no_alerts')}</span>}
-                        </div>
-                        <div className="text-xs text-stone-600">
-                            {count(summary.adoptions, 'adopter.hh_link_adoptions_one', 'adopter.hh_link_adoptions_many')}
-                            {' · '}
-                            {count(summary.records, 'adopter.hh_link_records_one', 'adopter.hh_link_records_many')}
-                        </div>
-                    </>
-                )}
-                {summary.ownerName && (
-                    <div className="text-xs text-stone-500 break-words">{fill(t('adopter.hh_link_owner'), { name: summary.ownerName })}</div>
-                )}
-            </div>
-            {(summary.contacts.length > 0 || canAddContact) && (
-                <div className="mt-3 pt-3 border-t border-dashed border-stone-200">
-                    {summary.contacts.length > 0 && (
-                        <ul className="space-y-1.5 mb-2">
-                            {summary.contacts.map((c, i) => (
-                                <SummaryContactRow key={`${c.id ?? c.type}-${i}`} c={c} trailing={isMatch?.(c) ? <MatchesPill /> : undefined} />
-                            ))}
-                            {summary.moreContacts > 0 && (
-                                <li className="text-xs text-stone-500">{fill(t('adopter.hh_link_more_contacts'), { n: summary.moreContacts })}</li>
-                            )}
-                        </ul>
+        <div className="min-w-0" data-testid={testId}>
+            {summary.contacts.length > 0 && (
+                <ul className="space-y-2">
+                    {summary.contacts.map((c, i) => <SummaryContactRow key={`${c.id ?? c.type}-${i}`} c={c} />)}
+                    {summary.moreContacts > 0 && (
+                        <li className="text-xs text-stone-500">{fill(t('adopter.hh_link_more_contacts'), { n: summary.moreContacts })}</li>
                     )}
-                    {anyLocked && <p className="text-xs text-stone-500 mb-2">{t('adopter.hh_link_locked_note')}</p>}
-                    {canAddContact && (
-                        <ContactComposer onSubmit={addToProfile} triggerTestId="linked-add-contact" testIdPrefix="linked-contact" />
-                    )}
-                </div>
+                </ul>
+            )}
+            {anyLocked && <p className="text-xs text-stone-500 mt-2">{t('adopter.hh_link_locked_note')}</p>}
+            {canAddContact && (
+                <ContactComposer onSubmit={addToProfile} triggerTestId="linked-add-contact" testIdPrefix="linked-contact" className={summary.contacts.length > 0 ? 'mt-1' : ''} />
             )}
         </div>
     );
