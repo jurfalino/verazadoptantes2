@@ -36,7 +36,7 @@ Production on 2026-10-26: 19 profiles with a household, 29 members (3 with conta
 A **household** is a group of profiles who live together. Membership is many-to-many: **a profile can be in more than one household (Jon: no restriction)**, for example a child of separated parents. Each household shows as its own block on the profile, with its own «Agregar familiar / conviviente». Picking an existing profile who already lives elsewhere adds them to this household too; nothing is merged or moved, and the other household's teams are told (Claude's call).
 
 - `households(id, created_by, created_at)`
-- `household_memberships(id, household_id, adopter_id, relationship, relative_to_adopter_id, age, age_as_of, gift_recipient, added_by, added_at)`. Unique `(household_id, adopter_id)`.
+- `household_memberships(id, household_id, adopter_id, relationship, relative_to_adopter_id, gift_recipient, added_by, added_at)` (age lives on the profile: `adopters.age`, `age_as_of`, `is_minor`). Unique `(household_id, adopter_id)`.
 
 The relationship is relative to the person they were added next to, e.g. «pareja de Pedro», «hijo de Pedro». On Pedro's profile Marta shows as «Marta · pareja». On Lucas's profile she shows as «Marta · pareja de Pedro», and Pedro (the person relationships point at) shows with no label. No reverse labels (gender isn't recorded). `unknown` is allowed, and is most of today's data. (Claude's call.)
 
