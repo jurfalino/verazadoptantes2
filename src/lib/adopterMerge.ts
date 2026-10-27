@@ -397,7 +397,7 @@ export async function mergeAdopters(
 
         // 11a. The survivor joined the absorbed profile's households: its pending
         // duplicate pairs with its new housemates go (never throws, logs itself).
-        await clearHousematePairsAfterMerge(db, primaryId, households.joined);
+        await clearHousematePairsAfterMerge(db, primaryId, households.joined, actorEmail);
         // A merge that brought a corrected person back into that household is a
         // dispute: the admins decide (D48).
         await notifyMergeDisputes(db, households.disputes, { id: primaryId, name: primary.name }, actorEmail, { primaryId, secondaryId });

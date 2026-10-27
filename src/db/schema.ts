@@ -124,7 +124,10 @@ export const adopterHistory = sqliteTable("adopter_history", {
     // (loadApprovers re-checks privilege); old builds still trust it, so a
     // non-privileged write must never default to 'edit'.
     kind: text("kind").notNull().default('edit'),
-});
+}, (table) => ({
+    // Migration 0100: the per-person rename rate limit counts a person's recent rows.
+    changedByIdx: index("idx_adopter_history_changed_by").on(table.changedBy, table.changedAt),
+}));
 
 export const searches = sqliteTable("searches", {
     id: text("id").primaryKey(),

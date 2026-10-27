@@ -562,7 +562,8 @@ async function place(
         if (theirs) await db.update(householdConversions).set({ membershipId: theirs.id }).where(eq(householdConversions.sourceKey, p.key));
         return { householdId: home, membershipId: theirs?.id ?? null };
     }
-    await dropHousemateCandidates(db, home, p.profileId, { force: true });
+    // S3: only pairs the conversion's actor is privileged on both sides of (the system actor: none).
+    await dropHousemateCandidates(db, home, p.profileId, { actor: st.actor });
     return { householdId: home, membershipId };
 }
 
@@ -1129,7 +1130,23 @@ export async function reverseConvertedOldMerge(db: Db, undo: OldMergeHouseholdUn
         const targetKey = inlineKey(A, original.id);
         const target = await ledgerRow(db, targetKey);
         if (target?.outcome === 'converted') {
-            if (target.profileId === P) continue; // a re-run
+            if (target.profileId === P) {
+                // The absorbed host's own conversion made this profile, and the copy on the survivor
+                // reused it (final fix D1(b)): the person already lives in the absorbed home — the
+                // survivor's membership and the survivor's grants on them go. On a re-run there is
+                // nothing left to take (the membership is gone or no longer the survivor's).
+                if (row.reason === 'old_merge_copy') {
+                    if (own.membership && row.householdId && row.membershipId) {
+                        const gone = await db.delete(householdMemberships).where(and(
+                            eq(householdMemberships.id, row.membershipId), eq(householdMemberships.householdId, row.householdId), eq(householdMemberships.adopterId, P),
+                        )).returning({ id: householdMemberships.id });
+                        if (gone.length) out.dropped++;
+                    }
+                    if (own.grants) await revokeConversionGrants(db, S, P, actor);
+                    logger.info('householdConversion.undo: the reused copy left the survivor\'s home; the person stays in the absorbed home', c);
+                }
+                continue; // a re-run
+            }
             // The revived absorbed host was converted from its own JSON meanwhile (a retried undo): the person lives
             // there already as another profile, so the copy leaves the survivor's home. The copy's profile is left
             // for the duplicate review (logged).

@@ -123,6 +123,8 @@ export async function renamesBySince(db: Db, actor: string, since: Date): Promis
         eq(adopterHistory.changedBy, actor),
         gte(adopterHistory.changedAt, since),
         sql`json_extract(${adopterHistory.changes}, '$.name_changed') IS NOT NULL`,
+        // Undoing renames never counts: a team cleaning up a flood can still rename.
+        sql`json_extract(${adopterHistory.changes}, '$.name_changed.undoOf') IS NULL`,
     )).get() as { n: number } | undefined;
     return Number(row?.n ?? 0);
 }

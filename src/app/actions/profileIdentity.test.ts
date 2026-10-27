@@ -589,6 +589,14 @@ describe('Final fix S5 — no rename email flood', () => {
         expect(bell(OWNER)).toHaveLength(4);
     });
 
+    it('undoing renames never counts against the person undoing (a team cleaning up a flood can still rename)', async () => {
+        const ins = sqlite.prepare("INSERT INTO adopter_history (id, adopter_id, changed_by, kind, changes, changed_at) VALUES (?, 'lucas', ?, 'edit', ?, strftime('%s','now'))");
+        for (let i = 0; i < RENAME_RATE_LIMIT; i++) {
+            ins.run(`undo-${i}`, OWNER, JSON.stringify({ name: { from: `X${i}`, to: `Y${i}` }, name_changed: { from: `X${i}`, to: `Y${i}`, undoOf: `h-${i}` } }));
+        }
+        expect(await as(OWNER, () => changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' }))).toMatchObject({ ok: true });
+    });
+
     it(`a person renames at most ${RENAME_RATE_LIMIT} times an hour: then rate_limited, nothing changes`, async () => {
         for (let i = 0; i < RENAME_RATE_LIMIT; i++) {
             const from = i === 0 ? 'Lucas Paez' : `Lucas ${i - 1}`;

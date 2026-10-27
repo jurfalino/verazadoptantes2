@@ -778,3 +778,39 @@ describe('final fix D2 — old-tab edits the conversion cannot replay are logged
         expect(warned('removed')).toEqual([expect.objectContaining({ hostId: 'pedro', memberId: 'pm2', profileId: expect.any(String) })]);
     });
 });
+
+describe('final fix D1(b) — undo of that old merge after the copy reused the converted profile', () => {
+    const RAUL_PHONE = '+54 11 8200 0001';
+    const raul: Member = { id: 'orig-1', name: 'Raúl Gómez', relationship: 'partner', addedBy: OTHER_OWNER, contactEntries: [{ id: 'r1', type: 'phone', value: RAUL_PHONE, addedBy: OTHER_OWNER }] };
+
+    it('the person leaves the survivor\'s home (once in the absorbed home), keeps its owner, and the survivor\'s grants on them go', async () => {
+        adopter('ana2', 'Ana Gomez', { owner: OTHER_OWNER, members: [raul] });
+        await getHouseholdsFor(db(), OTHER_OWNER, 'ana2'); // converted before the merge
+        const made = await convertedProfileId(inlineKey('ana2', 'orig-1'));
+        const homeA = membershipsOfHost('ana2')[0].household_id as string;
+        // An old build merges ana2 into ana (OWNER's): the JSON copy, the soft delete, the old-shape undo payload.
+        adopter('ana', 'Ana Gómez', { members: [{ ...raul, id: 'copy-1', contactEntries: [{ ...raul.contactEntries[0], id: 'r1-copy' }] }] });
+        grant('g-ana-all', 'ana', GRANTEE, 'all_contact');
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 6000, token_hash = 'MERGED' WHERE id = 'ana2'`).run();
+        const snap = profile('ana')!;
+        const undo = {
+            primarySnapshot: { contactInfo: snap.contact_info, contactEntries: snap.contact_entries, addressInfo: null, familyMembers: null, sourceUrl: null, isPublic: 0 },
+            placementIds: [], adopterEventIds: [], imageIds: [], flagIds: [], historyIds: [], statsIds: [], formSubmissionIds: [], candidates: [], annotatedFlags: [],
+            addedHouseholdMemberIds: ['copy-1'], householdLinks: [], householdLinkCorrections: [],
+        };
+        sqlite.prepare(`INSERT INTO audit_log (id, user_id, user_email, action, target, details, created_at) VALUES ('audit-d1b', ?, ?, 'adopter_merge', 'ana', ?, 6000)`)
+            .run(ADMIN, ADMIN, JSON.stringify({ primaryId: 'ana', secondaryId: 'ana2', secondaryName: 'Ana Gomez', mergeDetails: {}, undo }));
+
+        await getHouseholdsFor(db(), OWNER, 'ana'); // the survivor's view reuses Raúl's profile
+        expect(membershipsOfHost('ana').map(m => m.adopter_id)).toContain(made);
+        expect(liveGrantsOn(made).some(g => g.grantee_email === GRANTEE)).toBe(true);
+
+        expect((await unmergeAdopters('audit-d1b', ADMIN)).success).toBe(true);
+        expect(membershipsOfHost('ana').map(m => m.adopter_id)).not.toContain(made);
+        expect(householdOf(homeA).filter(id => id === made)).toHaveLength(1);
+        expect(profile(made)).toMatchObject({ added_by: OTHER_OWNER, deleted_at: null });
+        expect(liveGrantsOn(made).some(g => g.grantee_email === GRANTEE)).toBe(false);
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopters WHERE name = 'Raúl Gómez' AND deleted_at IS NULL`).get()!.n).toBe(1);
+        expect(vi.mocked(logger.error)).not.toHaveBeenCalled();
+    });
+});

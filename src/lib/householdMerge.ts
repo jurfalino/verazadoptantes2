@@ -270,8 +270,9 @@ export async function moveMembershipsOnMerge(
 }
 
 /** After the merge stands: the survivor's pending duplicate pairs with its new housemates go (Task 5 join rule). Never throws. */
-export async function clearHousematePairsAfterMerge(db: Db, survivorId: string, joined: readonly string[]): Promise<void> {
-    for (const householdId of joined) await dropHousemateCandidates(db, householdId, survivorId, { force: true });
+export async function clearHousematePairsAfterMerge(db: Db, survivorId: string, joined: readonly string[], actor: string): Promise<void> {
+    // S3: only the pairs the merging person is privileged on both sides of.
+    for (const householdId of joined) await dropHousemateCandidates(db, householdId, survivorId, { actor });
 }
 
 /** «Pedro» for the dispute notice: the household's anchor (or its oldest other member). Null on failure (logged). */
