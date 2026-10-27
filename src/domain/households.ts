@@ -73,24 +73,47 @@ export function membershipLabel(
     return { key: 'adopter.hh_rel_of', params: { rel: relationshipKey(rel), name } };
 }
 
+/** One profile of the household, with who put it there (null for a household's own anchor row). */
+export interface HouseholdStanding {
+    adopterId: string;
+    addedBy?: string | null;
+}
+
 /**
- * Who may take a person out of a household: whoever added the membership; the
- * team (owner, org-mates) of any profile in that household — `privilegedOn`
- * is isPrivilegedOnProfile per profile, so admins/moderators count there too;
- * `isAdmin` covers admins and moderators directly. Nobody signed in (or a
- * sentinel like 'anonymous') never may.
+ * Who may take a person out of a household:
+ * - whoever added that membership — but never on a profile's own anchor row
+ *   (added next to nobody: `relativeToAdopterId` empty). Whoever happened to
+ *   create the household gets no rights over the person it was made for.
+ * - the team (owner, org-mates) of a profile in that household — `privilegedOn`
+ *   is isPrivilegedOnProfile per profile, so admins/moderators count there too —
+ *   but only through a profile that the viewer's own team did NOT put there
+ *   (`isOwnTeam(addedBy)`: the viewer or an org-mate). Standing is never
+ *   self-granted: linking your own profile into a household gives you no power
+ *   over the others (spec: «others only through the dispute path»).
+ * - `isAdmin` covers admins and moderators directly.
+ * Nobody signed in (or a sentinel like 'anonymous') never may.
  */
 export function canRemoveMembership(
-    viewer: { email: string | null | undefined; privilegedOn: (adopterId: string) => boolean; isAdmin: boolean },
-    m: { addedBy?: string | null },
-    householdAdopterIds: readonly string[],
+    viewer: {
+        email: string | null | undefined;
+        privilegedOn: (adopterId: string) => boolean;
+        isAdmin: boolean;
+        /** The viewer or one of their org-mates (case-insensitive). */
+        isOwnTeam: (email: string | null | undefined) => boolean;
+    },
+    m: { addedBy?: string | null; relativeToAdopterId?: string | null },
+    household: readonly HouseholdStanding[],
 ): boolean {
     const me = realOwner(viewer.email?.trim() ?? null)?.toLowerCase();
     if (!me) return false;
     if (viewer.isAdmin) return true;
     const adder = realOwner(m.addedBy?.trim() ?? null)?.toLowerCase();
-    if (adder && adder === me) return true;
-    return householdAdopterIds.some(id => viewer.privilegedOn(id));
+    if (adder && adder === me && !!m.relativeToAdopterId) return true;
+    const ownTeamAdded = (by: string | null | undefined) => {
+        const b = realOwner(by?.trim() ?? null)?.toLowerCase();
+        return !!b && (b === me || viewer.isOwnTeam(b));
+    };
+    return household.some(h => viewer.privilegedOn(h.adopterId) && !ownTeamAdded(h.addedBy));
 }
 
 /**

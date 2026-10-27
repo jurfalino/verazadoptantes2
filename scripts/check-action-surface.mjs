@@ -294,13 +294,17 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                                      only the relationship, checked against RELATIONSHIPS,
 //                                      compare-and-swap; credited + history + the household's
 //                                      teams told, so every change is visible to the owners.
-//   removeHouseholdMembership(input)   canRemoveMembership on the STORED row (the adder, any
-//                                      household profile's team, admins/moderators), else
-//                                      not_authorized; reason checked against mistake|not_living;
-//                                      never deletes a profile.
+//   removeHouseholdMembership(input)   canRemoveMembership on the STORED rows (the adder — never
+//                                      on a profile's own anchor row, which has no adder; the
+//                                      team of a household profile whose membership that team
+//                                      did NOT add, so standing is never self-granted;
+//                                      admins/moderators), else not_authorized; reason checked
+//                                      against mistake|not_living; never deletes a profile.
 //   getHouseholdMatchCandidates(input) the same masked duplicate check «Nuevo adoptante»
-//                                      already exposes (findFormDuplicates) plus each match's
-//                                      household line (names, rating, alert counts — no contacts).
+//                                      already exposes (src/lib/formDuplicates.ts, also searching
+//                                      by a contact alone — an option findFormDuplicates never
+//                                      accepts from the browser) plus each match's household line
+//                                      (names, rating, alert counts — no contacts).
 // The notice workers that take the actor (src/lib/householdNotices.ts) are plain lib code.
 // 170 = 166 + 4.
 const EXPECTED_ACTIONS = 170;

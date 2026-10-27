@@ -9,7 +9,7 @@
  * (`runAfterResponse`: Workers kill bare fire-and-forget work) and never throws.
  *
  * - `notifyHouseholdPersonAdded`: the anchor's owner + editors when the adder
- *   has no standing on it (D54 'household_contribution', the shared
+ *   is not on its team — a stranger, or an admin from outside it (D54 'household_contribution', the shared
  *   contribution path); the teams of the household's other profiles,
  *   including the person added ('household_linked', D45); the teams of any
  *   other household the person already lives in ('household_also_lives_with').
@@ -121,8 +121,8 @@ export type PersonAddedNotice = {
     anchor: { id: string; name: string; addedBy: string | null };
     person: { id: string; name: string };
     actor: string;
-    /** The actor is on the anchor's team (or staff): no contribution notice (D54). */
-    privilegedOnAnchor: boolean;
+    /** The actor is the anchor's owner or an org-mate: no contribution notice (D54). An admin from outside the team is not. */
+    onAnchorTeam: boolean;
     /** An existing profile was linked: the teams of its other households hear too. */
     existingProfile: boolean;
 };
@@ -132,7 +132,7 @@ export async function notifyHouseholdPersonAdded(n: PersonAddedNotice): Promise<
     await runAfterResponse('household.person_added', async () => {
         const db = await getDb();
         if (!db) return;
-        if (!n.privilegedOnAnchor) {
+        if (!n.onAnchorTeam) {
             await notifyApprovers({
                 op: 'addHouseholdPerson', adopterId: n.anchor.id, actor: n.actor, type: 'household_contribution',
                 build: (actorName) => ({ key: 'household_contribution', params: { actorName, what: 'member', ...(n.anchor.name ? { adopterName: n.anchor.name } : {}) } }),

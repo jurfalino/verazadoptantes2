@@ -162,7 +162,6 @@ const ENTRY_TYPE: Record<NotificationLocale, Record<string, string>> = {
     en: { phone: 'a phone number', email: 'an email', social: 'a social profile', id: 'an ID document', address: 'an address', alias: 'an alternative name', other: 'a contact detail' },
     pt: { phone: 'um telefone', email: 'um e-mail', social: 'uma rede social', id: 'um documento', address: 'um endereço', alias: 'um nome alternativo', other: 'um dado de contato' },
 };
-/** «de Pedro» / «del adoptante»: whose household (D54); never a hole when the name is missing. */
 /** A relationship code as a word, lower case (the RELATIONSHIPS of src/lib/householdMembers). */
 const RELATIONSHIP_WORD: Record<NotificationLocale, Record<string, string>> = {
     es: { partner: 'pareja', child: 'hijo/a', parent: 'padre/madre', sibling: 'hermano/a', other_relative: 'otro familiar', housemate: 'conviviente', unknown: 'sin parentesco' },
@@ -171,6 +170,7 @@ const RELATIONSHIP_WORD: Record<NotificationLocale, Record<string, string>> = {
 };
 const relationshipWord = (code: string, l: NotificationLocale): string | null =>
     Object.hasOwn(RELATIONSHIP_WORD[l], code) ? RELATIONSHIP_WORD[l][code] : null;
+/** «de Pedro» / «del adoptante»: whose household (D54); never a hole when the name is missing. */
 const householdOf = (name: string | undefined, l: NotificationLocale): string => {
     const n = name?.trim();
     if (l === 'en') return n ? `${n}'s` : "the adopter's";

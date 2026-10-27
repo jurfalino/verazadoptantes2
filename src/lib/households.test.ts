@@ -154,7 +154,8 @@ describe('write core', () => {
         const b = await ensureHousehold(db(), 'pedro', MATE);
         expect(b).toBe(a);
         expect(sqlite.prepare('SELECT id, created_by FROM households').all()).toEqual([{ id: a, created_by: OWNER }]);
-        expect(memberships()).toEqual([expect.objectContaining({ household_id: a, adopter_id: 'pedro', relationship: 'unknown', added_by: OWNER })]);
+        // The anchor's own row has no adder: whoever triggered the household gets no adder's rights over it (Task 2 fix 1).
+        expect(memberships()).toEqual([expect.objectContaining({ household_id: a, adopter_id: 'pedro', relationship: 'unknown', added_by: null, relative_to_adopter_id: null })]);
         expect(await householdIdsOf(db(), 'pedro')).toEqual([a]);
     });
 
@@ -226,7 +227,8 @@ describe('getHouseholdsFor', () => {
         expect(view.members.map(m => m.profileId).sort()).toEqual(['marta', 'pedro']);
         const pedro = view.members.find(m => m.profileId === 'pedro')!;
         const marta = view.members.find(m => m.profileId === 'marta')!;
-        expect(pedro).toMatchObject({ name: 'Pedro Paez', rating: 1, openAlerts: 1, adoptions: 1, label: null, ownerName: 'Gatitos Olivos', addedByName: 'Gatitos Olivos', isMinor: false });
+        expect(pedro).toMatchObject({ name: 'Pedro Paez', rating: 1, openAlerts: 1, adoptions: 1, label: null, ownerName: 'Gatitos Olivos', addedByName: null, isMinor: false });
+        // ↑ Pedro's own (anchor) row has no adder (Task 2 fix 1): no «según …» on it.
         expect(pedro.linkId).toBe(pedro.membershipId);
         expect(marta.label).toEqual({ key: 'adopter.hh_rel_of', params: { rel: 'adopter.hh_rel_partner', name: 'Pedro Paez' } });
 
@@ -296,8 +298,8 @@ describe('getHouseholdsFor', () => {
         };
         // STRANGER added Lucas (and owns him): may remove him; Marta was added by OWNER.
         expect(await flags(STRANGER, 'pedro', 'lucas')).toEqual([true, true]);
-        // STRANGER owns Lucas, a profile in the household: privileged on a housemate → may remove Marta too.
-        expect(await flags(STRANGER, 'pedro', 'marta')).toEqual([true, true]);
+        // STRANGER owns Lucas, but STRANGER put Lucas there: standing is never self-granted (Task 2 fix 4).
+        expect(await flags(STRANGER, 'pedro', 'marta')).toEqual([false, false]);
         // MATE: team of Pedro and Marta.
         expect(await flags(MATE, 'lucas', 'marta')).toEqual([true, true]);
         expect(await flags(ADMIN, 'lucas', 'marta')).toEqual([true, true]);

@@ -52,10 +52,12 @@ describe('membershipLabel', () => {
 });
 
 describe('canRemoveMembership', () => {
-    const HOUSEHOLD = ['pedro', 'marta'];
-    const m = { addedBy: 'Adder@Example.com' };
-    const viewer = (email: string | null, privileged: string[] = [], isAdmin = false) => ({
+    // Pedro's own (anchor) row has no adder; Marta was added next to Pedro by ADDER.
+    const HOUSEHOLD = [{ adopterId: 'pedro', addedBy: null }, { adopterId: 'marta', addedBy: 'Adder@Example.com' }];
+    const m = { addedBy: 'Adder@Example.com', relativeToAdopterId: 'pedro' };
+    const viewer = (email: string | null, privileged: string[] = [], isAdmin = false, team: string[] = []) => ({
         email, isAdmin, privilegedOn: (id: string) => privileged.includes(id),
+        isOwnTeam: (e: string | null | undefined) => !!e && team.includes(e.toLowerCase()),
     });
 
     it('the adder may (case-insensitive)', () => {
@@ -72,9 +74,27 @@ describe('canRemoveMembership', () => {
         expect(canRemoveMembership(viewer('stranger@example.com', ['elsewhere']), m, HOUSEHOLD)).toBe(false);
     });
     it('nobody signed in, or a sentinel, never matches a sentinel adder', () => {
-        expect(canRemoveMembership(viewer(null), { addedBy: 'anonymous' }, HOUSEHOLD)).toBe(false);
-        expect(canRemoveMembership(viewer('anonymous'), { addedBy: 'anonymous' }, HOUSEHOLD)).toBe(false);
+        expect(canRemoveMembership(viewer(null), { addedBy: 'anonymous', relativeToAdopterId: 'pedro' }, HOUSEHOLD)).toBe(false);
+        expect(canRemoveMembership(viewer('anonymous'), { addedBy: 'anonymous', relativeToAdopterId: 'pedro' }, HOUSEHOLD)).toBe(false);
         expect(canRemoveMembership(viewer(null, ['pedro'], true), m, HOUSEHOLD)).toBe(false);
+    });
+    it("the adder rule never applies to a profile's own (anchor) row — added next to nobody", () => {
+        const anchorRow = { addedBy: 'stranger@example.com', relativeToAdopterId: null };
+        expect(canRemoveMembership(viewer('stranger@example.com'), anchorRow, HOUSEHOLD)).toBe(false);
+        // Pedro's team still may.
+        expect(canRemoveMembership(viewer('team@example.com', ['pedro']), anchorRow, HOUSEHOLD)).toBe(true);
+    });
+    it('standing is never self-granted: a profile the viewer (or their team) put in the household gives them none', () => {
+        // STRANGER linked their own S into Pedro's household, then targets Marta.
+        const household = [...HOUSEHOLD, { adopterId: 's', addedBy: 'Stranger@Example.com' }];
+        const marta = { addedBy: 'owner@example.com', relativeToAdopterId: 'pedro' };
+        expect(canRemoveMembership(viewer('stranger@example.com', ['s']), marta, household)).toBe(false);
+        // Same when a teammate of theirs did the linking.
+        const viaMate = [...HOUSEHOLD, { adopterId: 's', addedBy: 'mate@example.com' }];
+        expect(canRemoveMembership(viewer('stranger@example.com', ['s'], false, ['mate@example.com']), marta, viaMate)).toBe(false);
+        // Someone else linking S does give S's team standing.
+        const byOther = [...HOUSEHOLD, { adopterId: 's', addedBy: 'owner@example.com' }];
+        expect(canRemoveMembership(viewer('stranger@example.com', ['s']), marta, byOther)).toBe(true);
     });
 });
 

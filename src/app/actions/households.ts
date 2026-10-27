@@ -30,7 +30,7 @@
  * ('contribution' for anyone without standing on that profile). Errors are
  * codes (the UI translates them); a failure carries an errorId.
  */
-import { eq } from 'drizzle-orm';
+import { and, eq, like } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { adopterHistory, adopters } from '@/db/schema';
 import { logger } from '@/lib/logger';
@@ -41,10 +41,11 @@ import { isRealActorEmail } from '@/lib/piiAccess';
 import { isPrivilegedOnProfile, historyKind, historyKindForOwner } from '@/lib/profilePrivilege';
 import { contactEntryFromInput, type ContactEntry } from '@/lib/contactEntries';
 import { RELATIONSHIPS, type Relationship } from '@/lib/householdMembers';
-import { insertContributionGrant, fileContributionAccessRequest } from '@/lib/contributionSideEffects';
+import { insertContributionGrant, fileContributionAccessRequest, revokeContributionGrants } from '@/lib/contributionSideEffects';
+import { extractErrorId } from '@/lib/errorUtils';
 import {
     addMembership, createHousehold, ensureHousehold, hasCorrection, householdExists, householdIdsOf,
-    householdLinesFor, isMemberOf, membershipById, membershipsOf, removeMembership, setMembershipRelationship,
+    householdLinesFor, isMemberOf, membershipById, membershipsOf, ownTeamOf, removeMembership, setMembershipRelationship,
     type HouseholdLine,
 } from '@/lib/households';
 import {
@@ -55,7 +56,7 @@ import { hasMinimumIdentifier } from '@/domain/adopterIdentity';
 import { householdContactSchema } from './validation';
 import { addContactEntry } from './addContactEntry';
 import { createHouseholdProfile } from './_adopterFactory';
-import { findFormDuplicates } from './findFormDuplicates';
+import { searchFormDuplicates } from '@/lib/formDuplicates';
 import type { DiscoveryMatch } from './types';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -159,6 +160,42 @@ async function capacityError(db: Db, householdId: string, adopterId: string | nu
     return null;
 }
 
+/** A gift household is one more household for the giver, and for an existing recipient. */
+async function giftCapacityError(db: Db, anchorId: string, recipientId: string | null): Promise<'too_many_households' | null> {
+    const counts = await Promise.all([anchorId, ...(recipientId ? [recipientId] : [])].map(id => householdIdsOf(db, id)));
+    return counts.some(c => c.length >= MAX_HOUSEHOLDS_PER_PROFILE) ? 'too_many_households' : null;
+}
+
+/** The anchor's history already records this membership (its add's side effects ran). */
+async function addRecorded(db: Db, anchorId: string, membershipId: string): Promise<boolean> {
+    const row = await db.select({ id: adopterHistory.id }).from(adopterHistory)
+        .where(and(eq(adopterHistory.adopterId, anchorId), like(adopterHistory.changes, `%"household_member_added":{"id":"${membershipId}"%`)))
+        .limit(1).get();
+    return !!row;
+}
+
+/**
+ * A profile made for a household add that ended up in no household: undo it
+ * — soft-deleted, its tokens removed (never a search or duplicate match), any
+ * contribution grant on it revoked — so a retry makes one live profile, never
+ * two. Logged; a failure here is logged too (the caller already answers with
+ * an error).
+ */
+async function undoCreatedProfile(db: Db, profileId: string, actor: string, entries: ContactEntry[], ctx: Record<string, unknown>): Promise<void> {
+    const c = { ...ctx, profileId };
+    try {
+        const { duplicateTokens } = await import('@/db/schema');
+        await runBatch(db, [
+            db.update(adopters).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(adopters.id, profileId)),
+            db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, profileId)),
+        ]);
+        await revokeContributionGrants(db, { op: 'addHouseholdPerson.undo', adopterId: profileId, actor, removed: entries, stillOnProfile: new Set() });
+        logger.warn('addHouseholdPerson: membership not placed, new profile undone', c);
+    } catch (e) {
+        logger.error('addHouseholdPerson: membership not placed and the new profile could not be undone', e, c);
+    }
+}
+
 /**
  * addMembership, then make sure the household still exists: a racing
  * ensureHousehold may drop an anchor-only household between our check and
@@ -225,12 +262,21 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
             logger.info('addHouseholdPerson: existing profile missing, deleted or the anchor itself', ctx);
             return { ok: false, error: 'not_found' };
         }
-        const privilegedOnAnchor = await isPrivilegedOnProfile(actor, anchor.addedBy);
+        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+        const [privilegedOnAnchor, onAnchorTeam] = await Promise.all([
+            isPrivilegedOnProfile(actor, anchor.addedBy),
+            isOwnerOrOrgMate(actor, anchor.addedBy),
+        ]);
 
         // Where they go — checked BEFORE a profile is made, so a refusal leaves nothing behind.
-        let householdId: string;
+        let householdId = '';
         if (gift) {
-            householdId = '';
+            // A gift household is one more household for the giver (and an existing recipient).
+            const full = await giftCapacityError(db, anchor.id, existing?.id ?? null);
+            if (full) {
+                logger.info('addHouseholdPerson: refused, cap reached (gift)', { ...ctx, cap: full });
+                return { ok: false, error: full };
+            }
         } else {
             const resolved = await resolveHousehold(db, anchor.id, chosen, actor, ctx);
             if (resolved === 'not_found') {
@@ -263,52 +309,54 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                 historyKind: historyKind(privilegedOnAnchor),
                 history: { created_in_household: { anchorId: anchor.id, anchorName: anchor.name, householdId: householdId || null, gift, ...(contactTypes.length ? { contactTypes } : {}) } },
             });
+            logAudit({ userEmail: actor, action: 'adopter_created', target: newId, details: { name, via: 'household' } });
             person = { id: newId, name, addedBy: anchor.addedBy, deletedAt: null };
             createdProfile = true;
-            if (!privilegedOnAnchor) {
-                // D54: the typist sees what they typed, everyone else the profile's protection.
-                for (const e of entries) {
-                    if (e.type === 'alias') continue; // never masked: a grant would be inert
-                    await insertContributionGrant(db, newId, actor, e).catch((err: unknown) => {
-                        logger.error('addHouseholdPerson: contribution grant not written', err, { ...ctx, profileId: newId, type: e.type });
-                    });
-                }
-                if (entries.length > 0) {
-                    await runAfterResponse('addHouseholdPerson.autoAccessRequest',
-                        () => fileContributionAccessRequest('addHouseholdPerson', actor, newId), { ...ctx, profileId: newId });
-                    autoRequestFiled = true;
-                }
-            }
         }
 
-        // The membership.
+        // The membership. A new profile that ends up in no household is undone.
         let placed: { householdId: string; membershipId: string; created: boolean };
-        if (gift) {
-            // Recipient first: a household is "gift" once a membership says so (Task 1).
-            householdId = await createHousehold(db, actor);
-            const recipient = await addMembership(db, { householdId, adopterId: person.id, relationship, relativeToAdopterId: anchor.id, giftRecipient: true, addedBy: actor });
-            await addMembership(db, { householdId, adopterId: anchor.id, relationship: 'unknown', addedBy: actor });
-            placed = { householdId, ...recipient };
-        } else {
-            const joined = await joinHousehold(db, { householdId, chosen: !!chosen, anchorId: anchor.id, adopterId: person.id, relationship, actor }, ctx);
-            if (joined === 'not_found') return { ok: false, error: 'not_found' };
-            placed = joined;
+        try {
+            if (gift) {
+                // Recipient first: a household is "gift" once a membership says so (Task 1).
+                householdId = await createHousehold(db, actor);
+                const recipient = await addMembership(db, { householdId, adopterId: person.id, relationship, relativeToAdopterId: anchor.id, giftRecipient: true, addedBy: actor });
+                // The giver's own row has no adder (as ensureHousehold's anchor row).
+                await addMembership(db, { householdId, adopterId: anchor.id, relationship: 'unknown', addedBy: null });
+                placed = { householdId, ...recipient };
+            } else {
+                const joined = await joinHousehold(db, { householdId, chosen: !!chosen, anchorId: anchor.id, adopterId: person.id, relationship, actor }, ctx);
+                if (joined === 'not_found') {
+                    if (createdProfile) await undoCreatedProfile(db, person.id, actor, entries, ctx);
+                    return { ok: false, error: 'not_found' };
+                }
+                placed = joined;
+            }
+        } catch (e) {
+            if (createdProfile) await undoCreatedProfile(db, person.id, actor, entries, ctx);
+            throw e;
         }
         const out = { ...ctx, householdId: placed.householdId, membershipId: placed.membershipId, profileId: person.id };
 
-        // Contacts typed for an existing profile: addContactEntry's semantics exactly.
-        if (existing) {
-            for (const c of contacts) {
-                const res = await addContactEntry({ adopterId: existing.id, ...c, platform: c.platform ?? undefined });
-                if (!res.ok) {
-                    const errorId = 'errorId' in res ? res.errorId : logger.error('addHouseholdPerson: contact not added to the existing profile', new Error(res.error), { ...out, type: c.type });
-                    return { ok: false, error: 'failed', errorId };
-                }
-                if (res.autoRequestFiled) autoRequestFiled = true;
+        // D54 for a new profile, once it is placed: the typist sees what they typed.
+        if (createdProfile && !privilegedOnAnchor) {
+            for (const e of entries) {
+                if (e.type === 'alias') continue; // never masked: a grant would be inert
+                await insertContributionGrant(db, person.id, actor, e).catch((err: unknown) => {
+                    logger.error('addHouseholdPerson: contribution grant not written', err, { ...out, type: e.type });
+                });
+            }
+            if (entries.length > 0) {
+                await runAfterResponse('addHouseholdPerson.autoAccessRequest',
+                    () => fileContributionAccessRequest('addHouseholdPerson', actor, person.id), out);
+                autoRequestFiled = true;
             }
         }
 
-        if (placed.created) {
+        // The link's own record — history, audit, notices, dispute — right after it is placed,
+        // independent of the contacts below. Keyed on "not recorded yet", not on `created`,
+        // so a retry after a failure completes whatever is missing.
+        if (placed.created || !(await addRecorded(db, anchor.id, placed.membershipId))) {
             const anchorKind = historyKind(privilegedOnAnchor);
             const personKind = existing ? await historyKindForOwner(actor, existing.addedBy, out) : null;
             const now = new Date();
@@ -322,16 +370,16 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                     changes: JSON.stringify({ household_joined: { hostId: anchor.id, hostName: anchor.name, householdId: placed.householdId, relationship } }),
                 })] : []),
             ]).catch((e: unknown) => {
-                // The person is in the household already; a retry would find them there.
+                // The person is in the household already; the next add completes the record.
                 logger.error('addHouseholdPerson: membership saved, history not written', e, out);
             });
             logAudit({ userEmail: actor, action: 'household_person_added', target: anchor.id, details: { membershipId: placed.membershipId, householdId: placed.householdId, profileId: person.id, createdProfile, relationship, contactTypes, gift, ...(privilegedOnAnchor ? {} : { contribution: true }) } });
-            logger.info('addHouseholdPerson: added', { ...out, createdProfile });
+            logger.info('addHouseholdPerson: added', { ...out, createdProfile, completedLater: !placed.created });
             await notifyHouseholdPersonAdded({
                 householdId: placed.householdId, membershipId: placed.membershipId,
                 anchor: { id: anchor.id, name: anchor.name, addedBy: anchor.addedBy },
                 person: { id: person.id, name: person.name },
-                actor, privilegedOnAnchor, existingProfile: !!existing,
+                actor, onAnchorTeam, existingProfile: !!existing,
             });
             if (await hasCorrection(db, placed.householdId, person.id)) {
                 logger.info('addHouseholdPerson: re-added after «No vive acá», dispute', out);
@@ -339,6 +387,21 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
             }
         } else {
             logger.info('addHouseholdPerson: already in that household, nothing added', out);
+        }
+
+        // Contacts typed for an existing profile: addContactEntry's semantics exactly. A failure
+        // keeps the link (and its record) and answers with addContactEntry's own errorId; a retry
+        // finds the link and adds the contacts (deduped).
+        if (existing) {
+            for (const c of contacts) {
+                const res = await addContactEntry({ adopterId: existing.id, ...c, platform: c.platform ?? undefined });
+                if (!res.ok) {
+                    const errorId = ('errorId' in res ? res.errorId : extractErrorId(res.error))
+                        ?? logger.error('addHouseholdPerson: contact refused by addContactEntry', new Error(res.error), { ...out, type: c.type });
+                    return { ok: false, error: 'failed', errorId };
+                }
+                if (res.autoRequestFiled) autoRequestFiled = true;
+            }
         }
         return { ok: true, profileId: person.id, membershipId: placed.membershipId, createdProfile, autoRequestFiled };
     } catch (e) {
@@ -417,11 +480,14 @@ export async function removeHouseholdMembership(
         const profiles = new Map<string, ProfileRow>();
         for (const p of await Promise.all(group.map(g => liveProfile(db, g.adopterId)))) if (p) profiles.set(p.id, p);
         const { isModeratorOrAdminAsync } = await import('@/config/admins');
-        const [isStaff, privileged] = await Promise.all([
+        const [isStaff, privileged, isOwnTeam] = await Promise.all([
             isModeratorOrAdminAsync(actor),
             Promise.all([...profiles.values()].map(async p => [p.id, await isPrivilegedOnProfile(actor, p.addedBy)] as const)).then(e => new Map(e)),
+            ownTeamOf(actor, group.map(g => g.addedBy), ctx),
         ]);
-        if (!canRemoveMembership({ email: actor, isAdmin: !!isStaff, privilegedOn: id => !!privileged.get(id) }, m, [...profiles.keys()])) {
+        // Standing comes from each live profile's own membership — never one the actor's team added.
+        const standing = group.filter(g => profiles.has(g.adopterId));
+        if (!canRemoveMembership({ email: actor, isAdmin: !!isStaff, privilegedOn: id => !!privileged.get(id), isOwnTeam }, m, standing)) {
             logger.warn('removeHouseholdMembership: refused — not the adder, a household team or staff', ctx);
             return { ok: false, error: 'not_authorized' };
         }
@@ -491,9 +557,10 @@ export async function getHouseholdMatchCandidates(
             .filter(e => e && e.type === t && typeof e.value === 'string')
             .map(e => e.value.trim().slice(0, 500))
             .filter(Boolean);
-        const { results } = await findFormDuplicates(
+        const { results } = await searchFormDuplicates(
             { name, phones: pick('phone'), emails: pick('email'), socials: pick('social'), ...(anchorId ? { excludeAdopterId: anchorId } : {}) },
             { minRelevance: 15, allowContactOnly: true },
+            async () => actor,
         );
         const matches = results.filter(r => r.adopter.id !== anchorId);
         if (matches.length === 0) return { results: [] };

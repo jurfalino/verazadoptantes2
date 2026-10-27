@@ -60,7 +60,7 @@ export type HouseholdMemberView = LinkedSummary & {
     label: MembershipLabel | null;
     /** Who added this membership («según …»): display name or handle, never an email. */
     addedByName: string | null;
-    /** canRemoveMembership: the adder, the team of anyone in the household, admins/moderators. */
+    /** canRemoveMembership: the adder (not on an anchor row), the team of a household profile that team didn't add, admins/moderators. */
     canRemove: boolean;
     relationship: Relationship;
     relativeToAdopterId: string | null;
@@ -143,6 +143,34 @@ export async function hasCorrection(db: Db, householdId: string, adopterId: stri
         .where(and(eq(householdCorrections.householdId, householdId), eq(householdCorrections.adopterId, adopterId)))
         .limit(1).get();
     return !!row;
+}
+
+/**
+ * `isOwnTeam` for canRemoveMembership: is this email the viewer or one of
+ * their org-mates? Checked once per distinct adder (no IN): a failed check
+ * counts as "own team" — it only ever takes standing away (logged).
+ */
+export async function ownTeamOf(
+    viewer: string | null | undefined,
+    adders: ReadonlyArray<string | null | undefined>,
+    ctx: Record<string, unknown>,
+): Promise<(email: string | null | undefined) => boolean> {
+    const me = (viewer ?? '').trim().toLowerCase();
+    const distinct = [...new Set(adders.map(a => (a ?? '').trim().toLowerCase()).filter(a => a.includes('@') && a !== me))];
+    const { isOrgMate } = await import('@/lib/orgMembership');
+    const mates = new Set<string>();
+    await Promise.all(distinct.map(async a => {
+        try {
+            if (me && await isOrgMate(me, a)) mates.add(a);
+        } catch (e) {
+            logger.warn('households: org-mate check failed, adder treated as own team (no standing from it)', { ...ctx, error: errMsg(e) });
+            mates.add(a);
+        }
+    }));
+    return (email) => {
+        const e = (email ?? '').trim().toLowerCase();
+        return !!e && (e === me || mates.has(e));
+    };
 }
 
 /** The household row is there (a racing ensureHousehold may have dropped an anchor-only one). */
@@ -237,7 +265,8 @@ export async function ensureHousehold(db: Db, anchorId: string, actor: string | 
     const taken = await db.select({ id: households.id }).from(households).where(eq(households.id, preferred)).get();
     const id = taken ? `hh-${anchorId}-${crypto.randomUUID().slice(0, 8)}` : preferred;
     await createHousehold(db, actor, id);
-    await addMembership(db, { householdId: id, adopterId: anchorId, relationship: 'unknown', relativeToAdopterId: null, addedBy: actor });
+    // The anchor's own row has no adder: whoever triggered the household gets no adder's rights over it.
+    await addMembership(db, { householdId: id, adopterId: anchorId, relationship: 'unknown', relativeToAdopterId: null, addedBy: null });
     const winner = (await ordinaryHouseholdOf(db, anchorId)) ?? id;
     if (winner !== id) await dropLostHousehold(db, id, anchorId, { anchorId, actor, winner });
     return winner;
@@ -423,6 +452,7 @@ export async function getHouseholdsFor(
                 : Promise.resolve(false),
             Promise.all(everyone.map(async p => [p.id, await isPrivilegedOnProfile(viewerEmail, p.addedBy)] as const)).then(e => new Map(e)),
         ]);
+        const isOwnTeam = await ownTeamOf(viewerEmail, capped.flat().map(m => m.addedBy), ctx);
         const rescuerNames = await namesFor([
             ...[...profiles.values()].map(p => p.addedBy),
             ...capped.flat().map(m => m.addedBy),
@@ -433,7 +463,6 @@ export async function getHouseholdsFor(
         own.forEach((selfMembership, i) => {
             const group = capped[i];
             const live = group.filter(m => m.adopterId === adopterId || profiles.has(m.adopterId));
-            const liveIds = live.map(m => m.adopterId);
             const names: Record<string, string> = {};
             for (const m of live) names[m.adopterId] = m.adopterId === adopterId ? self.name : profiles.get(m.adopterId)!.name;
             const members: HouseholdMemberView[] = [];
@@ -443,9 +472,9 @@ export async function getHouseholdsFor(
                 const c: ProfileCounts = counts.get(p.id) ?? EMPTY_COUNTS;
                 const { contacts, more, canSeeContact } = viewerContacts(p, gatingOn, publicFlag, visibilities.get(p.id));
                 const canRemove = canRemoveMembership(
-                    { email: viewerEmail, isAdmin: !!viewerIsStaff, privilegedOn: id => !!privileged.get(id) },
+                    { email: viewerEmail, isAdmin: !!viewerIsStaff, privilegedOn: id => !!privileged.get(id), isOwnTeam },
                     m,
-                    liveIds,
+                    live,
                 );
                 members.push({
                     linkId: m.id,

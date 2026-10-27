@@ -93,6 +93,8 @@ const MUST_NOT_BE_ACTIONS = [
     'notifyHouseholdReaddDisputed',
     'notifyHouseholdRelationshipChanged',
     'notifyHouseholdMemberRemoved',
+    // The duplicate check with server-only options (contact-only search): findFormDuplicates never takes them.
+    'searchFormDuplicates',
 ];
 
 const files = walk(SRC);
