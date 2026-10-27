@@ -60,7 +60,12 @@ Credit, history and notices are the same as today's contribution model (D54). Th
 
 ### Removing / correcting
 - **«No convive»** (D48) removes that person's membership from that household, for everyone. History goes on the affected profiles and the household's other teams are notified. If the same pair is linked again after a correction, admins are notified (dispute), as today.
-- **Member card (Jon, 2026-10-27):** the person's name is the link to their profile (no «Ver perfil completo» row). A «⋯» menu next to the name holds «Editar parentesco», «Quitar del hogar» and «Eliminar perfil de {nombre}» / «Pedir eliminación».
+- **Editing (Jon, 2026-10-27):** «⋯» → «Editar» opens one small form.
+  - **Relationship:** editable by whoever added the person, the teams of anyone in the household, and admins.
+  - **Name and age:** belong to the person's PROFILE and are editable by whoever can edit that profile (owner, team, admins). Others see these fields greyed out with «Lo puede cambiar quien cargó su perfil».
+- **Age lives on the profile (Jon, 2026-10-27):** new adopter columns `age` + `age_as_of`. The age goes up by itself as today (`currentAge`) and shows on the person's own profile too. The membership no longer has its own age.
+- **Children (Jon, 2026-10-27):** a minor is a profile marked «Menor de edad». Minor means current age under 18, or a «Es menor de edad» checkbox (`is_minor`) when the age is unknown. Such a profile is searchable (so the family is found) and shows the tag. It gets **no rating, no alerts and no adoption records**: those go on the adults. The «¿Qué pasó con …?» actions and rating controls are hidden on it. At 18 (by age) the tag drops and it becomes a normal profile.
+- **Member card (Jon, 2026-10-27):** the person's name is the link to their profile (no «Ver perfil completo» row). A «⋯» menu next to the name holds «Editar», «Quitar del hogar» and «Eliminar perfil de {nombre}» / «Pedir eliminación».
   - **«Quitar del hogar»** asks why. «Lo cargué por error» removes the membership with no record. «No vive acá» is «No convive»: it writes a correction, and a re-add is a dispute.
   - **«Eliminar perfil»** follows today's deletion rules exactly. The owner can delete only when nobody else contributed (no one else's records, photos, edits or contacts, no alerts, no linked forms). Otherwise the owner gets «Pedir eliminación» (admins decide; it goes to the Papelera, restorable). Admins can always delete. Nobody else sees it.
 - **Who may remove a membership:** whoever added it; the team (owner, org-mates) of any profile in that household; admins and moderators. Others get «No convive» only through the dispute path.
@@ -82,7 +87,12 @@ Credit, history and notices are the same as today's contribution model (D54). Th
 
 ### Removing / correcting
 - **«No convive»** (D48) removes that person's membership from that household, for everyone. History goes on the affected profiles and the household's other teams are notified. If the same pair is linked again after a correction, admins are notified (dispute), as today.
-- **Member card (Jon, 2026-10-27):** the person's name is the link to their profile (no «Ver perfil completo» row). A «⋯» menu next to the name holds «Editar parentesco», «Quitar del hogar» and «Eliminar perfil de {nombre}» / «Pedir eliminación».
+- **Editing (Jon, 2026-10-27):** «⋯» → «Editar» opens one small form.
+  - **Relationship:** editable by whoever added the person, the teams of anyone in the household, and admins.
+  - **Name and age:** belong to the person's PROFILE and are editable by whoever can edit that profile (owner, team, admins). Others see these fields greyed out with «Lo puede cambiar quien cargó su perfil».
+- **Age lives on the profile (Jon, 2026-10-27):** new adopter columns `age` + `age_as_of`. The age goes up by itself as today (`currentAge`) and shows on the person's own profile too. The membership no longer has its own age.
+- **Children (Jon, 2026-10-27):** a minor is a profile marked «Menor de edad». Minor means current age under 18, or a «Es menor de edad» checkbox (`is_minor`) when the age is unknown. Such a profile is searchable (so the family is found) and shows the tag. It gets **no rating, no alerts and no adoption records**: those go on the adults. The «¿Qué pasó con …?» actions and rating controls are hidden on it. At 18 (by age) the tag drops and it becomes a normal profile.
+- **Member card (Jon, 2026-10-27):** the person's name is the link to their profile (no «Ver perfil completo» row). A «⋯» menu next to the name holds «Editar», «Quitar del hogar» and «Eliminar perfil de {nombre}» / «Pedir eliminación».
   - **«Quitar del hogar»** asks why. «Lo cargué por error» removes the membership with no record. «No vive acá» is «No convive»: it writes a correction, and a re-add is a dispute.
   - **«Eliminar perfil»** follows today's deletion rules exactly. The owner can delete only when nobody else contributed (no one else's records, photos, edits or contacts, no alerts, no linked forms). Otherwise the owner gets «Pedir eliminación» (admins decide; it goes to the Papelera, restorable). Admins can always delete. Nobody else sees it.
 - **Who may remove a membership:** whoever added it; the team (owner, org-mates) of any profile in that household; admins and moderators. Others get «No convive» only through the dispute path.
