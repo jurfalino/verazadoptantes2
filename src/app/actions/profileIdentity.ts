@@ -26,6 +26,7 @@ import {
     notifyProfileAgeChanged, notifyProfileRenamed, renameProfile, renameUndoState, setProfileAge, undoRename,
 } from '@/lib/profileIdentity';
 import { isValidAge, MAX_PROFILE_NAME_LEN } from '@/domain/profileIdentity';
+import { canonField } from '@/domain/fieldCollab';
 
 export type ProfileIdentityError =
     | 'not_authenticated' | 'not_found' | 'invalid' | 'conflict' | 'busy' | 'failed'
@@ -33,8 +34,11 @@ export type ProfileIdentityError =
 
 type Fail = { ok: false; error: ProfileIdentityError; errorId?: string };
 
+/** Another inline field a teammate changed since this tab loaded it (the form shows «Actualizado por …»). */
+export type ProfileFieldUpdate = { field: 'familyMembers' | 'status'; by: string; value: string | null };
+
 export type ChangeProfileNameResult =
-    | { ok: true; name: string; aliasKept: boolean; warningErrorId?: string }
+    | { ok: true; name: string; aliasKept: boolean; warningErrorId?: string; updatedByOthers?: ProfileFieldUpdate[] }
     /** `conflict`: the stored name (`theirs`) and who wrote it (`by`, a display name or '') — «alguien cambió este dato mientras lo editabas». */
     | { ok: false; error: 'conflict'; theirs: string; by: string }
     | { ok: false; error: Exclude<ProfileIdentityError, 'conflict'>; errorId?: string };
@@ -58,7 +62,11 @@ async function sessionActor(op: string): Promise<string | null> {
     return isRealActorEmail(actor) ? actor : null;
 }
 
-export async function changeProfileName(input: { adopterId: string; name: string; expectedName: string | null }): Promise<ChangeProfileNameResult> {
+export async function changeProfileName(input: {
+    adopterId: string; name: string; expectedName: string | null;
+    /** What the form loaded for its OTHER inline fields: those a teammate changed since come back in `updatedByOthers`. */
+    loaded?: { familyMembers?: string | null; status?: string | null };
+}): Promise<ChangeProfileNameResult> {
     const actor = await sessionActor('changeProfileName');
     if (!actor) return { ok: false, error: 'not_authenticated' };
     const adopterId = id64(input?.adopterId);
@@ -81,15 +89,35 @@ export async function changeProfileName(input: { adopterId: string; name: string
                 const by = (await adopterFieldAuthors(db, adopterId, ['name'])).name ?? '';
                 return { ok: false, error: 'conflict', theirs: res.theirs, by };
             }
-            case 'renamed':
+            case 'renamed': {
                 await notifyProfileRenamed(db, { adopterId, actor, from: res.from, to: res.to, historyId: res.historyId });
                 revalidatePath(`/adopter/${adopterId}`);
-                return { ok: true, name: res.to, aliasKept: res.aliasKept, ...(res.warningErrorId ? { warningErrorId: res.warningErrorId } : {}) };
+                const updatedByOthers = await othersChanged(db, adopterId, input?.loaded, res.others);
+                return {
+                    ok: true, name: res.to, aliasKept: res.aliasKept,
+                    ...(updatedByOthers.length ? { updatedByOthers } : {}),
+                    ...(res.warningErrorId ? { warningErrorId: res.warningErrorId } : {}),
+                };
+            }
         }
     } catch (e) {
         const errorId = logger.error('changeProfileName failed', e, ctx);
         return { ok: false, error: 'failed', errorId };
     }
+}
+
+async function othersChanged(
+    db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+    adopterId: string,
+    loaded: { familyMembers?: string | null; status?: string | null } | undefined,
+    stored: { familyMembers: string | null; status: string | null },
+): Promise<ProfileFieldUpdate[]> {
+    if (!loaded || typeof loaded !== 'object') return [];
+    const fields = (['familyMembers', 'status'] as const).filter(f =>
+        f in loaded && (loaded[f] === null || typeof loaded[f] === 'string') && canonField(f, loaded[f]) !== canonField(f, stored[f]));
+    if (!fields.length) return [];
+    const by = await adopterFieldAuthors(db, adopterId, [...fields]);
+    return fields.map(f => ({ field: f, by: by[f] ?? '', value: stored[f] }));
 }
 
 export async function changeProfileAge(input: { adopterId: string; age: number | null; isMinor: boolean }): Promise<ChangeProfileAgeResult> {

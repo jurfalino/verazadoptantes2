@@ -805,7 +805,8 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         const revert = () => { setData(prevData); dataRef.current = prevData; };
         let res: Awaited<ReturnType<typeof changeProfileName>>;
         try {
-            res = await changeProfileName({ adopterId: prevData.id, name: next, expectedName });
+            const { familyMembers } = baselineRef.current;
+            res = await changeProfileName({ adopterId: prevData.id, name: next, expectedName, loaded: { familyMembers } });
         } catch (e) {
             revert();
             if (!handledAsStale(e)) toast.error(t('toast.save_error_title'), t('adopter.rename_failed'), resolveErrorId(e, 'AdopterForm.saveName'));
@@ -835,10 +836,17 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
             toast.error(t('toast.save_error_title'), t('adopter.rename_failed'), errorId);
             return false;
         }
-        baselineRef.current = { ...baselineRef.current, name: res.name };
+        // Fields a teammate changed that this editor didn't: show theirs («Actualizado por …»).
+        const others = (res.updatedByOthers ?? []).filter(o => o.field === 'familyMembers');
+        baselineRef.current = { ...baselineRef.current, name: res.name, ...Object.fromEntries(others.map(o => [o.field, o.value])) };
         const display = { ...dataRef.current, name: res.name };
+        for (const o of others) display.familyMembers = o.value ?? '';
         setData(display);
         dataRef.current = display;
+        if (others.length) {
+            setFieldUpdatedBy(u => ({ ...u, ...Object.fromEntries(others.map(o => [o.field, o.by])) }));
+            for (const o of others) toast.info(updatedByOtherMessage(t, o.field, o.by));
+        }
         setFieldConflicts(c => { const n = { ...c }; delete n.name; return n; });
         setFieldUpdatedBy(u => { const n = { ...u }; delete n.name; return n; });
         zarazTrack('adopter_updated', { source: 'inline', field: 'name' });

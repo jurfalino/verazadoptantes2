@@ -33,7 +33,9 @@ type Ctx = Record<string, unknown>;
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export type RenameResult =
-    | { status: 'renamed'; from: string; to: string; aliasKept: boolean; historyId: string | null; ownerEmail: string | null; warningErrorId?: string }
+    | { status: 'renamed'; from: string; to: string; aliasKept: boolean; historyId: string | null; ownerEmail: string | null; warningErrorId?: string;
+        /** The row's other inline fields as stored at the write (for «Actualizado por …»). */
+        others: { familyMembers: string | null; status: string | null } }
     | { status: 'unchanged' }
     | { status: 'conflict'; theirs: string }
     | { status: 'missing' }
@@ -104,7 +106,11 @@ export async function renameProfile(db: Db, input: {
         logger.error('renameProfile: tokenize failed (the old name stays findable once re-indexed)', e, ctx);
     }
     logger.info('renameProfile: renamed', { ...ctx, aliasKept: step.aliasKept });
-    return { status: 'renamed', from: step.from, to, aliasKept: step.aliasKept, historyId, ownerEmail, ...(warningErrorId ? { warningErrorId } : {}) };
+    return {
+        status: 'renamed', from: step.from, to, aliasKept: step.aliasKept, historyId, ownerEmail,
+        others: { familyMembers: out.row.familyMembers ?? null, status: out.row.status ?? null },
+        ...(warningErrorId ? { warningErrorId } : {}),
+    };
 }
 
 export type UndoState =

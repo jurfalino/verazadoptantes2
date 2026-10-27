@@ -147,6 +147,17 @@ describe('changeProfileName — open to anyone signed in', () => {
         expect(entriesOf('pedro').filter(e => e.type === 'alias').map(e => e.value)).toEqual(['Pedro Paez', 'Pedro A. Paez']);
     });
 
+    it('a teammate changed another inline field since this tab loaded it → reported back («Actualizado por …»), never overwritten', async () => {
+        sqlite.prepare("UPDATE adopters SET family_members = 'Hijo y perro' WHERE id = 'pedro'").run();
+        sqlite.prepare("INSERT INTO adopter_history (id, adopter_id, changed_by, changes, changed_at, kind) VALUES ('hf', 'pedro', ?, ?, 1000, 'edit')")
+            .run(MATE, JSON.stringify({ familyMembers: { from: 'Hijo', to: 'Hijo y perro' } }));
+        const res = await as(OWNER, () => changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez', loaded: { familyMembers: 'Hijo' } }));
+        expect(res).toMatchObject({ ok: true, updatedByOthers: [{ field: 'familyMembers', value: 'Hijo y perro', by: expect.any(String) }] });
+        expect(pedro().family_members).toBe('Hijo y perro');
+        const same = await as(OWNER, () => changeProfileName({ adopterId: 'pedro', name: 'Pedro', expectedName: 'P. Paez', loaded: { familyMembers: 'Hijo y perro' } }));
+        expect(same).not.toHaveProperty('updatedByOthers');
+    });
+
     it('typing the stored name is a saved no-op; signed out, empty or unknown is refused', async () => {
         expect(await changeProfileName({ adopterId: 'pedro', name: ' Pedro Paez ', expectedName: 'something old' })).toMatchObject({ ok: true });
         expect(historyOf('pedro')).toHaveLength(0);
