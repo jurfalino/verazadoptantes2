@@ -45,6 +45,9 @@ import {
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 export type MembershipRow = typeof householdMemberships.$inferSelect;
+
+/** Profile reads per search / «¿Es este perfil?» card at most (live or not) — the card line's hard read cap. */
+export const MAX_CARD_PROFILE_READS = MAX_HOUSEHOLD_LINES * 3;
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const REL_SET: ReadonlySet<string> = new Set(RELATIONSHIPS);
 
@@ -173,11 +176,24 @@ async function ordinaryHouseholdOf(db: Db, anchorId: string): Promise<string | n
 
 /**
  * The household to add people next to `anchorId`: its oldest ordinary
- * (non-gift) household, else a new one with the anchor in it. The first one
- * gets the deterministic id `hh-{anchorId}` so two concurrent first adds
- * converge on one household (no cross-await transaction on D1). If that id is
- * taken (the anchor was removed from it once), a fresh one is made — never
- * putting the anchor back into a household they were taken out of.
+ * (non-gift) household, else a new one with the anchor in it.
+ *
+ * Usage: call it when adding someone next to a profile WITHOUT a chosen
+ * household (`addHouseholdPerson` with no `householdId`), then
+ * `addMembership` into the id it returns. With a chosen household, or for a
+ * gift household (`createHousehold`, recipient first), don't call it.
+ *
+ * Race-safe without a transaction (D1 has none across awaits):
+ * - the first household gets the deterministic id `hh-{anchorId}`, so
+ *   concurrent first adds insert-or-ignore the same rows;
+ * - if that id is taken (the anchor was removed from it once — they are never
+ *   put back into it), or a racing caller took it a moment earlier, a fresh
+ *   `hh-{anchorId}-{8 hex}` is made;
+ * - every caller then re-reads and returns the anchor's OLDEST ordinary
+ *   household (all callers agree on it: membership ids are time-ordered), and
+ *   a caller whose own new household lost removes it if it still holds only
+ *   the anchor. So a race never leaves an orphan anchor-only household
+ *   counting against MAX_HOUSEHOLDS_PER_PROFILE.
  */
 export async function ensureHousehold(db: Db, anchorId: string, actor: string | null): Promise<string> {
     const existing = await ordinaryHouseholdOf(db, anchorId);
@@ -187,7 +203,32 @@ export async function ensureHousehold(db: Db, anchorId: string, actor: string | 
     const id = taken ? `hh-${anchorId}-${crypto.randomUUID().slice(0, 8)}` : preferred;
     await createHousehold(db, actor, id);
     await addMembership(db, { householdId: id, adopterId: anchorId, relationship: 'unknown', relativeToAdopterId: null, addedBy: actor });
-    return (await ordinaryHouseholdOf(db, anchorId)) ?? id;
+    const winner = (await ordinaryHouseholdOf(db, anchorId)) ?? id;
+    if (winner !== id) await dropLostHousehold(db, id, anchorId, { anchorId, actor, winner });
+    return winner;
+}
+
+/**
+ * A racing ensureHousehold made `householdId` but another caller's household
+ * is the anchor's oldest: remove ours while it holds only the anchor. Anyone
+ * else in it (never expected) keeps it as is. A failure is logged; the caller
+ * still answers with the winner.
+ */
+async function dropLostHousehold(db: Db, householdId: string, anchorId: string, ctx: Record<string, unknown>): Promise<void> {
+    try {
+        const members = await membershipsOf(db, householdId, 2);
+        if (members.length !== 1 || members[0].adopterId !== anchorId) {
+            logger.warn('ensureHousehold: lost race but the household is not anchor-only, kept', { ...ctx, householdId, members: members.length });
+            return;
+        }
+        await runBatch(db, [
+            db.delete(householdMemberships).where(eq(householdMemberships.id, members[0].id)),
+            db.delete(households).where(eq(households.id, householdId)),
+        ]);
+        logger.info('ensureHousehold: lost race, own empty household removed', { ...ctx, householdId });
+    } catch (e) {
+        logger.warn('ensureHousehold: lost race, removing own household failed (orphan left)', { ...ctx, householdId, error: errMsg(e) });
+    }
 }
 
 /**
@@ -270,6 +311,16 @@ async function liveProfile(db: Db, id: string): Promise<ProfileRow | null> {
     return row && !row.deletedAt ? row : null;
 }
 
+/** A housemate's profile; a failed read skips that one person (logged) instead of blanking the section. */
+async function housemateProfile(db: Db, id: string, ctx: Record<string, unknown>): Promise<ProfileRow | null> {
+    try {
+        return await liveProfile(db, id);
+    } catch (e) {
+        logger.warn('households: housemate profile read failed, member skipped', { ...ctx, profileId: id, error: errMsg(e) });
+        return null;
+    }
+}
+
 const asRelationship = (r: string | null | undefined): Relationship => (r && REL_SET.has(r) ? r as Relationship : 'unknown');
 
 export type GetHouseholdsOptions = {
@@ -320,7 +371,7 @@ export async function getHouseholdsFor(
         const capped = groups.map(g => g.slice(0, MAX_HOUSEHOLD_MEMBERS));
 
         const otherIds = [...new Set(capped.flat().map(m => m.adopterId).filter(id => id !== adopterId))];
-        const loaded = await Promise.all(otherIds.map(async id => [id, await liveProfile(db, id)] as const));
+        const loaded = await Promise.all(otherIds.map(async id => [id, await housemateProfile(db, id, ctx)] as const));
         const profiles = new Map<string, ProfileRow>();
         for (const [id, p] of loaded) if (p) profiles.set(id, p);
         if (profiles.size === 0) return [];
@@ -438,12 +489,21 @@ export async function householdLinesFor(
                     mates.set(m.adopterId, (mates.get(m.adopterId) ?? true) && gift);
                 }
             });
-            const live = (await Promise.all([...mates.keys()].map(id => memo(profileMemo, id, () => liveProfile(db, id)))))
-                .filter((p): p is ProfileRow => !!p);
-            if (live.length > MAX_HOUSEHOLD_LINES) {
-                logger.info('households: card line cap reached', { ...ctx, housemates: live.length, cap: MAX_HOUSEHOLD_LINES });
+            // Read only what the line shows: just enough profiles to fill it,
+            // in membership order, never more than MAX_CARD_PROFILE_READS
+            // (deleted housemates can't make a card read without end).
+            const candidates = [...mates.keys()];
+            if (candidates.length > MAX_CARD_PROFILE_READS) {
+                logger.info('households: card read cap, later housemates not read', { ...ctx, housemates: candidates.length, cap: MAX_CARD_PROFILE_READS });
             }
-            const shown = live.slice(0, MAX_HOUSEHOLD_LINES);
+            const readable = candidates.slice(0, MAX_CARD_PROFILE_READS);
+            const shown: ProfileRow[] = [];
+            for (let i = 0; i < readable.length && shown.length < MAX_HOUSEHOLD_LINES;) {
+                const batch = readable.slice(i, i + (MAX_HOUSEHOLD_LINES - shown.length));
+                i += batch.length;
+                const rows = await Promise.all(batch.map(id => memo(profileMemo, id, () => housemateProfile(db, id, ctx))));
+                for (const p of rows) if (p) shown.push(p);
+            }
             const counts = await Promise.all(shown.map(p => memo(countMemo, p.id, () => countsFor(db, p.id, ctx))));
             return [adopterId, shown.map((p, i) => ({
                 name: p.name,

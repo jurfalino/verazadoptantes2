@@ -106,6 +106,13 @@ describe('currentAge / isMinor', () => {
         expect(isMinor({ age: undefined, ageAsOf: undefined, isMinor: null }, today)).toBe(false);
     });
 
+    it('a malformed age_as_of never fails open: the current age is unknown and the checkbox decides', () => {
+        expect(currentAge({ age: 12, ageAsOf: '27/10/2026' }, today)).toBeNull();
+        expect(isMinor({ age: 12, ageAsOf: '27/10/2026', isMinor: 1 }, today)).toBe(true);
+        expect(isMinor({ age: 12, ageAsOf: '27/10/2026', isMinor: 0 }, today)).toBe(false);
+        expect(isMinor({ age: 12, ageAsOf: 'garbage', isMinor: 1 }, today)).toBe(true);
+    });
+
     it('an adult age is not a minor', () => {
         expect(isMinor({ age: 40, ageAsOf: '2026-01-01', isMinor: 0 }, today)).toBe(false);
     });

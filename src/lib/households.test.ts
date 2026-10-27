@@ -31,10 +31,10 @@ vi.mock('@/lib/logger', () => ({
 
 import {
     addMembership, ensureHousehold, getHouseholdsFor, hasCorrection, householdIdsOf, householdLinesFor,
-    removeMembership, sameHousehold,
+    MAX_CARD_PROFILE_READS, removeMembership, sameHousehold,
 } from './households';
 import { logger } from '@/lib/logger';
-import { currentAge } from '@/domain/households';
+import { MAX_HOUSEHOLD_LINES, currentAge } from '@/domain/households';
 
 type Row = Record<string, unknown>;
 type Sqlite = {
@@ -112,6 +112,35 @@ describe('write core', () => {
         expect(rows).toEqual([expect.objectContaining({
             id: a.membershipId, household_id: hh, relationship: 'partner', relative_to_adopter_id: 'pedro', added_by: OWNER, gift_recipient: 0, source_key: 'form-s1-0',
         })]);
+    });
+
+    it('addMembership racing itself on the same pair → one row, both callers get the same membership id', async () => {
+        const hh = await ensureHousehold(db(), 'pedro', OWNER);
+        const input = { householdId: hh, adopterId: 'marta', relationship: 'partner', relativeToAdopterId: 'pedro', addedBy: OWNER };
+        const [a, b] = await Promise.all([addMembership(db(), input), addMembership(db(), { ...input, addedBy: MATE })]);
+        expect(a.membershipId).toBe(b.membershipId);
+        expect([a.created, b.created].sort()).toEqual([false, true]);
+        expect(memberships().filter(r => r.adopter_id === 'marta')).toHaveLength(1);
+    });
+
+    it('ensureHousehold racing itself → one household with the anchor once, no orphan', async () => {
+        const [a, b] = await Promise.all([ensureHousehold(db(), 'pedro', OWNER), ensureHousehold(db(), 'pedro', MATE)]);
+        expect(b).toBe(a);
+        expect(sqlite.prepare('SELECT id FROM households').all()).toEqual([{ id: a }]);
+        expect(memberships()).toHaveLength(1);
+        expect(await householdIdsOf(db(), 'pedro')).toEqual([a]);
+    });
+
+    it('ensureHousehold racing itself when hh-{anchor} is taken (anchor removed from it once) → one new household, the loser cleaned up', async () => {
+        sqlite.exec(`INSERT INTO households (id, created_by, created_at) VALUES ('hh-pedro', '${OWNER}', 1)`);
+        await addMembership(db(), { householdId: 'hh-pedro', adopterId: 'marta', addedBy: OWNER });
+        const [a, b, c] = await Promise.all([1, 2, 3].map(() => ensureHousehold(db(), 'pedro', OWNER)));
+        expect(new Set([a, b, c]).size).toBe(1);
+        expect(a).not.toBe('hh-pedro');
+        expect(await householdIdsOf(db(), 'pedro')).toEqual([a]);
+        expect(sqlite.prepare('SELECT id FROM households ORDER BY id').all().map(r => r.id).sort()).toEqual([a, 'hh-pedro'].sort());
+        // Pedro was never put back into the household he was taken out of.
+        expect(memberships().filter(r => r.household_id === 'hh-pedro').map(r => r.adopter_id)).toEqual(['marta']);
     });
 
     it('a relationship outside the list is stored as unknown; a person is never relative to themselves', async () => {
@@ -290,6 +319,28 @@ describe('getHouseholdsFor', () => {
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('households'), expect.objectContaining({ adopterId: 'pedro', error: 'boom' }));
     });
 
+    it("one member's failed profile read skips that member (logged with context), not the whole section", async () => {
+        await pedrosHousehold();
+        const handle = state.db as { select: (cols?: Record<string, unknown>) => unknown };
+        const real = handle.select.bind(handle);
+        let profileReads = 0;
+        const spy = vi.spyOn(handle, 'select').mockImplementation((cols?: Record<string, unknown>) => {
+            // Profile reads select ageAsOf: the 1st is Pedro (viewed), the 2nd Marta.
+            if (cols && 'ageAsOf' in cols && ++profileReads === 2) {
+                return { from: () => ({ where: () => ({ get: async () => { throw new Error('D1 hiccup'); } }) }) };
+            }
+            return real(cols);
+        });
+        try {
+            const views = await getHouseholdsFor(db(), OWNER, 'pedro');
+            expect(views[0].members.map(m => m.profileId)).toEqual(['lucas']);
+            expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('households'),
+                expect.objectContaining({ adopterId: 'pedro', viewer: OWNER, profileId: 'marta', error: 'D1 hiccup' }));
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
     it('never throws: a broken read is logged and shows no households', async () => {
         await pedrosHousehold();
         sqlite.exec('DROP TABLE household_memberships');
@@ -316,6 +367,35 @@ describe('householdLinesFor', () => {
         expect(lines.ana).toEqual([{ name: 'Rosa Diaz', profileId: 'rosa', rating: null, openAlerts: 0, isMinor: false, isGift: true }]);
         expect(lines.nobody).toEqual([]);
         expect(lines.gone).toEqual([]);
+    });
+
+    it('a big household reads at most the cap: profile reads stop once the card line is full, and deleted rows cannot make it read without end', async () => {
+        const hh = await ensureHousehold(db(), 'pedro', OWNER);
+        const insert = sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, deleted_at) VALUES (?, ?, '5', ?, 1000, 1000, ?)`);
+        // 25 deleted housemates first, then 4 live ones.
+        for (let i = 0; i < 29; i++) {
+            const id = `big${String(i).padStart(2, '0')}`;
+            insert.run(id, `Person ${i}`, OWNER, i < 25 ? 5000 : null);
+            await addMembership(db(), { householdId: hh, adopterId: id, addedBy: OWNER, addedAt: new Date(1_000_000 + i * 1000) });
+        }
+        const handle = state.db as { select: (cols?: Record<string, unknown>) => unknown };
+        const spy = vi.spyOn(handle, 'select');
+        const profileReads = () => spy.mock.calls.filter(([cols]) => !!cols && 'ageAsOf' in (cols as object)).length;
+        try {
+            const { pedro } = await householdLinesFor(db(), OWNER, ['pedro']);
+            expect(profileReads()).toBeLessThanOrEqual(MAX_CARD_PROFILE_READS);
+            // The hard cap may hide live people behind many deleted ones; it never reads them all.
+            expect(pedro.length).toBeLessThanOrEqual(MAX_HOUSEHOLD_LINES);
+
+            // All live: reading stops as soon as MAX_HOUSEHOLD_LINES are found.
+            sqlite.exec('UPDATE adopters SET deleted_at = NULL');
+            spy.mockClear();
+            const lines = (await householdLinesFor(db(), OWNER, ['pedro'])).pedro;
+            expect(lines).toHaveLength(MAX_HOUSEHOLD_LINES);
+            expect(profileReads()).toBe(MAX_HOUSEHOLD_LINES);
+        } finally {
+            spy.mockRestore();
+        }
     });
 
     it('a housemate shared through two households is one line; a deleted housemate is left out', async () => {

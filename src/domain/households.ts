@@ -93,14 +93,19 @@ export function canRemoveMembership(
     return householdAdopterIds.some(id => viewer.privilegedOn(id));
 }
 
-/** Age today: the recorded age plus whole years elapsed since `ageAsOf` (YYYY-MM-DD). */
+/**
+ * Age today: the recorded age plus whole years elapsed since `ageAsOf`
+ * (YYYY-MM-DD). A malformed `ageAsOf` (e.g. '27/10/2026') makes the current
+ * age unknown (null), never NaN.
+ */
 export function currentAge(
     m: { age?: number | null; ageAsOf?: string | null },
     today: Date = new Date(),
 ): number | null {
-    if (typeof m.age !== 'number') return null;
+    if (typeof m.age !== 'number' || !Number.isFinite(m.age)) return null;
     if (!m.ageAsOf) return m.age;
     const [y, mo, d] = m.ageAsOf.split('-').map(Number);
+    if (![y, mo, d].every(Number.isFinite)) return null;
     let years = today.getUTCFullYear() - y;
     const month = today.getUTCMonth() + 1;
     if (month < mo || (month === mo && today.getUTCDate() < d)) years--;
@@ -110,14 +115,16 @@ export function currentAge(
 /**
  * «Menor de edad»: a known age decides (current age under 18 — so at 18 the
  * tag drops by itself, even though the box turned on when the age was
- * entered); with no age, the «Es menor de edad» checkbox (`is_minor`) does.
+ * entered); with no age, or an unreadable `ageAsOf`, the «Es menor de edad»
+ * checkbox (`is_minor`) does.
  */
 export function isMinor(
     p: { age?: number | null; ageAsOf?: string | null; isMinor?: number | boolean | null },
     today: Date = new Date(),
 ): boolean {
     const age = currentAge(p, today);
-    if (age != null) return age < MINOR_AGE_LIMIT;
+    // Unknown (or unreadable) age: the checkbox decides — never fail open.
+    if (age != null && Number.isFinite(age)) return age < MINOR_AGE_LIMIT;
     return !!p.isMinor;
 }
 
