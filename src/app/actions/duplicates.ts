@@ -1102,12 +1102,15 @@ export async function getPendingDuplicatesForUser(
         // Detected pairs of housemates are not duplicates («alguien de su hogar» is
         // already a recorded answer): one detected before they shared a household
         // leaves the list as soon as they do, before ranking so `total` agrees. A
-        // person's flag or merge request is someone asking: those stay. One query.
+        // person's flag or merge request is someone asking: those stay — a pair
+        // with a request keeps its candidate row here, or the request check below
+        // would read the still-pending row as settled and drop the request. One query.
         try {
             if (mine.length > 0) {
                 const housemates = await housematePairKeys(db);
                 for (let i = mine.length - 1; i >= 0; i--) {
-                    if (housemates.has(pairKey(mine[i].adopter1Id, mine[i].adopter2Id))) mine.splice(i, 1);
+                    const key = pairKey(mine[i].adopter1Id, mine[i].adopter2Id);
+                    if (housemates.has(key) && !requests.has(key)) mine.splice(i, 1);
                 }
             }
         } catch (e) {

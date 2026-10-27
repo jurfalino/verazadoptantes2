@@ -227,6 +227,17 @@ describe('duplicate detection never pairs two housemates', () => {
         expect(total).toBe(1);
     });
 
+    it('a merge request someone filed on a housemate pair stays listed (a person asked): only detection is filtered', async () => {
+        const ins = sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at) VALUES (?, ?, ?, '["phone"]', 60, 'high', 'pending', 1000)`);
+        ins.run('c-housemates', 'marta', 'pedro');
+        sqlite.prepare(`INSERT INTO merge_requests (id, primary_id, secondary_id, candidate_id, requester_email, owner_email, status, created_at) VALUES ('mr1', 'pedro', 'marta', 'c-housemates', ?, ?, 'pending', 1)`)
+            .run(mocks.STRANGER, OWNER);
+        const { pairs, total } = await getPendingDuplicatesForUser(1, 10, true);
+        expect(pairs.map(p => [p.candidateId, p.group])).toEqual([['c-housemates', 'received']]);
+        expect(pairs[0].request).not.toBeNull();
+        expect(total).toBe(1);
+    });
+
     it("the profile's duplicate banner skips it too", async () => {
         const ins = sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at) VALUES (?, ?, ?, '["phone"]', 60, 'high', 'pending', 1000)`);
         ins.run('c-housemates', 'marta', 'pedro');
