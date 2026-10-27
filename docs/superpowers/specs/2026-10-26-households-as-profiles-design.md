@@ -127,7 +127,7 @@ A correction is stored per (household, person). Re-adding that person to that ho
 ## Migration
 
 One-time and idempotent. For each of the 29 inline members:
-1. Create the member profile (owner = the member's `addedBy`, else the host's owner), carrying name, contacts (with their `addedBy`), relationship, age.
+1. Create the member profile (owner = the host's owner, as in «Who owns the profile a household add creates»; the member's `addedBy` is credited on the membership and contacts), carrying name, contacts (with their `addedBy`), relationship, age.
 2. Create the household with the host and the member.
 3. Move the grants that pointed at those contact values on the host to the new profile.
 4. Run the normal duplicate check. Matches go to «Pendientes de revisar» like any new profile.
