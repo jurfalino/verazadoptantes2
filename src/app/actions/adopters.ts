@@ -23,6 +23,7 @@ import {
     stripRenameMarks,
     contactCapExceeded,
     contactEntriesJsonCount,
+    stripClientRenameMarksJson,
     CONTACT_ENTRIES_FULL,
     MAX_CONTACT_ENTRIES,
 } from '@/lib/contactEntries';
@@ -114,6 +115,8 @@ export async function appendToExistingAdopter(
         publicSource?: boolean;
     },
 ): Promise<{ success: boolean; adopterId?: string; error?: string }> {
+    // Client JSON: rename marks off FIRST (never counted or read as exempt from the cap).
+    if (fields && typeof fields.contactEntries === 'string') fields = { ...fields, contactEntries: stripClientRenameMarksJson(fields.contactEntries) };
     try {
         if (!targetId) return { success: false, error: 'Missing target adopter id' };
 
@@ -275,6 +278,8 @@ export async function saveAdopter(data: SaveAdopterInput, opts?: { loaded?: Part
     // provides them, so the blob (read by LIKE search, the tokenizer and the
     // profile display) stays consistent with contactEntries.
     // S1: a list past the cap is refused (after the session check), never stored for a later read to truncate.
+    // Client JSON: rename marks off FIRST, so no forged mark is counted or read as exempt.
+    data.contactEntries = stripClientRenameMarksJson(data.contactEntries);
     const overCap = contactEntriesJsonCount(data.contactEntries) > MAX_CONTACT_ENTRIES;
     if (data.contactEntries !== undefined && data.contactEntries !== null) {
         // Client JSON: only the server's rename code may mark a rename alias.

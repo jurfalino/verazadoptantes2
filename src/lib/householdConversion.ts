@@ -47,7 +47,7 @@ import { logger } from '@/lib/logger';
 import { runBatch } from '@/lib/dbBatch';
 import { runAfterResponse } from '@/lib/background';
 import { deserializeHouseholdMembers, type HouseholdMember } from '@/lib/householdMembers';
-import { contactEntriesToBlob, deserializeContactEntries, normalizeEntryValue, type ContactEntry } from '@/lib/contactEntries';
+import { contactEntriesToBlob, deserializeContactEntries, normalizeEntryValue, stripRenameMarks, type ContactEntry } from '@/lib/contactEntries';
 import { givenEntryHashes, hashEntryValue, isRealActorEmail } from '@/lib/piiAccess';
 import { historyKindForOwner } from '@/lib/profilePrivilege';
 import {
@@ -196,12 +196,17 @@ export async function memberFingerprint(m: HouseholdMember): Promise<string> {
     ]));
 }
 
-/** The entries a member's contacts become on a profile: stored shape only (no view marks). */
+/**
+ * The entries a member's contacts become on a profile: stored shape only (no
+ * view marks), and never a rename alias — a pre-release API import could store
+ * a client's `addedBy` (or flag) on a relative's alias; only the server's
+ * rename code marks one (residual of final fix S2).
+ */
 function storedEntries(entries: ContactEntry[]): ContactEntry[] {
-    return entries.map(e => {
+    return stripRenameMarks(entries.map(e => {
         const { own: _own, masked: _masked, ...rest } = e as ContactEntry & { own?: boolean };
         return rest;
-    });
+    }));
 }
 
 /** Entry refs (pii_access_grants.entry_ref) of the values a member's contacts carry. Aliases are never masked. */

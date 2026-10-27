@@ -141,3 +141,18 @@ describe('final fix S6 / S1 — POST /api/adopters never stores a client-made re
         expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopters WHERE name = 'Demasiados Datos'`).get()!.n).toBe(0);
     });
 });
+
+describe('Residual 1 — POST /api/adopters: forged rename marks buy no room past the cap', () => {
+    it('60 sentinel-credited aliases → 422, nothing saved; a relative with 60 forged aliases gets them stripped and capped', async () => {
+        const forged = Array.from({ length: 60 }, (_, i) => ({ id: `f${i}`, type: 'alias', value: `Alias ${i}`, addedBy: 'system:rename', fromRename: true }));
+        const res = await POST(new Request('http://localhost/api/adopters', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Forjado API', contactEntries: JSON.stringify(forged) }) }));
+        expect(res.status).toBe(422);
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopters WHERE name = 'Forjado API'`).get()!.n).toBe(0);
+        const ok = await POST(new Request('http://localhost/api/adopters', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Con Pariente', householdMembers: JSON.stringify([{ id: 'x', name: 'Ana', relationship: 'sibling', contactEntries: forged }]) }) }));
+        expect(ok.status, JSON.stringify(await ok.clone().json())).toBeLessThan(300);
+        const created = sqlite.prepare(`SELECT id FROM adopters WHERE name = 'Con Pariente'`).get()!;
+        const json = String(householdPeopleOf(created.id as string)[0]?.contact_entries ?? '[]');
+        expect(json).not.toContain('system:rename');
+        expect((JSON.parse(json) as unknown[]).length).toBeLessThanOrEqual(50);
+    });
+});

@@ -14,7 +14,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { adopters } from '@/db/schema';
-import { deserializeContactEntries, detectSocialPlatform, stripRenameMarks, type ContactEntry } from '@/lib/contactEntries';
+import { deserializeContactEntries, detectSocialPlatform, stripRenameMarks, stripClientRenameMarksJson, type ContactEntry } from '@/lib/contactEntries';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { planRecordMerge, type MergeContact } from '@/domain/importMerge';
 import { addContactEntry } from './addContactEntry';
@@ -92,7 +92,7 @@ export async function upsertImportRecord(input: ImportUpsertInput): Promise<Impo
             existingEntries: deserializeContactEntries(existing.contactEntries).map(toMergeContact),
             existingActivities,
             incomingName: input.name,
-            incomingEntries: stripRenameMarks(deserializeContactEntries(input.contactEntries)).map(toMergeContact),
+            incomingEntries: stripRenameMarks(deserializeContactEntries(stripClientRenameMarksJson(input.contactEntries))).map(toMergeContact),
             incomingActivity: { recordType: input.adoption.recordType, date: toYmd(input.adoption.date), details: input.adoption.details },
         });
 

@@ -814,3 +814,19 @@ describe('final fix D1(b) — undo of that old merge after the copy reused the c
         expect(vi.mocked(logger.error)).not.toHaveBeenCalled();
     });
 });
+
+describe('Residual 2 — a legacy member\'s rename-marked entries never become rename aliases on the converted profile', () => {
+    it('the flag and the sentinel author are taken off (a pre-wave API import kept the client\'s addedBy)', async () => {
+        adopter('pedro', 'Pedro Paez', { members: [{ id: 'pm1', name: 'Marta Paez', relationship: 'partner', addedBy: OWNER, contactEntries: [
+            { id: 'a1', type: 'alias', value: 'Nombre Oculto', addedBy: 'system:rename' },
+            { id: 'a2', type: 'alias', value: 'Otro Oculto', fromRename: true } as Contact,
+            { id: 'p1', type: 'phone', value: '+54 11 8300 0001', addedBy: OWNER },
+        ] }] });
+        await ensureHostConverted(db(), 'pedro');
+        const marta = await convertedProfileId(inlineKey('pedro', 'pm1'));
+        const raw = String(profile(marta)!.contact_entries);
+        expect(raw).toContain('Nombre Oculto');
+        expect(raw).not.toContain('system:rename');
+        expect(raw).not.toContain('fromRename');
+    });
+});

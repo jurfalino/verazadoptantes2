@@ -15,7 +15,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { adopters, userProfiles, users, importRunItems, importRuns } from '@/db/schema';
-import { deserializeContactEntries, contactEntriesToBlob, stripRenameMarks, contactEntriesJsonCount, MAX_CONTACT_ENTRIES } from '@/lib/contactEntries';
+import { deserializeContactEntries, contactEntriesToBlob, stripRenameMarks, stripClientRenameMarksJson, contactEntriesJsonCount, MAX_CONTACT_ENTRIES } from '@/lib/contactEntries';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { insertRecord } from './_recordWrite';
 import { importDateToNoon } from '@/domain/importRow';
@@ -155,7 +155,9 @@ export async function importAdoptersBatch(rows: ImportBatchRow[], runId: string)
     } catch { /* country is best-effort */ }
 
     const out: ImportBatchResult[] = [];
-    for (const row of rows) {
+    for (const raw of rows) {
+        // Client JSON: rename marks off FIRST (never counted or read as exempt from the cap).
+        const row: ImportBatchRow = { ...raw, contactEntries: stripClientRenameMarksJson(raw.contactEntries) };
         try {
             if (row.action === 'skip') { out.push({ index: row.index, status: 'skipped', message: 'Omitido' }); continue; }
             if (row.action === 'upsert' && row.matchedAdopterId) {

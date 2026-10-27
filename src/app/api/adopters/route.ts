@@ -11,7 +11,7 @@ import { logAudit } from '@/lib/audit';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { processImageForStorage, uploadToR2 } from '@/lib/r2';
 import { createAdopterApiSchema } from '@/app/actions/validation';
-import { deserializeContactEntries, contactEntriesToBlob, contactEntriesJsonCount, stripRenameMarks, CONTACT_ENTRIES_FULL, MAX_CONTACT_ENTRIES } from '@/lib/contactEntries';
+import { deserializeContactEntries, contactEntriesToBlob, contactEntriesJsonCount, stripRenameMarks, stripClientRenameMarksJson, stripClientRenameMarksHouseholdJson, CONTACT_ENTRIES_FULL, MAX_CONTACT_ENTRIES } from '@/lib/contactEntries';
 import { deserializeHouseholdMembers, withoutProfileLinks } from '@/lib/householdMembers';
 import { maskAdopterRow } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
@@ -331,7 +331,11 @@ export async function POST(request: Request) {
         }, { status: 400 });
     }
 
-    const { name, contactInfo, contactEntries, notes, sourceUrl, flags, images, adoption, source, isPublic: callerIsPublic, householdMembers: householdJson } = parsed.data;
+    const { name, contactInfo, notes, sourceUrl, flags, images, adoption, source, isPublic: callerIsPublic } = parsed.data;
+    // Client JSON: rename marks off FIRST — on the profile's entries and every relative's —
+    // so no forged mark is counted or read as exempt from the cap.
+    const contactEntries = stripClientRenameMarksJson(parsed.data.contactEntries);
+    const householdJson = stripClientRenameMarksHouseholdJson(parsed.data.householdMembers);
     // Final fix S1: more contacts than a profile holds is refused, never stored for a later read to truncate.
     if (contactEntriesJsonCount(contactEntries ?? null) > MAX_CONTACT_ENTRIES) {
         logger.info('Adopter create: refused — more contact entries than a profile holds', { errorId, user: session.user.email });

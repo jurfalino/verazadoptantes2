@@ -612,6 +612,40 @@ export function contactEntriesJsonCount(json: string | null | undefined): number
     }
 }
 
+/**
+ * A client-supplied contact-entry list (raw JSON) with every rename mark taken
+ * off — the `fromRename` flag and the sentinel author — BEFORE anything counts
+ * or reads it (residual of final fix S1/S2): otherwise a forged mark makes an
+ * entry «a rename alias», exempt from the cap. Only the server's rename code
+ * marks a rename alias. Not a JSON array → returned as is (deserialize drops it).
+ */
+export function stripClientRenameMarksJson<T extends string | null | undefined>(json: T): T {
+    if (typeof json !== 'string' || !json) return json;
+    let parsed: unknown;
+    try { parsed = JSON.parse(json); } catch { return json; }
+    if (!Array.isArray(parsed)) return json;
+    return JSON.stringify(parsed.map(stripRawRenameMark)) as T;
+}
+
+function stripRawRenameMark(e: unknown): unknown {
+    if (!e || typeof e !== 'object' || Array.isArray(e)) return e;
+    const { fromRename: _f, ...rest } = e as Record<string, unknown>;
+    void _f;
+    if (rest.addedBy === RENAME_ALIAS_AUTHOR) delete rest.addedBy;
+    return rest;
+}
+
+/** The same for a client-supplied household JSON: each person's `contactEntries`. */
+export function stripClientRenameMarksHouseholdJson<T extends string | null | undefined>(json: T): T {
+    if (typeof json !== 'string' || !json) return json;
+    let parsed: unknown;
+    try { parsed = JSON.parse(json); } catch { return json; }
+    if (!Array.isArray(parsed)) return json;
+    return JSON.stringify(parsed.map(m => (m && typeof m === 'object' && Array.isArray((m as { contactEntries?: unknown }).contactEntries)
+        ? { ...(m as object), contactEntries: ((m as { contactEntries: unknown[] }).contactEntries).map(stripRawRenameMark) }
+        : m))) as T;
+}
+
 /** `entries` with the rename aliases first (stable otherwise) — the storage order. */
 export function renameAliasesFirst<T extends Pick<ContactEntry, 'type' | 'fromRename' | 'addedBy'>>(entries: readonly T[]): T[] {
     return [...entries.filter(isRenameAlias), ...entries.filter(e => !isRenameAlias(e))];

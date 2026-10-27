@@ -75,7 +75,8 @@ import { updateContactEntry } from './updateContactEntry';
 import { addContactEntry } from './addContactEntry';
 import { saveAdopter, appendToExistingAdopter, checkAdopterDeletable } from './adopters';
 import { mergeAdopters, unmergeAdopters } from '@/lib/adopterMerge';
-import { mergeContactEntries, CONTACT_ENTRIES_FULL, MAX_CONTACT_ENTRIES, RENAME_ALIAS_AUTHOR } from '@/lib/contactEntries';
+import { mergeContactEntries, CONTACT_ENTRIES_FULL, MAX_CONTACT_ENTRIES, RENAME_ALIAS_AUTHOR, stripClientRenameMarksJson, contactEntriesJsonCount } from '@/lib/contactEntries';
+import { importAdoptersBatch } from './importBatch';
 import { knownAsNames, RENAME_NOTICE_WINDOW_MS, RENAME_RATE_LIMIT } from '@/domain/profileIdentity';
 import { preserveRenameAliases } from '@/domain/profileIdentity';
 
@@ -654,5 +655,34 @@ describe('Final fix P1 — age edits have a conflict check, and «Editar» check
         expect(JSON.stringify(res)).not.toContain('Lucas A.');
         expect(await as(null, () => checkHouseholdPersonEdit({ profileId: 'lucas', expected: shown }))).toEqual({ ok: false, error: 'not_authenticated' });
         expect(await checkHouseholdPersonEdit({ profileId: 'nobody', expected: shown })).toEqual({ ok: false, error: 'not_found' });
+    });
+});
+
+describe('Residual 1 — forged rename marks never buy room past the cap on a client-supplied list', () => {
+    const forged = (n: number, p = 'f') => JSON.stringify(Array.from({ length: n }, (_, i) => ({ id: `${p}${i}`, type: 'alias', value: `${p} alias ${i}`, addedBy: RENAME_ALIAS_AUTHOR, fromRename: true })));
+
+    it('saveAdopter create with 80 sentinel-credited aliases → contact_entries_full, nothing saved', async () => {
+        const res = await as(OWNER, () => saveAdopter({ id: '', name: 'Forjado Masivo', contactEntries: forged(80) } as never));
+        expect(res).toEqual({ success: false, error: CONTACT_ENTRIES_FULL, errorId: expect.any(String) });
+        expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adopters WHERE name = 'Forjado Masivo'").get()!.n).toBe(0);
+    });
+
+    it('appendToExistingAdopter with forged aliases past the cap → refused', async () => {
+        expect(await as(OWNER, () => appendToExistingAdopter('lucas', { contactEntries: forged(60, 'a') }))).toMatchObject({ success: false, error: CONTACT_ENTRIES_FULL });
+        expect(entriesOf('lucas')).toHaveLength(0);
+    });
+
+    it('importAdoptersBatch: a row with forged aliases past the cap is refused', async () => {
+        const out = await as(OWNER, () => importAdoptersBatch([{ index: 0, action: 'create', name: 'Forjado Import', contactEntries: forged(80, 'i'), adoption: { recordType: 'observation' } as never }], 'run-forged'));
+        expect(out[0]).toMatchObject({ status: 'failed' });
+        expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adopters WHERE name = 'Forjado Import'").get()!.n).toBe(0);
+    });
+
+    it('stripClientRenameMarksJson drops the flag and the sentinel author before anything counts or reads', () => {
+        const out = JSON.parse(stripClientRenameMarksJson(forged(2))!);
+        expect(out).toEqual([{ id: 'f0', type: 'alias', value: 'f alias 0' }, { id: 'f1', type: 'alias', value: 'f alias 1' }]);
+        expect(contactEntriesJsonCount(stripClientRenameMarksJson(forged(60)))).toBe(60);
+        expect(stripClientRenameMarksJson(null)).toBeNull();
+        expect(stripClientRenameMarksJson('not json')).toBe('not json');
     });
 });

@@ -116,9 +116,10 @@ export type AddMembershipInput = {
 /**
  * Who may clear a newcomer's pending duplicate pairs on a join (final fix S3):
  * `{ actor }` — only the pairs where the actor is privileged on BOTH profiles
- * (owner team, admin, moderator); `{ force: true }` — the «alguien de su hogar»
- * answer (D35), a merge, the conversion of existing household data. Never a
- * pair that shares an email or an ID number.
+ * (owner team, admin, moderator) — every join, merges (the merging person) and
+ * the conversion (its own actor) included; `{ force: true }` — only the
+ * «alguien de su hogar» answer (D35). Never a pair that shares an email or an
+ * ID number.
  */
 export type PairClear = { actor: string } | { force: true };
 
@@ -422,8 +423,8 @@ export async function addMembership(db: Db, input: AddMembershipInput): Promise<
  * already there leave «Pendientes de revisar» — but only as `how` allows
  * (final fix S3: declaring two profiles housemates must not let anyone erase a
  * real duplicate pair): with `{ actor }` only the pairs where the actor is
- * privileged on both profiles; `{ force: true }` for «alguien de su hogar»
- * (D35), merges and the conversion. A pair sharing an email or an ID number is
+ * privileged on both profiles (merges pass the merging person, the conversion
+ * its own actor); `{ force: true }` only for «alguien de su hogar» (D35). A pair sharing an email or an ID number is
  * never removed (it isn't hidden either). Removed rather than marked
  * dismissed: if they stop living together, the next scan may pair them again.
  * A merge request on such a pair keeps standing on its own. Not in a gift
