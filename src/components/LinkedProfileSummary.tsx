@@ -25,7 +25,7 @@ import { RatingBadge } from '@/components/RatingBadge';
 import { SocialLogo } from '@/components/SocialLogo';
 import { handledAsStale } from '@/lib/errorMessage';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-import type { ContactEntry, ContactEntryType } from '@/lib/contactEntries';
+import { CONTACT_ENTRIES_FULL, type ContactEntry, type ContactEntryType } from '@/lib/contactEntries';
 import type { LinkedSummary } from '@/domain/householdLinks';
 import { addContactEntry } from '@/app/actions';
 import { ContactComposer, draftPlatform, type ComposerDraft } from '@/components/ContactComposer';
@@ -92,7 +92,7 @@ export function LinkedProfileSummary({ summary, testId = 'linked-summary', canAd
                 ...(platform ? { platform } : {}), ...(d.type === 'phone' && d.apps.length ? { apps: d.apps } : {}),
             });
             if (!res.ok) {
-                toast.error(t('errors.generic'), res.error === 'busy' ? t('collab.busy') : t('adopter.ce_add_error'),
+                toast.error(t('errors.generic'), res.error === 'busy' ? t('collab.busy') : res.error === CONTACT_ENTRIES_FULL ? t('adopter.ce_add_full') : t('adopter.ce_add_error'),
                     'errorId' in res ? res.errorId : resolveErrorId(new Error(`addContactEntry (household member): ${res.error}`), 'LinkedProfileSummary'));
                 return false;
             }

@@ -877,6 +877,7 @@ export const pt = {
         ce_delete_toast: 'Dado excluído',
         ce_delete_error: 'Não foi possível excluir o dado.',
         ce_add_error: 'Não foi possível adicionar o dado.',
+        ce_add_full: 'Este perfil já tem 50 dados de contato, o máximo. Remova um que esteja errado ou repetido e depois adicione este.',
         ce_add_toast_added: 'Dado adicionado',
         ce_add_toast_added_with_request: 'Dado adicionado. Solicitamos acesso ao perfil completo em seu nome.',
         ce_add_toast_unlocked: 'Você reconheceu um dado existente — agora ele aparece desbloqueado',

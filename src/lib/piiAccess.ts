@@ -1115,6 +1115,8 @@ export function redactHistoryChanges(changesJson: string | null, visibility: Vis
 const SENTINEL_ACTORS = new Set([
     'unknown', 'anonymous', 'system',
     'form-submission', 'contract-submission', 'contract', 'contract-signed-via-invitation',
+    // Who a rename alias is credited to (contactEntries.ts RENAME_ALIAS_AUTHOR).
+    'system:rename',
 ]);
 
 /** True when `email` is a real user (not a sentinel / empty). */

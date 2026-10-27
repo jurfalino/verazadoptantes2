@@ -23,7 +23,7 @@ import ContactEntriesSection from "@/components/ContactEntriesSection";
 import HouseholdSection from "@/components/HouseholdSection";
 import { KnownAsLine } from "@/components/household/KnownAsLine";
 import { EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from "@/domain/profileHouseholds";
-import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
+import { CONTACT_ENTRIES_FULL, deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
 import type { VisibilityBadge } from "@/domain/visibilityBadge";
 import { hasMinimumIdentifier } from "@/domain/adopterIdentity";
 import { adopterDisplayName, namelessSubIdentifier } from "@/lib/adopterDisplay";
@@ -493,7 +493,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                 router.push(`/adopter/${result.adopterId}`);
             } else {
                 // eslint-disable-next-line no-alert
-                alert(result.error || 'No se pudo continuar con este perfil');
+                alert(result.error === CONTACT_ENTRIES_FULL ? t('adopter.ce_add_full') : result.error || 'No se pudo continuar con este perfil');
                 setContinueBusyId(null);
                 setPendingMerge(null);
             }

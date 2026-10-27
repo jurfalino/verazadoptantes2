@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { planFieldSave, canonField, holdTogether } from '@/domain/fieldCollab';
 import { recordFieldAuthors } from '@/lib/collabAttribution';
 import { casAdopterLists } from '@/lib/adopterListCas';
-import { deserializeContactEntries, parseBlobToContactEntries, mergeContactEntries, contactEntriesToBlob } from '@/lib/contactEntries';
+import { deserializeContactEntries, parseBlobToContactEntries, mergeContactEntries, contactEntriesToBlob, contactCapExceeded } from '@/lib/contactEntries';
 import { SAVE_BUSY, ANIMAL_ALREADY_PLACED } from '@/domain/fieldCollab';
 import { insertRecord, updateRecord, isActivePlacementConflict, deleteRecordById, softDeleteAnimal, isAnimalBacked, countAnimalLinks, deletePlacementForAdopter } from './_recordWrite';
 import { decideAnimalFate, NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
@@ -120,6 +120,11 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert, opts?: {
                         const base = current.length ? current : parseBlobToContactEntries(row.contactInfo).map(e => ({ id: crypto.randomUUID(), ...e }));
                         const merged = mergeContactEntries(base, [{ id: crypto.randomUUID(), type: 'address', value: verified, addedBy: changedBy }]);
                         if (merged.length === base.length) return { result: null };
+                        if (contactCapExceeded(merged)) {
+                            // S1: never past the cap (a later read would truncate). The record is saved.
+                            logger.warn('saveAdoption: verified address not added — the profile holds the maximum contact entries', { adopterId: data.adopterId, changedBy });
+                            return { result: null };
+                        }
                         const blob = contactEntriesToBlob(merged) || null;
                         return { write: { contactEntries: JSON.stringify(merged), contactInfo: blob }, result: { from: row.contactInfo, to: blob } };
                     }, { op: 'saveAdoption.verifiedAddress', changedBy });

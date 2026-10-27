@@ -876,6 +876,7 @@ export const en = {
         ce_delete_toast: 'Entry deleted',
         ce_delete_error: 'Could not delete the entry.',
         ce_add_error: 'Could not add the entry.',
+        ce_add_full: 'This profile already has 50 contact details, the most it can hold. Remove one that is wrong or repeated, then add this one.',
         ce_add_toast_added: 'Entry added',
         ce_add_toast_added_with_request: 'Entry added. We filed an access request to the full profile on your behalf.',
         ce_add_toast_unlocked: 'You confirmed an existing entry — it’s now unlocked',

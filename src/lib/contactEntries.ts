@@ -155,7 +155,9 @@ export interface ContactEntry {
      * and duplicate detection find the old name), but not listed among the
      * contacts — the header shows it as «Conocido/a como». Persisted; only
      * the rename path sets it (deserialize keeps it on aliases only, and the
-     * contact actions build entries from typed input, never from it).
+     * contact actions build entries from typed input, never from it). Always
+     * paired with `addedBy: RENAME_ALIAS_AUTHOR`; either marker makes a rename
+     * alias (`isRenameAlias`), since builds that predate the flag drop it.
      */
     fromRename?: true;
     /**
@@ -379,7 +381,7 @@ function dedupe(entries: ContactEntry[]): ContactEntry[] {
         if (i !== undefined) {
             // Two copies of one name: the rename alias wins (with its marker) — a
             // plain copy would let its contributor delete the only copy of an old name.
-            if (e.type === 'alias' && e.fromRename === true && out[i].fromRename !== true) out[i] = e;
+            if (isRenameAlias(e) && !isRenameAlias(out[i])) out[i] = e;
             continue;
         }
         at.set(key, out.length);
@@ -570,8 +572,55 @@ export function buildContactEntries(parts: ContactParts): ContactEntry[] {
     return dedupe(entries).map(withStableId);
 }
 
-/** Upper bounds applied when reading stored/untrusted entry JSON. */
-const MAX_ENTRIES = 50;
+/**
+ * Upper bound on a profile's contact entries — the rename aliases aside
+ * (final fix S1: they are exempt, kept first on every read and write, so
+ * junk entries can never push a previous name out of search). Reads cap the
+ * rest at this; every add path refuses to grow past it (`CONTACT_ENTRIES_FULL`)
+ * instead of letting a later read truncate.
+ */
+export const MAX_CONTACT_ENTRIES = 50;
+const MAX_ENTRIES = MAX_CONTACT_ENTRIES;
+/** Error code: the profile already holds `MAX_CONTACT_ENTRIES` contact entries. */
+export const CONTACT_ENTRIES_FULL = 'contact_entries_full';
+/**
+ * Who a rename alias is credited to (final fix S2): never a real actor, so no
+ * build — even an old one that drops `fromRename` — lets the renamer delete
+ * it as «their own contribution». The renamer is credited in the history row.
+ */
+export const RENAME_ALIAS_AUTHOR = 'system:rename';
+
+/** The list grown past the cap (rename aliases don't count)? */
+export function contactCapExceeded(entries: readonly Pick<ContactEntry, 'type' | 'fromRename' | 'addedBy'>[]): boolean {
+    return entries.filter(e => !isRenameAlias(e)).length > MAX_CONTACT_ENTRIES;
+}
+
+/**
+ * How many contact entries (rename aliases aside) a JSON list holds BEFORE the
+ * read cap — so an add path can refuse an oversized list instead of storing
+ * it for a later read to truncate silently.
+ */
+export function contactEntriesJsonCount(json: string | null | undefined): number {
+    if (!json) return 0;
+    try {
+        const parsed: unknown = JSON.parse(json);
+        if (!Array.isArray(parsed)) return 0;
+        return parsed.filter(e => e && typeof e === 'object' && typeof (e as ContactEntry).value === 'string'
+            && (e as ContactEntry).value.trim().length > 0 && !isRenameAlias(e as ContactEntry)).length;
+    } catch {
+        return 0;
+    }
+}
+
+/** `entries` with the rename aliases first (stable otherwise) — the storage order. */
+export function renameAliasesFirst<T extends Pick<ContactEntry, 'type' | 'fromRename' | 'addedBy'>>(entries: readonly T[]): T[] {
+    return [...entries.filter(isRenameAlias), ...entries.filter(e => !isRenameAlias(e))];
+}
+
+/** `e` as a rename alias: both markers set (the flag, and the sentinel author old builds keep). */
+export function asRenameAlias<T extends ContactEntry>(e: T): T {
+    return { ...e, addedBy: RENAME_ALIAS_AUTHOR, fromRename: true as const };
+}
 const MAX_LABEL_LEN = 40;
 /**
  * Per-type value cap. Identifiers are short; `other` holds free-text prose
@@ -602,10 +651,11 @@ export function deserializeContactEntries(
         const parsed = JSON.parse(json);
         if (!Array.isArray(parsed)) return [];
         const valid: ContactEntryType[] = ['phone', 'email', 'social', 'id', 'address', 'alias', 'other'];
-        return parsed
-            .filter((e): e is ContactEntry =>
-                e && typeof e.value === 'string' && valid.includes(e.type) && e.value.trim().length > 0)
-            .slice(0, MAX_ENTRIES)
+        const ok = parsed.filter((e): e is ContactEntry =>
+            e && typeof e.value === 'string' && valid.includes(e.type) && e.value.trim().length > 0);
+        const isKept = (e: ContactEntry) => e.type === 'alias' && (e.fromRename === true || e.addedBy === RENAME_ALIAS_AUTHOR);
+        // Rename aliases first and outside the cap (S1); the rest capped.
+        return [...ok.filter(isKept), ...ok.filter(e => !isKept(e)).slice(0, MAX_ENTRIES)]
             .map(e => {
             const social = readSocialPlatform(e);
             return {
@@ -628,12 +678,16 @@ export function deserializeContactEntries(
                 ...readPhoneApps(e),
                 ...(e.masked === true ? { masked: true } : {}),
                 ...(viewMarks && e.own === true ? { own: true } : {}),
-                ...(e.type === 'alias' && e.fromRename === true ? { fromRename: true as const } : {}),
                 // Per-entry contributor attribution (v2.16.0-9+). Length-capped
                 // defensively; undefined if absent (most pre-existing rows).
-                ...(typeof e.addedBy === 'string' && e.addedBy.trim()
-                    ? { addedBy: e.addedBy.slice(0, 256) }
-                    : {}),
+                // A rename alias (either marker — an old build keeps only the
+                // author) is always credited to the sentinel, flag set (S2).
+                ...(isKept(e)
+                    ? { addedBy: RENAME_ALIAS_AUTHOR }
+                    : typeof e.addedBy === 'string' && e.addedBy.trim()
+                        ? { addedBy: e.addedBy.slice(0, 256) }
+                        : {}),
+                ...(isKept(e) ? { fromRename: true as const } : {}),
                 // Per-entry "sourced from a public channel" flag (v2.16.0-12+).
                 // Stored only when explicitly true to keep the JSON tight.
                 ...(e.isPublic === true ? { isPublic: true } : {}),
@@ -682,8 +736,8 @@ export function contactEntryFromInput(
 }
 
 /** A previous name kept by a rename: a name token, never listed with the contacts. */
-export function isRenameAlias(e: Pick<ContactEntry, 'type' | 'fromRename'>): boolean {
-    return e.type === 'alias' && e.fromRename === true;
+export function isRenameAlias(e: Pick<ContactEntry, 'type' | 'fromRename' | 'addedBy'>): boolean {
+    return e.type === 'alias' && (e.fromRename === true || e.addedBy === RENAME_ALIAS_AUTHOR);
 }
 
 /**
@@ -692,16 +746,18 @@ export function isRenameAlias(e: Pick<ContactEntry, 'type' | 'fromRename'>): boo
  */
 export function stripRenameMarks<T extends ContactEntry>(entries: readonly T[]): T[] {
     return entries.map(e => {
-        if (!('fromRename' in e)) return e;
+        const forgedAuthor = e.addedBy === RENAME_ALIAS_AUTHOR;
+        if (!('fromRename' in e) && !forgedAuthor) return e;
         const { fromRename: _drop, ...rest } = e;
         void _drop;
+        if (forgedAuthor) delete (rest as { addedBy?: string }).addedBy;
         return rest as T;
     });
 }
 
 /** Merge two entry lists, de-duplicating on normalized value. */
 export function mergeContactEntries(a: ContactEntry[], b: ContactEntry[]): ContactEntry[] {
-    return dedupe([...a, ...b]);
+    return renameAliasesFirst(dedupe([...a, ...b]));
 }
 
 /**

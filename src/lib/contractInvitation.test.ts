@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { decideInvitationAccess, buildContractPrefill, contactUpdateOnSign, splitName, tokenRef } from './contractInvitation';
 import { hashEntryValue, type Visibility } from './piiAccess';
-import { buildContactEntries, deserializeContactEntries } from './contactEntries';
+import { buildContactEntries, deserializeContactEntries, RENAME_ALIAS_AUTHOR } from './contactEntries';
 
 function vis(partial: Partial<Visibility> = {}): Visibility {
     return {
@@ -141,7 +141,7 @@ describe('contactUpdateOnSign keeps old names findable (households as profiles, 
         expect(u.name).toBe('Carla Beatriz Gómez');
         expect(u.nameChange).toEqual({ from: 'Carla Gómez', to: 'Carla Beatriz Gómez', aliasKept: true });
         expect(deserializeContactEntries(u.contactEntries).filter(e => e.type === 'alias'))
-            .toEqual([expect.objectContaining({ value: 'Carla Gómez', fromRename: true, addedBy: 'contract-signed-via-invitation' })]);
+            .toEqual([expect.objectContaining({ value: 'Carla Gómez', fromRename: true, addedBy: RENAME_ALIAS_AUTHOR })]);
         expect(u.contactInfo).toContain('Carla Gómez');
     });
 });

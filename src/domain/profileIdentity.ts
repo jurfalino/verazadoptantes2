@@ -2,10 +2,13 @@
  * A profile's name and age, open to anyone signed in (households as profiles,
  * Task 3 — Jon, 2026-10-27). Pure rules: no DB, no server imports.
  *
- * - A rename keeps the previous name as a hidden alias (`fromRename`): still a
- *   name token, so search and duplicate detection find the old name, shown in
- *   the header as «Conocido/a como». Renaming back to a kept name drops that
- *   alias (it is the name again).
+ * - A rename keeps the previous name as a hidden alias (`fromRename`, credited
+ *   to `RENAME_ALIAS_AUTHOR` — never the renamer, so even an old build that
+ *   drops the flag can't let the renamer delete it): still a name token, so
+ *   search and duplicate detection find the old name, shown in the header as
+ *   «Conocido/a como». Rename aliases are stored FIRST and are exempt from the
+ *   contact cap (no junk can push them out of a read). Renaming back to a kept
+ *   name drops that alias (it is the name again).
  * - The history row of a rename is `{ name: {from,to}, name_changed: {from,to,…} }`:
  *   the `name` key keeps the field-author lookup (collabAttribution) and the
  *   conflict notice's «por …» working; `name_changed` is what the history
@@ -14,7 +17,7 @@
  *   `currentAge` counts up from there. A known age decides «menor»; the box
  *   (`is_minor`) counts only with no age (ruling, Task 1).
  */
-import { isRenameAlias, type ContactEntry } from '@/lib/contactEntries';
+import { asRenameAlias, isRenameAlias, renameAliasesFirst, RENAME_ALIAS_AUTHOR, type ContactEntry } from '@/lib/contactEntries';
 import { normalizeText } from '@/lib/tokenizer';
 import { MINOR_AGE_LIMIT, currentAge, isMinor } from '@/domain/households';
 
@@ -56,13 +59,15 @@ export function renameEntries(
     if (!fromKey || fromKey === toKey) return { entries: kept, aliasKept: false, changed };
     const idx = kept.findIndex(e => e.type === 'alias' && aliasKey(e.value) === fromKey);
     if (idx >= 0) {
-        if (isRenameAlias(kept[idx])) return { entries: kept, aliasKept: true, changed };
-        const out = kept.map((e, i) => (i === idx ? { ...e, fromRename: true as const } : e));
-        return { entries: out, aliasKept: true, changed: true };
+        if (isRenameAlias(kept[idx])) return { entries: renameAliasesFirst(kept), aliasKept: true, changed };
+        const out = kept.map((e, i) => (i === idx ? asRenameAlias(e) : e));
+        return { entries: renameAliasesFirst(out), aliasKept: true, changed: true };
     }
     changed = true;
+    // FIRST, and credited to the sentinel (never the renamer — S2): no junk
+    // entry can push it past the read cap, no build lets the renamer delete it.
     return {
-        entries: [...kept, { id: opts.newId, type: 'alias', value: from, addedBy: opts.actor, fromRename: true }],
+        entries: renameAliasesFirst([...kept, { id: opts.newId, type: 'alias', value: from, addedBy: RENAME_ALIAS_AUTHOR, fromRename: true }]),
         aliasKept: true,
         changed,
     };
@@ -221,10 +226,10 @@ export function withRenameAliases<T extends ContactEntry>(base: readonly T[], re
         if (!isRenameAlias(a)) continue;
         const k = aliasKey(a.value);
         const idx = out.findIndex(e => e.type === 'alias' && aliasKey(e.value) === k);
-        if (idx < 0) out.push(a);
-        else if (!isRenameAlias(out[idx])) out[idx] = { ...out[idx], fromRename: true as const };
+        if (idx < 0) out.push(asRenameAlias(a));
+        else if (!isRenameAlias(out[idx])) out[idx] = asRenameAlias(out[idx]);
     }
-    return out;
+    return renameAliasesFirst(out);
 }
 
 /**

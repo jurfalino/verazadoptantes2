@@ -21,6 +21,10 @@ import {
     parseBlobToContactEntries,
     mergeContactEntries,
     stripRenameMarks,
+    contactCapExceeded,
+    contactEntriesJsonCount,
+    CONTACT_ENTRIES_FULL,
+    MAX_CONTACT_ENTRIES,
 } from '@/lib/contactEntries';
 import { sameName } from '@/domain/profileIdentity';
 import { canEditAdopterRecord, maskAdopterContact, redactHistoryChanges, renderName } from '@/lib/piiAccess';
@@ -165,6 +169,8 @@ export async function appendToExistingAdopter(
                     const targetEntries = deserializeContactEntries(row.contactEntries);
                     const base = targetEntries.length ? targetEntries : parseBlobToContactEntries(row.contactInfo);
                     const merged = mergeContactEntries(base, incoming);
+                    // S1: never grow past the cap (a later read would truncate it).
+                    if (merged.length !== base.length && (contactCapExceeded(merged) || contactEntriesJsonCount(fields.contactEntries) > MAX_CONTACT_ENTRIES)) return { result: { [CONTACT_ENTRIES_FULL]: '1' } };
                     if (merged.length !== base.length) {
                         updates.contactEntries = JSON.stringify(merged);
                         updates.contactInfo = contactEntriesToBlob(merged) || null;
@@ -191,6 +197,10 @@ export async function appendToExistingAdopter(
         }, { op: 'appendToExistingAdopter', actorEmail });
         if (outcome.status === 'missing') return { success: false, error: 'Target adopter not found' };
         if (outcome.status === 'busy') return { success: false, error: `Failed to append (Error ID: ${outcome.errorId})` };
+        if (!outcome.wrote && outcome.result[CONTACT_ENTRIES_FULL]) {
+            logger.info('appendToExistingAdopter: refused — the profile holds the maximum number of contact entries', { adopterId: targetId, actorEmail });
+            return { success: false, error: CONTACT_ENTRIES_FULL };
+        }
         // Idempotent no-op — everything the user typed was already on the target.
         if (!outcome.wrote) return { success: true, adopterId: targetId };
         const appendedFields = outcome.result;
@@ -267,6 +277,8 @@ export async function saveAdopter(data: SaveAdopterInput, opts?: { loaded?: Part
     if (data.contactEntries !== undefined && data.contactEntries !== null) {
         // Client JSON: only the server's rename code may mark a rename alias.
         const entries = stripRenameMarks(deserializeContactEntries(data.contactEntries));
+        // S1: a list past the cap is refused, never stored for a later read to truncate.
+        if (contactEntriesJsonCount(data.contactEntries) > MAX_CONTACT_ENTRIES) throw new Error(CONTACT_ENTRIES_FULL);
         data.contactEntries = entries.length ? JSON.stringify(entries) : null;
         data.contactInfo = contactEntriesToBlob(entries) || null;
     }

@@ -12,6 +12,8 @@ import {
     contactEntriesToBlob,
     joinedAddressValue,
     parseBlobToContactEntries,
+    contactCapExceeded,
+    CONTACT_ENTRIES_FULL,
     type ContactEntry,
     type SocialPlatform,
     type MessagingApp,
@@ -61,7 +63,7 @@ export type AddContactEntryStatus = 'appended' | 'unlocked_existing' | 'no_chang
 
 export async function addContactEntry(
     input: { adopterId: string; type: ContactEntry['type']; value: string; streetAndNumber?: string; locality?: string; platform?: SocialPlatform; apps?: MessagingApp[] },
-): Promise<{ ok: true; adopterId: string; appended: boolean; status: AddContactEntryStatus; autoRequestFiled: boolean } | { ok: false; error: 'busy'; errorId: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; adopterId: string; appended: boolean; status: AddContactEntryStatus; autoRequestFiled: boolean } | { ok: false; error: 'busy'; errorId: string } | { ok: false; error: typeof CONTACT_ENTRIES_FULL } | { ok: false; error: string }> {
     const parsed = addContactEntrySchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: 'Invalid input' };
     const { adopterId, type, value } = parsed.data;
@@ -103,7 +105,7 @@ export async function addContactEntry(
         // (or one adding while another edits) at the same moment both land.
         // It used to compare `updatedAt` and refuse with a raw English error —
         // and the check never fired (the driver reports no rowsAffected).
-        const outcome = await casAdopterLists<{ appended: boolean }>(db, adopterId, (row) => {
+        const outcome = await casAdopterLists<{ appended: boolean; full?: true }>(db, adopterId, (row) => {
             let existing = deserializeContactEntries(row.contactEntries);
             if (existing.length === 0 && row.contactInfo && row.contactInfo.trim()) {
                 const fromBlob = parseBlobToContactEntries(row.contactInfo);
@@ -113,6 +115,8 @@ export async function addContactEntry(
             }
             const merged = mergeContactEntries(existing, [newEntry]);
             const appended = merged.length !== existing.length;
+            // S1: never grow past the cap — a later read would truncate it.
+            if (appended && contactCapExceeded(merged)) return { result: { appended: false, full: true } };
             const structuralWrite = appended || merged.length !== deserializeContactEntries(row.contactEntries).length;
             if (!structuralWrite) return { result: { appended } };
             if (existing.length && !deserializeContactEntries(row.contactEntries).length) {
@@ -125,6 +129,10 @@ export async function addContactEntry(
         }, { op: 'addContactEntry', actor });
         if (outcome.status === 'missing') return { ok: false, error: 'Adopter not found' };
         if (outcome.status === 'busy') return { ok: false, error: 'busy', errorId: outcome.errorId };
+        if (outcome.result.full) {
+            logger.info('addContactEntry: refused — the profile holds the maximum number of contact entries', { adopterId, actor, type });
+            return { ok: false, error: CONTACT_ENTRIES_FULL };
+        }
         const appended = outcome.result.appended;
 
         if (appended) {

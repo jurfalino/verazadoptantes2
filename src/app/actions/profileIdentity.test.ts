@@ -66,7 +66,8 @@ import { updateContactEntry } from './updateContactEntry';
 import { addContactEntry } from './addContactEntry';
 import { saveAdopter, appendToExistingAdopter } from './adopters';
 import { mergeAdopters, unmergeAdopters } from '@/lib/adopterMerge';
-import { mergeContactEntries } from '@/lib/contactEntries';
+import { mergeContactEntries, CONTACT_ENTRIES_FULL, MAX_CONTACT_ENTRIES, RENAME_ALIAS_AUTHOR } from '@/lib/contactEntries';
+import { knownAsNames } from '@/domain/profileIdentity';
 import { preserveRenameAliases } from '@/domain/profileIdentity';
 
 type Row = Record<string, unknown>;
@@ -107,7 +108,7 @@ describe('changeProfileName — open to anyone signed in', () => {
 
         expect(pedro().name).toBe('P. Paez');
         const alias = entriesOf('pedro').find(e => e.type === 'alias');
-        expect(alias).toMatchObject({ type: 'alias', value: 'Pedro Paez', addedBy: STRANGER, fromRename: true });
+        expect(alias).toMatchObject({ type: 'alias', value: 'Pedro Paez', addedBy: RENAME_ALIAS_AUTHOR, fromRename: true });
         // The phone is untouched; the blob now carries the old name too (discovery LIKE search reads it).
         expect(entriesOf('pedro').find(e => e.type === 'phone')).toMatchObject({ value: PEDRO_PHONE });
         expect(pedro().contact_info).toContain('Pedro Paez');
@@ -196,7 +197,7 @@ describe('undoProfileRename — the owner team or an admin', () => {
 
         expect(pedro().name).toBe('Pedro Paez');
         const aliases = entriesOf('pedro').filter(e => e.type === 'alias');
-        expect(aliases).toEqual([expect.objectContaining({ value: 'P. Paez', addedBy: OWNER, fromRename: true })]);
+        expect(aliases).toEqual([expect.objectContaining({ value: 'P. Paez', addedBy: RENAME_ALIAS_AUTHOR, fromRename: true })]);
         expect(await findsByName('P. Paez')).toContain('pedro');
 
         const undo = historyOf('pedro')[1];
@@ -445,8 +446,8 @@ describe('Task 3 fix round 2 — no path makes an old name unfindable', () => {
     it('preserveRenameAliases: a wholesale replacement keeps every rename alias (upgrading a plain copy)', () => {
         const prev = [{ id: 'a', type: 'alias' as const, value: 'Old', fromRename: true as const }, { id: 'p', type: 'phone' as const, value: '1' }];
         expect(preserveRenameAliases(prev, [{ id: 'e', type: 'email', value: 'x@y.com' }]))
-            .toEqual([{ id: 'e', type: 'email', value: 'x@y.com' }, prev[0]]);
-        expect(preserveRenameAliases(prev, [{ id: 'b', type: 'alias', value: 'old' }])).toEqual([{ id: 'b', type: 'alias', value: 'old', fromRename: true }]);
+            .toEqual([{ ...prev[0], addedBy: RENAME_ALIAS_AUTHOR }, { id: 'e', type: 'email', value: 'x@y.com' }]);
+        expect(preserveRenameAliases(prev, [{ id: 'b', type: 'alias', value: 'old' }])).toEqual([{ id: 'b', type: 'alias', value: 'old', addedBy: RENAME_ALIAS_AUTHOR, fromRename: true }]);
     });
 });
 
@@ -464,3 +465,78 @@ describe('Task 3 fix round 3', () => {
     });
 });
 
+
+describe('Final fix S1/S2 — the rename alias survives the contact cap and old builds', () => {
+    const tokensOf = (id: string) => sqlite.prepare('SELECT token_value AS v FROM duplicate_tokens WHERE adopter_id = ?').all(id).map(r => r.v);
+    const rawEntries = (id: string) => JSON.parse(sqlite.prepare('SELECT contact_entries AS c FROM adopters WHERE id = ?').get(id)!.c as string) as Array<Record<string, unknown>>;
+
+    it('S1 attack: 50 junk aliases + rename → the add past the cap is refused, the old name stays first, findable and shown; removing the junk keeps it in storage', async () => {
+        // Pedro has a phone: 49 junk aliases fill the cap.
+        for (let i = 0; i < MAX_CONTACT_ENTRIES - 1; i++) {
+            expect(await addContactEntry({ adopterId: 'pedro', type: 'alias', value: `Junk ${i}` })).toMatchObject({ ok: true, appended: true });
+        }
+        expect(await addContactEntry({ adopterId: 'pedro', type: 'alias', value: 'One too many' })).toEqual({ ok: false, error: CONTACT_ENTRIES_FULL });
+        expect(await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' })).toMatchObject({ ok: true, aliasKept: true });
+
+        const read = entriesOf('pedro');
+        expect(read[0]).toMatchObject({ type: 'alias', value: 'Pedro Paez', fromRename: true, addedBy: RENAME_ALIAS_AUTHOR });
+        expect(rawEntries('pedro')[0]).toMatchObject({ value: 'Pedro Paez', fromRename: true });
+        expect(tokensOf('pedro')).toContain('pedro paez');
+        expect(knownAsNames(read, 'P. Paez')).toEqual(['Pedro Paez']);
+
+        // The stranger removes their own junk: the write never drops the old name.
+        for (const e of read.filter(x => x.type === 'alias' && x.value.startsWith('Junk')).slice(0, 5)) {
+            expect(await removeContactEntry({ adopterId: 'pedro', entryId: e.id! })).toMatchObject({ ok: true });
+        }
+        expect(rawEntries('pedro').some(e => e.value === 'Pedro Paez' && e.fromRename === true)).toBe(true);
+        expect(tokensOf('pedro')).toContain('pedro paez');
+    });
+
+    it('S1: a profile already over the cap keeps its rename alias wherever storage put it', async () => {
+        const junk = Array.from({ length: 70 }, (_, i) => ({ id: `j${i}`, type: 'alias', value: `Junk ${i}`, addedBy: STRANGER }));
+        sqlite.prepare("UPDATE adopters SET contact_entries = ? WHERE id = 'pedro'")
+            .run(JSON.stringify([...junk, { id: 'r', type: 'alias', value: 'Pedro Viejo', addedBy: RENAME_ALIAS_AUTHOR, fromRename: true }]));
+        await tokenizeAdopter('pedro');
+        expect(entriesOf('pedro')[0]).toMatchObject({ id: 'r', fromRename: true });
+        expect(tokensOf('pedro')).toContain('pedro viejo');
+        // No add grows it further.
+        expect(await addContactEntry({ adopterId: 'pedro', type: 'phone', value: '+54 11 4200 9999' })).toEqual({ ok: false, error: CONTACT_ENTRIES_FULL });
+    });
+
+    it('S1: appendToExistingAdopter and saveAdopter refuse to grow a list past the cap', async () => {
+        const many = (n: number, p = 'x') => JSON.stringify(Array.from({ length: n }, (_, i) => ({ id: `${p}${i}`, type: 'alias', value: `${p} ${i}` })));
+        await expect(as(OWNER, () => saveAdopter({ id: '', name: 'Nuevo', contactEntries: many(MAX_CONTACT_ENTRIES + 1) } as never))).rejects.toThrow(CONTACT_ENTRIES_FULL);
+        sqlite.prepare("UPDATE adopters SET contact_entries = ? WHERE id = 'lucas'").run(many(MAX_CONTACT_ENTRIES - 1, 'l'));
+        const r = await as(OWNER, () => appendToExistingAdopter('lucas', { contactEntries: many(2, 'n') }));
+        expect(r).toMatchObject({ success: false, error: CONTACT_ENTRIES_FULL });
+        expect(entriesOf('lucas')).toHaveLength(MAX_CONTACT_ENTRIES - 1);
+    });
+
+    it('S2: the alias is credited to the rename sentinel, the renamer only in the history row', async () => {
+        await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' });
+        expect(entriesOf('pedro').find(e => e.type === 'alias')).toMatchObject({ addedBy: RENAME_ALIAS_AUTHOR });
+        expect(historyOf('pedro')[0]).toMatchObject({ changed_by: STRANGER });
+    });
+
+    it('S2: after an old build rewrote the list without `fromRename`, the renamer still cannot delete the old name and it stays hidden from the contacts', async () => {
+        await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' });
+        // What an old build writes back: the flag dropped, the sentinel author kept.
+        const stripped = rawEntries('pedro').map(({ fromRename: _f, ...e }) => e);
+        sqlite.prepare("UPDATE adopters SET contact_entries = ? WHERE id = 'pedro'").run(JSON.stringify(stripped));
+        const alias = entriesOf('pedro').find(e => e.type === 'alias')!;
+        expect(alias).toMatchObject({ fromRename: true });
+        expect(await removeContactEntry({ adopterId: 'pedro', entryId: alias.id! })).toMatchObject({ ok: false });
+        expect(await updateContactEntry({ adopterId: 'pedro', entryId: alias.id!, value: 'Nadie' })).toMatchObject({ ok: false });
+        expect(knownAsNames(entriesOf('pedro'), 'P. Paez')).toEqual(['Pedro Paez']);
+    });
+
+    it('S2: client JSON carrying the sentinel author is not a rename alias (create and append)', async () => {
+        const forged = JSON.stringify([{ id: 'f', type: 'alias', value: 'Hidden Name', addedBy: RENAME_ALIAS_AUTHOR }]);
+        const created = await saveAdopter({ id: '', name: 'Nuevo', contactEntries: forged } as never);
+        const e = entriesOf((created as { id: string }).id).find(x => x.type === 'alias')!;
+        expect(e).not.toHaveProperty('fromRename');
+        expect(e.addedBy).not.toBe(RENAME_ALIAS_AUTHOR);
+        await as(OWNER, () => appendToExistingAdopter('lucas', { contactEntries: forged }));
+        expect(entriesOf('lucas').find(x => x.type === 'alias')?.addedBy).not.toBe(RENAME_ALIAS_AUTHOR);
+    });
+});

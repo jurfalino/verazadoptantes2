@@ -9,7 +9,7 @@ import {
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
-import { isRenameAlias, deriveStreet, deriveLocality, detectSocialPlatform, socialUrl, phoneAppUrl, retypeDraft, SOCIAL_PLATFORMS, type ContactEntry, type ContactEntryType, type ContactDraft, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
+import { CONTACT_ENTRIES_FULL, isRenameAlias, deriveStreet, deriveLocality, detectSocialPlatform, socialUrl, phoneAppUrl, retypeDraft, SOCIAL_PLATFORMS, type ContactEntry, type ContactEntryType, type ContactDraft, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
 import { ContactTypePicker } from '@/components/ContactTypePicker';
 import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
 import { SocialLogo } from '@/components/SocialLogo';
@@ -366,6 +366,10 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
             const res = await addContactEntry(payload);
             if (!res.ok && res.error === 'busy' && 'errorId' in res) {
                 toast.error(t('errors.generic'), t('collab.busy'), res.errorId);
+                return { ok: false };
+            }
+            if (!res.ok && res.error === CONTACT_ENTRIES_FULL) {
+                toast.error(t('errors.generic'), t('adopter.ce_add_full'));
                 return { ok: false };
             }
             if (res.ok) {

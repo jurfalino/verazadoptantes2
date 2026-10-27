@@ -16,7 +16,7 @@ import { logger } from '@/lib/logger';
 import { getDb } from '@/lib/db';
 import { reassignAdopterRecords } from '@/app/actions/_recordWrite';
 import { normalizeText } from '@/lib/tokenizer';
-import { deserializeContactEntries, mergeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, isRenameAlias, type ContactEntry } from '@/lib/contactEntries';
+import { deserializeContactEntries, mergeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, isRenameAlias, RENAME_ALIAS_AUTHOR, type ContactEntry } from '@/lib/contactEntries';
 import { knownAsNames, preserveRenameAliases, withRenameAliases } from '@/domain/profileIdentity';
 import { deserializeHouseholdMembers, serializeHouseholdMembers, undoHouseholdMerge } from '@/lib/householdMembers';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
@@ -232,10 +232,11 @@ export async function mergeAdopters(
             // existing plain copy is upgraded in place; unmerge reverts exactly these ids.
             carriedAliasIds = [];
             if (secondaryName && normalizeText(secondaryName) !== normalizeText(p.name || '')) {
-                const carried: ContactEntry = { id: crypto.randomUUID(), type: 'alias', value: secondaryName, addedBy: actorEmail, fromRename: true };
-                const before = new Map(mergedEntries.map(e => [e.id, e.fromRename === true]));
+                // Credited to the rename sentinel (S2); the merge audit names the actor.
+                const carried: ContactEntry = { id: crypto.randomUUID(), type: 'alias', value: secondaryName, addedBy: RENAME_ALIAS_AUTHOR, fromRename: true };
+                const before = new Map(mergedEntries.map(e => [e.id, isRenameAlias(e)]));
                 mergedEntries = withRenameAliases(mergedEntries, [carried]);
-                carriedAliasIds = mergedEntries.filter(e => e.fromRename === true && before.get(e.id) !== true).map(e => e.id ?? '').filter(Boolean);
+                carriedAliasIds = mergedEntries.filter(e => isRenameAlias(e) && before.get(e.id) !== true).map(e => e.id ?? '').filter(Boolean);
             }
             if (mergedEntries.length > 0) {
                 updates.contactEntries = JSON.stringify(mergedEntries);
