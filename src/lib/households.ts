@@ -243,6 +243,11 @@ function membershipId(): string {
     return `hm-${lastIdMs.toString(36).padStart(9, '0')}-${crypto.randomUUID()}`;
 }
 
+/** A new membership id, for a caller that writes the row inside its own batch. */
+export function newMembershipId(): string {
+    return membershipId();
+}
+
 /** A new household with nobody in it yet. For a gift household add the recipient (gift) first. */
 export async function createHousehold(db: Db, actor: string | null, id: string = `hh-${crypto.randomUUID()}`): Promise<string> {
     await db.insert(households).values({ id, createdBy: actor, createdAt: new Date() }).onConflictDoNothing().run();

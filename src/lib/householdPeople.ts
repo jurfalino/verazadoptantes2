@@ -30,7 +30,7 @@ import type { ContactEntry } from '@/lib/contactEntries';
 import { findIdentifierHits, ownerCountry as apiOwnerCountry } from '@/lib/api/profiles';
 import {
     addMembership, claimMembershipRecord, ensureHousehold, hasCorrection, householdExists, householdIdsOf,
-    isMemberOf, membershipBySourceKey, membershipsOf, releaseMembershipRecord,
+    isMemberOf, membershipBySourceKey, membershipsOf, newMembershipId, releaseMembershipRecord,
 } from '@/lib/households';
 import { notifyHouseholdPersonAdded, notifyHouseholdReaddDisputed } from '@/lib/householdNotices';
 import { FORM_SENTINEL, giftRecipientsOf, giftSourceKey, type FormGiftRecipient } from '@/lib/giftRecipients';
@@ -490,8 +490,10 @@ const ABANDONED_GIFT_CLAIM_MS = 2 * 60 * 1000;
  *
  * Once per form: the household id `hh-gift-{submissionId}` is the claim
  * (insert-or-ignore), so a double click makes one profile; the membership's
- * `source_key = gift-{submissionId}` finds it again. Throws on a DB failure
- * (a claim that fails mid-way is taken back).
+ * `source_key = gift-{submissionId}` (unique) finds it again. A recipient
+ * profile since deleted is replaced in place (its row swapped for the new one
+ * in one batch), never by deleting the household. Throws on a DB failure (a
+ * claim that fails mid-way is taken back).
  */
 export async function createGiftRecipientFromForm(
     db: Db,
@@ -527,38 +529,79 @@ export async function createGiftRecipientFromForm(
     if (keyed && await liveRow(db, keyed.adopterId)) {
         return { ok: true, profileId: keyed.adopterId, householdId: keyed.householdId, membershipId: keyed.id, created: false };
     }
-    // A recipient profile made earlier and since deleted is absent, so «Crear perfil» works again:
-    // ITS row goes (by id, while it still points at that deleted profile), and its gift household
-    // with the giver's row — but only while that household still carries the mark we read BEFORE
-    // deleting and holds no recipient. A click that claimed it in between changed the mark: its
-    // rows are never touched. One batch.
+    const privileged = await isPrivilegedOnProfile(input.actor, giver.addedBy);
+    const entries: ContactEntry[] = recipient.phone ? [{ id: crypto.randomUUID(), type: 'phone', value: recipient.phone, addedBy: FORM_SENTINEL }] : [];
+    const makeProfile = async () => {
+        const { createHouseholdProfile } = await import('@/app/actions/_adopterFactory');
+        return await createHouseholdProfile(db, {
+            ownerEmail: giver.addedBy ?? 'anonymous',
+            actor: input.actor,
+            name,
+            contactEntries: entries,
+            historyKind: historyKind(privileged),
+            history: { created_in_household: { anchorId: giver.id, anchorName: giver.name, householdId, gift: true, submissionId: sub.id, ...(entries.length ? { contactTypes: ['phone'] } : {}) } },
+        });
+    };
+    /** The add's own record on the giver (once), audit, log. */
+    const record = async (membershipId: string, profileId: string) => {
+        if (await claimMembershipRecord(db, membershipId)) {
+            await db.insert(adopterHistory).values({
+                id: crypto.randomUUID(), adopterId: giver.id, changedBy: input.actor, kind: historyKind(privileged), changedAt: new Date(),
+                changes: JSON.stringify({ household_member_added: { id: membershipId, householdId, profileId, relationship: recipient.relationship, gift: true, submissionId: sub.id } }),
+            }).catch(async (e: unknown) => {
+                logger.error('createGiftRecipientFromForm: profile made, giver history not written', e, { ...ctx, profileId });
+                await releaseMembershipRecord(db, membershipId).catch((re: unknown) => logger.error('createGiftRecipientFromForm: record claim not released', re, ctx));
+            });
+        }
+        logAudit({ userEmail: input.actor, action: 'adopter_created', target: profileId, details: { name, via: 'gift', submissionId: sub.id, giverAdopterId: giver.id } });
+        logger.info('createGiftRecipientFromForm: recipient profile made', { ...ctx, profileId, householdId });
+    };
+
+    // A recipient profile made earlier and since deleted is absent, so «Crear perfil» works again.
+    // The gift household is never deleted or re-claimed for it: the deleted recipient's row is
+    // REPLACED by the new one in one batch (delete by id while it still points at the deleted
+    // profile + insert under the same unique source key). Two clicks at once: one insert lands,
+    // the other finds the winner's row under the key, drops its own profile and answers that one.
+    if (keyed && keyed.householdId === householdId) {
+        const profileId = await makeProfile();
+        const newId = newMembershipId();
+        try {
+            await runBatch(db, [
+                db.delete(householdMemberships).where(and(
+                    eq(householdMemberships.id, keyed.id),
+                    eq(householdMemberships.adopterId, keyed.adopterId),
+                    sql`EXISTS (SELECT 1 FROM adopters a WHERE a.id = ${householdMemberships.adopterId} AND a.deleted_at IS NOT NULL)`,
+                )),
+                db.insert(householdMemberships).values({
+                    id: newId, householdId, adopterId: profileId, relationship: recipient.relationship, relativeToAdopterId: giver.id,
+                    giftRecipient: 1, addedBy: input.actor, addedAt: new Date(), sourceKey,
+                }).onConflictDoNothing(),
+            ]);
+        } catch (e) {
+            await undoCreated(db, profileId, ctx);
+            throw e;
+        }
+        const now = await membershipBySourceKey(db, sourceKey);
+        if (now?.id !== newId) {
+            await undoCreated(db, profileId, ctx, 'lost_race');
+            const winner = await already();
+            if (winner) return winner;
+            logger.info('createGiftRecipientFromForm: another request is replacing the deleted recipient', ctx);
+            return { ok: false, error: 'conflict' };
+        }
+        // The giver's own row (no adder), kept from before or put back.
+        await addMembership(db, { householdId, adopterId: giver.id, relationship: 'unknown', addedBy: null });
+        logger.info('createGiftRecipientFromForm: the deleted recipient was replaced', { ...ctx, profileId, previousProfileId: keyed.adopterId });
+        await record(newId, profileId);
+        return { ok: true, profileId, householdId, membershipId: newId, created: true };
+    }
     if (keyed) {
-        const h = keyed.householdId === householdId
-            ? await db.select({ createdAt: households.createdAt }).from(households).where(eq(households.id, householdId)).get() as { createdAt: Date | null } | undefined
-            : undefined;
-        const unchanged = h?.createdAt
-            ? sql`EXISTS (SELECT 1 FROM households h WHERE h.id = ${householdId} AND h.created_at = ${Math.floor(new Date(h.createdAt).getTime() / 1000)})`
-            : sql`0`;
-        await runBatch(db, [
-            db.delete(householdMemberships).where(and(
-                eq(householdMemberships.id, keyed.id),
-                eq(householdMemberships.adopterId, keyed.adopterId),
-                sql`EXISTS (SELECT 1 FROM adopters a WHERE a.id = ${householdMemberships.adopterId} AND a.deleted_at IS NOT NULL)`,
-            )),
-            db.delete(householdMemberships).where(and(
-                eq(householdMemberships.householdId, householdId),
-                eq(householdMemberships.adopterId, giver.id),
-                eq(householdMemberships.giftRecipient, 0),
-                unchanged,
-                sql`NOT EXISTS (SELECT 1 FROM household_memberships r WHERE r.household_id = ${householdId} AND r.gift_recipient = 1)`,
-            )),
-            db.delete(households).where(and(
-                eq(households.id, householdId),
-                unchanged,
-                sql`NOT EXISTS (SELECT 1 FROM household_memberships m WHERE m.household_id = ${householdId})`,
-            )),
-        ]);
-        logger.info('createGiftRecipientFromForm: the earlier recipient profile is deleted, its gift household cleared', { ...ctx, householdId: keyed.householdId, profileId: keyed.adopterId });
+        // A row under this form's key outside its gift household (never written that way): it goes, by id.
+        await db.delete(householdMemberships).where(and(
+            eq(householdMemberships.id, keyed.id),
+            sql`EXISTS (SELECT 1 FROM adopters a WHERE a.id = ${householdMemberships.adopterId} AND a.deleted_at IS NOT NULL)`,
+        ));
+        logger.warn('createGiftRecipientFromForm: a deleted recipient\'s row outside the gift household removed', { ...ctx, householdId: keyed.householdId });
     }
     if ((await householdIdsOf(db, giver.id)).length >= MAX_HOUSEHOLDS_PER_PROFILE) {
         logger.info('createGiftRecipientFromForm: refused, the giver is in too many households', ctx);
@@ -599,17 +642,7 @@ export async function createGiftRecipientFromForm(
     let profileId: string | null = null;
     const mine: string[] = []; // memberships this request created — the only ones its cleanup may remove
     try {
-        const { createHouseholdProfile } = await import('@/app/actions/_adopterFactory');
-        const entries: ContactEntry[] = recipient.phone ? [{ id: crypto.randomUUID(), type: 'phone', value: recipient.phone, addedBy: FORM_SENTINEL }] : [];
-        const privileged = await isPrivilegedOnProfile(input.actor, giver.addedBy);
-        profileId = await createHouseholdProfile(db, {
-            ownerEmail: giver.addedBy ?? 'anonymous',
-            actor: input.actor,
-            name,
-            contactEntries: entries,
-            historyKind: historyKind(privileged),
-            history: { created_in_household: { anchorId: giver.id, anchorName: giver.name, householdId, gift: true, submissionId: sub.id, ...(entries.length ? { contactTypes: ['phone'] } : {}) } },
-        });
+        profileId = await makeProfile();
         // Recipient first: the household is a gift one from its first membership (Task 1).
         const placed = await addMembership(db, {
             householdId, adopterId: profileId, relationship: recipient.relationship, relativeToAdopterId: giver.id,
@@ -618,17 +651,7 @@ export async function createGiftRecipientFromForm(
         if (placed.created) mine.push(placed.membershipId);
         const giverRow = await addMembership(db, { householdId, adopterId: giver.id, relationship: 'unknown', addedBy: null });
         if (giverRow.created) mine.push(giverRow.membershipId);
-        if (await claimMembershipRecord(db, placed.membershipId)) {
-            await db.insert(adopterHistory).values({
-                id: crypto.randomUUID(), adopterId: giver.id, changedBy: input.actor, kind: historyKind(privileged), changedAt: new Date(),
-                changes: JSON.stringify({ household_member_added: { id: placed.membershipId, householdId, profileId, relationship: recipient.relationship, gift: true, submissionId: sub.id } }),
-            }).catch(async (e: unknown) => {
-                logger.error('createGiftRecipientFromForm: profile made, giver history not written', e, { ...ctx, profileId });
-                await releaseMembershipRecord(db, placed.membershipId).catch((re: unknown) => logger.error('createGiftRecipientFromForm: record claim not released', re, ctx));
-            });
-        }
-        logAudit({ userEmail: input.actor, action: 'adopter_created', target: profileId, details: { name, via: 'gift', submissionId: sub.id, giverAdopterId: giver.id } });
-        logger.info('createGiftRecipientFromForm: recipient profile made', { ...ctx, profileId, householdId });
+        await record(placed.membershipId, profileId);
         return { ok: true, profileId, householdId, membershipId: placed.membershipId, created: true };
     } catch (e) {
         // Take OUR claim back so a retry can make it: only the memberships we created, the

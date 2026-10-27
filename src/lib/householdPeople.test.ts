@@ -21,6 +21,8 @@ const { state, notify, deferred, faults } = vi.hoisted(() => ({
         beforeAdd: null as null | ((input: { householdId: string; sourceKey?: string | null }) => void | Promise<void>),
         /** Runs before the next runBatch (once): another request finishing in between. */
         beforeBatch: null as null | (() => Promise<void>),
+        /** Runs after the next source-key read that finds a row (once). */
+        afterKeyRead: null as null | ((row: { id: string; adopterId: string; householdId: string }) => Promise<void>),
     },
     state: { db: null as unknown },
     notify: { create: [] as Array<Record<string, unknown>>, admins: [] as Array<Record<string, unknown>> },
@@ -62,6 +64,11 @@ vi.mock('@/lib/households', async (orig) => {
         addMembership: vi.fn(async (...args: Parameters<typeof real.addMembership>) => {
             const hook = faults.beforeAdd; faults.beforeAdd = null; await hook?.(args[1]);
             return real.addMembership(...args);
+        }),
+        membershipBySourceKey: vi.fn(async (...args: Parameters<typeof real.membershipBySourceKey>) => {
+            const row = await real.membershipBySourceKey(...args);
+            if (row && faults.afterKeyRead) { const hook = faults.afterKeyRead; faults.afterKeyRead = null; await hook(row); }
+            return row;
         }),
     };
 });
@@ -149,6 +156,7 @@ beforeEach(async () => {
     deferred.tasks.length = 0;
     faults.beforeAdd = null;
     faults.beforeBatch = null;
+    faults.afterKeyRead = null;
     vi.mocked(findAdopters).mockClear();
     session.user = OWNER;
     // The form link's owner, in Argentina: phones are read as Argentine ones.
@@ -601,9 +609,9 @@ describe('Task 4 fix round 2', () => {
         expect(a).toMatchObject({ ok: true, created: true });
         expect(live('Sofía Gómez')).toBe(1);
         const members = householdOf(`hh-gift-${submissionId}`);
-        expect(members.map(m => m.gift_recipient)).toEqual([1, 0]);
         const sofia = sqlite.prepare(`SELECT id FROM adopters WHERE name = 'Sofía Gómez' AND deleted_at IS NULL`).get()!.id;
-        expect(members[0].adopter_id).toBe(sofia);
+        // The new recipient replaced the deleted one next to the giver's kept row.
+        expect(members.map(m => [m.adopter_id, m.gift_recipient]).sort()).toEqual([[applicantId, 0], [sofia, 1]].sort());
         if (b.ok) expect(b.profileId).toBe(sofia); else expect(b.error).toBe('conflict');
     });
 
@@ -705,5 +713,42 @@ describe('Task 4 fix round 2', () => {
         const home = sqlite.prepare(`SELECT household_id FROM household_memberships WHERE adopter_id = 'pedro'`).get()!.household_id;
         expect(home).not.toBe('hh-pedro');
         expect(householdOf(home as string).map(m => m.adopter_id)).toEqual(['pedro', first.profileId]);
+    });
+});
+
+describe('Task 4 fix round 3', () => {
+    it("gift: a click that cleared the deleted recipient and re-claimed between our key read and our cleanup keeps its household", async () => {
+        const { submissionId, applicantId } = await postForm({
+            name: 'Jonathan Giver', email: 'jg30@example.com', phone: '11 6123 3030', intent: 'gift',
+            giftRecipient: { relationship: 'child', firstName: 'Sofía', lastName: 'Gómez', phone: '11 5555 0101' },
+        });
+        session.user = OWNER;
+        const first = await createGiftRecipientProfile({ giverAdopterId: applicantId, submissionId });
+        if (!first.ok) throw new Error(first.error);
+        sqlite.prepare('UPDATE adopters SET deleted_at = 5 WHERE id = ?').run(first.profileId);
+        const hh = `hh-gift-${submissionId}`;
+
+        let aPaused!: () => void;
+        const aAtAdd = new Promise<void>(r => { aPaused = r; });
+        let releaseA!: () => void;
+        const bDone = new Promise<void>(r => { releaseA = r; });
+        let aRun: Promise<unknown> | null = null;
+        // B (OWNER) has read the stale key; A (ADMIN) then runs and stops at its next membership
+        // write — while B's cleanup / replacement runs.
+        faults.afterKeyRead = async () => {
+            faults.beforeAdd = async () => { aPaused(); await bDone; };
+            aRun = createGiftRecipientFromForm(db(), { giverAdopterId: applicantId, submissionId, actor: ADMIN });
+            await aAtAdd;
+        };
+        const b = await createGiftRecipientFromForm(db(), { giverAdopterId: applicantId, submissionId, actor: OWNER });
+        releaseA();
+        const a = (await aRun) as unknown as Awaited<ReturnType<typeof createGiftRecipientFromForm>>;
+        // A's recipient stands; B, which read the stale key first, answers A's profile.
+        expect(a).toMatchObject({ ok: true, created: true });
+        expect(b).toEqual(a.ok ? { ...a, created: false } : null);
+        expect(count(`SELECT COUNT(*) AS n FROM adopters WHERE name = 'Sofía Gómez' AND deleted_at IS NULL`)).toBe(1);
+        const members = householdOf(hh);
+        expect(members.filter(m => m.gift_recipient === 1).map(m => m.adopter_id)).toEqual([a.ok ? a.profileId : 'x']);
+        expect(members.filter(m => m.gift_recipient === 0).map(m => m.adopter_id)).toEqual([applicantId]);
     });
 });
