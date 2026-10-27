@@ -503,7 +503,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
             setContinueBusyId(null);
             setPendingMerge(null);
         }
-    }, [pendingMerge, continueBusyId, data.contactInfo, data.familyMembers, contactEntries, router]);
+    }, [pendingMerge, continueBusyId, data.contactInfo, data.familyMembers, contactEntries, router, t]);
 
     // Debounced duplicate search while typing (create only)
     useEffect(() => {

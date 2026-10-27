@@ -574,13 +574,6 @@ describe('getHouseholdMatchCandidates — «¿Es este perfil?»', () => {
 });
 
 describe('Task 2 fix round 1', () => {
-    const tenHouseholds = (adopterId: string) => {
-        for (let i = 0; i < 10; i++) {
-            sqlite.prepare('INSERT INTO households (id, created_by, created_at) VALUES (?, ?, 1000)').run(`hh-x${i}`, OTHER);
-            sqlite.prepare(`INSERT INTO household_memberships (id, household_id, adopter_id, relationship, gift_recipient, added_by, added_at) VALUES (?, ?, ?, 'unknown', 0, ?, 1000)`)
-                .run(`hm-x${i}`, `hh-x${i}`, adopterId, OTHER);
-        }
-    };
 
     it("1: a stranger who triggered Pedro's household gets no adder's rights over Pedro's own row", async () => {
         await strangerAddsLucas();
