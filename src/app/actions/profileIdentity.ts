@@ -37,7 +37,7 @@ export type ChangeProfileNameResult =
     | { ok: true; name: string; aliasKept: boolean; warningErrorId?: string }
     /** `conflict`: the stored name (`theirs`) and who wrote it (`by`, a display name or '') — «alguien cambió este dato mientras lo editabas». */
     | { ok: false; error: 'conflict'; theirs: string; by: string }
-    | Fail;
+    | { ok: false; error: Exclude<ProfileIdentityError, 'conflict'>; errorId?: string };
 
 export type ChangeProfileAgeResult = { ok: true; age: number | null; isMinor: boolean; warningErrorId?: string } | Fail;
 export type UndoProfileRenameResult = { ok: true; name: string; warningErrorId?: string } | Fail;

@@ -6,7 +6,9 @@ import { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { useSetEditActions } from "@/context/EditActionsContext";
 import { InlineEditField } from "@/components/InlineEditField";
 import { useRouter, useSearchParams } from "next/navigation";
-import { saveAdopter, saveImage, findFormDuplicates, appendToExistingAdopter } from "@/app/actions";
+import { saveAdopter, saveImage, findFormDuplicates, appendToExistingAdopter, changeProfileName } from "@/app/actions";
+import type { ProfileIdentityView } from "@/domain/profileIdentity";
+import ProfileAgeEditor from "@/components/ProfileAgeEditor";
 import { hasStrongMatch } from "@/lib/matchChips";
 import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
 import DuplicatePeek from "@/components/DuplicatePeek";
@@ -113,10 +115,12 @@ interface AdopterFormProps {
     isModerator?: boolean;
     /** «Ver como desconocido»: the household shows exactly what a stranger gets — no team controls, no own markers. */
     previewAsStranger?: boolean;
+    /** Households as profiles: «Conocido/a como», age and «Menor de edad» (server-computed). */
+    identity?: ProfileIdentityView | null;
 }
 
 
-export function AdopterForm({ origin = null, interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick, linkedSummaries = EMPTY_LINKED_SUMMARIES, isModerator = false, previewAsStranger = false }: AdopterFormProps) {
+export function AdopterForm({ origin = null, interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick, linkedSummaries = EMPTY_LINKED_SUMMARIES, isModerator = false, previewAsStranger = false, identity = null }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -127,6 +131,8 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     const isNew = !initialData?.id;
     const id = adopterId || initialData?.id || '';
     const [showReportMenu, setShowReportMenu] = useState(false);
+    // «Cambiar edad» (households as profiles): anyone signed in; opened from the ⋯ menu.
+    const [ageEditorOpen, setAgeEditorOpen] = useState(false);
     const flaggingRef = useRef<AdopterFlaggingHandle>(null);
     // Publishes edit state to the global nav so, on MOBILE, it shows Cancelar/Guardar
     // (keyboard-proof) while editing an existing profile. `formRef` lets the nav's
@@ -785,7 +791,64 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     //
     // `force` = «Guardar la mía igual»: the editor has seen the teammate's
     // value, so that value becomes the one compared against.
+    // The NAME of an existing profile is open to anyone signed in (households as
+    // profiles, Jon 2026-10-27): it goes through changeProfileName — compare-and-set
+    // on the name this tab loaded, the old name kept as «Conocido/a como», the
+    // owner's team told with «Deshacer». Same conflict UX as every inline field.
+    const saveName = useCallback(async (next: string, opts?: { force?: boolean }): Promise<boolean> => {
+        const prevData = dataRef.current;
+        const seen = fieldConflictsRef.current.name;
+        const expectedName = opts?.force && seen ? (seen.value ?? '') : (baselineRef.current.name ?? '');
+        const optimistic = { ...prevData, name: next };
+        setData(optimistic);
+        dataRef.current = optimistic;
+        const revert = () => { setData(prevData); dataRef.current = prevData; };
+        let res: Awaited<ReturnType<typeof changeProfileName>>;
+        try {
+            res = await changeProfileName({ adopterId: prevData.id, name: next, expectedName });
+        } catch (e) {
+            revert();
+            if (!handledAsStale(e)) toast.error(t('toast.save_error_title'), t('adopter.rename_failed'), resolveErrorId(e, 'AdopterForm.saveName'));
+            return false;
+        }
+        if (!res.ok) {
+            if (res.error === 'conflict') {
+                // Nothing of theirs was overwritten: show their name, keep my text open beside «Guardar la mía igual».
+                baselineRef.current = { ...baselineRef.current, name: res.theirs };
+                const display = { ...prevData, name: res.theirs };
+                setData(display);
+                dataRef.current = display;
+                setFieldConflicts(c => ({ ...c, name: { by: res.by, value: res.theirs } }));
+                toast.warning(needsReviewMessage(t, 'name'));
+                return false;
+            }
+            revert();
+            if (res.error === 'busy') {
+                toast.error(t('toast.save_error_title'), t('collab.busy'), res.errorId);
+                return false;
+            }
+            const errorId = res.errorId ?? await reportClientError({
+                message: `changeProfileName failed: ${res.error}`,
+                source: 'AdopterForm.saveName',
+                extra: { adopterId: prevData.id || null },
+            });
+            toast.error(t('toast.save_error_title'), t('adopter.rename_failed'), errorId);
+            return false;
+        }
+        baselineRef.current = { ...baselineRef.current, name: res.name };
+        const display = { ...dataRef.current, name: res.name };
+        setData(display);
+        dataRef.current = display;
+        setFieldConflicts(c => { const n = { ...c }; delete n.name; return n; });
+        setFieldUpdatedBy(u => { const n = { ...u }; delete n.name; return n; });
+        zarazTrack('adopter_updated', { source: 'inline', field: 'name' });
+        // «Conocido/a como» and the history come from the server.
+        router.refresh();
+        return true;
+    }, [toast, t, router]);
+
     const saveField = useCallback(async (field: 'name' | 'familyMembers', next: string, opts?: { force?: boolean }): Promise<boolean> => {
+        if (field === 'name') return saveName(next, opts);
         const prevData = dataRef.current;
         const updated = { ...prevData, [field]: next };
         setData(updated);
@@ -855,7 +918,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         setFieldUpdatedBy(u => { const n = { ...u }; delete n[field]; return n; });
         zarazTrack('adopter_updated', { source: 'inline', field });
         return true;
-    }, [toast, t]);
+    }, [toast, t, saveName]);
 
     // «Quedarme con la de <Nombre>»: their value is already stored — just show it.
     const keepTheirs = useCallback((field: 'name' | 'familyMembers') => {
@@ -1185,7 +1248,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                         return (
                                             <InlineEditField
                                                 value={data.name}
-                                                canEdit={canEdit}
+                                                canEdit={!!isAuthenticated}
                                                 required
                                                 ariaLabel={displayName}
                                                 editButtonTestId="name-edit-btn"
@@ -1247,7 +1310,23 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                                 </button>
                                             );
                                         })()}
+                                        {identity?.isMinor && !nameEditing && (
+                                            <span data-testid="minor-tag" className="flex-none inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded whitespace-nowrap"
+                                                style={{ backgroundColor: 'var(--status-purple-bg)', color: 'var(--status-purple-text)' }}>
+                                                {t('adopter.minor_tag')}
+                                            </span>
+                                        )}
                                       </div>
+                                      {/* Anyone signed in can rename: say what happens to the old name (not to the owner's team — it's theirs). */}
+                                      {nameEditing && !isPrivileged && (
+                                          <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }} data-testid="rename-hint">{t('adopter.rename_hint')}</p>
+                                      )}
+                                      {/* Previous names a rename kept: still found by search, never listed with the contacts. */}
+                                      {!isNew && !!identity?.knownAs.length && (
+                                          <p className="text-xs mt-0.5 break-words" style={{ color: 'var(--text-muted)' }} data-testid="profile-known-as">
+                                              {t('adopter.known_as')} <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{identity.knownAs.join(', ')}</span>
+                                          </p>
+                                      )}
                                       {/* Sub-identifier for a nameless adopter — only when the
                                           contact reaching this form is unmasked for the viewer
                                           (isPrivileged); a masked contact would be useless noise. */}
@@ -1322,6 +1401,23 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                                                         </div>
                                                                     </a>
                                                                 )}
+                                                                {/* Age / «Es menor de edad» — open to anyone signed in, like the name. */}
+                                                                {identity && isAuthenticated && (
+                                                                    <>
+                                                                        <button type="button" data-testid="profile-age-edit"
+                                                                            onClick={() => { setShowReportMenu(false); setAgeEditorOpen(true); }}
+                                                                            className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left">
+                                                                            <svg className="w-5 h-5 mt-0.5 text-teal-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
+                                                                                <rect x="3.5" y="5" width="17" height="15" rx="2" /><path d="M3.5 10h17M8 3v4M16 3v4" strokeLinecap="round" />
+                                                                            </svg>
+                                                                            <div>
+                                                                                <div className="text-sm font-semibold text-stone-900">{identity.age !== null || identity.minorBox ? t('adopter.age_edit') : t('adopter.age_add')}</div>
+                                                                                <div className="text-xs text-stone-500 mt-0.5">{t('adopter.age_hint')}</div>
+                                                                            </div>
+                                                                        </button>
+                                                                        <div className="border-t border-stone-100" />
+                                                                    </>
+                                                                )}
                                                                 {/* Share Profile */}
                                                                 <button
                                                                     type="button"
@@ -1344,6 +1440,8 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                                                         <div className="text-xs text-stone-500 mt-0.5">{t('common.copy_link') || 'Copy link or share'}</div>
                                                                     </div>
                                                                 </button>
+                                                                {/* A minor gets no alerts (a duplicate report is one): the server refuses it too. */}
+                                                                {!identity?.isMinor && (<>
                                                                 <div className="border-t border-stone-100" />
                                                                 <button
                                                                     type="button"
@@ -1360,6 +1458,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                                                         <div className="text-xs text-stone-500 mt-0.5">{t('flagging.menu_duplicate_desc') || 'Flag as duplicate of another profile'}</div>
                                                                     </div>
                                                                 </button>
+                                                                </>)}
                                                                 <div className="border-t border-stone-100" />
                                                                 <button
                                                                     type="button"
@@ -1412,6 +1511,9 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                             {/* Metadata row */}
                             {!isNew && (
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-xs">
+                                    {identity?.age != null && (
+                                        <span className="font-semibold text-stone-600" data-testid="profile-age">{t('adopter.hh_years').replace('{n}', String(identity.age))}</span>
+                                    )}
                                     {/* Creator byline (v2.18.15). First item in the meta
                                         row because "who created this" is the most
                                         identifying piece of record metadata. Privileged
@@ -1447,6 +1549,9 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                         </a>
                                     )}
                                 </div>
+                            )}
+                            {!isNew && identity && ageEditorOpen && initialData?.id && (
+                                <ProfileAgeEditor adopterId={initialData.id} identity={identity} onClose={() => setAgeEditorOpen(false)} />
                             )}
                         </div>
                     </div>

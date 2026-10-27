@@ -9,7 +9,7 @@ import {
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
-import { deriveStreet, deriveLocality, detectSocialPlatform, socialUrl, phoneAppUrl, retypeDraft, SOCIAL_PLATFORMS, type ContactEntry, type ContactEntryType, type ContactDraft, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
+import { isRenameAlias, deriveStreet, deriveLocality, detectSocialPlatform, socialUrl, phoneAppUrl, retypeDraft, SOCIAL_PLATFORMS, type ContactEntry, type ContactEntryType, type ContactDraft, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
 import { ContactTypePicker } from '@/components/ContactTypePicker';
 import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
 import { SocialLogo } from '@/components/SocialLogo';
@@ -239,7 +239,8 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         wasComposerOpenRef.current = isOpenNow;
     }, [composerStage]);
 
-    const visibleEntries = entries.filter(e => e.id !== deletingId);
+    // A previous name kept by a rename is a name token, not a contact: the header shows it («Conocido/a como»).
+    const visibleEntries = entries.filter(e => e.id !== deletingId && !isRenameAlias(e));
     const sorted = [...visibleEntries].sort(
         (a, b) => DISPLAY_ORDER.indexOf(a.type) - DISPLAY_ORDER.indexOf(b.type),
     );

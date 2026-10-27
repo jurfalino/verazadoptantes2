@@ -16,7 +16,7 @@
  */
 import { isRenameAlias, type ContactEntry } from '@/lib/contactEntries';
 import { normalizeText } from '@/lib/tokenizer';
-import { MINOR_AGE_LIMIT } from '@/domain/households';
+import { MINOR_AGE_LIMIT, currentAge, isMinor } from '@/domain/households';
 
 /** Error-message prefix for a record, alert or rating refused on a minor's profile. */
 export const PROFILE_IS_MINOR = 'PROFILE_IS_MINOR';
@@ -172,4 +172,24 @@ export function renameUndoOf(metadata: unknown): { historyId: string; profileId:
 export function renameUndoPath(metadata: unknown): string | null {
     const u = renameUndoOf(metadata);
     return u ? `/adopter/${encodeURIComponent(u.profileId)}?${UNDO_RENAME_PARAM}=${encodeURIComponent(u.historyId)}` : null;
+}
+
+/** What the profile header shows about a person's identity (computed on the server: one clock, no hydration drift). */
+export type ProfileIdentityView = {
+    /** «Conocido/a como»: names a rename kept. */
+    knownAs: string[];
+    /** The age today (counted up from when it was told), or null. */
+    age: number | null;
+    /** «Menor de edad» (a known age decides; the box only with no age). */
+    isMinor: boolean;
+    /** The stored «Es menor de edad» box (what the editor starts from when there's no age). */
+    minorBox: boolean;
+};
+
+export function profileIdentityView(
+    p: { name?: string | null; age?: number | null; ageAsOf?: string | null; isMinor?: number | boolean | null },
+    entries: readonly ContactEntry[],
+    today: Date = new Date(),
+): ProfileIdentityView {
+    return { knownAs: knownAsNames(entries, p.name), age: currentAge(p, today), isMinor: isMinor(p, today), minorBox: !!p.isMinor };
 }

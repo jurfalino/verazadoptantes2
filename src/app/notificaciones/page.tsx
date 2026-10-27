@@ -5,6 +5,8 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { localizedNotification } from '@/domain/notificationTemplates';
+import { renameUndoOf } from '@/domain/profileIdentity';
+import { RenameUndoButton } from '@/components/RenameUndo';
 
 interface NotificationItem {
     id: string;
@@ -51,6 +53,7 @@ const TYPE_LABELS: Record<string, { es: string; en: string; icon: string }> = {
     contract_result: { es: 'Contrato', en: 'Contract', icon: '📋' },
     form_submission: { es: 'Formulario', en: 'Form', icon: '📝' },
     api_record: { es: 'Herramienta conectada', en: 'Connected tool', icon: '🔌' },
+    profile_renamed: { es: 'Nombre cambiado', en: 'Name changed', icon: '✏️' },
     system: { es: 'Sistema', en: 'System', icon: '⚙️' },
     pii_access_request: { es: 'Acceso a contacto', en: 'Contact access', icon: '🔒' },
     pii_access_approved: { es: 'Acceso aprobado', en: 'Access approved', icon: '✅' },
@@ -469,6 +472,11 @@ export default function NotificacionesPage() {
                                     }}>
                                         {text.body}
                                     </p>
+                                    {/* A rename's notice carries its own action (households as profiles): «Deshacer». */}
+                                    {item.type === 'profile_renamed' && (() => {
+                                        const undo = renameUndoOf(item.metadata);
+                                        return undo ? <div style={{ marginTop: 6 }}><RenameUndoButton historyId={undo.historyId} source="notificaciones" /></div> : null;
+                                    })()}
                                     <div style={{
                                         display: 'flex',
                                         alignItems: 'center',

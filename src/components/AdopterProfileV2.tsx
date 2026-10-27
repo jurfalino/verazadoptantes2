@@ -33,6 +33,8 @@ import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 import type { AdopterPiiContext } from '@/lib/piiAccess';
 import { NO_ACCESS_VISIBILITY, maskAdopterContact, maskContactEntries, renderName } from '@/lib/piiAccess';
 import { EMPTY_LINKED_SUMMARIES, type LinkedSummaries, type LinkedSummary } from '@/domain/householdLinks';
+import { UNDO_RENAME_PARAM, type ProfileIdentityView } from '@/domain/profileIdentity';
+import RenameUndoPrompt, { RenameUndoButton } from '@/components/RenameUndo';
 
 interface AdopterProfileV2Props {
     id: string;
@@ -86,13 +88,21 @@ interface AdopterProfileV2Props {
     interviewEnabled?: boolean;
     /** D46: linked convivientes' live summaries, already masked for this viewer by the server. */
     linkedSummaries?: LinkedSummaries;
+    /** Households as profiles: «Conocido/a como», age and «Menor de edad», computed on the server. */
+    identity?: ProfileIdentityView | null;
+    /** The rename this viewer may undo from the history (owner team / admin / moderator), or null. */
+    renameUndoId?: string | null;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, isModeratorOrAdmin = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null, linkedSummaries = EMPTY_LINKED_SUMMARIES }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, isModeratorOrAdmin = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null, linkedSummaries = EMPTY_LINKED_SUMMARIES, identity = null, renameUndoId = null }: AdopterProfileV2Props) {
     const { formatDateTime, formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const searchParams = useSearchParams();
     const disputeAuditId = searchParams.get('dispute')?.trim() || null;
+    // The email's «Deshacer» lands here: ask first, never act on the link itself.
+    const undoRenameParam = searchParams.get(UNDO_RENAME_PARAM)?.trim() || null;
+    // «Menor de edad»: no «¿Qué pasó con …?», no new records or alerts (the server refuses them too).
+    const minor = !isNew && !!identity?.isMinor;
     const toast = useShowToast();
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [deleteLoading, setDeleteLoading] = useState(false);
@@ -398,6 +408,10 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     <MergeDisputePrompt auditId={disputeAuditId} />
                 )}
 
+                {!isNew && adopter && undoRenameParam && !previewAsStranger && (
+                    <RenameUndoPrompt historyId={undoRenameParam} />
+                )}
+
                 {/* v39: pending-duplicate signal. Owner / admin gets the clickable
                     "Revisar" affordance straight to /my-adopters#pendientes
                     where the merge UI lives. Everyone else sees the same flag
@@ -489,6 +503,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     onBadgeClick={() => setVisibilityModalOpen(true)}
                     canEdit={!effectivePiiContext?.gatingOn || !!effectivePiiContext?.privileged}
                     linkedSummaries={displayedLinked}
+                    identity={identity}
                     onMaskedContactClick={
                         effectivePiiContext?.masked
                             ? (entryType) => setVerifyPopoverOpen(entryType)
@@ -505,7 +520,10 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 {!isNew && adopter && (
                     <div id="adoptions-section" data-testid="adoptions-list">
                         {/* Visit-intent prompt sits above the section title — context-setting,
-                            not part of the activity list. */}
+                            not part of the activity list. A minor gets none: one muted line instead. */}
+                        {minor ? (
+                            <p className="text-xs px-1 mb-4" style={{ color: 'var(--text-muted)' }} data-testid="minor-note">{t('adopter.minor_note')}</p>
+                        ) : (
                         <VisitIntentCard
                             adopterId={id}
                             adopterName={adopter?.name}
@@ -519,6 +537,9 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             piiOptInEligible={piiOptInEligible}
                             pinned={pinnedVisitIntent}
                         />
+                        )}
+                        {/* A minor's «Actividad» stays hidden unless something is already there (never buried). */}
+                        {(!minor || adoptions.length > 0) && (
                         <CollapsibleSection
                             title={t('adoption.title')}
                             count={adoptions.length}
@@ -527,7 +548,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             {/* AdoptionFormWizard renders here only for URL-driven autoOpen flows
                                 (?newAdoption=...). The closed-state "Registrar Actividad" CTA was
                                 removed in v2.14.8 — VisitIntentCard above is the canonical entry. */}
-                            <AdoptionFormWizard
+                            {!minor && <AdoptionFormWizard
                                 adopterId={id}
                                 adopterName={adopter?.name || ''}
                                 avgRating={avgRating ?? null}
@@ -538,7 +559,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                 currentUser={currentUser}
                                 adopterAddress={adopter?.contactInfo || ''}
                                 piiOptInEligible={piiOptInEligible}
-                            />
+                            />}
                             <AdoptionHistory
                                 adoptions={adoptions as any}
                                 originLabels={originLabels}
@@ -555,6 +576,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                 editFormComponent={AdoptionFormEditV2}
                             />
                         </CollapsibleSection>
+                        )}
                     </div>
                 )}
 
@@ -598,7 +620,10 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                         let eventType = 'update';
                                         try {
                                             const parsed = JSON.parse(h.changes as string);
-                                            if (parsed.adoption_updated) { eventType = 'adoption_updated'; changes = parsed.adoption_updated; }
+                                            // Households as profiles: a rename (or its undo) and an age change.
+                                            if (parsed.name_changed) { eventType = parsed.name_changed.undoOf ? 'name_restored' : 'name_changed'; changes = parsed.name_changed; }
+                                            else if (parsed.age_changed) { eventType = 'age_changed'; changes = parsed.age_changed; }
+                                            else if (parsed.adoption_updated) { eventType = 'adoption_updated'; changes = parsed.adoption_updated; }
                                             else if (parsed.adoption_added) { eventType = 'adoption_added'; changes = parsed.adoption_added; }
                                             else if (parsed.adoption_deleted) { eventType = 'adoption_deleted'; changes = parsed.adoption_deleted; }
                                             else if (parsed.image_deleted) { eventType = 'image_deleted'; changes = parsed.image_deleted; }
@@ -652,6 +677,9 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                         {eventType === 'profiles_unmerged' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_profiles_unmerged')}</span>}
                                                         {(eventType === 'hh_not_living_host' || eventType === 'hh_not_living_linked') && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_not_living')}</span>}
                                                         {eventType === 'hh_removed_by_host' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_removed_by_host')}</span>}
+                                                        {eventType === 'name_changed' && <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_name_changed')}</span>}
+                                                        {eventType === 'name_restored' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_name_restored')}</span>}
+                                                        {eventType === 'age_changed' && <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_age_changed')}</span>}
                                                     </div>
                                                     <span className="text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
                                                         {t('audit.by')} {(h.changedBy ? actorLabel(h.changedBy, userNameMap?.[h.changedBy], t) : t('common.anonymous'))}
@@ -672,6 +700,38 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                                     </div>
                                                                 </div>
                                                             ))}
+                                                            {(eventType === 'name_changed' || eventType === 'name_restored') && (
+                                                                <div data-testid="history-name-changed">
+                                                                    <div className="grid grid-cols-[120px_1fr] gap-3 items-start text-sm">
+                                                                        <span className="font-semibold text-teal-800">{t('audit.field_name')}:</span>
+                                                                        <div className="text-teal-700 break-words font-medium min-w-0">
+                                                                            <div className="line-through text-rose-400 text-xs mr-2 opacity-70 inline-block max-w-full break-all">{changes.from || t('audit.empty_val')}</div>
+                                                                            <span className="text-teal-700 mr-2">➜</span>
+                                                                            <span className="text-teal-900 bg-teal-100 px-1.5 rounded inline-block max-w-full break-all">{changes.to || t('audit.empty_val')}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    {changes.aliasKept && changes.from && (
+                                                                        <p className="text-xs text-teal-800 mt-1.5 break-words">{t('audit.desc_name_alias_kept').replace('{name}', changes.from)}</p>
+                                                                    )}
+                                                                    {eventType === 'name_changed' && h.id === renameUndoId && !previewAsStranger && (
+                                                                        <RenameUndoButton historyId={h.id} source="AdopterProfileV2.history" variant="link" />
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                            {eventType === 'age_changed' && (() => {
+                                                                const side = (v: { age?: number | null; minor?: boolean } | undefined) => {
+                                                                    const parts = [typeof v?.age === 'number' ? t('adopter.hh_years').replace('{n}', String(v.age)) : t('audit.desc_age_none')];
+                                                                    if (v?.minor) parts.push(t('audit.desc_age_minor'));
+                                                                    return parts.join(' · ');
+                                                                };
+                                                                return (
+                                                                    <div className="text-teal-800 break-words" data-testid="history-age-changed">
+                                                                        <span className="line-through text-rose-400 text-xs mr-2 opacity-70">{side(changes.from)}</span>
+                                                                        <span className="text-teal-700 mr-2">➜</span>
+                                                                        <span className="text-teal-900 bg-teal-100 px-1.5 rounded">{side(changes.to)}</span>
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                             {eventType === 'api_contacts' && Array.isArray(changes.fields) && (
                                                                 <div className="text-teal-800 font-medium break-words">
                                                                     {t('audit.desc_api_contacts').replace('{fields}', (changes.fields as string[]).map(f => t(f === 'documentId' ? 'audit.field_document' : f === 'phone' ? 'audit.field_phone' : 'audit.field_email')).join(', '))}

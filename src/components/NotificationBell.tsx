@@ -6,6 +6,8 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { localizedNotification } from '@/domain/notificationTemplates';
+import { renameUndoOf } from '@/domain/profileIdentity';
+import { RenameUndoButton } from '@/components/RenameUndo';
 
 interface NotificationItem {
     id: string;
@@ -385,6 +387,15 @@ export default function NotificationBell() {
                                                 )}
                                             </div>
                                         </button>
+                                        {/* A rename's notice carries its own action (households as profiles): «Deshacer». */}
+                                        {item.type === 'profile_renamed' && (() => {
+                                            const undo = renameUndoOf(item.metadata);
+                                            return undo ? (
+                                                <div className="pl-11 pr-4 pb-3 -mt-1">
+                                                    <RenameUndoButton historyId={undo.historyId} source="NotificationBell" />
+                                                </div>
+                                            ) : null;
+                                        })()}
                                         <button
                                             type="button"
                                             onClick={(e) => { e.stopPropagation(); handleDismiss(item); }}

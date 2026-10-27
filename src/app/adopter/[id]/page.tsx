@@ -13,6 +13,9 @@ import { AdopterProfileV2 } from '@/components/AdopterProfileV2';
 import type { AdopterPiiContext } from '@/lib/piiAccess';
 import { getLinkedSummaries } from '@/lib/householdLinks';
 import { EMPTY_LINKED_SUMMARIES, type LinkedSummaries } from '@/domain/householdLinks';
+import { profileIdentityView, undoableRenameId, type ProfileIdentityView } from '@/domain/profileIdentity';
+import { deserializeContactEntries } from '@/lib/contactEntries';
+import { profileReturnPath } from '@/domain/profileReturnPath';
 
 export default async function AdopterPage({
     params,
@@ -38,7 +41,7 @@ export default async function AdopterPage({
         ]);
     } catch (e: any) {
         if (e?.digest?.startsWith('NEXT_REDIRECT')) throw e;
-        redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(`/adopter/${id}`)}`);
+        redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(profileReturnPath(id, allSearchParams))}`);
     }
 
     // Batch 1a.5: Post-signin search-match replay. When a user arrives from
@@ -213,7 +216,17 @@ export default async function AdopterPage({
             }
         })(),
     ]);
-    const canViewAudit = isModeratorOrAdmin || isOrgMateOfOwner;
+    const isOwnerViewer = !isNew && !!currentUser && !!adopter?.addedBy && adopter.addedBy.trim().toLowerCase() === currentUser.trim().toLowerCase();
+    // The owner sees their profile's history too: «Deshacer» on a rename lives there (households as profiles).
+    const canViewAudit = isModeratorOrAdmin || isOrgMateOfOwner || isOwnerViewer;
+    // Name / age / «Menor de edad» for the header, and the one rename «Deshacer» is offered on
+    // (owner team, admin or moderator — the server checks again).
+    const identity: ProfileIdentityView | null = !isNew && adopter
+        ? profileIdentityView(adopter, deserializeContactEntries(adopter.contactEntries))
+        : null;
+    const renameUndoId = !isNew && adopter && (isOwnerViewer || isOrgMateOfOwner || isModeratorOrAdmin)
+        ? undoableRenameId(history, adopter.name)
+        : null;
     // "Removal requested" banner: only the record owner + admins/moderators (the
     // people who act on it) see it — not unrelated viewers.
     const showDeletionRequested = deletionRequested && (isModeratorOrAdmin || (!!currentUser && adopter?.addedBy === currentUser));
@@ -273,6 +286,8 @@ export default async function AdopterPage({
             mergedFrom={typeof allSearchParams.merged === 'string' && allSearchParams.merged ? allSearchParams.merged : null}
             interviewEnabled={interviewEnabled}
             linkedSummaries={linkedSummaries}
+            identity={identity}
+            renameUndoId={renameUndoId}
         />
     );
 }
