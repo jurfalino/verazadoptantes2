@@ -465,8 +465,15 @@ export async function purgeAllData(confirmationCode: string) {
 
         // 7. Delete adopters, and the merge requests between them
         await db.delete(adopters);
-        const { mergeRequests } = await import('@/db/schema');
+        const { mergeRequests, households, householdMemberships, householdCorrections, householdConversions } = await import('@/db/schema');
         await db.delete(mergeRequests);
+
+        // 8. Households (final fix D3): memberships, «No vive acá» corrections and
+        // the conversion ledger all name adopters that no longer exist.
+        await db.delete(householdMemberships);
+        await db.delete(householdCorrections);
+        await db.delete(households);
+        await db.delete(householdConversions);
 
         revalidatePath('/admin');
         revalidatePath('/');

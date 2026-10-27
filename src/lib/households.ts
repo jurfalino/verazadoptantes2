@@ -541,10 +541,23 @@ async function liveProfile(db: Db, id: string): Promise<ProfileRow | null> {
     return row && !row.deletedAt ? row : null;
 }
 
-/** A housemate's profile; a failed read skips that one person (logged) instead of blanking the section. */
+/**
+ * A housemate's profile; a failed read skips that one person (logged) instead
+ * of blanking the section. A member merged away by a build that didn't move
+ * memberships (an old tab, forwarded — final fix D1) is followed to the live
+ * survivor (the merge audit, as /adopter/<id> redirects): the person stays in
+ * the household under their surviving profile instead of vanishing. Callers
+ * key on the returned `id` (it may differ from `id`).
+ */
 async function housemateProfile(db: Db, id: string, ctx: Record<string, unknown>): Promise<ProfileRow | null> {
     try {
-        return await liveProfile(db, id);
+        const live = await liveProfile(db, id);
+        if (live) return live;
+        const { resolveMergedAdopterIdIn } = await import('@/lib/mergedAdopterRedirect');
+        const survivor = await resolveMergedAdopterIdIn(db, id);
+        if (!survivor || survivor === id) return null;
+        logger.info('households: a member merged away without its memberships, shown as the survivor', { ...ctx, profileId: id, survivorId: survivor });
+        return await liveProfile(db, survivor);
     } catch (e) {
         logger.warn('households: housemate profile read failed, member skipped', { ...ctx, profileId: id, error: errMsg(e) });
         return null;
@@ -609,12 +622,27 @@ export async function getHouseholdsFor(
                 logger.warn('households: member cap hit, newer members not shown', { ...ctx, householdId: own[i].householdId, cap: MAX_HOUSEHOLD_MEMBERS });
             }
         });
-        const capped = groups.map(g => g.slice(0, MAX_HOUSEHOLD_MEMBERS));
+        const cappedRaw = groups.map(g => g.slice(0, MAX_HOUSEHOLD_MEMBERS));
 
-        const otherIds = [...new Set(capped.flat().map(m => m.adopterId).filter(id => id !== adopterId))];
+        const otherIds = [...new Set(cappedRaw.flat().map(m => m.adopterId).filter(id => id !== adopterId))];
         const loaded = await Promise.all(otherIds.map(async id => [id, await housemateProfile(db, id, ctx)] as const));
         const profiles = new Map<string, ProfileRow>();
-        for (const [id, p] of loaded) if (p) profiles.set(id, p);
+        const shownAs = new Map<string, string>();
+        for (const [id, p] of loaded) if (p) { profiles.set(p.id, p); shownAs.set(id, p.id); }
+        // A member followed to its survivor (D1) stands in under the survivor's id —
+        // never twice in one household, never the profile itself.
+        const capped = cappedRaw.map(g => {
+            const seen = new Set<string>();
+            const out: MembershipRow[] = [];
+            for (const m of g) {
+                const as = m.adopterId === adopterId ? adopterId : shownAs.get(m.adopterId);
+                if (!as || (as === adopterId && m.adopterId !== adopterId) || seen.has(as)) continue;
+                seen.add(as);
+                out.push(as === m.adopterId ? m : { ...m, adopterId: as });
+            }
+            return out;
+        });
+        profiles.delete(adopterId);
         if (profiles.size === 0) return [];
 
         const viewerEmail = viewer ?? null;
@@ -785,7 +813,12 @@ export async function householdLinesFor(
                 const batch = readable.slice(i, i + (MAX_HOUSEHOLD_LINES - shown.length));
                 i += batch.length;
                 const rows = await Promise.all(batch.map(id => memo(profileMemo, id, () => housemateProfile(db, id, ctx))));
-                for (const p of rows) if (p) shown.push(p);
+                // A member followed to its survivor (D1): never twice, never the card's own profile.
+                rows.forEach((p, k) => {
+                    if (!p || p.id === adopterId || shown.some(x => x.id === p.id)) return;
+                    if (p.id !== batch[k] && !mates.has(p.id)) { mates.set(p.id, mates.get(batch[k]) ?? false); homeOf.set(p.id, homeOf.get(batch[k]) ?? ''); }
+                    shown.push(p);
+                });
             }
             const counts = await Promise.all(shown.map(p => memo(countMemo, p.id, () => countsFor(db, p.id, ctx))));
             return [adopterId, shown.map((p, i) => ({

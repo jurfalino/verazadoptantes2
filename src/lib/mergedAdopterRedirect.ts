@@ -18,9 +18,15 @@ import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { followMergeChain, pickActiveMerge, type MergeStep, type MergeRecord } from '@/domain/mergeRedirect';
 
+type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+
 async function stepFor(id: string): Promise<MergeStep> {
     const db = await getDb();
     if (!db) throw new Error('Database not available');
+    return stepIn(db, id);
+}
+
+async function stepIn(db: Db, id: string): Promise<MergeStep> {
 
     const row = await db.select({ deletedAt: adopters.deletedAt, tokenHash: adopters.tokenHash })
         .from(adopters).where(eq(adopters.id, id)).get() as { deletedAt: Date | null; tokenHash: string | null } | undefined;
@@ -58,4 +64,9 @@ async function stepFor(id: string): Promise<MergeStep> {
 /** The live survivor's id, or null when `id` should stay a 404. Throws on DB failure. */
 export function resolveMergedAdopterId(id: string): Promise<string | null> {
     return followMergeChain(id, stepFor);
+}
+
+/** The same, on a handle the caller already holds (the household reads, final fix D1). */
+export function resolveMergedAdopterIdIn(db: Db, id: string): Promise<string | null> {
+    return followMergeChain(id, next => stepIn(db, next));
 }

@@ -462,3 +462,35 @@ describe('householdLinesFor', () => {
         expect(lucas.map(l => l.profileId).sort()).toEqual(['marta', 'pedro', 'rosa']);
     });
 });
+
+describe('final fix D1(a) — a member merged away by an old build shows as its survivor', () => {
+    /** What an old build's merge leaves: the absorbed row soft-deleted as MERGED, its memberships untouched, the audit row. */
+    const oldBuildMerge = (absorbed: string, survivor: string) => {
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 6000, token_hash = 'MERGED' WHERE id = ?`).run(absorbed);
+        sqlite.prepare(`INSERT INTO audit_log (id, user_email, action, target, details, created_at) VALUES (?, ?, 'adopter_merge', ?, ?, 6000)`)
+            .run(`al-${absorbed}`, OWNER, survivor, JSON.stringify({ primaryId: survivor, secondaryId: absorbed }));
+    };
+
+    it('the household on Pedro\'s profile and his card line show Rosa (who absorbed Marta) in Marta\'s place', async () => {
+        await pedrosHousehold();
+        oldBuildMerge('marta', 'rosa');
+        const [view] = await getHouseholdsFor(db(), OWNER, 'pedro');
+        expect(view.members.map(m => m.profileId).sort()).toEqual(['lucas', 'rosa']);
+        const { pedro } = await householdLinesFor(db(), OWNER, ['pedro']);
+        expect(pedro.map(l => l.profileId).sort()).toEqual(['lucas', 'rosa']);
+    });
+
+    it('a survivor already in the household, or the profile itself, is never listed twice', async () => {
+        await pedrosHousehold();
+        oldBuildMerge('marta', 'lucas');
+        const [view] = await getHouseholdsFor(db(), OWNER, 'pedro');
+        expect(view.members.map(m => m.profileId)).toEqual(['lucas']);
+        expect((await householdLinesFor(db(), OWNER, ['pedro'])).pedro.map(l => l.profileId)).toEqual(['lucas']);
+        // Merged into Pedro himself: not his own housemate.
+        sqlite.prepare(`UPDATE adopters SET deleted_at = NULL, token_hash = NULL WHERE id = 'marta'`).run();
+        sqlite.prepare(`DELETE FROM audit_log`).run();
+        oldBuildMerge('marta', 'pedro');
+        expect((await getHouseholdsFor(db(), OWNER, 'pedro'))[0].members.map(m => m.profileId)).toEqual(['lucas']);
+        expect((await householdLinesFor(db(), OWNER, ['pedro'])).pedro.map(l => l.profileId)).toEqual(['lucas']);
+    });
+});

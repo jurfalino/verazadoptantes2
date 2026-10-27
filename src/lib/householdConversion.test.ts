@@ -711,3 +711,70 @@ describe('fix round 1: a member\'s age moves onto the profile', () => {
         expect(profile(await convertedProfileId(inlineKey('pedro', 'pm2')))).toMatchObject({ age: 41, age_as_of: '2025-01-15', is_minor: 0 });
     });
 });
+
+describe('final fix D1(b) — an old build merged a host whose members were already converted', () => {
+    const RAUL_PHONE = '+54 11 8100 0001';
+    const raul: Member = { id: 'orig-1', name: 'Raúl Gómez', relationship: 'partner', addedBy: OTHER_OWNER, contactEntries: [{ id: 'r1', type: 'phone', value: RAUL_PHONE, addedBy: OTHER_OWNER }] };
+    const oldBuildMerge = (absorbed: string, survivor: string) => {
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 6000, token_hash = 'MERGED' WHERE id = ?`).run(absorbed);
+        sqlite.prepare(`INSERT INTO audit_log (id, user_id, user_email, action, target, details, created_at) VALUES (?, ?, ?, 'adopter_merge', ?, ?, 6000)`)
+            .run(`audit-${absorbed}`, ADMIN, ADMIN, survivor, JSON.stringify({ primaryId: survivor, secondaryId: absorbed, secondaryName: 'x', mergeDetails: {}, undo: {} }));
+    };
+
+    it("the survivor's copy of the member reuses the profile the absorbed host's conversion made — nobody twice", async () => {
+        adopter('ana2', 'Ana Gomez', { owner: OTHER_OWNER, members: [raul] });
+        await getHouseholdsFor(db(), OTHER_OWNER, 'ana2'); // converted on a view, before the merge
+        const made = await convertedProfileId(inlineKey('ana2', 'orig-1'));
+        expect(profile(made)).toMatchObject({ name: 'Raúl Gómez' });
+        // An old build merges ana2 into ana: the JSON copy (new ids, same content), no memberships moved.
+        adopter('ana', 'Ana Gómez', { members: [{ ...raul, id: 'copy-1', contactEntries: [{ ...raul.contactEntries[0], id: 'r1-copy' }] }] });
+        oldBuildMerge('ana2', 'ana');
+        await getHouseholdsFor(db(), OWNER, 'ana');
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopters WHERE name = 'Raúl Gómez' AND deleted_at IS NULL`).get()!.n).toBe(1);
+        expect(membershipsOfHost('ana').map(m => m.adopter_id)).toContain(made);
+        expect(ledger().find(r => r.source_key === inlineKey('ana', 'copy-1'))).toMatchObject({ outcome: 'converted', profile_id: made, created_profile: 0 });
+    });
+
+    it('along the chain: ana2 → ana → bea', async () => {
+        adopter('ana2', 'Ana Gomez', { owner: OTHER_OWNER, members: [raul] });
+        await getHouseholdsFor(db(), OTHER_OWNER, 'ana2');
+        const made = await convertedProfileId(inlineKey('ana2', 'orig-1'));
+        adopter('ana', 'Ana Gómez', { members: [{ ...raul, id: 'copy-1' }] });
+        oldBuildMerge('ana2', 'ana');
+        adopter('bea', 'Ana Gómez B', { members: [{ ...raul, id: 'copy-2' }] });
+        oldBuildMerge('ana', 'bea');
+        await getHouseholdsFor(db(), OWNER, 'bea');
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopters WHERE name = 'Raúl Gómez' AND deleted_at IS NULL`).get()!.n).toBe(1);
+        expect(membershipsOfHost('bea').map(m => m.adopter_id)).toContain(made);
+    });
+});
+
+describe('final fix D2 — old-tab edits the conversion cannot replay are logged with ids', () => {
+    beforeEach(() => {
+        adopter('pedro', 'Pedro Paez', { members: [
+            { id: 'pm1', name: 'Marta Paez', relationship: 'partner', addedBy: OWNER, contactEntries: [] },
+            { id: 'pm2', name: 'Tomás Paez', relationship: 'child', addedBy: OWNER, contactEntries: [] },
+        ] });
+        adopter('rosa', 'Rosa Diaz');
+    });
+    const editInOldTab = (edit: (ms: Member[]) => Member[]) =>
+        sqlite.prepare('UPDATE adopters SET household_members = ? WHERE id = ?').run(JSON.stringify(edit(hostMembersJson('pedro'))), 'pedro');
+    const warned = (msg: string) => vi.mocked(logger.warn).mock.calls.filter(c => String(c[0]).includes(msg)).map(c => c[1]);
+
+    it('a relationship change and a new profile link → warn with the host, member and profile ids', async () => {
+        await ensureHostConverted(db(), 'pedro');
+        vi.mocked(logger.warn).mockClear();
+        editInOldTab(ms => ms.map(m => (m.id === 'pm1' ? { ...m, relationship: 'sibling' } : m.id === 'pm2' ? { ...m, profileId: 'rosa' } : m)));
+        await ensureHostConverted(db(), 'pedro');
+        expect(warned('relationship')).toEqual([expect.objectContaining({ hostId: 'pedro', memberId: 'pm1', profileId: expect.any(String) })]);
+        expect(warned('link')).toEqual([expect.objectContaining({ hostId: 'pedro', memberId: 'pm2', linkedProfileId: 'rosa' })]);
+    });
+
+    it('a member an old tab removed from the JSON → warn with its ids (the membership stays)', async () => {
+        await ensureHostConverted(db(), 'pedro');
+        vi.mocked(logger.warn).mockClear();
+        editInOldTab(ms => ms.filter(m => m.id !== 'pm2'));
+        await ensureHostConverted(db(), 'pedro');
+        expect(warned('removed')).toEqual([expect.objectContaining({ hostId: 'pedro', memberId: 'pm2', profileId: expect.any(String) })]);
+    });
+});

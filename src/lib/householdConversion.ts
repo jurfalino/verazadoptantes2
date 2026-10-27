@@ -39,7 +39,7 @@
  */
 import { and, asc, eq, gt, isNull, sql } from 'drizzle-orm';
 import {
-    adopters, formSubmissions, householdConversions, householdCorrections, householdLinkCorrections, householdLinks,
+    adopters, auditLog, formSubmissions, householdConversions, householdCorrections, householdLinkCorrections, householdLinks,
     householdMemberships, piiAccessGrants,
 } from '@/db/schema';
 import type { getDb } from '@/lib/db';
@@ -248,6 +248,55 @@ async function resolveLive(db: Db, id: string): Promise<string | null> {
     if (row.tokenHash !== 'MERGED') return null;
     const { resolveMergedAdopterId } = await import('@/lib/mergedAdopterRedirect');
     return await resolveMergedAdopterId(id);
+}
+
+/**
+ * The live profile the conversion already made for this member on a host that
+ * was merged INTO `hostId` — directly or along the merge chain (each hop: the
+ * live merge audits naming it as the survivor) — matched by the member's
+ * content (fingerprint), since an old merge copied the member under a new id
+ * (final fix D1). Null when there is none. Bounded: MAX_MERGE_HOPS hops, 20
+ * merges a hop.
+ */
+async function profileFromAbsorbedHost(db: Db, hostId: string, fingerprint: string, ctx: Record<string, unknown>): Promise<string | null> {
+    const { MAX_MERGE_HOPS } = await import('@/domain/mergeRedirect');
+    const seen = new Set([hostId]);
+    let frontier = [hostId];
+    for (let hop = 0; hop < MAX_MERGE_HOPS && frontier.length; hop++) {
+        const next: string[] = [];
+        for (const survivor of frontier) {
+            const rows = await db.select({ details: auditLog.details }).from(auditLog).where(and(
+                eq(auditLog.action, 'adopter_merge'),
+                eq(auditLog.target, survivor),
+            )).limit(20).all() as Array<{ details: string | null }>;
+            for (const r of rows) {
+                let d: { secondaryId?: unknown; undoneAt?: unknown } = {};
+                try { d = JSON.parse(r.details || '{}'); } catch {
+                    logger.warn('householdConversion: unparseable merge audit row skipped', { ...ctx, survivor });
+                    continue;
+                }
+                if (d.undoneAt || typeof d.secondaryId !== 'string' || seen.has(d.secondaryId)) continue;
+                seen.add(d.secondaryId);
+                next.push(d.secondaryId);
+            }
+        }
+        for (const absorbed of next) {
+            const hits = await db.select({ profileId: householdConversions.profileId }).from(householdConversions).where(and(
+                eq(householdConversions.hostAdopterId, absorbed),
+                eq(householdConversions.fingerprint, fingerprint),
+                eq(householdConversions.outcome, 'converted'),
+            )).limit(5).all() as Array<{ profileId: string | null }>;
+            for (const h of hits) {
+                const live = h.profileId ? await resolveLive(db, h.profileId) : null;
+                if (live && live !== hostId) {
+                    logger.info('householdConversion: an old merge\'s copy of a converted member reuses its profile', { ...ctx, absorbedHostId: absorbed, profileId: live });
+                    return live;
+                }
+            }
+        }
+        frontier = next;
+    }
+    return null;
 }
 
 async function ledgerOf(db: Db, hostId: string): Promise<Map<string, LedgerRow>> {
@@ -547,6 +596,7 @@ async function syncEditedMember(db: Db, st: HostState, m: HouseholdMember, row: 
     const report: MemberReport = { ...base, linkId: row.linkId, sourceKey: row.sourceKey, outcome: 'already', reason: row.reason ?? undefined, profileId: row.profileId };
     const ctx = { hostId: st.host.id, memberId: m.id, sourceKey: row.sourceKey, profileId: row.profileId, actor: st.actor, dryRun: st.dryRun };
     try {
+        await logUnreplayedEdits(db, m, row, ctx);
         const recorded = recordedRefs(row.contactRefs);
         const entries = storedEntries(m.contactEntries);
         const fresh = entries.filter(e => !recorded.has(hashEntryValue(e.type, e.value)));
@@ -578,6 +628,49 @@ async function syncEditedMember(db: Db, st: HostState, m: HouseholdMember, row: 
     } catch (e) {
         const errorId = logger.error('householdConversion: an old tab\'s edit to a converted member not carried over (retried next time)', e, ctx);
         return { ...report, outcome: 'skipped', reason: 'failed', errorId };
+    }
+}
+
+/**
+ * What an old tab changed on a converted member that the conversion does NOT
+ * replay (final fix D2): a relationship change, a new link to a profile. Logged
+ * at warn with the ids (never names or contacts) so it can be fixed by hand.
+ * Runs once per edit (syncEditedMember records the new fingerprint).
+ */
+async function logUnreplayedEdits(db: Db, m: HouseholdMember, row: LedgerRow, ctx: Record<string, unknown>): Promise<void> {
+    if (row.membershipId) {
+        const mem = await db.select({ relationship: householdMemberships.relationship }).from(householdMemberships)
+            .where(eq(householdMemberships.id, row.membershipId)).get() as { relationship: string | null } | undefined;
+        const told = m.relationship ?? 'unknown';
+        if (mem && (mem.relationship ?? 'unknown') !== told) {
+            logger.warn('householdConversion: an old tab changed a converted member\'s relationship — not replayed', { ...ctx, membershipId: row.membershipId, relationship: told, stored: mem.relationship ?? 'unknown' });
+        }
+    }
+    if (m.profileId && m.profileId !== row.profileId) {
+        const [to, was] = await Promise.all([resolveLive(db, m.profileId), row.profileId ? resolveLive(db, row.profileId) : Promise.resolve(null)]);
+        if (to !== was) {
+            logger.warn('householdConversion: an old tab linked a converted member to another profile — not replayed', { ...ctx, linkedProfileId: m.profileId });
+        }
+    }
+}
+
+/** Removed members already reported by this isolate (D2: warn once, not on every view). */
+const reportedRemovals = new Set<string>();
+
+/**
+ * Converted members no longer in the host's JSON: an old tab removed them
+ * (nothing new writes the JSON). Not replayed — the membership is the record
+ * now — but logged at warn with the ids (final fix D2).
+ */
+function logRemovedMembers(hostId: string, ledger: ReadonlyMap<string, LedgerRow>, members: readonly HouseholdMember[]): void {
+    const present = new Set(members.map(m => m.id));
+    for (const row of ledger.values()) {
+        if (row.outcome !== 'converted' || !row.memberId || row.linkId || !row.sourceKey.startsWith(inlineKey(hostId, ''))) continue;
+        if (present.has(row.memberId) || reportedRemovals.has(row.sourceKey)) continue;
+        reportedRemovals.add(row.sourceKey);
+        logger.warn('householdConversion: an old tab removed a converted member from the household JSON — not replayed (the membership stays)', {
+            hostId, memberId: row.memberId, sourceKey: row.sourceKey, membershipId: row.membershipId, profileId: row.profileId,
+        });
     }
 }
 
@@ -628,7 +721,7 @@ async function convertMember(db: Db, st: HostState, m: HouseholdMember, links: L
 
         // Who they are: the linked profile (followed through merges), someone of that name already home, or a new profile.
         let profileId: string | null = null;
-        let reason: 'linked' | 'same_name' | null = null;
+        let reason: 'linked' | 'same_name' | 'old_merge_copy' | null = null;
         if (linked) {
             profileId = linked.profileId;
             if (!profileId) return await skip('linked_profile_gone');
@@ -643,6 +736,12 @@ async function convertMember(db: Db, st: HostState, m: HouseholdMember, links: L
 
         const notes: string[] = [];
         let created = false;
+        if (!profileId) {
+            // An OLD build merged a host whose members were already converted, copying them here
+            // under new ids (final fix D1): the copy is that same person — reuse their profile.
+            const carried = await profileFromAbsorbedHost(db, host.id, fingerprint, ctx);
+            if (carried) { profileId = carried; reason = 'old_merge_copy'; }
+        }
         if (!profileId) {
             // A new profile, owned by the host's owner — exactly the team that saw the member on the host.
             const id = await convertedProfileId(key);
@@ -756,6 +855,7 @@ export async function convertHost(db: Db, hostId: string, opts: ConvertHostOptio
             : Promise.resolve([] as LinkRow[]),
         db.select().from(householdLinkCorrections).where(eq(householdLinkCorrections.hostAdopterId, hostId)).all() as Promise<Array<typeof householdLinkCorrections.$inferSelect>>,
     ]);
+    logRemovedMembers(hostId, ledger, members);
     if (members.length === 0 && corrections.length === 0) return out;
     const st: HostState = {
         host, actor: opts.actor ?? CONVERSION_ACTOR, dryRun: opts.dryRun === true, ledger,
