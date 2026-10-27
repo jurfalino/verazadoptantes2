@@ -89,6 +89,14 @@ const MUST_NOT_BE_ACTIONS = [
     // Households as profiles (src/lib/householdNotices.ts, _adopterFactory.ts): the actor /
     // owner is an argument; the browser goes through src/app/actions/households.ts (session).
     'createHouseholdProfile',
+    // Households, unattended paths (src/lib/householdPeople.ts, giftRecipients.ts, Task 4):
+    // the actor / owner is an argument; the browser goes through createGiftRecipientProfile.
+    'attachHouseholdPeople',
+    'resolveHouseholdPerson',
+    'createGiftRecipientFromForm',
+    'giftRecipientsForViewer',
+    'giftRecipientsOf',
+    'findAndPersistDuplicateCandidates',
     'notifyHouseholdPersonAdded',
     'notifyHouseholdReaddDisputed',
     'notifyHouseholdRelationshipChanged',

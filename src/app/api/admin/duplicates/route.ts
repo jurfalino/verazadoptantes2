@@ -7,8 +7,9 @@ import { eq, sql, isNull, or, and } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { isAdminAsync } from '@/config/admins';
 import { logger } from '@/lib/logger';
-import { extractTokens, computeTokenHash } from '@/lib/tokenizer';
+import { extractTokens, computeTokenHash, type TokenEntry } from '@/lib/tokenizer';
 import { tokenInputsFor } from '@/lib/adopterTokenize';
+import { giftRecipientTokenEntries } from '@/lib/giftRecipients';
 import { pairsOnSharedToken, scorePair, confidenceOf } from '@/domain/duplicatePairing';
 import { lockWaitMs } from '@/domain/scanResilience';
 import { computeAvgRating } from '@/domain/ratings';
@@ -487,18 +488,23 @@ export async function POST(request: Request) {
             // trip, atomic (a failed group writes nothing, so it is simply
             // retried once, then the page's own retry takes over).
             type Planned = { id: string; hash: string; tokens: ReturnType<typeof extractTokens> };
+            type StaleRow = (typeof staleAdopters)[number];
+            const toTokenize: StaleRow[] = staleAdopters.filter((a: StaleRow) => batchIds.has(a.id) && a.tokenHash !== computeTokenHash(a));
+            // The gift recipients' phones its gift forms named (src/lib/giftRecipients.ts) — the
+            // same inputs save-time tokenizing reads. A failed read fails the batch (retried),
+            // never a token set written without them.
+            const giftPhones = new Map<string, TokenEntry[]>(await Promise.all(toTokenize.map(async (a: StaleRow) =>
+                [a.id, await giftRecipientTokenEntries(db, a.id)] as const)));
             const planned: Planned[] = [];
-            for (const adopter of staleAdopters) {
-                if (!batchIds.has(adopter.id)) continue;
+            for (const adopter of toTokenize) {
                 const newHash = computeTokenHash(adopter);
-                if (adopter.tokenHash === newHash) continue; // Fresh, skip
 
                 // Fetch adoptions for onBehalfOf
                 const adopterAdoptions = adoptionsByAdopter.get(adopter.id) ?? [];
 
                 // Typed entries only (titular + each household member) — the same
                 // inputs save-time tokenizing uses (tokenInputsFor).
-                const { entries, household } = tokenInputsFor(adopter);
+                const { entries, household } = tokenInputsFor(adopter, giftPhones.get(adopter.id) ?? []);
                 planned.push({ id: adopter.id, hash: newHash, tokens: extractTokens(adopter, adopterAdoptions, entries, household) });
             }
 

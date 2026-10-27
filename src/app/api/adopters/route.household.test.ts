@@ -1,9 +1,10 @@
 /**
- * One rule for household `profileId` (D44 review): only addHouseholdMember may
- * set it. A profileId arriving in household JSON through the import endpoint
- * (POST /api/adopters) or the submission factory is dropped — the member is
- * saved, the link to someone else's profile is not, and no household_links row
- * appears. Real route / factory, real SQL.
+ * One rule for household `profileId` (D44 review): a profileId arriving in
+ * household JSON through the import endpoint (POST /api/adopters) is dropped —
+ * the person is saved (households as profiles: their own profile + a
+ * membership, src/lib/householdPeople.ts), never linked to someone else's
+ * profile by that id, and no household_links row appears. Nothing writes
+ * adopters.household_members any more. Real route / factory, real SQL.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { migratedDb } from '@/test-utils/migratedDb';
@@ -18,6 +19,7 @@ vi.mock('@/config/admins', () => ({ isAdminAsync: async () => false, isModerator
 vi.mock('@/lib/adopterTokenize', () => ({ tokenizeAdopter: vi.fn(async () => undefined) }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 vi.mock('@/lib/background', () => ({ runAfterResponse: vi.fn(async () => undefined) }));
+vi.mock('@/lib/requestContext', () => ({ getRequestContext: () => ({ env: {} }) }));
 vi.mock('@/lib/r2', () => ({ processImageForStorage: vi.fn(), uploadToR2: vi.fn() }));
 vi.mock('@/lib/logger', () => ({
     logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn(() => 'err12345') },
@@ -38,10 +40,14 @@ beforeEach(() => {
     sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by) VALUES ('someone-else', 'Jonathan Urfalino', '5', 'other@example.com')`).run();
 });
 
-const householdOf = (id: string) => JSON.parse((sqlite.prepare('SELECT household_members FROM adopters WHERE id = ?').get(id)!.household_members as string | null) || '[]');
+const householdPeopleOf = (id: string) => sqlite.prepare(
+    `SELECT a.id, a.name, a.contact_entries, m.relationship FROM household_memberships m JOIN adopters a ON a.id = m.adopter_id
+     WHERE m.household_id = (SELECT household_id FROM household_memberships WHERE adopter_id = ? LIMIT 1) AND m.adopter_id <> ? ORDER BY m.added_at, m.id`,
+).all(id, id);
+const storedJson = (id: string) => sqlite.prepare('SELECT household_members FROM adopters WHERE id = ?').get(id)!.household_members;
 
 describe('view markers are never stored', () => {
-    it('POST /api/adopters drops own: true on contact entries, household members and their entries', async () => {
+    it('POST /api/adopters drops own: true on contact entries, household people and their entries', async () => {
         const res = await POST(new Request('http://localhost/api/adopters', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -52,14 +58,17 @@ describe('view markers are never stored', () => {
             }),
         }));
         expect(res.status, JSON.stringify(await res.clone().json())).toBeLessThan(300);
-        const created = sqlite.prepare(`SELECT contact_entries, household_members FROM adopters WHERE name = 'Marca Plantada'`).get()!;
+        const created = sqlite.prepare(`SELECT id, contact_entries FROM adopters WHERE name = 'Marca Plantada'`).get()!;
         expect(created.contact_entries as string).toContain('plantada@example.org');
-        expect(created.household_members as string).toContain('+54 11 4444 3434');
-        expect(`${created.contact_entries}${created.household_members}`).not.toContain('"own"');
+        expect(storedJson(created.id as string)).toBeNull();
+        const people = householdPeopleOf(created.id as string);
+        expect(people).toEqual([expect.objectContaining({ name: 'Ana', relationship: 'sibling' })]);
+        expect(people[0].contact_entries as string).toContain('+54 11 4444 3434');
+        expect(`${created.contact_entries}${people[0].contact_entries}`).not.toContain('"own"');
     });
 });
 
-describe('profileId only through addHouseholdMember', () => {
+describe('profileId only through the household actions', () => {
     it('POST /api/adopters keeps the relative but drops a planted profileId', async () => {
         const res = await POST(new Request('http://localhost/api/adopters', {
             method: 'POST',
@@ -72,20 +81,16 @@ describe('profileId only through addHouseholdMember', () => {
         }));
         expect(res.status, JSON.stringify(await res.clone().json())).toBeLessThan(300);
         const created = sqlite.prepare(`SELECT id FROM adopters WHERE name = 'Pedro Paez'`).get()!;
-        const members = householdOf(created.id as string);
-        expect(members).toHaveLength(1);
-        expect(members[0]).toMatchObject({ name: 'Jonathan Urfalino', relationship: 'sibling' });
-        expect(members[0]).not.toHaveProperty('profileId');
+        const people = householdPeopleOf(created.id as string);
+        expect(people).toHaveLength(1);
+        expect(people[0]).toMatchObject({ name: 'Jonathan Urfalino', relationship: 'sibling' });
+        expect(people[0].id).not.toBe('someone-else');
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM household_memberships WHERE adopter_id = 'someone-else'`).get()!.n).toBe(0);
         expect(sqlite.prepare('SELECT COUNT(*) AS n FROM household_links').get()!.n).toBe(0);
     });
 
-    it('the submission factory drops a profileId too', async () => {
-        const out = await createAdopterFromSubmission({
-            name: 'Ana Díaz', addedBy: 'rescuer@example.com', source: 'form',
-            householdMembers: [{ id: 'm1', name: 'Jonathan Urfalino', relationship: 'partner', contactEntries: [], profileId: 'someone-else' }],
-        } as Parameters<typeof createAdopterFromSubmission>[0]);
-        const members = householdOf(out.adopterId);
-        expect(members).toEqual([expect.objectContaining({ id: 'm1', name: 'Jonathan Urfalino' })]);
-        expect(members[0]).not.toHaveProperty('profileId');
+    it('the submission factory never writes household_members', async () => {
+        const out = await createAdopterFromSubmission({ name: 'Ana Díaz', addedBy: 'rescuer@example.com', source: 'form' });
+        expect(storedJson(out.adopterId)).toBeNull();
     });
 });

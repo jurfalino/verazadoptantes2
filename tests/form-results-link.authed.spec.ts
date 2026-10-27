@@ -209,11 +209,13 @@ test.describe('form-results: linking to an existing profile', () => {
         expect(answers.children).toBe('2');
         expect(answers.householdPeople).toHaveLength(3); // the unknown relationship is dropped
 
-        const prof = one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`);
-        const members = JSON.parse(String(prof.household_members));
-        expect(members.map((m: { name: string }) => m.name)).toEqual(['Tomás López']);
-        expect(members[0]).toMatchObject({ relationship: 'child', age: 3, addedBy: 'form-submission' });
-        expect(members[0].ageAsOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        // Households as profiles: the named person is a profile in the applicant's household; no JSON.
+        expect(isNull(one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`).household_members)).toBe(true);
+        const members = rows(`SELECT a.name, a.age, a.age_as_of, a.is_minor, a.added_by AS owner, m.relationship, m.added_by FROM household_memberships m JOIN adopters a ON a.id = m.adopter_id
+            WHERE m.household_id = (SELECT household_id FROM household_memberships WHERE adopter_id = '${row.auto_adopter_id}' LIMIT 1) AND m.adopter_id <> '${row.auto_adopter_id}'`);
+        expect(members.map(m => m.name)).toEqual(['Tomás López']);
+        expect(members[0]).toMatchObject({ relationship: 'child', age: 3, is_minor: 1, added_by: 'form-submission' });
+        expect(String(members[0].age_as_of)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
         // Every form is linked from its profile: the request exists from submit time.
         expect(rows(`SELECT id FROM adoptions WHERE adopter_id = '${row.auto_adopter_id}' AND source_url = 'form:${submissionId}'`)).toHaveLength(1);
@@ -266,10 +268,12 @@ test.describe('form-results: linking to an existing profile', () => {
         const { submissionId } = await res.json();
         const row = one(`SELECT auto_adopter_id, answers_json FROM form_submissions WHERE id = '${submissionId}'`);
         expect(JSON.parse(String(row.answers_json)).giftRecipient).toMatchObject({ firstName: 'Laura', lastName: 'Pérez' });
-        const members = JSON.parse(String(one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`).household_members));
-        expect(members.map((m: { name: string }) => m.name)).toEqual(['Laura Pérez']);
-        expect(members[0]).toMatchObject({ relationship: 'child', giftRecipient: true });
-        expect(JSON.stringify(members[0].contactEntries)).toContain('11 5555 1234');
+        // The recipient is form data on the giver (spec «Gift recipient»): no profile, no household, no JSON
+        // until a rescuer presses «Crear perfil». Her phone is indexed with the giver's.
+        expect(isNull(one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`).household_members)).toBe(true);
+        expect(rows(`SELECT id FROM household_memberships WHERE adopter_id = '${row.auto_adopter_id}'`)).toHaveLength(0);
+        expect(rows(`SELECT id FROM adopters WHERE name IN ('Laura Pérez', 'Marcos Gómez') AND added_by IS NOT NULL AND created_at >= ${Math.floor(stamp / 1000) - 5}`)).toHaveLength(0);
+        expect(rows(`SELECT token_value FROM duplicate_tokens WHERE adopter_id = '${row.auto_adopter_id}' AND token_value LIKE '%55551234%'`).length).toBeGreaterThan(0);
 
         // The form screen: who it is for comes first, the home rows talk about her, "No sabe" carries no dot.
         await page.goto(`/form-results/${submissionId}`);
@@ -406,6 +410,7 @@ test.describe('form-results: linking to an existing profile', () => {
         expect(JSON.parse(String(row.answers_json)).giftRecipient).toMatchObject({ firstName: 'Ana' });
         const prof = one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`);
         expect(isNull(prof.household_members) || JSON.parse(String(prof.household_members)).length === 0).toBe(true);
+        expect(rows(`SELECT id FROM household_memberships WHERE adopter_id = '${row.auto_adopter_id}'`)).toHaveLength(0);
     });
 
     test('a fresh submission with no look-alikes reads as a new profile, not as "linked"', async ({ page, request }) => {

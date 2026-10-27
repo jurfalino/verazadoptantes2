@@ -12,7 +12,7 @@ import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { processImageForStorage, uploadToR2 } from '@/lib/r2';
 import { createAdopterApiSchema } from '@/app/actions/validation';
 import { deserializeContactEntries, contactEntriesToBlob } from '@/lib/contactEntries';
-import { deserializeHouseholdMembers, serializeHouseholdMembers, withoutProfileLinks } from '@/lib/householdMembers';
+import { deserializeHouseholdMembers, withoutProfileLinks } from '@/lib/householdMembers';
 import { maskAdopterRow } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
 
@@ -330,11 +330,17 @@ export async function POST(request: Request) {
     }
 
     const { name, contactInfo, contactEntries, notes, sourceUrl, flags, images, adoption, source, isPublic: callerIsPublic, householdMembers: householdJson } = parsed.data;
-    // Relatives named in the same post: sanitized, given real ids and the
-    // contributor, saved with the profile (Jon, 2026-10-22). Never a profileId:
-    // only addHouseholdMember may link a member to a profile.
+    // Relatives named in the same post (Jon, 2026-10-22): sanitized, their
+    // contacts credited to the contributor. They become profiles + memberships
+    // after the profile is saved (households as profiles: attachHouseholdPeople,
+    // the exact match) — never adopters.household_members, never a planted profileId.
     const relatives = withoutProfileLinks(deserializeHouseholdMembers(householdJson ?? null))
-        .map(m => ({ ...m, id: crypto.randomUUID(), addedBy: session.user?.email || undefined }));
+        .map(m => ({
+            name: m.name,
+            relationship: m.relationship,
+            age: m.age ?? null,
+            contactEntries: m.contactEntries.map(({ own: _own, ...e }) => ({ ...e, id: crypto.randomUUID(), addedBy: session.user?.email || undefined })),
+        }));
 
     // Log the incoming request (without image data for size)
     logger.info('Adopter create: start', {
@@ -469,7 +475,6 @@ export async function POST(request: Request) {
             contactInfo: contactInfoStr || null,
             contactEntries: contactEntriesJson,
             familyMembers: null,
-            ...(relatives.length ? { householdMembers: serializeHouseholdMembers(relatives) } : {}),
             status: '5', // Default neutral/good
             addedBy: session.user.email || 'anonymous',
             sourceUrl: sourceUrl || null,
@@ -656,6 +661,20 @@ export async function POST(request: Request) {
         // acceptable on submit). Tokenize is idempotent and try/catches
         // internally — await is safe.
         await tokenizeAdopter(newId);
+
+        // The post's relatives as profiles in this person's household (exact match, else new).
+        // After the profile's own tokens, so its own scan never sees them. A failure keeps the profile.
+        if (relatives.length && session.user.email) {
+            try {
+                const { attachHouseholdPeople } = await import('@/lib/householdPeople');
+                await attachHouseholdPeople(db, {
+                    anchorAdopterId: newId, people: relatives, actor: session.user.email, ownerEmail: session.user.email,
+                    sourceKey: `import:${newId}`, requestId: errorId,
+                });
+            } catch (e) {
+                logger.error('Adopter create: relatives not attached (the profile is saved)', e, { errorId, adopterId: newId, user: session.user.email });
+            }
+        }
 
         // v2.19.73: audit creates from this API/import path. Previously only the
         // saveAdopter server action logged adopter_created/adoption_created, so

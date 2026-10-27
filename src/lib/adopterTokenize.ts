@@ -12,20 +12,24 @@ import { getDb } from '@/lib/db';
 import { extractTokens, computeTokenHash, type Token, type TokenEntry } from '@/lib/tokenizer';
 import { deserializeHouseholdMembers } from '@/lib/householdMembers';
 import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
+import { giftRecipientTokenEntries } from '@/lib/giftRecipients';
 
 /**
  * The typed entries the tokenizer reads for one adopter: its `contactEntries`
  * (or, for a legacy row that never got them, the blob parsed into entries) and
- * each household member's own entries. Shared by save-time tokenizing and the
+ * each household member's own entries, plus `giftPhones` — the phones of the
+ * gift recipients its gift forms named (src/lib/giftRecipients.ts), so
+ * searching that phone finds the giver. Shared by save-time tokenizing and the
  * admin rescan so the two can never index the same record differently.
  */
 export function tokenInputsFor(adopter: {
     contactEntries?: string | null;
     contactInfo?: string | null;
     householdMembers?: string | null;
-}): { entries: TokenEntry[]; household: Array<{ name: string; contactEntries: TokenEntry[] }> } {
+}, giftPhones: TokenEntry[] = []): { entries: TokenEntry[]; household: Array<{ name: string; contactEntries: TokenEntry[] }> } {
     const parsed = deserializeContactEntries(adopter.contactEntries ?? null);
-    const entries = parsed.length > 0 ? parsed : parseBlobToContactEntries(adopter.contactInfo ?? null);
+    const own: TokenEntry[] = parsed.length > 0 ? parsed : parseBlobToContactEntries(adopter.contactInfo ?? null);
+    const entries = [...own, ...giftPhones];
     const household = deserializeHouseholdMembers(adopter.householdMembers ?? null)
         .map(m => ({ name: m.name, contactEntries: m.contactEntries }));
     return { entries, household };
@@ -37,8 +41,10 @@ export function tokenInputsFor(adopter: {
  * then replaces old tokens with new ones.
  * 
  * Designed to be called fire-and-forget after every save/update.
+ * `force`: re-index even when the row's hash is unchanged — for inputs that
+ * live outside the row (a gift form linked to this profile).
  */
-export async function tokenizeAdopter(adopterId: string): Promise<void> {
+export async function tokenizeAdopter(adopterId: string, opts: { force?: boolean } = {}): Promise<void> {
     try {
         const db = await getDb();
         if (!db) return;
@@ -52,7 +58,7 @@ export async function tokenizeAdopter(adopterId: string): Promise<void> {
 
         // Check if tokens are fresh via hash
         const newHash = computeTokenHash(adopter);
-        if (adopter.tokenHash === newHash) return; // Already up to date
+        if (adopter.tokenHash === newHash && !opts.force) return; // Already up to date
 
         // Fetch this adopter's adoptions (for onBehalfOf tokens)
         const adopterAdoptions = await db.select({
@@ -60,7 +66,9 @@ export async function tokenizeAdopter(adopterId: string): Promise<void> {
         }).from(adoptions).where(eq(adoptions.adopterId, adopterId));
 
         // Typed entries only (titular + each household member) — see extractTokens.
-        const { entries, household } = tokenInputsFor(adopter);
+        // Gift recipients' phones (form data kept with the giver). A failed read throws to the
+        // catch below, so the old tokens stay rather than a set without them.
+        const { entries, household } = tokenInputsFor(adopter, await giftRecipientTokenEntries(db, adopterId));
         const tokens: Token[] = extractTokens(adopter, adopterAdoptions, entries, household);
 
         // Delete old tokens for this adopter

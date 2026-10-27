@@ -6,10 +6,10 @@
  * Promise.all over single-value queries.
  */
 import { and, count, eq, isNull, max, sql } from 'drizzle-orm';
-import { adopters, adoptions, duplicateTokens, userProfiles, users } from '@/db/schema';
+import { alias } from 'drizzle-orm/sqlite-core';
+import { adopters, adoptions, duplicateTokens, householdMemberships, userProfiles, users } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { deserializeContactEntries } from '@/lib/contactEntries';
-import { deserializeHouseholdMembers } from '@/lib/householdMembers';
 import { enrichAdopters } from '@/app/actions/enrichAdopters';
 import { getRatingDisplayLevel, getRatingLabelKey } from '@/domain/ratings';
 import { RECORD_TYPES } from '@/domain/constants';
@@ -77,24 +77,45 @@ export async function findIdentifierHits(db: Db, person: SearchRequest['person']
 
     const profiles = await Promise.all([...matchedOn.keys()].map(id =>
         db.select({
-            id: adopters.id, name: adopters.name, contactEntries: adopters.contactEntries,
-            householdMembers: adopters.householdMembers, isDemo: adopters.isDemo,
+            id: adopters.id, name: adopters.name, contactEntries: adopters.contactEntries, isDemo: adopters.isDemo,
         }).from(adopters).where(and(eq(adopters.id, id), isNull(adopters.deletedAt))).get(),
     ));
-    const candidates: CandidateNames[] = [];
-    for (const p of profiles) {
-        if (!p || p.isDemo) continue;
-        candidates.push({
-            profileId: p.id,
-            name: p.name,
-            aliases: deserializeContactEntries(p.contactEntries).filter(e => e.type === 'alias').map(e => e.value),
-            householdNames: deserializeHouseholdMembers(p.householdMembers).map(m => m.name).filter(Boolean),
-        });
-    }
+    const live = profiles.filter((p): p is NonNullable<typeof p> => !!p && !p.isDemo);
+    // Housemates' names (households as profiles): one bounded join per candidate, gift
+    // households excluded (a gift recipient doesn't live there). Fails like the rest (503).
+    const housemates = await Promise.all(live.map(p => housemateNames(db, p.id)));
+    const candidates: CandidateNames[] = live.map((p, i) => ({
+        profileId: p.id,
+        name: p.name,
+        aliases: deserializeContactEntries(p.contactEntries).filter(e => e.type === 'alias').map(e => e.value),
+        householdNames: housemates[i],
+    }));
     // Tokens pointing at deleted / demo profiles are dropped; that's expected.
     for (const id of matchedOn.keys()) if (!candidates.some(c => c.profileId === id)) matchedOn.delete(id);
     logger.info('api: identifier lookup', { requestId, lookups: lookups.length, hits: candidates.length });
     return { candidates, matchedOn };
+}
+
+/** Housemates read per candidate at most (MAX_HOUSEHOLD_MEMBERS). */
+const MAX_HOUSEMATE_NAMES = 30;
+
+/**
+ * The live names of the people `adopterId` lives with — every ordinary
+ * household it is in (household_memberships), gift households left out. One
+ * query, bounded. API v1's `householdNames`, read from memberships.
+ */
+export async function housemateNames(db: Db, adopterId: string): Promise<string[]> {
+    const other = alias(householdMemberships, 'o');
+    const rows = await db.select({ name: adopters.name }).from(householdMemberships)
+        .innerJoin(other, and(eq(other.householdId, householdMemberships.householdId), sql`${other.adopterId} <> ${householdMemberships.adopterId}`))
+        .innerJoin(adopters, eq(adopters.id, other.adopterId))
+        .where(and(
+            eq(householdMemberships.adopterId, adopterId),
+            isNull(adopters.deletedAt),
+            sql`NOT EXISTS (SELECT 1 FROM household_memberships g WHERE g.household_id = ${householdMemberships.householdId} AND g.gift_recipient = 1)`,
+        ))
+        .limit(MAX_HOUSEMATE_NAMES).all() as Array<{ name: string | null }>;
+    return [...new Set(rows.map(r => (r.name ?? '').trim()).filter(Boolean))];
 }
 
 type RatingFields = Pick<ProfileSummary, 'rating' | 'ratingLevel' | 'ratingLabel'>;

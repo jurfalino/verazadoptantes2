@@ -588,3 +588,45 @@ export async function getHouseholdMatchCandidates(
         return { results: [] };
     }
 }
+
+// ─────────────────────────── Gift recipient ───────────────────────────
+
+export type CreateGiftRecipientProfileResult =
+    | { ok: true; profileId: string; householdId: string; membershipId: string; created: boolean }
+    | Fail;
+
+/**
+ * «Crear perfil de {nombre}» on the giver's «Destinatario del regalo (según el
+ * formulario)» (spec «Gift recipient»): a rescuer who confirmed who the
+ * recipient is makes the profile from that gift form's answers — owner = the
+ * giver's owner, the phone credited to the form — in a gift household with the
+ * giver, never «Convive con». Open to the giver's team (owner, org-mates) and
+ * admins. Once per form: a repeat answers the same profile (`created: false`);
+ * two at once → one profile, the other `conflict`.
+ */
+export async function createGiftRecipientProfile(
+    input: { giverAdopterId: string; submissionId: string },
+): Promise<CreateGiftRecipientProfileResult> {
+    const actor = await sessionActor();
+    if (!actor) return { ok: false, error: 'not_authenticated' };
+    const giverId = id64(input?.giverAdopterId);
+    const submissionId = id64(input?.submissionId);
+    const ctx = { actor, giverAdopterId: giverId, submissionId };
+    if (!giverId || !submissionId) return { ok: false, error: 'invalid' };
+    try {
+        const db = await getDb();
+        if (!db) throw new Error('No database');
+        const giver = await liveProfile(db, giverId);
+        if (!giver) return { ok: false, error: 'not_found' };
+        const { mayCreateGiftRecipient, createGiftRecipientFromForm } = await import('@/lib/householdPeople');
+        if (!(await mayCreateGiftRecipient(actor, giver.addedBy))) {
+            logger.info('createGiftRecipientProfile: refused, not the giver\'s team or an admin', ctx);
+            return { ok: false, error: 'not_authorized' };
+        }
+        const res = await createGiftRecipientFromForm(db, { giverAdopterId: giver.id, submissionId, actor });
+        return res;
+    } catch (e) {
+        const errorId = logger.error('createGiftRecipientProfile failed', e, ctx);
+        return { ok: false, error: 'failed', errorId };
+    }
+}

@@ -326,7 +326,17 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                                no names.
 // The writers and notice workers that take the actor (src/lib/profileIdentity.ts) are plain lib code.
 // 174 = 170 + 4.
-const EXPECTED_ACTIONS = 174;
+// Households as profiles, Task 4: +1 in src/app/actions/households.ts, exported from the barrel.
+//   createGiftRecipientProfile(input) session required; only the giver's team (owner,
+//                                org-mates) or an admin, else not_authorized. Only for a gift
+//                                form currently linked to that giver (else not_found); makes
+//                                the profile from THAT form's stored answers (nothing typed by
+//                                the caller), owned by the giver's owner; once per form
+//                                (a claimed household id, then the membership's source_key).
+// The unattended attach / match / gift readers (src/lib/householdPeople.ts,
+// src/lib/giftRecipients.ts) are plain lib code.
+// 175 = 174 + 1.
+const EXPECTED_ACTIONS = 175;
 
 let manifest;
 try {

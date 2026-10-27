@@ -32,14 +32,15 @@
  */
 
 import { logger } from '@/lib/logger';
-import { serializeHouseholdMembers, withoutProfileLinks, type HouseholdMember } from '@/lib/householdMembers';
 import type { ContactEntry, SocialPlatform } from '@/lib/contactEntries';
 
 export type AdopterSource = 'manual' | 'form' | 'contract' | 'imported' | 'api';
 
 export interface CreateAdopterInput {
-    /** Fully named people from "¿Quiénes viven en la casa?" (spec 2026-10-04 §3). Written before tokenizing so their names reach dedup. */
-    householdMembers?: HouseholdMember[];
+    // Household people are NOT written here any more (households as profiles):
+    // the caller attaches them as profiles + memberships afterwards
+    // (src/lib/householdPeople.ts attachHouseholdPeople). Nothing writes
+    // adopters.household_members.
     /** 'form', 'contract' or 'api' here; 'manual'/'imported' use their own paths. */
     source: Extract<AdopterSource, 'form' | 'contract' | 'api'>;
     /** source 'api' only: which key and call created the profile, for its history. */
@@ -136,8 +137,7 @@ export async function createAdopterFromSubmission(
     const db = await getDb();
     if (!db) throw new Error('createAdopterFromSubmission: database unavailable');
 
-    const { adopters, adopterHistory, duplicateCandidates } = await import('@/db/schema');
-    const { eq, and } = await import('drizzle-orm');
+    const { adopters, adopterHistory } = await import('@/db/schema');
 
     const adopterId = crypto.randomUUID();
     // Dynamic import to match this module's edge-route import convention.
@@ -162,7 +162,6 @@ export async function createAdopterFromSubmission(
         name: trimmedName,
         contactInfo: contactInfo || null,
         contactEntries: contactEntries.length ? JSON.stringify(contactEntries) : null,
-        householdMembers: input.householdMembers?.length ? serializeHouseholdMembers(withoutProfileLinks(input.householdMembers)) : null,
         addressInfo: input.address || null,
         addedBy: input.addedBy || 'anonymous',
         source: input.source,
@@ -224,43 +223,91 @@ export async function createAdopterFromSubmission(
     }
 
     // 4. Find duplicates + persist a filtered subset as `duplicate_candidates`
-    // pending rows so the pending-dedup section on /my-adopters has data.
-    //
-    // Two thresholds intentionally split:
-    //   • findAdopters minRelevance:0 — matches the existing form/contract
-    //     notification recall (the prior code paths use 0). Keeps the
-    //     notification banner honest about borderline matches and preserves
-    //     existing e2e behavior (notably contract-link.spec.ts which sets up
-    //     a low-confidence fixture and expects the "Es la misma persona"
-    //     merge button to render).
-    //   • PERSIST_THRESHOLD = 30 — only pairs with ≥30% relevance get
-    //     written to duplicate_candidates. Stops the pending-dedup table
-    //     from filling with noise that the rescuer would just dismiss.
+    // pending rows so the pending-dedup section on /my-adopters has data
+    // (thresholds: findAndPersistDuplicateCandidates).
+    const dupCandidates = await findAndPersistDuplicateCandidates(db, adopterId, {
+        name: trimmedName,
+        phone: input.phone,
+        documentId: input.documentId,
+        email: input.email,
+        socials: socialList.map(x => (typeof x === 'string' ? x : x.value)),
+    }, { skipLikeFallback: input.bulkImport === true });
+
+    logger.info('Adopter auto-created from submission', {
+        adopterId,
+        source: input.source,
+        addedBy: input.addedBy,
+        dupCount: dupCandidates.length,
+    });
+
+    return { adopterId, dupCandidates };
+}
+
+/** What a new profile is checked against the index with (findAdopters 'duplicate'). */
+export interface DuplicateProbe {
+    name: string;
+    phone?: string | null;
+    documentId?: string | null;
+    email?: string | null;
+    socials?: string[];
+}
+
+/**
+ * Step 4 of every unattended creation: find the likely duplicates of a new
+ * profile and persist the pairs above the noise floor as pending
+ * `duplicate_candidates` («Pendientes de revisar»). `skipPair(otherId)` drops
+ * a pair before it is written (households: never pair housemates — spec
+ * anti-goal). Never throws: a failure is logged and gives [].
+ *
+ * Two thresholds intentionally split:
+ *   • findAdopters minRelevance:0 — matches the existing form/contract
+ *     notification recall (the prior code paths use 0). Keeps the
+ *     notification banner honest about borderline matches and preserves
+ *     existing e2e behavior (notably contract-link.spec.ts which sets up
+ *     a low-confidence fixture and expects the "Es la misma persona"
+ *     merge button to render).
+ *   • PERSIST_THRESHOLD = 30 — only pairs with ≥30% relevance get
+ *     written to duplicate_candidates. Stops the pending-dedup table
+ *     from filling with noise that the rescuer would just dismiss.
+ */
+export async function findAndPersistDuplicateCandidates(
+    db: NonNullable<Awaited<ReturnType<typeof import('@/lib/db').getDb>>>,
+    adopterId: string,
+    probe: DuplicateProbe,
+    opts: { skipLikeFallback?: boolean; skipPair?: (otherId: string) => Promise<boolean> } = {},
+): Promise<DupCandidateSummary[]> {
     const PERSIST_THRESHOLD = 30;
-    let dupCandidates: DupCandidateSummary[] = [];
     try {
+        const { duplicateCandidates } = await import('@/db/schema');
+        const { eq, and } = await import('drizzle-orm');
         const { findAdopters } = await import('@/app/actions/findAdopters');
         const { extractEmails, extractSocials } = await import('@/lib/tokenizer');
+        const socials = (probe.socials ?? []).filter(Boolean);
 
         const dupResult = await findAdopters(
             {
-                name: trimmedName,
+                name: probe.name,
                 // The phone as typed — the matcher reads it by country, so a
                 // "+54 9 11 …" applicant finds a record saved as "11 …".
-                phones: input.phone?.trim() ? [input.phone.trim()] : [],
+                phones: probe.phone?.trim() ? [probe.phone.trim()] : [],
                 // The DNI is matched as an identity number. It used to be pushed
                 // into `phones`, so it was probed as a phone and never against
                 // the id index — a returning applicant's DNI found nobody.
-                ids: input.documentId?.trim() ? [input.documentId.trim()] : [],
-                emails: input.email ? extractEmails(input.email) : [],
+                ids: probe.documentId?.trim() ? [probe.documentId.trim()] : [],
+                emails: probe.email ? extractEmails(probe.email) : [],
                 // Entries may carry their network ({ value, platform }) — match on the value.
-                socials: socialList.length ? extractSocials(socialList.map(x => (typeof x === 'string' ? x : x.value)).join('\n')) : [],
+                socials: socials.length ? extractSocials(socials.join('\n')) : [],
                 excludeAdopterId: adopterId,
             },
-            { mode: 'duplicate', minRelevance: 0, limit: 5, skipLikeFallback: input.bulkImport === true },
+            { mode: 'duplicate', minRelevance: 0, limit: 5, skipLikeFallback: opts.skipLikeFallback === true },
         );
 
-        const matches = (dupResult.results as Array<{ adopterId: string; adopterName: string; matchTypes: string[]; relevancePercent: number }>) || [];
+        const found = (dupResult.results as Array<{ adopterId: string; adopterName: string; matchTypes: string[]; relevancePercent: number }>) || [];
+        const matches: typeof found = [];
+        for (const m of found) {
+            if (opts.skipPair && await opts.skipPair(m.adopterId)) continue;
+            matches.push(m);
+        }
 
         // Persist only matches above the noise floor. Skip pairs that are
         // already recorded (dismissed / merged) — the admin reconciliation
@@ -297,7 +344,7 @@ export async function createAdopterFromSubmission(
             });
         }
 
-        dupCandidates = matches.map(m => ({
+        return matches.map(m => ({
             adopterId: m.adopterId,
             adopterName: m.adopterName,
             matchTypes: m.matchTypes,
@@ -308,16 +355,8 @@ export async function createAdopterFromSubmission(
             adopterId,
             error: e instanceof Error ? e.message : String(e),
         });
+        return [];
     }
-
-    logger.info('Adopter auto-created from submission', {
-        adopterId,
-        source: input.source,
-        addedBy: input.addedBy,
-        dupCount: dupCandidates.length,
-    });
-
-    return { adopterId, dupCandidates };
 }
 
 export interface CreateHouseholdProfileInput {
@@ -331,6 +370,8 @@ export interface CreateHouseholdProfileInput {
     contactEntries: ContactEntry[];
     /** A whole 0–120, dated today so the profile shows the CURRENT age; null/undefined = unknown. */
     age?: number | null;
+    /** «Es menor de edad» with no age known (an age decides by itself: <18 ⇒ minor). */
+    isMinor?: boolean;
     /** profilePrivilege on the new profile: 'edit' only when the typist is on the owner's team (or staff). */
     historyKind: 'edit' | 'contribution';
     /** The creation line of the new profile's history (never raw contact values). */
@@ -377,7 +418,7 @@ export async function createHouseholdProfile(
         age,
         ageAsOf: age === null ? null : now.toISOString().slice(0, 10),
         // The «Es menor de edad» box turns on by itself under 18 (spec «Children»).
-        isMinor: age !== null && age < MINOR_AGE_LIMIT ? 1 : 0,
+        isMinor: (age !== null ? age < MINOR_AGE_LIMIT : input.isMinor === true) ? 1 : 0,
         createdAt: now,
         updatedAt: now,
     });

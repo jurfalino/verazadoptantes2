@@ -12,7 +12,7 @@ import type { MediaItem } from '@/components/ui/MediaLightbox';
 import LegalConsent from '@/components/LegalConsent';
 import { extractVideoThumbnail, extractVideoThumbnailFromUrl } from '@/lib/videoThumbnail';
 import { zarazTrack } from '@/lib/zaraz';
-import { findAdopters, addHouseholdMember } from '@/app/actions';
+import { findAdopters, addHouseholdPerson } from '@/app/actions';
 import type { DuplicateMatch } from '@/app/actions';
 import { confidenceBand } from '@/lib/scoring';
 import type { ExtractedAdopterData } from '@/lib/gemini';
@@ -1368,14 +1368,25 @@ export default function ImportWizard() {
                     }
                 }
             }
-            // Relatives: one write each, member + their contacts together. Refused
-            // on another team's profile (household edits are owner/teammate only).
+            // Relatives: households as profiles — each one becomes a profile (with their
+            // own contacts) in the target's household, through the same add anyone signed
+            // in uses (D54: credited, granted, the target's team told). The «¿Es este
+            // perfil?» confirmation per relative comes with the household UI (Task 8).
             for (const m of members) {
-                const res = await addHouseholdMember({ adopterId: mergeTarget.id, ...m });
+                const res = await addHouseholdPerson({
+                    anchorAdopterId: mergeTarget.id,
+                    name: m.name,
+                    relationship: m.relationship,
+                    contactEntries: m.contactEntries.map(e => ({
+                        type: e.type, value: e.value,
+                        ...(e.platform ? { platform: e.platform } : {}),
+                        ...(e.apps?.length ? { apps: e.apps } : {}),
+                        ...(e.streetAndNumber ? { streetAndNumber: e.streetAndNumber } : {}),
+                        ...(e.locality ? { locality: e.locality } : {}),
+                    })),
+                });
                 if (!res.ok) {
-                    const refused = /not authorized/i.test(res.error);
-                    const id = res.error === 'busy' && 'errorId' in res ? res.errorId : res.error.match(/Error ID:\s*([a-f0-9-]{6,})/i)?.[1];
-                    toast.error(t('errors.generic'), refused ? t('import.relatives_not_allowed') : t('import.relative_failed'), id);
+                    toast.error(t('errors.generic'), t('import.relative_failed'), res.errorId);
                     break;
                 }
             }

@@ -262,6 +262,7 @@ export async function linkFormToExistingAdopter(
             selectedAnimalId: formSubmissions.selectedAnimalId,
             linkedAdopterId: formSubmissions.linkedAdopterId,
             autoAdopterId: formSubmissions.autoAdopterId,
+            intent: formSubmissions.intent,
         }).from(formSubmissions).where(eq(formSubmissions.id, submissionId)).get();
         // The form-link owner, an org-mate of theirs, or an admin — the same
         // rule the page applies before rendering the cards (team applicants,
@@ -390,6 +391,14 @@ export async function linkFormToExistingAdopter(
             }
 
             await notifyProfileCreator(target, adopterId, submissionId, actorEmail, mergeAuditId);
+        }
+
+        // A gift form's recipient phone is indexed with the profile the form is linked to
+        // (src/lib/giftRecipients.ts): it moved, so both profiles re-index (tokenizeAdopter logs, never throws).
+        if (plan.op !== 'noop' && sub.intent === 'gift') {
+            const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
+            await tokenizeAdopter(adopterId, { force: true });
+            if (sub.linkedAdopterId && sub.linkedAdopterId !== adopterId) await tokenizeAdopter(sub.linkedAdopterId, { force: true });
         }
 
         // 'link' writes the request here; after a merge it already arrived with
