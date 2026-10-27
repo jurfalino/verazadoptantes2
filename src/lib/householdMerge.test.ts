@@ -228,6 +228,14 @@ describe('merges re-point memberships (spec «Merges and undo»)', () => {
         expect(householdOf('hh-pedro').map(r => r.adopter_id)).toEqual(['pedro', 'marta', 'martadup']);
     });
 
+    it('undo after the survivor was removed from a household the two collapsed in: nobody is put back there', async () => {
+        const auditId = await merge('marta', 'martadup');
+        sqlite.prepare(`DELETE FROM household_memberships WHERE id = 'hm-p2'`).run(); // «No vive acá» on Marta, after the merge
+        await undo(auditId);
+        expect(householdOf('hh-pedro').map(r => r.adopter_id)).toEqual(['pedro']);
+        expect(householdOf('hh-ana').map(r => r.adopter_id)).toEqual(['ana', 'martadup', 'lucas']);
+    });
+
     it('the survivor joins a household between the read and the move: collapsed, never two rows for one person', async () => {
         faults.afterAbsorbedRead = () => {
             sqlite.prepare(`INSERT INTO household_memberships (id, household_id, adopter_id, relationship, gift_recipient, added_by, added_at) VALUES ('hm-race', 'hh-ana', 'marta', 'unknown', 0, ?, 2500)`).run(OTHER);

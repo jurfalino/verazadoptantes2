@@ -309,6 +309,13 @@ export async function restoreMembershipsAfterMerge(
 
     let notRestored = 0;
     for (const c of [...undo.collapsed].reverse()) {
+        // The survivor left that household since («No vive acá», a removal): the
+        // person is not put back there under the absorbed profile either — the
+        // same rule as a moved row removed since.
+        if (!(await membershipById(db, c.survivorRowId))) {
+            notRestored++;
+            continue;
+        }
         // The survivor's row gives back what it took (its source_key first, so the
         // absorbed row can have it again), then the absorbed row comes back as it was.
         const statements: BatchItem<'sqlite'>[] = [];

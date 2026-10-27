@@ -106,7 +106,11 @@ export async function mergeAdopters(
         // household_links) must be converted to memberships HERE, before the claim
         // (ensureHostConverted on primaryId and secondaryId): the merge moves only
         // memberships, so an unconverted absorbed host would keep its people on a
-        // deleted row.
+        // deleted row. Also: a THIRD host's JSON may name the absorbed profile as a
+        // member's profileId (old D51 merges left it so; merges from here on move
+        // neither JSON nor links) — the conversion must follow profileId through
+        // resolveMergedAdopterId (or prefer the link row's linked_adopter_id), or
+        // it writes a membership for a deleted profile and the person vanishes.
 
         // 0. Claim the pair before moving anything: ONE statement soft-deletes
         // the secondary only while it AND the primary are still live. Two merges
