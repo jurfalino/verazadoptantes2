@@ -1048,6 +1048,7 @@ export const en = {
         hh_link_no_alerts: 'No alerts',
         hh_link_adoptions_one: '1 adoption',
         hh_link_adoptions_many: '{n} adoptions',
+        hh_contact_already_there: 'That detail was already there.',
         hh_link_more_contacts: '+{n} more details on their profile',
         hh_link_no_contacts: 'No contact details',
         hh_link_locked_note: 'Some details are protected. You can ask for access from their profile.',

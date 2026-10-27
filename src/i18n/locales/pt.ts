@@ -1055,6 +1055,7 @@ export const pt = {
         hh_link_no_alerts: 'Sem alertas',
         hh_link_adoptions_one: '1 adoção',
         hh_link_adoptions_many: '{n} adoções',
+        hh_contact_already_there: 'Esse dado já estava cadastrado.',
         hh_link_more_contacts: '+{n} dados a mais no perfil',
         hh_link_no_contacts: 'Sem dados de contato',
         hh_link_locked_note: 'Alguns dados estão protegidos. Você pode pedir acesso pelo perfil.',

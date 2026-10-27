@@ -108,6 +108,14 @@ interface Props {
     /** False: no «Agregar dato de contacto» (a signed-out viewer of a household member). */
     canAdd?: boolean;
     /**
+     * Say so when an add changed nothing (the value was already on the
+     * profile). Silent by default: on the profile the full list is on screen,
+     * so the value is visibly there. A household member's list is capped and
+     * leaves aliases out, so there it may not be — and a save that closes
+     * with no word reads as a save that failed.
+     */
+    reportNoChange?: boolean;
+    /**
      * The composer opened (true) or closed (false). A form that holds this
      * section hides its own «Cancelar / Guardar» meanwhile, so only one pair is
      * on screen and a contact still being typed can't be lost to the outer save.
@@ -128,7 +136,7 @@ interface Props {
  */
 type EditDraft = ContactDraft;
 
-export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick, adopterIsPublic = false, hidePublicMicrocopy = false, allowTypeChange = false, hideVisibilityMicrocopy = false, emptyMessage, testIdPrefix = 'ce', startComposer = 'auto', canAdd = true, onComposerOpenChange }: Props) {
+export default function ContactEntriesSection({ entries, adopterId, onChange, canEditAll, currentUser, onMaskedClick, adopterIsPublic = false, hidePublicMicrocopy = false, allowTypeChange = false, hideVisibilityMicrocopy = false, emptyMessage, testIdPrefix = 'ce', startComposer = 'auto', canAdd = true, reportNoChange = false, onComposerOpenChange }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
@@ -375,7 +383,8 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                     } else if (res.status === 'unlocked_existing') {
                         toast.success('🔓', t('adopter.ce_add_toast_unlocked'));
                     }
-                    // status === 'no_change' → silent (it would be noise).
+                    // status === 'no_change' → silent where the list shows it (it would be noise).
+                    else if (reportNoChange && res.status === 'no_change') toast.info(t('adopter.hh_contact_already_there'));
                 }
                 return { ok: true };
             } else {
@@ -845,7 +854,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                          * contacts and the household «Agregar» form (all of them are this
                          * component). Until v2.54.4 it was a Secondary button on an empty
                          * list and a bare text link once entries existed, and until
-                         * v2.58.2 the household drew its own («Agregar dato» as a link):
+                         * this change the household drew its own («Agregar dato» as a link):
                          * the same action in three looks.
                          *
                          * Emphasis for the empty state is carried by its own hint line

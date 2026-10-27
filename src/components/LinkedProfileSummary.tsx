@@ -53,6 +53,8 @@ export function MemberContacts({ summary, testId = 'linked-summary', canAddConta
                 canAdd={canAddContact}
                 // The household has its own «protected» note below; the profile-level line is the profile's.
                 hideVisibilityMicrocopy
+                // Capped and without aliases: an add that changed nothing must say so.
+                reportNoChange
                 testIdPrefix="linked-contact"
             />
             {summary.moreContacts > 0 && (
