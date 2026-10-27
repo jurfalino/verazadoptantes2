@@ -138,7 +138,8 @@ describe('saveAdopter — per-field collisions', () => {
         expect(res.success).toBe(true);
         const h = historyRows();
         expect(h.length).toBe(1);
-        expect(Object.keys(JSON.parse(h[0].changes as string))).toEqual(['name']);
+        // A name change is a rename (households as profiles): its row also carries `name_changed`.
+        expect(Object.keys(JSON.parse(h[0].changes as string))).toEqual(['name', 'name_changed']);
         expect(audit.calls.length).toBe(1);
     });
 
@@ -172,7 +173,8 @@ describe('saveAdopter — per-field collisions', () => {
         const res = await saveAdopter({ id: ID, name: 'Carla López' });
         expect(res).toMatchObject({ success: false, error: 'busy' });
         expect(!res.success && res.errorId).toMatch(/\w{6,}/);
-        expect(row().name).toBe('Carla 2');
+        // Every attempt lost; mine never landed (the rename path retries like the list writes).
+        expect(row().name).toMatch(/^Carla \d$/);
         expect(historyRows().length).toBe(0);
     });
 

@@ -61,6 +61,11 @@ import { isMinorProfile } from '@/lib/minors';
 import { isProfileIsMinorError } from '@/domain/profileIdentity';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { saveApiActivity } from '@/lib/api/records';
+import { removeContactEntry } from './removeContactEntry';
+import { updateContactEntry } from './updateContactEntry';
+import { addContactEntry } from './addContactEntry';
+import { saveAdopter, appendToExistingAdopter } from './adopters';
+import { mergeAdopters, unmergeAdopters } from '@/lib/adopterMerge';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -218,7 +223,7 @@ describe('undoProfileRename — the owner team or an admin', () => {
         await as(MATE, () => changeProfileName({ adopterId: 'pedro', name: 'Pedro Paez Gómez', expectedName: 'P. Paez' }));
         expect(await as(OWNER, () => undoProfileRename(historyId))).toEqual({ ok: false, error: 'superseded' });
         expect(pedro().name).toBe('Pedro Paez Gómez');
-        expect(await as(OWNER, () => undoProfileRename('missing-row'))).toEqual({ ok: false, error: 'not_found' });
+        expect(await as(OWNER, () => undoProfileRename('missing-row'))).toEqual({ ok: false, error: 'not_authorized' });
     });
 });
 
@@ -292,3 +297,95 @@ describe('changeProfileAge and minors', () => {
         expect(await changeProfileAge({ adopterId: 'lucas', age: 12, isMinor: true })).toEqual({ ok: false, error: 'has_activity' });
     });
 });
+
+describe('Task 3 fix round 1', () => {
+    const renameAliasOf = (id: string) => entriesOf(id).find(e => e.fromRename);
+    const tokensOf = (id: string) => sqlite.prepare('SELECT token_value AS v FROM duplicate_tokens WHERE adopter_id = ?').all(id).map(r => r.v);
+    const discovers = async (q: string) => (await as(MATE, () => findAdopters({ raw: q }, { mode: 'discovery' }))).results.map(r => r.adopterId);
+
+    it('C1: the renamer cannot remove or rewrite the rename alias; the old name stays in the token index and discovery search', async () => {
+        await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' });
+        const alias = renameAliasOf('pedro')!;
+        expect(alias).toBeTruthy();
+        expect(await removeContactEntry({ adopterId: 'pedro', entryId: alias.id! })).toMatchObject({ ok: false });
+        expect(await updateContactEntry({ adopterId: 'pedro', entryId: alias.id!, value: 'Nadie' })).toMatchObject({ ok: false });
+        expect(renameAliasOf('pedro')).toMatchObject({ value: 'Pedro Paez', fromRename: true });
+        expect(tokensOf('pedro')).toContain('pedro paez');
+        expect(await discovers('Pedro Paez')).toContain('pedro');
+    });
+
+    it('C1: a plain alias equal to the current name, added by the stranger before renaming, becomes the rename alias and is not theirs to delete', async () => {
+        expect(await addContactEntry({ adopterId: 'pedro', type: 'alias', value: 'Pedro Paez' })).toMatchObject({ ok: true });
+        await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' });
+        const alias = entriesOf('pedro').find(e => e.type === 'alias' && e.value === 'Pedro Paez')!;
+        expect(alias).toMatchObject({ fromRename: true });
+        expect(await removeContactEntry({ adopterId: 'pedro', entryId: alias.id! })).toMatchObject({ ok: false });
+        expect(tokensOf('pedro')).toContain('pedro paez');
+        expect(await discovers('Pedro Paez')).toContain('pedro');
+    });
+
+    it('C1: the owner team can rewrite (flag kept) or remove a junk rename alias', async () => {
+        await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' });
+        const alias = renameAliasOf('pedro')!;
+        expect(await as(OWNER, () => updateContactEntry({ adopterId: 'pedro', entryId: alias.id!, value: 'Pedro Páez' }))).toMatchObject({ ok: true });
+        expect(renameAliasOf('pedro')).toMatchObject({ value: 'Pedro Páez', fromRename: true });
+        expect(await as(MATE, () => removeContactEntry({ adopterId: 'pedro', entryId: alias.id! }))).toMatchObject({ ok: true });
+        expect(renameAliasOf('pedro')).toBeUndefined();
+    });
+
+    it("C2: a non-privileged renamer never gets another field's value back (gating on)", async () => {
+        sqlite.prepare("UPDATE adopters SET family_members = 'Hijo y perro' WHERE id = 'pedro'").run();
+        const res = await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez', loaded: { familyMembers: null } });
+        expect(res).toMatchObject({ ok: true });
+        expect(res).not.toHaveProperty('updatedByOthers');
+        expect(JSON.stringify(res)).not.toContain('Hijo y perro');
+    });
+
+    it('I1: merge → rename → unmerge keeps the rename alias (the old name stays findable)', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('pedro2', 'Pedro P.', '5', ?, 1000, 1000)`).run(OWNER);
+        const merged = await mergeAdopters('pedro', 'pedro2', OWNER);
+        expect(merged.success).toBe(true);
+        await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' });
+        expect((await unmergeAdopters(merged.auditId!, ADMIN)).success).toBe(true);
+        expect(pedro().name).toBe('P. Paez');
+        expect(renameAliasOf('pedro')).toMatchObject({ value: 'Pedro Paez', fromRename: true });
+        expect(entriesOf('pedro').find(e => e.type === 'phone')).toMatchObject({ value: PEDRO_PHONE });
+        expect(tokensOf('pedro')).toContain('pedro paez');
+    });
+
+    it('I2: a name change through saveAdopter keeps the alias and the rename history too (admin from outside the team → the team is told)', async () => {
+        const res = await as(ADMIN, () => saveAdopter({ id: 'pedro', name: 'P. Paez' } as never, { loaded: { name: 'Pedro Paez' } }));
+        expect(res).toMatchObject({ success: true });
+        expect(pedro().name).toBe('P. Paez');
+        expect(renameAliasOf('pedro')).toMatchObject({ value: 'Pedro Paez', fromRename: true });
+        expect(historyOf('pedro').at(-1)!.changes.name_changed).toMatchObject({ from: 'Pedro Paez', to: 'P. Paez' });
+        expect(noticesOfType('profile_renamed').map(n => n.userId).sort()).toEqual([MATE, OWNER].sort());
+        // A stale loaded name is a conflict, never an overwrite.
+        const stale = await as(OWNER, () => saveAdopter({ id: 'pedro', name: 'Otro' } as never, { loaded: { name: 'Pedro Paez' } }));
+        expect(stale).toMatchObject({ success: true, conflicts: [expect.objectContaining({ field: 'name', value: 'P. Paez' })] });
+        expect(pedro().name).toBe('P. Paez');
+    });
+
+    it('only the rename code sets fromRename: client JSON on create and append is stripped', async () => {
+        const forged = JSON.stringify([{ id: 'f', type: 'alias', value: 'Hidden Name', fromRename: true }, { id: 'p', type: 'phone', value: '+54 11 5555 0000' }]);
+        const created = await saveAdopter({ id: '', name: 'Nuevo', contactEntries: forged } as never);
+        const newId = (created as { id: string }).id;
+        expect(entriesOf(newId).find(e => e.type === 'alias')).not.toHaveProperty('fromRename');
+        await as(OWNER, () => appendToExistingAdopter('lucas', { contactEntries: forged }));
+        expect(entriesOf('lucas').find(e => e.type === 'alias')).not.toHaveProperty('fromRename');
+    });
+
+    it('renameUndoState: a stranger gets the same answer for a real rename and an unknown id', async () => {
+        await changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' });
+        const real = historyOf('pedro')[0].id;
+        expect(await getRenameUndoOption('no-such-row')).toEqual(await getRenameUndoOption(real));
+        expect(await undoProfileRename('no-such-row')).toEqual(await undoProfileRename(real));
+    });
+
+    it('a rename of a profile with no real owner tells the admins (with «Deshacer»)', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('orphan', 'Ana Gómez', '5', 'anonymous', 1000, 1000)`).run();
+        expect(await changeProfileName({ adopterId: 'orphan', name: 'A. Gómez', expectedName: 'Ana Gómez' })).toMatchObject({ ok: true });
+        expect(notify.admins).toEqual([expect.objectContaining({ type: 'profile_renamed', actorEmail: STRANGER, metadata: expect.objectContaining({ undo: { historyId: expect.any(String) } }) })]);
+    });
+});
+

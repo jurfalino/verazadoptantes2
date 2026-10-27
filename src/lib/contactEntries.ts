@@ -680,6 +680,19 @@ export function isRenameAlias(e: Pick<ContactEntry, 'type' | 'fromRename'>): boo
     return e.type === 'alias' && e.fromRename === true;
 }
 
+/**
+ * Entries that arrived from a client (create, append, import): only the
+ * server's rename code may mark a rename alias, so the marker is dropped.
+ */
+export function stripRenameMarks<T extends ContactEntry>(entries: readonly T[]): T[] {
+    return entries.map(e => {
+        if (!('fromRename' in e)) return e;
+        const { fromRename: _drop, ...rest } = e;
+        void _drop;
+        return rest as T;
+    });
+}
+
 /** Merge two entry lists, de-duplicating on normalized value. */
 export function mergeContactEntries(a: ContactEntry[], b: ContactEntry[]): ContactEntry[] {
     return dedupe([...a, ...b]);

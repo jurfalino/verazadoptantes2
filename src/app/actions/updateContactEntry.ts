@@ -8,6 +8,7 @@ import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import {
     deserializeContactEntries,
+    isRenameAlias,
     contactEntriesToBlob,
     joinedAddressValue,
     detectSocialPlatform,
@@ -112,7 +113,8 @@ export async function updateContactEntry(
                 return { result: expectedValue !== undefined ? { kind: 'deleted' } : { kind: 'not_found' } };
             }
             const original = entries[idx];
-            const isOwnContribution = !!original.addedBy && original.addedBy === actor;
+            // A rename alias (the old name) is the profile team's to correct, never the renamer's.
+            const isOwnContribution = !!original.addedBy && original.addedBy === actor && !isRenameAlias(original);
             if (!isOwner && !actorIsAdmin && !actorIsOrgMate && !isOwnContribution) return { result: { kind: 'forbidden' } };
 
             const previousValueHash = hashEntryValue(original.type, original.value);
@@ -135,6 +137,8 @@ export async function updateContactEntry(
                     value,
                     ...(original.label ? { label: original.label } : {}),
                     ...(original.addedBy ? { addedBy: original.addedBy } : {}),
+                    // A corrected rename alias stays one (hidden, team-only).
+                    ...(isRenameAlias(original) ? { fromRename: true as const } : {}),
                     // Re-deduce the social network from the new value (URL); keep the
                     // prior platform for a bare handle.
                     ...(original.type === 'social' && (detectSocialPlatform(value) ?? original.platform)

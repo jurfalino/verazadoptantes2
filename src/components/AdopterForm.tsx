@@ -1318,12 +1318,6 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                                 </button>
                                             );
                                         })()}
-                                        {identity?.isMinor && !nameEditing && (
-                                            <span data-testid="minor-tag" className="flex-none inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded whitespace-nowrap"
-                                                style={{ backgroundColor: 'var(--status-purple-bg)', color: 'var(--status-purple-text)' }}>
-                                                {t('adopter.minor_tag')}
-                                            </span>
-                                        )}
                                       </div>
                                       {/* Anyone signed in can rename: say what happens to the old name (not to the owner's team — it's theirs). */}
                                       {nameEditing && !isPrivileged && (
@@ -1351,6 +1345,13 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                 </div>
                                 {/* Actions (right-aligned inline) */}
                                 <div className="flex items-center justify-end gap-2 flex-shrink-0">
+                                    {/* «Menor de edad» (K1): top-right, beside ⋯ — no rating, alerts or records on this profile. */}
+                                    {!isNew && identity?.isMinor && !isEditing && (
+                                        <span data-testid="minor-tag" className="flex-none inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded whitespace-nowrap"
+                                            style={{ backgroundColor: 'var(--status-purple-bg)', color: 'var(--status-purple-text)' }}>
+                                            {t('adopter.minor_tag')}
+                                        </span>
+                                    )}
                                     {isEditing ? (
                                         // Desktop: inline Cancel/Save in the header. On mobile these
                                         // are hidden so the name input gets the full row width; the

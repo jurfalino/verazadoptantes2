@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
     ageColumns, knownAsNames, parseNameChange, renameEntries, renameUndoPath, undoableRenameId, sameName,
 } from './profileIdentity';
-import { deserializeContactEntries, contactEntriesToBlob, mergeContactEntries, type ContactEntry } from '@/lib/contactEntries';
+import { deserializeContactEntries, contactEntriesToBlob, mergeContactEntries, stripRenameMarks, type ContactEntry } from '@/lib/contactEntries';
 import { maskContactEntries, maskAdopterContact, NO_ACCESS_VISIBILITY } from '@/lib/piiAccess';
 import { extractTokens } from '@/lib/tokenizer';
 import { isMinor } from './households';
@@ -15,11 +15,16 @@ describe('renameEntries', () => {
         expect(aliasKept).toBe(true);
         expect(entries).toEqual([phone, { id: 'a1', type: 'alias', value: 'Pedro Paez', addedBy: 's@x.com', fromRename: true }]);
     });
-    it('no alias for an empty old name, the same name in other case/accents, or one already an alias', () => {
-        expect(renameEntries([], { from: '', to: 'Lucas', actor: 's', newId: 'a' }).aliasKept).toBe(false);
-        expect(renameEntries([], { from: 'José Pérez', to: 'jose perez', actor: 's', newId: 'a' }).aliasKept).toBe(false);
-        const plain: ContactEntry = { id: 'x', type: 'alias', value: 'Pedro Paez' };
-        expect(renameEntries([plain], { from: 'Pedro Paez', to: 'P. Paez', actor: 's', newId: 'a' })).toEqual({ entries: [plain], aliasKept: false });
+    it('no alias for an empty old name or the same name in other case/accents', () => {
+        expect(renameEntries([], { from: '', to: 'Lucas', actor: 's', newId: 'a' })).toMatchObject({ aliasKept: false, changed: false });
+        expect(renameEntries([], { from: 'José Pérez', to: 'jose perez', actor: 's', newId: 'a' })).toMatchObject({ aliasKept: false, changed: false });
+    });
+    it('a plain alias with the old name is upgraded to the rename alias (its contributor can no longer erase the old name); an existing rename alias is left as is', () => {
+        const plain: ContactEntry = { id: 'x', type: 'alias', value: 'pedro paez', addedBy: 's' };
+        expect(renameEntries([plain], { from: 'Pedro Paez', to: 'P. Paez', actor: 'o', newId: 'a' }))
+            .toEqual({ entries: [{ ...plain, fromRename: true }], aliasKept: true, changed: true });
+        const kept: ContactEntry = { id: 'k', type: 'alias', value: 'Pedro Paez', fromRename: true };
+        expect(renameEntries([kept], { from: 'Pedro Paez', to: 'P. Paez', actor: 'o', newId: 'a' })).toEqual({ entries: [kept], aliasKept: true, changed: false });
     });
     it('renaming back to a kept name drops that rename alias (it is the name again), never a plain alias', () => {
         const kept: ContactEntry = { id: 'k', type: 'alias', value: 'Pedro Paez', fromRename: true };
@@ -27,6 +32,7 @@ describe('renameEntries', () => {
         expect(renameEntries([kept], { from: 'P. Paez', to: 'Pedro Paez', actor: 'o', newId: 'a' }).entries)
             .toEqual([{ id: 'a', type: 'alias', value: 'P. Paez', addedBy: 'o', fromRename: true }]);
         expect(renameEntries([plain], { from: 'P. Paez', to: 'Pedro Paez', actor: 'o', newId: 'a' }).entries[0]).toBe(plain);
+        expect(stripRenameMarks([{ id: 'k', type: 'alias', value: 'X', fromRename: true }])).toEqual([{ id: 'k', type: 'alias', value: 'X' }]);
     });
 });
 

@@ -25,6 +25,7 @@ import { isRealActorEmail } from '@/lib/piiAccess';
 import { actorNameOf, teamsOf } from '@/lib/householdNotices';
 import { currentAge, isMinor } from '@/domain/households';
 import { countOpenAlerts } from '@/domain/householdLinks';
+import { realOwner } from '@/domain/dedupPair';
 import { ageColumns, parseNameChange, renameEntries, sameName } from '@/domain/profileIdentity';
 import { notificationContent, type NotificationTemplate } from '@/domain/notificationTemplates';
 
@@ -47,7 +48,8 @@ export type RenameResult =
  * stored name). `undoOf`: this rename undoes that history row.
  */
 export async function renameProfile(db: Db, input: {
-    adopterId: string; name: string; expectedName: string | null; actor: string; undoOf?: string;
+    /** `undefined`: no baseline (a caller that does no collision check) — renames whatever is stored, still race-safe. */
+    adopterId: string; name: string; expectedName: string | null | undefined; actor: string; undoOf?: string;
 }): Promise<RenameResult> {
     const { adopterId, actor, undoOf } = input;
     const to = input.name.trim();
@@ -56,14 +58,13 @@ export async function renameProfile(db: Db, input: {
     const out = await casAdopterLists<Step>(db, adopterId, (row) => {
         // Already what I typed (a teammate typed the same): saved, nothing to write.
         if (sameName(row.name, to)) return { result: { kind: 'unchanged' } };
-        if (!sameName(row.name, input.expectedName)) return { result: { kind: 'conflict', theirs: row.name ?? '' } };
+        if (input.expectedName !== undefined && !sameName(row.name, input.expectedName)) return { result: { kind: 'conflict', theirs: row.name ?? '' } };
         const current = deserializeContactEntries(row.contactEntries);
         const base = current.length ? current : parseBlobToContactEntries(row.contactInfo).map(e => ({ id: crypto.randomUUID(), ...e }));
-        const { entries, aliasKept } = renameEntries(base, { from: row.name, to, actor, newId: crypto.randomUUID() });
-        // Nothing kept or dropped: only the name is written (a legacy blob stays as it is).
-        const entriesChanged = aliasKept || entries.length !== base.length;
+        const { entries, aliasKept, changed } = renameEntries(base, { from: row.name, to, actor, newId: crypto.randomUUID() });
+        // Nothing kept, upgraded or dropped: only the name is written (a legacy blob stays as it is).
         return {
-            write: !entriesChanged
+            write: !changed
                 ? { name: to }
                 : { name: to, contactEntries: entries.length ? JSON.stringify(entries) : null, contactInfo: contactEntriesToBlob(entries) || null },
             result: { kind: 'write', from: (row.name ?? '').trim(), aliasKept },
@@ -117,17 +118,21 @@ export type UndoState =
     | { status: 'can_undo'; adopterId: string; from: string; to: string; renamer: string | null; ownerEmail: string | null }
     | { status: 'not_found' | 'not_undoable' | 'not_authorized' | 'already_undone' | 'superseded'; adopterId?: string };
 
-/** The history row this undo references, whether it was already undone, and whether `viewer` may undo it. */
+/**
+ * The history row this undo references, whether it was already undone, and
+ * whether `viewer` may undo it. Permission comes first: an unknown id, a gone
+ * profile and someone else's profile all answer `not_authorized`, so the
+ * answer never tells a stranger whether a history id exists.
+ */
 export async function renameUndoState(db: Db, historyId: string, viewer: string): Promise<UndoState> {
     const row = await db.select().from(adopterHistory).where(eq(adopterHistory.id, historyId)).get() as typeof adopterHistory.$inferSelect | undefined;
-    if (!row) return { status: 'not_found' };
-    const change = parseNameChange(row.changes);
+    if (!row) return { status: 'not_authorized' };
     const adopterId = row.adopterId;
-    if (!change || change.undoOf || change.to === null) return { status: 'not_undoable', adopterId };
     const profile = await db.select({ name: adopters.name, addedBy: adopters.addedBy, deletedAt: adopters.deletedAt })
         .from(adopters).where(eq(adopters.id, adopterId)).get() as { name: string | null; addedBy: string | null; deletedAt: Date | null } | undefined;
-    if (!profile || profile.deletedAt) return { status: 'not_found', adopterId };
-    if (!(await isPrivilegedOnProfile(viewer, profile.addedBy))) return { status: 'not_authorized', adopterId };
+    if (!profile || profile.deletedAt || !(await isPrivilegedOnProfile(viewer, profile.addedBy))) return { status: 'not_authorized' };
+    const change = parseNameChange(row.changes);
+    if (!change || change.undoOf || change.to === null) return { status: 'not_undoable', adopterId };
     if (await isUndone(db, adopterId, historyId)) return { status: 'already_undone', adopterId };
     if (!sameName(profile.name, change.to)) return { status: 'superseded', adopterId };
     return { status: 'can_undo', adopterId, from: change.from ?? '', to: change.to, renamer: row.changedBy ?? null, ownerEmail: profile.addedBy };
@@ -186,6 +191,11 @@ export type AgeResult =
  * refused while it has records or open alerts: a minor's profile hides the
  * «¿Qué pasó con …?» actions and refuses new records, so marking an adult with
  * a history as a child would bury it (anyone signed in can change an age).
+ * The activity check and the write are not atomic: a record landing in
+ * between can end up on a profile just marked minor. That is the rare,
+ * harmless side — the AUTHORITATIVE rule is the other way round: every record
+ * and alert insert refuses a minor (src/lib/minors.ts), so nothing new lands
+ * on a minor once the mark is in.
  */
 export async function setProfileAge(db: Db, input: { adopterId: string; age: number | null; isMinor: boolean; actor: string; today?: Date }): Promise<AgeResult> {
     const { adopterId, actor } = input;
@@ -273,10 +283,21 @@ export async function notifyProfileRenamed(db: Db, n: { adopterId: string; actor
     }
     await runAfterResponse('profileIdentity.renamed', async () => {
         try {
-            const [recipients, actorName] = await Promise.all([teamsOf(db, [n.adopterId], n.actor, new Set(), ctx), actorNameOf(n.actor, ctx)]);
-            await sendTo(recipients, 'profile_renamed',
-                { key: 'profile_renamed', params: { actorName, fromName: n.from || undefined, toName: n.to } },
-                n.historyId ? { undo: { historyId: n.historyId } } : {}, '✏️', ctx);
+            const actorName = await actorNameOf(n.actor, ctx);
+            const template: NotificationTemplate = { key: 'profile_renamed', params: { actorName, fromName: n.from || undefined, toName: n.to } };
+            const metadata = n.historyId ? { undo: { historyId: n.historyId } } : {};
+            if (!realOwner(n.ownerEmail)) {
+                // Nobody owns it (imported / anonymous): the admins are its team — they can undo.
+                const { notifyAdmins } = await import('@/app/actions/notifications');
+                await notifyAdmins({
+                    actorEmail: n.actor, type: 'profile_renamed', ...notificationContent(template),
+                    url: `/adopter/${n.adopterId}`, icon: '✏️', metadata: { ...metadata, adopterId: n.adopterId, profileId: n.adopterId },
+                });
+                logger.info('profileIdentity: profile_renamed sent to the admins (no owner)', ctx);
+                return;
+            }
+            const recipients = await teamsOf(db, [n.adopterId], n.actor, new Set(), ctx);
+            await sendTo(recipients, 'profile_renamed', template, metadata, '✏️', ctx);
         } catch (e) {
             logger.warn('profileIdentity: rename notice failed', { ...ctx, error: errMsg(e) });
         }

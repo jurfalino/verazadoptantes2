@@ -38,24 +38,33 @@ export function sameName(a: string | null | undefined, b: string | null | undefi
 
 /**
  * The contact entries after renaming `from` → `to`: the rename aliases equal
- * to the new name go (it is the name again), and the old name is kept as a
- * rename alias unless it is empty, normalizes to the new name, or is already
- * an alias of any kind.
+ * to the new name go (it is the name again), and the old name is ALWAYS left
+ * as a rename alias (unless empty or the same name): an existing plain alias
+ * with that value is upgraded to one — so nobody who could delete a plain
+ * alias (its contributor) can erase the old name — else one is added.
+ * `changed`: the list differs from the input.
  */
 export function renameEntries(
     entries: readonly ContactEntry[],
     opts: { from: string | null | undefined; to: string; actor: string; newId: string },
-): { entries: ContactEntry[]; aliasKept: boolean } {
+): { entries: ContactEntry[]; aliasKept: boolean; changed: boolean } {
     const from = (opts.from ?? '').trim();
     const toKey = aliasKey(opts.to.trim());
     const kept = entries.filter(e => !(isRenameAlias(e) && aliasKey(e.value) === toKey));
+    let changed = kept.length !== entries.length;
     const fromKey = from ? aliasKey(from) : null;
-    const add = !!fromKey && fromKey !== toKey
-        && !kept.some(e => e.type === 'alias' && aliasKey(e.value) === fromKey);
-    if (!add) return { entries: kept, aliasKept: false };
+    if (!fromKey || fromKey === toKey) return { entries: kept, aliasKept: false, changed };
+    const idx = kept.findIndex(e => e.type === 'alias' && aliasKey(e.value) === fromKey);
+    if (idx >= 0) {
+        if (isRenameAlias(kept[idx])) return { entries: kept, aliasKept: true, changed };
+        const out = kept.map((e, i) => (i === idx ? { ...e, fromRename: true as const } : e));
+        return { entries: out, aliasKept: true, changed: true };
+    }
+    changed = true;
     return {
         entries: [...kept, { id: opts.newId, type: 'alias', value: from, addedBy: opts.actor, fromRename: true }],
         aliasKept: true,
+        changed,
     };
 }
 

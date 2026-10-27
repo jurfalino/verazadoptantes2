@@ -20,7 +20,9 @@ import {
     contactEntriesToBlob,
     parseBlobToContactEntries,
     mergeContactEntries,
+    stripRenameMarks,
 } from '@/lib/contactEntries';
+import { sameName } from '@/domain/profileIdentity';
 import { canEditAdopterRecord, maskAdopterContact, markViewerOwnHousehold, redactHistoryChanges, renderName } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdopterVisibility, buildMaskOptions } from '@/lib/piiAccessServer';
 import { deleteAdopterRecords } from '@/app/actions/_recordWrite';
@@ -161,7 +163,7 @@ export async function appendToExistingAdopter(
             // the caller sends contactEntries; fall back to the legacy blob append
             // for callers that only send a contactInfo string.
             if (fields.contactEntries) {
-                const parsed = deserializeContactEntries(fields.contactEntries);
+                const parsed = stripRenameMarks(deserializeContactEntries(fields.contactEntries));
                 const incoming = stampPublic ? parsed.map(e => ({ ...e, isPublic: true })) : parsed;
                 if (incoming.length) {
                     const targetEntries = deserializeContactEntries(row.contactEntries);
@@ -267,7 +269,8 @@ export async function saveAdopter(data: SaveAdopterInput, opts?: { loaded?: Part
     // provides them, so the blob (read by LIKE search, the tokenizer and the
     // profile display) stays consistent with contactEntries.
     if (data.contactEntries !== undefined && data.contactEntries !== null) {
-        const entries = deserializeContactEntries(data.contactEntries);
+        // Client JSON: only the server's rename code may mark a rename alias.
+        const entries = stripRenameMarks(deserializeContactEntries(data.contactEntries));
         data.contactEntries = entries.length ? JSON.stringify(entries) : null;
         data.contactInfo = contactEntriesToBlob(entries) || null;
     }
@@ -335,7 +338,42 @@ export async function saveAdopter(data: SaveAdopterInput, opts?: { loaded?: Part
             // fields this editor CHANGED are written, each only if nobody
             // changed it since the form loaded (`opts.loaded`). Callers without
             // `loaded` keep the old behaviour (write what differs).
-            return await updateAdopterFields(db, existing, data, opts?.loaded, changedBy);
+            // A NAME change is a rename, whoever makes it and from wherever (households as
+            // profiles): the old name stays as a rename alias, the history row is a
+            // `name_changed`, and the owner team hears about it when it comes from outside.
+            // Same compare-and-set rules as the other fields: written only if the editor
+            // changed it and nobody else did since `loaded`.
+            const loadedIn = opts?.loaded ? { ...opts.loaded } : undefined;
+            const renamed: { saved: string[]; conflicts: AdopterFieldConflict[] } = { saved: [], conflicts: [] };
+            if (data.name !== undefined) {
+                const hasLoaded = !!loadedIn && 'name' in loadedIn;
+                const base = hasLoaded ? (loadedIn!.name ?? null) : existing.name;
+                if (!sameName(data.name, base)) {
+                    const { renameProfile, notifyProfileRenamed } = await import('@/lib/profileIdentity');
+                    const res = await renameProfile(db, { adopterId: existing.id, name: data.name ?? '', expectedName: hasLoaded ? base : undefined, actor: changedBy });
+                    if (res.status === 'busy') return { success: false, error: 'busy', errorId: res.errorId };
+                    if (res.status === 'missing') throw new Error('Adopter disappeared during save');
+                    if (res.status === 'conflict') {
+                        const by = (await adopterFieldAuthors(db, existing.id, ['name'])).name ?? '';
+                        renamed.conflicts.push({ field: 'name', by, value: res.theirs });
+                    } else {
+                        renamed.saved.push('name');
+                        if (res.status === 'renamed') {
+                            await notifyProfileRenamed(db, { adopterId: existing.id, actor: changedBy, ownerEmail: res.ownerEmail, from: res.from, to: res.to, historyId: res.historyId });
+                        }
+                    }
+                    // Handled here: never compared again below.
+                    if (loadedIn) delete loadedIn.name;
+                }
+                delete (data as Record<string, unknown>).name;
+            }
+            const rest = await updateAdopterFields(db, existing, data, loadedIn, changedBy);
+            if (!rest.success) return rest;
+            return {
+                ...rest,
+                saved: [...renamed.saved, ...(rest.saved ?? [])],
+                conflicts: [...renamed.conflicts, ...(rest.conflicts ?? [])],
+            };
         } else {
             // Create. The id is always minted here: a client-chosen id is never
             // trusted (the form sends '' for a new profile).

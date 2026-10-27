@@ -8,6 +8,7 @@ import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import {
     deserializeContactEntries,
+    isRenameAlias,
     contactEntriesToBlob,
     type ContactEntry,
 } from '@/lib/contactEntries';
@@ -88,7 +89,9 @@ export async function removeContactEntry(
                 return { result: expectedValue !== undefined ? { kind: 'deleted' } : { kind: 'not_found' } };
             }
             const removed = entries[idx];
-            const isOwnContribution = !!removed.addedBy && removed.addedBy === actor;
+            // A previous name kept by a rename is never «their own contribution»: only the
+            // profile's team (or an admin) may drop it, or a renamer could erase the old name.
+            const isOwnContribution = !!removed.addedBy && removed.addedBy === actor && !isRenameAlias(removed);
             if (!isOwner && !actorIsAdmin && !actorIsOrgMate && !isOwnContribution) return { result: { kind: 'forbidden' } };
             // A teammate changed it since this was shown: don't delete what the
             // person hasn't seen.

@@ -23,6 +23,7 @@ import { getDb, getUser } from './_db';
 import { logger } from '@/lib/logger';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { adopterFieldAuthors } from '@/lib/collabAttribution';
+import { isPrivilegedOnProfile } from '@/lib/profilePrivilege';
 import {
     notifyProfileAgeChanged, notifyProfileRenamed, renameProfile, renameUndoState, setProfileAge, undoRename,
 } from '@/lib/profileIdentity';
@@ -93,7 +94,10 @@ export async function changeProfileName(input: {
             case 'renamed': {
                 await notifyProfileRenamed(db, { adopterId, actor, ownerEmail: res.ownerEmail, from: res.from, to: res.to, historyId: res.historyId });
                 revalidatePath(`/adopter/${adopterId}`);
-                const updatedByOthers = await othersChanged(db, adopterId, input?.loaded, res.others);
+                // Only someone who may see the whole row hears what else changed (family text is masked for others).
+                const updatedByOthers = (await isPrivilegedOnProfile(actor, res.ownerEmail))
+                    ? await othersChanged(db, adopterId, input?.loaded, res.others)
+                    : [];
                 return {
                     ok: true, name: res.to, aliasKept: res.aliasKept,
                     ...(updatedByOthers.length ? { updatedByOthers } : {}),

@@ -16,7 +16,8 @@ import { logger } from '@/lib/logger';
 import { getDb } from '@/lib/db';
 import { reassignAdopterRecords } from '@/app/actions/_recordWrite';
 import { normalizeText } from '@/lib/tokenizer';
-import { deserializeContactEntries, mergeContactEntries } from '@/lib/contactEntries';
+import { deserializeContactEntries, mergeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, isRenameAlias } from '@/lib/contactEntries';
+import { knownAsNames, sameName } from '@/domain/profileIdentity';
 import { deserializeHouseholdMembers, serializeHouseholdMembers, mergeHouseholdMembers, mergeHouseholdMembersTracked, undoHouseholdMerge } from '@/lib/householdMembers';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { casAdopterLists } from '@/lib/adopterListCas';
@@ -533,6 +534,27 @@ export async function mergeCandidatePair(candidateId: string, actorEmail: string
     }
 }
 
+/**
+ * The survivor's restored contacts on unmerge: the pre-merge snapshot, plus
+ * every rename alias the survivor carries now that the snapshot lacks (and that
+ * isn't its current name). With none to add, the snapshot as it was.
+ */
+function withRenameAliasesKept(
+    snapshot: { contactInfo: string | null; contactEntries: string | null },
+    current: { name: string | null; contactEntries: string | null },
+): { contactInfo: string | null; contactEntries: string | null } {
+    const renameAliases = deserializeContactEntries(current.contactEntries).filter(isRenameAlias);
+    if (!renameAliases.length) return snapshot;
+    const snapEntries = deserializeContactEntries(snapshot.contactEntries);
+    const base = snapEntries.length ? snapEntries : parseBlobToContactEntries(snapshot.contactInfo).map(e => ({ id: crypto.randomUUID(), ...e }));
+    const known = knownAsNames(renameAliases, current.name);
+    const missing = renameAliases.filter(a => known.includes(a.value.trim())
+        && !base.some(e => e.type === 'alias' && sameName(normalizeText(e.value), normalizeText(a.value))));
+    if (!missing.length) return snapshot;
+    const merged = [...base, ...missing];
+    return { contactEntries: JSON.stringify(merged), contactInfo: contactEntriesToBlob(merged) || null };
+}
+
 /** Everything unmergeAdopters needs to reverse one merge, stored in the merge's audit_log row. */
 interface MergeUndoPayload {
     primarySnapshot: {
@@ -683,9 +705,13 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
 
         // 3. Restore the survivor's pre-merge fields (drops the appended
         //    contact blob, the merged entries and the auto-alias in one go).
+        //    Previous names a rename kept since (households as profiles) stay:
+        //    the snapshot predates them, and dropping them would make an old
+        //    name unfindable while the profile keeps its new one.
+        const restoredContacts = withRenameAliasesKept(undo.primarySnapshot, primary);
         await db.update(adopters).set({
-            contactInfo: undo.primarySnapshot.contactInfo,
-            contactEntries: undo.primarySnapshot.contactEntries,
+            contactInfo: restoredContacts.contactInfo,
+            contactEntries: restoredContacts.contactEntries,
             addressInfo: undo.primarySnapshot.addressInfo,
             familyMembers: undo.primarySnapshot.familyMembers,
             sourceUrl: undo.primarySnapshot.sourceUrl,
