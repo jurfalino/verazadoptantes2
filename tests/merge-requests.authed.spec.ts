@@ -200,6 +200,8 @@ test('a rescuer\'s request goes to the other owner, can be cancelled, and an adm
         await row.getByTestId('merge-request-approve').click();
         const confirm = page.getByTestId('merge-request-confirm');
         await expect(confirm).toBeVisible();
+        // Both sides told apart by owner (same-name pairs): an owner's address is in the sentence.
+        await expect(confirm).toContainText('@');
         await confirm.getByTestId('merge-request-confirm-confirm').click();
         await expect(confirm).toHaveCount(0, { timeout: 30_000 });
         await expect(row).toHaveCount(0, { timeout: 30_000 });

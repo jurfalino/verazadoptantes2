@@ -59,6 +59,17 @@ export default function MergeRequestsPanel({ requests, disputes }: { requests: M
     }
 
     const c = confirming;
+    /**
+     * «Julieta Moreno (de ana@…, 27 sept '26)»: most pairs share a name, so the
+     * confirm tells the two profiles apart by owner and date, as the notices do (D31, C8).
+     */
+    const sideLabel = (side: MergeRequestAdminRow['primary']) => {
+        const name = side.name || t('admin.merge_req_no_name');
+        const date = side.createdAt != null ? formatShortDate(side.createdAt) : '—';
+        return side.ownerEmail
+            ? fill(t('admin.merge_confirm_side'), { name, owner: side.ownerEmail, date })
+            : fill(t('admin.merge_confirm_side_no_owner'), { name, date });
+    };
 
     return (
         <div className="max-w-3xl">
@@ -85,7 +96,7 @@ export default function MergeRequestsPanel({ requests, disputes }: { requests: M
                 testId="merge-request-confirm"
                 title={c?.decision === 'accept' ? t('admin.merge_confirm_approve_title') : t('admin.merge_confirm_decline_title')}
                 message={c ? (c.decision === 'accept'
-                    ? fill(t('admin.merge_confirm_approve_body'), { keep: c.row.primary.name, absorb: c.row.secondary.name })
+                    ? fill(t('admin.merge_confirm_approve_body'), { keep: sideLabel(c.row.primary), absorb: sideLabel(c.row.secondary) })
                     : t('admin.merge_confirm_decline_body')) : undefined}
                 confirmLabel={c?.decision === 'accept'
                     ? (c.row.status === 'declined' ? t('admin.merge_req_approve_anyway') : t('admin.merge_req_approve'))

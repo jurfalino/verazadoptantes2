@@ -188,6 +188,8 @@ export const pt = {
         merge_dispute_badge: 'Combinação questionada',
         merge_confirm_approve_title: 'Combinar estes perfis?',
         merge_confirm_approve_body: '«{keep}» fica com tudo de «{absorb}», que deixa de ser um perfil separado. Vamos avisar os resgatistas.',
+        merge_confirm_side: '{name} (de {owner}, {date})',
+        merge_confirm_side_no_owner: '{name} (sem dono, {date})',
         merge_confirm_decline_title: 'Recusar o pedido?',
         merge_confirm_decline_body: 'Os dois perfis continuam separados. Vamos avisar quem pediu.',
         merge_confirm_undo_title: 'Desfazer a combinação?',

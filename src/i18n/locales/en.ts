@@ -188,6 +188,8 @@ export const en = {
         merge_dispute_badge: 'Merge questioned',
         merge_confirm_approve_title: 'Merge these profiles?',
         merge_confirm_approve_body: '“{keep}” takes everything from “{absorb}”, which stops being a separate profile. We\'ll let the rescuers know.',
+        merge_confirm_side: '{name} (from {owner}, {date})',
+        merge_confirm_side_no_owner: '{name} (no owner, {date})',
         merge_confirm_decline_title: 'Decline the request?',
         merge_confirm_decline_body: 'The two profiles stay separate. We\'ll let whoever asked know.',
         merge_confirm_undo_title: 'Undo the merge?',
