@@ -25,7 +25,7 @@ export default function IdentityChoice({ nameA, nameB, busy, onSame, onHousehold
                 {fill(t('myAdopters.pending_d_identity_body') || 'Coinciden los datos de contacto, pero los nombres son distintos: {a} y {b}.', { a: nameA, b: nameB })}
             </p>
             <p className={`mt-2 text-[14px] ${T_MUTED}`}>
-                {t('myAdopters.pending_d_identity_household_hint') || 'Si es alguien de su hogar, los perfiles quedan separados y lo agregamos como conviviente.'}
+                {t('myAdopters.pending_d_identity_household_hint') || 'Si es alguien de su hogar, los perfiles quedan separados y lo agregamos a su hogar.'}
             </p>
             <div className="mt-6 flex flex-col gap-2">
                 <Button type="button" data-testid="dedup-identity-same" onClick={onSame} disabled={busy} fullWidth>
