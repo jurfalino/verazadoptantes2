@@ -14,7 +14,8 @@ import MergeDisputesSection from './MergeDisputesSection';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { BreakableEmail } from '@/components/ui/BreakableEmail';
 import { fill } from '@/lib/householdCopy';
-import { AdminPairCompare, BADGE, PRIMARY_BTN, SECONDARY_BTN, waited, type T } from './mergeAdminUi';
+import { AdminPairCompare, BADGE, waited, type T } from './mergeAdminUi';
+import { Button } from '@/components/ui/Button';
 
 /**
  * Admin «Pedidos de combinación»: open questions about merges that already
@@ -155,13 +156,13 @@ function RequestRow({ row: r, busy, locked, now, t, formatShortDate, onResolve }
                 </div>
             )}
             <div className="flex flex-wrap gap-2 pt-1">
-                <button type="button" data-testid="merge-request-approve" onClick={() => onResolve(r, 'accept')} disabled={locked} className={PRIMARY_BTN}>
+                <Button variant="primary" size="compact" data-testid="merge-request-approve" onClick={() => onResolve(r, 'accept')} disabled={locked}>
                     {busy ? (t('common.processing') || 'Procesando...') : declined ? (t('admin.merge_req_approve_anyway') || 'Aprobar igual') : (t('admin.merge_req_approve') || 'Aprobar')}
-                </button>
+                </Button>
                 {!declined && (
-                    <button type="button" data-testid="merge-request-decline" onClick={() => onResolve(r, 'decline')} disabled={locked} className={SECONDARY_BTN}>
+                    <Button variant="secondary" size="compact" data-testid="merge-request-decline" onClick={() => onResolve(r, 'decline')} disabled={locked}>
                         {t('admin.merge_req_decline') || 'Rechazar'}
-                    </button>
+                    </Button>
                 )}
             </div>
         </li>

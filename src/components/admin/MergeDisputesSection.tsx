@@ -23,7 +23,8 @@ import type { MergeDisputeAdminRow } from '@/lib/mergeDisputes';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { BreakableEmail } from '@/components/ui/BreakableEmail';
 import { fill } from '@/lib/householdCopy';
-import { AdminPairCompare, BADGE, PRIMARY_BTN, SECONDARY_BTN, type T } from './mergeAdminUi';
+import { AdminPairCompare, BADGE, type T } from './mergeAdminUi';
+import { Button } from '@/components/ui/Button';
 
 export default function MergeDisputesSection({ disputes }: { disputes: MergeDisputeAdminRow[] }) {
     const { t } = useLanguage();
@@ -121,12 +122,12 @@ function DisputeRow({ row: d, busy, locked, t, formatShortDate, onResolve }: {
             {line(t('admin.merge_dispute_merged_by') || 'Combinó', d.mergedBy, d.mergedAt)}
             {line(t('admin.merge_dispute_raised_by') || 'Cuestionó', d.raisedBy, d.createdAt)}
             <div className="flex flex-wrap gap-2 pt-1">
-                <button type="button" data-testid="merge-dispute-undo" onClick={() => onResolve(d, 'undo')} disabled={locked} className={PRIMARY_BTN}>
+                <Button variant="primary" size="compact" data-testid="merge-dispute-undo" onClick={() => onResolve(d, 'undo')} disabled={locked}>
                     {busy ? (t('common.processing') || 'Procesando...') : (t('admin.merge_dispute_undo') || 'Deshacer combinación')}
-                </button>
-                <button type="button" data-testid="merge-dispute-keep" onClick={() => onResolve(d, 'keep')} disabled={locked} className={SECONDARY_BTN}>
+                </Button>
+                <Button variant="secondary" size="compact" data-testid="merge-dispute-keep" onClick={() => onResolve(d, 'keep')} disabled={locked}>
                     {t('admin.merge_dispute_keep') || 'Mantener'}
-                </button>
+                </Button>
             </div>
         </li>
     );

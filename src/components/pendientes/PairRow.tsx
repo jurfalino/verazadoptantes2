@@ -16,6 +16,7 @@
  */
 
 import Link from 'next/link';
+import { Button } from '@/components/ui/Button';
 import { ChevronDown, Copy, ExternalLink, Inbox, Mail, Send, XCircle } from 'lucide-react';
 import type { PendingDedupPair, PendingDedupSide } from '@/app/actions/duplicates';
 import MatchCompare, { AdminScore, entriesAsShown } from '@/components/MatchCompare';
@@ -23,7 +24,7 @@ import { matchTypeLabel } from '@/lib/matchTypeLabels';
 import { MinorTag } from '@/components/MinorTag';
 import { CardHouseholdLine } from '@/components/CardHouseholdLine';
 import {
-    AbsorbedBadge, ACCENT_SECONDARY, KeptBadge, PRIMARY, SECONDARY, T_MUTED, T_PRIMARY,
+    AbsorbedBadge, KeptBadge, T_MUTED, T_PRIMARY,
     combineTheirsSide, fill, otherSide, ownerName, sideById, sideOf, movesToOtherList, type KeepSide, type T,
 } from './ui';
 
@@ -289,10 +290,10 @@ export default function PairRow({ pair, open, onToggle, keep, onKeep, busy, lock
     const showScore = isAdmin && typeof pair.adminScore === 'number';
 
     const write = r?.canMessage && (
-        <button type="button" data-testid="dedup-write" className={ACCENT_SECONDARY} disabled={locked} onClick={() => onAction(pair, 'write')}>
+        <Button variant="secondary" size="compact" data-testid="dedup-write" disabled={locked} onClick={() => onAction(pair, 'write')}>
             <Mail className="w-4 h-4 shrink-0" aria-hidden="true" />
             {fill(t('myAdopters.pending_d_action_write') || 'Escribirle a {name}', { name: writeTo })}
-        </button>
+        </Button>
     );
 
     return (
@@ -353,57 +354,57 @@ export default function PairRow({ pair, open, onToggle, keep, onKeep, busy, lock
                     <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
                         {group === 'received' && <>
                             {write}
-                            <button type="button" data-testid="dedup-decline-request" className={SECONDARY} disabled={locked} onClick={() => onAction(pair, 'decline')}>
+                            <Button variant="secondary" size="compact" data-testid="dedup-decline-request" disabled={locked} onClick={() => onAction(pair, 'decline')}>
                                 {t('myAdopters.pending_dedup_action_decline') || 'Rechazar'}
-                            </button>
-                            <button type="button" data-testid="dedup-flip" className={ACCENT_SECONDARY} disabled={locked} onClick={() => onAction(pair, 'flip')}>
+                            </Button>
+                            <Button variant="secondary" size="compact" data-testid="dedup-flip" disabled={locked} onClick={() => onAction(pair, 'flip')}>
                                 {t('myAdopters.pending_d_action_flip') || 'Conservar el mío'}
-                            </button>
-                            <button type="button" data-testid="dedup-accept-request" className={PRIMARY} disabled={locked} onClick={() => onAction(pair, 'accept')}>
+                            </Button>
+                            <Button variant="primary" size="compact" data-testid="dedup-accept-request" disabled={locked} onClick={() => onAction(pair, 'accept')}>
                                 {busy ? (t('common.processing') || 'Procesando...') : (t('myAdopters.pending_dedup_action_accept') || 'Aceptar')}
-                            </button>
+                            </Button>
                         </>}
                         {group === 'sent' && <>
                             {write}
-                            <button type="button" data-testid="dedup-cancel-request" className={SECONDARY} disabled={locked} onClick={() => onAction(pair, 'cancel')}>
+                            <Button variant="secondary" size="compact" data-testid="dedup-cancel-request" disabled={locked} onClick={() => onAction(pair, 'cancel')}>
                                 {t('myAdopters.pending_dedup_action_cancel_request') || 'Cancelar pedido'}
-                            </button>
+                            </Button>
                         </>}
                         {group === 'declined' && <>
-                            <button type="button" data-testid="dedup-hide" className={SECONDARY} disabled={locked} onClick={() => onAction(pair, 'hide')}>
+                            <Button variant="secondary" size="compact" data-testid="dedup-hide" disabled={locked} onClick={() => onAction(pair, 'hide')}>
                                 {t('myAdopters.pending_d_action_hide') || 'Quitar de la lista'}
-                            </button>
+                            </Button>
                             {write}
                             {theirs && (
-                                <button type="button" data-testid="dedup-merge" className={PRIMARY} disabled={locked} onClick={() => onAction(pair, 'combine_theirs', theirs)}>
+                                <Button variant="primary" size="compact" data-testid="dedup-merge" disabled={locked} onClick={() => onAction(pair, 'combine_theirs', theirs)}>
                                     {busy ? (t('common.processing') || 'Procesando...')
                                         : pair.actionByKeep[theirs] === 'dispute'
                                             ? (t('myAdopters.pending_d_action_dispute') || 'Pedir revisión a un administrador')
                                             : fill(t('myAdopters.pending_d_action_combine_theirs') || 'Combinar conservando el de {name}', { name: theirsName })}
-                                </button>
+                                </Button>
                             )}
                             {r?.direction === 'received' && (
-                                <button type="button" data-testid="dedup-accept-request" className={PRIMARY} disabled={locked} onClick={() => onAction(pair, 'accept')}>
+                                <Button variant="primary" size="compact" data-testid="dedup-accept-request" disabled={locked} onClick={() => onAction(pair, 'accept')}>
                                     {busy ? (t('common.processing') || 'Procesando...') : (t('myAdopters.pending_d_action_accept_now') || 'Aceptar ahora')}
-                                </button>
+                                </Button>
                             )}
                         </>}
                         {group === 'pair' && <>
                             {/* Dismiss writes to duplicate_candidates; a hand-flagged pair has no row there. */}
                             {pair.source === 'detected' && (
-                                <button type="button" data-testid="dedup-keep-separate" className={SECONDARY} disabled={locked} onClick={() => onAction(pair, 'keep_separate')}>
+                                <Button variant="secondary" size="compact" data-testid="dedup-keep-separate" disabled={locked} onClick={() => onAction(pair, 'keep_separate')}>
                                     {t('myAdopters.pending_dedup_action_keep') || 'Mantener separados'}
-                                </button>
+                                </Button>
                             )}
                             {mainAction && (
-                                <button type="button" data-testid="dedup-merge" className={PRIMARY} disabled={locked} onClick={() => onAction(pair, 'combine', keep)}>
+                                <Button variant="primary" size="compact" data-testid="dedup-merge" disabled={locked} onClick={() => onAction(pair, 'combine', keep)}>
                                     {busy ? (t('common.processing') || 'Procesando...')
                                         : mainAction === 'request'
                                             ? (t('myAdopters.pending_dedup_action_request') || 'Pedir combinar')
                                             : mainAction === 'dispute'
                                                 ? (t('myAdopters.pending_d_action_dispute') || 'Pedir revisión a un administrador')
                                                 : (t('myAdopters.pending_dedup_action_merge') || 'Combinar perfiles')}
-                                </button>
+                                </Button>
                             )}
                         </>}
                     </div>

@@ -17,9 +17,6 @@ const DAY_MS = 86_400_000;
 export type T = (key: string) => string;
 
 export const BADGE = 'inline-block px-2 py-0.5 rounded-full text-xs font-semibold border';
-export const PRIMARY_BTN = 'inline-flex items-center justify-center min-h-[44px] px-4 rounded-lg text-sm font-semibold bg-teal-600 text-white hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
-/** Outlined so it has a shape in both themes (D29). */
-export const SECONDARY_BTN = 'inline-flex items-center justify-center min-h-[44px] px-4 rounded-lg text-sm font-semibold border border-[var(--text-faint)] text-[var(--text-primary)] bg-transparent hover:bg-[var(--accent-subtle-bg)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 
 /** "hace 3 días" — `now` is set after mount only (reading the clock at render breaks hydration). */
 export function waited(createdAt: number | null, now: number | null, t: T): string {
