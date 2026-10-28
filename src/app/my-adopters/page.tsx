@@ -4,8 +4,8 @@ export const runtime = 'edge';
 import { useLanguage } from '@/context/LanguageContext';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { FileText, AlertCircle } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { FileText, AlertCircle, Search } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
@@ -16,6 +16,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import PendingDedup from '@/components/PendingDedup';
 import { AdopterName } from '@/components/AdopterName';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
+import { withoutLegacyMergeSeparators } from '@/lib/contactEntries';
 
 import type { AdopterFlags } from '@/types/adopter';
 
@@ -108,21 +109,53 @@ function FormLine({ form, onOpen, t }: {
 }
 
 /** Amber "Por revisar" pill beside the name; opens the form to decide. */
+/**
+ * A row pill that acts (opens the form, jumps to «Pendientes de revisar»):
+ * a <button>, never an <a> — the row itself is a <Link>, and an <a> inside an
+ * <a> is invalid HTML and a hydration error (audit C3). One look for both.
+ */
+function RowPill({ onClick, title, icon, testId, children }: { onClick: () => void; title: string; icon: ReactNode; testId: string; children: ReactNode }) {
+    return (
+        <button
+            type="button"
+            data-testid={testId}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClick(); }}
+            title={title}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap hover:bg-amber-100 flex-shrink-0"
+        >
+            {icon}
+            {children}
+        </button>
+    );
+}
+
 function NeedsReviewPill({ form, onOpen, t }: {
     form: NonNullable<Adopter['latestForm']> | null | undefined;
     onOpen: (submissionId: string) => void;
     t: (key: string) => string;
 }) {
     return (
-        <a
-            href={form ? `/form-results/${form.submissionId}` : '#'}
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (form) onOpen(form.submissionId); }}
+        <RowPill testId="row-needs-review" onClick={() => { if (form) onOpen(form.submissionId); }}
             title={t('myAdopters.form_needs_review_tooltip') || 'Hay perfiles parecidos: decidí si es la misma persona'}
-            className="inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap hover:bg-amber-100 flex-shrink-0"
-        >
-            <AlertCircle className="w-3 h-3" strokeWidth={2} aria-hidden="true" />
+            icon={<AlertCircle className="w-3 h-3" strokeWidth={2} aria-hidden="true" />}>
             {t('myAdopters.form_needs_review') || 'Por revisar'}
-        </a>
+        </RowPill>
+    );
+}
+
+/** «Posible duplicado»: jumps to «Pendientes de revisar» above (opens it, scrolls to it). */
+function PendingDupPill({ t }: { t: (key: string) => string }) {
+    const go = () => {
+        // Already on #pendientes: setting the same hash fires nothing, so say it ourselves.
+        if (window.location.hash === '#pendientes') window.dispatchEvent(new HashChangeEvent('hashchange'));
+        else window.location.hash = 'pendientes';
+    };
+    return (
+        <RowPill testId="row-pending-dup" onClick={go}
+            title={t('myAdopters.row_pending_dup_tooltip') || 'Hay un posible duplicado pendiente de revisar arriba'}
+            icon={<Search className="w-3 h-3" strokeWidth={2} aria-hidden="true" />}>
+            {t('myAdopters.row_pending_dup') || 'Posible duplicado'}
+        </RowPill>
     );
 }
 
@@ -530,19 +563,10 @@ export default function MyAdoptersPage() {
                                                         on "¿es la misma persona?", that is the pair the duplicate
                                                         pill would point at — and the form path also files the
                                                         request in the right history. */}
-                                                    {adopter.hasPendingDuplicate && !adopter.formNeedsReview && (
-                                                        <a
-                                                            href="#pendientes"
-                                                            onClick={(e) => e.stopPropagation()}
-                                                            title={t('myAdopters.row_pending_dup_tooltip') || 'Hay un posible duplicado pendiente de revisar arriba'}
-                                                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap hover:bg-amber-100 flex-shrink-0"
-                                                        >
-                                                            🔍 {t('myAdopters.row_pending_dup') || 'Posible duplicado'}
-                                                        </a>
-                                                    )}
+                                                    {adopter.hasPendingDuplicate && !adopter.formNeedsReview && <PendingDupPill t={t} />}
                                                     {adopter.formNeedsReview && <NeedsReviewPill form={adopter.latestForm} onOpen={openForm} t={t} />}
                                                 </div>
-                                                <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
+                                                <div className="text-xs text-stone-500 truncate">{withoutLegacyMergeSeparators(adopter.contactInfo) || t('dashboard.no_contact')}</div>
                                                 {/* Inline addedBy was moved to its own column in v2.19.6 —
                                                     keeps the Name cell focused on identity, lets the
                                                     Creado-por col carry the resolved name + org chip. */}
@@ -643,19 +667,10 @@ export default function MyAdoptersPage() {
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 min-w-0 flex-wrap">
                                                 <AdopterName adopter={adopter} className="font-semibold text-stone-900 truncate" title />
-                                                {adopter.hasPendingDuplicate && !adopter.formNeedsReview && (
-                                                    <a
-                                                        href="#pendientes"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        title={t('myAdopters.row_pending_dup_tooltip') || 'Hay un posible duplicado pendiente de revisar arriba'}
-                                                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap hover:bg-amber-100"
-                                                    >
-                                                        🔍 {t('myAdopters.row_pending_dup') || 'Posible duplicado'}
-                                                    </a>
-                                                )}
+                                                {adopter.hasPendingDuplicate && !adopter.formNeedsReview && <PendingDupPill t={t} />}
                                                 {adopter.formNeedsReview && <NeedsReviewPill form={adopter.latestForm} onOpen={openForm} t={t} />}
                                             </div>
-                                            <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
+                                            <div className="text-xs text-stone-500 truncate">{withoutLegacyMergeSeparators(adopter.contactInfo) || t('dashboard.no_contact')}</div>
                                             {/* v2.19.13: inline addedBy + bottom dates row from
                                                 the mobile card are folded into the provenance lines
                                                 at the bottom of the card. SourcePill no longer
@@ -673,9 +688,9 @@ export default function MyAdoptersPage() {
 
                                     {/* Stats Row */}
                                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-500">
-                                        <span>👁 {adopter.profileViews} {t('stats.views')}</span>
-                                        <span>📋 {adopter.requestCount} {t('stats.requests')}</span>
-                                        <span>🏠 {adopter.adoptionCount} {t('stats.adoptions')}</span>
+                                        <span>👁 {adopter.profileViews} {adopter.profileViews === 1 ? t('stats.view_one') : t('stats.views')}</span>
+                                        <span>📋 {adopter.requestCount} {adopter.requestCount === 1 ? t('stats.request_one') : t('stats.requests')}</span>
+                                        <span>🏠 {adopter.adoptionCount} {adopter.adoptionCount === 1 ? t('stats.adoption_one') : t('stats.adoptions')}</span>
                                         {(adopter.formCount ?? 0) > 0 && (
                                             <span className="text-teal-600 font-medium">
                                                 📄 {adopter.formCount} {(adopter.formCount ?? 0) === 1 ? (t('dashboard.form_count_one') || 'form') : (t('dashboard.form_count') || 'forms')}

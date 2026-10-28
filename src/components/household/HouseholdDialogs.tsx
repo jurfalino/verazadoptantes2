@@ -112,6 +112,28 @@ export function RemoveFromHomeDialog({ person, host, gift = false, busy, onCance
     );
 }
 
+/**
+ * «Contribuciones de otros usuarios: • 1 edición • 3 fotos» — what others added, on
+ * every «can't delete, ask the admins» dialog (the profile's own and a household
+ * row's). Singular for one (audit C4: «1 ediciones»).
+ */
+export function DeletionCollaboratorList({ collaborators: c }: { collaborators: DeletionCollaborators }) {
+    const { t } = useLanguage();
+    const line = (n: number, key: keyof DeletionCollaborators) => n > 0 && (
+        <p key={key}>• {n} {t(`adopter.delete_collab_${key}${n === 1 ? '_one' : ''}`)}</p>
+    );
+    return (
+        <div className="text-xs space-y-1 rounded-xl p-3" style={{ background: 'var(--surface-muted)', color: 'var(--text-muted)' }} data-testid="delete-collab-list">
+            <p className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('adopter.delete_collab_detail')}:</p>
+            {line(c.adoptions, 'adoptions')}
+            {line(c.images, 'images')}
+            {line(c.edits, 'edits')}
+            {line(c.flags, 'flags')}
+            {line(c.forms, 'forms')}
+        </div>
+    );
+}
+
 /** D1 — the owner can't delete (others contributed): ask the admins. */
 export function RequestDeletionDialog({ name, collaborators, busy, onCancel, onConfirm }: {
     name: string; collaborators: DeletionCollaborators | null; busy: boolean; onCancel: () => void; onConfirm: () => void;
@@ -122,16 +144,7 @@ export function RequestDeletionDialog({ name, collaborators, busy, onCancel, onC
         <Modal label={fill(t('adopter.hh_request_title'), { name })} onCancel={onCancel} busy={busy} testId="hh-request-dialog">
             <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{fill(t('adopter.hh_request_title'), { name })}</h3>
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t('adopter.hh_request_body')}</p>
-            {c && (
-                <div className="text-xs space-y-1 rounded-xl p-3" style={{ background: 'var(--surface-muted)', color: 'var(--text-muted)' }}>
-                    <p className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('adopter.delete_collab_detail')}:</p>
-                    {c.adoptions > 0 && <p>• {c.adoptions} {t('adopter.delete_collab_adoptions')}</p>}
-                    {c.images > 0 && <p>• {c.images} {t('adopter.delete_collab_images')}</p>}
-                    {c.edits > 0 && <p>• {c.edits} {t('adopter.delete_collab_edits')}</p>}
-                    {c.flags > 0 && <p>• {c.flags} {t('adopter.delete_collab_flags')}</p>}
-                    {c.forms > 0 && <p>• {c.forms} {t('adopter.delete_collab_forms')}</p>}
-                </div>
-            )}
+            {c && <DeletionCollaboratorList collaborators={c} />}
             <Buttons busy={busy} onCancel={onCancel} onConfirm={onConfirm} label={t('adopter.hh_request_confirm')} cancelLabel={t('adopter.delete_cancel')} confirmTestId="hh-request-confirm" />
         </Modal>
     );

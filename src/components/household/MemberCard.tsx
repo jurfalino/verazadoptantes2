@@ -45,15 +45,21 @@ import { fill, firstName } from '@/lib/householdCopy';
 
 type Deletion = { kind: 'delete' | 'request'; collaborators: DeletionCollaborators; others: number } | null;
 
-/** The membership's label as words: «Pareja» / «Pareja de Pedro». */
+/**
+ * The membership's label as words: «Pareja» / «Pareja de Pedro» — or, mid-sentence
+ * (`midSentence`), «pareja» / «padre/madre de Pedro»: the relationship word is
+ * lower-cased whole («Padre/Madre» read «padre/Madre» when only its first letter
+ * was, audit C5), a name never.
+ */
 export function useMemberLabel() {
     const { t } = useLanguage();
-    return (label: HouseholdMemberView['label']): string | null => {
+    return (label: HouseholdMemberView['label'], midSentence = false): string | null => {
         if (!label) return null;
+        const word = (key: string) => (midSentence ? t(key).toLocaleLowerCase() : t(key));
         if (label.key === 'adopter.hh_rel_of') {
-            return fill(t('adopter.hh_rel_of'), { rel: t(label.params.rel), name: firstName(label.params.name) || label.params.name });
+            return fill(t('adopter.hh_rel_of'), { rel: word(label.params.rel), name: firstName(label.params.name) || label.params.name });
         }
-        return fill(t(label.key), label.params);
+        return fill(word(label.key), label.params);
     };
 }
 
@@ -95,9 +101,9 @@ export function MemberCard({ member, hostName, relativeName, signedIn, currentUs
     const canRemove = !preview && signedIn && member.canRemove;
     const mayDelete = !preview && signedIn && (member.ownerIsViewer || isAdmin);
     const hasMenu = canEdit || canRemove || mayDelete;
-    const rel = labelOf(member.label);
     // Mid-sentence on the row: «pareja de Pedro · 16 años».
-    const sub = [rel ? rel.charAt(0).toLowerCase() + rel.slice(1) : null, member.age != null ? fill(t('adopter.hh_years'), { n: member.age }) : null].filter(Boolean).join(' · ');
+    const rel = labelOf(member.label, true);
+    const sub = [rel, member.age != null ? fill(t('adopter.hh_years'), { n: member.age }) : null].filter(Boolean).join(' · ');
     // ONE attribution: the viewer's own add, else who added them (an anchor row has no adder: none).
     const own = !preview && member.addedByViewer;
     const attribution = own ? t('adopter.hh_added_by_you') : member.addedByName ? fill(t('adopter.hh_lives_with_by'), { name: member.addedByName }) : null;

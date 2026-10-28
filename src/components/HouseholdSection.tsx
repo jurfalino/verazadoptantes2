@@ -130,9 +130,9 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
 
     /** The divider's words: the profile's own place there («Lucas figura como hijo/a de Pedro»), else whose home it is. */
     const dividerOf = (view: HouseholdView) => {
-        const self = labelOf(view.self.label);
+        const self = labelOf(view.self.label, true);
         return self
-            ? fill(t('adopter.hh_self_as'), { name: hostFirst, rel: self.charAt(0).toLowerCase() + self.slice(1) })
+            ? fill(t('adopter.hh_self_as'), { name: hostFirst, rel: self })
             : fill(t('adopter.hh_with_names'), { names: peopleOf(view) });
     };
 

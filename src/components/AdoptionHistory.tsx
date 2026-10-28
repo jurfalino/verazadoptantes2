@@ -5,6 +5,7 @@ import { activityOrigin } from '@/domain/recordOrigin';
 import { contractHref } from '@/lib/contractLink';
 import FormAnswers from './FormAnswers';
 import { useState, useEffect, type ComponentType } from 'react';
+import { ClipboardList } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { StarIcon } from '@/components/StarIcon';
@@ -223,7 +224,8 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
     if (initialAdoptions.length === 0) {
         return (
             <div className="py-6 text-center">
-                <div className="text-3xl mb-2 opacity-60">📋</div>
+                {/* A lucide icon, not an emoji (design guide §3.2; audit C6). */}
+                <ClipboardList className="w-8 h-8 mx-auto mb-2 text-stone-400" strokeWidth={1.5} aria-hidden="true" />
                 <p className="text-sm text-stone-500 font-medium">{t('adoption.no_activity') || 'No hay actividad registrada aún.'}</p>
                 <p className="text-xs text-stone-400 mt-1">{t('adoption.no_activity_hint') || 'Registrá una adopción, solicitud o nota para comenzar.'}</p>
             </div>

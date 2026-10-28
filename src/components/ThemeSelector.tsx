@@ -3,10 +3,12 @@
 import { useTheme } from '@/context/ThemeContext';
 import { useLanguage } from '@/context/LanguageContext';
 import { useState, useRef, useEffect } from 'react';
+import { Check, Moon, Sun } from 'lucide-react';
 
 const themes = [
-    { id: 'light', labelKey: 'theme.light', icon: '☀️', bg: '#e5e5ea', fg: '#1d1d1f' },
-    { id: 'dark', labelKey: 'theme.dark', icon: '🌙', bg: '#0a1628', fg: '#e0e7ff' },
+    // lucide, not emoji (design guide §3.2; audit C6).
+    { id: 'light', labelKey: 'theme.light', Icon: Sun, bg: '#e5e5ea', fg: '#1d1d1f' },
+    { id: 'dark', labelKey: 'theme.dark', Icon: Moon, bg: '#0a1628', fg: '#e0e7ff' },
 ] as const;
 
 export function ThemeSelector() {
@@ -35,7 +37,7 @@ export function ThemeSelector() {
                 title={t('theme.change')}
                 aria-label={t('theme.change')}
             >
-                <span className="text-lg">{currentTheme.icon}</span>
+                <currentTheme.Icon className="w-5 h-5 text-stone-600" strokeWidth={2} aria-hidden="true" />
             </button>
 
             {isOpen && (
@@ -58,7 +60,7 @@ export function ThemeSelector() {
                                 {t(opt.labelKey)}
                             </span>
                             {theme === opt.id && (
-                                <span className="ml-auto text-teal-700">✓</span>
+                                <Check className="ml-auto w-4 h-4 text-teal-700" strokeWidth={2.5} aria-hidden="true" />
                             )}
                         </button>
                     ))}

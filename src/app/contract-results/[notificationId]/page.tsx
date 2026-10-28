@@ -157,7 +157,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
             <div className={`rounded-xl p-4 mb-6 ${hasMatches ? 'bg-amber-50 border border-amber-200' : 'bg-teal-50 border border-teal-200'}`}>
                 <p className={`text-sm font-semibold ${hasMatches ? 'text-amber-800' : 'text-teal-800'}`}>
                     {hasMatches
-                        ? `Se encontraron ${metadata.matchCount} posible${metadata.matchCount > 1 ? 's' : ''} coincidencia${metadata.matchCount > 1 ? 's' : ''}`
+                        ? (metadata.matchCount === 1 ? 'Se encontró 1 posible coincidencia' : `Se encontraron ${metadata.matchCount} posibles coincidencias`)
                         : 'No se encontraron registros previos para este adoptante'
                     }
                 </p>

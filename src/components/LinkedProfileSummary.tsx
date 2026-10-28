@@ -15,7 +15,7 @@
  * `MatchesPill` marks, in «¿Es este perfil?» (HouseholdCandidateCard), the
  * contact that matched what was typed.
  */
-import { Check } from 'lucide-react';
+import { Check, Lock } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import ContactEntriesSection from '@/components/ContactEntriesSection';
 import type { LinkedSummary } from '@/domain/householdLinks';
@@ -60,9 +60,17 @@ export function MemberContacts({ summary, testId = 'linked-summary', canAddConta
                 testIdPrefix="linked-contact"
             />
             {summary.moreContacts > 0 && (
-                <p className="text-xs text-stone-500">{fill(t('adopter.hh_link_more_contacts'), { n: summary.moreContacts })}</p>
+                <p className="text-xs text-stone-500" data-testid="linked-more-contacts">
+                    {summary.moreContacts === 1 ? t('adopter.hh_link_more_contacts_one') : fill(t('adopter.hh_link_more_contacts'), { n: summary.moreContacts })}
+                </p>
             )}
-            {anyLocked && <p className="text-xs text-stone-500">{t('adopter.hh_link_locked_note')}</p>}
+            {/* The profile's own «Datos protegidos» line look (padlock, muted): one rendering for «protected» (audit C9). */}
+            {anyLocked && (
+                <p className="flex items-start gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }} data-testid="linked-locked-note">
+                    <Lock className="w-3.5 h-3.5 mt-px shrink-0" strokeWidth={1.8} aria-hidden="true" />
+                    {t('adopter.hh_link_locked_note')}
+                </p>
+            )}
         </div>
     );
 }
