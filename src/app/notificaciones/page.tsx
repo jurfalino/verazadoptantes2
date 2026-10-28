@@ -364,7 +364,7 @@ export default function NotificacionesPage() {
                                     color: typeFilter === type ? '#fff' : 'var(--text-muted)',
                                 }}
                             >
-                                <NotificationTypeIcon type={type} className="w-4 h-4" />{label || type}
+                                <NotificationTypeIcon type={type} className="w-4 h-4" />{label || t('settings.email_cat_other')}
                             </button>
                         );
                     })}
