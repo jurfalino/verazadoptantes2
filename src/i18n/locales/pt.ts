@@ -969,7 +969,7 @@ export const pt = {
         ce_type_id: 'Documento',
         ce_type_address: 'Endereço',
         ce_type_other: 'Nota',
-        ce_type_alias: 'Outro nome/identidade',
+        ce_type_alias: 'Também conhecido/a como',
         ce_empty: 'Ainda não há dados de contato. Adicione um.',
         ce_masked: 'oculto',
         pii_protected_title: 'Dados de contato protegidos',
@@ -1446,13 +1446,6 @@ export const pt = {
         none: 'Sem avaliação',
         clear: 'Remover',
         scale_title: 'Escala de avaliação',
-        search_label: {
-            dangerous: 'Adotante Perigoso',
-            poor: 'Adotante Arriscado',
-            average: 'Adotante Regular',
-            good: 'Bom Adotante',
-            excellent: 'Excelente Adotante',
-        },
         explanation: {
             dangerous: 'Não se recomenda entregar animais em adoção para esta pessoa.',
             poor: 'Só entregar animais em adoção sob avaliação e acompanhamento rigorosos.',

@@ -18,6 +18,7 @@
 import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { MinorTag } from '@/components/MinorTag';
+import { AlertPill } from '@/components/AlertPill';
 import { ActivityCountsLine } from '@/components/ActivityCountsLine';
 import { activityParts, type ActivityCounts } from '@/domain/activityCounts';
 
@@ -36,9 +37,10 @@ export function PersonStanding({ rating, openAlerts, isMinor, minorTestId, alert
                 ? <RatingBadge rating={rating} variant="inline" size="sm" label="short" />
                 : <span className="text-xs text-stone-500 whitespace-nowrap" data-testid="person-unrated">{t('adopter.hh_link_unrated')}</span>}
             {openAlerts > 0 && (
-                <span className="text-xs font-semibold text-rose-700 whitespace-nowrap" data-testid={alertsTestId}>
+                // The profile header's flag pill (AlertPill), with the count (audit B2).
+                <AlertPill kind="count" testId={alertsTestId}>
                     {openAlerts === 1 ? t('adopter.hh_link_alerts_one') : t('adopter.hh_link_alerts_many').replace('{n}', String(openAlerts))}
-                </span>
+                </AlertPill>
             )}
         </>
     );

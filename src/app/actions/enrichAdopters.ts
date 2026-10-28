@@ -12,6 +12,7 @@ import { getAdoptionConfig } from './config';
 
 import { computeAvgRating } from '@/domain/ratings';
 import { computeStats } from '@/domain/stats';
+import { countActivity, type ActivityCounts } from '@/domain/activityCounts';
 import { buildFlags } from '@/domain/flags';
 import { RECORD_TYPES } from '@/domain/constants';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
@@ -33,7 +34,7 @@ const logBatchFallback = (op: string, chunkSize: number) => (e: unknown) => {
 export interface EnrichmentResult {
     avgRating: number | null;
     thumbnail: string | null;
-    stats: { searchHits: number; profileViews: number; requests: number; adoptions: number };
+    stats: { searchHits: number; profileViews: number; requests: number; adoptions: number; activity?: ActivityCounts };
     flags: AdopterFlags;
 }
 
@@ -178,9 +179,11 @@ async function _enrichAdoptersImpl(
             };
         }
 
-        const stats = computeStats(adopterStatRecords, adopterAdoptions);
+        const stats: EnrichmentResult['stats'] = computeStats(adopterStatRecords, adopterAdoptions);
         stats.adoptions = adoptionCount;
         stats.requests = requestCount;
+        // The same counts a household row and the «Actividad» header show (audit B12).
+        stats.activity = countActivity(adopterAdoptions);
 
         resultMap.set(id, { avgRating, thumbnail: thumbByAdopter.get(id) || null, stats, flags });
     }

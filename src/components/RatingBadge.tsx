@@ -9,8 +9,17 @@ interface RatingBadgeProps {
     rating: number | string; // Supports '1'-'5' or 1-5 (including decimals like 4.2)
     size?: 'sm' | 'md' | 'lg';
     variant?: 'badge' | 'inline'; // badge = colored pill with number, inline = compact ⭐ + number
-    label?: 'none' | 'short' | 'search'; // none = no label (default), short = "Bueno", search = "Buen Adoptante"
+    /** none = the number only (default); short = «★ 4.0 · Bueno». One label set everywhere (audit B1). */
+    label?: 'none' | 'short';
 }
+
+/**
+ * The rating, one way everywhere (audit B1): «★ 4.0 · Bueno» — the star, the
+ * number, a «·» and the short word, as a pill (`badge`: the profile header,
+ * lists) or inline (`inline`: a household row, a card's household line, the
+ * picker). Colour is never the only signal: the word is always there when a
+ * label is asked for.
+ */
 
 export function RatingBadge({ rating, size = 'md', variant = 'badge', label = 'none' }: RatingBadgeProps) {
     const { t } = useLanguage();
@@ -23,12 +32,8 @@ export function RatingBadge({ rating, size = 'md', variant = 'badge', label = 'n
     const display = numRating % 1 !== 0 ? numRating.toFixed(1) : `${numRating}.0`;
 
     const labelKey = getRatingLabelKey(numRating);
-    const shortText = (t(`ratings.${labelKey}` as any) || '');             // "Peligroso"
-    const searchText = (t(`ratings.search_label.${labelKey}` as any) || ''); // "Adoptante Peligroso"
-    const labelText =
-        label === 'short' ? shortText
-        : label === 'search' ? searchText
-        : '';
+    const labelText = label === 'short' ? (t(`ratings.${labelKey}` as any) || '') : ''; // "Peligroso"
+    const labelEl = labelText ? <span className="ml-0.5 whitespace-nowrap"><span aria-hidden="true">·</span> {labelText}</span> : null;
 
     if (variant === 'inline') {
         const inlineSizes = {
@@ -37,9 +42,9 @@ export function RatingBadge({ rating, size = 'md', variant = 'badge', label = 'n
             lg: 'text-base',
         }[size];
         return (
-            <span className={`inline-flex items-center gap-0.5 font-semibold ${colors.text} ${inlineSizes}`}>
+            <span className={`inline-flex items-center gap-0.5 whitespace-nowrap font-semibold ${colors.text} ${inlineSizes}`}>
                 <StarIcon className="w-[1em] h-[1em]" /><span>{display}</span>
-                {labelText && <span className="ml-1">{labelText}</span>}
+                {labelEl}
             </span>
         );
     }
@@ -53,13 +58,7 @@ export function RatingBadge({ rating, size = 'md', variant = 'badge', label = 'n
     return (
         <div data-testid="rating-value" className={`inline-flex items-center gap-1 rounded-full font-semibold shadow-sm ${colors.bg} ${colors.text} ${colors.border} border ${sizeClasses.pad} ${sizeClasses.text}`}>
             <StarIcon className="w-[1em] h-[1em]" /><span>{display}</span>
-            {label === 'search' ? (
-                // Mobile: the short adjective ("Peligroso") so the name keeps room;
-                // ≥sm: the full label ("Adoptante Peligroso").
-                <span className="ml-0.5 whitespace-nowrap">· <span className="sm:hidden">{shortText}</span><span className="hidden sm:inline">{searchText}</span></span>
-            ) : labelText ? (
-                <span className="ml-0.5">· {labelText}</span>
-            ) : null}
+            {labelEl}
         </div>
     );
 }

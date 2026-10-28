@@ -2,6 +2,7 @@
 
 export const runtime = 'edge';
 
+import { AlertPill } from '@/components/AlertPill';
 import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { useRouter } from 'next/navigation';
@@ -82,7 +83,7 @@ export default function DemoProfilePage() {
                             <span className="text-xs px-2 py-1 rounded-full font-medium bg-teal-100 text-teal-700">✓ {t('flags.verified_identity')}</span>
                         )}
                         {flags.inaccurate && (
-                            <span className="text-xs px-2 py-1 rounded-full font-medium bg-rose-100 text-rose-700">⚠ {t('flags.inaccurate')}</span>
+                            <AlertPill kind="inaccurate">{t('flags.inaccurate')}</AlertPill>
                         )}
                     </div>
 

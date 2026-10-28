@@ -11,7 +11,7 @@ import type { ProfileIdentityView } from "@/domain/profileIdentity";
 import ProfileAgeEditor from "@/components/ProfileAgeEditor";
 import { MinorTag } from "@/components/MinorTag";
 import { AnchoredMenu, AnchoredMenuItem, OverflowMenuButton } from "@/components/ui/AnchoredMenu";
-import { CalendarDays, GitMerge, PencilLine, Phone, Share2, Trash2 } from "lucide-react";
+import { CalendarDays, GitMerge, Info, PencilLine, Phone, Share2, Trash2 } from "lucide-react";
 import { CardHouseholdLine } from "@/components/CardHouseholdLine";
 import { hasStrongMatch } from "@/lib/matchChips";
 import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
@@ -1362,10 +1362,6 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                 </div>
                                 {/* Actions (right-aligned inline) */}
                                 <div className="flex items-center justify-end gap-2 flex-shrink-0">
-                                    {/* «Menor de edad» (K1): top-right, beside ⋯ — no rating, alerts or records on this profile. */}
-                                    {!isNew && identity?.isMinor && !isEditing && (
-                                        <MinorTag />
-                                    )}
                                     {isEditing ? (
                                         // Desktop: inline Cancel/Save in the header. On mobile these
                                         // are hidden so the name input gets the full row width; the
@@ -1448,7 +1444,18 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                             {/* Verdict — the rating is the single most important at-a-glance
                                 signal on a vetting tool, so it's promoted (md, with label) to its
                                 own prominent row right under the name, not buried in the meta row. */}
-                            {/* A minor's tag replaces the rating (final fix P7): a legacy rating from before the mark stays off the header. */}
+                            {/* A minor's tag takes the rating's slot (final fix P7, audit B5: the same place as on a row or a card), with
+                                why there's no rating or activity as a callout inside this card. A legacy rating stays off the header. */}
+                            {!isNew && identity?.isMinor && (
+                                <div className="mt-2 space-y-2">
+                                    <MinorTag />
+                                    <p className="flex items-start gap-2 rounded-xl border px-3 py-2 text-xs" data-testid="minor-note"
+                                        style={{ background: 'var(--status-info-bg)', borderColor: 'var(--status-info-border)', color: 'var(--text-secondary)' }}>
+                                        <Info className="w-4 h-4 mt-px shrink-0" style={{ color: 'var(--status-info-text)' }} aria-hidden="true" />
+                                        <span>{t('adopter.minor_note')}</span>
+                                    </p>
+                                </div>
+                            )}
                             {!isNew && !identity?.isMinor && avgRating !== null && avgRating !== undefined && (
                                 <div className="mt-2">
                                     <div

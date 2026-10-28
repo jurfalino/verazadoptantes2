@@ -97,7 +97,7 @@ test.describe('Search to Decision', () => {
             }
         });
 
-        // Step 1: Search for María and check the search result card shows 🏠 2
+        // Step 1: Search for María and check the search result card counts her adoptions
         await page.fill('input#search', 'María');
         await page.getByRole('button', { name: /search records|buscar registros/i }).click();
 
@@ -109,12 +109,10 @@ test.describe('Search to Decision', () => {
         const resultCard = page.locator('a[href*="/adopter/"]').first();
         await expect(resultCard).toBeVisible({ timeout: 30000 });
 
-        // The stats row shows adoption count — must NOT be 0
-        const adoptionStat = resultCard.locator('text=🏠').first();
+        // The activity line counts her adoptions (ActivityCountsLine: data-activity / data-count) — must NOT be 0
+        const adoptionStat = resultCard.getByTestId('search-card-activity').locator('[data-activity="adoption"]');
         await expect(adoptionStat).toBeVisible({ timeout: 30000 });
-        const statText = await adoptionStat.textContent();
-        expect(statText).not.toMatch(/🏠\s*0/);
-        expect(statText).toMatch(/🏠\s*[1-9]/);
+        expect(Number(await adoptionStat.getAttribute('data-count'))).toBeGreaterThan(0);
 
         // Step 2: Navigate to María's profile and check the stats header
         await page.goto(`/adopter/${TEST_ADOPTERS.MARIA}`);

@@ -962,7 +962,7 @@ export const en = {
         ce_type_id: 'ID',
         ce_type_address: 'Address',
         ce_type_other: 'Note',
-        ce_type_alias: 'Other name/identity',
+        ce_type_alias: 'Also known as',
         ce_empty: 'No contact entries yet. Add one.',
         ce_masked: 'hidden',
         pii_protected_title: 'Contact details are protected',
@@ -1441,13 +1441,6 @@ export const en = {
         none: 'Not rated',
         clear: 'Clear',
         scale_title: 'Rating scale',
-        search_label: {
-            dangerous: 'Dangerous Adopter',
-            poor: 'Risky Adopter',
-            average: 'Fair Adopter',
-            good: 'Good Adopter',
-            excellent: 'Excellent Adopter',
-        },
         explanation: {
             dangerous: 'Do not place animals with this adopter.',
             poor: 'Only place animals under strict evaluation and follow-up.',

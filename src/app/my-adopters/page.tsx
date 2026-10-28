@@ -15,6 +15,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import PendingDedup from '@/components/PendingDedup';
 import { AdopterName } from '@/components/AdopterName';
+import { AlertPill } from '@/components/AlertPill';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import { withoutLegacyMergeSeparators } from '@/lib/contactEntries';
 
@@ -314,32 +315,20 @@ function timeAgo(input: number | Date | string | null | undefined, isEs: boolean
 function FlagBadges({ flags, t }: { flags: AdopterFlags; t: (key: string) => string }) {
     const badges = [];
 
-    if (flags.inaccurate) {
-        badges.push(
-            <span key="inaccurate" className="text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap bg-rose-100 text-rose-700">
-                ⚠ {t('flags.inaccurate') || 'Inaccurate'}
-            </span>
-        );
-    }
-    if (flags.duplicate) {
-        badges.push(
-            <span key="duplicate" className="text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap bg-amber-100 text-amber-700">
-                📄 {t('flags.duplicate') || 'Duplicate'}
-            </span>
-        );
-    }
+    if (flags.inaccurate) badges.push(<AlertPill key="inaccurate" kind="inaccurate">{t('flags.inaccurate') || 'Inaccurate'}</AlertPill>);
+    if (flags.duplicate) badges.push(<AlertPill key="duplicate" kind="duplicate">{t('flags.duplicate') || 'Duplicate'}</AlertPill>);
     if (flags.tooManyAdoptions) {
         badges.push(
-            <span key="too_many_adoptions" className="text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap bg-orange-100 text-orange-700">
-                ⚠ {flags.tooManyAdoptions.count} {t('stats.adoptions') || 'adoptions'} in {flags.tooManyAdoptions.actualSpanDays || flags.tooManyAdoptions.periodDays}d
-            </span>
+            <AlertPill key="too_many_adoptions" kind="too_many_adoptions">
+                {t('flags.too_many_adoptions').replace('{count}', String(flags.tooManyAdoptions.count)).replace('{days}', String(Math.max(1, Math.round(flags.tooManyAdoptions.actualSpanDays || flags.tooManyAdoptions.periodDays))))}
+            </AlertPill>
         );
     }
     if (flags.tooManyRequests) {
         badges.push(
-            <span key="too_many_requests" className="text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap bg-purple-100 text-purple-700">
-                ⚠ {t('flags.too_many_requests').replace('{count}', String(flags.tooManyRequests.count)).replace('{days}', String(Math.max(1, Math.round(flags.tooManyRequests.actualSpanDays || flags.tooManyRequests.periodDays))))}
-            </span>
+            <AlertPill key="too_many_requests" kind="too_many_requests">
+                {t('flags.too_many_requests').replace('{count}', String(flags.tooManyRequests.count)).replace('{days}', String(Math.max(1, Math.round(flags.tooManyRequests.actualSpanDays || flags.tooManyRequests.periodDays))))}
+            </AlertPill>
         );
     }
 

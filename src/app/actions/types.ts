@@ -1,4 +1,5 @@
 import type { adopters } from '@/db/schema';
+import type { ActivityCounts } from '@/domain/activityCounts';
 import type { AdopterFlags } from '@/types/adopter';
 import type { VisibilityBadge } from '@/domain/visibilityBadge';
 import type { HouseholdLine } from '@/domain/households';
@@ -30,6 +31,8 @@ export interface SearchResult {
         profileViews: number;
         requests: number;
         adoptions: number;
+        /** Records by type, counted as the «Actividad» header counts them (domain/activityCounts) — the card's line (audit B12). */
+        activity?: ActivityCounts;
     };
     flags: AdopterFlags;
 }
@@ -106,7 +109,7 @@ export interface DiscoveryMatch {
     avgRating: number | null;
     thumbnail: string | null;
     /** Always populated. Defaults to all-zero when enrich=false. */
-    stats: { searchHits: number; profileViews: number; requests: number; adoptions: number };
+    stats: { searchHits: number; profileViews: number; requests: number; adoptions: number; activity?: ActivityCounts };
     /** Always populated. Defaults to all-false when enrich=false. */
     flags: AdopterFlags;
     /** «Menor de edad» (domain `isMinor`: current age under 18, or the box with no age). */

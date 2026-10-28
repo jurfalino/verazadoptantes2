@@ -16,6 +16,9 @@ import { useDateFormat } from '@/context/TimezoneContext';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
 import { MinorTag } from './MinorTag';
 import { CardHouseholdLine } from './CardHouseholdLine';
+import { AlertPill } from './AlertPill';
+import { CalendarPlus, Eye, Pencil, Search } from 'lucide-react';
+import { PersonActivity } from './PersonStanding';
 
 const SNIPPET_ICONS: Record<SnippetField, string> = {
     name: '👤', contact: '📞', address: '📍',
@@ -112,9 +115,10 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
     // Extracted so each element renders in ONE source of truth but lands in a
     // different slot per breakpoint (desktop = today's [name/contact][rating];
     // mobile = [name/rating] with risk flags + contact promoted full-width below).
-    const ratingBadge = res.avgRating !== null ? (
+    // A minor's «Menor de edad» takes the rating's slot (audit B5): one place, as on the profile header and a household row.
+    const ratingBadge = res.isMinor ? <MinorTag /> : res.avgRating !== null ? (
         <RatingExplainer rating={res.avgRating}>
-            <RatingBadge rating={res.avgRating} size="sm" label="search" />
+            <RatingBadge rating={res.avgRating} size="sm" label="short" />
         </RatingExplainer>
     ) : null;
 
@@ -138,10 +142,10 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
     const riskFlagChips = (
         <>
             {res.flags.tooManyAdoptions && (
-                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {t('flags.too_many_adoptions').replace('{count}', res.flags.tooManyAdoptions.count.toString()).replace('{days}', Math.round(res.flags.tooManyAdoptions.actualSpanDays || res.flags.tooManyAdoptions.periodDays).toString())}</span>
+                <AlertPill kind="too_many_adoptions">{t('flags.too_many_adoptions').replace('{count}', res.flags.tooManyAdoptions.count.toString()).replace('{days}', Math.max(1, Math.round(res.flags.tooManyAdoptions.actualSpanDays || res.flags.tooManyAdoptions.periodDays)).toString())}</AlertPill>
             )}
             {res.flags.tooManyRequests && (
-                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">⚠ {t('flags.too_many_requests').replace('{count}', res.flags.tooManyRequests.count.toString()).replace('{days}', Math.max(1, Math.round(res.flags.tooManyRequests.actualSpanDays || res.flags.tooManyRequests.periodDays)).toString())}</span>
+                <AlertPill kind="too_many_requests">{t('flags.too_many_requests').replace('{count}', res.flags.tooManyRequests.count.toString()).replace('{days}', Math.max(1, Math.round(res.flags.tooManyRequests.actualSpanDays || res.flags.tooManyRequests.periodDays)).toString())}</AlertPill>
             )}
         </>
     );
@@ -224,7 +228,6 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                                 {t('search.protected_label')}
                             </span>
                         ) : null}
-                        {res.isMinor && <MinorTag />}
                     </div>
                     {/* Desktop: contact stays in the middle column under the name.
                         Full string, always wrapped (never truncated), matched tokens
@@ -265,24 +268,28 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
 
             {/* Stats Row */}
             <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
-                {showMetadata && (
-                    <span>👁 {res.stats.profileViews} {t('stats.views')}</span>
+                {/* Views, then the activity counted as a household row and the «Actividad» header count it
+                    (PersonActivity — singulars, «sin actividad» when none; a minor's card shows none) — audit B12. */}
+                {showMetadata && !res.isMinor && (
+                    <span className="inline-flex items-center gap-1" data-testid="search-card-views">
+                        <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+                        {res.stats.profileViews} {t(res.stats.profileViews === 1 ? 'stats.view_one' : 'stats.views')}
+                    </span>
                 )}
-                <span>📋 {res.stats.requests} {t('stats.requests')}</span>
-                <span>🏠 {res.stats.adoptions} {t('stats.adoptions')}</span>
+                {!res.isMinor && (
+                    <PersonActivity
+                        activity={res.stats.activity ?? { adoption: res.stats.adoptions || undefined, adoption_request: res.stats.requests || undefined }}
+                        isMinor={false} testId="search-card-activity" />
+                )}
                 <div className="flex flex-wrap gap-1 ml-auto">
-                    {res.flags.inaccurate && (
-                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-rose-100 text-rose-700">⚠ {t('flags.inaccurate') || 'Inaccurate'}</span>
-                    )}
-                    {res.flags.duplicate && (
-                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-amber-100 text-amber-700">📄 {t('flags.duplicate') || 'Duplicate'}</span>
-                    )}
+                    {res.flags.inaccurate && <AlertPill kind="inaccurate">{t('flags.inaccurate') || 'Inaccurate'}</AlertPill>}
+                    {res.flags.duplicate && <AlertPill kind="duplicate">{t('flags.duplicate') || 'Duplicate'}</AlertPill>}
                     {res.flags.systemDuplicate && !res.flags.duplicate && (
                         <span
                             title={t('search.possible_duplicate_tooltip') || 'El sistema detectó otro registro similar. El responsable del registro puede revisarlo.'}
                             className="text-xs px-1.5 py-0.5 rounded font-medium bg-stone-100 text-stone-600 cursor-help"
                         >
-                            🔍 {t('flags.possible_duplicate') || 'Possible duplicate'}
+                            <Search className="inline w-3 h-3 -mt-px mr-0.5" aria-hidden="true" />{t('flags.possible_duplicate') || 'Possible duplicate'}
                         </span>
                     )}
                     {res.flags.verified_identity && (
@@ -375,8 +382,8 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
             {/* Dates Row - bottom right */}
             {showMetadata && (addedDate || updatedDate) && (
                 <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-stone-100 text-xs text-stone-500">
-                    {addedDate && (<span>📅 {addedDate}</span>)}
-                    {updatedDate && (<span>✏️ {updatedDate}</span>)}
+                    {addedDate && (<span className="inline-flex items-center gap-1"><CalendarPlus className="w-3.5 h-3.5" aria-hidden="true" />{addedDate}</span>)}
+                    {updatedDate && (<span className="inline-flex items-center gap-1"><Pencil className="w-3.5 h-3.5" aria-hidden="true" />{updatedDate}</span>)}
                 </div>
             )}
         </div>

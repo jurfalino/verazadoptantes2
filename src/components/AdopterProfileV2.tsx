@@ -534,10 +534,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 {!isNew && adopter && (
                     <div id="adoptions-section" data-testid="adoptions-list">
                         {/* Visit-intent prompt sits above the section title — context-setting,
-                            not part of the activity list. A minor gets none: one muted line instead. */}
-                        {minor ? (
-                            <p className="text-xs px-1 mb-4" style={{ color: 'var(--text-muted)' }} data-testid="minor-note">{t('adopter.minor_note')}</p>
-                        ) : (
+                            not part of the activity list. A minor gets none: the header card says why (minor-note, audit B5). */}
+                        {minor ? null : (
                         <VisitIntentCard
                             adopterId={id}
                             adopterName={adopter?.name}

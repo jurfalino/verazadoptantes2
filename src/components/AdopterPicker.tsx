@@ -191,7 +191,7 @@ export default function AdopterPicker({
                         <div className="flex gap-4 text-sm">
                             {preview.isMinor ? <MinorTag testId="picker-minor-tag" /> : preview.avgRating != null && (
                                 <RatingExplainer rating={preview.avgRating}>
-                                    <RatingBadge rating={preview.avgRating} variant="inline" size="sm" label="search" />
+                                    <RatingBadge rating={preview.avgRating} variant="inline" size="sm" label="short" />
                                 </RatingExplainer>
                             )}
                             {preview.stats?.adoptions != null && (

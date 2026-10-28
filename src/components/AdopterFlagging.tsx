@@ -16,6 +16,7 @@ import { useDateFormat } from '@/context/TimezoneContext';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
 import { isOpenDuplicateFlag } from '@/domain/dedupPair';
 import { CheckCircle2 } from 'lucide-react';
+import { AlertPill } from '@/components/AlertPill';
 import { Modal, ModalActions } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 
@@ -288,83 +289,30 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                     <div className="flex flex-wrap items-center gap-2">
                         {/* Inaccurate Information Flag */}
                         {isFlaggedAsInaccurate && (
-                            <button
-                                type="button"
-                                onClick={() => setShowInaccurateHint(!showInaccurateHint)}
-                                aria-pressed={showInaccurateHint}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all hover:opacity-90 ${showInaccurateHint ? 'shadow-inner' : ''} animate-in fade-in`}
-                                style={{
-                                    background: 'var(--status-error-bg)',
-                                    color: 'var(--status-error-text)',
-                                    borderColor: 'var(--status-error-border)',
-                                }}
-                            >
-                                <svg className={`w-3.5 h-3.5 transform transition-transform ${showInaccurateHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                </svg>
+                            <AlertPill kind="inaccurate" size="md" onClick={() => setShowInaccurateHint(!showInaccurateHint)} pressed={showInaccurateHint}>
                                 {t('flags.inaccurate') || 'Inaccurate'}
-                            </button>
+                            </AlertPill>
                         )}
 
                         {/* Duplicate - click to expand hint */}
                         {isFlaggedAsDuplicate && !hasDuplicateBanner && (
-                            <button
-                                type="button"
-                                onClick={() => setShowDuplicateHint(!showDuplicateHint)}
-                                aria-pressed={showDuplicateHint}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all hover:opacity-90 ${showDuplicateHint ? 'shadow-inner' : ''} animate-in fade-in`}
-                                style={{
-                                    background: 'var(--status-warning-bg)',
-                                    color: 'var(--status-warning-text)',
-                                    borderColor: 'var(--status-warning-border)',
-                                }}
-                            >
-                                <svg className={`w-3.5 h-3.5 transform transition-transform ${showDuplicateHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
-                                    <path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z" />
-                                    <path d="M3 8a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
-                                </svg>
+                            <AlertPill kind="duplicate" size="md" onClick={() => setShowDuplicateHint(!showDuplicateHint)} pressed={showDuplicateHint}>
                                 {t('flags.duplicate') || 'Duplicate'}
-                            </button>
+                            </AlertPill>
                         )}
 
                         {/* Too Many Adoptions Warning */}
                         {tooManyAdoptions && (
-                            <button
-                                type="button"
-                                onClick={() => setShowAdoptionsHint(!showAdoptionsHint)}
-                                aria-pressed={showAdoptionsHint}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all hover:opacity-90 ${showAdoptionsHint ? 'shadow-inner' : ''} animate-in fade-in`}
-                                style={{
-                                    background: 'var(--status-warning-bg)',
-                                    color: 'var(--status-warning-text)',
-                                    borderColor: 'var(--status-warning-border)',
-                                }}
-                            >
-                                <svg className={`w-3.5 h-3.5 transform transition-transform ${showAdoptionsHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                </svg>
-                                {tooManyAdoptions.count} {t('stats.adoptions') || 'adopciones'} {t('common.in') || 'en'} {Math.max(1, Math.round(tooManyAdoptions.actualSpanDays || tooManyAdoptions.periodDays))} {t('common.days') || 'días'}
-                            </button>
+                            <AlertPill kind="too_many_adoptions" size="md" onClick={() => setShowAdoptionsHint(!showAdoptionsHint)} pressed={showAdoptionsHint}>
+                                {t('flags.too_many_adoptions').replace('{count}', String(tooManyAdoptions.count)).replace('{days}', String(Math.max(1, Math.round(tooManyAdoptions.actualSpanDays || tooManyAdoptions.periodDays))))}
+                            </AlertPill>
                         )}
 
                         {/* Too Many Requests Warning */}
                         {tooManyRequests && (
-                            <button
-                                type="button"
-                                onClick={() => setShowRequestsHint(!showRequestsHint)}
-                                aria-pressed={showRequestsHint}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all hover:opacity-90 ${showRequestsHint ? 'shadow-inner' : ''} animate-in fade-in`}
-                                style={{
-                                    background: 'var(--status-purple-bg)',
-                                    color: 'var(--status-purple-text)',
-                                    borderColor: 'var(--status-purple-border)',
-                                }}
-                            >
-                                <svg className={`w-3.5 h-3.5 transform transition-transform ${showRequestsHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                </svg>
+                            <AlertPill kind="too_many_requests" size="md" onClick={() => setShowRequestsHint(!showRequestsHint)} pressed={showRequestsHint}>
                                 {t('flags.too_many_requests').replace('{count}', String(tooManyRequests.count)).replace('{days}', String(Math.max(1, Math.round(tooManyRequests.actualSpanDays || tooManyRequests.periodDays))))}
-                            </button>
+                            </AlertPill>
                         )}
                         
                         {/* Context hints revealed on tap */}

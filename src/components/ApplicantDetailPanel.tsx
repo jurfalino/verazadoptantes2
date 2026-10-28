@@ -28,6 +28,7 @@ import { createContractInvitation } from '@/app/actions/contract';
 import { zarazTrack } from '@/lib/zaraz';
 import type { ApplicantSummary } from '@/app/actions/applicants';
 import LocationMap from '@/components/LocationMap';
+import { AlertPill } from '@/components/AlertPill';
 
 interface Props {
     applicants: ApplicantSummary[];
@@ -130,8 +131,8 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
         const f = applicant.flags;
         if (f.verified_identity) flagPills.push(<FlagBadge key="vid" icon="✓" label={t('flags.verified_identity') || 'Verified ID'} tone="ok" />);
         if (f.verified_address) flagPills.push(<FlagBadge key="vad" icon="✓" label={t('flags.verified_address') || 'Verified address'} tone="ok" />);
-        if (f.inaccurate) flagPills.push(<FlagBadge key="ina" icon="⚠" label={t('flags.inaccurate') || 'Inaccurate'} tone="warn" />);
-        if (f.duplicate) flagPills.push(<FlagBadge key="dup" icon="📄" label={t('flags.duplicate') || 'Duplicate'} tone="warn" />);
+        if (f.inaccurate) flagPills.push(<AlertPill key="ina" kind="inaccurate">{t('flags.inaccurate') || 'Inaccurate'}</AlertPill>);
+        if (f.duplicate) flagPills.push(<AlertPill key="dup" kind="duplicate">{t('flags.duplicate') || 'Duplicate'}</AlertPill>);
     }
 
     const fullAnswers = (() => {
