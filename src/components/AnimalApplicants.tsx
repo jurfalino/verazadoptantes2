@@ -12,6 +12,7 @@
  */
 
 import { useState } from 'react';
+import { Users } from 'lucide-react';
 import Link from 'next/link';
 import { useLanguage } from '@/context/LanguageContext';
 import { StarIcon } from '@/components/StarIcon';
@@ -247,7 +248,7 @@ export default function AnimalApplicants({
                     className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-teal-50 transition-colors"
                 >
                     <span className="text-sm font-semibold text-teal-800 flex items-center gap-2">
-                        <span>👥</span>
+                        <Users className="w-4 h-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />
                         {countLabel}
                     </span>
                     <svg className={`w-4 h-4 text-teal-700 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
