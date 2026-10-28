@@ -12,7 +12,7 @@
  */
 
 import { useState } from 'react';
-import { Users } from 'lucide-react';
+import { Home, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useLanguage } from '@/context/LanguageContext';
 import { StarIcon } from '@/components/StarIcon';
@@ -290,8 +290,9 @@ export default function AnimalApplicants({
                                             {a.appliedAt && <span>· {relativeDate(a.appliedAt, locale, timeZone)}</span>}
                                         </div>
                                         {summary && (
-                                            <div className="text-[11px] text-stone-500 truncate mt-0.5">
-                                                🏠 {summary}
+                                            <div className="flex items-center gap-1 text-[11px] text-stone-500 min-w-0 mt-0.5">
+                                                <Home className="w-3 h-3 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                                                <span className="truncate">{summary}</span>
                                             </div>
                                         )}
                                     </div>
