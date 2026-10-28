@@ -189,7 +189,7 @@ export const en = {
         merge_confirm_side: '{name} (from {owner}, {date})',
         merge_confirm_side_no_owner: '{name} (no owner, {date})',
         merge_confirm_decline_title: 'Decline the request?',
-        merge_confirm_decline_body: 'The two profiles stay separate. We\'ll let whoever asked know.',
+        merge_confirm_decline_body: 'The two profiles stay separate for good: they won\'t be suggested as the same person again. We\'ll let whoever asked and the owner know.',
         merge_confirm_undo_title: 'Undo the merge?',
         merge_confirm_undo_body: '“{absorbed}” becomes a separate profile again, with its own details, and the two won\'t be suggested as the same person again. We\'ll let both rescuers know.',
         merge_confirm_keep_title: 'Keep the merge?',

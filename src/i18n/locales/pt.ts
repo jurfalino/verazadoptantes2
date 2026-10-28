@@ -189,7 +189,7 @@ export const pt = {
         merge_confirm_side: '{name} (de {owner}, {date})',
         merge_confirm_side_no_owner: '{name} (sem dono, {date})',
         merge_confirm_decline_title: 'Recusar o pedido?',
-        merge_confirm_decline_body: 'Os dois perfis continuam separados. Vamos avisar quem pediu.',
+        merge_confirm_decline_body: 'Os dois perfis ficam separados para sempre: não voltam a ser sugeridos como a mesma pessoa. Vamos avisar quem pediu e o dono.',
         merge_confirm_undo_title: 'Desfazer a combinação?',
         merge_confirm_undo_body: '«{absorbed}» volta a ser um perfil separado, com seus dados, e os dois não voltam a ser sugeridos como a mesma pessoa. Vamos avisar os dois resgatistas.',
         merge_confirm_keep_title: 'Manter a combinação?',
