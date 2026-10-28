@@ -17,8 +17,8 @@ import { fill } from '@/lib/householdCopy';
 import { AdminPairCompare, BADGE, PRIMARY_BTN, SECONDARY_BTN, waited, type T } from './mergeAdminUi';
 
 /**
- * Admin «Pedidos de combinación»: open disputes about merges that already
- * happened («Disputas», D50) first, then the merge requests — both profiles,
+ * Admin «Pedidos de combinación»: open questions about merges that already
+ * happened («Combinaciones cuestionadas», D50; «Disputas» before audit A4) first, then the merge requests — both profiles,
  * who asked, who owns the target, how long it has waited. Approving merges
  * (the requester's survivor); a declined request can still be approved
  * ("Aprobar igual"). One row per pair (oneRowPerPair): a review asked for after a

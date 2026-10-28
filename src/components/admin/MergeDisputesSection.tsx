@@ -3,7 +3,7 @@
 /**
  * «Combinaciones cuestionadas» (D50; «Disputas» before audit A4): merges a rescuer says are not the same person
  * (listMergeDisputesForAdmin). For each: the profile that stayed and the one
- * absorbed (owner, date), who merged them and when, who disputed it and when.
+ * absorbed (owner, date), who merged them and when, who questioned it and when.
  * «Deshacer combinación» runs the shared undo (resolveMergeDispute →
  * unmergeAdopters by the merge's audit id) and keeps the pair separate;
  * «Mantener» leaves the merge. Both rescuers hear the outcome. Each row shows
@@ -34,7 +34,7 @@ export default function MergeDisputesSection({ disputes }: { disputes: MergeDisp
     const [confirming, setConfirming] = useState<{ row: MergeDisputeAdminRow; decision: 'undo' | 'keep' } | null>(null);
 
     async function resolve(row: MergeDisputeAdminRow, decision: 'undo' | 'keep') {
-        const failed = t('admin.merge_dispute_failed') || 'No se pudo resolver la disputa. Volvé a intentar.';
+        const failed = t('admin.merge_dispute_failed') || 'No se pudo resolver la combinación cuestionada. Volvé a intentar.';
         setBusyId(row.id);
         try {
             const res = await resolveMergeDispute(row.id, decision);
@@ -42,7 +42,7 @@ export default function MergeDisputesSection({ disputes }: { disputes: MergeDisp
                 setItems(prev => prev.filter(d => d.id !== row.id));
                 toast.success('✓', res.status === 'closed'
                     // Moot: the merge was undone elsewhere or its survivor merged away since.
-                    ? (t('admin.merge_dispute_closed') || 'Esa combinación ya se había deshecho o cambió: cerramos la disputa')
+                    ? (t('admin.merge_dispute_closed') || 'Esa combinación ya se había deshecho o cambió: la dimos por revisada')
                     : res.status === 'undone'
                         ? (t('admin.merge_dispute_undone') || 'Combinación deshecha: vuelven a ser dos perfiles')
                         : (t('admin.merge_dispute_kept') || 'Se mantuvo la combinación'));
@@ -119,7 +119,7 @@ function DisputeRow({ row: d, busy, locked, t, formatShortDate, onResolve }: {
             {/* «Qué coincide y qué no» (audit A4): the survivor as it was before the merge, the absorbed profile as it is. */}
             <AdminPairCompare kept={d.survivor} absorbed={d.absorbed} matchTypes={d.matchTypes} testIdPrefix="merge-dispute" t={t} formatShortDate={formatShortDate} />
             {line(t('admin.merge_dispute_merged_by') || 'Combinó', d.mergedBy, d.mergedAt)}
-            {line(t('admin.merge_dispute_raised_by') || 'Disputó', d.raisedBy, d.createdAt)}
+            {line(t('admin.merge_dispute_raised_by') || 'Cuestionó', d.raisedBy, d.createdAt)}
             <div className="flex flex-wrap gap-2 pt-1">
                 <button type="button" data-testid="merge-dispute-undo" onClick={() => onResolve(d, 'undo')} disabled={locked} className={PRIMARY_BTN}>
                     {busy ? (t('common.processing') || 'Procesando...') : (t('admin.merge_dispute_undo') || 'Deshacer combinación')}
