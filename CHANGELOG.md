@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.2] - 2026-10-27
+
+### Fixed — household section consistency
+- Adding a household member: the «¿En qué hogar?» list and the ⋯ menu were cut off by the card; a phone still
+  being typed was lost on «Guardar» / «Sí, es esta persona» (those are now disabled while typing); the form now
+  looks like the rest of the profile.
+- One «Agregar dato de contacto» everywhere (no more «Agregar dato» / «0 datos»).
+- Household contacts use the profile's own contact list (same font, icons, padlock, edit/delete), with that
+  person's own permissions.
+- A person's rating, alerts and activity read the same on household rows, «¿Es este perfil?» and card
+  household lines («★ 4.0 Bueno», «Sin calificación», «1 observación»).
+- Contact buttons are at least 44px tall on phones; ⋯ menus close with Escape and return focus.
+
 ## [2.58.1] - 2026-10-27
 
 ### Changed — compact «Familiares / Convivientes»
