@@ -307,8 +307,11 @@ export async function GET(request: Request) {
  *
  * A Worker has a hard subrequest ceiling (~1000), and a tokenizer-version bump
  * makes EVERY record stale at once — 1,146 in production as of v2.49, ~6,000
- * for the households release (v2.58: ~239 batches of 25). The admin page asks
- * for SCAN_PAGE_LIMIT per call (src/domain/scanResilience.ts).
+ * for the households release (v2.58). The admin page asks for SCAN_PAGE_LIMIT
+ * (100) per call (src/domain/scanResilience.ts), so that is ~60 batches; this
+ * default (25) is for any other caller. A batch of 100 must stay well under the
+ * 60 s same-admin lock reclaim (SCAN_LOCK_SAME_USER_STALE_MS) — the release
+ * runbook (.agents/workflows/deploy.md, step 4) says what to watch.
  *
  * Writes go out as one atomic D1 batch per SCAN_WRITE_GROUP records (a batch
  * is one subrequest), so a batch of 25 costs ~3 write subrequests plus a
@@ -316,13 +319,14 @@ export async function GET(request: Request) {
  * `2 + tokenCount`, and v2.49.3's batch of 100 was hard-killed on production
  * data with the scan lock wedged at `running` (see lockWaitMs); then 3
  * sequential calls per record (~30 s per batch of 50), where one dropped call
- * left a record half-written (2026-10-10). The loop is automatic, so the batch
- * stays modest: a smaller batch loses less to a failure. Callers that want
- * fewer round trips can pass `?limit=` up to SCAN_BATCH_MAX.
+ * left a record half-written (2026-10-10). Writes are grouped now
+ * (SCAN_WRITE_GROUP records per D1 batch), which is why the admin page can ask
+ * for 100 at once. Callers that want fewer round trips pass `?limit=` up to
+ * SCAN_BATCH_MAX.
  */
-// 25 since 2.56.159: a batch of 50 took ~30 s, and a dropped browser
-// connection cancels the batch in flight — a shorter one loses less and lets
-// the page retry sooner (see src/domain/scanResilience.ts).
+// 25 since 2.56.159 (for callers without `?limit=`): a batch of 50 took ~30 s
+// with per-record writes, and a dropped browser connection cancels the batch in
+// flight — a shorter one loses less (see src/domain/scanResilience.ts).
 const SCAN_BATCH_DEFAULT = 25;
 
 /** The gift forms, read once per «Scan Now» (the page's `?scan=` id), not once per batch — src/lib/scanMemo.ts. */

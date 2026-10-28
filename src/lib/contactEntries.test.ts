@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-    withoutLegacyMergeSeparators,
+    contactBlobForDisplay,
+    newContactsForProfile,
     categorizeContactText,
     contactEntriesToBlob,
     parseBlobToContactEntries,
@@ -355,9 +356,17 @@ describe('mergeContactEntries', () => {
 });
 
 describe('alias contact entries', () => {
-    it('writes an alias entry to the blob under the Otro nombre/identidad label', () => {
+    it('writes an alias entry to the blob under the stored Otro nombre/identidad label', () => {
         const blob = contactEntriesToBlob([{ type: 'alias', value: 'Juan Garcia' }]);
         expect(blob).toContain('Otro nombre/identidad: Juan Garcia');
+    });
+
+    it('a blob shown as text reads the alias as «Conocido/a como» (render time; the stored label is unchanged)', () => {
+        const blob = contactEntriesToBlob([{ type: 'phone', value: '11 2345-6789' }, { type: 'alias', value: 'Juan Garcia' }]);
+        expect(contactBlobForDisplay(blob, 'Conocido/a como')).toBe('Tel: 11 2345-6789\nConocido/a como: Juan Garcia');
+        // Only the label at the start of a line: a value that happens to say it is left alone.
+        expect(contactBlobForDisplay('Nota: Otro nombre/identidad: no sé', 'Also known as')).toBe('Nota: Otro nombre/identidad: no sé');
+        expect(contactBlobForDisplay('  Otro nombre/identidad:Juan', 'Also known as')).toBe('  Also known as: Juan');
     });
 
     it('round-trips an alias entry through deserialize', () => {
@@ -648,10 +657,43 @@ describe('legacy merge separators (audit C1)', () => {
         expect(entries.some(e => /Merged/.test(e.value))).toBe(false);
     });
     it('a list\'s one-line summary drops them too', () => {
-        expect(withoutLegacyMergeSeparators('Tel: 11 5110-110\n--- Merged from Diego Sosa ---\nTel: 11 5110-111')).toBe('Tel: 11 5110-110\nTel: 11 5110-111');
-        expect(withoutLegacyMergeSeparators(null)).toBe('');
+        expect(contactBlobForDisplay('Tel: 11 5110-110\n--- Merged from Diego Sosa ---\nTel: 11 5110-111', 'Conocido/a como')).toBe('Tel: 11 5110-110\nTel: 11 5110-111');
+        expect(contactBlobForDisplay(null, 'Conocido/a como')).toBe('');
     });
     it('ordinary prose with dashes is still kept', () => {
         expect(parseBlobToContactEntries('--- llamar después de las 18 ---').map(e => e.value)).toEqual(['--- llamar después de las 18 ---']);
+    });
+});
+
+/**
+ * «¿Continuar con el perfil de X?» (fix round 2, item 20): what the typed data
+ * would ADD to that profile — the typed contacts the server's merge
+ * (mergeContactEntries, keyed on contactEntryKey) would not drop as already
+ * there. A masked contact can't be compared, so a typed one isn't assumed to be
+ * it; an email the duplicate engine matched on is the same normalized value.
+ */
+describe('newContactsForProfile', () => {
+    const profile = (entries: Array<Record<string, unknown>> | null, contactInfo: string | null = null) =>
+        ({ contactEntries: entries ? JSON.stringify(entries) : null, contactInfo });
+    it('a typed phone the profile does not have is new info (the dialog used to say «nothing new»)', () => {
+        const typed = [{ id: 't1', type: 'phone' as const, value: '11 5555-0001' }];
+        expect(newContactsForProfile(typed, profile([{ id: 'p1', type: 'email', value: 'ana@example.com' }])).map(e => e.value)).toEqual(['11 5555-0001']);
+        expect(newContactsForProfile(typed, profile(null)).map(e => e.value)).toEqual(['11 5555-0001']);
+    });
+    it('what the profile already shows, however it is written, is not new', () => {
+        const typed = [{ id: 't1', type: 'phone' as const, value: '(11) 5555 0001' }, { id: 't2', type: 'email' as const, value: ' Ana@Example.com ' }];
+        expect(newContactsForProfile(typed, profile([{ id: 'p1', type: 'phone', value: '1155550001' }, { id: 'p2', type: 'email', value: 'ana@example.com' }]))).toEqual([]);
+        // A legacy profile with only the text blob: read as the server reads it.
+        expect(newContactsForProfile(typed, profile(null, 'Tel: 11 5555-0001\nEmail: ana@example.com'))).toEqual([]);
+    });
+    it('a masked contact is not assumed to be the typed one; an email the engine matched on is', () => {
+        const typed = [{ id: 't1', type: 'phone' as const, value: '11 5555-0001' }, { id: 't2', type: 'email' as const, value: 'Ana@example.com' }];
+        const masked = profile([{ id: 'p1', type: 'phone', value: '•••• 0001', masked: true }, { id: 'p2', type: 'email', value: '••••@example.com', masked: true }]);
+        expect(newContactsForProfile(typed, masked).map(e => e.type)).toEqual(['phone', 'email']);
+        expect(newContactsForProfile(typed, masked, [{ type: 'email', value: 'ana@example.com' }]).map(e => e.type)).toEqual(['phone']);
+    });
+    it('blank and repeated typed entries count once', () => {
+        const typed = [{ id: 't1', type: 'phone' as const, value: '11 5555-0001' }, { id: 't2', type: 'phone' as const, value: '1155550001' }, { id: 't3', type: 'email' as const, value: '  ' }];
+        expect(newContactsForProfile(typed, profile([]))).toHaveLength(1);
     });
 });

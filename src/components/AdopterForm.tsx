@@ -22,14 +22,14 @@ import { Modal, ModalActions, ModalText } from "@/components/ui/Modal";
 import { MatchCard } from "@/components/MatchCardParts";
 import { AdopterName } from "@/components/AdopterName";
 import { isNamelessAdopter } from "@/lib/adopterDisplay";
-import { alertCountOf } from "@/domain/flags";
+import { openAlertKinds } from "@/domain/flags";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesSection from "@/components/ContactEntriesSection";
 import HouseholdSection from "@/components/HouseholdSection";
 import { KnownAsLine } from "@/components/household/KnownAsLine";
 import { EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from "@/domain/profileHouseholds";
-import { CONTACT_ENTRIES_FULL, deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
+import { CONTACT_ENTRIES_FULL, deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, newContactsForProfile, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
 import type { VisibilityBadge } from "@/domain/visibilityBadge";
 import { hasMinimumIdentifier } from "@/domain/adopterIdentity";
 import { adopterDisplayName, namelessSubIdentifier } from "@/lib/adopterDisplay";
@@ -39,6 +39,8 @@ import { useAuthContext } from '@/context/AuthContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import ProfilePhotoChooser from '@/components/ProfilePhotoChooser';
 import { useShowToast } from '@/components/ui/Toast';
+import { Button } from '@/components/ui/Button';
+import { TAP_TARGET_44 } from '@/components/ui/tapTarget';
 import { extractErrorId } from '@/lib/errorUtils';
 import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
 
@@ -52,7 +54,7 @@ import type { AdopterFlaggingHandle } from '@/components/AdopterFlagging';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, AdoptionConfig } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 import { parseContactsParam } from '@/lib/createPrefill';
-import { handledAsStale } from '@/lib/errorMessage';
+import { handledAsStale, userFacingMessage } from '@/lib/errorMessage';
 import { FieldConflictNotice, UpdatedByBadge } from '@/components/collab/FieldConflictNotice';
 import { updatedByOtherMessage, needsReviewMessage } from '@/lib/collabCopy';
 
@@ -273,7 +275,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     // "Continuar con este perfil" loading guard — one in-flight call at a time.
     const [continueBusyId, setContinueBusyId] = useState<string | null>(null);
     // Confirmation modal — pending append target until the user confirms.
-    const [pendingMerge, setPendingMerge] = useState<{ adopterId: string; adopterName: string } | null>(null);
+    const [pendingMerge, setPendingMerge] = useState<{ adopterId: string; adopterName: string; match: DiscoveryMatch } | null>(null);
 
     const DUPLICATE_DEBOUNCE_MS = 350;
 
@@ -476,7 +478,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         if (continueBusyId) return;
         const match = known ?? duplicateResults?.find(r => r.adopter.id === targetId);
         if (!match) return;
-        setPendingMerge({ adopterId: targetId, adopterName: match.adopter.name });
+        setPendingMerge({ adopterId: targetId, adopterName: match.adopter.name, match });
     }, [continueBusyId, duplicateResults]);
 
     // «No es esta persona» on any match card of this form (the panel, the strip, the save check):
@@ -503,19 +505,26 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
             if (result.success && result.adopterId) {
                 zarazTrack('adopter_updated', { source: 'append' });
                 router.push(`/adopter/${result.adopterId}`);
+            } else if (result.error === CONTACT_ENTRIES_FULL) {
+                // An expected rule (the profile holds the most contacts it can), not a failure: a warning, no Error ID.
+                toast.warning(t('adopter.ce_add_full'));
+                setContinueBusyId(null);
+                setPendingMerge(null);
             } else {
-                // eslint-disable-next-line no-alert
-                alert(result.error === CONTACT_ENTRIES_FULL ? t('adopter.ce_add_full') : result.error || 'No se pudo continuar con este perfil');
+                // The server's message may already carry its Error ID («…(Error ID: x)»): resolveErrorId reuses it.
+                toast.error(t('toast.save_error_title'), t('adopter.merge_continue_failed'),
+                    resolveErrorId(new Error(`appendToExistingAdopter ${targetId}: ${result.error || 'failed'}`), 'AdopterForm.confirmMerge'));
                 setContinueBusyId(null);
                 setPendingMerge(null);
             }
         } catch (e) {
-            // eslint-disable-next-line no-alert
-            if (!handledAsStale(e)) alert(e instanceof Error ? e.message : 'Error inesperado');
+            if (!handledAsStale(e)) {
+                toast.error(t('toast.save_error_title'), userFacingMessage(e, t('adopter.merge_continue_failed')), resolveErrorId(e, 'AdopterForm.confirmMerge'));
+            }
             setContinueBusyId(null);
             setPendingMerge(null);
         }
-    }, [pendingMerge, continueBusyId, data.contactInfo, data.familyMembers, contactEntries, router, t]);
+    }, [pendingMerge, continueBusyId, data.contactInfo, data.familyMembers, contactEntries, router, t, toast]);
 
     // Debounced duplicate search while typing (create only)
     useEffect(() => {
@@ -1372,21 +1381,13 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                         // are hidden so the name input gets the full row width; the
                                         // sticky bottom bar (below, md:hidden) carries the actions there.
                                         <div className="hidden md:flex items-center gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={handleCancel}
-                                                className="px-3 py-1.5 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors"
-                                            >
+                                            {/* The button matrix (Secondary «Cancelar» + Primary «Guardar»), as in every dialog and inline editor. */}
+                                            <Button type="button" variant="secondary" size="compact" onClick={handleCancel}>
                                                 {t('common.cancel')}
-                                            </button>
-                                            <button
-                                                type="submit"
-                                                disabled={loading}
-                                                data-testid="adopter-form-submit"
-                                                className="px-4 py-1.5 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 focus:ring-4 focus:ring-teal-200 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-lg shadow-teal-700/30 transform active:scale-95"
-                                            >
+                                            </Button>
+                                            <Button type="submit" variant="primary" size="compact" disabled={loading} data-testid="adopter-form-submit">
                                                 {loading ? t('common.loading') : t('common.save')}
-                                            </button>
+                                            </Button>
                                         </div>
                                     ) : (
                                         <>
@@ -1422,7 +1423,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                                                 }
                                                                 setShowReportMenu(false);
                                                             }}
-                                                            title={t('common.share') || 'Share Profile'} desc={t('common.copy_link') || 'Copy link or share'} />
+                                                            title={t('common.share') || 'Share profile'} desc={t('common.copy_link') || 'Copy link or share'} />
                                                         {/* A minor gets no alerts (a duplicate report is one): the server refuses it too. */}
                                                         {!identity?.isMinor && (
                                                             <AnchoredMenuItem icon={GitMerge} testId="profile-report-duplicate"
@@ -1431,14 +1432,14 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                                                     if (!session?.user) { openLogin(); return; }
                                                                     flaggingRef.current?.openAction('duplicate');
                                                                 }}
-                                                                title={t('flagging.menu_duplicate') || 'Report Duplicate'} desc={t('flagging.menu_duplicate_desc') || 'Flag as duplicate of another profile'} />
+                                                                title={t('flagging.menu_duplicate') || 'Report duplicate'} desc={t('flagging.menu_duplicate_desc') || 'Flag as duplicate of another profile'} />
                                                         )}
                                                         <AnchoredMenuItem icon={PencilLine} testId="profile-report-inaccuracy"
                                                             onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('inaccuracy'); }}
-                                                            title={t('flagging.menu_inaccuracy') || 'Report Inaccuracy'} desc={t('flagging.menu_inaccuracy_desc') || 'Information about me is wrong'} />
+                                                            title={t('flagging.menu_inaccuracy') || 'Report inaccuracy'} desc={t('flagging.menu_inaccuracy_desc') || 'Information about me is wrong'} />
                                                         <AnchoredMenuItem icon={Trash2} danger testId="profile-request-removal"
                                                             onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('deletion'); }}
-                                                            title={t('flagging.menu_deletion') || 'Request Removal'} desc={t('flagging.menu_deletion_desc') || 'Remove my data from this platform'} />
+                                                            title={t('flagging.menu_deletion') || 'Request removal'} desc={t('flagging.menu_deletion_desc') || 'Remove my data from this platform'} />
                                                     </AnchoredMenu>
                                                 </div>
                                             )}
@@ -1468,7 +1469,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                         tabIndex={0}
                                         data-testid="rating-badge"
                                         onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
-                                        className="inline-block cursor-pointer hover:shadow-md transition-shadow rounded-full"
+                                        className={`inline-block cursor-pointer hover:shadow-md transition-shadow rounded-full ${TAP_TARGET_44}`}
                                     >
                                         <RatingBadge rating={avgRating} size="md" label="short" />
                                     </div>
@@ -1652,7 +1653,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                         {saveDuplicateModal.matches.map((result) => (
                             <li key={result.adopter.id} className="p-3 rounded-xl bg-stone-50 border border-stone-200">
                                 <MatchCard newTab thumbnail={result.thumbnail} headTestId="save-dup-head"
-                                    person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openAlerts: alertCountOf(result.flags), isMinor: result.isMinor, households: result.households }}
+                                    person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openAlerts: openAlertKinds(result.flags), isMinor: result.isMinor, households: result.households }}
                                     nameNode={isNamelessAdopter(result.adopter) ? <AdopterName adopter={result.adopter} className="break-words" /> : undefined}
                                     compare={(
                                         <MatchCompare
@@ -1694,29 +1695,14 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                 <Modal title={(t('adopter.merge_confirm_title') || '¿Continuar con el perfil de {name}?').replace('{name}', pendingMerge.adopterName)}
                     onClose={() => setPendingMerge(null)} busy={!!continueBusyId} testId="continue-merge-dialog">
                     <ModalText>{t('adopter.merge_confirm_body') || 'La información que ingresaste se agregará a este perfil. Los datos que ya existan en el perfil no se duplicarán.'}</ModalText>
-                    {(data.contactInfo?.trim() || data.familyMembers?.trim()) ? (
-                        <div className="rounded-xl px-3 py-3 bg-amber-50 border border-amber-100">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-amber-800 mb-2">
-                                {t('adopter.merge_confirm_preview') || 'Se agregará:'}
-                            </p>
-                            <ul className="space-y-1.5 text-sm text-stone-800">
-                                {data.contactInfo?.trim() && (
-                                    <li>
-                                        <span className="text-xs font-medium text-stone-500">{t('adopter.contact') || 'Contacto'}: </span>
-                                        <span className="[overflow-wrap:anywhere]">{data.contactInfo.trim()}</span>
-                                    </li>
-                                )}
-                                {data.familyMembers?.trim() && (
-                                    <li>
-                                        <span className="text-xs font-medium text-stone-500">{t('adopter.family_members') || 'Familia'}: </span>
-                                        <span className="[overflow-wrap:anywhere]">{data.familyMembers.trim()}</span>
-                                    </li>
-                                )}
-                            </ul>
-                        </div>
-                    ) : (
-                        <ModalText>{t('adopter.merge_confirm_no_new') || 'No hay información nueva para agregar. Solo abriremos el perfil existente.'}</ModalText>
-                    )}
+                    <ContinueMergePreview
+                        // What the typed data would ADD to that profile (fix round 2, item 20): the typed contacts
+                        // it doesn't already show (newContactsForProfile mirrors the server's merge), else — no
+                        // contact chips — the typed text; plus the household text.
+                        newContacts={contactEntries.length ? newContactsForProfile(contactEntries, pendingMerge.match.adopter, pendingMerge.match.matchValues) : []}
+                        typedText={contactEntries.length ? '' : (data.contactInfo?.trim() ?? '')}
+                        family={data.familyMembers?.trim() ?? ''}
+                    />
                     <ModalActions
                         onCancel={() => setPendingMerge(null)}
                         busy={!!continueBusyId}
@@ -1725,6 +1711,43 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                 </Modal>
             )}
 
+        </div>
+    );
+}
+
+/** «Se agregará: …» in «¿Continuar con el perfil de X?», or «No hay información nueva…» when nothing would be added. */
+function ContinueMergePreview({ newContacts, typedText, family }: { newContacts: ContactEntry[]; typedText: string; family: string }) {
+    const { t } = useLanguage();
+    if (newContacts.length === 0 && !typedText && !family) {
+        return (
+            <ModalText testId="continue-merge-nothing-new">{t('adopter.merge_confirm_no_new') || 'No hay información nueva para agregar. Solo abriremos el perfil existente.'}</ModalText>
+        );
+    }
+    return (
+        <div className="rounded-xl px-3 py-3 bg-amber-50 border border-amber-100">
+            <p className="text-xs font-semibold uppercase tracking-wider text-amber-800 mb-2">
+                {t('adopter.merge_confirm_preview') || 'Se agregará:'}
+            </p>
+            <ul className="space-y-1.5 text-sm text-stone-800" data-testid="continue-merge-new">
+                {newContacts.map(e => (
+                    <li key={e.id ?? `${e.type}|${e.value}`}>
+                        <span className="text-xs font-medium text-stone-500">{t(`adopter.ce_type_${e.type}`)}: </span>
+                        <span className="[overflow-wrap:anywhere]">{e.value.trim()}</span>
+                    </li>
+                ))}
+                {typedText && (
+                    <li>
+                        <span className="text-xs font-medium text-stone-500">{t('adopter.contact') || 'Contacto'}: </span>
+                        <span className="[overflow-wrap:anywhere]">{typedText}</span>
+                    </li>
+                )}
+                {family && (
+                    <li>
+                        <span className="text-xs font-medium text-stone-500">{t('adopter.family_members') || 'Familia'}: </span>
+                        <span className="[overflow-wrap:anywhere]">{family}</span>
+                    </li>
+                )}
+            </ul>
         </div>
     );
 }

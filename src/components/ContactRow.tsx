@@ -28,11 +28,18 @@ import { MessagingLogo } from '@/components/MessagingLogo';
 import { socialUrl, phoneAppUrl, SOCIAL_PLATFORMS, type ContactEntry, type ContactEntryType, type SocialPlatform } from '@/lib/contactEntries';
 import { renderTextWithLinks } from '@/lib/textUtils';
 import { BreakableEmail } from '@/components/ui/BreakableEmail';
+import { TAP_TARGET_44 } from '@/components/ui/tapTarget';
 
 /** Per-network brand label (Facebook / Instagram / ...), keyed by platform. */
 const SOCIAL_LABEL = Object.fromEntries(SOCIAL_PLATFORMS.map(p => [p.key, p.label])) as Record<SocialPlatform, string>;
 
-const LINK_CLASS = 'text-teal-700 hover:underline';
+/** A contact value's link (tel:, mailto:, maps, the network): 44px to the touch, as it looks (TAP_TARGET_44). */
+const LINK_CLASS = `text-teal-700 hover:underline ${TAP_TARGET_44}`;
+/**
+ * A phone's WhatsApp / Telegram logo link: a 44×44 box on phones (it sits right after the number,
+ * so an ::after would reach over the number's last digits), the bare 15px logo from `sm:`.
+ */
+const APP_LOGO_LINK = 'inline-flex items-center justify-center min-w-11 min-h-11 -my-3.5 sm:min-w-0 sm:min-h-0 sm:my-0';
 
 /**
  * A social entry that renders with its OWN network icon + name (Facebook,
@@ -90,7 +97,7 @@ export function ContactValue({ entry, onMaskedClick }: { entry: ContactEntry; on
                     type="button"
                     onClick={() => onMaskedClick(entry.type)}
                     aria-label={t('adopter.pii_masked_chip_aria')}
-                    className="inline-flex items-center gap-1.5 text-stone-500 hover:text-teal-700 hover:bg-teal-50 -mx-1.5 -my-0.5 px-1.5 py-0.5 rounded-md transition-colors cursor-pointer group"
+                    className={`inline-flex items-center gap-1.5 text-stone-500 hover:text-teal-700 hover:bg-teal-50 -mx-1.5 -my-0.5 px-1.5 py-0.5 rounded-md transition-colors cursor-pointer group ${TAP_TARGET_44}`}
                 >
                     <Lock className="w-3 h-3 opacity-60 group-hover:opacity-100" aria-hidden="true" />
                     <span className="select-none">{entry.value}</span>
@@ -115,7 +122,7 @@ export function ContactValue({ entry, onMaskedClick }: { entry: ContactEntry; on
                     const u = phoneAppUrl(app, entry.value);
                     const logo = <MessagingLogo app={app} size={15} />;
                     return u
-                        ? <a key={app} href={u} target="_blank" rel="noopener noreferrer" title={app === 'whatsapp' ? 'WhatsApp' : 'Telegram'} className="inline-flex">{logo}</a>
+                        ? <a key={app} href={u} target="_blank" rel="noopener noreferrer" title={app === 'whatsapp' ? 'WhatsApp' : 'Telegram'} aria-label={app === 'whatsapp' ? 'WhatsApp' : 'Telegram'} className={APP_LOGO_LINK}>{logo}</a>
                         : <span key={app} title={app === 'whatsapp' ? 'WhatsApp' : 'Telegram'}>{logo}</span>;
                 })}
             </span>
@@ -161,7 +168,8 @@ export function ContactValueCell({ entry, onMaskedClick, trailing, wrapTrailing 
 /** A read-only contact row (e.g. «¿Es este perfil?»): exactly the profile's row, with an optional trailing mark. */
 export function ContactRow({ entry, trailing, testId = 'contact-row' }: { entry: ContactEntry; trailing?: ReactNode; testId?: string }) {
     return (
-        <li className="flex items-start gap-2 text-sm" data-testid={testId} data-entry-type={entry.type}>
+        // 44px on phones, like the profile's own rows (ContactEntriesSection): the value's 44px tap target never overlaps the next row's.
+        <li className="flex items-start gap-2 text-sm py-3 sm:py-0" data-testid={testId} data-entry-type={entry.type}>
             <ContactLead entry={entry} />
             <div className="flex-1 min-w-0">
                 <ContactValueCell entry={entry} trailing={trailing} wrapTrailing />

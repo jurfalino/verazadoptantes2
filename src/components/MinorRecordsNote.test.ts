@@ -6,7 +6,7 @@ vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null }) }));
 import { adultsToOffer } from './MinorRecordsNote';
 
 const line = (id: string, over: Partial<{ isMinor: boolean; isGift: boolean }> = {}) =>
-    ({ name: id, profileId: id, rating: null, openAlerts: 0, isMinor: false, isGift: false, householdId: 'h', ...over });
+    ({ name: id, profileId: id, rating: null, openAlerts: [], isMinor: false, isGift: false, householdId: 'h', ...over });
 
 describe('adultsToOffer (audit A3: a minor in the picker offers their household\'s adults)', () => {
     it('keeps the adults of the household, once each', () => {

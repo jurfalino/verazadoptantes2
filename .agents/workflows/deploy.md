@@ -200,22 +200,40 @@ npx wrangler d1 time-travel info pet-adoption-db          # prints the current b
 loaded admin tab on buenadoptante.org). One page per call: `budget` = members actually converted (default 10, max 25;
 a host is never split), `limit` = hosts read (default 25). The report carries ids and reasons only.
 ```js
-// a) dry run — writes nothing; follow `next` until it is null and read `skipped` / `failed` / `blocked`
-let next = null, page = 0;
-do {
-  const r = await (await fetch(`/api/admin/households/convert?dryRun=1${next ? `&cursor=${next}` : ''}`, { method: 'POST' })).json();
-  console.log(++page, r.hosts, r.members, r.createdProfiles, r.reusedProfiles, r.alreadyConverted, r.skipped, r.failed);
-  next = r.next;
-} while (next);
-// b) the real run — the same loop without dryRun=1 (Jon's OK first)
-// c) re-run the real loop once more: every page must report only alreadyConverted (createdProfiles 0, failed 0)
+// a) dry run — writes nothing; follow `next` until it is null and read `skipped` / `failed` / `deletedHostsSkipped`
+// The loop STOPS on any error answer (non-2xx, or a body without `next`) and says so — never a silent half run.
+async function convertAll(dryRun) {
+  let next = null, page = 0;
+  do {
+    const res = await fetch(`/api/admin/households/convert?${dryRun ? 'dryRun=1&' : ''}${next ? `cursor=${encodeURIComponent(next)}` : ''}`, { method: 'POST' });
+    const r = await res.json().catch(() => null);
+    if (!res.ok || !r || !('next' in r)) {
+      console.error(`STOPPED at page ${page + 1}: HTTP ${res.status}`, r);
+      throw new Error(`convert stopped at page ${page + 1} (HTTP ${res.status})`);
+    }
+    console.log(++page, { hosts: r.hosts, members: r.members, created: r.createdProfiles, reused: r.reusedProfiles,
+      already: r.alreadyConverted, updated: r.updatedMembers, skipped: r.skipped.length, failed: r.failed, deletedHosts: r.deletedHostsSkipped });
+    if (r.skipped.length) console.table(r.skipped);
+    next = r.next;
+  } while (next);
+  console.log(`DONE: ${page} pages`);
+}
+await convertAll(true);
+// b) the real run — `await convertAll(false)` (Jon's OK first)
+// c) run `await convertAll(false)` once more: no page may convert anything new or fail —
+//    createdProfiles 0, reusedProfiles 0, failed 0 on every page. The same `skipped` members
+//    may come back each time (a member that can't be converted is skipped on every run): that
+//    is fine as long as the list doesn't grow.
 ```
 The run is idempotent; members an old tab added since are converted on the re-run.
 
 **4. Scan Now** — Admin → Duplicates → «Scan Now», once the bulk run is done. The new profiles make ~6,000 records stale
-(~239 batches of 25). The panel asks for 100 per batch and reads the gift forms once per scan, so **one click
-finishes**; wait for «✅ Scan complete». If it stops (stall or retries exhausted), click it again — work already done
-is kept.
+(~239 batches of 25). The panel asks for 100 per batch (~60 batches) and reads the gift forms once per scan, so **one
+click finishes**; wait for «✅ Scan complete». If it stops (stall or retries exhausted), click it again — work already
+done is kept.
+- **Watch the batch duration on the first staging Scan Now.** If a batch of 100 takes more than ~45 s, a dropped
+  connection's retry can reclaim the same admin's lock after 60 s (`SCAN_LOCK_SAME_USER_STALE_MS`) while that batch is
+  still running. In that case lower `SCAN_PAGE_LIMIT` (src/domain/scanResilience.ts) to 50 before the production run.
 
 **5. +1 day and +14 days** — old tabs are served by their own build for up to 14 days (deploy skew), and an old build's
 merge doesn't know memberships:

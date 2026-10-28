@@ -31,6 +31,7 @@
  * codes (the UI translates them); a failure carries an errorId.
  */
 import { eq } from 'drizzle-orm';
+import type { OpenAlertKind } from '@/domain/flags';
 import { getDb, getUser } from './_db';
 import { adopterHistory, adopters } from '@/db/schema';
 import { logger } from '@/lib/logger';
@@ -121,8 +122,8 @@ export type AddHouseholdPersonResult =
 
 export type HouseholdMatchCandidate = DiscoveryMatch & {
     householdLine: HouseholdLine[];
-    /** Open alerts, counted exactly as the household line counts them (ProfileCounts / countOpenAlerts — final fix P6). */
-    openAlerts: number;
+    /** Open alerts, counted exactly as the household line counts them (ProfileCounts / openAlertKinds — final fix P6). */
+    openAlerts: OpenAlertKind[];
     /** Activity by record type, counted as the candidate's own «Actividad» header and a household row count it (countsFor). */
     activity: ActivityCounts;
     /** The rating as a household row reads it (countsFor); null = not rated. */

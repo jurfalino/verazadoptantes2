@@ -6,6 +6,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { userFacingMessage } from '@/lib/errorMessage';
 import type { NotificationSeenState } from '@/domain/notificationState';
 import { useDateFormat } from '@/context/TimezoneContext';
+import { NotificationTypeIcon, useNotificationTypeLabel } from '@/components/NotificationTypeIcon';
 
 interface NotificationPreview {
     id: string;
@@ -40,44 +41,51 @@ interface NotificationTypeStat {
     previews: NotificationPreview[];
 }
 
-// Known types dictionary for friendly names
-const KNOWN_TYPES: Record<string, { label: string; description: string }> = {
-    'contract_result': { label: 'Contract Results', description: 'Triggered when a PetShield adoption contract completes.' },
-    'form_result': { label: 'Form Submissions', description: 'Triggered when a potential adopter fills out an adoption request.' },
-    'duplicate_candidate': { label: 'Duplicate Candidates', description: 'Created when the AI engine flags a potential duplicate record.' },
-    'import_result': { label: 'Scraper Imports', description: 'Status updates from background social media import jobs.' },
+/**
+ * What each type is for, for the admin. The type's NAME is the one the bell and
+ * /notificaciones use (`notifications.types.<type>`, es/en/pt — fix round 2,
+ * item 6); only this page's explanation lives here. A type not in
+ * NOTIFICATION_TYPES (an old row) shows its raw key.
+ */
+const TYPE_DESCRIPTIONS: Record<string, string> = {
+    'contract_result': 'Cuando un adoptante firma un contrato de adopción.',
+    'form_result': 'Tipo antiguo: respuestas al formulario de adopción (hoy «form_submission»).',
+    'duplicate_candidate': 'Tipo antiguo: posibles duplicados detectados automáticamente.',
+    'import_result': 'Tipo antiguo: estado de importaciones de redes sociales.',
     // v2.55.17: the followup-cron Worker checks NOTIF_ENABLED_follow_up_due
-    // before inserting — this row is its kill switch.
-    'contact_entry_added': { label: 'Dato de contacto agregado', description: 'Al dueño (y editores) cuando otra persona agrega un dato de contacto a su registro.' },
-    'pii_access_request': { label: 'Solicitud de acceso', description: 'Al dueño cuando alguien pide ver los datos de contacto de su registro. Se aprueba o rechaza desde el perfil.' },
-    'pii_access_revoked': { label: 'Acceso revocado', description: 'A quien tenía acceso, cuando el dueño o un admin se lo quita.' },
-    'ownership_transferred': { label: 'Cambio de propietario', description: 'A ambas partes cuando un admin transfiere un registro.' },
-    'adopter_flagged': { label: 'Adoptante reportado', description: 'A los admins cuando alguien reporta un adoptante.' },
-    'deletion_request': { label: 'Solicitud de eliminación', description: 'A los admins cuando alguien pide eliminar un registro.' },
-    'member_joined': { label: 'Nuevo miembro', description: 'A los miembros de una organización cuando se suma alguien.' },
-    'form_submission': { label: 'Respuesta al formulario', description: 'Cuando un posible adoptante completa el formulario compartido.' },
-    'api_record': { label: 'Registro por API', description: 'Al rescatista (y su organización) cuando una herramienta conectada guarda un registro con su clave.' },
-    'contract_attached': { label: 'Contrato vinculado', description: 'Cuando un contrato firmado se vincula a un perfil.' },
-    'adopter_merged': { label: 'Perfiles unidos', description: 'A quienes cargaron dos perfiles cuando un admin los une y elige avisarles.' },
-    'household_linked': { label: 'Convive con (vinculado)', description: 'Al dueño (y su equipo) de un perfil cuando otra persona lo anota como conviviente de otro adoptante.' },
-    'household_link_removed': { label: 'No conviven', description: 'Al dueño (y su equipo) del perfil anfitrión cuando el equipo del perfil vinculado indica que esa persona no convive: se quita de los dos perfiles.' },
-    'household_contribution': { label: 'Aporte al hogar', description: 'Al dueño (y editores) cuando otra persona agrega un conviviente, o un dato de contacto de un conviviente, a su registro.' },
-    'household_link_disputed': { label: 'Convivencia en disputa', description: 'A los administradores cuando alguien vuelve a agregar como conviviente a una persona cuyo equipo ya indicó que no conviven.' },
-    'household_also_lives_with': { label: 'También vive en otro hogar', description: 'A los equipos de un hogar cuando alguien anota que una persona de ese hogar también vive con otro adoptante.' },
-    'household_relationship_changed': { label: 'Parentesco cambiado', description: 'A los equipos de los perfiles de un hogar cuando alguien cambia el parentesco de una persona.' },
-    'household_member_removed': { label: 'Quitado del hogar', description: 'A los equipos de los perfiles de un hogar cuando alguien quita a una persona: «Lo cargué por error» o «No vive acá».' },
-    'profile_renamed': { label: 'Nombre cambiado', description: 'Al equipo del dueño de un perfil cuando alguien le cambia el nombre (con «Deshacer»).' },
-    'profile_rename_undone': { label: 'Cambio de nombre deshecho', description: 'A quien cambió el nombre de un perfil cuando el equipo del dueño lo deshace.' },
-    'profile_age_changed': { label: 'Edad cambiada', description: 'Al equipo del dueño de un perfil cuando alguien cambia la edad o lo marca como menor de edad.' },
-    'household_member_disputed': { label: 'Hogar en disputa', description: 'A los administradores cuando alguien vuelve a agregar a una persona a un hogar después de que se indicó que no vive ahí.' },
-    'form_attached': { label: 'Solicitud vinculada', description: 'Al creador de un perfil cuando otra persona le vincula una solicitud de adopción del formulario.' },
-    'follow_up_due': { label: 'Follow-up Reminders', description: 'Daily cron reminder when an adoption/transit follow-up slot is due.' }
+    // before inserting — the follow_up_due row is its kill switch.
+    'contact_entry_added': 'Al dueño (y editores) cuando otra persona agrega un dato de contacto a su registro.',
+    'pii_access_request': 'Al dueño cuando alguien pide ver los datos de contacto de su registro. Se aprueba o rechaza desde el perfil.',
+    'pii_access_revoked': 'A quien tenía acceso, cuando el dueño o un admin se lo quita.',
+    'ownership_transferred': 'A ambas partes cuando un admin transfiere un registro.',
+    'adopter_flagged': 'A los admins cuando alguien reporta un adoptante.',
+    'deletion_request': 'A los admins cuando alguien pide eliminar un registro.',
+    'member_joined': 'A los miembros de una organización cuando se suma alguien.',
+    'form_submission': 'Cuando un posible adoptante completa el formulario compartido.',
+    'api_record': 'Al rescatista (y su organización) cuando una herramienta conectada guarda un registro con su clave.',
+    'contract_attached': 'Cuando un contrato firmado se vincula a un perfil.',
+    'adopter_merged': 'A quienes cargaron dos perfiles cuando un admin los une y elige avisarles.',
+    'household_linked': 'Al dueño (y su equipo) de un perfil cuando otra persona lo anota como conviviente de otro adoptante.',
+    'household_link_removed': 'Al dueño (y su equipo) del perfil anfitrión cuando el equipo del perfil vinculado indica que esa persona no convive: se quita de los dos perfiles.',
+    'household_contribution': 'Al dueño (y editores) cuando otra persona agrega un conviviente, o un dato de contacto de un conviviente, a su registro.',
+    'household_link_disputed': 'A los administradores cuando alguien vuelve a agregar como conviviente a una persona cuyo equipo ya indicó que no conviven.',
+    'household_also_lives_with': 'A los equipos de un hogar cuando alguien anota que una persona de ese hogar también vive con otro adoptante.',
+    'household_relationship_changed': 'A los equipos de los perfiles de un hogar cuando alguien cambia el parentesco de una persona.',
+    'household_member_removed': 'A los equipos de los perfiles de un hogar cuando alguien quita a una persona: «Lo cargué por error» o «No vive acá».',
+    'profile_renamed': 'Al equipo del dueño de un perfil cuando alguien le cambia el nombre (con «Deshacer»).',
+    'profile_rename_undone': 'A quien cambió el nombre de un perfil cuando el equipo del dueño lo deshace.',
+    'profile_age_changed': 'Al equipo del dueño de un perfil cuando alguien cambia la edad o lo marca como menor de edad.',
+    'household_member_disputed': 'A los administradores cuando alguien vuelve a agregar a una persona a un hogar después de que se indicó que no vive ahí.',
+    'form_attached': 'Al creador de un perfil cuando otra persona le vincula una solicitud de adopción del formulario.',
+    'follow_up_due': 'Recordatorio diario (cron) cuando toca el seguimiento de una adopción o un tránsito.',
+    'adopter_login_blocked': 'A los administradores cuando se bloquea el ingreso de alguien que coincide con un perfil de adoptante bloqueado.',
 };
 
 export default function AdminNotificationsPage() {
     // Stored in epoch SECONDS; `new Date(n)` read them as milliseconds and every
     // date on this page showed as 21/1/1970. The shared formatter handles both.
     const { formatDateTime } = useDateFormat();
+    const typeLabelOf = useNotificationTypeLabel();
     const [types, setTypes] = useState<NotificationTypeStat[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -207,7 +215,8 @@ export default function AdminNotificationsPage() {
                     ) : (
                         types.map(stat => {
                             const isExpanded = expandedType === stat.type;
-                            const known = KNOWN_TYPES[stat.type] || { label: stat.type, description: 'Tipo dinámico no registrado.' };
+                            const label = typeLabelOf(stat.type) || stat.type;
+                            const description = TYPE_DESCRIPTIONS[stat.type] || 'Tipo dinámico no registrado.';
                             const readRate = stat.totalSent > 0 ? Math.round((stat.totalRead / stat.totalSent) * 100) : 0;
 
                             return (
@@ -216,12 +225,13 @@ export default function AdminNotificationsPage() {
                                     <div className="p-4 hover:bg-stone-50 flex items-center justify-between gap-4 transition-colors">
                                         <div className="flex-1 cursor-pointer" onClick={() => setExpandedType(isExpanded ? null : stat.type)}>
                                             <div className="flex items-center gap-2">
-                                                <h3 className="font-semibold text-stone-900">{known.label}</h3>
+                                                <NotificationTypeIcon type={stat.type} className="w-5 h-5 text-stone-500 shrink-0" />
+                                                <h3 className="font-semibold text-stone-900">{label}</h3>
                                                 <span className="font-mono text-[10px] bg-stone-100 text-stone-500 px-1.5 py-0.5 rounded">
                                                     {stat.type}
                                                 </span>
                                             </div>
-                                            <p className="text-xs text-stone-500 mt-0.5 line-clamp-1">{known.description}</p>
+                                            <p className="text-xs text-stone-500 mt-0.5 line-clamp-1">{description}</p>
                                         </div>
 
                                         <div className="flex items-center gap-6">

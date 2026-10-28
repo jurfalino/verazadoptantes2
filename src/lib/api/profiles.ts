@@ -183,7 +183,8 @@ export async function buildProfileSummaries(db: Db, ids: string[], origin: strin
         const f = e?.flags;
         const flags: ProfileSummary['flags'] = [];
         if (f?.inaccurate) flags.push('inaccurate');
-        if (f?.duplicate) flags.push('duplicate');
+        // Any duplicate report (open or closed), as the API has always said — not the app's open-only rule.
+        if (e?.duplicateReported) flags.push('duplicate');
         if (f?.systemDuplicate) flags.push('possible_duplicate');
         if (f?.verified_identity) flags.push('verified_identity');
         if (f?.verified_address) flags.push('verified_address');

@@ -14,8 +14,9 @@ import MatchCompare, { type MatchSourceKind } from '@/components/MatchCompare';
 import { zarazTrack } from '@/lib/zaraz';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
-import { withoutLegacyMergeSeparators } from '@/lib/contactEntries';
+import { contactBlobForDisplay } from '@/lib/contactEntries';
 import { isOpenDuplicateFlag } from '@/domain/dedupPair';
+import { openAlertKindsOfRows } from '@/domain/flags';
 import { CheckCircle2 } from 'lucide-react';
 import { AlertPill } from '@/components/AlertPill';
 import { Modal, ModalActions } from '@/components/ui/Modal';
@@ -109,14 +110,17 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
         });
     }, [adopterId]);
 
-    // Only an OPEN duplicate question: a merged flag ("Merged into … by …") or
-    // a declined merge request ("Kept separate: …") is settled, and its
+    // The open alerts, by the one rule every surface counts them with
+    // (openAlertKindsOfRows): «Inexacto» for any inaccuracy report, «Duplicado»
+    // only for an OPEN duplicate question — a merged flag ("Merged into … by …")
+    // or a declined merge request ("Kept separate: …") is settled, and its
     // details are bookkeeping, not something to show every viewer.
-    const duplicateFlags = existingFlags.filter(f => isOpenDuplicateFlag(f));
-    const isFlaggedAsDuplicate = duplicateFlags.length > 0;
+    const alertKinds = openAlertKindsOfRows(existingFlags.map(f => ({ adopterId, ...f })));
+    const duplicateFlags = existingFlags.filter(f => isOpenDuplicateFlag({ adopterId, ...f }));
+    const isFlaggedAsDuplicate = alertKinds.includes('duplicate');
 
     const inaccurateFlags = existingFlags.filter(f => f.reason === 'inaccurate_information' || f.reason === 'inaccurate');
-    const isFlaggedAsInaccurate = inaccurateFlags.length > 0;
+    const isFlaggedAsInaccurate = alertKinds.includes('inaccurate');
 
     // Verification flags - include adoption-based verification
     const identityVerifiedFlag = existingFlags.find(f => f.reason === 'verified_identity');
@@ -287,7 +291,8 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             <div className="space-y-2 mb-4">
                 {/* ⚠ Warnings: things that need attention */}
                 {(isFlaggedAsInaccurate || isFlaggedAsDuplicate || tooManyAdoptions || tooManyRequests) && (
-                    <div className="flex flex-wrap items-center gap-2">
+                    // gap-y-3: wrapped rows of 32px pills keep their 44px tap targets apart.
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
                         {/* Inaccurate Information Flag */}
                         {isFlaggedAsInaccurate && (
                             <AlertPill kind="inaccurate" size="md" onClick={() => setShowInaccurateHint(!showInaccurateHint)} pressed={showInaccurateHint}>
@@ -405,9 +410,9 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             {isOpen && (
                 // The shared dialog shell (audit B8): 16px title, ×, matrix buttons.
                 <Modal size="lg" testId="flag-dialog" onClose={resetAndClose} busy={submitLoading}
-                    title={reason === 'duplicate' ? (t('flagging.title_duplicate') || 'Report Duplicate')
-                        : reason === 'inaccuracy' ? (t('flagging.title_inaccuracy') || 'Report Inaccuracy')
-                        : (t('flagging.title_deletion') || 'Request Removal')}>
+                    title={reason === 'duplicate' ? (t('flagging.title_duplicate') || 'Report duplicate')
+                        : reason === 'inaccuracy' ? (t('flagging.title_inaccuracy') || 'Report inaccuracy')
+                        : (t('flagging.title_deletion') || 'Request removal')}>
                         {/* Success state for data requests */}
                         {dataRequestSubmitted ? (
                             <div className="text-center py-6">
@@ -515,7 +520,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                                         onClick={() => setTargetAdopter(res.adopter)}
                                                     >
                                                         <div className="font-semibold text-teal-900 truncate" title={res.adopter.name}>{res.adopter.name}</div>
-                                                        <div className="text-teal-700 truncate" title={withoutLegacyMergeSeparators(res.adopter.contactInfo) || undefined}>{withoutLegacyMergeSeparators(res.adopter.contactInfo)}</div>
+                                                        <div className="text-teal-700 truncate" title={contactBlobForDisplay(res.adopter.contactInfo, t('adopter.ce_type_alias')) || undefined}>{contactBlobForDisplay(res.adopter.contactInfo, t('adopter.ce_type_alias'))}</div>
                                                     </div>
                                                 ))}
                                             </div>

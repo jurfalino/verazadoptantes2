@@ -58,7 +58,7 @@ describe('createNotification with a template', () => {
     });
 
     it('without a template nothing changes', async () => {
-        const id = await createNotification({ userId: 'a@example.com', type: 'x', title: 'T', body: 'B', metadata: { a: 1 } });
+        const id = await createNotification({ userId: 'a@example.com', type: 'system', title: 'T', body: 'B', metadata: { a: 1 } });
         expect(row(id!)).toMatchObject({ title: 'T', body: 'B', metadata: JSON.stringify({ a: 1 }) });
     });
 });

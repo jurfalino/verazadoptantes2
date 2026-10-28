@@ -122,7 +122,7 @@ describe('createMergeRequest', () => {
             expect(n.body).toContain('Carla Gómez');
             expect(n.body).toContain('Carla Gomez');
             // D31: which one stays, each with its owner (a name, never the address).
-            expect(n.body).toMatch(/se conserva «Carla Gómez \(de stranger, .+\)» y se absorbe «Carla Gomez \(de owner, .+\)»/);
+            expect(n.body).toMatch(/se conserva «Carla Gómez \(de stranger, .+\)» y «Carla Gomez \(de owner, .+\)» se suma al otro/);
             expect(n.template).toMatchObject({ key: 'merge_request', params: { requesterName: 'stranger', survivorOwner: 'stranger', absorbedOwner: 'owner' } });
             expect(JSON.stringify(n)).not.toContain(REQUESTER);
         }

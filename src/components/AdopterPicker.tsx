@@ -10,7 +10,7 @@ import { RatingExplainer } from '@/components/RatingExplainer';
 import { AdopterName } from '@/components/AdopterName';
 import { MinorTag } from '@/components/MinorTag';
 import { MinorRecordsNote } from '@/components/MinorRecordsNote';
-import { withoutLegacyMergeSeparators } from '@/lib/contactEntries';
+import { contactBlobForDisplay } from '@/lib/contactEntries';
 
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -156,10 +156,10 @@ export default function AdopterPicker({
 
                     <div className="p-4 space-y-3">
                         {/* No «--- Merged from X ---» line of an old merge (audit C1). */}
-                        {withoutLegacyMergeSeparators(preview.adopter.contactInfo) && (
+                        {contactBlobForDisplay(preview.adopter.contactInfo, t('adopter.ce_type_alias')) && (
                             <div>
                                 <div className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-1">{t('adopter.contact') || 'Contact'}</div>
-                                <div className="text-sm text-stone-700 whitespace-pre-line line-clamp-3">{withoutLegacyMergeSeparators(preview.adopter.contactInfo)}</div>
+                                <div className="text-sm text-stone-700 whitespace-pre-line line-clamp-3">{contactBlobForDisplay(preview.adopter.contactInfo, t('adopter.ce_type_alias'))}</div>
                             </div>
                         )}
                         <div className="flex gap-4 text-sm">

@@ -470,9 +470,24 @@ function formattedPhonesIn(text: string): string[] {
 /** «--- Merged from Elena Vidal ---» / «--- Merged ---», written by merges before 2026-10-28. */
 const LEGACY_MERGE_SEPARATOR = /^-{3}\s*Merged(?:\s+from\s.*?)?\s*-{3}$/i;
 
-/** A contact blob shown as text (a list's one-line summary) without those legacy separator lines. */
-export function withoutLegacyMergeSeparators(text: string | null | undefined): string {
-    return (text ?? '').split(/\r?\n/).filter(l => !LEGACY_MERGE_SEPARATOR.test(l.trim())).join('\n');
+/** The alias line's stored label at the start of a line («Otro nombre/identidad: Juan»). */
+const STORED_ALIAS_LABEL = new RegExp(`^(\\s*)${TYPE_LABEL.alias.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}:\\s*`);
+
+/**
+ * The contactInfo blob as people read it, wherever it is shown as text (a
+ * search card, a /my-adopters row, the picker preview, the «Reportar duplicado»
+ * search list, the demo profile):
+ * - without the legacy «--- Merged from X ---» separator lines (audit C1);
+ * - an alias reads as `aliasLabel` — «Conocido/a como», the words every other
+ *   surface uses for a person's other name (audit B12) — not the stored
+ *   «Otro nombre/identidad». Render time only: the stored blob (and TYPE_LABEL,
+ *   which the search stopwords and the blob parser read) is unchanged.
+ */
+export function contactBlobForDisplay(text: string | null | undefined, aliasLabel: string): string {
+    return (text ?? '').split(/\r?\n/)
+        .filter(l => !LEGACY_MERGE_SEPARATOR.test(l.trim()))
+        .map(l => l.replace(STORED_ALIAS_LABEL, (_m, lead: string) => `${lead}${aliasLabel}: `))
+        .join('\n');
 }
 
 export function categorizeContactText(text: string | null | undefined): ContactEntry[] {
@@ -797,6 +812,36 @@ export function stripRenameMarks<T extends ContactEntry>(entries: readonly T[]):
         if (forgedAuthor) delete (rest as { addedBy?: string }).addedBy;
         return rest as T;
     });
+}
+
+/**
+ * The typed contacts that would be NEW on a profile — what «¿Continuar con el
+ * perfil de X?» lists under «Se agregará» (fix round 2, item 20). Mirrors the
+ * server's append (appendToExistingAdopter → mergeContactEntries): the
+ * profile's typed list, else its legacy text read as entries, de-duplicated on
+ * contactEntryKey. A masked contact (`masked: true`) can't be compared, so a
+ * typed one is never assumed to be it — unless the duplicate engine matched on
+ * that same email (`matchValues`: the query's own normalized tokens).
+ * Blank and repeated typed entries count once.
+ */
+export function newContactsForProfile(
+    typed: readonly ContactEntry[],
+    profile: { contactEntries: string | null; contactInfo: string | null },
+    matchValues: ReadonlyArray<{ type: string; value: string }> = [],
+): ContactEntry[] {
+    const stored = deserializeContactEntries(profile.contactEntries);
+    const base = stored.length ? stored : parseBlobToContactEntries(profile.contactInfo);
+    const known = new Set(base.filter(e => !e.masked && e.value?.trim()).map(contactEntryKey));
+    for (const v of matchValues) if (v.type === 'email' && v.value) known.add(contactEntryKey({ type: 'email', value: v.value }));
+    const out: ContactEntry[] = [];
+    for (const e of typed) {
+        if (!e.value?.trim()) continue;
+        const key = contactEntryKey(e);
+        if (known.has(key)) continue;
+        known.add(key);
+        out.push(e);
+    }
+    return out;
 }
 
 /** Merge two entry lists, de-duplicating on normalized value. */

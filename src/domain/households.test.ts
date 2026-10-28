@@ -148,7 +148,7 @@ describe('householdNameKey', () => {
 
 describe('householdLineGroups (the card line: «Convive con» / «En otro hogar, con»)', () => {
     const line = (profileId: string, householdId: string, isGift = false) =>
-        ({ name: profileId, profileId, rating: null, openAlerts: 0, isMinor: false, isGift, householdId });
+        ({ name: profileId, profileId, rating: null, openAlerts: [], isMinor: false, isGift, householdId });
     it('groups by home in order and leaves gift-only lines out', () => {
         expect(householdLineGroups([line('pedro', 'h1'), line('ana', 'h2'), line('marta', 'h1'), line('rosa', 'g1', true)]))
             .toEqual([[line('pedro', 'h1'), line('marta', 'h1')], [line('ana', 'h2')]]);

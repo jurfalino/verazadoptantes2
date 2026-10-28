@@ -14,6 +14,7 @@ import { computeAvgRating } from '@/domain/ratings';
 import { computeStats } from '@/domain/stats';
 import { countActivity, type ActivityCounts } from '@/domain/activityCounts';
 import { buildFlags } from '@/domain/flags';
+import { FLAG_REASONS } from '@/domain/constants';
 import { RECORD_TYPES } from '@/domain/constants';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 import { computeRequestRescueDensity } from '@/domain/requestDensity';
@@ -36,6 +37,13 @@ export interface EnrichmentResult {
     thumbnail: string | null;
     stats: { searchHits: number; profileViews: number; requests: number; adoptions: number; activity?: ActivityCounts };
     flags: AdopterFlags;
+    /**
+     * Any duplicate report on the profile, open or closed — what the public API has always
+     * reported as `flags: ['duplicate']` («set by people in BuenAdoptante», adopter_flags.reason).
+     * The app's own screens use `flags.duplicate`, which is the profile header's OPEN rule
+     * (fix round 2, item 9); the API contract is left as it was.
+     */
+    duplicateReported: boolean;
 }
 
 /**
@@ -72,7 +80,7 @@ async function _enrichAdoptersImpl(
     // list twice, so chunk*2 must stay within budget).
     const CHUNK = 40;
     type AdoptionRow = { adopterId: string; rating: number | null; recordType: string | null; date: number | null; addedBy: string | null };
-    type FlagRow = { adopterId: string; reason: string };
+    type FlagRow = { adopterId: string; reason: string | null; targetAdopterId: string | null; details: string | null };
     type StatRow = { adopterId: string; eventType: string };
     type ImageRow = { adopterId: string; url: string; isProfilePicture: number | null };
     type DupRow = { adopter1Id: string; adopter2Id: string };
@@ -94,7 +102,7 @@ async function _enrichAdoptersImpl(
         const [a, f, s, im, d] = await Promise.all([
             db.select({ adopterId: adoptions.adopterId, rating: adoptions.rating, recordType: adoptions.recordType, date: adoptions.date, addedBy: adoptions.addedBy })
                 .from(adoptions).where(sql`${adoptions.adopterId} IN (${inList})`).catch(riskRead('adoptions', chunk.length)),
-            db.select({ adopterId: adopterFlags.adopterId, reason: adopterFlags.reason })
+            db.select({ adopterId: adopterFlags.adopterId, reason: adopterFlags.reason, targetAdopterId: adopterFlags.targetAdopterId, details: adopterFlags.details })
                 .from(adopterFlags).where(sql`${adopterFlags.adopterId} IN (${inList})`).catch(riskRead('flags', chunk.length)),
             db.select({ adopterId: adopterStats.adopterId, eventType: adopterStats.eventType })
                 .from(adopterStats).where(and(
@@ -163,7 +171,7 @@ async function _enrichAdoptersImpl(
         const adoptionCount = adopterAdoptions.filter((a) => a.recordType === RECORD_TYPES.ADOPTION).length;
         const requestCount = adopterAdoptions.filter((a) => a.recordType === RECORD_TYPES.REQUEST).length;
 
-        const flags = buildFlags(adopterFlagRecords.map((fr) => fr.reason), systemDupCount);
+        const flags = buildFlags(adopterFlagRecords, systemDupCount);
         const adoptionsDensity = computeMaxDensityPeriod(adopterAdoptions as any, RECORD_TYPES.ADOPTION, adoptionConfig.periodDays);
         if (adoptionsDensity.count >= adoptionConfig.threshold) {
             flags.tooManyAdoptions = {
@@ -185,7 +193,8 @@ async function _enrichAdoptersImpl(
         // The same counts a household row and the «Actividad» header show (audit B12).
         stats.activity = countActivity(adopterAdoptions);
 
-        resultMap.set(id, { avgRating, thumbnail: thumbByAdopter.get(id) || null, stats, flags });
+        resultMap.set(id, { avgRating, thumbnail: thumbByAdopter.get(id) || null, stats, flags,
+            duplicateReported: adopterFlagRecords.some(fr => fr.reason === FLAG_REASONS.DUPLICATE) });
     }
 
     return resultMap;

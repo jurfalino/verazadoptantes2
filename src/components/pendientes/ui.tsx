@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Shared bits of «Pendientes de revisar» (layout D): button styles, the dialog
- * shell, the «Se conserva» badges and how a profile's owner is named.
+ * Shared bits of «Pendientes de revisar» (layout D): the dialog shell (buttons
+ * are the matrix's, components/ui/Button), the «Se conserva» badges and how a profile's owner is named.
  *
  * Colours are CSS variables (theme-safe by construction) or classes with a
  * [data-theme] remap in globals.css (bg-white, bg-teal-700, stone-*, teal-*).
@@ -15,11 +15,6 @@ import type { PendingDedupPair, PendingDedupSide } from '@/app/actions/duplicate
 
 export type T = (key: string) => string;
 export type KeepSide = PendingDedupPair['defaultKeep'];
-
-export const PRIMARY = 'inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-xl text-[14px] font-bold text-white bg-teal-700 hover:bg-teal-600 shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
-/** Outlined so it has a shape in both themes (D29): bg-stone-100 vanished in Azul Noche. */
-export const SECONDARY = 'inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-xl text-[14px] font-bold border border-[var(--text-faint)] text-[var(--text-primary)] bg-transparent hover:bg-[var(--accent-subtle-bg)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
-export const ACCENT_SECONDARY = 'inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-xl text-[14px] font-bold border border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-subtle-bg)] hover:bg-[var(--accent-badge-bg)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
 
 export const T_PRIMARY = 'text-[var(--text-primary)]';
 export const T_MUTED = 'text-[var(--text-muted)]';

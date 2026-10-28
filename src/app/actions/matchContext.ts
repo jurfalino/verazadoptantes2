@@ -1,11 +1,12 @@
 'use server';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { adopters } from '@/db/schema';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { logger } from '@/lib/logger';
 import { isMinor, type HouseholdLine } from '@/domain/households';
+import type { OpenAlertKind } from '@/domain/flags';
 
 export interface MatchContext {
     ok: boolean;
@@ -16,9 +17,11 @@ export interface MatchContext {
      * card's header (audit B6) — their own rating and open alerts (countsFor, as a
      * household row counts them), «Menor de edad», and who they live with. Not
      * PII: the same a search card shows any signed-in rescuer. Absent when it
-     * could not be read (logged).
+     * could not be read (logged). Exactly the fields the duplicate search's result
+     * carries for this caller (matchContext.test pins it); for a merged-away
+     * profile the call returns nothing at all.
      */
-    standing?: { rating: number | null; openAlerts: number; isMinor: boolean; households: HouseholdLine[] };
+    standing?: { rating: number | null; openAlerts: OpenAlertKind[]; isMinor: boolean; households: HouseholdLine[] };
 }
 
 /** Presence-only summary of an existing adopter's contact types — for the import
@@ -32,10 +35,14 @@ export async function getMatchContext(adopterId: string, opts?: { standing?: boo
     try {
         const db = await getDb();
         if (!db) return empty;
+        // With `standing`, never more than the duplicate search tells the same caller (fix round 2, item 23):
+        // it skips merged-away / soft-deleted profiles (hydrateDuplicateMatches), so this says nothing about
+        // them either. Without it (MatchCompare's presence hints) a merged-away profile still answers: the
+        // admin «Combinaciones cuestionadas» rows compare exactly that absorbed profile.
         const row = await db.select({
             name: adopters.name, contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo,
             age: adopters.age, ageAsOf: adopters.ageAsOf, isMinor: adopters.isMinor,
-        }).from(adopters).where(eq(adopters.id, adopterId)).get();
+        }).from(adopters).where(opts?.standing === true ? and(eq(adopters.id, adopterId), isNull(adopters.deletedAt)) : eq(adopters.id, adopterId)).get();
         if (!row) return empty;
         const has = { phone: false, email: false, id: false, social: false, address: false };
         for (const e of deserializeContactEntries(row.contactEntries)) {

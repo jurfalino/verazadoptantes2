@@ -26,7 +26,8 @@ const WORDS: Record<ActivityKind, { one: string; many: string; color: string }> 
  * wrap the pieces in `<div class="overflow-hidden"><div class="-ml-3 flex flex-wrap">`.
  * So a wrapped line never starts with «·» (household rows, card lines).
  */
-export const SEPARATED_PIECE = "relative ml-3 min-w-0 break-words before:absolute before:-left-2 before:content-['·'] before:text-stone-400";
+// `content: '·' / ''`: the dot is drawn but has empty alt text, so a screen reader doesn't read «punto» between the pieces (fix round 2, item 12).
+export const SEPARATED_PIECE = "relative ml-3 min-w-0 break-words before:absolute before:-left-2 before:content-['·'_/_''] before:text-stone-400";
 
 /**
  * The counts as inline items (no wrapper): the caller's flex row spaces them.

@@ -5,7 +5,7 @@ import { activityOrigin } from '@/domain/recordOrigin';
 import { contractHref } from '@/lib/contractLink';
 import FormAnswers from './FormAnswers';
 import { useState, useEffect, type ComponentType } from 'react';
-import { ClipboardList } from 'lucide-react';
+import { ClipboardList, Pencil } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { StarIcon } from '@/components/StarIcon';
@@ -394,8 +394,9 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                                     </a>
                                                 )}
                                                 {canEdit && (
-                                                    <span className="text-teal-600 md:opacity-0 md:group-hover:opacity-100 transition-opacity inline-flex items-center ml-1.5 align-middle">
-                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                                    // Always visible, like every edit pencil (fix round 2, item 7): the row opens the editor.
+                                                    <span className="text-teal-600 inline-flex items-center ml-1.5 align-middle">
+                                                        <Pencil className="w-4 h-4" aria-hidden="true" />
                                                     </span>
                                                 )}
                                             </p>

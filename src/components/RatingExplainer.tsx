@@ -1,5 +1,6 @@
 'use client';
 
+import { TAP_TARGET_44 } from '@/components/ui/tapTarget';
 import { useState, useRef, useEffect, ReactNode } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { getRatingColors } from '@/lib/ratingColors';
@@ -47,7 +48,7 @@ export function RatingExplainer({ rating, children }: RatingExplainerProps) {
                 onClick={() => setIsOpen(o => !o)}
                 aria-label={t('ratings.scale_title')}
                 aria-expanded={isOpen}
-                className="cursor-pointer focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-1 rounded-full"
+                className={`cursor-pointer focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-1 rounded-full ${TAP_TARGET_44}`}
             >
                 {children}
             </button>

@@ -146,9 +146,9 @@ describe("search returns only the people who match, each with its household line
         const lucas = (res.results as DiscoveryMatch[])[0];
         expect(lucas.isMinor).toBe(true);
         expect(lucas.households).toEqual([
-            { name: 'Pedro Paez', profileId: 'pedro', rating: 1, openAlerts: 1, isMinor: false, isGift: false, householdId: 'hh-pedro' },
-            { name: 'Marta Paez', profileId: 'marta', rating: 4, openAlerts: 0, isMinor: false, isGift: false, householdId: 'hh-pedro' },
-            { name: 'Ana Gómez', profileId: 'ana', rating: 3, openAlerts: 0, isMinor: false, isGift: false, householdId: 'hh-ana' },
+            { name: 'Pedro Paez', profileId: 'pedro', rating: 1, openAlerts: ['inaccurate'], isMinor: false, isGift: false, householdId: 'hh-pedro' },
+            { name: 'Marta Paez', profileId: 'marta', rating: 4, openAlerts: [], isMinor: false, isGift: false, householdId: 'hh-pedro' },
+            { name: 'Ana Gómez', profileId: 'ana', rating: 3, openAlerts: [], isMinor: false, isGift: false, householdId: 'hh-ana' },
         ]);
     });
 
@@ -467,12 +467,13 @@ describe('final fix P2 — «Pendientes de revisar» shows each side as every ca
 });
 
 describe('final fix P6 — «¿Es este perfil?» counts alerts as the household line does', () => {
-    it('two open inaccuracy reports → 2 (not the 0/1 per kind of the search flags)', async () => {
+    // Fix round 2, item 9: one rule, the profile header's — one alert per KIND (it draws one «Inexacto» pill).
+    it('two open inaccuracy reports → one alert, «Inexacto», on the candidate and on the line', async () => {
         sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason) VALUES ('f2', 'pedro', ?, 'inaccurate_information')`).run(ADMIN);
         const { results } = await getHouseholdMatchCandidates({ name: 'Pedro Paez', contactEntries: [{ type: 'phone', value: HOME_PHONE }] });
         const pedro = results.find(r => r.adopterId === 'pedro')!;
-        expect(pedro.openAlerts).toBe(2);
+        expect(pedro.openAlerts).toEqual(['inaccurate']);
         const line = (await householdLinesFor(db(), OWNER, ['marta'])).marta.find(l => l.profileId === 'pedro')!;
-        expect(line.openAlerts).toBe(pedro.openAlerts);
+        expect(line.openAlerts).toEqual(pedro.openAlerts);
     });
 });

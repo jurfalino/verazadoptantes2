@@ -29,18 +29,6 @@ import { WarningIcon, CloseIcon, CheckIcon, AttachIcon, UploadIcon, VideoIcon, S
  */
 const MAX_FETCHED_IMAGES = 12;
 
-/**
- * Style guide §2.1, Standard × Primary — kept as a constant so the wizard's step
- * CTAs cannot drift apart again. `min-h-[44px]` is the §1.5 tap-target floor,
- * which these buttons sat 4px under at `py-2.5`.
- * The component form lives in `components/ui/Button.tsx`; see the 2026-09-04
- * audit for the plan to migrate the remaining inline buttons onto it.
- */
-const BTN_PRIMARY =
-    'inline-flex items-center justify-center gap-2 min-h-[44px] py-3 px-6 rounded-xl ' +
-    'font-bold text-sm bg-teal-600 text-white shadow-sm transition-all duration-200 ' +
-    'hover:bg-teal-700 hover:shadow-md focus:outline-none focus-visible:ring-2 ' +
-    'focus-visible:ring-teal-500 disabled:opacity-40 disabled:cursor-not-allowed';
 import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
 import { handledAsStale, minorRefusalMessage } from '@/lib/errorMessage';
@@ -56,6 +44,9 @@ import MatchCompare from '@/components/MatchCompare';
 import { MatchCard } from '@/components/MatchCardParts';
 import { MinorRecordsNote } from '@/components/MinorRecordsNote';
 import { buttonClasses } from '@/components/ui/Button';
+
+/** The matrix's Standard × Primary (components/ui/Button) for the wizard's step CTAs — not a style of its own. */
+const BTN_PRIMARY = buttonClasses({ variant: 'primary' });
 import StickyActions from '@/components/import/StickyActions';
 import MediaPicker from '@/components/import/MediaPicker';
 

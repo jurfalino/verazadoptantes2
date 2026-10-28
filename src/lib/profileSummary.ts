@@ -19,7 +19,8 @@ import { maskContactEntries, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib
 import { maskOptionsFor } from '@/lib/piiAccessServer';
 import { countActivity, type ActivityCounts } from '@/domain/activityCounts';
 import { realOwner } from '@/domain/dedupPair';
-import { countOpenAlerts, summaryContacts, type LinkedSummary } from '@/domain/householdLinks';
+import { summaryContacts, type LinkedSummary } from '@/domain/householdLinks';
+import { openAlertKindsOfRows, type OpenAlertKind } from '@/domain/flags';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -37,9 +38,9 @@ export async function namesFor(emails: Array<string | null | undefined>, ctx: Re
     }
 }
 
-export type ProfileCounts = { rating: number | null; openAlerts: number; activity: ActivityCounts };
+export type ProfileCounts = { rating: number | null; openAlerts: OpenAlertKind[]; activity: ActivityCounts };
 
-export const EMPTY_COUNTS: ProfileCounts = { rating: null, openAlerts: 0, activity: {} };
+export const EMPTY_COUNTS: ProfileCounts = { rating: null, openAlerts: [], activity: {} };
 
 /**
  * Rating (same source as the profile page: AVG over the adoptions view), open
@@ -50,7 +51,7 @@ export const EMPTY_COUNTS: ProfileCounts = { rating: null, openAlerts: 0, activi
  * as a parameter), and ONE pass over that profile's activity rows: the
  * average and the record types come out of the same subquery. Flags come back
  * as a JSON array so the open-alert rule stays in src/domain
- * (countOpenAlerts), not in SQL. A failure degrades to an empty summary line
+ * (openAlertKindsOfRows), not in SQL. A failure degrades to an empty summary line
  * and is logged.
  *
  * `activity: false` (search-card household lines, «¿Es este perfil?»: they show
@@ -90,7 +91,7 @@ export async function countsFor(db: Db, id: string, ctx: Record<string, unknown>
     }
     return {
         rating: avg,
-        openAlerts: countOpenAlerts(flags.map(f => ({ adopterId: id, ...f }))),
+        openAlerts: openAlertKindsOfRows(flags.map(f => ({ adopterId: id, ...f }))),
         activity: withActivity ? countActivity(kinds.map(recordType => ({ recordType }))) : {},
     };
 }

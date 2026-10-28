@@ -24,7 +24,8 @@ import { historyKindForOwner, isPrivilegedOnProfile } from '@/lib/profilePrivile
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { actorNameOf, teamsOf } from '@/lib/householdNotices';
 import { currentAge, isMinor } from '@/domain/households';
-import { countOpenAlerts } from '@/domain/householdLinks';
+import { openAlertKindsOfRows } from '@/domain/flags';
+import type { NotificationType } from '@/domain/constants';
 import { realOwner } from '@/domain/dedupPair';
 import { ageColumns, parseNameChange, renameEntries, sameName, RENAME_NOTICE_WINDOW_MS } from '@/domain/profileIdentity';
 import { notificationContent, type NotificationTemplate } from '@/domain/notificationTemplates';
@@ -189,8 +190,8 @@ export async function profileHasActivity(db: Db, adopterId: string): Promise<boo
             .from(adopterFlags).where(eq(adopterFlags.adopterId, adopterId)).orderBy(desc(adopterFlags.createdAt)).limit(50).all(),
     ]);
     if (record) return true;
-    return countOpenAlerts((flags as Array<{ reason: string | null; targetAdopterId: string | null; details: string | null }>)
-        .map(f => ({ adopterId, ...f }))) > 0;
+    return openAlertKindsOfRows((flags as Array<{ reason: string | null; targetAdopterId: string | null; details: string | null }>)
+        .map(f => ({ adopterId, ...f }))).length > 0;
 }
 
 export type AgeResult =
@@ -271,7 +272,7 @@ export async function setProfileAge(db: Db, input: {
 
 // ── Notices ─────────────────────────────────────────────────────
 
-async function sendTo(recipients: Map<string, string>, type: string, template: NotificationTemplate, metadata: Record<string, unknown>, icon: string, ctx: Ctx) {
+async function sendTo(recipients: Map<string, string>, type: NotificationType, template: NotificationTemplate, metadata: Record<string, unknown>, icon: string, ctx: Ctx) {
     if (recipients.size === 0) {
         logger.info(`profileIdentity: ${type} — no recipients`, ctx);
         return;
