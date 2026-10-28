@@ -10,7 +10,9 @@
  */
 
 import { useEffect, useState } from 'react';
-import { ShieldQuestion } from 'lucide-react';
+import { Info, ShieldQuestion } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { ProfilePromptBanner } from '@/components/ProfilePromptBanner';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { getMergeDisputeOption, raiseMergeDispute } from '@/app/actions/mergeDisputes';
@@ -70,25 +72,18 @@ export default function MergeDisputePrompt({ auditId }: { auditId: string }) {
     if (state === 'loading' || state === 'hidden') return null;
 
     return (
-        <div data-testid="merge-dispute-prompt" role="status"
-            className="rounded-xl border p-3 text-sm flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between bg-[var(--status-warning-bg)] border-[var(--status-warning-border)] text-[var(--text-primary)]">
-            <div className="flex items-start gap-2 min-w-0">
-                <ShieldQuestion className="w-5 h-5 shrink-0 text-[var(--status-warning-text)]" aria-hidden="true" />
-                <div className="min-w-0">
-                    <p className="font-semibold text-[var(--status-warning-text)]">{t('adopter.merge_dispute_title')}</p>
-                    <p className="text-[13px] text-[var(--text-muted)]">
-                        {state === 'can_raise' ? t('adopter.merge_dispute_body')
-                            : state === 'sent' ? t('adopter.merge_dispute_sent')
-                                : t('adopter.merge_dispute_open')}
-                    </p>
-                </div>
-            </div>
-            {state === 'can_raise' && (
-                <button type="button" data-testid="merge-dispute-raise" onClick={raise} disabled={busy}
-                    className="inline-flex items-center justify-center min-h-[44px] px-4 rounded-xl text-[14px] font-bold shrink-0 border border-[var(--status-warning-border)] text-[var(--status-warning-text)] bg-[var(--surface-card)] hover:bg-[var(--accent-subtle-bg)] disabled:opacity-40 disabled:cursor-not-allowed">
-                    {busy ? (t('common.processing') || 'Procesando...') : t('adopter.merge_dispute_raise')}
-                </button>
-            )}
-        </div>
+        // The shared profile banner (audit B7): a question while it can be raised (warning), a neutral state once it
+        // has been (info) — nothing is left to do here then.
+        <ProfilePromptBanner tone={state === 'can_raise' ? 'warning' : 'info'} icon={state === 'can_raise' ? ShieldQuestion : Info}
+            testId="merge-dispute-prompt" title={t('adopter.merge_dispute_title')}
+            actions={state === 'can_raise' ? (
+                <Button type="button" variant="secondary" size="compact" data-testid="merge-dispute-raise" onClick={raise} loading={busy}>
+                    {t('adopter.merge_dispute_raise')}
+                </Button>
+            ) : undefined}>
+            {state === 'can_raise' ? t('adopter.merge_dispute_body')
+                : state === 'sent' ? t('adopter.merge_dispute_sent')
+                    : t('adopter.merge_dispute_open')}
+        </ProfilePromptBanner>
     );
 }

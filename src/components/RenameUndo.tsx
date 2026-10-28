@@ -14,7 +14,9 @@
  */
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Undo2 } from 'lucide-react';
+import { PencilLine, Undo2 } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { ProfilePromptBanner } from '@/components/ProfilePromptBanner';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { getRenameUndoOption, undoProfileRename } from '@/app/actions';
@@ -64,19 +66,19 @@ function useUndo(source: string) {
     return { undo, busy };
 }
 
-/** `variant`: 'outlined' (the bell's notice action) or 'link' (a history row, like «Ver perfil ↗»). */
-export function RenameUndoButton({ historyId, source, onDone, variant = 'outlined' }: { historyId: string; source: string; onDone?: () => void; variant?: 'outlined' | 'link' }) {
+/**
+ * «Deshacer» — the one look everywhere it appears (audit B7): the bell's notice, /notificaciones, a history row
+ * and the profile's rename banner all use the matrix Secondary button (compact, 44px).
+ */
+export function RenameUndoButton({ historyId, source, onDone }: { historyId: string; source: string; onDone?: () => void }) {
     const { t } = useLanguage();
     const { undo, busy } = useUndo(source);
     return (
-        <button type="button" data-testid="rename-undo" disabled={busy}
-            onClick={async (e) => { e.stopPropagation(); if (await undo(historyId)) onDone?.(); }}
-            className={variant === 'link'
-                ? 'inline-flex min-h-[44px] items-center gap-1 text-sm font-semibold text-teal-700 hover:underline disabled:opacity-60'
-                : 'inline-flex min-h-[44px] items-center gap-1.5 px-3 rounded-lg text-sm font-semibold border border-[var(--border-default)] bg-[var(--surface-card)] text-[var(--brand)] disabled:opacity-60'}>
-            <Undo2 className="w-4 h-4" aria-hidden="true" />
+        <Button type="button" variant="secondary" size="compact" data-testid="rename-undo" loading={busy}
+            icon={<Undo2 className="w-4 h-4" aria-hidden="true" />}
+            onClick={async (e) => { e.stopPropagation(); if (await undo(historyId)) onDone?.(); }}>
             {t('adopter.rename_undo')}
-        </button>
+        </Button>
     );
 }
 
@@ -110,26 +112,20 @@ export default function RenameUndoPrompt({ historyId }: { historyId: string }) {
     if (state.kind !== 'ask') return null;
     const shown = (name: string) => name.trim() || t('adopter.nameless');
     return (
-        <div data-testid="rename-undo-prompt" role="dialog" aria-labelledby="rename-undo-title"
-            className="rounded-xl border p-4 text-sm flex flex-col gap-3 bg-[var(--status-warning-bg)] border-[var(--status-warning-border)] text-[var(--text-primary)]">
-            <div className="min-w-0">
-                <p id="rename-undo-title" className="font-semibold text-[var(--status-warning-text)]">{t('adopter.rename_undo_title')}</p>
-                <p className="text-[13px] text-[var(--text-muted)] break-words">
-                    {t('adopter.rename_undo_body').replace('{from}', shown(state.from)).replace('{to}', shown(state.to))}
-                </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-                <button type="button" data-testid="rename-undo-confirm" disabled={busy}
-                    onClick={async () => { if (await undo(historyId)) setState({ kind: 'done' }); else setState({ kind: 'hidden' }); }}
-                    className="inline-flex min-h-[44px] items-center gap-1.5 px-4 rounded-lg text-sm font-semibold text-white bg-teal-700 hover:bg-teal-600 disabled:opacity-60">
-                    <Undo2 className="w-4 h-4" aria-hidden="true" />
+        // The shared profile banner (ProfilePromptBanner); «Deshacer» is the same Secondary as everywhere.
+        <ProfilePromptBanner tone="warning" icon={PencilLine} testId="rename-undo-prompt" role="dialog" titleId="rename-undo-title"
+            title={t('adopter.rename_undo_title')}
+            actions={<>
+                <Button type="button" variant="secondary" size="compact" data-testid="rename-undo-confirm" loading={busy}
+                    icon={<Undo2 className="w-4 h-4" aria-hidden="true" />}
+                    onClick={async () => { if (await undo(historyId)) setState({ kind: 'done' }); else setState({ kind: 'hidden' }); }}>
                     {t('adopter.rename_undo')}
-                </button>
-                <button type="button" onClick={() => setState({ kind: 'hidden' })}
-                    className="inline-flex min-h-[44px] items-center px-4 rounded-lg text-sm font-semibold text-teal-700 hover:bg-teal-50">
+                </Button>
+                <Button type="button" variant="secondary" size="compact" onClick={() => setState({ kind: 'hidden' })}>
                     {t('adopter.rename_undo_keep')}
-                </button>
-            </div>
-        </div>
+                </Button>
+            </>}>
+            {t('adopter.rename_undo_body').replace('{from}', shown(state.from)).replace('{to}', shown(state.to))}
+        </ProfilePromptBanner>
     );
 }
