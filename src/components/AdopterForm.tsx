@@ -40,6 +40,7 @@ import { RatingBadge } from '@/components/RatingBadge';
 import ProfilePhotoChooser from '@/components/ProfilePhotoChooser';
 import { useShowToast } from '@/components/ui/Toast';
 import { Button } from '@/components/ui/Button';
+import { TAP_TARGET_44 } from '@/components/ui/tapTarget';
 import { extractErrorId } from '@/lib/errorUtils';
 import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
 
@@ -1468,7 +1469,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                         tabIndex={0}
                                         data-testid="rating-badge"
                                         onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
-                                        className="inline-block cursor-pointer hover:shadow-md transition-shadow rounded-full"
+                                        className={`inline-block cursor-pointer hover:shadow-md transition-shadow rounded-full ${TAP_TARGET_44}`}
                                     >
                                         <RatingBadge rating={avgRating} size="md" label="short" />
                                     </div>

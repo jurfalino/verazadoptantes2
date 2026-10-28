@@ -17,6 +17,7 @@ import type { ReactNode } from 'react';
 import { AlertCircle, AlertTriangle, Files, type LucideIcon } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import type { OpenAlertKind } from '@/domain/flags';
+import { TAP_TARGET_44 } from '@/components/ui/tapTarget';
 
 export type AlertKind = 'inaccurate' | 'duplicate' | 'too_many_adoptions' | 'too_many_requests' | 'count';
 
@@ -50,7 +51,8 @@ export function AlertPill({ kind, children, size = 'sm', onClick, pressed, testI
     if (onClick) {
         return (
             <button type="button" onClick={onClick} aria-pressed={pressed} data-testid={testId} data-alert={kind}
-                className={`${cls} transition-all hover:opacity-90 ${pressed ? 'shadow-inner' : ''}`} style={style}>
+                // 44px to the touch (TAP_TARGET_44) at the pill's own size.
+                className={`${cls} ${TAP_TARGET_44} transition-all hover:opacity-90 ${pressed ? 'shadow-inner' : ''}`} style={style}>
                 {body}
             </button>
         );

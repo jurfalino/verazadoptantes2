@@ -11,6 +11,7 @@
 import { Check, HelpCircle, Home, Info } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { openAlertKinds } from '@/domain/flags';
+import { TAP_TARGET_44 } from '@/components/ui/tapTarget';
 import { useLanguage } from '@/context/LanguageContext';
 import { PersonStanding, PersonActivity } from '@/components/PersonStanding';
 import { CardHouseholdLine } from '@/components/CardHouseholdLine';
@@ -78,7 +79,7 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
                         {/* Name, standing and activity exactly as a household row writes them (PersonStanding). */}
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                             <a href={`/adopter/${encodeURIComponent(candidate.adopterId)}`} target="_blank" rel="noopener noreferrer"
-                                data-testid={`${testId}-link`} className="font-semibold text-[15px] text-teal-700 hover:underline break-words">{name}</a>
+                                data-testid={`${testId}-link`} className={`font-semibold text-[15px] text-teal-700 hover:underline break-words ${TAP_TARGET_44}`}>{name}</a>
                             <PersonStanding rating={candidate.rating ?? candidate.avgRating} openAlerts={alerts} isMinor={minor} alertsTestId={`${testId}-alerts`} />
                             {candidate.activity && <PersonActivity activity={candidate.activity} isMinor={minor} testId={`${testId}-activity`} />}
                         </div>

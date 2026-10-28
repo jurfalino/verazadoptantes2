@@ -685,13 +685,13 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                          * hiding the label below `sm:` in the first place.
                          */
                         const pickerOwnsType = isEditing && typeChangeEnabled;
-                        // A row with ✎ 🗑 is 44px on phones: its 12px padding holds the buttons' -my-3, so the icon, the
-                        // value's first line and the buttons share one centre line and two rows' targets never overlap (B20).
-                        const hasRowActions = !isEditing && canEditEntry(entry) && !entry.masked && !!entry.id;
+                        // Every row is 44px on phones (B20; fix round 2, item 4): its 12px padding holds the ✎ 🗑 buttons'
+                        // -my-3 and the value link's 44px tap target, so the icon, the value's first line and the buttons
+                        // share one centre line and two rows' targets never overlap.
                         return (
                             <li
                                 key={entry.id || `${entry.type}:${entry.value}`}
-                                className={`group flex items-start gap-2 text-sm ${hasRowActions ? 'py-3 sm:py-0' : ''}`}
+                                className={`group flex items-start gap-2 text-sm ${isEditing ? '' : 'py-3 sm:py-0'}`}
                                 data-testid={`${testIdPrefix}-chip`}
                                 data-entry-type={entry.type}
                             >

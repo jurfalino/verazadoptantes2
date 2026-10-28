@@ -291,7 +291,8 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             <div className="space-y-2 mb-4">
                 {/* ⚠ Warnings: things that need attention */}
                 {(isFlaggedAsInaccurate || isFlaggedAsDuplicate || tooManyAdoptions || tooManyRequests) && (
-                    <div className="flex flex-wrap items-center gap-2">
+                    // gap-y-3: wrapped rows of 32px pills keep their 44px tap targets apart.
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
                         {/* Inaccurate Information Flag */}
                         {isFlaggedAsInaccurate && (
                             <AlertPill kind="inaccurate" size="md" onClick={() => setShowInaccurateHint(!showInaccurateHint)} pressed={showInaccurateHint}>
