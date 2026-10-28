@@ -155,11 +155,14 @@ const MERGED_TITLE: Record<NotificationLocale, (p: MergeSides) => string> = {
     en: p => sameMergedName(p) ? `Two profiles of ${plainName(p.survivorName, 'en')} were merged` : `Two profiles were merged: ${plainName(p.absorbedName, 'en')} → ${plainName(p.survivorName, 'en')}`,
     pt: p => sameMergedName(p) ? `Dois perfis de ${plainName(p.survivorName, 'pt')} foram combinados` : `Dois perfis foram combinados: ${plainName(p.absorbedName, 'pt')} → ${plainName(p.survivorName, 'pt')}`,
 };
-/** «se conserva X y se absorbe Y» — which one stays (D31). */
+/**
+ * «se conserva X y Y se suma al otro» — which one stays (D31), in the words of the
+ * Pendientes and admin badges «SE CONSERVA» / «SE SUMA AL OTRO» (audit B11; fix round 2, item 13).
+ */
 const KEEPS: Record<NotificationLocale, (p: MergeSides) => string> = {
-    es: p => `se conserva ${survivorLabel(p, 'es')} y se absorbe ${absorbedLabel(p, 'es')}`,
-    en: p => `${survivorLabel(p, 'en')} stays and ${absorbedLabel(p, 'en')} is folded into it`,
-    pt: p => `fica ${survivorLabel(p, 'pt')} e ${absorbedLabel(p, 'pt')} é incorporado a ele`,
+    es: p => `se conserva ${survivorLabel(p, 'es')} y ${absorbedLabel(p, 'es')} se suma al otro`,
+    en: p => `${survivorLabel(p, 'en')} stays and ${absorbedLabel(p, 'en')} joins the other`,
+    pt: p => `fica ${survivorLabel(p, 'pt')} e ${absorbedLabel(p, 'pt')} se junta ao outro`,
 };
 const KEPT_APART: Record<NotificationLocale, (p: MergeSides) => string> = {
     es: p => `${absorbedLabel(p, 'es')} y ${survivorLabel(p, 'es')} siguen como perfiles separados.`,

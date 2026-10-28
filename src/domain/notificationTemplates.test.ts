@@ -171,7 +171,7 @@ describe('renderNotification', () => {
 
     it('same-name pairs: each side shows its owner and date, per locale (D31)', () => {
         const es = renderNotification({ key: 'merge_request', params: SAMPLES.merge_request }, 'es')!;
-        expect(es.body).toContain("se conserva «Julieta Paz (de María, 22 oct '26)» y se absorbe «Julieta Paz (de Jon, 3 sept '26)»");
+        expect(es.body).toContain("se conserva «Julieta Paz (de María, 22 oct '26)» y «Julieta Paz (de Jon, 3 sept '26)» se suma al otro");
         const en = renderNotification({ key: 'merge_request', params: SAMPLES.merge_request }, 'en')!;
         expect(en.body).toContain("“Julieta Paz (from María, Oct 22 '26)” stays");
         const pt = renderNotification({ key: 'adopter_merged_by_admin', params: SAMPLES.adopter_merged_by_admin }, 'pt')!;

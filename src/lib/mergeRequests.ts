@@ -63,7 +63,7 @@ export interface MergeRequestAdminRow {
     createdAt: number | null;
     /** The side that stays («se conserva»): the request's primaryId. */
     primary: MergeRequestAdminSide;
-    /** The side that is absorbed («se absorbe»). */
+    /** The side that is absorbed («se suma al otro»). */
     secondary: MergeRequestAdminSide;
     requesterEmail: string;
     ownerEmail: string | null;
