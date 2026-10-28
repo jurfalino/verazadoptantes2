@@ -808,7 +808,8 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                             canEditEntry(entry) && !entry.masked && entry.id && (
                                                 // -my-3 on phones: the 44px buttons centre on the value's FIRST line instead of
                                                 // hanging below it (audit B20); from `sm:` they are small and need no offset.
-                                                <span className="flex items-center gap-1 shrink-0 -my-3 sm:my-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 transition-opacity">
+                                                // Always visible, like the name's pencil (one rule for edit controls — fix round 2, item 7).
+                                                <span className="flex items-center gap-1 shrink-0 -my-3 sm:my-0">
                                                     <button
                                                         type="button"
                                                         onClick={() => startEdit(entry)}
@@ -817,7 +818,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                         className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 p-1 text-stone-500 hover:text-teal-700 hover:bg-teal-50 rounded transition-colors"
                                                         data-testid={`${testIdPrefix}-edit-btn`}
                                                     >
-                                                        <Pencil className="w-3.5 h-3.5" />
+                                                        <Pencil className="w-4 h-4" aria-hidden="true" />
                                                     </button>
                                                     <button
                                                         type="button"
@@ -827,7 +828,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                         className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 p-1 text-stone-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
                                                         data-testid={`${testIdPrefix}-delete-btn`}
                                                     >
-                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                        <Trash2 className="w-4 h-4" aria-hidden="true" />
                                                     </button>
                                                 </span>
                                             )} />
