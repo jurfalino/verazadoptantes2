@@ -303,6 +303,7 @@ export default function NotificacionesPage() {
                     <button
                         key={tab.key}
                         onClick={() => handleFilterChange(tab.key)}
+                        className="min-h-[44px] sm:min-h-0"
                         style={{
                             flex: 1,
                             padding: '8px 16px',
