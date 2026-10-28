@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.4] - 2026-10-28
+
+### Fixed — final consistency round
+- Alerts: one rule everywhere (the profile header's). A single alert shows its own label («Inexacto» red,
+  «Duplicado» amber) instead of «1 alerta»; resolved duplicate reports no longer show in the app (the public
+  API is unchanged). The applicants list uses the same alert pill.
+- Search cards say «Conocido/a como» for another name.
+- /my-adopters: no hydration error on load (no link inside a link); long names no longer push the phone screen wide.
+- «¿Continuar con el perfil de X?» lists what the typed data really adds (no false «No hay información nueva»);
+  its failures are toasts with an Error ID, not a browser alert.
+- Dialogs keep the keyboard inside and give focus back to what opened them.
+- Pendientes and admin merge buttons use the same button styles as everywhere else.
+- Edit/delete controls are always visible (name and contact rows alike); remaining small tap targets are 44px.
+- Header «⋯» items in sentence case; merge notices use the «se conserva / se suma al otro» wording;
+  «Login bloqueado» notices have a label and icon; result-page headings use icons, not emoji.
+- The duplicate check never reveals more than the duplicate search to the same person.
+
 ## [2.58.3] - 2026-10-28
 
 ### Fixed — audit of the household and merge pages
