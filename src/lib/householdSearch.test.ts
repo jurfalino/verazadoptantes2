@@ -220,8 +220,8 @@ describe('duplicate detection never pairs two housemates', () => {
         const reads = vi.mocked(giftPhoneEntriesByGiver);
         reads.mockClear();
         const batch = (scanId?: string) => scan(new Request(`http://localhost/api/admin/duplicates?limit=1${scanId ? `&scan=${scanId}` : ''}`, { method: 'POST' }));
-        const first = await (await batch('scan-0001-aaaa')).json();
-        const second = await (await batch('scan-0001-aaaa')).json();
+        const first = await (await batch('scan-0001-aaaa')).json() as { tokenized: number; remaining: number };
+        const second = await (await batch('scan-0001-aaaa')).json() as { tokenized: number; remaining: number };
         expect(first.tokenized).toBe(1);
         expect(second.tokenized).toBe(1);
         expect(second.remaining).toBe(first.remaining - 1);
