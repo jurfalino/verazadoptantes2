@@ -27,6 +27,7 @@ import { SocialLogo } from '@/components/SocialLogo';
 import { MessagingLogo } from '@/components/MessagingLogo';
 import { socialUrl, phoneAppUrl, SOCIAL_PLATFORMS, type ContactEntry, type ContactEntryType, type SocialPlatform } from '@/lib/contactEntries';
 import { renderTextWithLinks } from '@/lib/textUtils';
+import { BreakableEmail } from '@/components/ui/BreakableEmail';
 
 /** Per-network brand label (Facebook / Instagram / ...), keyed by platform. */
 const SOCIAL_LABEL = Object.fromEntries(SOCIAL_PLATFORMS.map(p => [p.key, p.label])) as Record<SocialPlatform, string>;
@@ -120,7 +121,8 @@ export function ContactValue({ entry, onMaskedClick }: { entry: ContactEntry; on
             </span>
         );
     }
-    if (entry.type === 'email') return <a href={`mailto:${entry.value}`} className={LINK_CLASS}>{entry.value}</a>;
+    // Wraps before «@» and the domain's dots, never mid-word when a piece fits (BreakableEmail, audit B20).
+    if (entry.type === 'email') return <a href={`mailto:${entry.value}`} className={LINK_CLASS}><BreakableEmail email={entry.value} /></a>;
     if (entry.type === 'address') {
         const query = encodeURIComponent(entry.value.replace(/\n/g, ', '));
         return <a href={`https://www.google.com/maps/search/?api=1&query=${query}`} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>{entry.value}</a>;

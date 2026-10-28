@@ -50,8 +50,9 @@ export function PersonActivity({ activity, isMinor, testId = 'person-activity' }
     const { t } = useLanguage();
     if (activityParts(activity).length > 0) {
         return (
-            <span className="inline-flex flex-wrap items-baseline gap-x-1 text-xs text-stone-600" data-testid={testId}>
-                <ActivityCountsLine counts={activity} separated />
+            // «·» between counts, never at the start of a wrapped line (SEPARATED_PIECE, audit B10).
+            <span className="inline-block min-w-0 max-w-full overflow-hidden text-xs text-stone-600" data-testid={testId}>
+                <span className="-ml-3 flex flex-wrap items-baseline"><ActivityCountsLine counts={activity} separated /></span>
             </span>
         );
     }

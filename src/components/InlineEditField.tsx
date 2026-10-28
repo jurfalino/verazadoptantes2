@@ -117,8 +117,11 @@ export function InlineEditField({
     const isEmpty = !value.trim();
     return (
         <div className={rootClassName}>
-            <div className={`group/inline flex items-center gap-2 ${displayClassName || ''}`}>
-                <div className={`min-w-0 flex-1 ${isEmpty ? 'italic' : ''}`} style={isEmpty ? { color: 'var(--text-muted)' } : undefined}>
+            {/* The pencil sits on the value's FIRST line, right after it, and is always visible (audit B21): one place and
+                one rule for every viewer who may edit, at every width — it used to centre on a wrapped name (far right,
+                mid-block) and appear only on hover from `sm:`. 44px hit area on phones, the visual size unchanged. */}
+            <div className={`group/inline flex items-start gap-1 ${displayClassName || ''}`}>
+                <div className={`min-w-0 ${multiline ? 'flex-1' : ''} ${isEmpty ? 'italic' : ''}`} style={isEmpty ? { color: 'var(--text-muted)' } : undefined}>
                     {isEmpty ? (emptyLabel || '') : (displayRender ? displayRender(value) : value)}
                 </div>
                 {badge}
@@ -129,9 +132,9 @@ export function InlineEditField({
                         aria-label={t('adopter.ce_edit_label')}
                         title={t('adopter.ce_edit_label')}
                         data-testid={editButtonTestId}
-                        className="shrink-0 p-1 text-stone-500 hover:text-teal-700 hover:bg-teal-50 rounded transition-colors opacity-100 sm:opacity-0 sm:group-hover/inline:opacity-100 sm:focus-within:opacity-100"
+                        className="shrink-0 inline-flex items-center justify-center min-w-[44px] min-h-[44px] -my-2 -mx-1.5 sm:min-w-0 sm:min-h-0 sm:m-0 sm:mt-0.5 p-1 text-stone-500 hover:text-teal-700 hover:bg-teal-50 rounded transition-colors"
                     >
-                        <Pencil className="w-3.5 h-3.5" />
+                        <Pencil className="w-4 h-4" aria-hidden="true" />
                     </button>
                 )}
             </div>

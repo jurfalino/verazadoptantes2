@@ -10,6 +10,7 @@ import { CONTACT_ENTRIES_FULL, isRenameAlias, deriveStreet, deriveLocality, dete
 import { ContactTypePicker, CONTACT_TYPE_ICON } from '@/components/ContactTypePicker';
 import { ContactLead, ContactValueCell } from '@/components/ContactRow';
 import { INLINE_CANCEL_BTN, INLINE_FIELD, INLINE_SAVE_BTN } from '@/components/ui/inlineFormButtons';
+import { buttonClasses } from '@/components/ui/Button';
 import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
 import { PhoneAppsToggle } from '@/components/PhoneAppsToggle';
 import { addContactEntry } from '@/app/actions/addContactEntry';
@@ -684,10 +685,13 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                          * hiding the label below `sm:` in the first place.
                          */
                         const pickerOwnsType = isEditing && typeChangeEnabled;
+                        // A row with ✎ 🗑 is 44px on phones: its 12px padding holds the buttons' -my-3, so the icon, the
+                        // value's first line and the buttons share one centre line and two rows' targets never overlap (B20).
+                        const hasRowActions = !isEditing && canEditEntry(entry) && !entry.masked && !!entry.id;
                         return (
                             <li
                                 key={entry.id || `${entry.type}:${entry.value}`}
-                                className="group flex items-start gap-2 text-sm"
+                                className={`group flex items-start gap-2 text-sm ${hasRowActions ? 'py-3 sm:py-0' : ''}`}
                                 data-testid={`${testIdPrefix}-chip`}
                                 data-entry-type={entry.type}
                             >
@@ -802,7 +806,9 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                     ) : (
                                         <ContactValueCell entry={entry} onMaskedClick={onMaskedClick} trailing={
                                             canEditEntry(entry) && !entry.masked && entry.id && (
-                                                <span className="flex items-center gap-1 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 transition-opacity">
+                                                // -my-3 on phones: the 44px buttons centre on the value's FIRST line instead of
+                                                // hanging below it (audit B20); from `sm:` they are small and need no offset.
+                                                <span className="flex items-center gap-1 shrink-0 -my-3 sm:my-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 transition-opacity">
                                                     <button
                                                         type="button"
                                                         onClick={() => startEdit(entry)}
@@ -872,9 +878,9 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                          * list, quiet the Secondary variant here — for every place at
                          * once — rather than special-casing one place back into a link.
                          */
-                        className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-md transition-colors"
+                        className={buttonClasses({ variant: 'secondary', size: 'compact' })}
                     >
-                        <Plus className="w-4 h-4" />
+                        <Plus className="w-4 h-4" aria-hidden="true" />
                         {t('adopter.contrib_cta')}
                     </button>
                 )}

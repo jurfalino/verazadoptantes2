@@ -35,6 +35,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { MemberContacts } from '@/components/LinkedProfileSummary';
 import { PersonStanding, PersonActivity } from '@/components/PersonStanding';
+import { SEPARATED_PIECE } from '@/components/ActivityCountsLine';
 import { EditMemberForm, useHouseholdFailure } from '@/components/household/PersonForms';
 import { RemoveFromHomeDialog, RequestDeletionDialog, DeleteProfileDialog, type DeletionCollaborators, type RemoveReason } from '@/components/household/HouseholdDialogs';
 import { checkAdopterDeletable, deleteOwnAdopter, removeHouseholdMembership, requestAdopterDeletion } from '@/app/actions';
@@ -223,35 +224,35 @@ export function MemberCard({ member, hostName, relativeName, signedIn, currentUs
                 <span className="mt-1.5 w-8 h-8 rounded-full bg-teal-600 text-white font-bold text-xs flex items-center justify-center shrink-0" aria-hidden="true">{(name[0] || '?').toUpperCase()}</span>
                 <div className="min-w-0 flex-1 py-1">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                        {/* `relative z-10`: the contacts toggle's padded hit area (below) reaches up into this line; the name always wins. */}
-                        <a href={`/adopter/${encodeURIComponent(member.profileId)}`} data-testid="household-member-profile-link" className="relative z-10 font-semibold text-[15px] text-teal-700 hover:underline min-w-0 break-words">{name}</a>
+                        {/* `relative z-10`: the contacts toggle's padded hit area (below) reaches up into this line; the name always wins.
+                            Its own ::after pads the tap area to 44px without moving the text (audit B9). */}
+                        <a href={`/adopter/${encodeURIComponent(member.profileId)}`} data-testid="household-member-profile-link" className="relative z-10 font-semibold text-[15px] text-teal-700 hover:underline min-w-0 break-words after:absolute after:-inset-y-3 after:inset-x-0 after:content-['']">{name}</a>
                         {/* The one «standing + activity» renderer (PersonStanding), as «¿Es este perfil?» and every card's household line. */}
                         <PersonStanding rating={member.rating} openAlerts={member.openAlerts} isMinor={member.isMinor} alertsTestId="household-member-alerts" />
                         <PersonActivity activity={member.activity} isMinor={member.isMinor} testId="household-member-activity" />
                     </div>
                     {(sub || attribution || hasContactsToggle) && (
-                        <div className="text-xs text-stone-500 mt-1 break-words">
-                            {/* Each piece keeps together («según Test Admin», «4 datos ▾»); the line wraps between them. */}
-                            {sub && <span className="inline-block max-w-full" data-testid="household-member-label">{sub}</span>}
-                            {attribution && (
-                                // The «·» travels with the piece it introduces, so a piece («según Test Admin», «4 datos ▾») never splits across lines.
-                                <span className="inline-block max-w-full">
-                                    {sub && <span className="text-stone-400 mx-1" aria-hidden="true">·</span>}
-                                    <span data-testid={own ? 'household-member-own' : 'household-member-by'}>{attribution}</span>
-                                </span>
+                        // One flex row (audit B10): the text pieces are separated by a «·» drawn before each one and
+                        // clipped at the start of a line (overflow-hidden + -ml-3), so a wrapped line never starts with
+                        // «·»; the contacts toggle is its own flex item, separated by the gap, never by a dot.
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-500">
+                            {(sub || attribution) && (
+                                <div className="min-w-0 overflow-hidden">
+                                    <div className="-ml-3 flex flex-wrap">
+                                        {sub && <span className={SEPARATED_PIECE} data-testid="household-member-label">{sub}</span>}
+                                        {attribution && <span className={SEPARATED_PIECE} data-testid={own ? 'household-member-own' : 'household-member-by'}>{attribution}</span>}
+                                    </div>
+                                </div>
                             )}
                             {hasContactsToggle && (
-                                <span className="inline-block">
-                                    {(sub || attribution) && <span className="text-stone-400 mx-1" aria-hidden="true">·</span>}
-                                    {/* Inline, so the name keeps the row's width; the ::after pads the hit area to 44px. */}
-                                    <button type="button" onClick={() => setContactsOpen(o => !o)} aria-expanded={contactsOpen} aria-controls={contactsId}
-                                        data-testid="household-member-contacts-toggle"
-                                        className="relative inline-flex items-center gap-1 leading-5 font-semibold text-teal-700 hover:underline whitespace-nowrap after:absolute after:-inset-x-2 after:-inset-y-3 after:content-['']">
-                                        {locked && <Lock className="w-3 h-3 opacity-70" aria-label={t('adopter.ce_masked')} data-testid="household-member-contacts-locked" />}
-                                        {dataCount === 1 ? t('adopter.hh_data_one') : fill(t('adopter.hh_data_many'), { n: dataCount })}
-                                        <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${contactsOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
-                                    </button>
-                                </span>
+                                // The ::after pads the hit area to 44px (it is outside the clipped box above).
+                                <button type="button" onClick={() => setContactsOpen(o => !o)} aria-expanded={contactsOpen} aria-controls={contactsId}
+                                    data-testid="household-member-contacts-toggle"
+                                    className="relative inline-flex items-center gap-1 leading-5 font-semibold text-teal-700 hover:underline whitespace-nowrap after:absolute after:-inset-x-2 after:-inset-y-3 after:content-['']">
+                                    {locked && <Lock className="w-3 h-3 opacity-70" aria-label={t('adopter.ce_masked')} data-testid="household-member-contacts-locked" />}
+                                    {dataCount === 1 ? t('adopter.hh_data_one') : fill(t('adopter.hh_data_many'), { n: dataCount })}
+                                    <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${contactsOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+                                </button>
                             )}
                         </div>
                     )}
