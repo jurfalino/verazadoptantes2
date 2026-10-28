@@ -11,7 +11,7 @@ import { useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { en } from '@/i18n/locales/en';
 import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
-import { MatchCardActions, MatchCardHeader } from '@/components/MatchCardParts';
+import { MatchCard } from '@/components/MatchCardParts';
 import type { HouseholdLine } from '@/domain/households';
 
 // Single source of truth: fallbacks from English locale
@@ -165,33 +165,33 @@ export default function FormResultMatchCard({
                     </div>
                 </div>
             )}
-            {/* The applicant and the existing profile in two blocks, each value marked
-                by whether it matches (Jon, 2026-10-25). The profile's values as this
-                viewer may see them — masked stays masked. */}
-            {/* The shared match-card header (audit B6): name + their own standing, then their household line. */}
-            <div className="px-4 pt-3">
-                <MatchCardHeader person={profile} />
-            </div>
-            <div id={`comparison-${profile.id}`} className="px-4 pb-2 border-b border-stone-200">
-                <MatchCompare
-                    adopterId={profile.id}
-                    matchTypes={matchTypes}
-                    profileName={profile.name}
-                    source={{ kind: 'form', name: applicant.name, entries: applicantEntries }}
-                    profileEntries={profileEntries}
-                    score={score}
-                    bare
-                    t={t}
-                />
-            </div>
-
-            {/* Actions. The decision pair sits together — "Es la misma persona"
-                first, "No es esta persona" last — with navigation between. */}
-            <div className="px-4 py-3 border-t border-stone-200">
-                <MatchCardActions profileId={profile.id} busy={linking}
-                    onSame={canLink ? () => setConfirmOpen(true) : undefined} sameLabel={L('same_person')}
-                    onNotThis={canLink && onDismiss ? onDismiss : undefined} />
-            </div>
+            {/* The shared match card (audit B6): header (their photo or initial, name + their own standing,
+                household line) → «Qué coincide y qué no» → the same actions as every match card. The
+                applicant's values against the profile's, as this viewer may see them (masked stays masked). */}
+            <MatchCard
+                className="px-4 py-3"
+                person={profile}
+                thumbnail={profile.profileImageUrl ? proxyImageUrl(profile.profileImageUrl) : null}
+                compare={(
+                    <div id={`comparison-${profile.id}`}>
+                        <MatchCompare
+                            adopterId={profile.id}
+                            matchTypes={matchTypes}
+                            profileName={profile.name}
+                            source={{ kind: 'form', name: applicant.name, entries: applicantEntries }}
+                            profileEntries={profileEntries}
+                            score={score}
+                            bare
+                            t={t}
+                        />
+                    </div>
+                )}
+                actions={{
+                    busy: linking,
+                    onSame: canLink ? () => setConfirmOpen(true) : undefined, sameLabel: L('same_person'),
+                    onNotThis: canLink && onDismiss ? onDismiss : undefined,
+                }}
+            />
 
             <ConfirmDialog
                 open={confirmOpen}

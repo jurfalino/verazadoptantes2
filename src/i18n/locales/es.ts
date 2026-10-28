@@ -825,7 +825,6 @@ export const es = {
         merge_confirm_preview: 'Se agregará:',
         merge_confirm_no_new: 'No hay información nueva para agregar. Solo abriremos el perfil existente.',
         merge_confirm_action: 'Sí, continuar',
-        dup_action_dismiss: 'Descartar',
         identifications: 'Identificaciones',
         image_expired: 'Imagen expirada',
         add_profile_photo: 'Agregar foto de perfil',
@@ -1691,7 +1690,6 @@ export const es = {
         duplicateCard_view: 'Ver',
         saveModal_title: 'Posibles perfiles duplicados',
         saveModal_body: 'Crear un perfil nuevo puede generar un duplicado. Podés vincular con un perfil existente.',
-        saveModal_use_existing: 'Usar perfil existente',
         saveModal_create_anyway: 'Crear perfil nuevo igualmente',
         confidence: {
             high: 'Alta confianza',
@@ -2768,7 +2766,6 @@ export const es = {
         duplicateCard_use_profile: 'Usar este perfil',
         saveModal_title: 'Posibles perfiles duplicados',
         saveModal_body: 'Crear un perfil nuevo puede generar un duplicado. Podés vincular con un perfil existente.',
-        saveModal_use_existing: 'Usar perfil existente',
         saveModal_create_anyway: 'Crear perfil nuevo igualmente',
         // Validación IA
         aiValidationWarning: 'Los datos extraídos por IA pueden contener errores. Verificá todos los campos antes de guardar.',

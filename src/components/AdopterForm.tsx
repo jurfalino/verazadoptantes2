@@ -12,13 +12,17 @@ import ProfileAgeEditor from "@/components/ProfileAgeEditor";
 import { MinorTag } from "@/components/MinorTag";
 import { AnchoredMenu, AnchoredMenuItem, OverflowMenuButton } from "@/components/ui/AnchoredMenu";
 import { CalendarDays, GitMerge, Info, PencilLine, Phone, Share2, Trash2 } from "lucide-react";
-import { CardHouseholdLine } from "@/components/CardHouseholdLine";
 import { hasStrongMatch } from "@/lib/matchChips";
 import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
 import DuplicatePeek from "@/components/DuplicatePeek";
 import StrongMatchStrip from "@/components/StrongMatchStrip";
 import { zarazTrack } from "@/lib/zaraz";
 import type { DiscoveryMatch } from "@/app/actions";
+import { Modal, ModalActions, ModalText } from "@/components/ui/Modal";
+import { MatchCard } from "@/components/MatchCardParts";
+import { AdopterName } from "@/components/AdopterName";
+import { isNamelessAdopter } from "@/lib/adopterDisplay";
+import { alertCountOf } from "@/domain/flags";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesSection from "@/components/ContactEntriesSection";
@@ -262,8 +266,6 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         // can edit it.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-    const saveDuplicateModalRef = useRef<HTMLDivElement>(null);
-    const createAnywayButtonRef = useRef<HTMLButtonElement>(null);
     const duplicateDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     // Strong-match dismissal: ids the user explicitly ×-ed off the strong strip.
     // Save-time modal only fires for strong matches NOT in this set.
@@ -344,13 +346,6 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         }
     };
 
-    // Focus "Create new profile anyway" when save duplicate modal opens (accessibility)
-    useEffect(() => {
-        if (saveDuplicateModal) {
-            const id = setTimeout(() => createAnywayButtonRef.current?.focus(), 100);
-            return () => clearTimeout(id);
-        }
-    }, [saveDuplicateModal]);
     const MIN_NAME_LENGTH_FOR_SEARCH = 2;
     const MAX_DUPLICATE_CARD_RESULTS = 5;
 
@@ -476,12 +471,24 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     // "Continuar con este perfil" — open the confirmation modal first so the
     // user knows their in-progress data will be merged into the existing record.
     // The actual append fires only from confirmMerge() below.
-    const handleContinueWith = useCallback((targetId: string) => {
+    // `known`: the save check's own match (its fresh search may hold a profile the live list doesn't).
+    const handleContinueWith = useCallback((targetId: string, known?: DiscoveryMatch) => {
         if (continueBusyId) return;
-        const match = duplicateResults?.find(r => r.adopter.id === targetId);
+        const match = known ?? duplicateResults?.find(r => r.adopter.id === targetId);
         if (!match) return;
         setPendingMerge({ adopterId: targetId, adopterName: match.adopter.name });
     }, [continueBusyId, duplicateResults]);
+
+    // «No es esta persona» on any match card of this form (the panel, the strip, the save check):
+    // off every list, and the save check won't ask about it again.
+    const dismissStrongMatch = useCallback((adopterId: string) => {
+        setDismissedStrongIds(prev => new Set(prev).add(adopterId));
+        setSaveDuplicateModal(prev => {
+            if (!prev) return prev;
+            const matches = prev.matches.filter(m => m.adopter.id !== adopterId);
+            return matches.length > 0 ? { matches } : null;
+        });
+    }, []);
 
     const confirmMerge = useCallback(async () => {
         if (!pendingMerge || continueBusyId) return;
@@ -1072,16 +1079,14 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                             searching={duplicateSearching}
                             onContinueWith={handleContinueWith}
                             busyAdopterId={continueBusyId}
+                            dismissedIds={dismissedStrongIds}
+                            onNotThis={dismissStrongMatch}
                         />
                         <StrongMatchStrip
                             compareSource={compareSource}
                             results={duplicateResults}
                             dismissedIds={dismissedStrongIds}
-                            onDismiss={(id) => setDismissedStrongIds(prev => {
-                                const next = new Set(prev);
-                                next.add(id);
-                                return next;
-                            })}
+                            onDismiss={dismissStrongMatch}
                             onContinueWith={handleContinueWith}
                             busyAdopterId={continueBusyId}
                         />
@@ -1637,161 +1642,87 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                 </div>
             </form>
 
-            {/* Save confirmation modal when possible duplicates found */}
+            {/* Save check: strong matches still on the strip when «Guardar» is pressed. The shared dialog
+                (audit B8) with the shared match cards (audit B6) — the same header, order and actions as
+                the «Posibles coincidencias» panel. */}
             {saveDuplicateModal && (
-                <div
-                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/50 backdrop-blur-sm animate-in fade-in duration-200"
-                    onClick={() => setSaveDuplicateModal(null)}
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="save-duplicate-modal-title"
-                    aria-describedby="save-duplicate-modal-desc"
-                >
-                    <div
-                        ref={saveDuplicateModalRef}
-                        className="relative bg-white rounded-2xl shadow-xl border border-stone-200 w-full max-w-md max-h-[90svh] overflow-y-auto animate-in zoom-in-95 duration-200"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <h2 id="save-duplicate-modal-title" className="text-lg font-semibold text-stone-900 p-5 pb-2">
-                            {t('import.saveModal_title') || 'Possible duplicate profiles'}
-                        </h2>
-                        <p id="save-duplicate-modal-desc" className="text-sm text-stone-600 px-5 pb-4">
-                            {t('import.saveModal_body') || 'Creating a new profile may create a duplicate. You can link to an existing profile instead.'}
-                        </p>
-                        <ul className="px-5 space-y-2 max-h-[50svh] overflow-y-auto">
-                            {saveDuplicateModal.matches.map((result) => (
-                                <li key={result.adopter.id} className="p-3 rounded-xl bg-stone-50 border border-stone-200">
-                                    <div className="flex items-center justify-between gap-3">
-                                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                                            {result.thumbnail ? (
-                                                <img src={result.thumbnail} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
-                                            ) : (
-                                                <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-semibold flex-shrink-0">
-                                                    {result.adopter.name?.charAt(0)?.toUpperCase() || '?'}
-                                                </div>
-                                            )}
-                                            <div className="min-w-0">
-                                                <p className="font-semibold text-stone-800 truncate">{result.adopter.name}</p>
-                                            </div>
-                                        </div>
-                                        <a
-                                            href={`/adopter/${result.adopter.id}`}
-                                            className="px-3 py-1.5 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors flex-shrink-0"
-                                        >
-                                            {t('import.saveModal_use_existing') || 'Use existing profile'}
-                                        </a>
-                                    </div>
-                                    {result.isMinor && <div className="mt-2"><MinorTag /></div>}
-                                    <CardHouseholdLine lines={result.households} />
-                                    {/* Full row width: beside the button it squeezes to a sliver on a phone. */}
-                                    <MatchCompare
-                                        adopterId={result.adopter.id}
-                                        matchTypes={result.matchTypes}
-                                        profileName={result.adopter.name ?? ''}
-                                        source={compareSource}
-                                        profileEntries={entriesAsShown(result.adopter)}
-                                        score={result.relevancePercent}
-                                        defaultOpen={saveDuplicateModal.matches.length === 1}
-                                        t={t}
-                                    />
-                                </li>
-                            ))}
-                        </ul>
-                        <div className="p-5 pt-4 flex flex-col sm:flex-row gap-2 sm:justify-end border-t border-stone-100">
-                            <button
-                                type="button"
-                                ref={createAnywayButtonRef}
-                                onClick={async () => {
-                                    setSaveDuplicateModal(null);
-                                    await performActualSave();
-                                }}
-                                className="px-4 py-2.5 text-sm font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-xl transition-colors"
-                            >
-                                {t('import.saveModal_create_anyway') || 'Create new profile anyway'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setSaveDuplicateModal(null)}
-                                className="px-4 py-2.5 text-sm font-semibold text-stone-600 hover:bg-stone-100 rounded-xl transition-colors"
-                            >
-                                {t('common.cancel')}
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <Modal title={t('import.saveModal_title') || 'Possible duplicate profiles'} onClose={() => setSaveDuplicateModal(null)} testId="save-duplicate-modal" size="lg">
+                    <ModalText>{t('import.saveModal_body') || 'Creating a new profile may create a duplicate. You can link to an existing profile instead.'}</ModalText>
+                    <ul className="space-y-2">
+                        {saveDuplicateModal.matches.map((result) => (
+                            <li key={result.adopter.id} className="p-3 rounded-xl bg-stone-50 border border-stone-200">
+                                <MatchCard newTab thumbnail={result.thumbnail} headTestId="save-dup-head"
+                                    person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openAlerts: alertCountOf(result.flags), isMinor: result.isMinor, households: result.households }}
+                                    nameNode={isNamelessAdopter(result.adopter) ? <AdopterName adopter={result.adopter} className="break-words" /> : undefined}
+                                    compare={(
+                                        <MatchCompare
+                                            adopterId={result.adopter.id}
+                                            matchTypes={result.matchTypes}
+                                            profileName={result.adopter.name ?? ''}
+                                            source={compareSource}
+                                            profileEntries={entriesAsShown(result.adopter)}
+                                            score={result.relevancePercent}
+                                            defaultOpen={saveDuplicateModal.matches.length === 1}
+                                            t={t}
+                                        />
+                                    )}
+                                    actions={{
+                                        busy: continueBusyId === result.adopter.id,
+                                        // The same step as the panel: the typed data goes into that profile, after its confirm.
+                                        onSame: () => { setSaveDuplicateModal(null); handleContinueWith(result.adopter.id, result); },
+                                        sameLabel: t('adopter.dup_action_continue_with_existing') || 'Continue with this profile',
+                                        onNotThis: () => dismissStrongMatch(result.adopter.id),
+                                        notThisTestId: 'save-dup-not-this',
+                                    }} />
+                            </li>
+                        ))}
+                    </ul>
+                    <ModalActions
+                        onCancel={() => setSaveDuplicateModal(null)}
+                        confirm={{
+                            label: t('import.saveModal_create_anyway') || 'Create new profile anyway',
+                            tone: 'primary',
+                            testId: 'save-dup-create-anyway',
+                            onClick: async () => { setSaveDuplicateModal(null); await performActualSave(); },
+                        }}
+                    />
+                </Modal>
             )}
 
-            {/* Confirmation: "Continuar con este perfil" merges typed data into target */}
+            {/* «Continuar con este perfil»: the typed data goes into that profile — the shared dialog (audit B8). */}
             {pendingMerge && (
-                <div
-                    className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-stone-900/50 backdrop-blur-sm animate-in fade-in duration-200"
-                    onClick={() => continueBusyId ? undefined : setPendingMerge(null)}
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="continue-merge-title"
-                >
-                    <div
-                        className="relative bg-white rounded-2xl shadow-xl border border-stone-200 w-full max-w-md animate-in zoom-in-95 duration-200"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="p-5 pb-3 border-b border-stone-100">
-                            <h2 id="continue-merge-title" className="text-lg font-semibold text-stone-900">
-                                {(t('adopter.merge_confirm_title') || '¿Continuar con el perfil de {name}?').replace('{name}', pendingMerge.adopterName)}
-                            </h2>
-                            <p className="text-sm text-stone-600 mt-2">
-                                {t('adopter.merge_confirm_body') || 'La información que ingresaste se agregará a este perfil. Los datos que ya existan en el perfil no se duplicarán.'}
+                <Modal title={(t('adopter.merge_confirm_title') || '¿Continuar con el perfil de {name}?').replace('{name}', pendingMerge.adopterName)}
+                    onClose={() => setPendingMerge(null)} busy={!!continueBusyId} testId="continue-merge-dialog">
+                    <ModalText>{t('adopter.merge_confirm_body') || 'La información que ingresaste se agregará a este perfil. Los datos que ya existan en el perfil no se duplicarán.'}</ModalText>
+                    {(data.contactInfo?.trim() || data.familyMembers?.trim()) ? (
+                        <div className="rounded-xl px-3 py-3 bg-amber-50 border border-amber-100">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-amber-800 mb-2">
+                                {t('adopter.merge_confirm_preview') || 'Se agregará:'}
                             </p>
+                            <ul className="space-y-1.5 text-sm text-stone-800">
+                                {data.contactInfo?.trim() && (
+                                    <li>
+                                        <span className="text-xs font-medium text-stone-500">{t('adopter.contact') || 'Contacto'}: </span>
+                                        <span className="[overflow-wrap:anywhere]">{data.contactInfo.trim()}</span>
+                                    </li>
+                                )}
+                                {data.familyMembers?.trim() && (
+                                    <li>
+                                        <span className="text-xs font-medium text-stone-500">{t('adopter.family_members') || 'Familia'}: </span>
+                                        <span className="[overflow-wrap:anywhere]">{data.familyMembers.trim()}</span>
+                                    </li>
+                                )}
+                            </ul>
                         </div>
-                        {(data.contactInfo?.trim() || data.familyMembers?.trim()) ? (
-                            <div className="px-5 py-3 bg-amber-50 border-y border-amber-100">
-                                <p className="text-xs font-semibold uppercase tracking-wider text-amber-800 mb-2">
-                                    {t('adopter.merge_confirm_preview') || 'Se agregará:'}
-                                </p>
-                                <ul className="space-y-1.5 text-sm text-stone-800">
-                                    {data.contactInfo?.trim() && (
-                                        <li>
-                                            <span className="text-xs font-medium text-stone-500">{t('adopter.contact') || 'Contacto'}: </span>
-                                            <span className="break-words">{data.contactInfo.trim()}</span>
-                                        </li>
-                                    )}
-                                    {data.familyMembers?.trim() && (
-                                        <li>
-                                            <span className="text-xs font-medium text-stone-500">{t('adopter.family_members') || 'Familia'}: </span>
-                                            <span className="break-words">{data.familyMembers.trim()}</span>
-                                        </li>
-                                    )}
-                                </ul>
-                            </div>
-                        ) : (
-                            <div className="px-5 py-3 bg-stone-50 border-y border-stone-100">
-                                <p className="text-sm text-stone-600">
-                                    {t('adopter.merge_confirm_no_new') || 'No hay información nueva para agregar. Solo abriremos el perfil existente.'}
-                                </p>
-                            </div>
-                        )}
-                        <div className="p-5 pt-4 flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
-                            <button
-                                type="button"
-                                onClick={() => setPendingMerge(null)}
-                                disabled={!!continueBusyId}
-                                className="px-4 py-2.5 text-sm font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 disabled:opacity-50 rounded-xl transition-colors"
-                            >
-                                {t('common.cancel') || 'Cancelar'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={confirmMerge}
-                                disabled={!!continueBusyId}
-                                autoFocus
-                                className="px-4 py-2.5 text-sm font-semibold text-white bg-teal-700 hover:bg-teal-600 disabled:opacity-50 rounded-xl transition-colors shadow-lg shadow-teal-700/30"
-                            >
-                                {continueBusyId
-                                    ? (t('common.processing') || 'Procesando...')
-                                    : (t('adopter.merge_confirm_action') || 'Sí, continuar')}
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                    ) : (
+                        <ModalText>{t('adopter.merge_confirm_no_new') || 'No hay información nueva para agregar. Solo abriremos el perfil existente.'}</ModalText>
+                    )}
+                    <ModalActions
+                        onCancel={() => setPendingMerge(null)}
+                        busy={!!continueBusyId}
+                        confirm={{ label: t('adopter.merge_confirm_action') || 'Sí, continuar', tone: 'primary', testId: 'continue-merge-confirm', onClick: () => { void confirmMerge(); } }}
+                    />
+                </Modal>
             )}
 
         </div>

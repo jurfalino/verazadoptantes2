@@ -826,7 +826,6 @@ export const en = {
         merge_confirm_preview: 'Will be added:',
         merge_confirm_no_new: 'No new information to add. We’ll just open the existing profile.',
         merge_confirm_action: 'Yes, continue',
-        dup_action_dismiss: 'Dismiss',
         add_profile_photo: 'Add profile photo',
         view_profile_photo: 'View profile photo',
         change_profile_photo: 'Change photo',
@@ -1686,7 +1685,6 @@ export const en = {
         duplicateCard_view: 'View',
         saveModal_title: 'Possible duplicate profiles',
         saveModal_body: 'Creating a new profile may create a duplicate. You can link to an existing profile instead.',
-        saveModal_use_existing: 'Use existing profile',
         saveModal_create_anyway: 'Create new profile anyway',
         confidence: {
             high: 'High confidence',
@@ -2763,7 +2761,6 @@ export const en = {
         duplicateCard_use_profile: 'Use this profile',
         saveModal_title: 'Possible duplicate profiles',
         saveModal_body: 'Creating a new profile may create a duplicate. You can link to an existing profile instead.',
-        saveModal_use_existing: 'Use existing profile',
         saveModal_create_anyway: 'Create new profile anyway',
         // AI validation
         aiValidationWarning: 'AI-extracted data may contain errors. Please verify all fields before saving.',

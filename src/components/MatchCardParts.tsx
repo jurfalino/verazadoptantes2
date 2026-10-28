@@ -1,8 +1,10 @@
 'use client';
 
 /**
- * The parts every «¿Es esta persona?» match card shares (audit B6): form
- * results, contract results and «Nuevo adoptante → Posibles coincidencias».
+ * The one «¿Es esta persona?» match card (audit B6): form results, contract
+ * results, «Nuevo adoptante → Posibles coincidencias», its «Coincidencia casi
+ * exacta» strip and save dialog, and the post import's match list. `MatchCard`
+ * is the structure — every surface renders it, only its container differs.
  * One order on every card:
  *
  *   (P) Pedro Paez ★ 4.0 · Bueno  [1 alerta]        ← MatchCardHeader
@@ -10,7 +12,7 @@
  *   «Qué coincide y qué no» (MatchCompare)          ← the caller's
  *   [Es la misma persona] [Ver perfil completo →] [No es esta persona]   ← MatchCardActions
  *
- * The header is the household row's (teal initial, the name as a link,
+ * The header is the household row's (their photo, else the teal initial; the name as a link with a 44px hit area,
  * PersonStanding: the matched person's own rating and alerts, or «Menor de
  * edad»); long names and emails wrap inside the card (`min-w-0`,
  * `overflow-wrap:anywhere`). The actions are the matrix's compact buttons
@@ -35,8 +37,10 @@ export type MatchCardPerson = {
     households?: HouseholdLine[];
 };
 
-export function MatchCardHeader({ person, newTab = false, testId = 'match-card-head', nameNode, thumbnail }: {
+export function MatchCardHeader({ person, newTab = false, testId = 'match-card-head', nameNode, thumbnail, showStanding = true }: {
     person: MatchCardPerson; newTab?: boolean; testId?: string;
+    /** False when their standing could not be read: say nothing rather than «Sin calificación». */
+    showStanding?: boolean;
     /** The name as the caller renders it (e.g. with the typed words highlighted). */
     nameNode?: ReactNode;
     /** Their photo, in the initial's place. */
@@ -54,10 +58,11 @@ export function MatchCardHeader({ person, newTab = false, testId = 'match-card-h
                     </span>}
                 <div className="min-w-0 flex-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm py-1">
                     <a href={`/adopter/${encodeURIComponent(person.id)}`} {...(newTab ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                        className="min-w-0 font-semibold text-[15px] text-teal-700 hover:underline [overflow-wrap:anywhere]" data-testid={`${testId}-name`}>
+                        // The household row's name link: a 44px hit area around the text (audit B9).
+                        className="relative min-w-0 font-semibold text-[15px] text-teal-700 hover:underline [overflow-wrap:anywhere] after:absolute after:-inset-y-3 after:inset-x-0 after:content-['']" data-testid={`${testId}-name`}>
                         {nameNode ?? name}
                     </a>
-                    <PersonStanding rating={person.rating ?? null} openAlerts={person.openAlerts ?? 0} isMinor={!!person.isMinor} alertsTestId={`${testId}-alerts`} />
+                    {showStanding && <PersonStanding rating={person.rating ?? null} openAlerts={person.openAlerts ?? 0} isMinor={!!person.isMinor} minorTestId={`${testId}-minor`} alertsTestId={`${testId}-alerts`} />}
                 </div>
             </div>
             <CardHouseholdLine lines={person.households} className="mt-1 pl-10" />
@@ -70,7 +75,7 @@ export function MatchCardHeader({ person, newTab = false, testId = 'match-card-h
  * link) and «No es esta persona» (secondary, optional) — or a caller's own
  * primary label for the same slot (e.g. «Continuar con este perfil»).
  */
-export function MatchCardActions({ profileId, onSame, sameLabel, onNotThis, busy = false, newTab = false, sameTestId, viewTestId }: {
+export type MatchCardActionsProps = {
     profileId: string;
     onSame?: () => void;
     sameLabel?: string;
@@ -79,7 +84,10 @@ export function MatchCardActions({ profileId, onSame, sameLabel, onNotThis, busy
     newTab?: boolean;
     sameTestId?: string;
     viewTestId?: string;
-}) {
+    notThisTestId?: string;
+};
+
+export function MatchCardActions({ profileId, onSame, sameLabel, onNotThis, busy = false, newTab = false, sameTestId, viewTestId, notThisTestId }: MatchCardActionsProps) {
     const { t } = useLanguage();
     const layout = 'w-full sm:w-auto';
     return (
@@ -96,10 +104,42 @@ export function MatchCardActions({ profileId, onSame, sameLabel, onNotThis, busy
                 <ArrowRight className="w-4 h-4" aria-hidden="true" />
             </Link>
             {onNotThis && (
-                <Button type="button" variant="secondary" size="compact" onClick={onNotThis} disabled={busy} layoutClassName={`${layout} sm:ml-auto`}>
+                <Button type="button" variant="secondary" size="compact" onClick={onNotThis} disabled={busy} data-testid={notThisTestId} layoutClassName={`${layout} sm:ml-auto`}>
                     {t('formResults.not_this_person')}
                 </Button>
             )}
+        </div>
+    );
+}
+
+/**
+ * The whole card's structure, the same on every surface (audit B6): header
+ * (name + standing, household line) → `note` (e.g. why a minor can't be picked)
+ * → «Qué coincide y qué no» → the actions. Compare and actions span the card's
+ * full width (no indent) everywhere. `leading` sits before the header (the
+ * post import's selection mark).
+ */
+export function MatchCard({ person, nameNode, thumbnail, newTab = false, headTestId, showStanding = true, leading, note, compare, actions, testId, className = '' }: {
+    person: MatchCardPerson;
+    nameNode?: ReactNode;
+    thumbnail?: string | null;
+    newTab?: boolean;
+    headTestId?: string;
+    showStanding?: boolean;
+    leading?: ReactNode;
+    note?: ReactNode;
+    compare: ReactNode;
+    actions: Omit<MatchCardActionsProps, 'profileId' | 'newTab'>;
+    testId?: string;
+    className?: string;
+}) {
+    const header = <MatchCardHeader person={person} nameNode={nameNode} thumbnail={thumbnail} newTab={newTab} testId={headTestId} showStanding={showStanding} />;
+    return (
+        <div className={`min-w-0 space-y-3 ${className}`} data-testid={testId}>
+            {leading ? <div className="flex items-start gap-2">{leading}<div className="min-w-0 flex-1">{header}</div></div> : header}
+            {note}
+            {compare}
+            <MatchCardActions profileId={person.id} newTab={newTab} {...actions} />
         </div>
     );
 }

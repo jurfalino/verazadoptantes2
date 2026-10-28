@@ -8,7 +8,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
 import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
-import { MatchCardActions, MatchCardHeader } from '@/components/MatchCardParts';
+import { MatchCard } from '@/components/MatchCardParts';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import type { HouseholdLine } from '@/domain/households';
 
@@ -51,6 +51,7 @@ export default function ContractResultsMatchCard({
     const toast = useShowToast();
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [linking, setLinking] = useState(false);
+    const [dismissed, setDismissed] = useState(false);
 
     const handleConfirm = async () => {
         setLinking(true);
@@ -79,26 +80,30 @@ export default function ContractResultsMatchCard({
         }
     };
 
+    if (dismissed) return null;
     return (
         <>
-            {/* The shared match card (audit B6): header (name + their own standing) → household line → «Qué coincide
-                y qué no» → the same three actions and labels as a form's match card. */}
-            <div data-testid="contract-match-card" className="block bg-white rounded-xl border border-stone-200 p-4 shadow-sm space-y-3">
-                <MatchCardHeader person={profile} />
-                {/* What matches and what doesn't, field by field (Jon, 2026-10-25). */}
-                <MatchCompare
-                    adopterId={profile.id}
-                    matchTypes={matchTypes}
-                    profileName={profile.name}
-                    source={{ kind: 'contract', name: signer.name, entries: signer.entries }}
-                    profileEntries={entriesAsShown(profile)}
-                    score={score}
-                    defaultOpen={compareOpen}
-                    t={t}
+            {/* The shared match card (audit B6): header (name + their own standing, household line) → «Qué coincide
+                y qué no» → the same actions and labels as every match card. */}
+            <div data-testid="contract-match-card" className="block bg-white rounded-xl border border-stone-200 p-4 shadow-sm">
+                <MatchCard
+                    person={profile}
+                    compare={(
+                        // What matches and what doesn't, field by field (Jon, 2026-10-25).
+                        <MatchCompare
+                            adopterId={profile.id}
+                            matchTypes={matchTypes}
+                            profileName={profile.name}
+                            source={{ kind: 'contract', name: signer.name, entries: signer.entries }}
+                            profileEntries={entriesAsShown(profile)}
+                            score={score}
+                            defaultOpen={compareOpen}
+                            t={t}
+                        />
+                    )}
+                    // «No es esta persona» takes the card off this page, as on a form's results.
+                    actions={{ onSame: () => setConfirmOpen(true), busy: linking, onNotThis: () => setDismissed(true), notThisTestId: 'contract-match-not-this' }}
                 />
-                <div className="pt-3 border-t border-stone-100">
-                    <MatchCardActions profileId={profile.id} onSame={() => setConfirmOpen(true)} busy={linking} />
-                </div>
             </div>
 
             {/* The shared dialog (role="dialog", focus, Escape); the same question as a form's «¿Vincular a …?». */}

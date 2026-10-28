@@ -26,7 +26,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { AdopterName } from '@/components/AdopterName';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
 import MatchCompare, { entriesAsShown, type MatchSourceKind } from '@/components/MatchCompare';
-import { MatchCardActions, MatchCardHeader } from '@/components/MatchCardParts';
+import { MatchCard } from '@/components/MatchCardParts';
 import { alertCountOf } from '@/domain/flags';
 
 const NAME_HL_TYPES = ['name_full', 'name_word'];
@@ -40,11 +40,16 @@ interface Props {
     /** Distinguishes "user dismissed it" from "no matches" — DuplicatePeek itself
      *  doesn't persist dismissal state; consumers wire if needed. */
     busyAdopterId?: string | null;
+    /** «No es esta persona» (the form's dismissal, shared with the strong-match strip and the save check). */
+    dismissedIds?: Set<string>;
+    onNotThis?: (adopterId: string) => void;
 }
 
 
-export default function DuplicatePeek({ results, searching, onContinueWith, busyAdopterId, compareSource }: Props) {
+export default function DuplicatePeek({ results: allResults, searching, onContinueWith, busyAdopterId, compareSource, dismissedIds, onNotThis }: Props) {
     const { t } = useLanguage();
+    // A profile the rescuer said is not this person leaves the list (and the count).
+    const results = allResults && dismissedIds?.size ? allResults.filter(r => !dismissedIds.has(r.adopter.id)) : allResults;
     const [expanded, setExpanded] = useState(false);
     const [pulse, setPulse] = useState(false);
     const prevCountRef = useRef(0);
@@ -173,28 +178,30 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
                                 return (
                                     <li key={result.adopter.id} className={`px-5 py-3 ${strong ? 'bg-amber-50/40' : ''}`}>
                                         {/* The shared match card (audit B6): header → household line → «Qué coincide» → actions. */}
-                                        <MatchCardHeader newTab thumbnail={result.thumbnail}
+                                        <MatchCard newTab thumbnail={result.thumbnail} headTestId="dup-peek-head"
                                             person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openAlerts: alertCountOf(result.flags), isMinor: result.isMinor, households: result.households }}
                                             nameNode={isNamelessAdopter(result.adopter)
                                                 ? <AdopterName adopter={result.adopter} className="break-words" />
-                                                : highlightMatches(result.adopter.name, result.matchValues, NAME_HL_TYPES)} />
-                                        <div className="pl-10">
-                                            <MatchCompare
-                                                adopterId={result.adopter.id}
-                                                matchTypes={result.matchTypes}
-                                                profileName={result.adopter.name ?? ''}
-                                                source={compareSource}
-                                                profileEntries={entriesAsShown(result.adopter)}
-                                                score={result.relevancePercent}
-                                                defaultOpen={(results ?? []).length === 1}
-                                                t={t}
-                                            />
-                                            <div className="mt-2.5">
-                                                <MatchCardActions profileId={result.adopter.id} newTab busy={busyAdopterId === result.adopter.id}
-                                                    onSame={onContinueWith ? () => onContinueWith(result.adopter.id) : undefined}
-                                                    sameLabel={t('adopter.dup_action_continue_with_existing') || 'Continue with this profile'} />
-                                            </div>
-                                        </div>
+                                                : highlightMatches(result.adopter.name, result.matchValues, NAME_HL_TYPES)}
+                                            compare={(
+                                                <MatchCompare
+                                                    adopterId={result.adopter.id}
+                                                    matchTypes={result.matchTypes}
+                                                    profileName={result.adopter.name ?? ''}
+                                                    source={compareSource}
+                                                    profileEntries={entriesAsShown(result.adopter)}
+                                                    score={result.relevancePercent}
+                                                    defaultOpen={(results ?? []).length === 1}
+                                                    t={t}
+                                                />
+                                            )}
+                                            actions={{
+                                                busy: busyAdopterId === result.adopter.id,
+                                                onSame: onContinueWith ? () => onContinueWith(result.adopter.id) : undefined,
+                                                sameLabel: t('adopter.dup_action_continue_with_existing') || 'Continue with this profile',
+                                                onNotThis: onNotThis ? () => onNotThis(result.adopter.id) : undefined,
+                                                notThisTestId: 'dup-peek-not-this',
+                                            }} />
                                     </li>
                                 );
                             })}
