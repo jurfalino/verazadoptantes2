@@ -8,6 +8,9 @@ import type { DiscoveryMatch, SnippetField } from '@/app/actions';
 import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
 import { AdopterName } from '@/components/AdopterName';
+import { MinorTag } from '@/components/MinorTag';
+import { PersonStanding } from '@/components/PersonStanding';
+import type { HouseholdLine } from '@/domain/households';
 
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -17,6 +20,19 @@ const SNIPPET_ICONS: Record<SnippetField, string> = {
 };
 
 type Accent = 'teal' | 'rose';
+
+/** Who was picked: an existing result, or an adult of a minor's household offered under it. */
+export type PickedAdopter = { adopterId: string; name: string };
+
+/**
+ * A minor's housemates who can carry the record (audit A3): adults only, never
+ * a gift recipient's household. From the result's own household line, when the
+ * search read it.
+ */
+export function adultsToOffer(lines: HouseholdLine[] | null | undefined): HouseholdLine[] {
+    const seen = new Set<string>();
+    return (lines ?? []).filter(l => !l.isMinor && !l.isGift && !seen.has(l.profileId) && seen.add(l.profileId));
+}
 
 const ACCENT: Record<Accent, { snippet: string; resultRowSelectedBg: string }> = {
     teal: { snippet: 'text-teal-700', resultRowSelectedBg: 'bg-teal-50 border-l-2 border-l-teal-500' },
@@ -30,14 +46,19 @@ const ACCENT: Record<Accent, { snippet: string; resultRowSelectedBg: string }> =
  * (or hand off to /adopter/create) before transferring control to
  * `AdoptionFormWizard`. Previously the same UI lived duplicated inside
  * `AdoptionWizard` and `ReportWizard`; this is the single source of truth.
+ *
+ * A minor (audit 2026-10-28, A3) shows «Menor de edad» where the rating goes
+ * and can't be picked — a record would be refused after the whole wizard. The
+ * row says why and offers the adults of their household instead, when the
+ * search knows them.
  */
 export default function AdopterPicker({
     onSelect,
     onCreateNew,
     accent = 'teal',
 }: {
-    /** Called when the user picks an existing adopter. */
-    onSelect: (adopter: DiscoveryMatch) => void;
+    /** Called when the user picks an existing adopter (never a minor: records go on the adults of their household). */
+    onSelect: (picked: PickedAdopter) => void;
     /** Called when the user chooses "+ create new". `searchText` is whatever they typed (may be empty). */
     onCreateNew: (searchText: string) => void;
     accent?: Accent;
@@ -112,6 +133,34 @@ export default function AdopterPicker({
         debounceRef.current = setTimeout(() => runSearch(term), SEARCH_DEBOUNCE_MS);
     };
 
+    const pick = (res: DiscoveryMatch) => {
+        if (res.isMinor) return;
+        onSelect({ adopterId: res.adopter.id, name: res.adopter.name ?? '' });
+    };
+
+    /** Under a minor's row: why it can't be picked, and their household's adults to pick instead. */
+    const minorNote = (res: DiscoveryMatch) => {
+        const adults = adultsToOffer(res.households);
+        return (
+            <div className="px-3 pb-3 pl-[60px] text-xs text-stone-600 space-y-1.5" data-testid="picker-minor-note">
+                <p>{t('adopter.minor_note')}</p>
+                {adults.length > 0 && (
+                    <div className="space-y-1">
+                        <p className="font-semibold text-stone-500">{t('wizard.minor_pick_adult')}</p>
+                        {adults.map(a => (
+                            <button key={a.profileId} type="button" data-testid="picker-minor-adult" data-profile-id={a.profileId}
+                                onClick={() => onSelect({ adopterId: a.profileId, name: a.name })}
+                                className="w-full flex flex-wrap items-center gap-x-2 gap-y-0.5 min-h-[44px] px-3 py-2 rounded-xl border border-stone-200 bg-white hover:bg-teal-50 hover:border-teal-400 text-left transition-colors">
+                                <span className="font-semibold text-sm text-stone-800 break-words">{a.name}</span>
+                                <PersonStanding rating={a.rating} openAlerts={a.openAlerts} isMinor={false} />
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     if (preview) {
         return (
             <div className="animate-in slide-in-from-right duration-200">
@@ -140,7 +189,7 @@ export default function AdopterPicker({
                             </div>
                         )}
                         <div className="flex gap-4 text-sm">
-                            {preview.avgRating != null && (
+                            {preview.isMinor ? <MinorTag testId="picker-minor-tag" /> : preview.avgRating != null && (
                                 <RatingExplainer rating={preview.avgRating}>
                                     <RatingBadge rating={preview.avgRating} variant="inline" size="sm" label="search" />
                                 </RatingExplainer>
@@ -159,6 +208,7 @@ export default function AdopterPicker({
                         )}
                     </div>
 
+                    {preview.isMinor && minorNote(preview)}
                     <div className="p-4 border-t border-teal-100 flex justify-between">
                         <button
                             onClick={() => setPreview(null)}
@@ -166,12 +216,15 @@ export default function AdopterPicker({
                         >
                             {t('wizard.back_to_results') || '← Back to results'}
                         </button>
-                        <button
-                            onClick={() => onSelect(preview)}
-                            className="px-5 py-2 bg-teal-600 text-white font-semibold rounded-xl hover:bg-teal-700 transition-colors text-sm"
-                        >
-                            ✓ {t('wizard.select_this') || 'Select this person'}
-                        </button>
+                        {/* A minor can't be picked (audit A3): the note above offers their household's adults. */}
+                        {!preview.isMinor && (
+                            <button
+                                onClick={() => pick(preview)}
+                                className="px-5 py-2 bg-teal-600 text-white font-semibold rounded-xl hover:bg-teal-700 transition-colors text-sm"
+                            >
+                                ✓ {t('wizard.select_this') || 'Select this person'}
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -214,10 +267,11 @@ export default function AdopterPicker({
                         // that don't go through discovery search.
                         const isMine = res.ownership === 'mine' || (!!viewerEmail && res.adopter.addedBy === viewerEmail);
                         const isTeam = !isMine && res.ownership === 'team';
+                        const minor = !!res.isMinor;
                         return (
+                        <div key={res.adopter.id} data-testid="picker-result" data-minor={minor ? '1' : undefined}>
                         <div
-                            key={res.adopter.id}
-                            className={`flex items-center gap-3 p-3 hover:bg-teal-50 transition-colors ${isMine ? 'bg-teal-50/50' : isTeam ? 'bg-indigo-50/40' : ''}`}
+                            className={`flex items-center gap-3 p-3 transition-colors ${minor ? '' : 'hover:bg-teal-50'} ${isMine ? 'bg-teal-50/50' : isTeam ? 'bg-indigo-50/40' : ''}`}
                         >
                             {res.thumbnail ? (
                                 <img src={res.thumbnail} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
@@ -228,8 +282,10 @@ export default function AdopterPicker({
                             )}
 
                             <button
-                                onClick={() => onSelect(res)}
-                                className="flex-1 text-left min-w-0"
+                                onClick={() => pick(res)}
+                                disabled={minor}
+                                aria-disabled={minor || undefined}
+                                className="flex-1 text-left min-w-0 disabled:cursor-not-allowed"
                             >
                                 <div className="flex items-center gap-2">
                                     <AdopterName adopter={res.adopter} className="font-semibold text-sm text-stone-800 truncate" title />
@@ -250,7 +306,8 @@ export default function AdopterPicker({
                                     )}
                                 </div>
                                 <div className="flex items-center gap-2 text-xs text-stone-500">
-                                    {res.avgRating != null && (
+                                    {/* A minor: «Menor de edad» where the rating goes (as on every card). */}
+                                    {minor ? <MinorTag testId="picker-minor-tag" /> : res.avgRating != null && (
                                         <RatingBadge rating={res.avgRating} variant="inline" size="sm" label="short" />
                                     )}
                                     {res.stats?.adoptions > 0 && (
@@ -267,6 +324,8 @@ export default function AdopterPicker({
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                             </button>
+                        </div>
+                        {minor && minorNote(res)}
                         </div>
                         );
                     })}

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
-import AdopterPicker from '@/components/AdopterPicker';
+import AdopterPicker, { type PickedAdopter } from '@/components/AdopterPicker';
 import { appendCreatePrefill } from '@/lib/createPrefill';
 
 type RecordType = 'adoption' | 'observation';
@@ -76,9 +76,9 @@ export default function HomepageActionCard({
         setPickerOpen(true);
     };
 
-    const handleSelect = (adopter: { adopter: { id: string } }) => {
+    const handleSelect = (picked: PickedAdopter) => {
         setPickerOpen(false);
-        router.push(`/adopter/${adopter.adopter.id}?newAdoption=${recordType}`);
+        router.push(`/adopter/${encodeURIComponent(picked.adopterId)}?newAdoption=${recordType}`);
     };
 
     const handleCreateNew = (searchText: string) => {

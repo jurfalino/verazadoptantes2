@@ -40,3 +40,17 @@ describe('handledAsStale', () => {
         expect(markDeploymentStale).not.toHaveBeenCalled();
     });
 });
+
+describe('minorRefusalMessage (audit A3: an expected rule, not a failure)', () => {
+    const t = (k: string) => `T:${k}`;
+    it('names the rule for a record or an alert refused on a minor — with or without an old-build Error ID suffix', async () => {
+        const { minorRefusalMessage } = await import('./errorMessage');
+        expect(minorRefusalMessage(new Error('PROFILE_IS_MINOR'), t, 'record')).toBe('T:adopter.minor_note');
+        expect(minorRefusalMessage(new Error('PROFILE_IS_MINOR (Error ID: ab12cd34)'), t, 'alert')).toBe('T:adopter.minor_refused_alert');
+    });
+    it('is null for anything else (those stay error toasts with their id)', async () => {
+        const { minorRefusalMessage } = await import('./errorMessage');
+        expect(minorRefusalMessage(new Error('Failed to save adoption (Error ID: x)'), t, 'record')).toBeNull();
+        expect(minorRefusalMessage('PROFILE_IS_MINOR', t, 'record')).toBeNull();
+    });
+});

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { isProfileIsMinorError } from '@/domain/profileIdentity';
+import { minorRefusalMessage } from '@/lib/errorMessage';
 import { flagAdopter, findAdopters, getDuplicateCandidates } from '@/app/actions';
 import type { DuplicateCandidate, DiscoveryMatch } from '@/app/actions';
 import { useRouter } from 'next/navigation';
@@ -186,7 +186,10 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                 }
             } catch (e) {
                 console.error(e);
-                toast.error(t('errors.generic'), isProfileIsMinorError(e) ? t('adopter.minor_refused_alert') : t('errors.report_error'), resolveErrorId(e, 'AdopterFlagging'));
+                // A minor's profile: the rule, as a validation message — no Error ID (audit A3).
+                const minor = minorRefusalMessage(e, t, 'alert');
+                if (minor) toast.warning(minor);
+                else toast.error(t('errors.generic'), t('errors.report_error'), resolveErrorId(e, 'AdopterFlagging'));
             } finally {
                 setSubmitLoading(false);
             }
@@ -238,7 +241,10 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             }
         } catch (e) {
             console.error(e);
-            toast.error(t('errors.generic'), isProfileIsMinorError(e) ? t('adopter.minor_refused_alert') : t('errors.report_error'), resolveErrorId(e, 'AdopterFlagging'));
+            // A minor's profile: the rule, as a validation message — no Error ID (audit A3).
+            const minor = minorRefusalMessage(e, t, 'alert');
+            if (minor) toast.warning(minor);
+            else toast.error(t('errors.generic'), t('errors.report_error'), resolveErrorId(e, 'AdopterFlagging'));
         } finally {
             setSubmitLoading(false);
         }

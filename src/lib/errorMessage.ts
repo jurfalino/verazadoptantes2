@@ -1,3 +1,4 @@
+import { isProfileIsMinorError } from '@/domain/profileIdentity';
 import { isDeploymentSkewError } from '@/domain/clientErrors';
 import { markDeploymentStale } from './staleDeploy';
 
@@ -27,4 +28,15 @@ export function handledAsStale(err: unknown): boolean {
     if (!isDeploymentSkewError(err)) return false;
     markDeploymentStale({ userInitiated: true });
     return true;
+}
+
+/**
+ * A record, rating or alert refused because the profile is a minor's
+ * (PROFILE_IS_MINOR): an expected rule, not a failure — the caller shows this
+ * text as a warning (validation message), never an error toast with an Error
+ * ID (audit 2026-10-28, A3). Null for any other error.
+ */
+export function minorRefusalMessage(err: unknown, t: (key: string) => string, what: 'record' | 'alert'): string | null {
+    if (!isProfileIsMinorError(err)) return null;
+    return t(what === 'alert' ? 'adopter.minor_refused_alert' : 'adopter.minor_note');
 }

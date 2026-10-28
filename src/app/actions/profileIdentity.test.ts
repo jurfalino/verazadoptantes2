@@ -264,11 +264,14 @@ describe('changeProfileAge and minors', () => {
     it('on a minor: saveAdoption refused (a request, an adoption with a rating), flagAdopter refused — with a clear code; nothing written', async () => {
         await changeProfileAge({ adopterId: 'lucas', age: 12, isMinor: true });
         const before = sqlite.prepare("SELECT COUNT(*) AS n FROM adoptions WHERE adopter_id = 'lucas'").get()!.n;
+        // An expected rule, not a failure (audit A3): the refusal carries no Error ID — the screen shows
+        // «Es menor de edad…» as a validation message, never an error toast with an id to quote.
+        const ruleOnly = (e: unknown) => isProfileIsMinorError(e) && !/Error ID/.test((e as Error).message);
         await expect(saveAdoption({ adopterId: 'lucas', recordType: 'adoption_request', species: 'cat', status: 'pending' } as never))
-            .rejects.toSatisfy((e: unknown) => isProfileIsMinorError(e) && /Error ID: \w+/.test((e as Error).message));
+            .rejects.toSatisfy(ruleOnly);
         await expect(saveAdoption({ adopterId: 'lucas', recordType: 'adoption', animalName: 'Nina', species: 'cat', status: 'completed', rating: 1 } as never))
-            .rejects.toSatisfy(isProfileIsMinorError);
-        await expect(flagAdopter('lucas', 'inaccurate_information', 'datos falsos')).rejects.toSatisfy(isProfileIsMinorError);
+            .rejects.toSatisfy(ruleOnly);
+        await expect(flagAdopter('lucas', 'inaccurate_information', 'datos falsos')).rejects.toSatisfy(ruleOnly);
         expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adoptions WHERE adopter_id = 'lucas'").get()!.n).toBe(before);
         expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adopter_flags WHERE adopter_id = 'lucas'").get()!.n).toBe(0);
         // Every create path (API, forms, imports) goes through the record writer.

@@ -3,8 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
-import AdopterPicker from '@/components/AdopterPicker';
-import type { DiscoveryMatch } from '@/app/actions';
+import AdopterPicker, { type PickedAdopter } from '@/components/AdopterPicker';
 import { appendCreatePrefill } from '@/lib/createPrefill';
 import AdoptionFormWizard from '@/components/AdoptionFormWizard';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
@@ -139,14 +138,14 @@ export default function PickAdopterForAnimalModal({
      *
      * Creating a BRAND-NEW adopter still leaves: that is a full profile form,
      * not this one. */
-    const handleSelectExisting = (adopter: DiscoveryMatch) => {
-        const adopterId = adopter.adopterId;
+    const handleSelectExisting = (picked: PickedAdopter) => {
+        const adopterId = picked.adopterId;
         if (!adopterId) return;
         const params = new URLSearchParams(searchParams.toString());
         params.set('newAdoption', recordType);
         params.set('animalId', animalId);
         router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-        setWizard({ adopterId, adopterName: adopter.adopterName || adopter.adopter?.name || '' });
+        setWizard({ adopterId, adopterName: picked.name });
     };
 
     /** Drop the prefill params. Without this the wizard re-opens on the record

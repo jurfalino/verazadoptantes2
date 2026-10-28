@@ -12,6 +12,7 @@ import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
 import { didPersist } from '@/domain/serverActionResult';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { minorRefusalMessage } from '@/lib/errorMessage';
 import { MediaLightbox, isVideo as isVideoItem } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { useDateFormat } from '@/context/TimezoneContext';
@@ -465,6 +466,9 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
             }
         } catch (err) {
             console.error(err);
+            // A minor's profile: the rule, as a validation message — no Error ID (audit A3).
+            const minor = minorRefusalMessage(err, t, 'record');
+            if (minor) { toast.warning(minor); return; }
             toast.error(
                 t('errors.generic'),
                 isAnimalAlreadyPlacedError(err) ? animalAlreadyPlacedMessage(t, formData.animalName)

@@ -4,7 +4,7 @@ import { adopterFlags, adopterHistory } from '@/db/schema';
 import { eq, sql, and } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
-import { logger, generateErrorId } from '@/lib/logger';
+import { logger } from '@/lib/logger';
 import { assertNotMinor } from '@/lib/minors';
 import { PROFILE_IS_MINOR, isProfileIsMinorError } from '@/domain/profileIdentity';
 import { logAudit } from '@/lib/audit';
@@ -74,9 +74,9 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
         return { success: true, id };
     } catch (error) {
         if (isProfileIsMinorError(error)) {
-            const errorId = generateErrorId();
-            logger.warn('flagAdopter: refused — the profile is a minor', { adopterId, reason, errorId });
-            throw new Error(`${PROFILE_IS_MINOR} (Error ID: ${errorId})`);
+            // An expected rule, not a failure: no Error ID (audit A3) — alerts go on the household's adults.
+            logger.info('flagAdopter: refused — the profile is a minor', { adopterId, reason });
+            throw new Error(PROFILE_IS_MINOR);
         }
         const errorId = logger.error('Flag adopter failed', error, { adopterId, reason });
         throw new Error(`Failed to flag adopter (Error ID: ${errorId})`);

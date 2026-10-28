@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { isProfileIsMinorError } from '@/domain/profileIdentity';
 import { saveAdoption } from '@/app/actions';
 import { requestPiiAccess } from '@/app/actions/piiAccess';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { minorRefusalMessage } from '@/lib/errorMessage';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
@@ -675,11 +675,13 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
             await new Promise(r => setTimeout(r, 100));
             router.refresh();
         } catch (err) {
+            // A minor's profile: the rule, as a validation message — no Error ID (audit A3).
+            const minor = minorRefusalMessage(err, t, 'record');
+            if (minor) { toast.warning(minor); return; }
             toast.error(
                 t('errors.generic'),
                 isAnimalAlreadyPlacedError(err) ? animalAlreadyPlacedMessage(t, formData.animalName)
                     : isSaveBusyError(err) ? t('collab.busy')
-                    : isProfileIsMinorError(err) ? t('adopter.minor_note')
                     : t('errors.save_failed_generic'),
                 resolveErrorId(err, 'AdoptionFormWizard'),
             );
