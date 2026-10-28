@@ -26,6 +26,7 @@ import { fileAccessRequestFor } from '@/lib/piiAccessRequest';
 import { notificationContent, type NotificationTemplate } from '@/domain/notificationTemplates';
 import { createNotification, resolveDisplayName } from '@/app/actions/notifications';
 import { getAdopterApprovers } from '@/app/actions/piiAccess';
+import type { NotificationType } from '@/domain/constants';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -118,7 +119,7 @@ export async function notifyApprovers(opts: {
     op: string;
     adopterId: string;
     actor: string;
-    type: string;
+    type: NotificationType;
     build: (actorName: string) => NotificationTemplate;
     metadata?: Record<string, unknown>;
 }): Promise<void> {

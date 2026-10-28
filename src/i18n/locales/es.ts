@@ -2973,6 +2973,7 @@ export const es = {
             adopter_flagged: 'Perfil reportado',
             deletion_request: 'Pedido de eliminación',
             member_joined: 'Nuevo miembro del equipo',
+            adopter_login_blocked: 'Login bloqueado',
             adopter_merged: 'Perfiles combinados',
             merge_request: 'Pedido de combinación',
             merge_request_resolved: 'Pedido de combinación respondido',

@@ -68,6 +68,7 @@ export const NOTIFICATION_TYPES = [
     'profile_renamed', 'profile_rename_undone', 'profile_age_changed',
     'pii_access_request', 'pii_access_approved', 'pii_access_denied', 'pii_access_revoked',
     'contact_entry_added', 'follow_up_due', 'ownership_transferred', 'adopter_flagged', 'deletion_request', 'member_joined',
+    'adopter_login_blocked',
     'adopter_merged', 'merge_request', 'merge_request_resolved', 'merge_disputed', 'merge_dispute_resolved', 'pair_message',
     'household_linked', 'household_link_removed', 'household_link_disputed', 'household_contribution',
     'household_also_lives_with', 'household_relationship_changed', 'household_member_removed', 'household_member_disputed',

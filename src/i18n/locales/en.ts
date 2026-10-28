@@ -2968,6 +2968,7 @@ export const en = {
             adopter_flagged: 'Profile reported',
             deletion_request: 'Deletion request',
             member_joined: 'New team member',
+            adopter_login_blocked: 'Blocked login',
             adopter_merged: 'Profiles combined',
             merge_request: 'Merge request',
             merge_request_resolved: 'Merge request answered',

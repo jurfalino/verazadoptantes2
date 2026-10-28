@@ -27,6 +27,7 @@ import { displayNameFor } from '@/lib/userDisplay';
 import { runAfterResponse } from '@/lib/background';
 import { sendNotificationEmail } from '@/lib/notificationEmail';
 import { renderNotification, type NotificationTemplate } from '@/domain/notificationTemplates';
+import type { NotificationType } from '@/domain/constants';
 
 /**
  * Create a notification for a user.
@@ -41,7 +42,7 @@ import { renderNotification, type NotificationTemplate } from '@/domain/notifica
 export async function createNotification(data: {
     id?: string;
     userId: string;
-    type?: string;
+    type?: NotificationType;
     title: string;
     body: string;
     url?: string;
@@ -385,7 +386,7 @@ export async function resolveDisplayNames(emails: string[]): Promise<Map<string,
  */
 export async function notifyAdmins(opts: {
     actorEmail: string;
-    type: string;
+    type: NotificationType;
     title: string;
     body: string;
     url?: string;
@@ -454,7 +455,7 @@ export async function notifyAdmins(opts: {
  */
 export async function notifyOrgMembers(opts: {
     actorEmail: string;
-    type: string;
+    type: NotificationType;
     title: string;
     body: string;
     url?: string;

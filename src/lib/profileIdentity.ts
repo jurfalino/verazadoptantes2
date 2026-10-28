@@ -25,6 +25,7 @@ import { isRealActorEmail } from '@/lib/piiAccess';
 import { actorNameOf, teamsOf } from '@/lib/householdNotices';
 import { currentAge, isMinor } from '@/domain/households';
 import { openAlertKindsOfRows } from '@/domain/flags';
+import type { NotificationType } from '@/domain/constants';
 import { realOwner } from '@/domain/dedupPair';
 import { ageColumns, parseNameChange, renameEntries, sameName, RENAME_NOTICE_WINDOW_MS } from '@/domain/profileIdentity';
 import { notificationContent, type NotificationTemplate } from '@/domain/notificationTemplates';
@@ -271,7 +272,7 @@ export async function setProfileAge(db: Db, input: {
 
 // ── Notices ─────────────────────────────────────────────────────
 
-async function sendTo(recipients: Map<string, string>, type: string, template: NotificationTemplate, metadata: Record<string, unknown>, icon: string, ctx: Ctx) {
+async function sendTo(recipients: Map<string, string>, type: NotificationType, template: NotificationTemplate, metadata: Record<string, unknown>, icon: string, ctx: Ctx) {
     if (recipients.size === 0) {
         logger.info(`profileIdentity: ${type} — no recipients`, ctx);
         return;

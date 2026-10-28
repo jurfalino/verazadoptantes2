@@ -219,7 +219,7 @@ export async function notifyApiRecord(
     const { requestId, profileId, recordId } = rec;
     await runAfterResponse('api.notifyRecord', async () => {
         const notification = {
-            type: 'api_record',
+            type: 'api_record' as const,
             ...notificationContent({
                 key: 'api_record',
                 params: {

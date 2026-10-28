@@ -32,6 +32,7 @@ import { realOwner } from '@/domain/dedupPair';
 import { linkNoticeRecipients, personLabel } from '@/domain/householdLinks';
 import { MAX_HOUSEHOLDS_PER_PROFILE } from '@/domain/households';
 import { notificationContent, type NotificationTemplate } from '@/domain/notificationTemplates';
+import type { NotificationType } from '@/domain/constants';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type Ctx = Record<string, unknown>;
@@ -88,7 +89,7 @@ export async function actorNameOf(actor: string, ctx: Ctx): Promise<string> {
 
 async function send(
     recipients: Map<string, string>,
-    type: string,
+    type: NotificationType,
     template: NotificationTemplate,
     metadata: Record<string, unknown>,
     ctx: Ctx,

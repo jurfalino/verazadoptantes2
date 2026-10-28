@@ -2973,6 +2973,7 @@ export const pt = {
             adopter_flagged: 'Perfil denunciado',
             deletion_request: 'Pedido de exclusão',
             member_joined: 'Novo membro da equipe',
+            adopter_login_blocked: 'Login bloqueado',
             adopter_merged: 'Perfis combinados',
             merge_request: 'Pedido de combinação',
             merge_request_resolved: 'Pedido de combinação respondido',
