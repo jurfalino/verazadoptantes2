@@ -80,4 +80,8 @@ describe('displayNameFor (audit C2: one person, one name, never an email)', () =
         expect(displayNameFor('testuser@example.com', '   ')).toBe('testuser');
         expect(displayNameFor('testuser@example.com', 'Dev (testuser@example.com)')).toBe('testuser');
     });
+    it('a social handle in the name is part of the name, not an email', () => {
+        expect(displayNameFor('ana@example.com', 'Patitas @refugio')).toBe('Patitas @refugio');
+        expect(displayNameFor('ana@example.com', '@patitas')).toBe('@patitas');
+    });
 });

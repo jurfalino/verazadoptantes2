@@ -23,6 +23,7 @@ const USERS: Record<string, string | null> = {
     'caro@example.com': 'Caro',
     'noname@example.com': null,
     'dev@example.com': 'Dev (dev@example.com)',
+    'ig@example.com': 'Patitas @refugio',
 };
 const many = (n: number) => Array.from({ length: n }, (_, i) => `user${i}@example.com`);
 many(250).forEach((e, i) => { USERS[e] = `Name ${i}`; });
@@ -70,7 +71,7 @@ describe('resolveUserNames (D1)', () => {
     });
 
     it('a «name» carrying an email address is not a name (audit C2): omitted, so callers show the handle', async () => {
-        expect(await resolveUserNames(['dev@example.com', 'beto@example.com'])).toEqual({ 'beto@example.com': 'Beto' });
+        expect(await resolveUserNames(['dev@example.com', 'beto@example.com', 'ig@example.com'])).toEqual({ 'beto@example.com': 'Beto', 'ig@example.com': 'Patitas @refugio' });
     });
 
     it('omits users without a name and unknown emails', async () => {

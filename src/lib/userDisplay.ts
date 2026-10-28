@@ -24,8 +24,13 @@ export function emailHandle(email: string | null | undefined): string {
  */
 export function displayNameFor(email: string | null | undefined, name: string | null | undefined): string {
     const n = name?.trim();
-    if (n && !n.includes('@')) return n;
+    if (n && !nameCarriesEmail(n)) return n;
     return emailHandle(email);
+}
+
+/** The «name» contains an email address («Dev (x@y.com)»). A handle («Patitas @refugio») is not one. */
+export function nameCarriesEmail(name: string): boolean {
+    return /[^\s@()<>]+@[^\s@()<>]+\.[^\s@()<>]+/.test(name);
 }
 
 /**
