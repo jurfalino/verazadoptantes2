@@ -22,8 +22,6 @@ import { saveAdoption, getAdoptions } from './adoptions';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { importDateToNoon } from '@/domain/importRow';
 import { logger } from '@/lib/logger';
-import { IMPORT_ROW_MINOR_MESSAGE } from '@/domain/profileIdentity';
-import { isMinorProfile } from '@/lib/minors';
 
 export interface ImportUpsertInput {
     adopterId: string;
@@ -97,14 +95,6 @@ export async function upsertImportRecord(input: ImportUpsertInput): Promise<Impo
             incomingEntries: stripRenameMarks(deserializeContactEntries(stripClientRenameMarksJson(input.contactEntries))).map(toMergeContact),
             incomingActivity: { recordType: input.adoption.recordType, date: toYmd(input.adoption.date), details: input.adoption.details },
         });
-
-        // A minor's profile gets no records (households as profiles): the row is
-        // refused as the rule — before anything is written, as the API does —
-        // never as a server error with an id (review of audit A3).
-        if (plan.addActivity && await isMinorProfile(db, input.adopterId)) {
-            logger.info('upsertImportRecord: refused — the matched profile is a minor', { adopterId: input.adopterId, actor, recordType: input.adoption.recordType ?? null });
-            return { ok: false, error: IMPORT_ROW_MINOR_MESSAGE, ...empty };
-        }
 
         let addedContacts = 0;
         for (const c of plan.contactsToAdd) {

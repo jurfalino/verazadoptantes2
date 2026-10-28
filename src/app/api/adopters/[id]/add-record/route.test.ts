@@ -1,9 +1,8 @@
 /**
  * «Agregar a este perfil» from the post import (ImportWizard → POST
- * /api/adopters/[id]/add-record) on a minor's profile (review of audit A3): a
- * minor gets no records — an expected rule, so the route answers 422
- * `profile_is_minor` (as the public API does, src/lib/api/records.ts), logged at
- * info, with no Error ID, and writes nothing. Real route, real SQL.
+ * /api/adopters/[id]/add-record) on a minor's profile: «Menor de edad» is a
+ * marker only (Jon, 2026-10-28), so the record lands like on anyone else's.
+ * Real route, real SQL.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { migratedDb } from '@/test-utils/migratedDb';
@@ -53,18 +52,14 @@ const post = (id: string) => POST(
 const records = (id: string) => sqlite.prepare('SELECT id FROM adoptions WHERE adopter_id = ?').all(id);
 
 describe('POST /api/adopters/[id]/add-record — a minor\'s profile', () => {
-    it('answers 422 profile_is_minor with no Error ID, logged at info, nothing written', async () => {
+    it('a minor\'s profile gets the record, with its rating, like anyone else\'s', async () => {
         const res = await post('lucas');
-        expect(res.status).toBe(422);
-        const body = await res.json() as Record<string, unknown>;
-        expect(body).toMatchObject({ error: 'profile_is_minor', code: 'profile_is_minor' });
-        expect(body).not.toHaveProperty('errorId');
+        expect(res.status).toBe(200);
         expect(logs.error).toEqual([]);
-        expect(logs.info).toContainEqual([expect.stringContaining('minor'), expect.objectContaining({ adopterId: 'lucas', user: 'rescuer@example.com', recordType: 'observation' })]);
-        expect(records('lucas')).toEqual([]);
+        expect(sqlite.prepare('SELECT rating FROM adoptions WHERE adopter_id = ?').all('lucas')).toEqual([{ rating: 4 }]);
     });
 
-    it('an adult\'s profile still gets the record', async () => {
+    it('an adult\'s profile gets the record', async () => {
         const res = await post('pedro');
         expect(res.status).toBe(200);
         expect(records('pedro')).toHaveLength(1);

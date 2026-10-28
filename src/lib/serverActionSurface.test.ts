@@ -119,7 +119,6 @@ const MUST_NOT_BE_ACTIONS = [
     'notifyProfileRenamed',
     'notifyRenameUndone',
     'notifyProfileAgeChanged',
-    'assertNotMinor',
     // The duplicate check with server-only options (contact-only search): findFormDuplicates never takes them.
     'searchFormDuplicates',
 ];

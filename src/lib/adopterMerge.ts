@@ -32,8 +32,7 @@ import {
     clearHousematePairsAfterMerge, emptyHouseholdMergeUndo, householdHostName, isHouseholdMergeUndo, moveMembershipsOnMerge,
     restoreMembershipsAfterMerge, type HouseholdMergeUndo, type MergeDispute,
 } from '@/lib/householdMerge';
-import { HOUSEHOLD_NOT_CONVERTED, isMinor, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
-import { minorSurvivorHasActivity } from '@/lib/minors';
+import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
 
 export interface MergeAdoptersResult {
     success: boolean;
@@ -87,17 +86,6 @@ export async function mergeAdopters(
         }
         if (primary.deletedAt || secondary.deletedAt) {
             return { success: false, error: 'Cannot merge already-deleted profiles' };
-        }
-
-        // A minor gets no records and no alerts: those go on the adults (spec
-        // «Children»). A merge that would hand the absorbed profile's onto a
-        // minor survivor is refused before anything moves; keeping the other
-        // profile as the survivor merges (admins too: they pick the side).
-        // Not atomic with the claim: a record landing on the absorbed profile in
-        // between rides along (rare; every record/alert insert refuses a minor).
-        if (await minorSurvivorHasActivity(db, primaryId, secondaryId)) {
-            logger.warn('mergeAdopters: refused, the survivor is a minor and the absorbed profile has records or alerts', { primaryId, secondaryId, actor: actorEmail });
-            return { success: false, error: MINOR_SURVIVOR_HAS_ACTIVITY };
         }
 
         // Both profiles' old inline households (household_members JSON,
@@ -538,10 +526,7 @@ export async function mergeCandidatePair(candidateId: string, actorEmail: string
         if (n2 !== n1) primary = n2 > n1 ? a2 : a1;
         else if (e2 !== e1) primary = e2 > e1 ? a2 : a1;
         else if (t2 < t1) primary = a2;
-        let secondary = primary.id === a1.id ? a2 : a1;
-        // A minor survivor may not receive the other side's records or alerts
-        // (mergeAdopters refuses it): nobody picks a side here, so keep the adult.
-        if (!isMinor(secondary) && await minorSurvivorHasActivity(db, primary.id, secondary.id)) [primary, secondary] = [secondary, primary];
+        const secondary = primary.id === a1.id ? a2 : a1;
 
         const result = await mergeAdopters(primary.id, secondary.id, actorEmail);
         return { ...result, primaryId: primary.id, secondaryId: secondary.id };

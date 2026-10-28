@@ -380,36 +380,28 @@ describe('«No convive» memory follows merges (D48)', () => {
     });
 });
 
-describe('minors never receive records through a merge (ruling, Task 6)', () => {
+describe('a minor merges like anyone else (marker only — Jon, 2026-10-28)', () => {
     beforeEach(() => {
         person('kid', 'Tomás Gil', OTHER, { age: 12 });
         person('kiddup', 'Tomas Gil', OTHER, { createdAt: 3000 });
     });
 
-    it('a minor survivor with an absorbed side that has records is refused, nothing moves; keeping the other side works', async () => {
+    it('a minor survivor receives the absorbed side\'s records and open alerts', async () => {
         record('pl-1', 'kiddup');
-        expect(await mergeAdopters('kid', 'kiddup', ADMIN)).toEqual({ success: false, error: 'minor_survivor_has_activity' });
-        expect(deletedAt('kiddup')).toBeNull();
-        expect(sqlite.prepare(`SELECT adopter_id FROM placements WHERE id = 'pl-1'`).get()!.adopter_id).toBe('kiddup');
-        expect((await mergeAdopters('kiddup', 'kid', ADMIN)).success).toBe(true);
-    });
-
-    it('an open alert counts as activity too', async () => {
         sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason) VALUES ('f1', 'kiddup', ?, 'inaccurate_information')`).run(OTHER);
-        expect(await mergeAdopters('kid', 'kiddup', ADMIN)).toMatchObject({ success: false, error: 'minor_survivor_has_activity' });
-    });
-
-    it('an absorbed side with no records or alerts merges into a minor as usual', async () => {
         expect((await mergeAdopters('kid', 'kiddup', ADMIN)).success).toBe(true);
+        expect(deletedAt('kiddup')).not.toBeNull();
+        expect(sqlite.prepare(`SELECT adopter_id FROM placements WHERE id = 'pl-1'`).get()!.adopter_id).toBe('kid');
+        expect(sqlite.prepare(`SELECT adopter_id FROM adopter_flags WHERE id = 'f1'`).get()!.adopter_id).toBe('kid');
     });
 
-    it('the automatic pair merge keeps the adult when it would otherwise keep the minor', async () => {
+    it('the automatic pair merge picks the side by its usual rule, minor or not', async () => {
         record('pl-1', 'kiddup');
-        record('pl-2', 'kid'); // a legacy record on the minor: activity ties, the minor is older
+        record('pl-2', 'kid'); // activity ties: the older profile (the minor) is kept
         sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at)
             VALUES ('cand-kid', 'kid', 'kiddup', '["name_full"]', '{}', 80, 'high', 'pending', 1000)`).run();
         const res = await mergeCandidatePair('cand-kid', ADMIN);
-        expect(res).toMatchObject({ success: true, primaryId: 'kiddup', secondaryId: 'kid' });
+        expect(res).toMatchObject({ success: true, primaryId: 'kid', secondaryId: 'kiddup' });
     });
 });
 

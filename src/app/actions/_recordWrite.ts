@@ -11,7 +11,6 @@ import { eq, and, isNull, desc, ne, sql } from 'drizzle-orm';
 import { deriveEndedPlacement } from '@/domain/placements';
 import { NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
 import { canonField } from '@/domain/fieldCollab';
-import { assertNotMinor } from '@/lib/minors';
 
 const PLACEMENT_TYPES = ['foster', 'adoption'];
 const EVENT_TYPES = ['observation', 'adoption_request', 'follow_up', 'returned_pet'];
@@ -82,9 +81,6 @@ function placementValues(animalId: string, data: RecordData, recordType: string,
  * routes that generate their own uuid).
  */
 export async function insertRecord(db: Db, data: RecordData, actor: string): Promise<string> {
-    // A minor's profile gets no records (households as profiles): every create
-    // path — the wizard, the API, forms, imports — comes through here.
-    await assertNotMinor(db, data.adopterId, { op: 'insertRecord', actor, recordType: data.recordType ?? null });
     const recordType: string = normalizeRecordType(data.recordType);
     const date: Date | number = data.date || new Date();
 
@@ -229,9 +225,6 @@ function asPlanned(viewOf: (f: string) => unknown, existing: RecordData, fields:
  */
 export async function updateRecord(db: Db, data: RecordData, existing: RecordData, actor: string, opts: { cas?: boolean } = {}): Promise<{ lost: boolean; landed?: string[] }> {
     const id: string = data.id;
-    // Nothing is written to a record that is (or would end up) on a minor's
-    // profile: moving it to an adult is the only way out.
-    await assertNotMinor(db, data.adopterId !== undefined ? data.adopterId : existing.adopterId, { op: 'updateRecord', actor, recordId: id });
     const now = new Date();
     const cas = !!opts.cas;
     const written = Object.keys(data).filter(k => data[k] !== undefined);

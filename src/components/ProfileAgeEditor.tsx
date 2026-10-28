@@ -48,7 +48,6 @@ export default function ProfileAgeEditor({ adopterId, identity, onClose }: { ado
                 router.refresh();
                 return;
             }
-            if (res.error === 'has_activity') { setProblem(t('adopter.age_has_activity')); return; }
             if (res.error === 'invalid') { setProblem(t('adopter.age_invalid')); return; }
             const errorId = res.errorId ?? await reportClientError({ message: `changeProfileAge failed: ${res.error}`, source: 'ProfileAgeEditor', extra: { adopterId } });
             toast.error(t('toast.save_error_title'), res.error === 'busy' ? t('collab.busy') : t('adopter.age_failed'), errorId);

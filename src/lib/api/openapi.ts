@@ -177,7 +177,6 @@ Toda respuesta de error trae \`error.code\` (estable: tu código puede decidir s
 | \`species_required\` | Una adopción o tránsito sin especie. | Mandá \`species\`. |
 | \`animal_details_require_placement\` | Datos del animal (edad, sexo…) en otro tipo de actividad. | Solo van en \`adoption\` o \`foster\`. |
 | \`invalid_age\` | \`age\` y \`birthDate\` juntos, o un nacimiento posterior a la fecha. | Mandá uno de los dos, bien. |
-| \`profile_is_minor\` | La persona encontrada es menor de edad: no se le registran actividades. | Registrala en el adulto de su hogar que hizo el pedido o la adopción. |
 | \`example_data\` | En producción, una persona de los ejemplos de esta documentación. | Mandá una persona real; los ejemplos se prueban en staging. |
 | \`contract_not_allowed\` | Contrato sobre algo que no es una adopción o tránsito de tu clave. | Usá el \`activityId\` de una adopción o tránsito. |
 | \`contract_exists\` | Esa actividad ya tiene contrato. | Anulala y registrala de nuevo. |

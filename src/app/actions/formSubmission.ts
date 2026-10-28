@@ -13,7 +13,7 @@ import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdmin } from '@/config/admins';
 import { planFormLink, canLinkSubmissionDirectly } from '@/domain/formLink';
 import { logger, generateErrorId } from '@/lib/logger';
-import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
+import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
 
 // ── Human-readable label helpers ──────────────────────────────────
 
@@ -357,9 +357,9 @@ export async function linkFormToExistingAdopter(
             if (!merged.success) {
                 await releaseClaim?.();
                 const ctx = { submissionId, adopterId, orphanId: plan.orphanId, actorEmail };
-                // A merge rule's refusal (minor survivor with records on the other side; household data not
-                // converted yet) is an expected answer the card explains — warn, not error.
-                if (merged.error === MINOR_SURVIVOR_HAS_ACTIVITY || merged.error === HOUSEHOLD_NOT_CONVERTED) {
+                // A merge rule's refusal (household data not converted yet) is an expected answer the card
+                // explains — warn, not error.
+                if (merged.error === HOUSEHOLD_NOT_CONVERTED) {
                     const errorId = generateErrorId();
                     logger.warn('linkFormToExistingAdopter: merge refused', { ...ctx, reason: merged.error, errorId });
                     return { success: false, error: merged.error, errorId };
