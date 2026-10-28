@@ -6,6 +6,7 @@ import { getMatchContext, type MatchContext } from '@/app/actions';
 import { reportClientError } from '@/lib/clientErrorReporter';
 import { matchBreakdown, otherSignals, summarizeBreakdown, type BreakdownField, type BreakdownRow } from '@/domain/matchBreakdown';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
+import { BreakableEmail } from '@/components/ui/BreakableEmail';
 import { parseBlobToContactEntries, deserializeContactEntries } from '@/lib/contactEntries';
 
 /**
@@ -151,11 +152,11 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
                 <div data-testid="match-compare-rows" className="mt-1 space-y-2">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <Block head={sourceHead ?? t(`matchCompare.col_${source.kind}`)} side="source" kept={kept === 'source'}>
-                            {rows.map(r => <Cell key={r.field} label={t(`matchCompare.field_${r.field}`)} {...sourceCell(r)} t={t} below={r.field === 'name' ? nameStanding?.source : undefined} />)}
+                            {rows.map(r => <Cell key={r.field} field={r.field} label={t(`matchCompare.field_${r.field}`)} {...sourceCell(r)} t={t} below={r.field === 'name' ? nameStanding?.source : undefined} />)}
                         </Block>
                         <Block head={targetHead ?? t(`matchCompare.col_target_${target}`)} side="target" kept={kept === 'target'}
                             aside={isAdmin && typeof score === 'number' ? <AdminScore score={score} t={t} /> : null}>
-                            {rows.map(r => <Cell key={r.field} label={t(`matchCompare.field_${r.field}`)} {...targetCell(r, !!profileEntries, fullVisibility)} t={t} below={r.field === 'name' ? nameStanding?.target : undefined} />)}
+                            {rows.map(r => <Cell key={r.field} field={r.field} label={t(`matchCompare.field_${r.field}`)} {...targetCell(r, !!profileEntries, fullVisibility)} t={t} below={r.field === 'name' ? nameStanding?.target : undefined} />)}
                         </Block>
                     </div>
                     {nameOnly && <p className="rounded-lg px-3 py-2 text-xs font-medium text-amber-800 bg-amber-50">{t('matchCompare.name_only_warning')}</p>}
@@ -218,10 +219,13 @@ function Block({ head, side, aside, kept = false, children }: { head: ReactNode;
     );
 }
 
-function Cell({ label, value, mark, locked, empty, t, below }: CellData & { label: string; t: (key: string) => string; below?: ReactNode }) {
+function Cell({ field, label, value, mark, locked, empty, t, below }: CellData & { field: BreakdownField; label: string; t: (key: string) => string; below?: ReactNode }) {
     const shown = empty ? <span className="text-stone-400">—</span>
         : locked ? <span className="inline-flex items-center gap-1 text-stone-500"><LockIcon />{value ?? t('matchCompare.has_one')}</span>
-            : value ? <span className="break-words">{value}</span>
+            // A long value wraps inside the block at 390 (audit B6): an email at its «.»/«@» (BreakableEmail), anything else anywhere.
+            : value ? (field === 'email' && !value.includes('•')
+                ? <BreakableEmail email={value} className="min-w-0" />
+                : <span className="min-w-0 [overflow-wrap:anywhere]">{value}</span>)
                     // Matched on a value outside this side's contact list (a handle in a form comment).
                     : <span className="font-normal italic">{t('matchCompare.elsewhere')}</span>;
     return (

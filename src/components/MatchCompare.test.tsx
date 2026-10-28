@@ -43,3 +43,13 @@ describe('MatchCompare — full visibility (admin merge rows)', () => {
         expect(text(html)).toContain(es.matchCompare.privacy_locked);
     });
 });
+
+describe('MatchCompare — long values wrap (audit B6)', () => {
+    it('an email breaks at its dots and «@», and no value can push the block wider', () => {
+        const html = renderToStaticMarkup(<MatchCompare {...props} matchTypes={['email']} fullVisibility
+            source={{ kind: 'profile', name: 'Ana', entries: [{ type: 'email', value: 'pedro.con.un.nombre.larguisimo@example.com' }] }}
+            profileEntries={[{ type: 'email', value: 'pedro.con.un.nombre.larguisimo@example.com' }]} />);
+        expect(html).toContain('<wbr/>@');
+        expect(html).not.toContain('break-words');
+    });
+});
