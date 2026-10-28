@@ -22,7 +22,7 @@
  * `getHouseholdsFor` (src/lib/households.ts) via the page.
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
-import { useEscapeToClose } from '@/hooks/useEscapeToClose';
+import { AnchoredMenu } from '@/components/ui/AnchoredMenu';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, Gift, Plus, UserPlus } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -108,8 +108,6 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
         if (wasAdding.current && adding === null) addButtonRef.current?.focus();
         wasAdding.current = adding !== null;
     }, [adding]);
-    /** «¿En qué hogar?» closes on Escape, back on its button. */
-    useEscapeToClose(choosing, closeChooser, addButtonRef);
 
     const homes = data.views.filter(v => !v.isGift);
     const gifts = data.views.filter(v => v.isGift);
@@ -174,22 +172,17 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
         return (
             <span className="relative inline-flex">
                 <AddMemberButton buttonRef={addButtonRef} onClick={() => setChoosing(c => !c)} expanded={choosing} />
-                {choosing && (
-                    <>
-                        <span className="fixed inset-0 z-40" onClick={() => setChoosing(false)} />
-                        <span role="menu" data-testid="household-add-which"
-                            className="absolute left-0 top-full mt-2 w-64 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-xl border border-stone-200 z-50 overflow-hidden flex flex-col animate-in fade-in slide-in-from-top-2 duration-150">
-                            <span className="px-4 pt-3 pb-1 text-xs font-semibold text-stone-500">{t('adopter.hh_add_which')}</span>
-                            {homes.map(v => (
-                                <button key={v.id} type="button" role="menuitem" data-testid="household-add-which-option" data-household-id={v.id}
-                                    className="px-4 py-3 min-h-[44px] text-left text-sm font-semibold text-stone-900 hover:bg-stone-50 transition-colors border-t border-stone-100 break-words"
-                                    onClick={() => { setChoosing(false); setAdding(v.id); }}>
-                                    {fill(t('adopter.hh_with_names'), { names: peopleOf(v) })}
-                                </button>
-                            ))}
-                        </span>
-                    </>
-                )}
+                {/* On <body>, next to the button (AnchoredMenu): a later card can't cover it (audit A1). */}
+                <AnchoredMenu open={choosing} anchorRef={addButtonRef} onClose={closeChooser} align="left" testId="household-add-which">
+                    <span className="px-4 pt-3 pb-1 text-xs font-semibold text-stone-500">{t('adopter.hh_add_which')}</span>
+                    {homes.map(v => (
+                        <button key={v.id} type="button" role="menuitem" data-testid="household-add-which-option" data-household-id={v.id}
+                            className="px-4 py-3 min-h-[44px] text-left text-sm font-semibold text-stone-900 hover:bg-stone-50 transition-colors border-t border-stone-100 break-words"
+                            onClick={() => { setChoosing(false); setAdding(v.id); }}>
+                            {fill(t('adopter.hh_with_names'), { names: peopleOf(v) })}
+                        </button>
+                    ))}
+                </AnchoredMenu>
             </span>
         );
     };

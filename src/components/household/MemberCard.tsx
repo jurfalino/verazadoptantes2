@@ -28,7 +28,7 @@
  * Rendered as an `<li>`: the caller's `<ul>` divides the rows.
  */
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { useEscapeToClose } from '@/hooks/useEscapeToClose';
+import { AnchoredMenu } from '@/components/ui/AnchoredMenu';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, Lock, Pencil, Trash2, UserMinus } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -81,7 +81,6 @@ export function MemberCard({ member, hostName, relativeName, signedIn, currentUs
     const [menuOpen, setMenuOpen] = useState(false);
     const menuButtonRef = useRef<HTMLButtonElement>(null);
     const closeMenu = useCallback(() => setMenuOpen(false), []);
-    useEscapeToClose(menuOpen, closeMenu, menuButtonRef);
     const [editing, setEditing] = useState(false);
     const [dialog, setDialog] = useState<'remove' | 'delete' | 'request' | null>(null);
     const [busy, setBusy] = useState(false);
@@ -261,26 +260,22 @@ export function MemberCard({ member, hostName, relativeName, signedIn, currentUs
                                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
                             </span>
                         </button>
-                        {menuOpen && (
-                            <>
-                                <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-                                <div role="menu" data-testid="household-member-menu-panel" className="absolute right-0 mt-2 w-64 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-xl border border-stone-200 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
-                                    {items.map((i, n) => (
-                                        <div key={i.id}>
-                                            {n > 0 && <div className="border-t border-stone-100" />}
-                                            <button type="button" role="menuitem" disabled={i.disabled} onClick={() => pick(i.id)} data-testid={`household-member-menu-${i.id}`}
-                                                className="w-full flex items-start gap-3 px-4 py-3 min-h-[44px] hover:bg-stone-50 transition-colors text-left disabled:cursor-wait">
-                                                {i.icon}
-                                                <div className="min-w-0">
-                                                    <div className={`text-sm font-semibold ${i.danger ? 'text-rose-700' : i.disabled ? 'text-stone-500' : 'text-stone-900'}`}>{i.title}</div>
-                                                    {i.desc && <div className="text-xs text-stone-500 mt-0.5">{i.desc}</div>}
-                                                </div>
-                                            </button>
+                        {/* On <body>, next to the button (AnchoredMenu): a later card can't cover it (audit A1). */}
+                        <AnchoredMenu open={menuOpen} anchorRef={menuButtonRef} onClose={closeMenu} testId="household-member-menu-panel">
+                            {items.map((i, n) => (
+                                <div key={i.id}>
+                                    {n > 0 && <div className="border-t border-stone-100" />}
+                                    <button type="button" role="menuitem" disabled={i.disabled} onClick={() => pick(i.id)} data-testid={`household-member-menu-${i.id}`}
+                                        className="w-full flex items-start gap-3 px-4 py-3 min-h-[44px] hover:bg-stone-50 transition-colors text-left disabled:cursor-wait">
+                                        {i.icon}
+                                        <div className="min-w-0">
+                                            <div className={`text-sm font-semibold ${i.danger ? 'text-rose-700' : i.disabled ? 'text-stone-500' : 'text-stone-900'}`}>{i.title}</div>
+                                            {i.desc && <div className="text-xs text-stone-500 mt-0.5">{i.desc}</div>}
                                         </div>
-                                    ))}
+                                    </button>
                                 </div>
-                            </>
-                        )}
+                            ))}
+                        </AnchoredMenu>
                     </div>
                 )}
             </div>

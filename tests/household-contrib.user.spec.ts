@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissCountryBanner } from './helpers';
-import { cleanupProfiles, execD1, fillAddForm, housemates, insertHousehold, insertProfile, profileNamed, rows, saveAsNew } from './householdFixtures';
+import { cleanupProfiles, execD1, fillAddForm, housemates, insertHousehold, insertProfile, memberMenuPanel, profileNamed, rows, saveAsNew } from './householdFixtures';
 
 /**
  * Household contributions (D54 + D55) on households as profiles (Task 8), as a
@@ -66,10 +66,10 @@ test.describe('household contributions by a non-owner (D54, D55)', () => {
         // out or delete; contacts masked.
         const martaCard = cards.filter({ hasText: MARTA_NAME });
         await martaCard.getByTestId('household-member-menu').click();
-        await expect(martaCard.getByTestId('household-member-menu-edit')).toBeVisible();
-        await expect(martaCard.getByTestId('household-member-menu-remove')).toHaveCount(0);
-        await expect(martaCard.getByTestId('household-member-menu-delete')).toHaveCount(0);
-        await expect(martaCard.getByTestId('household-member-menu-request')).toHaveCount(0);
+        await expect(memberMenuPanel(martaCard).getByTestId('household-member-menu-edit')).toBeVisible();
+        await expect(memberMenuPanel(martaCard).getByTestId('household-member-menu-remove')).toHaveCount(0);
+        await expect(memberMenuPanel(martaCard).getByTestId('household-member-menu-delete')).toHaveCount(0);
+        await expect(memberMenuPanel(martaCard).getByTestId('household-member-menu-request')).toHaveCount(0);
         await page.mouse.click(5, 300);
         // Her contacts sit behind «1 dato ▾», with a padlock: masked for this viewer.
         const martaToggle = martaCard.getByTestId('household-member-contacts-toggle');
@@ -96,13 +96,13 @@ test.describe('household contributions by a non-owner (D54, D55)', () => {
         await expect(mine.getByTestId('linked-summary')).toContainText(NEW_MEMBER_PHONE);
         await expect(mine.getByTestId('household-member-own')).toBeVisible();
         await mine.getByTestId('household-member-menu').click();
-        await expect(mine.getByTestId('household-member-menu-edit')).toBeVisible();
-        await expect(mine.getByTestId('household-member-menu-remove')).toBeVisible();
+        await expect(memberMenuPanel(mine).getByTestId('household-member-menu-edit')).toBeVisible();
+        await expect(memberMenuPanel(mine).getByTestId('household-member-menu-remove')).toBeVisible();
         // Not their profile: no deletion item.
-        await expect(mine.getByTestId('household-member-menu-delete')).toHaveCount(0);
-        await expect(mine.getByTestId('household-member-menu-request')).toHaveCount(0);
+        await expect(memberMenuPanel(mine).getByTestId('household-member-menu-delete')).toHaveCount(0);
+        await expect(memberMenuPanel(mine).getByTestId('household-member-menu-request')).toHaveCount(0);
         await page.mouse.click(5, 300); // outside: the menu closes
-        await expect(mine.getByTestId('household-member-menu-panel')).toHaveCount(0);
+        await expect(memberMenuPanel(mine)).toHaveCount(0);
 
         // ── D55: a phone added on a housemate's card goes to THEIR profile.
         const brunoCard = cards.filter({ hasText: BRUNO_NAME });

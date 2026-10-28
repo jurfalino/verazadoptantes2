@@ -1,7 +1,7 @@
 import { test, expect, request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
 import { dismissCountryBanner } from './helpers';
 import {
-    ADMIN_EMAIL, USER_EMAIL, cleanupProfiles, createProfileViaApi, execD1, fillAddForm, housemates, insertHousehold, insertProfile, memberMenu, profileNamed, rows, saveAsNew,
+    ADMIN_EMAIL, USER_EMAIL, cleanupProfiles, createProfileViaApi, execD1, fillAddForm, housemates, insertHousehold, insertProfile, memberMenu, memberMenuPanel, profileNamed, rows, saveAsNew,
 } from './householdFixtures';
 
 /**
@@ -109,7 +109,8 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         await expect(edit.getByTestId('hh-person-rel')).toHaveCount(0);
         await edit.getByTestId('hh-form-cancel').click();
         await pedroCard.getByTestId('household-member-menu').click();
-        await expect(pedroCard.getByTestId('household-member-menu-remove')).toHaveCount(0);
+        await expect(memberMenuPanel(pedroCard).getByTestId('household-member-menu-edit')).toBeVisible();
+        await expect(memberMenuPanel(pedroCard).getByTestId('household-member-menu-remove')).toHaveCount(0);
         await page.mouse.click(5, 300);
     });
 
@@ -380,6 +381,67 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         } finally {
             const made = profileNamed(NEW)?.id;
             cleanupProfiles([KID, MOM, DAD, ...(made ? [String(made)] : [])]);
+        }
+    });
+
+    test('10. the last row\'s «⋯» and «¿En qué hogar?» open above the «¿Qué pasó con …?» card: their last item takes a real tap (audit A1)', async ({ page }) => {
+        test.setTimeout(180_000);
+        const [OWN, M1, M2, A, B] = ['own', 'm1', 'm2', 'a', 'b'].map(r => `test-hh-fixture-a1-${r}-${stamp}`);
+        const [HH_OWN, HH_A, HH_B] = ['own', 'ha', 'hb'].map(r => `test-hh-fixture-a1-${r}-${stamp}`);
+        try {
+            insertProfile({ id: OWN, name: `Dueno Menu ${stamp}`, owner: USER_EMAIL });
+            insertProfile({ id: M1, name: `Primero Menu ${stamp}`, owner: USER_EMAIL });
+            insertProfile({ id: M2, name: `Segundo Menu ${stamp}`, owner: USER_EMAIL });
+            insertHousehold(HH_OWN, OWN, [
+                { id: `${HH_OWN}-1`, adopterId: M1, relationship: 'sibling', addedBy: USER_EMAIL },
+                { id: `${HH_OWN}-2`, adopterId: M2, relationship: 'sibling', addedBy: USER_EMAIL },
+            ]);
+            // Also in two more homes (so «+ Agregar» asks «¿En qué hogar?»); an adult, so «¿Qué pasó con …?» shows.
+            insertProfile({ id: A, name: `Ana Menu ${stamp}`, owner: USER_EMAIL });
+            insertProfile({ id: B, name: `Beto Menu ${stamp}`, owner: USER_EMAIL });
+            insertHousehold(HH_A, A, [{ id: `${HH_A}-x`, adopterId: OWN, relationship: 'sibling', addedBy: USER_EMAIL }]);
+            insertHousehold(HH_B, B, [{ id: `${HH_B}-x`, adopterId: OWN, relationship: 'sibling', addedBy: USER_EMAIL }]);
+
+            for (const size of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
+                await page.setViewportSize(size);
+                await page.goto(`/adopter/${OWN}`);
+                await dismissCountryBanner(page);
+                const memberRows = page.getByTestId('household-member');
+                await expect(memberRows).toHaveCount(4, { timeout: 30_000 });
+                await expect(page.getByTestId('visit-intent-other')).toBeVisible();
+
+                // The last row's ⋯ near the bottom of the screen, the «¿Qué pasó?» card right under it.
+                const last = memberRows.last();
+                const button = last.getByTestId('household-member-menu');
+                await button.scrollIntoViewIfNeeded();
+                await page.evaluate((y) => window.scrollBy(0, y), await button.evaluate(el => el.getBoundingClientRect().bottom - window.innerHeight + 80));
+                await button.click();
+                const del = memberMenuPanel(last).getByTestId('household-member-menu-delete');
+                await expect(del).toBeEnabled({ timeout: 15_000 });
+                // A real tap (no force): Playwright refuses it if anything (the «¿Qué pasó?» buttons) covers the item.
+                await del.click();
+                const dialog = page.getByTestId('hh-delete-dialog');
+                await expect(dialog).toBeVisible();
+                await dialog.getByTestId('hh-dialog-cancel').click();
+                await expect(dialog).toHaveCount(0);
+
+                // «¿En qué hogar?» right above the same card: its last home takes the tap too.
+                const add = page.getByTestId('household-add-member');
+                await add.scrollIntoViewIfNeeded();
+                await page.evaluate((y) => window.scrollBy(0, y), await add.evaluate(el => el.getBoundingClientRect().bottom - window.innerHeight + 80));
+                await add.click();
+                const options = page.getByTestId('household-add-which').getByTestId('household-add-which-option');
+                await expect(options).toHaveCount(3);
+                await options.last().click();
+                await expect(page.getByTestId('hh-add-form')).toBeVisible({ timeout: 15_000 });
+                await page.getByTestId('hh-add-form').getByTestId('hh-form-cancel').click();
+
+                const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+                expect(overflow).toBeLessThanOrEqual(0);
+            }
+            for (const id of [M1, M2, A, B]) expect(rows(`SELECT id FROM adopters WHERE id = '${id}'`)).toHaveLength(1); // only ever cancelled
+        } finally {
+            cleanupProfiles([OWN, M1, M2, A, B]);
         }
     });
 

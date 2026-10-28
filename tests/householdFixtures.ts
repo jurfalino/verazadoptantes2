@@ -133,10 +133,16 @@ export async function rescuerContext(browser: Browser, tag: string, stamp: numbe
     };
 }
 
+/** The open «⋯» menu of a member card — rendered on <body>, so found on the page, not inside the card. */
+export function memberMenuPanel(card: ReturnType<Page['getByTestId']>) {
+    return card.page().getByTestId('household-member-menu-panel');
+}
+
 /** Opens a member card's ⋯ menu and picks an item (edit | remove | delete | request). */
 export async function memberMenu(card: ReturnType<Page['getByTestId']>, item: 'edit' | 'remove' | 'delete' | 'request') {
     await card.getByTestId('household-member-menu').click();
-    const pick = card.getByTestId(`household-member-menu-${item}`);
+    // The panel is on <body> (AnchoredMenu), not inside the card: one menu is open at a time.
+    const pick = memberMenuPanel(card).getByTestId(`household-member-menu-${item}`);
     await expect(pick).toBeVisible({ timeout: 15_000 });
     await expect(pick).toBeEnabled({ timeout: 15_000 });
     await pick.click();

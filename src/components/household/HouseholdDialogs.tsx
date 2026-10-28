@@ -53,7 +53,7 @@ function Buttons({ busy, onCancel, onConfirm, label, disabled = false, cancelLab
     useEffect(() => { cancelRef.current?.focus(); }, []);
     return (
         <div className="flex gap-3 pt-1">
-            <button ref={cancelRef} type="button" onClick={onCancel} disabled={busy} className={CANCEL_BTN} style={{ background: 'var(--surface-muted)', color: 'var(--text-primary)' }}>{cancelLabel}</button>
+            <button ref={cancelRef} type="button" onClick={onCancel} disabled={busy} data-testid="hh-dialog-cancel" className={CANCEL_BTN} style={{ background: 'var(--surface-muted)', color: 'var(--text-primary)' }}>{cancelLabel}</button>
             <button type="button" onClick={onConfirm} disabled={busy || disabled} data-testid={confirmTestId} className={DANGER_BTN}>{busy ? '…' : label}</button>
         </div>
     );

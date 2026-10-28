@@ -325,7 +325,7 @@ test.describe('One shared reality (D48–D52)', () => {
             const hostCard = lp.getByTestId('household-member').filter({ hasText: HOST_NAME });
             await expect(hostCard).toHaveCount(1, { timeout: 30_000 });
             await hostCard.getByTestId('household-member-menu').click();
-            await hostCard.getByTestId('household-member-menu-remove').click();
+            await lp.getByTestId('household-member-menu-panel').getByTestId('household-member-menu-remove').click();
             const dialog = lp.getByTestId('hh-remove-dialog');
             await expect(dialog).toBeVisible({ timeout: 15_000 });
             await dialog.getByTestId('hh-remove-why-not_living').click();
