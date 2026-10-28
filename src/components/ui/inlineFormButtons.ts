@@ -20,7 +20,9 @@ export const INLINE_SAVE_BTN = `${buttonClasses({ variant: 'primary', size: 'com
  * A field of an inline form (contact composer, a household person's name /
  * relationship / age). 16px on phones (iOS doesn't zoom), 44px tall below
  * `sm:`; its border and focus colour have [data-theme] remaps (globals.css,
- * audit B18), so the frame reads in Azul Noche too.
+ * audit B18), so the frame reads in Azul Noche too. 12px radius (`rounded-xl`):
+ * the style guide's §2.3 and the global input/textarea/select rule in
+ * globals.css (fix round 2, item 11).
  */
 export const INLINE_FIELD =
-    'w-full min-h-[44px] sm:min-h-0 px-3 py-1.5 border border-stone-300 rounded-lg bg-white text-base sm:text-sm text-stone-900 outline-none focus:border-teal-500 transition-colors';
+    'w-full min-h-[44px] sm:min-h-0 px-3 py-1.5 border border-stone-300 rounded-xl bg-white text-base sm:text-sm text-stone-900 outline-none focus:border-teal-500 transition-colors';
