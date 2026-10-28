@@ -194,7 +194,14 @@ test('a rescuer\'s request goes to the other owner, can be cancelled, and an adm
         await dismissCountryBanner(page);
         const row = page.getByTestId('merge-request-row').filter({ hasText: NAME });
         await expect(row).toHaveCount(1, { timeout: 30_000 });
+        // «Qué coincide y qué no» on the row; approving asks first, saying what it does (audit A4).
+        await expect(row.getByTestId('match-compare')).toBeVisible();
+        await expect(row.getByTestId('merge-request-keep')).toBeVisible();
         await row.getByTestId('merge-request-approve').click();
+        const confirm = page.getByTestId('merge-request-confirm');
+        await expect(confirm).toBeVisible();
+        await confirm.getByTestId('merge-request-confirm-confirm').click();
+        await expect(confirm).toHaveCount(0, { timeout: 30_000 });
         await expect(row).toHaveCount(0, { timeout: 30_000 });
 
         await expect.poll(() => rows(`SELECT token_hash FROM adopters WHERE id = '${B}'`)[0]?.token_hash, { timeout: 30_000 })

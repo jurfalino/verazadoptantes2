@@ -24,6 +24,8 @@ interface Props {
     secondary?: { label: string; onClick: () => void };
     onConfirm: () => void;
     onCancel: () => void;
+    /** `data-testid` of the dialog; its buttons get `${testId}-confirm` / `${testId}-cancel`. */
+    testId?: string;
 }
 
 /**
@@ -59,6 +61,7 @@ export default function ConfirmDialog({
     secondary,
     onConfirm,
     onCancel,
+    testId,
 }: Props) {
     const { t } = useLanguage();
     const cancelRef = useRef<HTMLButtonElement>(null);
@@ -91,6 +94,7 @@ export default function ConfirmDialog({
                 role="dialog"
                 aria-modal="true"
                 aria-label={title}
+                data-testid={testId}
             >
                 <div className="space-y-1.5">
                     <h3 className="text-base font-bold leading-tight" style={{ color: 'var(--text-primary)' }}>
@@ -106,6 +110,7 @@ export default function ConfirmDialog({
                         type="button"
                         onClick={onCancel}
                         disabled={busy}
+                        data-testid={testId ? `${testId}-cancel` : undefined}
                         className="px-4 py-2 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
                         style={{ background: 'var(--surface-muted)', color: 'var(--text-secondary)' }}
                     >
@@ -126,6 +131,7 @@ export default function ConfirmDialog({
                         type="button"
                         onClick={onConfirm}
                         disabled={busy}
+                        data-testid={testId ? `${testId}-confirm` : undefined}
                         className={`px-4 py-2 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-50 ${destructive ? 'bg-red-600 hover:bg-red-700' : 'bg-teal-600 hover:bg-teal-700'
                             }`}
                     >

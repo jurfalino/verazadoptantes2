@@ -45,6 +45,7 @@ import {
     type MergeRequestStatus,
 } from '@/domain/dedupPair';
 import { oneRowPerPair, type RejectedPosition } from '@/domain/mergeRequestAdminRows';
+import { compareEntriesOf, pairMatchTypes, type CompareEntry } from '@/lib/mergeAdminCompare';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type RequestRow = typeof mergeRequests.$inferSelect;
@@ -79,6 +80,8 @@ export interface MergeRequestAdminRow {
      * admin ruled the pair separate (no decline to show).
      */
     rejected: RejectedPosition | null;
+    /** The duplicate scan's match types for the pair ([] when never scanned). */
+    matchTypes: string[];
 }
 
 /** One profile of a request, as the admin list shows it (D31). Admin page, so the owner email is shown whole. */
@@ -89,6 +92,8 @@ export interface MergeRequestAdminSide {
     ownerEmail: string | null;
     /** epoch ms the profile was created */
     createdAt: number | null;
+    /** Its contacts, whole (admin page), for «Qué coincide y qué no» (audit A4). */
+    entries: CompareEntry[];
 }
 
 const ICON = '🔗';
@@ -523,20 +528,21 @@ export async function listMergeRequestsForAdmin(db: Db): Promise<MergeRequestAdm
 
     const ids = [...new Set(rows.flatMap(r => [r.primaryId, r.secondaryId]))];
     const sides = new Map(await Promise.all(ids.map(async id => {
-        let row: { name: string | null; addedBy: string | null; createdAt: Date | null } | undefined;
+        let row: { name: string | null; addedBy: string | null; createdAt: Date | null; contactEntries: string | null; contactInfo: string | null } | undefined;
         try {
-            row = await db.select({ name: adopters.name, addedBy: adopters.addedBy, createdAt: adopters.createdAt })
+            row = await db.select({ name: adopters.name, addedBy: adopters.addedBy, createdAt: adopters.createdAt, contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo })
                 .from(adopters).where(eq(adopters.id, id)).get();
         } catch (e) {
             logger.warn('listMergeRequestsForAdmin: D1 fallback hit', { adopterId: id, error: e instanceof Error ? e.message : String(e) });
         }
         const owner = row?.addedBy && row.addedBy !== 'anonymous' ? row.addedBy : null;
-        const side: MergeRequestAdminSide = { id, name: row?.name ?? '', ownerEmail: owner, createdAt: row?.createdAt ? row.createdAt.getTime() : null };
+        const side: MergeRequestAdminSide = { id, name: row?.name ?? '', ownerEmail: owner, createdAt: row?.createdAt ? row.createdAt.getTime() : null, entries: compareEntriesOf(row) };
         return [id, side] as const;
     })));
-    const side = (id: string): MergeRequestAdminSide => sides.get(id) ?? { id, name: '', ownerEmail: null, createdAt: null };
+    const side = (id: string): MergeRequestAdminSide => sides.get(id) ?? { id, name: '', ownerEmail: null, createdAt: null, entries: [] };
+    const matchTypes = await Promise.all(rows.map(r => pairMatchTypes(db, r.primaryId, r.secondaryId, { op: 'listMergeRequestsForAdmin', requestId: r.id })));
 
-    return oneRowPerPair(rows.map(r => ({
+    return oneRowPerPair(rows.map((r, i) => ({
         id: r.id,
         status: r.status as MergeRequestStatus,
         createdAt: r.createdAt ? r.createdAt.getTime() : null,
@@ -547,5 +553,6 @@ export async function listMergeRequestsForAdmin(db: Db): Promise<MergeRequestAdm
         dispute: r.dispute === 1,
         resolvedByEmail: r.resolvedByEmail ?? null,
         resolvedAt: r.resolvedAt ? r.resolvedAt.getTime() : null,
+        matchTypes: matchTypes[i],
     })));
 }

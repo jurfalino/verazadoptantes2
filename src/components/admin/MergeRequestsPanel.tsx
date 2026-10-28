@@ -11,16 +11,20 @@ import type { MergeRequestAdminRow } from '@/lib/mergeRequests';
 import type { MergeDisputeAdminRow } from '@/lib/mergeDisputes';
 import { pairKey } from '@/domain/dedupPair';
 import MergeDisputesSection from './MergeDisputesSection';
-import { AdminSideCard, BADGE, PRIMARY_BTN, SECONDARY_BTN, waited, type T } from './mergeAdminUi';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import { BreakableEmail } from '@/components/ui/BreakableEmail';
+import { fill } from '@/lib/householdCopy';
+import { AdminPairCompare, BADGE, PRIMARY_BTN, SECONDARY_BTN, waited, type T } from './mergeAdminUi';
 
 /**
  * Admin «Pedidos de combinación»: open disputes about merges that already
  * happened («Disputas», D50) first, then the merge requests — both profiles,
  * who asked, who owns the target, how long it has waited. Approving merges
  * (the requester's survivor); a declined request can still be approved
- * ("Aprobar igual"). One row per pair (oneRowPerPair): a dispute after a
- * rejection («Disputa», D49) shows both rescuers' positions. A resolved row
- * leaves the list with a toast.
+ * ("Aprobar igual"). One row per pair (oneRowPerPair): a review asked for after a
+ * rejection («Revisión pedida», D49) shows both rescuers' positions. Each row
+ * shows «Qué coincide y qué no» (audit A4); every decision is confirmed first,
+ * saying what it does, and a resolved row leaves the list with a toast.
  */
 export default function MergeRequestsPanel({ requests, disputes }: { requests: MergeRequestAdminRow[]; disputes: MergeDisputeAdminRow[] }) {
     const { t } = useLanguage();
@@ -30,6 +34,8 @@ export default function MergeRequestsPanel({ requests, disputes }: { requests: M
     const [busyId, setBusyId] = useState<string | null>(null);
     const [now, setNow] = useState<number | null>(null);
     useEffect(() => { setNow(Date.now()); }, []);
+    /** The decision waiting for «¿Combinar…?» / «¿Rechazar…?» (audit A4). */
+    const [confirming, setConfirming] = useState<{ row: MergeRequestAdminRow; decision: 'accept' | 'decline' } | null>(null);
 
     async function resolve(row: MergeRequestAdminRow, decision: 'accept' | 'decline') {
         const failed = t('admin.merge_req_failed') || 'No se pudo resolver el pedido. Volvé a intentar.';
@@ -48,8 +54,11 @@ export default function MergeRequestsPanel({ requests, disputes }: { requests: M
             if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', userFacingMessage(e, failed), resolveErrorId(e, 'MergeRequestsPanel'));
         } finally {
             setBusyId(null);
+            setConfirming(null);
         }
     }
+
+    const c = confirming;
 
     return (
         <div className="max-w-3xl">
@@ -67,10 +76,25 @@ export default function MergeRequestsPanel({ requests, disputes }: { requests: M
             ) : (
                 <ul className="space-y-3">
                     {items.map(r => (
-                        <RequestRow key={r.id} row={r} busy={busyId === r.id} locked={!!busyId} now={now} t={t} formatShortDate={formatShortDate} onResolve={resolve} />
+                        <RequestRow key={r.id} row={r} busy={busyId === r.id} locked={!!busyId} now={now} t={t} formatShortDate={formatShortDate} onResolve={(row, decision) => setConfirming({ row, decision })} />
                     ))}
                 </ul>
             )}
+            <ConfirmDialog
+                open={!!c}
+                testId="merge-request-confirm"
+                title={c?.decision === 'accept' ? t('admin.merge_confirm_approve_title') : t('admin.merge_confirm_decline_title')}
+                message={c ? (c.decision === 'accept'
+                    ? fill(t('admin.merge_confirm_approve_body'), { keep: c.row.primary.name, absorb: c.row.secondary.name })
+                    : t('admin.merge_confirm_decline_body')) : undefined}
+                confirmLabel={c?.decision === 'accept'
+                    ? (c.row.status === 'declined' ? t('admin.merge_req_approve_anyway') : t('admin.merge_req_approve'))
+                    : t('admin.merge_req_decline')}
+                destructive={false}
+                busy={!!busyId}
+                onCancel={() => setConfirming(null)}
+                onConfirm={() => { if (c) void resolve(c.row, c.decision); }}
+            />
         </div>
     );
 }
@@ -85,8 +109,10 @@ function RequestRow({ row: r, busy, locked, now, t, formatShortDate, onResolve }
     onResolve: (row: MergeRequestAdminRow, decision: 'accept' | 'decline') => void;
 }) {
     const declined = r.status === 'declined';
+    // «Revisión pedida»: the requester asks the admins after the owner said no (D49) — not
+    // «Combinación cuestionada», which is a merge that already happened (the section above).
     const badge = r.dispute
-        ? { cls: 'bg-[var(--status-warning-bg)] border-[var(--status-warning-border)] text-[var(--status-warning-text)]', label: t('admin.merge_req_status_dispute') || 'Disputa' }
+        ? { cls: 'bg-[var(--status-warning-bg)] border-[var(--status-warning-border)] text-[var(--status-warning-text)]', label: t('admin.merge_req_status_review') }
         : declined
             ? { cls: 'bg-[var(--status-error-bg)] border-[var(--status-error-border)] text-[var(--status-error-text)]', label: t('admin.merge_req_status_declined') || 'Rechazado' }
             : { cls: 'bg-[var(--surface-muted)] border-[var(--border-default)] text-[var(--text-muted)]', label: t('admin.merge_req_status_pending') || 'Pendiente' };
@@ -96,13 +122,12 @@ function RequestRow({ row: r, busy, locked, now, t, formatShortDate, onResolve }
             <div className="flex flex-wrap items-center gap-2 font-semibold">
                 <span data-testid="merge-request-badge" className={`ml-auto order-last ${BADGE} ${badge.cls}`}>{badge.label}</span>
             </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-                <AdminSideCard testId="merge-request-keep" side={r.primary} label={t('admin.merge_req_keep') || 'se conserva'} kept t={t} formatShortDate={formatShortDate} />
-                <AdminSideCard testId="merge-request-absorb" side={r.secondary} label={t('admin.merge_req_absorb') || 'se absorbe'} kept={false} t={t} formatShortDate={formatShortDate} />
-            </div>
-            {/* A dispute (D49) carries both positions: who wants them combined, and who said they are not the same person. */}
-            <div className="text-stone-600 break-all">
-                <span className="font-medium">{r.dispute ? (t('admin.merge_req_review_by') || 'Pide revisión (quiere combinarlos)') : (t('admin.merge_req_requested_by') || 'Pidió')}: </span>{r.requesterEmail}
+            {/* «Qué coincide y qué no» (audit A4): the one that stays outlined, the absorbed one beside it. */}
+            <AdminPairCompare kept={r.primary} absorbed={r.secondary} matchTypes={r.matchTypes} testIdPrefix="merge-request"
+                keptLabel={t('admin.merge_req_keep') || 'se conserva'} absorbedLabel={t('admin.merge_req_absorb') || 'se absorbe'} t={t} formatShortDate={formatShortDate} />
+            {/* A review request (D49) carries both positions: who wants them combined, and who said they are not the same person. */}
+            <div className="min-w-0 text-stone-600">
+                <span className="font-medium">{r.dispute ? (t('admin.merge_req_review_by') || 'Pide revisión (quiere combinarlos)') : (t('admin.merge_req_requested_by') || 'Pidió')}: </span><BreakableEmail email={r.requesterEmail} />
             </div>
             {r.createdAt != null && (
                 <div className="text-xs text-stone-500">
@@ -111,9 +136,9 @@ function RequestRow({ row: r, busy, locked, now, t, formatShortDate, onResolve }
                 </div>
             )}
             {r.dispute && r.rejected && (
-                <div data-testid="merge-request-rejected" className="text-stone-600 break-all">
+                <div data-testid="merge-request-rejected" className="min-w-0 text-stone-600">
                     <span className="font-medium">{t('admin.merge_req_rejected_by') || 'Rechazó (no es la misma persona)'}: </span>
-                    {r.rejected.byEmail ?? (t('admin.merge_dispute_unknown') || 'desconocido')}
+                    {r.rejected.byEmail ? <BreakableEmail email={r.rejected.byEmail} /> : (t('admin.merge_dispute_unknown') || 'desconocido')}
                     {r.rejected.at != null && (
                         <span className="text-xs text-stone-500"> · {(t('admin.merge_req_rejected_on') || 'Rechazado el {date}').replace('{date}', formatShortDate(r.rejected.at))}</span>
                     )}

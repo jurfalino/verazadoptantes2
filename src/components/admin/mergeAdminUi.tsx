@@ -2,10 +2,14 @@
 
 /**
  * Shared bits of the admin «Pedidos de combinación» page (requests and
- * disputes): one profile's card (name, owner, date, and whether it stays —
- * D31), the badge and button styles, and «hace N días». Colours are theme
+ * disputes): «Qué coincide y qué no» for the pair with each profile's head
+ * (name, owner, date, and whether it stays — D31), the badge and button
+ * styles, and «hace N días». Colours are theme
  * variables or classes remapped under [data-theme] in globals.css.
  */
+
+import MatchCompare from '@/components/MatchCompare';
+import { BreakableEmail } from '@/components/ui/BreakableEmail';
 
 const DAY_MS = 86_400_000;
 
@@ -31,10 +35,16 @@ export interface AdminSide {
     ownerEmail: string | null;
     /** epoch ms */
     createdAt: number | null;
+    /** Its contacts (whole: admin page), compared in «Qué coincide y qué no». */
+    entries: Array<{ type: string; value: string }>;
 }
 
-/** One profile of a pair: whether it stays or is absorbed, its name (linked), owner and creation date (D31). */
-export function AdminSideCard({ side, label, kept, testId, t, formatShortDate }: {
+/**
+ * One profile's head inside its «Qué coincide y qué no» block (audit A4): whether it
+ * stays or is absorbed, its name (linked), owner and creation date (D31) — the
+ * comparison underneath is the shared MatchCompare, as in Pendientes.
+ */
+export function AdminSideHead({ side, label, kept, testId, t, formatShortDate }: {
     side: AdminSide;
     label: string;
     kept: boolean;
@@ -43,20 +53,48 @@ export function AdminSideCard({ side, label, kept, testId, t, formatShortDate }:
     formatShortDate: (ms: number) => string;
 }) {
     return (
-        <div data-testid={testId} className="rounded-lg border border-stone-200 bg-stone-50 p-3 space-y-0.5 min-w-0">
+        <div data-testid={testId} className="min-w-0 normal-case tracking-normal font-normal space-y-0.5 text-sm">
             <span className={`${BADGE} ${kept ? 'bg-teal-50 border-teal-200 text-teal-700' : 'bg-stone-100 border-stone-200 text-stone-600'}`}>{label}</span>
             <div>
-                <a href={`/adopter/${encodeURIComponent(side.id)}`} className="inline-flex min-h-[44px] items-center font-semibold text-teal-700 hover:underline break-words">
+                <a href={`/adopter/${encodeURIComponent(side.id)}`} className="inline-flex min-h-[44px] items-center font-semibold text-[15px] text-teal-700 hover:underline break-words">
                     {side.name || t('admin.merge_req_no_name') || '(sin nombre)'}
                 </a>
             </div>
-            <div className="text-stone-600 break-all">
+            <div className="min-w-0 text-stone-600">
                 <span className="font-medium">{t('admin.merge_req_owner') || 'Dueño'}: </span>
-                {side.ownerEmail ?? <span className="italic text-stone-500">{t('admin.merge_req_no_owner') || 'sin dueño'}</span>}
+                {side.ownerEmail ? <BreakableEmail email={side.ownerEmail} /> : <span className="italic text-stone-500">{t('admin.merge_req_no_owner') || 'sin dueño'}</span>}
             </div>
             {side.createdAt != null && (
                 <div className="text-xs text-stone-500">{(t('admin.merge_req_created') || 'Creado el {date}').replace('{date}', formatShortDate(side.createdAt))}</div>
             )}
         </div>
+    );
+}
+
+/** «Qué coincide y qué no» for an admin row: the side that stays first (outlined), the absorbed one second. */
+export function AdminPairCompare({ kept, absorbed, keptLabel, absorbedLabel, matchTypes, testIdPrefix, t, formatShortDate }: {
+    kept: AdminSide;
+    absorbed: AdminSide;
+    keptLabel: string;
+    absorbedLabel: string;
+    matchTypes: string[];
+    testIdPrefix: string;
+    t: T;
+    formatShortDate: (ms: number) => string;
+}) {
+    return (
+        <MatchCompare
+            bare
+            adopterId={absorbed.id}
+            matchTypes={matchTypes}
+            profileName={absorbed.name}
+            source={{ kind: 'profile', name: kept.name, entries: kept.entries }}
+            profileEntries={absorbed.entries}
+            target="other"
+            kept="source"
+            sourceHead={<AdminSideHead testId={`${testIdPrefix}-keep`} side={kept} label={keptLabel} kept t={t} formatShortDate={formatShortDate} />}
+            targetHead={<AdminSideHead testId={`${testIdPrefix}-absorb`} side={absorbed} label={absorbedLabel} kept={false} t={t} formatShortDate={formatShortDate} />}
+            t={t}
+        />
     );
 }

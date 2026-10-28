@@ -177,6 +177,15 @@ describe('resolveMergeDispute (D50)', () => {
         })]);
     });
 
+    it('«Qué coincide y qué no» (audit A4): the survivor as it was BEFORE the merge (not with the absorbed contacts folded in), the absorbed as it is, the pair\'s match types', async () => {
+        const [row] = await listMergeDisputesForAdmin(db());
+        // mine-old had no contacts before; the merge copied theirs-new's phone onto it.
+        expect(sqlite.prepare(`SELECT contact_entries FROM adopters WHERE id = 'mine-old'`).get()!.contact_entries).toContain('5555 0001');
+        expect(row.survivor.entries).toEqual([]);
+        expect(row.absorbed.entries).toEqual([{ type: 'phone', value: '+54 11 5555 0001' }]);
+        expect(row.matchTypes).toEqual(['phone', 'name_full']);
+    });
+
     it('«Deshacer combinación»: both profiles back, the fold grants revoked, the pair kept separate, both rescuers told', async () => {
         expect(liveGrantsOn('mine-old')).toEqual([MATE, OWNER]);
         expect(await as(ADMIN, () => resolveMergeDispute(disputeId, 'undo'))).toEqual({ success: true, status: 'undone' });

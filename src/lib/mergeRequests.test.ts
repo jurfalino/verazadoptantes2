@@ -589,10 +589,10 @@ describe('listMergeRequestsForAdmin', () => {
         expect(rows.map(r => r.id)).toEqual(['p-old', 'p-new', 'd-old']);
         expect(rows[0]).toEqual({
             id: 'p-old', status: 'pending', createdAt: 200_000,
-            primary: { id: 'third', name: 'Otra', ownerEmail: OWNER, createdAt: 3_000_000 },
-            secondary: { id: 'anon-new', name: 'Anónima', ownerEmail: null, createdAt: 4_000_000 },
+            primary: { id: 'third', name: 'Otra', ownerEmail: OWNER, createdAt: 3_000_000, entries: [] },
+            secondary: { id: 'anon-new', name: 'Anónima', ownerEmail: null, createdAt: 4_000_000, entries: [] },
             requesterEmail: REQUESTER, ownerEmail: null, dispute: false,
-            resolvedByEmail: null, resolvedAt: null, rejected: null,
+            resolvedByEmail: null, resolvedAt: null, rejected: null, matchTypes: [],
         });
         expect(rows[2]).toMatchObject({ status: 'declined', primary: { name: 'Carla Gómez', ownerEmail: REQUESTER, createdAt: 1_000_000 }, secondary: { name: 'Carla Gomez', ownerEmail: OWNER, createdAt: 2_000_000 }, ownerEmail: OWNER });
     });
@@ -608,5 +608,17 @@ describe('listMergeRequestsForAdmin', () => {
             primary: { id: 'o-new' }, secondary: { id: 'r-old' },
             rejected: { byEmail: OWNER, at: 150_000 },
         });
+    });
+
+    it('each row carries what «Qué coincide y qué no» compares (audit A4): both sides\' contacts and the pair\'s match types, either orientation', async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'r-old'`).run(JSON.stringify([{ id: 'e1', type: 'phone', value: '11 5555-0001' }, { id: 'e2', type: 'email', value: 'carla@example.com' }]));
+        // A legacy profile with only the text blob: parsed into typed values.
+        sqlite.prepare(`UPDATE adopters SET contact_entries = NULL, contact_info = ? WHERE id = 'o-new'`).run('11 5555-0001');
+        sqlite.prepare(`INSERT INTO merge_requests (id, primary_id, secondary_id, requester_email, owner_email, status, created_at) VALUES ('m', 'r-old', 'o-new', ?, ?, 'pending', 100)`).run(REQUESTER, OWNER);
+        const [row] = await listMergeRequestsForAdmin(db());
+        expect(row.primary.entries).toEqual([{ type: 'phone', value: '11 5555-0001' }, { type: 'email', value: 'carla@example.com' }]);
+        expect(row.secondary.entries).toEqual([{ type: 'phone', value: expect.stringContaining('5555') }]);
+        // cand-1 is stored as (o-new, r-old): the reverse of the request.
+        expect(row.matchTypes).toEqual(['phone']);
     });
 });

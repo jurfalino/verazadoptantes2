@@ -171,7 +171,15 @@ test.describe('One shared reality (D48–D52)', () => {
             await expect(adminRow).toHaveCount(1, { timeout: 30_000 });
             await expect(adminRow).toHaveAttribute('data-dispute', '1');
             await expect(adminRow.getByTestId('merge-request-rejected')).toContainText(owner.email);
+            await expect(adminRow.getByTestId('match-compare')).toBeVisible();
             await adminRow.getByTestId('merge-request-decline').click();
+            // Confirmed first (audit A4): «Cancelar» leaves everything as it was.
+            const confirm = page.getByTestId('merge-request-confirm');
+            await confirm.getByTestId('merge-request-confirm-cancel').click();
+            await expect(confirm).toHaveCount(0);
+            await expect(adminRow).toHaveCount(1);
+            await adminRow.getByTestId('merge-request-decline').click();
+            await confirm.getByTestId('merge-request-confirm-confirm').click();
             await expect(adminRow).toHaveCount(0, { timeout: 30_000 });
 
             // Settled for the whole pair: nothing of it comes back after a reload («Aprobar igual» included).
@@ -250,7 +258,9 @@ test.describe('One shared reality (D48–D52)', () => {
             await dismissCountryBanner(page);
             const disputeRow = page.getByTestId('merge-dispute-row').filter({ hasText: NAME });
             await expect(disputeRow).toHaveCount(1, { timeout: 30_000 });
+            await expect(disputeRow.getByTestId('match-compare')).toBeVisible();
             await disputeRow.getByTestId('merge-dispute-undo').click();
+            await page.getByTestId('merge-dispute-confirm').getByTestId('merge-dispute-confirm-confirm').click();
             await expect(disputeRow).toHaveCount(0, { timeout: 60_000 });
 
             // Both profiles are back, and both rescuers hear the outcome.

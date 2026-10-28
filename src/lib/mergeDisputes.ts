@@ -24,6 +24,7 @@ import { createNotification, notifyAdmins, resolveDisplayName } from '@/app/acti
 import { rowsAffected } from '@/lib/interviews/rowsAffected';
 import { mergeSideParams } from '@/lib/mergeNotificationSides';
 import { keepSeparate } from '@/lib/mergeRequests';
+import { compareEntriesOf, pairMatchTypes, type CompareEntry } from '@/lib/mergeAdminCompare';
 import { notificationContent } from '@/domain/notificationTemplates';
 import {
     decideMergeDisputeRaise,
@@ -46,6 +47,12 @@ export interface MergeDisputeAdminSide {
     ownerEmail: string | null;
     /** epoch ms the profile was created */
     createdAt: number | null;
+    /**
+     * Its contacts, whole (admin page), for «Qué coincide y qué no» (audit A4).
+     * The survivor's are as they were BEFORE the merge (the merge's undo
+     * snapshot): today it also carries the absorbed profile's contacts.
+     */
+    entries: CompareEntry[];
 }
 
 export interface MergeDisputeAdminRow {
@@ -63,6 +70,8 @@ export interface MergeDisputeAdminRow {
     survivor: MergeDisputeAdminSide;
     /** The profile that was absorbed (soft-deleted until an undo). */
     absorbed: MergeDisputeAdminSide;
+    /** The duplicate scan's match types for the pair ([] when never scanned). */
+    matchTypes: string[];
 }
 
 /** What the profile page needs to offer «¿No es la misma persona? Avisar a un administrador». */
@@ -298,24 +307,40 @@ export async function listMergeDisputesForAdmin(db: Db): Promise<MergeDisputeAdm
         .orderBy(asc(mergeDisputes.createdAt)).all() as DisputeRow[];
     const side = async (id: string): Promise<MergeDisputeAdminSide> => {
         try {
-            const r = await db.select({ name: adopters.name, addedBy: adopters.addedBy, createdAt: adopters.createdAt })
+            const r = await db.select({ name: adopters.name, addedBy: adopters.addedBy, createdAt: adopters.createdAt, contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo })
                 .from(adopters).where(eq(adopters.id, id)).get();
-            return { id, name: r?.name ?? '', ownerEmail: realOwner(r?.addedBy), createdAt: r?.createdAt ? r.createdAt.getTime() : null };
+            return { id, name: r?.name ?? '', ownerEmail: realOwner(r?.addedBy), createdAt: r?.createdAt ? r.createdAt.getTime() : null, entries: compareEntriesOf(r) };
         } catch (e) {
             logger.warn('listMergeDisputesForAdmin: D1 fallback hit', { adopterId: id, error: e instanceof Error ? e.message : String(e) });
-            return { id, name: '', ownerEmail: null, createdAt: null };
+            return { id, name: '', ownerEmail: null, createdAt: null, entries: [] };
         }
     };
     const merge = async (r: DisputeRow) => {
         try {
-            return await db.select({ userEmail: auditLog.userEmail, createdAt: auditLog.createdAt }).from(auditLog).where(eq(auditLog.id, r.auditId)).get();
+            return await db.select({ userEmail: auditLog.userEmail, createdAt: auditLog.createdAt, details: auditLog.details }).from(auditLog).where(eq(auditLog.id, r.auditId)).get();
         } catch (e) {
             logger.warn('listMergeDisputesForAdmin: D1 fallback hit', { disputeId: r.id, auditId: r.auditId, error: e instanceof Error ? e.message : String(e) });
             return undefined;
         }
     };
+    /** The survivor's contacts before the merge folded the absorbed ones in (the merge's undo snapshot); null when unreadable. */
+    const beforeMerge = (r: DisputeRow, details: string | null | undefined): CompareEntry[] | null => {
+        if (!details) return null;
+        try {
+            const snap = (JSON.parse(details) as { undo?: { primarySnapshot?: { contactEntries?: string | null; contactInfo?: string | null } } }).undo?.primarySnapshot;
+            return snap ? compareEntriesOf(snap) : null;
+        } catch (e) {
+            logger.warn('listMergeDisputesForAdmin: merge snapshot unreadable, showing the survivor as it is', { disputeId: r.id, auditId: r.auditId, error: e instanceof Error ? e.message : String(e) });
+            return null;
+        }
+    };
     return Promise.all(rows.map(async (r) => {
-        const [survivor, absorbed, audit] = await Promise.all([side(r.survivorId), side(r.absorbedId), merge(r)]);
+        const [survivorRow, absorbedRow, audit, matchTypes] = await Promise.all([
+            side(r.survivorId), side(r.absorbedId), merge(r),
+            pairMatchTypes(db, r.survivorId, r.absorbedId, { op: 'listMergeDisputesForAdmin', disputeId: r.id }),
+        ]);
+        const survivor = { ...survivorRow, entries: beforeMerge(r, audit?.details) ?? survivorRow.entries };
+        const absorbed = absorbedRow;
         return {
             id: r.id,
             auditId: r.auditId,
@@ -326,6 +351,7 @@ export async function listMergeDisputesForAdmin(db: Db): Promise<MergeDisputeAdm
             mergedAt: audit?.createdAt ? audit.createdAt.getTime() : null,
             survivor,
             absorbed,
+            matchTypes,
         };
     }));
 }
