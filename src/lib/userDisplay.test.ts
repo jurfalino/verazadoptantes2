@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { actorLabel, emailHandle } from './userDisplay';
+import { actorLabel, displayNameFor, emailHandle } from './userDisplay';
 import { es } from '@/i18n/locales/es';
 import { en } from '@/i18n/locales/en';
 import { pt } from '@/i18n/locales/pt';
@@ -68,5 +68,16 @@ describe('actorLabel', () => {
             expect(actorLabel(actor, null, tEs)).toBe(actor);
             expect(actorLabel(actor, 'Nombre Real', tEs)).toBe('Nombre Real');
         }
+    });
+});
+
+describe('displayNameFor (audit C2: one person, one name, never an email)', () => {
+    it('the account name, trimmed', () => {
+        expect(displayNameFor('ana@example.com', '  Ana Torres ')).toBe('Ana Torres');
+    });
+    it('no name, or a «name» that carries an email → the handle', () => {
+        expect(displayNameFor('testuser@example.com', null)).toBe('testuser');
+        expect(displayNameFor('testuser@example.com', '   ')).toBe('testuser');
+        expect(displayNameFor('testuser@example.com', 'Dev (testuser@example.com)')).toBe('testuser');
     });
 });

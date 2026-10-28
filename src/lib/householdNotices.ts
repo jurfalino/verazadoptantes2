@@ -135,7 +135,7 @@ export async function notifyHouseholdPersonAdded(n: PersonAddedNotice): Promise<
         if (!n.onAnchorTeam) {
             await notifyApprovers({
                 op: 'addHouseholdPerson', adopterId: n.anchor.id, actor: n.actor, type: 'household_contribution',
-                build: (actorName) => ({ key: 'household_contribution', params: { actorName, what: 'member', ...(n.anchor.name ? { adopterName: n.anchor.name } : {}) } }),
+                build: (actorName) => ({ key: 'household_contribution', params: { actorName, what: 'member', ...(n.anchor.name ? { adopterName: n.anchor.name } : {}), ...(n.person.name?.trim() ? { personName: n.person.name.trim() } : {}) } }),
                 metadata: { membershipId: n.membershipId, profileId: n.person.id, householdId: n.householdId, what: 'member' },
             });
         }

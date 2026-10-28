@@ -56,7 +56,8 @@ export async function resolveUserNames(emails: string[]): Promise<Record<string,
                 return [] as Array<{ email: string | null; name: string | null }>;
             });
         for (const row of rows) {
-            if (row.name && row.email) map[row.email] = row.name;
+            // One name rule everywhere (displayNameFor): a «name» carrying an email is not a name.
+            if (row.name && row.email && !row.name.includes('@')) map[row.email] = row.name.trim();
         }
     }
     return map;

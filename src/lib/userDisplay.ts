@@ -16,6 +16,19 @@ export function emailHandle(email: string | null | undefined): string {
 }
 
 /**
+ * The one name rule for a rescuer anywhere their name is shown — notices,
+ * «agregado por», attribution (audit 2026-10-28, C2): their account name,
+ * else the email handle. A «name» that carries an email address (a dev login's
+ * «Dev (x@y)», a provider that stores the address as the name) is never shown:
+ * the handle instead, so no notice prints someone's email.
+ */
+export function displayNameFor(email: string | null | undefined, name: string | null | undefined): string {
+    const n = name?.trim();
+    if (n && !n.includes('@')) return n;
+    return emailHandle(email);
+}
+
+/**
  * Non-email actor codes that system write paths stamp into `recorded_by` /
  * `updated_by` / `changed_by`, mapped to the i18n key that names them for users.
  * All three come from the public contract app (`/api/contract/[id]/submit` and

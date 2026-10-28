@@ -85,7 +85,9 @@ export interface NotificationTemplateParams {
      * household. `what`: 'member' (a person) or 'contact' (a contact on a member;
      * `entryType` is its ContactEntry type).
      */
-    household_contribution: { actorName: string; adopterName?: string; what: string; entryType?: string };
+    household_contribution: { actorName: string; adopterName?: string; what: string; entryType?: string;
+        /** what='member': who was added (audit C2: «agregó a Marta Paez», not «a alguien»). Absent on notices stored before. */
+        personName?: string };
     /**
      * Households as profiles: the teams of a household `personName` already lived in hear that
      * `actorName` recorded them as also living with `hostName` (nothing changes in their household).
@@ -143,10 +145,15 @@ const survivorLabel = (p: MergeSides, l: NotificationLocale) => profileLabel(p.s
 const absorbedLabel = (p: MergeSides, l: NotificationLocale) => profileLabel(p.absorbedName, p.absorbedOwner, p.absorbedDate, l);
 const plainName = (name: string | undefined, l: NotificationLocale) => name?.trim() || NO_NAME[l];
 
+/** Both profiles under one name: «Carla Ruiz → Carla Ruiz» says nothing — name it once (audit C8). */
+const sameMergedName = (p: MergeSides) => {
+    const a = p.absorbedName?.trim().replace(/\s+/g, ' '), b = p.survivorName?.trim().replace(/\s+/g, ' ');
+    return !!a && a === b;
+};
 const MERGED_TITLE: Record<NotificationLocale, (p: MergeSides) => string> = {
-    es: p => `Se unieron dos perfiles: ${plainName(p.absorbedName, 'es')} → ${plainName(p.survivorName, 'es')}`,
-    en: p => `Two profiles were merged: ${plainName(p.absorbedName, 'en')} → ${plainName(p.survivorName, 'en')}`,
-    pt: p => `Dois perfis foram combinados: ${plainName(p.absorbedName, 'pt')} → ${plainName(p.survivorName, 'pt')}`,
+    es: p => sameMergedName(p) ? `Se unieron dos perfiles de ${plainName(p.survivorName, 'es')}` : `Se unieron dos perfiles: ${plainName(p.absorbedName, 'es')} → ${plainName(p.survivorName, 'es')}`,
+    en: p => sameMergedName(p) ? `Two profiles of ${plainName(p.survivorName, 'en')} were merged` : `Two profiles were merged: ${plainName(p.absorbedName, 'en')} → ${plainName(p.survivorName, 'en')}`,
+    pt: p => sameMergedName(p) ? `Dois perfis de ${plainName(p.survivorName, 'pt')} foram combinados` : `Dois perfis foram combinados: ${plainName(p.absorbedName, 'pt')} → ${plainName(p.survivorName, 'pt')}`,
 };
 /** «se conserva X y se absorbe Y» — which one stays (D31). */
 const KEEPS: Record<NotificationLocale, (p: MergeSides) => string> = {
@@ -541,17 +548,17 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
     household_contribution: {
         required: ['actorName', 'what'],
         es: p => p.what === 'member'
-            ? { title: 'Nuevo conviviente', body: `${p.actorName} agregó a alguien al hogar ${householdOf(p.adopterName, 'es')}.` }
+            ? { title: 'Nuevo conviviente', body: `${p.actorName} agregó a ${p.personName?.trim() || 'alguien'} al hogar ${householdOf(p.adopterName, 'es')}.` }
             : p.what === 'contact'
                 ? { title: 'Nuevo dato de un conviviente', body: `${p.actorName} agregó ${entryTypeLabel(p.entryType ?? '', 'es')} de alguien del hogar ${householdOf(p.adopterName, 'es')}.` }
                 : null,
         en: p => p.what === 'member'
-            ? { title: 'New household member', body: `${p.actorName} added someone to ${householdOf(p.adopterName, 'en')} household.` }
+            ? { title: 'New household member', body: `${p.actorName} added ${p.personName?.trim() || 'someone'} to ${householdOf(p.adopterName, 'en')} household.` }
             : p.what === 'contact'
                 ? { title: 'New household contact detail', body: `${p.actorName} added ${entryTypeLabel(p.entryType ?? '', 'en')} for someone in ${householdOf(p.adopterName, 'en')} household.` }
                 : null,
         pt: p => p.what === 'member'
-            ? { title: 'Novo convivente', body: `${p.actorName} adicionou alguém ao lar ${householdOf(p.adopterName, 'pt')}.` }
+            ? { title: 'Novo convivente', body: `${p.actorName} adicionou ${p.personName?.trim() || 'alguém'} ao lar ${householdOf(p.adopterName, 'pt')}.` }
             : p.what === 'contact'
                 ? { title: 'Novo dado de um convivente', body: `${p.actorName} adicionou ${entryTypeLabel(p.entryType ?? '', 'pt')} de alguém do lar ${householdOf(p.adopterName, 'pt')}.` }
                 : null,

@@ -100,6 +100,26 @@ describe('renderNotification', () => {
             .toBe('owner rechazó combinar dos perfiles');
     });
 
+    it('a merge of two profiles with the same name names it once (audit C8), different names keep «A → B»', () => {
+        const same = { actorName: 'Ana', survivorName: 'Carla Ruiz', absorbedName: ' Carla Ruiz ' };
+        expect(renderNotification({ key: 'adopter_merged_by_rescuer', params: same }, 'es')!.title).toBe('Se unieron dos perfiles de Carla Ruiz');
+        expect(renderNotification({ key: 'adopter_merged_by_rescuer', params: same }, 'en')!.title).toBe('Two profiles of Carla Ruiz were merged');
+        expect(renderNotification({ key: 'adopter_merged_by_rescuer', params: same }, 'pt')!.title).toBe('Dois perfis de Carla Ruiz foram combinados');
+        expect(renderNotification({ key: 'adopter_merged_by_rescuer', params: { actorName: 'Ana', survivorName: 'Carla Ruiz', absorbedName: 'Carla R.' } }, 'es')!.title)
+            .toBe('Se unieron dos perfiles: Carla R. → Carla Ruiz');
+    });
+
+    it('«Nuevo conviviente» names the person added when known (audit C2); older notices without it still read', () => {
+        expect(renderNotification({ key: 'household_contribution', params: { actorName: 'Ana', adopterName: 'Pedro Paez', what: 'member', personName: 'Marta Paez' } }, 'es')!.body)
+            .toBe('Ana agregó a Marta Paez al hogar de Pedro Paez.');
+        expect(renderNotification({ key: 'household_contribution', params: { actorName: 'Ana', adopterName: 'Pedro Paez', what: 'member', personName: 'Marta Paez' } }, 'en')!.body)
+            .toBe("Ana added Marta Paez to Pedro Paez's household.");
+        expect(renderNotification({ key: 'household_contribution', params: { actorName: 'Ana', adopterName: 'Pedro Paez', what: 'member', personName: 'Marta Paez' } }, 'pt')!.body)
+            .toBe('Ana adicionou Marta Paez ao lar de Pedro Paez.');
+        expect(renderNotification({ key: 'household_contribution', params: { actorName: 'Ana', adopterName: 'Pedro Paez', what: 'member' } }, 'es')!.body)
+            .toBe('Ana agregó a alguien al hogar de Pedro Paez.');
+    });
+
     it('households as profiles: relationship words per locale, removal reasons, unknown codes render nothing', () => {
         expect(renderNotification({ key: 'household_relationship_changed', params: { actorName: 'Ana', personName: 'Marta Paez', relationship: 'partner', relativeName: 'Pedro Paez' } }, 'es')!.body)
             .toBe('Ana cambió el parentesco de Marta Paez a «pareja» (respecto de Pedro Paez).');
