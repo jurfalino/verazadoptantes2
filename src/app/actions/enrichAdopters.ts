@@ -14,6 +14,7 @@ import { computeAvgRating } from '@/domain/ratings';
 import { computeStats } from '@/domain/stats';
 import { countActivity, type ActivityCounts } from '@/domain/activityCounts';
 import { buildFlags } from '@/domain/flags';
+import { FLAG_REASONS } from '@/domain/constants';
 import { RECORD_TYPES } from '@/domain/constants';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 import { computeRequestRescueDensity } from '@/domain/requestDensity';
@@ -36,6 +37,13 @@ export interface EnrichmentResult {
     thumbnail: string | null;
     stats: { searchHits: number; profileViews: number; requests: number; adoptions: number; activity?: ActivityCounts };
     flags: AdopterFlags;
+    /**
+     * Any duplicate report on the profile, open or closed — what the public API has always
+     * reported as `flags: ['duplicate']` («set by people in BuenAdoptante», adopter_flags.reason).
+     * The app's own screens use `flags.duplicate`, which is the profile header's OPEN rule
+     * (fix round 2, item 9); the API contract is left as it was.
+     */
+    duplicateReported: boolean;
 }
 
 /**
@@ -185,7 +193,8 @@ async function _enrichAdoptersImpl(
         // The same counts a household row and the «Actividad» header show (audit B12).
         stats.activity = countActivity(adopterAdoptions);
 
-        resultMap.set(id, { avgRating, thumbnail: thumbByAdopter.get(id) || null, stats, flags });
+        resultMap.set(id, { avgRating, thumbnail: thumbByAdopter.get(id) || null, stats, flags,
+            duplicateReported: adopterFlagRecords.some(fr => fr.reason === FLAG_REASONS.DUPLICATE) });
     }
 
     return resultMap;
