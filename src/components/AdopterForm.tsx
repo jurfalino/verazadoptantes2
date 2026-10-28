@@ -29,7 +29,7 @@ import ContactEntriesSection from "@/components/ContactEntriesSection";
 import HouseholdSection from "@/components/HouseholdSection";
 import { KnownAsLine } from "@/components/household/KnownAsLine";
 import { EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from "@/domain/profileHouseholds";
-import { CONTACT_ENTRIES_FULL, deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
+import { CONTACT_ENTRIES_FULL, deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, newContactsForProfile, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
 import type { VisibilityBadge } from "@/domain/visibilityBadge";
 import { hasMinimumIdentifier } from "@/domain/adopterIdentity";
 import { adopterDisplayName, namelessSubIdentifier } from "@/lib/adopterDisplay";
@@ -273,7 +273,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     // "Continuar con este perfil" loading guard — one in-flight call at a time.
     const [continueBusyId, setContinueBusyId] = useState<string | null>(null);
     // Confirmation modal — pending append target until the user confirms.
-    const [pendingMerge, setPendingMerge] = useState<{ adopterId: string; adopterName: string } | null>(null);
+    const [pendingMerge, setPendingMerge] = useState<{ adopterId: string; adopterName: string; match: DiscoveryMatch } | null>(null);
 
     const DUPLICATE_DEBOUNCE_MS = 350;
 
@@ -476,7 +476,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         if (continueBusyId) return;
         const match = known ?? duplicateResults?.find(r => r.adopter.id === targetId);
         if (!match) return;
-        setPendingMerge({ adopterId: targetId, adopterName: match.adopter.name });
+        setPendingMerge({ adopterId: targetId, adopterName: match.adopter.name, match });
     }, [continueBusyId, duplicateResults]);
 
     // «No es esta persona» on any match card of this form (the panel, the strip, the save check):
@@ -1694,29 +1694,14 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                 <Modal title={(t('adopter.merge_confirm_title') || '¿Continuar con el perfil de {name}?').replace('{name}', pendingMerge.adopterName)}
                     onClose={() => setPendingMerge(null)} busy={!!continueBusyId} testId="continue-merge-dialog">
                     <ModalText>{t('adopter.merge_confirm_body') || 'La información que ingresaste se agregará a este perfil. Los datos que ya existan en el perfil no se duplicarán.'}</ModalText>
-                    {(data.contactInfo?.trim() || data.familyMembers?.trim()) ? (
-                        <div className="rounded-xl px-3 py-3 bg-amber-50 border border-amber-100">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-amber-800 mb-2">
-                                {t('adopter.merge_confirm_preview') || 'Se agregará:'}
-                            </p>
-                            <ul className="space-y-1.5 text-sm text-stone-800">
-                                {data.contactInfo?.trim() && (
-                                    <li>
-                                        <span className="text-xs font-medium text-stone-500">{t('adopter.contact') || 'Contacto'}: </span>
-                                        <span className="[overflow-wrap:anywhere]">{data.contactInfo.trim()}</span>
-                                    </li>
-                                )}
-                                {data.familyMembers?.trim() && (
-                                    <li>
-                                        <span className="text-xs font-medium text-stone-500">{t('adopter.family_members') || 'Familia'}: </span>
-                                        <span className="[overflow-wrap:anywhere]">{data.familyMembers.trim()}</span>
-                                    </li>
-                                )}
-                            </ul>
-                        </div>
-                    ) : (
-                        <ModalText>{t('adopter.merge_confirm_no_new') || 'No hay información nueva para agregar. Solo abriremos el perfil existente.'}</ModalText>
-                    )}
+                    <ContinueMergePreview
+                        // What the typed data would ADD to that profile (fix round 2, item 20): the typed contacts
+                        // it doesn't already show (newContactsForProfile mirrors the server's merge), else — no
+                        // contact chips — the typed text; plus the household text.
+                        newContacts={contactEntries.length ? newContactsForProfile(contactEntries, pendingMerge.match.adopter, pendingMerge.match.matchValues) : []}
+                        typedText={contactEntries.length ? '' : (data.contactInfo?.trim() ?? '')}
+                        family={data.familyMembers?.trim() ?? ''}
+                    />
                     <ModalActions
                         onCancel={() => setPendingMerge(null)}
                         busy={!!continueBusyId}
@@ -1725,6 +1710,43 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                 </Modal>
             )}
 
+        </div>
+    );
+}
+
+/** «Se agregará: …» in «¿Continuar con el perfil de X?», or «No hay información nueva…» when nothing would be added. */
+function ContinueMergePreview({ newContacts, typedText, family }: { newContacts: ContactEntry[]; typedText: string; family: string }) {
+    const { t } = useLanguage();
+    if (newContacts.length === 0 && !typedText && !family) {
+        return (
+            <ModalText testId="continue-merge-nothing-new">{t('adopter.merge_confirm_no_new') || 'No hay información nueva para agregar. Solo abriremos el perfil existente.'}</ModalText>
+        );
+    }
+    return (
+        <div className="rounded-xl px-3 py-3 bg-amber-50 border border-amber-100">
+            <p className="text-xs font-semibold uppercase tracking-wider text-amber-800 mb-2">
+                {t('adopter.merge_confirm_preview') || 'Se agregará:'}
+            </p>
+            <ul className="space-y-1.5 text-sm text-stone-800" data-testid="continue-merge-new">
+                {newContacts.map(e => (
+                    <li key={e.id ?? `${e.type}|${e.value}`}>
+                        <span className="text-xs font-medium text-stone-500">{t(`adopter.ce_type_${e.type}`)}: </span>
+                        <span className="[overflow-wrap:anywhere]">{e.value.trim()}</span>
+                    </li>
+                ))}
+                {typedText && (
+                    <li>
+                        <span className="text-xs font-medium text-stone-500">{t('adopter.contact') || 'Contacto'}: </span>
+                        <span className="[overflow-wrap:anywhere]">{typedText}</span>
+                    </li>
+                )}
+                {family && (
+                    <li>
+                        <span className="text-xs font-medium text-stone-500">{t('adopter.family_members') || 'Familia'}: </span>
+                        <span className="[overflow-wrap:anywhere]">{family}</span>
+                    </li>
+                )}
+            </ul>
         </div>
     );
 }

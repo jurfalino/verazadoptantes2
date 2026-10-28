@@ -814,6 +814,36 @@ export function stripRenameMarks<T extends ContactEntry>(entries: readonly T[]):
     });
 }
 
+/**
+ * The typed contacts that would be NEW on a profile — what «¿Continuar con el
+ * perfil de X?» lists under «Se agregará» (fix round 2, item 20). Mirrors the
+ * server's append (appendToExistingAdopter → mergeContactEntries): the
+ * profile's typed list, else its legacy text read as entries, de-duplicated on
+ * contactEntryKey. A masked contact (`masked: true`) can't be compared, so a
+ * typed one is never assumed to be it — unless the duplicate engine matched on
+ * that same email (`matchValues`: the query's own normalized tokens).
+ * Blank and repeated typed entries count once.
+ */
+export function newContactsForProfile(
+    typed: readonly ContactEntry[],
+    profile: { contactEntries: string | null; contactInfo: string | null },
+    matchValues: ReadonlyArray<{ type: string; value: string }> = [],
+): ContactEntry[] {
+    const stored = deserializeContactEntries(profile.contactEntries);
+    const base = stored.length ? stored : parseBlobToContactEntries(profile.contactInfo);
+    const known = new Set(base.filter(e => !e.masked && e.value?.trim()).map(contactEntryKey));
+    for (const v of matchValues) if (v.type === 'email' && v.value) known.add(contactEntryKey({ type: 'email', value: v.value }));
+    const out: ContactEntry[] = [];
+    for (const e of typed) {
+        if (!e.value?.trim()) continue;
+        const key = contactEntryKey(e);
+        if (known.has(key)) continue;
+        known.add(key);
+        out.push(e);
+    }
+    return out;
+}
+
 /** Merge two entry lists, de-duplicating on normalized value. */
 export function mergeContactEntries(a: ContactEntry[], b: ContactEntry[]): ContactEntry[] {
     return renameAliasesFirst(dedupe([...a, ...b]));
