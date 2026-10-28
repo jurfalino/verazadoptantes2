@@ -9,8 +9,7 @@ import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
 import { AdopterName } from '@/components/AdopterName';
 import { MinorTag } from '@/components/MinorTag';
-import { PersonStanding } from '@/components/PersonStanding';
-import type { HouseholdLine } from '@/domain/households';
+import { MinorRecordsNote } from '@/components/MinorRecordsNote';
 import { withoutLegacyMergeSeparators } from '@/lib/contactEntries';
 
 const SEARCH_DEBOUNCE_MS = 250;
@@ -24,16 +23,6 @@ type Accent = 'teal' | 'rose';
 
 /** Who was picked: an existing result, or an adult of a minor's household offered under it. */
 export type PickedAdopter = { adopterId: string; name: string };
-
-/**
- * A minor's housemates who can carry the record (audit A3): adults only, never
- * a gift recipient's household. From the result's own household line, when the
- * search read it.
- */
-export function adultsToOffer(lines: HouseholdLine[] | null | undefined): HouseholdLine[] {
-    const seen = new Set<string>();
-    return (lines ?? []).filter(l => !l.isMinor && !l.isGift && !seen.has(l.profileId) && seen.add(l.profileId));
-}
 
 const ACCENT: Record<Accent, { snippet: string; resultRowSelectedBg: string }> = {
     teal: { snippet: 'text-teal-700', resultRowSelectedBg: 'bg-teal-50 border-l-2 border-l-teal-500' },
@@ -139,28 +128,11 @@ export default function AdopterPicker({
         onSelect({ adopterId: res.adopter.id, name: res.adopter.name ?? '' });
     };
 
-    /** Under a minor's row: why it can't be picked, and their household's adults to pick instead. */
-    const minorNote = (res: DiscoveryMatch, inPreview = false) => {
-        const adults = adultsToOffer(res.households);
-        return (
-            <div className={`text-xs text-stone-600 space-y-1.5 ${inPreview ? 'px-4 pb-4' : 'px-3 pb-3 pl-[60px]'}`} data-testid="picker-minor-note">
-                <p>{t('adopter.minor_note')}</p>
-                {adults.length > 0 && (
-                    <div className="space-y-1">
-                        <p className="font-semibold text-stone-500">{t('wizard.minor_pick_adult')}</p>
-                        {adults.map(a => (
-                            <button key={a.profileId} type="button" data-testid="picker-minor-adult" data-profile-id={a.profileId}
-                                onClick={() => onSelect({ adopterId: a.profileId, name: a.name })}
-                                className="w-full flex flex-wrap items-center gap-x-2 gap-y-0.5 min-h-[44px] px-3 py-2 rounded-xl border border-stone-200 bg-white hover:bg-teal-50 hover:border-teal-400 text-left transition-colors">
-                                <span className="font-semibold text-sm text-stone-800 break-words">{a.name}</span>
-                                <PersonStanding rating={a.rating} openAlerts={a.openAlerts} isMinor={false} />
-                            </button>
-                        ))}
-                    </div>
-                )}
-            </div>
-        );
-    };
+    /** Under a minor's row: why it can't be picked, and their household's adults to pick instead (shared with the post import). */
+    const minorNote = (res: DiscoveryMatch, inPreview = false) => (
+        <MinorRecordsNote households={res.households} testIdPrefix="picker" className={inPreview ? 'px-4 pb-4' : 'px-3 pb-3 pl-[60px]'}
+            onPickAdult={a => onSelect({ adopterId: a.profileId, name: a.name })} />
+    );
 
     if (preview) {
         return (

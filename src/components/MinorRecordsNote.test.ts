@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@/app/actions', () => ({ findAdopters: vi.fn() }));
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null }) }));
 
-import { adultsToOffer } from './AdopterPicker';
+import { adultsToOffer } from './MinorRecordsNote';
 
 const line = (id: string, over: Partial<{ isMinor: boolean; isGift: boolean }> = {}) =>
     ({ name: id, profileId: id, rating: null, openAlerts: 0, isMinor: false, isGift: false, householdId: 'h', ...over });

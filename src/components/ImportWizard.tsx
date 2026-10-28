@@ -12,7 +12,8 @@ import type { MediaItem } from '@/components/ui/MediaLightbox';
 import LegalConsent from '@/components/LegalConsent';
 import { extractVideoThumbnail, extractVideoThumbnailFromUrl } from '@/lib/videoThumbnail';
 import { zarazTrack } from '@/lib/zaraz';
-import { findAdopters, addHouseholdPerson } from '@/app/actions';
+import { findAdopters, addHouseholdPerson, getMatchContext } from '@/app/actions';
+import type { MatchContext } from '@/app/actions';
 import type { DuplicateMatch } from '@/app/actions';
 import { confidenceBand } from '@/lib/scoring';
 import type { ExtractedAdopterData } from '@/lib/gemini';
@@ -52,6 +53,8 @@ import { fill, householdErrorCopy } from '@/lib/householdCopy';
 import type { HouseholdContactInput } from '@/app/actions/households';
 import DatePicker from '@/components/ui/DatePicker';
 import MatchCompare from '@/components/MatchCompare';
+import { MatchCard } from '@/components/MatchCardParts';
+import { MinorRecordsNote } from '@/components/MinorRecordsNote';
 import { buttonClasses } from '@/components/ui/Button';
 import StickyActions from '@/components/import/StickyActions';
 import MediaPicker from '@/components/import/MediaPicker';
@@ -73,6 +76,8 @@ interface PersonMatch {
      * locale or used to drive non-text affordances later.
      */
     matchTypes: string[];
+    /** Their rating / alerts / «Menor de edad» and household line for the card's header (getMatchContext standing); absent when unread. */
+    standing?: MatchContext['standing'];
 }
 
 export default function ImportWizard() {
@@ -958,6 +963,16 @@ export default function ImportWizard() {
      * on the review screen ("Agregar a este perfil"): the same checks still run,
      * the same-post one first (review of 2.56.213, item 4).
      */
+    /** Each match's standing for its card header (audit B6) and the minor rule (A3); a failed read leaves it out. */
+    const withStanding = (list: PersonMatch[]): Promise<PersonMatch[]> => Promise.all(list.map(m =>
+        getMatchContext(m.id, { standing: true })
+            .then(c => (c.standing ? { ...m, standing: c.standing } : m))
+            .catch(e => {
+                logUxIssue('import: match standing could not load', { adopterId: m.id, error: e instanceof Error ? e.message : String(e) });
+                return m;
+            }),
+    ));
+
     const handlePreSave = async (preselect?: PersonMatch, opts: { skipUrlCheck?: boolean } = {}) => {
         setIsSaving(true);
         setDuplicateAdopter(null);
@@ -1030,12 +1045,14 @@ export default function ImportWizard() {
                     }));
                     foundMatches = true;
                     // The match picked on the review screen stays on the list and selected.
-                    const list = preselect && !matches.some(m => m.id === preselect.id) ? [preselect, ...matches] : matches;
+                    const list = await withStanding(preselect && !matches.some(m => m.id === preselect.id) ? [preselect, ...matches] : matches);
                     setPersonMatches(list);
                     // Otherwise pre-select only a strong match. A weak one used to come
                     // pre-selected, one tap from merging into the wrong person;
                     // the spreadsheet import makes the rescuer choose (audit D5).
-                    setSelectedMatch(preselect ? list.find(m => m.id === preselect.id)! : (matches[0].confidence === 'high' ? matches[0] : null));
+                    // Never a minor: their profile takes no records (audit A3).
+                    const pick = preselect ? list.find(m => m.id === preselect.id)! : (list.find(m => m.id === matches[0].id)!.confidence === 'high' ? list.find(m => m.id === matches[0].id)! : null);
+                    setSelectedMatch(pick && !pick.standing?.isMinor ? pick : null);
                     trackImport('import_duplicate_shown', { kind: 'person', count: matches.length, topBand: matches[0].confidence });
                 }
             } catch (e) {
@@ -2407,59 +2424,79 @@ export default function ImportWizard() {
                             <div className="space-y-2" role="radiogroup" aria-label={t('import.possible_match_title')}>
                                 {personMatches.map(match => {
                                     const isSelected = selectedMatch?.id === match.id;
+                                    // A minor's profile takes no records (audit A3): tagged like everywhere, not
+                                    // selectable, with why and their household's adults to pick instead.
+                                    const minor = !!match.standing?.isMinor;
+                                    const toggle = () => { if (minor) return; setMergeAs(null); setSelectedMatch(isSelected ? null : match); };
                                     return (
                                         <div
                                             key={match.id}
                                             role="radio"
                                             aria-checked={isSelected}
-                                            tabIndex={0}
-                                            onClick={() => { setMergeAs(null); setSelectedMatch(isSelected ? null : match); }}
+                                            aria-disabled={minor || undefined}
+                                            tabIndex={minor ? -1 : 0}
+                                            data-testid="import-match"
+                                            data-minor={minor ? '1' : undefined}
+                                            onClick={e => {
+                                                // A link or button inside the card (its name, «Ver perfil completo», «No es
+                                                // esta persona», the comparison's toggle) does its own thing, never picks the card.
+                                                const inner = (e.target as HTMLElement).closest('a, button');
+                                                if (inner && inner !== e.currentTarget) {
+                                                    if (inner.tagName === 'A') trackImport('import_duplicate_choice', { choice: 'view', kind: 'person' });
+                                                    return;
+                                                }
+                                                toggle();
+                                            }}
                                             onKeyDown={e => {
-                                                // Enter on the nested "Ver" link or "¿Por qué?" must not toggle the card.
+                                                // Enter on a nested link or button must not toggle the card.
                                                 if (e.target !== e.currentTarget) return;
                                                 if (e.key !== 'Enter' && e.key !== ' ') return;
                                                 e.preventDefault();
-                                                setMergeAs(null);
-                                                setSelectedMatch(isSelected ? null : match);
+                                                toggle();
                                             }}
-                                            className={`w-full text-left rounded-xl p-4 border-2 cursor-pointer transition-all ${isSelected
-                                                ? 'border-teal-500 bg-teal-50'
-                                                : 'border-stone-200 bg-stone-50 hover:border-stone-300'
+                                            className={`w-full text-left rounded-xl p-4 border-2 transition-all ${minor ? 'border-stone-200 bg-stone-50' : isSelected
+                                                ? 'border-teal-500 bg-teal-50 cursor-pointer'
+                                                : 'border-stone-200 bg-stone-50 hover:border-stone-300 cursor-pointer'
                                                 }`}
                                         >
-                                            <div className="flex items-start justify-between gap-3">
-                                                <div className="flex items-start gap-3 min-w-0">
-                                                    <span aria-hidden="true" className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-teal-600 bg-teal-600' : 'border-stone-300'}`}>
+                                            {/* The shared match card (audit B6). Selecting is the card itself (the radio mark);
+                                                the action follows below the list. */}
+                                            <MatchCard newTab headTestId="import-match-head"
+                                                person={{ id: match.id, name: match.name || '', rating: match.standing?.rating, openAlerts: match.standing?.openAlerts, isMinor: minor, households: match.standing?.households }}
+                                                showStanding={!!match.standing}
+                                                leading={minor ? undefined : (
+                                                    <span aria-hidden="true" className={`mt-1.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-teal-600 bg-teal-600' : 'border-stone-300'}`}>
                                                         {isSelected && <CheckIcon className="w-3 h-3 text-white" />}
                                                     </span>
-                                                    <div className="min-w-0">
-                                                        <p className="font-semibold text-stone-900 line-clamp-2 break-words" title={match.name}>{match.name?.trim() || t('import.unnamed_profile')}</p>
-                                                    </div>
-                                                </div>
-                                                <div className="flex flex-col items-end gap-1 shrink-0">
-                                                    <a
-                                                        href={`/adopter/${match.id}`}
-                                                        target="_blank"
-                                                        rel="noopener"
-                                                        onClick={e => { e.stopPropagation(); trackImport('import_duplicate_choice', { choice: 'view', kind: 'person' }); }}
-                                                        className="inline-flex items-center min-h-[44px] px-1 text-xs font-semibold text-teal-700 underline underline-offset-2"
-                                                    >
-                                                        {t('import.viewProfile')}
-                                                    </a>
-                                                </div>
-                                            </div>
-                                            {/* What matches and what doesn't, field by field (Jon, 2026-10-25).
-                                                Full card width so the rows stay readable at 390px; open by
-                                                default when it is the only possible match. */}
-                                            <MatchCompare
-                                                adopterId={match.id}
-                                                matchTypes={match.matchTypes || []}
-                                                profileName={match.name}
-                                                source={{ kind: 'post', name: extractedData?.name, entries: contactEntries }}
-                                                score={match.score}
-                                                defaultOpen={personMatches.length === 1}
-                                                t={t}
-                                            />
+                                                )}
+                                                note={minor ? (
+                                                    // No adults offered here (unlike the adoption picker): merging into an adult
+                                                    // would put the post's name and contacts on them as an alias.
+                                                    <MinorRecordsNote households={match.standing?.households} testIdPrefix="import" />
+                                                ) : undefined}
+                                                compare={(
+                                                    // What matches and what doesn't, field by field (Jon, 2026-10-25); open by
+                                                    // default when it is the only possible match.
+                                                    <MatchCompare
+                                                        adopterId={match.id}
+                                                        matchTypes={match.matchTypes || []}
+                                                        profileName={match.name}
+                                                        source={{ kind: 'post', name: extractedData?.name, entries: contactEntries }}
+                                                        score={match.score}
+                                                        defaultOpen={personMatches.length === 1}
+                                                        t={t}
+                                                    />
+                                                )}
+                                                actions={{
+                                                    viewTestId: 'import-match-view',
+                                                    notThisTestId: 'import-match-not-this',
+                                                    // Off the list; if it was the picked one, nothing is picked.
+                                                    onNotThis: () => {
+                                                        trackImport('import_duplicate_choice', { choice: 'not_this', kind: 'person' });
+                                                        setPersonMatches(list => list.filter(m => m.id !== match.id));
+                                                        if (isSelected) { setMergeAs(null); setSelectedMatch(null); }
+                                                    },
+                                                }} />
                                         </div>
                                     );
                                 })}
