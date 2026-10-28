@@ -10,6 +10,7 @@
 
 import MatchCompare from '@/components/MatchCompare';
 import { BreakableEmail } from '@/components/ui/BreakableEmail';
+import { AbsorbedBadge, KeptBadge } from '@/components/pendientes/ui';
 
 const DAY_MS = 86_400_000;
 
@@ -44,9 +45,8 @@ export interface AdminSide {
  * stays or is absorbed, its name (linked), owner and creation date (D31) — the
  * comparison underneath is the shared MatchCompare, as in Pendientes.
  */
-export function AdminSideHead({ side, label, kept, testId, t, formatShortDate }: {
+export function AdminSideHead({ side, kept, testId, t, formatShortDate }: {
     side: AdminSide;
-    label: string;
     kept: boolean;
     testId: string;
     t: T;
@@ -54,7 +54,8 @@ export function AdminSideHead({ side, label, kept, testId, t, formatShortDate }:
 }) {
     return (
         <div data-testid={testId} className="min-w-0 normal-case tracking-normal font-normal space-y-0.5 text-sm">
-            <span className={`${BADGE} ${kept ? 'bg-teal-50 border-teal-200 text-teal-700' : 'bg-stone-100 border-stone-200 text-stone-600'}`}>{label}</span>
+            {/* Pendientes' own identity blocks («SE CONSERVA» / «SE SUMA AL OTRO»): one wording for the same decision (audit B11). */}
+            {kept ? <KeptBadge t={t} /> : <AbsorbedBadge t={t} />}
             <div>
                 <a href={`/adopter/${encodeURIComponent(side.id)}`} className="inline-flex min-h-[44px] items-center font-semibold text-[15px] text-teal-700 hover:underline break-words">
                     {side.name || t('admin.merge_req_no_name') || '(sin nombre)'}
@@ -72,11 +73,9 @@ export function AdminSideHead({ side, label, kept, testId, t, formatShortDate }:
 }
 
 /** «Qué coincide y qué no» for an admin row: the side that stays first (outlined), the absorbed one second. */
-export function AdminPairCompare({ kept, absorbed, keptLabel, absorbedLabel, matchTypes, testIdPrefix, t, formatShortDate }: {
+export function AdminPairCompare({ kept, absorbed, matchTypes, testIdPrefix, t, formatShortDate }: {
     kept: AdminSide;
     absorbed: AdminSide;
-    keptLabel: string;
-    absorbedLabel: string;
     matchTypes: string[];
     testIdPrefix: string;
     t: T;
@@ -92,8 +91,8 @@ export function AdminPairCompare({ kept, absorbed, keptLabel, absorbedLabel, mat
             profileEntries={absorbed.entries}
             target="other"
             kept="source"
-            sourceHead={<AdminSideHead testId={`${testIdPrefix}-side-keep`} side={kept} label={keptLabel} kept t={t} formatShortDate={formatShortDate} />}
-            targetHead={<AdminSideHead testId={`${testIdPrefix}-side-absorb`} side={absorbed} label={absorbedLabel} kept={false} t={t} formatShortDate={formatShortDate} />}
+            sourceHead={<AdminSideHead testId={`${testIdPrefix}-side-keep`} side={kept} kept t={t} formatShortDate={formatShortDate} />}
+            targetHead={<AdminSideHead testId={`${testIdPrefix}-side-absorb`} side={absorbed} kept={false} t={t} formatShortDate={formatShortDate} />}
             t={t}
         />
     );

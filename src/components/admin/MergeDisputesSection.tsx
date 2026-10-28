@@ -117,8 +117,7 @@ function DisputeRow({ row: d, busy, locked, t, formatShortDate, onResolve }: {
                 </span>
             </div>
             {/* «Qué coincide y qué no» (audit A4): the survivor as it was before the merge, the absorbed profile as it is. */}
-            <AdminPairCompare kept={d.survivor} absorbed={d.absorbed} matchTypes={d.matchTypes} testIdPrefix="merge-dispute"
-                keptLabel={t('admin.merge_dispute_kept_side') || 'se conservó'} absorbedLabel={t('admin.merge_dispute_absorbed_side') || 'se absorbió'} t={t} formatShortDate={formatShortDate} />
+            <AdminPairCompare kept={d.survivor} absorbed={d.absorbed} matchTypes={d.matchTypes} testIdPrefix="merge-dispute" t={t} formatShortDate={formatShortDate} />
             {line(t('admin.merge_dispute_merged_by') || 'Combinó', d.mergedBy, d.mergedAt)}
             {line(t('admin.merge_dispute_raised_by') || 'Disputó', d.raisedBy, d.createdAt)}
             <div className="flex flex-wrap gap-2 pt-1">

@@ -134,8 +134,7 @@ function RequestRow({ row: r, busy, locked, now, t, formatShortDate, onResolve }
                 <span data-testid="merge-request-badge" className={`ml-auto order-last ${BADGE} ${badge.cls}`}>{badge.label}</span>
             </div>
             {/* «Qué coincide y qué no» (audit A4): the one that stays outlined, the absorbed one beside it. */}
-            <AdminPairCompare kept={r.primary} absorbed={r.secondary} matchTypes={r.matchTypes} testIdPrefix="merge-request"
-                keptLabel={t('admin.merge_req_keep') || 'se conserva'} absorbedLabel={t('admin.merge_req_absorb') || 'se absorbe'} t={t} formatShortDate={formatShortDate} />
+            <AdminPairCompare kept={r.primary} absorbed={r.secondary} matchTypes={r.matchTypes} testIdPrefix="merge-request" t={t} formatShortDate={formatShortDate} />
             {/* A review request (D49) carries both positions: who wants them combined, and who said they are not the same person. */}
             <div className="min-w-0 text-stone-600">
                 <span className="font-medium">{r.dispute ? (t('admin.merge_req_review_by') || 'Pide revisión (quiere combinarlos)') : (t('admin.merge_req_requested_by') || 'Pidió')}: </span><BreakableEmail email={r.requesterEmail} />
