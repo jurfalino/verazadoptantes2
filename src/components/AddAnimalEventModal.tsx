@@ -28,7 +28,6 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-import { minorRefusalMessage } from '@/lib/errorMessage';
 import { compressImage } from '@/lib/imageCompress';
 import { StarRating } from '@/components/StarRating';
 import { addAnimalEvent } from '@/app/actions/animalTimeline';
@@ -151,9 +150,6 @@ export default function AddAnimalEventModal({ animal, activePlacement, open, onC
             onClose();
             router.refresh();
         } catch (error) {
-            // A minor's profile: the rule, as a validation message — no Error ID (audit A3).
-            const minor = minorRefusalMessage(error, t, 'record');
-            if (minor) { toast.warning(minor); return; }
             toast.error(t('errors.generic') || 'Error', t('animalProfile.event_save_failed') || 'No se pudo guardar el evento.', resolveErrorId(error, 'AddAnimalEventModal'));
         } finally {
             setSaving(false);

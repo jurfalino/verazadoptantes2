@@ -119,12 +119,14 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
     // Extracted so each element renders in ONE source of truth but lands in a
     // different slot per breakpoint (desktop = today's [name/contact][rating];
     // mobile = [name/rating] with risk flags + contact promoted full-width below).
-    // A minor's «Menor de edad» takes the rating's slot (audit B5): one place, as on the profile header and a household row.
-    const ratingBadge = res.isMinor ? <MinorTag /> : res.avgRating !== null ? (
+    const rating = res.avgRating !== null ? (
         <RatingExplainer rating={res.avgRating}>
             <RatingBadge rating={res.avgRating} size="sm" label="short" />
         </RatingExplainer>
     ) : null;
+    // A minor's «Menor de edad» sits in the rating's slot, before the rating (audit B5): one place, as on the
+    // profile header and a household row — an informational marker only (Jon, 2026-10-28).
+    const ratingBadge = res.isMinor ? <span className="inline-flex flex-wrap items-center gap-2"><MinorTag />{rating}</span> : rating;
 
     // Contact line content (highlighted contactInfo + login nudge), reused in the
     // desktop middle-column slot and the mobile full-width slot.
@@ -273,18 +275,16 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
             {/* Stats Row */}
             <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
                 {/* Views, then the activity counted as a household row and the «Actividad» header count it
-                    (PersonActivity — singulars, «sin actividad» when none; a minor's card shows none) — audit B12. */}
-                {showMetadata && !res.isMinor && (
+                    (PersonActivity — singulars, «sin actividad» when none) — audit B12. */}
+                {showMetadata && (
                     <span className="inline-flex items-center gap-1" data-testid="search-card-views">
                         <Eye className="w-3.5 h-3.5" aria-hidden="true" />
                         {res.stats.profileViews} {t(res.stats.profileViews === 1 ? 'stats.view_one' : 'stats.views')}
                     </span>
                 )}
-                {!res.isMinor && (
-                    <PersonActivity
-                        activity={res.stats.activity ?? { adoption: res.stats.adoptions || undefined, adoption_request: res.stats.requests || undefined }}
-                        isMinor={false} testId="search-card-activity" />
-                )}
+                <PersonActivity
+                    activity={res.stats.activity ?? { adoption: res.stats.adoptions || undefined, adoption_request: res.stats.requests || undefined }}
+                    testId="search-card-activity" />
                 <div className="flex flex-wrap gap-1 ml-auto">
                     {res.flags.inaccurate && <AlertPill kind="inaccurate">{t('flags.inaccurate') || 'Inaccurate'}</AlertPill>}
                     {res.flags.duplicate && <AlertPill kind="duplicate">{t('flags.duplicate') || 'Duplicate'}</AlertPill>}

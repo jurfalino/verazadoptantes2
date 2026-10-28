@@ -489,7 +489,6 @@ export const en = {
     errors: {
         link_submission_failed: "The submission couldn't be linked. Please try again.",
         merge_household_not_converted: 'One of the two profiles has household data we haven\'t moved to the new format yet. Try again in a while.',
-        merge_minor_survivor: 'A minor\'s profile can\'t be the one kept: the other has records or alerts, which go on an adult.',
         dedup_already_resolved: 'This suggestion was already resolved. The list has been refreshed.',
         dedup_not_found: 'This suggestion no longer exists. The list has been refreshed.',
         dedup_not_authorized: "You don't have permission to dismiss this pair.",
@@ -784,8 +783,6 @@ export const en = {
     adopter: {
         known_as: 'Also known as:',
         minor_tag: 'Minor',
-        minor_note: 'A minor: requests and adoptions are recorded on the adults of their household.',
-        minor_refused_alert: 'A minor: alerts are recorded on the adults of their household.',
         rename_hint: 'If you change the name, the previous one is kept as “Also known as” and whoever added the profile is told.',
         rename_failed: 'Could not change the name.',
         rename_rate_limited: 'You have changed many names in the last hour. Try again later.',
@@ -805,7 +802,6 @@ export const en = {
         age_save: 'Save',
         age_cancel: 'Cancel',
         age_invalid: 'Enter an age between 0 and 120, or leave it empty.',
-        age_has_activity: 'This profile already has activity or alerts, so it can\'t be marked as a minor. If they are a minor, whoever recorded that activity can delete it and record it on an adult of their household; otherwise, write to us via “Contact” at the bottom of the page.',
         age_failed: 'Could not save the age.',
         age_hint: 'Anyone can correct it; whoever added the profile is told.',
         dup_chip_phone_suffix: 'ends in …',
@@ -1589,7 +1585,6 @@ export const en = {
         create_new_named: '+ Create new record for',
         preview: 'Preview',
         select_this: 'Select this person',
-        minor_pick_adult: 'Pick an adult from their household:',
         adoptions_label: 'adoptions',
         your_record: 'Yours',
         team_record: 'From your team',
@@ -1855,7 +1850,6 @@ export const en = {
         pending_d_err_declined_before: 'This request was already declined. You can write to them or ask an administrator to review it.',
         pending_d_err_request_pending: 'There is already an open request on these profiles. We refreshed the list.',
         pending_d_err_keep_not_allowed: 'That profile can no longer be kept. We refreshed the list.',
-        pending_d_err_minor_survivor: "A minor's profile can't be the one kept: the other has records or alerts, which go on an adult. Choose to keep the other profile.",
         pending_d_err_identity_not_applicable: 'These profiles changed. We refreshed the list.',
         // Source attribution pill (v2.14.10-20)
         source_form: 'Form',

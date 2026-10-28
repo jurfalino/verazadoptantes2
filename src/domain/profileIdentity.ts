@@ -15,27 +15,13 @@
  *   list, «Deshacer» and the undo bookkeeping read.
  * - Age is stored as told (`age`) plus the day it was told (`age_as_of`, UTC);
  *   `currentAge` counts up from there. A known age decides «menor»; the box
- *   (`is_minor`) counts only with no age (ruling, Task 1).
+ *   (`is_minor`) counts only with no age (ruling, Task 1). «Menor de edad» is
+ *   an informational marker only (Jon, 2026-10-28): it changes nothing a
+ *   profile can have (records, ratings, alerts, merges).
  */
 import { asRenameAlias, isRenameAlias, renameAliasesFirst, RENAME_ALIAS_AUTHOR, type ContactEntry } from '@/lib/contactEntries';
 import { normalizeText } from '@/lib/tokenizer';
 import { MINOR_AGE_LIMIT, currentAge, isMinor } from '@/domain/households';
-
-/** Error-message prefix for a record, alert or rating refused on a minor's profile. */
-export const PROFILE_IS_MINOR = 'PROFILE_IS_MINOR';
-
-/** The HTTP answer's code for that refusal (422): the public API and the import's add-record route. */
-export const PROFILE_IS_MINOR_CODE = 'profile_is_minor';
-
-/**
- * The spreadsheet import's row message for that refusal (its row messages are
- * Spanish server text, like «Omitido»): the same words as `adopter.minor_note`.
- */
-export const IMPORT_ROW_MINOR_MESSAGE = 'Es menor de edad: los pedidos y las adopciones se registran en los adultos de su hogar.';
-
-export function isProfileIsMinorError(e: unknown): boolean {
-    return e instanceof Error && e.message.startsWith(PROFILE_IS_MINOR);
-}
 
 export const MAX_PROFILE_NAME_LEN = 200;
 

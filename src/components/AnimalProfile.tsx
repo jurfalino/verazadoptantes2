@@ -16,7 +16,6 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-import { minorRefusalMessage } from '@/lib/errorMessage';
 import { formatAge } from '@/lib/ageUtils';
 import { useDateFormat, useRelativeTime } from '@/context/TimezoneContext';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
@@ -724,9 +723,6 @@ function InlineEditForm({ animal, images, isAvailable, onCancel, onSaved }: {
             toast.success(t('collab.saved'), name);
             onSaved();
         } catch (error) {
-            // A minor's profile: the rule, as a validation message — no Error ID (audit A3).
-            const minor = minorRefusalMessage(error, t, 'record');
-            if (minor) { toast.warning(minor); setSaving(false); return; }
             const errorId = resolveErrorId(error, 'AnimalProfile');
             toast.error(t('errors.generic') || 'Error', isSaveBusyError(error) ? t('collab.busy') : (t('animalProfile.edit_save_failed') || 'No se pudieron guardar los cambios.'), errorId);
             setSaving(false);

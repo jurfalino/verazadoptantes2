@@ -19,7 +19,8 @@ import {
  *      (one home, someone else's) there is no «Hogar con …» title and no
  *      «¿En qué hogar?»; its add goes into that home.
  *   4. A stranger's rename: the owner is told and «Deshacer» puts the name back.
- *   5. A minor's profile has no «¿Qué pasó con …?».
+ *   5. A minor's profile is tagged and has «¿Qué pasó con …?» like anyone's
+ *      (marker only — Jon, 2026-10-28); the homepage picker picks them.
  *   6. «Quitar del hogar» → «No vive acá» removes the person on every profile.
  *   7. At 390px nothing scrolls sideways.
  *   8. On the viewer's own household: «Eliminar perfil», «Pedir eliminación»
@@ -231,7 +232,7 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         }
     });
 
-    test('5. a minor added to the household: tagged, and no «¿Qué pasó con …?» on the profile', async ({ page }) => {
+    test('5. a minor added to the household: tagged, and «¿Qué pasó con …?» on the profile like anyone\'s', async ({ page }) => {
         test.setTimeout(150_000);
         await page.goto(`/adopter/${PEDRO}`);
         await dismissCountryBanner(page);
@@ -251,9 +252,27 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         expect(Number(tomas.is_minor)).toBe(1);
         await page.goto(`/adopter/${tomas.id}`);
         await dismissCountryBanner(page);
-        await expect(page.getByTestId('minor-note')).toBeVisible({ timeout: 30_000 });
-        await expect(page.getByTestId('visit-intent-adoption_request')).toHaveCount(0);
+        // «Menor de edad» is a marker only (Jon, 2026-10-28): tagged, nothing hidden.
+        await expect(page.getByTestId('minor-tag')).toBeVisible({ timeout: 30_000 });
+        await expect(page.getByTestId('visit-intent-adoption_request')).toBeVisible();
+        await expect(page.getByTestId('minor-note')).toHaveCount(0);
     });
+
+    test('5b. the homepage picker shows the minor tagged and picks them for a record', async ({ page }) => {
+        test.setTimeout(150_000);
+        const tomas = profileNamed(TOMAS_NAME)!;
+        await page.goto('/');
+        await dismissCountryBanner(page);
+        await page.getByTestId('adoption-wizard-btn').click();
+        await page.getByTestId('picker-search').fill(TOMAS_NAME);
+        const row = page.getByTestId('picker-result').filter({ hasText: TOMAS_NAME });
+        await expect(row).toHaveCount(1, { timeout: 30_000 });
+        await expect(row.getByTestId('picker-minor-tag')).toBeVisible();
+        await row.getByTestId('picker-pick').click();
+        await page.waitForURL(new RegExp(`/adopter/${tomas.id}\\?newAdoption=adoption`), { timeout: 30_000 });
+        await expect(page.getByTestId('wizard-next-step1')).toBeVisible({ timeout: 30_000 });
+    });
+
 
     test('6. «Quitar del hogar» → «No vive acá» removes Marta from the household on every profile', async ({ page }) => {
         test.setTimeout(150_000);

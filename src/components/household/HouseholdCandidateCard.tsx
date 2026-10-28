@@ -81,7 +81,7 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
                             <a href={`/adopter/${encodeURIComponent(candidate.adopterId)}`} target="_blank" rel="noopener noreferrer"
                                 data-testid={`${testId}-link`} className={`font-semibold text-[15px] text-teal-700 hover:underline break-words ${TAP_TARGET_44}`}>{name}</a>
                             <PersonStanding rating={candidate.rating ?? candidate.avgRating} openAlerts={alerts} isMinor={minor} alertsTestId={`${testId}-alerts`} />
-                            {candidate.activity && <PersonActivity activity={candidate.activity} isMinor={minor} testId={`${testId}-activity`} />}
+                            {candidate.activity && <PersonActivity activity={candidate.activity} testId={`${testId}-activity`} />}
                         </div>
                         {shown.length > 0 && (
                             <ul className="mt-3 pt-3 border-t border-dashed border-stone-200 space-y-1.5">

@@ -31,8 +31,7 @@ const MAX_FETCHED_IMAGES = 12;
 
 import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
-import { handledAsStale, minorRefusalMessage } from '@/lib/errorMessage';
-import { PROFILE_IS_MINOR, PROFILE_IS_MINOR_CODE } from '@/domain/profileIdentity';
+import { handledAsStale } from '@/lib/errorMessage';
 import { resolveErrorId, reportClientError } from '@/lib/clientErrorReporter';
 import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, recordDateFrom, aliasForMerge, cleanOtherPeople, extractionQuality, type PostPerson, type ExtractionIssue } from '@/domain/importInput';
 import { needsIdentityChoice as needsIdentityChoiceFor } from '@/domain/identityChoice';
@@ -42,7 +41,6 @@ import type { HouseholdContactInput } from '@/app/actions/households';
 import DatePicker from '@/components/ui/DatePicker';
 import MatchCompare from '@/components/MatchCompare';
 import { MatchCard } from '@/components/MatchCardParts';
-import { MinorRecordsNote } from '@/components/MinorRecordsNote';
 import { buttonClasses } from '@/components/ui/Button';
 
 /** The matrix's Standard × Primary (components/ui/Button) for the wizard's step CTAs — not a style of its own. */
@@ -954,7 +952,7 @@ export default function ImportWizard() {
      * on the review screen ("Agregar a este perfil"): the same checks still run,
      * the same-post one first (review of 2.56.213, item 4).
      */
-    /** Each match's standing for its card header (audit B6) and the minor rule (A3); a failed read leaves it out. */
+    /** Each match's standing for its card header (audit B6); a failed read leaves it out. */
     const withStanding = (list: PersonMatch[]): Promise<PersonMatch[]> => Promise.all(list.map(m =>
         getMatchContext(m.id, { standing: true })
             .then(c => (c.standing ? { ...m, standing: c.standing } : m))
@@ -1041,9 +1039,8 @@ export default function ImportWizard() {
                     // Otherwise pre-select only a strong match. A weak one used to come
                     // pre-selected, one tap from merging into the wrong person;
                     // the spreadsheet import makes the rescuer choose (audit D5).
-                    // Never a minor: their profile takes no records (audit A3).
                     const pick = preselect ? list.find(m => m.id === preselect.id)! : (list.find(m => m.id === matches[0].id)!.confidence === 'high' ? list.find(m => m.id === matches[0].id)! : null);
-                    setSelectedMatch(pick && !pick.standing?.isMinor ? pick : null);
+                    setSelectedMatch(pick);
                     trackImport('import_duplicate_shown', { kind: 'person', count: matches.length, topBand: matches[0].confidence });
                 }
             } catch (e) {
@@ -1380,10 +1377,8 @@ export default function ImportWizard() {
                 body: JSON.stringify(payload),
             });
 
-            const result = await response.json() as { adoptionId?: string; adopterId?: string; adopterName?: string; error?: string; code?: string; errorId?: string };
+            const result = await response.json() as { adoptionId?: string; adopterId?: string; adopterName?: string; error?: string; errorId?: string };
 
-            // A minor's profile gets no records: the rule (422, no Error ID), shown below as a validation message.
-            if (response.status === 422 && result.code === PROFILE_IS_MINOR_CODE) throw new Error(PROFILE_IS_MINOR);
             if (!response.ok) {
                 throw new Error(result.errorId ? `${result.error || 'Failed to add record'} (Error ID: ${result.errorId})` : (result.error || 'Failed to add record'));
             }
@@ -1477,10 +1472,7 @@ export default function ImportWizard() {
 
             router.push(`/adopter/${adopterId}`);
         } catch (err) {
-            // The minor rule, not a failure (audit A3): a warning with no Error ID, the rescuer picks an adult.
-            const minor = minorRefusalMessage(err, t, 'record');
-            if (minor) toast.warning(minor);
-            else showFailure(err, t('import.save_failed'), null, 'ImportWizard.merge');
+            showFailure(err, t('import.save_failed'), null, 'ImportWizard.merge');
             setShowConfirmModal(false);
             // Reset only on failure (see handleConfirmSave).
             setIsSaving(false);
@@ -2381,6 +2373,7 @@ export default function ImportWizard() {
                     const mergeBtn = (
                         <button
                             type="button"
+                            data-testid="import-merge-selected"
                             onClick={() => handleMerge()}
                             disabled={!selectedMatch || (needsIdentityChoice(selectedMatch) && !mergeAs)}
                             className={mergeLeads ? `${BTN_PRIMARY} w-full` : secondary}
@@ -2415,19 +2408,14 @@ export default function ImportWizard() {
                             <div className="space-y-2" role="radiogroup" aria-label={t('import.possible_match_title')}>
                                 {personMatches.map(match => {
                                     const isSelected = selectedMatch?.id === match.id;
-                                    // A minor's profile takes no records (audit A3): tagged like everywhere, not
-                                    // selectable, with why and their household's adults to pick instead.
-                                    const minor = !!match.standing?.isMinor;
-                                    const toggle = () => { if (minor) return; setMergeAs(null); setSelectedMatch(isSelected ? null : match); };
+                                    const toggle = () => { setMergeAs(null); setSelectedMatch(isSelected ? null : match); };
                                     return (
                                         <div
                                             key={match.id}
                                             role="radio"
                                             aria-checked={isSelected}
-                                            aria-disabled={minor || undefined}
-                                            tabIndex={minor ? -1 : 0}
+                                            tabIndex={0}
                                             data-testid="import-match"
-                                            data-minor={minor ? '1' : undefined}
                                             onClick={e => {
                                                 // A link or button inside the card (its name, «Ver perfil completo», «No es
                                                 // esta persona», the comparison's toggle) does its own thing, never picks the card.
@@ -2445,7 +2433,7 @@ export default function ImportWizard() {
                                                 e.preventDefault();
                                                 toggle();
                                             }}
-                                            className={`w-full text-left rounded-xl p-4 border-2 transition-all ${minor ? 'border-stone-200 bg-stone-50' : isSelected
+                                            className={`w-full text-left rounded-xl p-4 border-2 transition-all ${isSelected
                                                 ? 'border-teal-500 bg-teal-50 cursor-pointer'
                                                 : 'border-stone-200 bg-stone-50 hover:border-stone-300 cursor-pointer'
                                                 }`}
@@ -2453,18 +2441,13 @@ export default function ImportWizard() {
                                             {/* The shared match card (audit B6). Selecting is the card itself (the radio mark);
                                                 the action follows below the list. */}
                                             <MatchCard newTab headTestId="import-match-head"
-                                                person={{ id: match.id, name: match.name || '', rating: match.standing?.rating, openAlerts: match.standing?.openAlerts, isMinor: minor, households: match.standing?.households }}
+                                                person={{ id: match.id, name: match.name || '', rating: match.standing?.rating, openAlerts: match.standing?.openAlerts, isMinor: !!match.standing?.isMinor, households: match.standing?.households }}
                                                 showStanding={!!match.standing}
-                                                leading={minor ? undefined : (
+                                                leading={(
                                                     <span aria-hidden="true" className={`mt-1.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-teal-600 bg-teal-600' : 'border-stone-300'}`}>
                                                         {isSelected && <CheckIcon className="w-3 h-3 text-white" />}
                                                     </span>
                                                 )}
-                                                note={minor ? (
-                                                    // No adults offered here (unlike the adoption picker): merging into an adult
-                                                    // would put the post's name and contacts on them as an alias.
-                                                    <MinorRecordsNote households={match.standing?.households} testIdPrefix="import" />
-                                                ) : undefined}
                                                 compare={(
                                                     // What matches and what doesn't, field by field (Jon, 2026-10-25); open by
                                                     // default when it is the only possible match.

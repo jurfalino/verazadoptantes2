@@ -11,7 +11,7 @@ const tFor = (dict: Record<string, unknown>) => (key: string) => {
 
 describe('householdErrorCopy (Task 8: every household / merge code has words, in es/en/pt)', () => {
     const CODES = ['identifier_required', 'household_full', 'too_many_households', 'not_authorized', 'not_found', 'conflict',
-        'already_there', 'invalid', 'has_activity', 'minor_survivor_has_activity', 'household_not_converted'];
+        'already_there', 'invalid', 'household_not_converted'];
     for (const [loc, dict] of [['es', es], ['en', en], ['pt', pt]] as const) {
         it(`${loc}: refusals are warnings with real copy; failures are errors`, () => {
             const t = tFor(dict as unknown as Record<string, unknown>);

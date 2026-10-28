@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import DuplicateMergeModal from '@/components/DuplicateMergeModal';
 import { useLanguage } from '@/context/LanguageContext';
-import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
+import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
 import { scanRetryDelayMs, SCAN_MAX_CONSECUTIVE_FAILURES, SCAN_MAX_BATCHES, SCAN_PAGE_LIMIT } from '@/domain/scanResilience';
 
 /**
@@ -126,8 +126,7 @@ export default function DuplicatesPanel() {
     const { t } = useLanguage();
     /** A merge rule's refusal, in words (households as profiles); anything else as the server said it. */
     const mergeErrorText = (e: string | null | undefined) =>
-        e === MINOR_SURVIVOR_HAS_ACTIVITY ? t('errors.merge_minor_survivor')
-            : e === HOUSEHOLD_NOT_CONVERTED ? t('errors.merge_household_not_converted')
+        e === HOUSEHOLD_NOT_CONVERTED ? t('errors.merge_household_not_converted')
             : (e ?? '');
     const [userFlagged, setUserFlagged] = useState<UserFlagged[]>([]);
     const [candidates, setCandidates] = useState<DuplicateCandidate[]>([]);

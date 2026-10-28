@@ -261,10 +261,12 @@ describe('profile identity notices (households as profiles, Task 3)', () => {
         expect(es.body).toBe('El nombre anterior quedó como «Conocido/a como», así que buscar «Pedro Paez» lo sigue encontrando. Si el cambio no corresponde, deshacelo.');
         expect(renderNotification({ key: 'profile_renamed', params: { actorName: 'Ana', toName: 'Lucas' } }, 'en')!.title).toBe('Ana named a profile Lucas');
     });
-    it('profile_age_changed: an age must be digits; a minor says where records go', () => {
+    it('profile_age_changed: an age must be digits; a minor is only named as one (no rule about records — Jon, 2026-10-28)', () => {
         expect(renderNotification({ key: 'profile_age_changed', params: { actorName: 'Ana', personName: 'Lucas', age: 'doce' } }, 'es')).toBeNull();
         expect(renderNotification({ key: 'profile_age_changed', params: { actorName: 'Ana', personName: 'Lucas', age: '12', minor: '1' } }, 'es')!.body)
-            .toBe('Ana indicó que Lucas tiene 12 años. Figura como menor de edad: los pedidos y las adopciones se registran en los adultos de su hogar.');
+            .toBe('Ana indicó que Lucas tiene 12 años.');
+        expect(renderNotification({ key: 'profile_age_changed', params: { actorName: 'Ana', personName: 'Lucas', minor: '1' } }, 'es')!.body)
+            .toBe('Ana indicó que Lucas es menor de edad.');
         expect(renderNotification({ key: 'profile_age_changed', params: { actorName: 'Ana', personName: 'Lucas' } }, 'pt')!.body).toBe('Ana removeu a idade de Lucas.');
     });
 });

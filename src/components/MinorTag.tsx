@@ -4,9 +4,9 @@ import { useLanguage } from '@/context/LanguageContext';
 
 /**
  * «Menor de edad» — the profile header's pill, in the «special state» purple.
- * A minor carries no rating, alerts or records, so wherever a person's rating
- * would show, a minor shows this instead (profile header, search cards,
- * «¿Es este perfil?», household lines).
+ * An informational marker only (Jon, 2026-10-28): a minor is rated, recorded
+ * and flagged like anyone else. It sits in the rating slot, before the rating
+ * (profile header, search cards, «¿Es este perfil?», household lines).
  */
 export function MinorTag({ testId = 'minor-tag' }: { testId?: string }) {
     const { t } = useLanguage();

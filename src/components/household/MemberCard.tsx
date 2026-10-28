@@ -7,9 +7,9 @@
  *       pareja · 16 años · según Refugio Patitas · 2 datos ▾
  *
  * The initial; the name — the link to their profile; the rating and open
- * alerts («Menor de edad» instead: a minor carries no rating or alerts);
+ * alerts («Menor de edad» first for a minor);
  * the person's activity counted exactly as their own «Actividad» header
- * counts it (ActivityCountsLine — for a minor only when they have any); then one line with the relationship, the
+ * counts it (ActivityCountsLine); then one line with the relationship, the
  * age, ONE attribution («agregado por vos» / «según {quien lo agregó}») and
  * the contacts collapsed behind «N datos ▾» (a padlock when some are
  * protected), which open to that person's contact list — the profile's own
@@ -229,7 +229,7 @@ export function MemberCard({ member, hostName, relativeName, signedIn, currentUs
                         <a href={`/adopter/${encodeURIComponent(member.profileId)}`} data-testid="household-member-profile-link" className="relative z-10 font-semibold text-[15px] text-teal-700 hover:underline min-w-0 break-words after:absolute after:-inset-y-3 after:inset-x-0 after:content-['']">{name}</a>
                         {/* The one «standing + activity» renderer (PersonStanding), as «¿Es este perfil?» and every card's household line. */}
                         <PersonStanding rating={member.rating} openAlerts={member.openAlerts} isMinor={member.isMinor} alertsTestId="household-member-alerts" />
-                        <PersonActivity activity={member.activity} isMinor={member.isMinor} testId="household-member-activity" />
+                        <PersonActivity activity={member.activity} testId="household-member-activity" />
                     </div>
                     {(sub || attribution || hasContactsToggle) && (
                         // One flex row (audit B10): the text pieces are separated by a «·» drawn before each one and

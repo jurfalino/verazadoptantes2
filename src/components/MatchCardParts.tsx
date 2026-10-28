@@ -115,12 +115,11 @@ export function MatchCardActions({ profileId, onSame, sameLabel, onNotThis, busy
 
 /**
  * The whole card's structure, the same on every surface (audit B6): header
- * (name + standing, household line) → `note` (e.g. why a minor can't be picked)
- * → «Qué coincide y qué no» → the actions. Compare and actions span the card's
+ * (name + standing, household line) → «Qué coincide y qué no» → the actions. Compare and actions span the card's
  * full width (no indent) everywhere. `leading` sits before the header (the
  * post import's selection mark).
  */
-export function MatchCard({ person, nameNode, thumbnail, newTab = false, headTestId, showStanding = true, leading, note, compare, actions, testId, className = '' }: {
+export function MatchCard({ person, nameNode, thumbnail, newTab = false, headTestId, showStanding = true, leading, compare, actions, testId, className = '' }: {
     person: MatchCardPerson;
     nameNode?: ReactNode;
     thumbnail?: string | null;
@@ -128,7 +127,6 @@ export function MatchCard({ person, nameNode, thumbnail, newTab = false, headTes
     headTestId?: string;
     showStanding?: boolean;
     leading?: ReactNode;
-    note?: ReactNode;
     compare: ReactNode;
     actions: Omit<MatchCardActionsProps, 'profileId' | 'newTab'>;
     testId?: string;
@@ -138,7 +136,6 @@ export function MatchCard({ person, nameNode, thumbnail, newTab = false, headTes
     return (
         <div className={`min-w-0 space-y-3 ${className}`} data-testid={testId}>
             {leading ? <div className="flex items-start gap-2">{leading}<div className="min-w-0 flex-1">{header}</div></div> : header}
-            {note}
             {compare}
             <MatchCardActions profileId={person.id} newTab={newTab} {...actions} />
         </div>

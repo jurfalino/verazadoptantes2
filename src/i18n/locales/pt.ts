@@ -488,7 +488,6 @@ export const pt = {
     errors: {
         link_submission_failed: 'Não foi possível vincular a solicitação. Tente novamente.',
         merge_household_not_converted: 'Um dos dois perfis tem dados do lar que ainda não passamos para o formato novo. Tente de novo daqui a pouco.',
-        merge_minor_survivor: 'Não dá para manter o perfil de um menor de idade: o outro tem registros ou alertas, que ficam em um adulto.',
         dedup_already_resolved: 'Esta sugestão já foi resolvida. A lista foi atualizada.',
         dedup_not_found: 'Esta sugestão não existe mais. A lista foi atualizada.',
         dedup_not_authorized: 'Você não tem permissão para descartar este par.',
@@ -783,8 +782,6 @@ export const pt = {
     adopter: {
         known_as: 'Também conhecido/a como:',
         minor_tag: 'Menor de idade',
-        minor_note: 'É menor de idade: os pedidos e as adoções são registrados nos adultos do seu lar.',
-        minor_refused_alert: 'É menor de idade: os alertas são registrados nos adultos do seu lar.',
         rename_hint: 'Se você mudar o nome, o anterior fica como «Também conhecido/a como» e avisamos quem cadastrou o perfil.',
         rename_failed: 'Não foi possível mudar o nome.',
         rename_rate_limited: 'Você mudou muitos nomes na última hora. Tente de novo mais tarde.',
@@ -804,7 +801,6 @@ export const pt = {
         age_save: 'Salvar',
         age_cancel: 'Cancelar',
         age_invalid: 'Digite uma idade entre 0 e 120, ou deixe vazia.',
-        age_has_activity: 'Este perfil já tem atividade ou alertas, então não pode ser marcado como menor de idade. Se for menor, quem registrou essa atividade pode apagá-la e registrá-la em um adulto do seu lar; se não, escreva para nós pelo «Contato», no rodapé da página.',
         age_failed: 'Não foi possível salvar a idade.',
         age_hint: 'Qualquer pessoa pode corrigi-la; avisamos quem cadastrou o perfil.',
         dup_chip_phone_suffix: 'termina em …',
@@ -1594,7 +1590,6 @@ export const pt = {
         create_new_named: '+ Criar novo registro para',
         preview: 'Prévia',
         select_this: 'Selecionar esta pessoa',
-        minor_pick_adult: 'Escolha um adulto do seu lar:',
         adoptions_label: 'adoções',
         your_record: 'Seu',
         team_record: 'Da sua equipe',
@@ -1860,7 +1855,6 @@ export const pt = {
         pending_d_err_declined_before: 'Este pedido já foi recusado. Você pode escrever ou pedir revisão a um administrador.',
         pending_d_err_request_pending: 'Já existe um pedido aberto sobre estes perfis. Atualizamos a lista.',
         pending_d_err_keep_not_allowed: 'Esse perfil não pode mais ficar. Atualizamos a lista.',
-        pending_d_err_minor_survivor: 'Não dá para manter o perfil de um menor de idade: o outro tem registros ou alertas, que ficam em um adulto. Escolha manter o outro perfil.',
         pending_d_err_identity_not_applicable: 'Estes perfis mudaram. Atualizamos a lista.',
         // Source attribution pill (v2.14.10-20)
         source_form: 'Formulário',
