@@ -29,13 +29,13 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
 /** A light tint: a 50–200 shade (any opacity) or white. */
 const LIGHT_TINT = /^(?:(?:stone|teal|rose|amber|blue|green|purple|pink|red|indigo|emerald|sky|cyan|orange|yellow|violet|slate|gray|zinc|neutral)-(?:50|100|200)(?:\/\d+)?|white)$/;
 
-type Variant = 'hover' | 'group-hover';
+type Variant = 'hover' | 'group-hover' | 'focus' | 'active' | 'focus-visible';
 
 function usedLightHovers(): Map<string, Set<string>> {
     const used = new Map<string, Set<string>>();
     for (const f of sourceFiles(ROOT)) {
         const src = fs.readFileSync(f, 'utf8');
-        for (const m of src.matchAll(/(?<![\w-])((?:group-)?hover):bg-([a-z]+(?:-\d+)?(?:\/\d+)?)(?![\w/-])/g)) {
+        for (const m of src.matchAll(/(?<![\w-])((?:group-)?hover|focus|focus-visible|active):bg-([a-z]+(?:-\d+)?(?:\/\d+)?)(?![\w/-])/g)) {
             const [, variant, color] = m;
             if (!LIGHT_TINT.test(color)) continue;
             const key = `${variant}:${color}`;
@@ -48,20 +48,23 @@ function usedLightHovers(): Map<string, Set<string>> {
 
 function darkSelector(variant: Variant, color: string): string {
     const cls = color.replace(/\//g, '\\/');
-    return variant === 'hover'
-        ? `[data-theme="dark"] .hover\\:bg-${cls}:hover`
-        : `[data-theme="dark"] .group:hover .group-hover\\:bg-${cls}`;
+    if (variant === 'group-hover') return `[data-theme="dark"] .group:hover .group-hover\\:bg-${cls}`;
+    // hover / focus / focus-visible / active: the pseudo-class is the variant's own name.
+    return `[data-theme="dark"] .${variant}\\:bg-${cls}:${variant}`;
 }
 
-describe('globals.css — dark remaps for light-tint hovers', () => {
+describe('globals.css — dark remaps for light-tint hover / focus / active backgrounds', () => {
     const used = usedLightHovers();
 
     it('finds the hovers the audit named (the scan works)', () => {
         expect(used.has('hover:stone-50')).toBe(true);
         expect(used.has('hover:teal-100')).toBe(true);
+        // …and the keyboard/press states (review of part 1, finding 8).
+        expect(used.has('focus:stone-50')).toBe(true);
+        expect(used.has('active:stone-100')).toBe(true);
     });
 
-    it('every light-tint hover background used in src/ is remapped for dark', () => {
+    it('every light-tint hover, focus or active background used in src/ is remapped for dark', () => {
         const missing = [...used].filter(([key]) => {
             const [variant, color] = key.split(':') as [Variant, string];
             return !css.includes(darkSelector(variant, color));

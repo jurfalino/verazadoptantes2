@@ -1245,6 +1245,29 @@ button {
 [data-theme="dark"] .hover\:bg-indigo-200:hover {
   background-color: rgba(129, 140, 248, 0.25) !important;
 }
+/* The keyboard and press states of the same light tints (review of the A2 fix):
+   a focused option in a list (AnimalSelectPicker, the Google contacts picker,
+   a contact composer suggestion, the contract form's fields) and a pressed
+   share-menu row went white-on-white the same way. Same targets as their hover. */
+[data-theme="dark"] .focus\:bg-stone-50:focus,
+[data-theme="dark"] .active\:bg-stone-100:active {
+  background-color: var(--surface-elevated) !important;
+}
+[data-theme="dark"] .focus\:bg-teal-50:focus {
+  background-color: rgba(94, 234, 212, 0.1) !important;
+}
+[data-theme="dark"] .focus\:bg-teal-50\/30:focus {
+  background-color: rgba(94, 234, 212, 0.06) !important;
+}
+[data-theme="dark"] .active\:bg-blue-100:active {
+  background-color: rgba(94, 234, 212, 0.2) !important;
+}
+[data-theme="dark"] .active\:bg-green-100:active {
+  background-color: rgba(74, 222, 128, 0.22) !important;
+}
+[data-theme="dark"] .active\:bg-purple-100:active {
+  background-color: rgba(168, 85, 247, 0.22) !important;
+}
 /* A native checkbox's unchecked box follows the theme (not the browser's white). */
 [data-theme="dark"] .themed-checkbox {
   color-scheme: dark;
