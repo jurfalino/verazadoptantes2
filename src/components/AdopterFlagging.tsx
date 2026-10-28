@@ -14,7 +14,7 @@ import MatchCompare, { type MatchSourceKind } from '@/components/MatchCompare';
 import { zarazTrack } from '@/lib/zaraz';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
-import { withoutLegacyMergeSeparators } from '@/lib/contactEntries';
+import { contactBlobForDisplay } from '@/lib/contactEntries';
 import { isOpenDuplicateFlag } from '@/domain/dedupPair';
 import { openAlertKindsOfRows } from '@/domain/flags';
 import { CheckCircle2 } from 'lucide-react';
@@ -519,7 +519,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                                         onClick={() => setTargetAdopter(res.adopter)}
                                                     >
                                                         <div className="font-semibold text-teal-900 truncate" title={res.adopter.name}>{res.adopter.name}</div>
-                                                        <div className="text-teal-700 truncate" title={withoutLegacyMergeSeparators(res.adopter.contactInfo) || undefined}>{withoutLegacyMergeSeparators(res.adopter.contactInfo)}</div>
+                                                        <div className="text-teal-700 truncate" title={contactBlobForDisplay(res.adopter.contactInfo, t('adopter.ce_type_alias')) || undefined}>{contactBlobForDisplay(res.adopter.contactInfo, t('adopter.ce_type_alias'))}</div>
                                                     </div>
                                                 ))}
                                             </div>

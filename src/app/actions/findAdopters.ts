@@ -70,7 +70,8 @@ function tokenize(q: string): string[] {
 
 /**
  * Field-label words derived from the contactInfo blob's `TYPE_LABEL` (Dirección,
- * Tel, Email, Documento, Redes, "Otro nombre/identidad"). The stored blob prefixes every
+ * Tel, Email, Documento, Redes, "Otro nombre/identidad" — the stored label; cards show the alias as
+ * «Conocido/a como» at render time, contactBlobForDisplay). The stored blob prefixes every
  * entry with its label, and discovery does a substring LIKE over that blob — so a
  * bare label word matches EVERY record that has that field (e.g. "Dirección" hits
  * every address-bearing record). Normalized (accent-stripped, lowercased) so both

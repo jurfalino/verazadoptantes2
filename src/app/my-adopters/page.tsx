@@ -17,7 +17,7 @@ import PendingDedup from '@/components/PendingDedup';
 import { AdopterName } from '@/components/AdopterName';
 import { AlertPill } from '@/components/AlertPill';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
-import { withoutLegacyMergeSeparators } from '@/lib/contactEntries';
+import { contactBlobForDisplay } from '@/lib/contactEntries';
 
 import type { AdopterFlags } from '@/types/adopter';
 
@@ -555,7 +555,7 @@ export default function MyAdoptersPage() {
                                                     {adopter.hasPendingDuplicate && !adopter.formNeedsReview && <PendingDupPill t={t} />}
                                                     {adopter.formNeedsReview && <NeedsReviewPill form={adopter.latestForm} onOpen={openForm} t={t} />}
                                                 </div>
-                                                <div className="text-xs text-stone-500 truncate">{withoutLegacyMergeSeparators(adopter.contactInfo) || t('dashboard.no_contact')}</div>
+                                                <div className="text-xs text-stone-500 truncate">{contactBlobForDisplay(adopter.contactInfo, t('adopter.ce_type_alias')) || t('dashboard.no_contact')}</div>
                                                 {/* Inline addedBy was moved to its own column in v2.19.6 —
                                                     keeps the Name cell focused on identity, lets the
                                                     Creado-por col carry the resolved name + org chip. */}
@@ -659,7 +659,7 @@ export default function MyAdoptersPage() {
                                                 {adopter.hasPendingDuplicate && !adopter.formNeedsReview && <PendingDupPill t={t} />}
                                                 {adopter.formNeedsReview && <NeedsReviewPill form={adopter.latestForm} onOpen={openForm} t={t} />}
                                             </div>
-                                            <div className="text-xs text-stone-500 truncate">{withoutLegacyMergeSeparators(adopter.contactInfo) || t('dashboard.no_contact')}</div>
+                                            <div className="text-xs text-stone-500 truncate">{contactBlobForDisplay(adopter.contactInfo, t('adopter.ce_type_alias')) || t('dashboard.no_contact')}</div>
                                             {/* v2.19.13: inline addedBy + bottom dates row from
                                                 the mobile card are folded into the provenance lines
                                                 at the bottom of the card. SourcePill no longer

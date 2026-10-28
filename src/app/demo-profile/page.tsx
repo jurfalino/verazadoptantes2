@@ -7,6 +7,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { useRouter } from 'next/navigation';
 import { useDateFormat } from '@/context/TimezoneContext';
+import { contactBlobForDisplay } from '@/lib/contactEntries';
 
 export default function DemoProfilePage() {
     const { formatShortDate } = useDateFormat();
@@ -92,7 +93,7 @@ export default function DemoProfilePage() {
                         <div>
                             <h3 className="text-xs font-medium text-stone-500 uppercase tracking-wider mb-1">{t('adopter.contact')}</h3>
                             <pre className="text-sm text-stone-700 whitespace-pre-wrap font-sans bg-stone-50 rounded-lg p-3 border border-stone-100">
-                                {adopter.contactInfo}
+                                {contactBlobForDisplay(adopter.contactInfo, t('adopter.ce_type_alias'))}
                             </pre>
                         </div>
                         <div>

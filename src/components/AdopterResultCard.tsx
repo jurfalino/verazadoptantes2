@@ -19,6 +19,7 @@ import { CardHouseholdLine } from './CardHouseholdLine';
 import { AlertPill } from './AlertPill';
 import { CalendarPlus, Eye, Pencil, Search } from 'lucide-react';
 import { PersonActivity } from './PersonStanding';
+import { contactBlobForDisplay } from '@/lib/contactEntries';
 
 const SNIPPET_ICONS: Record<SnippetField, string> = {
     name: '👤', contact: '📞', address: '📍',
@@ -107,7 +108,10 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
     const { formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const nameRanges = tokenHighlightRanges(res.adopter.name, query);
-    const contactRanges = tokenHighlightRanges(res.adopter.contactInfo || '', query);
+    // The contact line as people read it (alias as «Conocido/a como», no legacy merge separators);
+    // highlights are computed on this text, not the stored blob, so their offsets match what is shown.
+    const contactText = contactBlobForDisplay(res.adopter.contactInfo, t('adopter.ce_type_alias'));
+    const contactRanges = tokenHighlightRanges(contactText, query);
 
     const addedDate = res.adopter.createdAt ? formatShortDate(res.adopter.createdAt) : null;
     const updatedDate = res.adopter.updatedAt ? formatShortDate(res.adopter.updatedAt) : null;
@@ -126,12 +130,12 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
     // desktop middle-column slot and the mobile full-width slot.
     const contactNode = (
         <>
-            {res.adopter.contactInfo
+            {contactText
                 ? (contactRanges.length > 0
-                    ? (renderHighlightedSnippet(res.adopter.contactInfo, contactRanges) || res.adopter.contactInfo)
-                    : res.adopter.contactInfo)
+                    ? (renderHighlightedSnippet(contactText, contactRanges) || contactText)
+                    : contactText)
                 : t('common.no_contact')}
-            {!isAuthenticated && res.adopter.contactInfo && (
+            {!isAuthenticated && contactText && (
                 <span className="ml-1 text-teal-700 font-medium">• {t('search.login_to_view')}</span>
             )}
         </>
@@ -232,7 +236,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                     {/* Desktop: contact stays in the middle column under the name.
                         Full string, always wrapped (never truncated), matched tokens
                         highlighted in place — nothing hidden behind a "…". */}
-                    <div className="hidden md:block text-xs text-stone-500 break-words" title={res.adopter.contactInfo || undefined}>
+                    <div className="hidden md:block text-xs text-stone-500 break-words" title={contactText || undefined}>
                         {contactNode}
                     </div>
                 </div>
@@ -252,7 +256,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
             {hasRiskFlags && (
                 <div className="md:hidden flex flex-wrap gap-1.5 mb-2">{riskFlagChips}</div>
             )}
-            <div className="md:hidden text-xs text-stone-500 break-words mb-3" title={res.adopter.contactInfo || undefined}>
+            <div className="md:hidden text-xs text-stone-500 break-words mb-3" title={contactText || undefined}>
                 {contactNode}
             </div>
 
@@ -319,7 +323,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                 // the value on the line, so "empty snippet" alone would wrongly show
                 // "protegida" on a record whose contact you can actually see.
                 if (s.field === 'contact') {
-                    const cinfo = normForOffsets(res.adopter.contactInfo || '');
+                    const cinfo = normForOffsets(contactText);
                     const matchVisible = query.trim().split(/\s+/)
                         .map(normForOffsets).filter(tk => tk.length >= 2)
                         .some(tk => cinfo.includes(tk));

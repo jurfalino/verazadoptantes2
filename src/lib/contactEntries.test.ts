@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-    withoutLegacyMergeSeparators,
+    contactBlobForDisplay,
     categorizeContactText,
     contactEntriesToBlob,
     parseBlobToContactEntries,
@@ -355,9 +355,17 @@ describe('mergeContactEntries', () => {
 });
 
 describe('alias contact entries', () => {
-    it('writes an alias entry to the blob under the Otro nombre/identidad label', () => {
+    it('writes an alias entry to the blob under the stored Otro nombre/identidad label', () => {
         const blob = contactEntriesToBlob([{ type: 'alias', value: 'Juan Garcia' }]);
         expect(blob).toContain('Otro nombre/identidad: Juan Garcia');
+    });
+
+    it('a blob shown as text reads the alias as «Conocido/a como» (render time; the stored label is unchanged)', () => {
+        const blob = contactEntriesToBlob([{ type: 'phone', value: '11 2345-6789' }, { type: 'alias', value: 'Juan Garcia' }]);
+        expect(contactBlobForDisplay(blob, 'Conocido/a como')).toBe('Tel: 11 2345-6789\nConocido/a como: Juan Garcia');
+        // Only the label at the start of a line: a value that happens to say it is left alone.
+        expect(contactBlobForDisplay('Nota: Otro nombre/identidad: no sé', 'Also known as')).toBe('Nota: Otro nombre/identidad: no sé');
+        expect(contactBlobForDisplay('  Otro nombre/identidad:Juan', 'Also known as')).toBe('  Also known as: Juan');
     });
 
     it('round-trips an alias entry through deserialize', () => {
@@ -648,8 +656,8 @@ describe('legacy merge separators (audit C1)', () => {
         expect(entries.some(e => /Merged/.test(e.value))).toBe(false);
     });
     it('a list\'s one-line summary drops them too', () => {
-        expect(withoutLegacyMergeSeparators('Tel: 11 5110-110\n--- Merged from Diego Sosa ---\nTel: 11 5110-111')).toBe('Tel: 11 5110-110\nTel: 11 5110-111');
-        expect(withoutLegacyMergeSeparators(null)).toBe('');
+        expect(contactBlobForDisplay('Tel: 11 5110-110\n--- Merged from Diego Sosa ---\nTel: 11 5110-111', 'Conocido/a como')).toBe('Tel: 11 5110-110\nTel: 11 5110-111');
+        expect(contactBlobForDisplay(null, 'Conocido/a como')).toBe('');
     });
     it('ordinary prose with dashes is still kept', () => {
         expect(parseBlobToContactEntries('--- llamar después de las 18 ---').map(e => e.value)).toEqual(['--- llamar después de las 18 ---']);
