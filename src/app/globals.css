@@ -1188,6 +1188,63 @@ button {
 [data-theme="dark"] .hover\:text-stone-600:hover {
   color: var(--text-primary) !important;
 }
+/* Audit 2026-10-28 (A2): the remaining light-tint hovers. Tailwind's raw
+   near-white under text dark mode already turned light read white-on-white
+   (member «⋯» items, «¿En qué hogar?», «Quitar del hogar» reasons, the
+   /my-adopters rows). Neutral ones lift to the elevated surface; coloured
+   ones to their own family's dark tint, a step above the base remap.
+   Guarded by src/app/globals.hoverRemap.test.ts. */
+[data-theme="dark"] .hover\:bg-stone-50:hover,
+[data-theme="dark"] .hover\:bg-stone-50\/60:hover,
+[data-theme="dark"] .hover\:bg-stone-200\/50:hover,
+[data-theme="dark"] .hover\:bg-white:hover,
+[data-theme="dark"] .group:hover .group-hover\:bg-stone-100 {
+  background-color: var(--surface-elevated) !important;
+}
+[data-theme="dark"] .group:hover .group-hover\:bg-stone-300 {
+  background-color: rgba(148, 163, 184, 0.45) !important; /* the toggle's elevated track, lifted */
+}
+[data-theme="dark"] .hover\:bg-teal-100:hover,
+[data-theme="dark"] .hover\:bg-blue-100:hover {
+  background-color: rgba(94, 234, 212, 0.2) !important;
+}
+[data-theme="dark"] .hover\:bg-teal-50\/60:hover {
+  background-color: rgba(94, 234, 212, 0.1) !important;
+}
+/* teal-200 CTAs (light text in dark): a raw teal-300 hover was a bright slab. */
+[data-theme="dark"] .hover\:bg-teal-300:hover {
+  background-color: rgba(94, 234, 212, 0.35) !important;
+}
+[data-theme="dark"] .hover\:bg-blue-50:hover {
+  background-color: rgba(56, 189, 248, 0.18) !important;
+}
+[data-theme="dark"] .hover\:bg-green-50:hover {
+  background-color: rgba(74, 222, 128, 0.15) !important;
+}
+[data-theme="dark"] .hover\:bg-green-100:hover {
+  background-color: rgba(74, 222, 128, 0.22) !important;
+}
+[data-theme="dark"] .hover\:bg-purple-50:hover {
+  background-color: rgba(168, 85, 247, 0.15) !important;
+}
+[data-theme="dark"] .hover\:bg-purple-100:hover {
+  background-color: rgba(168, 85, 247, 0.22) !important;
+}
+[data-theme="dark"] .hover\:bg-pink-100:hover {
+  background-color: rgba(236, 72, 153, 0.2) !important;
+}
+[data-theme="dark"] .hover\:bg-red-50:hover {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+}
+[data-theme="dark"] .hover\:bg-rose-100:hover {
+  background-color: rgba(251, 113, 133, 0.22) !important;
+}
+[data-theme="dark"] .hover\:bg-rose-200:hover {
+  background-color: rgba(251, 113, 133, 0.32) !important;
+}
+[data-theme="dark"] .hover\:bg-indigo-200:hover {
+  background-color: rgba(129, 140, 248, 0.25) !important;
+}
 /* A native checkbox's unchecked box follows the theme (not the browser's white). */
 [data-theme="dark"] .themed-checkbox {
   color-scheme: dark;
