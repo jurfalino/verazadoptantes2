@@ -41,7 +41,7 @@ type Mark = 'match' | 'partial' | 'different' | null;
  * (the same value, so nothing new) and otherwise only that the profile has one.
  * Its name is shown: names are not PII-gated.
  */
-export default function MatchCompare({ adopterId, matchTypes, profileName, source, target = 'profile', t, defaultOpen = false, bare = false, profileEntries, sourceHead, targetHead, score, kept = null }: {
+export default function MatchCompare({ adopterId, matchTypes, profileName, source, target = 'profile', t, defaultOpen = false, bare = false, profileEntries, fullVisibility = false, sourceHead, targetHead, score, kept = null }: {
     /** The possibly-duplicate profile. */
     adopterId: string;
     matchTypes: string[];
@@ -56,6 +56,10 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
     /** The other profile's contact as THIS SCREEN ALREADY SHOWS IT to the viewer
      *  (masked values keep their «•»). */
     profileEntries?: Array<{ type: string; value: string }>;
+    /** The viewer sees every value of both profiles (the admin merge rows): a matched
+     *  field `profileEntries` lacks is «en otro campo» (an old text field), never a
+     *  padlock, and there is no «protegido de otro equipo» footnote. */
+    fullVisibility?: boolean;
     /** Replace a block's title — e.g. Pendientes puts each profile's name link, source and date there. */
     sourceHead?: ReactNode;
     targetHead?: ReactNode;
@@ -105,7 +109,7 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
     // against: the commonest false merge, so say so.
     const nameOnly = has !== null && !has.phone && !has.email
         && rows.every(r => r.field === 'name' || (r.status !== 'match' && r.status !== 'partial'));
-    const anyLocked = rows.some(r => targetCell(r, !!profileEntries).locked || !!r.source?.includes('•'));
+    const anyLocked = rows.some(r => targetCell(r, !!profileEntries, fullVisibility).locked || !!r.source?.includes('•'));
 
     const summary = (
         <span className="inline-flex flex-wrap items-center gap-1.5 text-xs font-semibold">
@@ -149,7 +153,7 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
                         </Block>
                         <Block head={targetHead ?? t(`matchCompare.col_target_${target}`)} side="target" kept={kept === 'target'}
                             aside={isAdmin && typeof score === 'number' ? <AdminScore score={score} t={t} /> : null}>
-                            {rows.map(r => <Cell key={r.field} label={t(`matchCompare.field_${r.field}`)} {...targetCell(r, !!profileEntries)} t={t} />)}
+                            {rows.map(r => <Cell key={r.field} label={t(`matchCompare.field_${r.field}`)} {...targetCell(r, !!profileEntries, fullVisibility)} t={t} />)}
                         </Block>
                     </div>
                     {nameOnly && <p className="rounded-lg px-3 py-2 text-xs font-medium text-amber-800 bg-amber-50">{t('matchCompare.name_only_warning')}</p>}
@@ -183,11 +187,14 @@ function sourceCell(r: BreakdownRow): CellData {
 }
 
 /** The existing profile's side, never showing more than this screen may. */
-function targetCell(r: BreakdownRow, valuesShown: boolean): CellData {
+function targetCell(r: BreakdownRow, valuesShown: boolean, fullVisibility = false): CellData {
     if (r.status === 'only_source') return { mark: null, empty: true };
     const mark: Mark = r.status === 'only_profile' ? null : r.status;
     if (r.field === 'name') return { value: r.profile, mark };
     if (valuesShown && r.profile) return { value: r.profile, mark, locked: r.profile.includes('•') };
+    // Nothing is hidden from this viewer: a match the list doesn't hold sits in
+    // another field (e.g. the old contact text) — «en otro campo», no padlock.
+    if (fullVisibility) return { mark };
     // Not shown here: an exact match IS the rescuer's own value; anything else
     // only that the profile has one.
     if (r.status === 'match' && r.source) return { value: r.source, mark };

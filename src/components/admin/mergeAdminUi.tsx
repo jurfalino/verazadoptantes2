@@ -89,6 +89,8 @@ export function AdminPairCompare({ kept, absorbed, matchTypes, testIdPrefix, t, 
             profileName={absorbed.name}
             source={{ kind: 'profile', name: kept.name, entries: kept.entries }}
             profileEntries={absorbed.entries}
+            // Admins see every value: no false padlock (review of A4).
+            fullVisibility
             target="other"
             kept="source"
             sourceHead={<AdminSideHead testId={`${testIdPrefix}-side-keep`} side={kept} kept t={t} formatShortDate={formatShortDate} />}
