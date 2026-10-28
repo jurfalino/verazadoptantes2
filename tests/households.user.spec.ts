@@ -433,6 +433,20 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
                 await expect(memberMenuPanel(last)).toHaveCount(0);
                 await expect(button).toBeFocused();
 
+                // Arrow keys reach every item (roving focus): ArrowDown to «Eliminar perfil», Enter opens its dialog.
+                await page.keyboard.press('Enter');
+                const delKey = memberMenuPanel(last).getByTestId('household-member-menu-delete');
+                await expect(delKey).toBeEnabled({ timeout: 15_000 });
+                for (let i = 0; i < 8 && !(await delKey.evaluate(el => el === document.activeElement)); i++) await page.keyboard.press('ArrowDown');
+                await expect(delKey).toBeFocused();
+                await page.keyboard.press('Enter');
+                const delDialog = page.getByTestId('hh-delete-dialog');
+                await expect(delDialog).toBeVisible();
+                // The focus moved into the dialog, not stranded on the ⋯ behind it.
+                await expect.poll(() => delDialog.evaluate(el => el.contains(document.activeElement))).toBe(true);
+                await delDialog.getByTestId('hh-dialog-cancel').click();
+                await expect(delDialog).toHaveCount(0);
+
                 // «¿En qué hogar?» right above the same card: its last home takes the tap too.
                 const add = page.getByTestId('household-add-member');
                 await add.scrollIntoViewIfNeeded();

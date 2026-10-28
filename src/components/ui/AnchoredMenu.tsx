@@ -17,14 +17,18 @@
  * Closes on a tap outside (a transparent backdrop) and on Escape, giving the
  * focus back to the button (useEscapeToClose) — one behaviour for every menu.
  * On <body> the panel is no longer next to its button in the tab order, so it
- * takes the focus itself: its first enabled item once placed; Tab / Shift+Tab
- * out of it closes it, back on the button.
+ * takes the focus itself: its first enabled item once placed; ArrowDown /
+ * ArrowUp (wrapping), Home and End move between the enabled items (rovingTarget);
+ * Tab / Shift+Tab out of it closes it, back on the button.
  */
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useEscapeToClose } from '@/hooks/useEscapeToClose';
 import { placeAnchoredPanel, type AnchoredPlacement } from '@/lib/anchoredPlacement';
+import { rovingTarget } from '@/lib/menuRovingFocus';
+
+const ENABLED_ITEM = '[role="menuitem"]:not(:disabled)';
 
 // useLayoutEffect warns on the server; the menu only ever opens on the client.
 const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
@@ -85,14 +89,23 @@ export function AnchoredMenu({ open, anchorRef, onClose, align = 'right', role =
         if (!open) { focused.current = false; return; }
         if (!place || focused.current) return;
         focused.current = true;
-        contentRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
+        contentRef.current?.querySelector<HTMLElement>(ENABLED_ITEM)?.focus({ preventScroll: true });
     }, [open, place]);
 
     const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-        if (e.key !== 'Tab') return;
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            onClose();
+            anchorRef.current?.focus();
+            return;
+        }
+        // Roving focus over the enabled items, read at the keypress: an item can
+        // turn enabled after the panel opened (the delete row once its check answers).
+        const items = Array.from(contentRef.current?.querySelectorAll<HTMLElement>(ENABLED_ITEM) ?? []);
+        const next = rovingTarget(e.key, items.indexOf(document.activeElement as HTMLElement), items.length);
+        if (next === null) return;
         e.preventDefault();
-        onClose();
-        anchorRef.current?.focus();
+        items[next].focus();
     };
 
     if (!open || !mounted) return null;
