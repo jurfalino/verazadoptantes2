@@ -42,6 +42,23 @@ export function modalKeyAction(
     return null;
 }
 
+/**
+ * A menu / popover open inside a dialog claims Escape for itself: it marks the
+ * event handled (`preventDefault`) so `modalKeyAction` — which the dialog runs
+ * from a bubbling document listener — sees `defaultPrevented` and leaves the
+ * dialog open. One Escape closes one layer. Returns whether the key was Escape.
+ *
+ * The menu must call this from a CAPTURE listener on `document` (see
+ * hooks/useEscapeToClose): capture runs before every bubbling listener whatever
+ * has the focus, so the claim lands before the dialog looks — a React onKeyDown
+ * on the menu panel would only fire when the focus is inside the panel.
+ */
+export function claimEscape(e: { key: string; preventDefault: () => void }): boolean {
+    if (e.key !== 'Escape') return false;
+    e.preventDefault();
+    return true;
+}
+
 /** Where Tab (or Shift+Tab) moves the focus, or null to let the browser move it. */
 export function tabTrapTarget<T>(focusables: readonly T[], active: T | null, shift: boolean): T | null {
     if (focusables.length === 0) return null;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { FOCUSABLE, modalKeyAction, openDialogs, tabTrapTarget } from './dialogFocus';
+import { FOCUSABLE, claimEscape, modalKeyAction, openDialogs, tabTrapTarget } from './dialogFocus';
 
 describe('tabTrapTarget (the dialog keeps Tab inside it)', () => {
     const items = ['close', 'cancel', 'confirm'];
@@ -68,5 +68,25 @@ describe('FOCUSABLE (the tab trap\'s stops)', () => {
             'a[href]', 'button:not([disabled])', 'input:not([disabled]):not([type="hidden"])',
             'select:not([disabled])', 'textarea:not([disabled])', '[tabindex]',
         ]);
+    });
+});
+
+describe('claimEscape (a menu inside a dialog: one Escape closes one layer)', () => {
+    const key = (k: string) => {
+        const e = { key: k, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+        return e;
+    };
+    it('the menu claims Escape first (capture), so the dialog that looks next leaves itself open', () => {
+        const e = key('Escape');
+        expect(claimEscape(e)).toBe(true);
+        expect(modalKeyAction(e, { isTop: true, busy: false })).toBeNull();
+    });
+    it('with no menu open, nobody claims it and the dialog closes', () => {
+        expect(modalKeyAction(key('Escape'), { isTop: true, busy: false })).toBe('close');
+    });
+    it('other keys are not claimed', () => {
+        const e = key('Tab');
+        expect(claimEscape(e)).toBe(false);
+        expect(e.defaultPrevented).toBe(false);
     });
 });
