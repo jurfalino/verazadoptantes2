@@ -12,7 +12,8 @@ import { dismissCountryBanner } from './helpers';
 test('Scan carries on after dropped connections and a busy lock', async ({ page }) => {
     test.setTimeout(240_000);
     let intercepted = 0;
-    await page.route('**/api/admin/duplicates', async (route) => {
+    // The page sends `?limit=…&scan=…` with every batch (audit A5): match the path with any query.
+    await page.route(/\/api\/admin\/duplicates(\?.*)?$/, async (route) => {
         if (route.request().method() !== 'POST') return route.continue();
         intercepted++;
         if (intercepted <= 2) return route.abort('connectionreset');
