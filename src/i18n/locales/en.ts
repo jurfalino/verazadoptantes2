@@ -826,6 +826,7 @@ export const en = {
         merge_confirm_preview: 'Will be added:',
         merge_confirm_no_new: 'No new information to add. We’ll just open the existing profile.',
         merge_confirm_action: 'Yes, continue',
+        merge_continue_failed: "Couldn't continue with this profile. Please try again.",
         add_profile_photo: 'Add profile photo',
         view_profile_photo: 'View profile photo',
         change_profile_photo: 'Change photo',

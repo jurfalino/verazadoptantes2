@@ -825,6 +825,7 @@ export const es = {
         merge_confirm_preview: 'Se agregará:',
         merge_confirm_no_new: 'No hay información nueva para agregar. Solo abriremos el perfil existente.',
         merge_confirm_action: 'Sí, continuar',
+        merge_continue_failed: 'No se pudo continuar con este perfil. Volvé a intentar.',
         identifications: 'Identificaciones',
         image_expired: 'Imagen expirada',
         add_profile_photo: 'Agregar foto de perfil',

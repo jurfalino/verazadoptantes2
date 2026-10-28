@@ -52,7 +52,7 @@ import type { AdopterFlaggingHandle } from '@/components/AdopterFlagging';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, AdoptionConfig } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 import { parseContactsParam } from '@/lib/createPrefill';
-import { handledAsStale } from '@/lib/errorMessage';
+import { handledAsStale, userFacingMessage } from '@/lib/errorMessage';
 import { FieldConflictNotice, UpdatedByBadge } from '@/components/collab/FieldConflictNotice';
 import { updatedByOtherMessage, needsReviewMessage } from '@/lib/collabCopy';
 
@@ -503,19 +503,26 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
             if (result.success && result.adopterId) {
                 zarazTrack('adopter_updated', { source: 'append' });
                 router.push(`/adopter/${result.adopterId}`);
+            } else if (result.error === CONTACT_ENTRIES_FULL) {
+                // An expected rule (the profile holds the most contacts it can), not a failure: a warning, no Error ID.
+                toast.warning(t('adopter.ce_add_full'));
+                setContinueBusyId(null);
+                setPendingMerge(null);
             } else {
-                // eslint-disable-next-line no-alert
-                alert(result.error === CONTACT_ENTRIES_FULL ? t('adopter.ce_add_full') : result.error || 'No se pudo continuar con este perfil');
+                // The server's message may already carry its Error ID («…(Error ID: x)»): resolveErrorId reuses it.
+                toast.error(t('toast.save_error_title'), t('adopter.merge_continue_failed'),
+                    resolveErrorId(new Error(`appendToExistingAdopter ${targetId}: ${result.error || 'failed'}`), 'AdopterForm.confirmMerge'));
                 setContinueBusyId(null);
                 setPendingMerge(null);
             }
         } catch (e) {
-            // eslint-disable-next-line no-alert
-            if (!handledAsStale(e)) alert(e instanceof Error ? e.message : 'Error inesperado');
+            if (!handledAsStale(e)) {
+                toast.error(t('toast.save_error_title'), userFacingMessage(e, t('adopter.merge_continue_failed')), resolveErrorId(e, 'AdopterForm.confirmMerge'));
+            }
             setContinueBusyId(null);
             setPendingMerge(null);
         }
-    }, [pendingMerge, continueBusyId, data.contactInfo, data.familyMembers, contactEntries, router, t]);
+    }, [pendingMerge, continueBusyId, data.contactInfo, data.familyMembers, contactEntries, router, t, toast]);
 
     // Debounced duplicate search while typing (create only)
     useEffect(() => {
