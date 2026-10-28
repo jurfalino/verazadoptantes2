@@ -2,6 +2,37 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.3] - 2026-10-28
+
+### Fixed — audit of the household and merge pages
+- The «⋯» menu of the last household member (and «¿En qué hogar?») opened under the «¿Qué pasó con …?» card,
+  so «Eliminar perfil» couldn't be tapped. Menus now open above everything, flip upward when there's no room,
+  and work with the keyboard (arrows, Home/End, Escape).
+- Dark mode: hovered/focused options no longer turn white-on-white.
+- Minors: tagged «Menor de edad» and not selectable when picking an adopter or matching an import; the rule
+  shows as a plain explanation instead of a red error with an Error ID, on every path.
+- Admin merge requests and questioned merges: each row shows «Qué coincide y qué no», the two cases are named
+  «Revisión pedida» / «Combinación cuestionada», and every decision asks for confirmation (stating the
+  consequence) and confirms with a toast. No false padlock for admins.
+- One name per person in notices (no emails); «Carla Ruiz → Carla Ruiz» shown once; no English
+  «--- Merged from ---» notes; plurals («1 vista», «1 observación»); «Le di», «Fotos», «Para sí» / «Es un regalo».
+- «✓ Combinados» rows get their own «Recién combinados» section.
+
+### Changed — one look for one concept
+- One rating, alerts and «Menor de edad» rendering on profile header, household rows, search cards and match cards.
+- One «⋯» menu, one dialog style (title, ×, Cancelar with a visible border in dark mode), one «Deshacer» and one
+  profile banner style.
+- One «Qué coincide y qué no» card on form results, contract results, «Posibles coincidencias», the save check
+  and the import; every one has «Ver perfil completo» and «No es esta persona». The save check's «Usar perfil
+  existente» (which lost what was typed) is now «Continuar con este perfil».
+- Notifications: every type has a label and an icon; filter chips and buttons are 44px; no sideways scroll on phones.
+- 44px tap targets on household rows, contact rows, the name pencil and the header «⋯».
+- «Hogar» / «convive con» wording everywhere; settings «Avisos por email» names renames and household notices.
+
+### Admin
+- «Escanear ahora» (duplicates) finishes in one run.
+- Release runbook for households added to the deploy workflow.
+
 ## [2.58.2] - 2026-10-27
 
 ### Fixed — household section consistency
