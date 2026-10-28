@@ -879,11 +879,16 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
             // Who was asked, so the toast names the right person. Display name
             // or email handle, never the address; null when the admins decide.
             const toAdmins = action.ownerEmail === null;
+            // resolveDisplayName is the one name rule (displayNameFor): a name that is an email
+            // address is never shown; a social handle in a name («Patitas @refugio») is.
             let toName: string | null = null;
             if (action.ownerEmail) {
+                const ownerEmail = action.ownerEmail;
                 const { resolveDisplayName } = await import('./notifications');
-                toName = await resolveDisplayName(action.ownerEmail).catch(() => action.ownerEmail!.split('@')[0]);
-                if (toName.includes('@')) toName = toName.split('@')[0];
+                toName = await resolveDisplayName(ownerEmail).catch((e) => {
+                    logger.warn('mergePendingDedupPair: owner name lookup failed, naming the handle', { candidateId, actorEmail, error: e instanceof Error ? e.message : String(e) });
+                    return emailHandle(ownerEmail);
+                });
             }
             return { success: true, outcome: 'requested', toName, toAdmins };
         }

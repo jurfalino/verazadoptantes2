@@ -96,6 +96,25 @@ describe('mergePendingDedupPair — merge or request', () => {
         expect(notify.create.every(n => n.type === 'merge_request')).toBe(true);
     });
 
+    it('the toast names the owner as resolveDisplayName does: a social handle in the name («Patitas @refugio») is kept whole', async () => {
+        const { resolveDisplayName } = await import('./notifications');
+        const handle = vi.mocked(resolveDisplayName).getMockImplementation()!;
+        vi.mocked(resolveDisplayName).mockImplementation(async (email: string) => (email === OWNER ? 'Patitas @refugio' : handle(email)));
+        try {
+            expect(await mergePendingDedupPair('cand-older-mine')).toEqual({ success: true, outcome: 'requested', toName: 'Patitas @refugio', toAdmins: false });
+        } finally { vi.mocked(resolveDisplayName).mockImplementation(handle); }
+    });
+
+    it('a failed name lookup falls back to the email handle, logged', async () => {
+        const { resolveDisplayName } = await import('./notifications');
+        const handle = vi.mocked(resolveDisplayName).getMockImplementation()!;
+        vi.mocked(resolveDisplayName).mockImplementation(async (email: string) => { if (email === OWNER) throw new Error('D1 down'); return handle(email); });
+        try {
+            expect(await mergePendingDedupPair('cand-older-mine')).toEqual({ success: true, outcome: 'requested', toName: 'owner', toAdmins: false });
+        } finally { vi.mocked(resolveDisplayName).mockImplementation(handle); }
+        expect(logs.warn).toContainEqual([expect.stringContaining('name lookup failed'), expect.objectContaining({ candidateId: 'cand-older-mine', error: 'D1 down' })]);
+    });
+
     it('asking twice: still one request, nobody notified twice', async () => {
         await mergePendingDedupPair('cand-older-mine');
         notify.create.length = 0;
