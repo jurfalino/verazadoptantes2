@@ -2,8 +2,12 @@
  * Final review M1: a «Escribirle» message goes to the other rescuer AND their
  * team, so the box warns that all of them will see the sender's email.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import type { ReactNode } from 'react';
+
+// The shared dialog renders on <body> once mounted (nothing on the server): render its body in place here.
+vi.mock('@/components/ui/Modal', () => ({ Modal: ({ children }: { children: ReactNode }) => <div>{children}</div> }));
 import WriteMessage from './WriteMessage';
 import { es } from '@/i18n/locales/es';
 import { en } from '@/i18n/locales/en';
