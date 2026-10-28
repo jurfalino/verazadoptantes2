@@ -55,3 +55,22 @@ export const IMPORT_FLAGS = {
     medium: 'import_medium',
     low: 'import_low',
 } as const;
+
+/**
+ * Every `notifications.type` the app writes (createNotification / notifyAdmins / notifyOrgMembers / the
+ * follow-up cron). The bell and /notificaciones label and draw each one (components/NotificationTypeIcon,
+ * `notifications.types.<type>` in es/en/pt) — a type missing here shows a generic bell and the raw key
+ * (audit B4: «household_contribution», «merge_request»… had no label).
+ */
+export const NOTIFICATION_TYPES = [
+    'contract_result', 'contract_attached', 'form_submission', 'form_attached',
+    'api_record', 'api_access', 'api_access_requested',
+    'profile_renamed', 'profile_rename_undone', 'profile_age_changed',
+    'pii_access_request', 'pii_access_approved', 'pii_access_denied', 'pii_access_revoked',
+    'contact_entry_added', 'follow_up_due', 'ownership_transferred', 'adopter_flagged', 'deletion_request', 'member_joined',
+    'adopter_merged', 'merge_request', 'merge_request_resolved', 'merge_disputed', 'merge_dispute_resolved', 'pair_message',
+    'household_linked', 'household_link_removed', 'household_link_disputed', 'household_contribution',
+    'household_also_lives_with', 'household_relationship_changed', 'household_member_removed', 'household_member_disputed',
+    'system',
+] as const;
+export type NotificationType = typeof NOTIFICATION_TYPES[number];

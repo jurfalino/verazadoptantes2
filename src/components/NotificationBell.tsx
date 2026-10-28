@@ -8,6 +8,8 @@ import { useLanguage } from '@/context/LanguageContext';
 import { localizedNotification } from '@/domain/notificationTemplates';
 import { renameUndoOf } from '@/domain/profileIdentity';
 import { RenameUndoButton } from '@/components/RenameUndo';
+import { NotificationTypeIcon } from '@/components/NotificationTypeIcon';
+import { useEscapeToClose } from '@/hooks/useEscapeToClose';
 
 interface NotificationItem {
     id: string;
@@ -67,6 +69,9 @@ export default function NotificationBell() {
     // Portal target — `document.body`. Gated by `mounted` so we don't try
     // to use document during SSR or before the React tree has hydrated.
     useEffect(() => { setMounted(true); }, []);
+    // Escape closes the panel and gives the focus back to the bell — the same as every menu (audit B4).
+    const closePanel = useCallback(() => setOpen(false), []);
+    useEscapeToClose(open, closePanel, buttonRef);
 
     const isAuthenticated = !!session?.user?.email;
 
@@ -365,12 +370,13 @@ export default function NotificationBell() {
                                     >
                                         <button
                                             onClick={() => handleClick(item)}
-                                            className="w-full text-left pl-4 pr-10 py-3 transition-colors"
+                                            className="w-full text-left pl-4 pr-12 py-3 transition-colors"
                                             onMouseEnter={(e) => { e.currentTarget.parentElement!.style.background = 'var(--surface-muted)'; }}
                                             onMouseLeave={(e) => { e.currentTarget.parentElement!.style.background = !item.read ? 'var(--accent-subtle-bg)' : 'transparent'; }}
                                         >
                                             <div className="flex items-start gap-2.5">
-                                                <span className="text-lg flex-shrink-0 mt-0.5">{item.icon}</span>
+                                                {/* One 20px lucide icon per type, as on /notificaciones (audit B4). */}
+                                                <span className="mt-0.5"><NotificationTypeIcon type={item.type} /></span>
                                                 <div className="flex-1 min-w-0">
                                                     <p className={`text-sm leading-snug break-words ${!item.read ? 'font-semibold' : 'font-medium'}`} style={{ color: 'var(--text-primary)' }}>
                                                         {stripLeadingEmoji(text.title)}
@@ -400,7 +406,7 @@ export default function NotificationBell() {
                                             type="button"
                                             onClick={(e) => { e.stopPropagation(); handleDismiss(item); }}
                                             aria-label={isEs ? 'Descartar notificación' : 'Dismiss notification'}
-                                            className="absolute top-2 right-2 w-7 h-7 rounded-md flex items-center justify-center hover:opacity-100 opacity-50 transition-opacity"
+                                            className="absolute top-0 right-0 w-11 h-11 rounded-md flex items-center justify-center hover:opacity-100 opacity-50 transition-opacity"
                                             style={{ color: 'var(--text-muted)' }}
                                             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-muted)'; }}
                                             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
