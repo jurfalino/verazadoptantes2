@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import DuplicateMergeModal from '@/components/DuplicateMergeModal';
 import { useLanguage } from '@/context/LanguageContext';
 import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
-import { scanRetryDelayMs, SCAN_MAX_CONSECUTIVE_FAILURES } from '@/domain/scanResilience';
+import { scanRetryDelayMs, SCAN_MAX_CONSECUTIVE_FAILURES, SCAN_MAX_BATCHES, SCAN_PAGE_LIMIT } from '@/domain/scanResilience';
 
 /**
  * Duplicate-detection review panel. Moved from the standalone `/admin/duplicates`
@@ -317,17 +317,23 @@ export default function DuplicatesPanel() {
      * can't blow its subrequest ceiling), so one click loops until `done`.
      *
      * This matters on a TOKENIZER_VERSION bump, which marks every record stale
-     * at once — 1,146 in production as of v2.49, i.e. ~12 batches. Doing that by
-     * hand means clicking until the counter stops moving, with no way to tell
-     * "finished" from "silently stopped early".
+     * at once — 1,146 in production as of v2.49, ~6,000 for the households
+     * release. Doing that by hand means clicking until the counter stops moving,
+     * with no way to tell "finished" from "silently stopped early".
      *
-     * `maxBatches` is a safety stop: if `remaining` ever fails to decrease, the
-     * loop would otherwise spin forever against the same records.
+     * Each batch asks for SCAN_PAGE_LIMIT records and carries one scan id, so
+     * the route reads the gift forms once per click, not once per batch.
+     * SCAN_MAX_BATCHES is only a runaway stop (the stall check below is the real
+     * guard); it used to be 200 batches of 25, so the ~239-batch households
+     * scan never finished in one click (audit A5).
      */
     async function handleScan() {
         setScanning(true);
         setScanResult(null);
-        const maxBatches = 200;
+        const maxBatches = SCAN_MAX_BATCHES;
+        const scanId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? crypto.randomUUID()
+            : `scan-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
         let totalTokenized = 0;
         let lastRemaining = Infinity;
         // Consecutive failed requests. A dropped connection cancels the batch in
@@ -355,7 +361,7 @@ export default function DuplicatesPanel() {
             for (let batch = 0; batch < maxBatches; batch++) {
                 let res: Response;
                 try {
-                    res = await fetch('/api/admin/duplicates', { method: 'POST' });
+                    res = await fetch(`/api/admin/duplicates?limit=${SCAN_PAGE_LIMIT}&scan=${encodeURIComponent(scanId)}`, { method: 'POST' });
                 } catch {
                     if (await retryAfter('Connection dropped')) continue;
                     return;

@@ -39,7 +39,7 @@ build-and-lint  →  migrate-{staging|production}  →  e2e (Playwright)  →  d
 - **`e2e`** runs the full Playwright suite. **It is a blocking dependency for the deploy job** — failing tests will prevent the deploy. (The comment in the YAML claims tests are "non-blocking", but `deploy-staging`/`deploy-production` both list `e2e` in `needs:`, so it gates the deploy.)
 - **`deploy-*`** runs `npx @cloudflare/next-on-pages` then `npx wrangler pages deploy ... --branch="<staging|master>"`.
 
-End-to-end pipeline takes **~8–15 minutes**. Watch progress at:
+End-to-end pipeline takes **17–34 minutes**. Watch progress at:
 - `gh run list --branch <staging|master> --limit 3`
 - `gh run watch <run-id>`
 - Or the GitHub Actions tab on the repo.
@@ -142,7 +142,7 @@ git push origin HEAD:staging
 Staging URL: https://staging.verazadoptantes2.pages.dev
 GitHub Actions run: https://github.com/jurfalino/verazadoptantes2/actions
 ```
-The full pipeline (build-and-lint → migrate-staging → e2e → deploy-staging) takes **~8–15 min**. The new build only goes live after `deploy-staging` finishes — not when the push lands on the branch. Check progress with:
+The full pipeline (build-and-lint → migrate-staging → e2e → deploy-staging) takes **17–34 min**. The new build only goes live after `deploy-staging` finishes — not when the push lands on the branch. Check progress with:
 ```
 gh run list --branch staging --limit 3
 gh run watch <run-id>   # to follow live
@@ -176,6 +176,60 @@ git push origin v<version>
 ```
 
 
+
+## 🏠 Households release (v2.58) — runbook
+
+Households-as-profiles turns every inline household member into a profile with a membership. These steps are for the
+**production** release; staging was converted the same way. **Every write below (bulk conversion, Scan Now) needs Jon's
+OK first** — the steps only say how to run them.
+
+**1. What the deploy itself does — nothing at once.** There is no feature gate: a host's inline members are converted
+the first time that profile's household is read after the deploy (its profile view, or someone adding a person to it),
+one host at a time (`ensureProfileConverted` in `src/lib/householdConversion.ts`, run by `getHouseholds`' pre-read hook). Profiles nobody opens stay unconverted until the bulk
+run (step 3).
+
+**2. D1 Time Travel bookmark — before the prod merge, and again before the bulk run.** Write each one down in the
+release notes; it is the only way back to the data as it was:
+```bash
+npx wrangler d1 time-travel info pet-adoption-db          # prints the current bookmark — copy it
+# only if the data has to go back (destroys everything written after it):
+# npx wrangler d1 time-travel restore pet-adoption-db --bookmark=<bookmark>
+```
+
+**3. Bulk conversion** — `POST /api/admin/households/convert` (admin session; from the browser console of a freshly
+loaded admin tab on buenadoptante.org). One page per call: `budget` = members actually converted (default 10, max 25;
+a host is never split), `limit` = hosts read (default 25). The report carries ids and reasons only.
+```js
+// a) dry run — writes nothing; follow `next` until it is null and read `skipped` / `failed` / `blocked`
+let next = null, page = 0;
+do {
+  const r = await (await fetch(`/api/admin/households/convert?dryRun=1${next ? `&cursor=${next}` : ''}`, { method: 'POST' })).json();
+  console.log(++page, r.hosts, r.members, r.createdProfiles, r.reusedProfiles, r.alreadyConverted, r.skipped, r.failed);
+  next = r.next;
+} while (next);
+// b) the real run — the same loop without dryRun=1 (Jon's OK first)
+// c) re-run the real loop once more: every page must report only alreadyConverted (createdProfiles 0, failed 0)
+```
+The run is idempotent; members an old tab added since are converted on the re-run.
+
+**4. Scan Now** — Admin → Duplicates → «Scan Now», once the bulk run is done. The new profiles make ~6,000 records stale
+(~239 batches of 25). The panel asks for 100 per batch and reads the gift forms once per scan, so **one click
+finishes**; wait for «✅ Scan complete». If it stops (stall or retries exhausted), click it again — work already done
+is kept.
+
+**5. +1 day and +14 days** — old tabs are served by their own build for up to 14 days (deploy skew), and an old build's
+merge doesn't know memberships:
+```bash
+node scripts/list-old-build-merges.mjs --since <release date YYYY-MM-DD>   # read-only; look at each listed merge
+```
+Then run **Scan Now** again (an old tab's edits leave records stale).
+
+**6. Rollback consequences** — read before choosing Cloudflare's «Rollback to this deployment»:
+- the old build still reads the inline household JSON **and** shows the converted people as ordinary profiles, so
+  **every converted person appears twice** on their host's profile;
+- **households added on 2.58** (memberships only, no inline JSON) are **invisible** on the old build;
+- the data is not rolled back by a deploy rollback — only the Time Travel bookmark (step 2) does that, and it also
+  drops everything written since.
 
 ## 🗃️ Database Migrations
 
@@ -214,7 +268,7 @@ git pull
 git revert HEAD
 git push origin master   # ← only via PR, see Forbidden Commands
 ```
-This kicks off the full ~10–15 min pipeline. Only use when you also want CI/migrations to run on the rollback (e.g. the bad commit added a migration that needs reverting too).
+This kicks off the full 17–34 min pipeline. Only use when you also want CI/migrations to run on the rollback (e.g. the bad commit added a migration that needs reverting too).
 
 ## ⛔ Forbidden Commands
 These commands must NEVER be run without explicit user approval:

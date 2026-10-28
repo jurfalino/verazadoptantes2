@@ -175,7 +175,7 @@ Lint warnings must not exceed the current ratchet threshold (currently **125**).
 build-and-lint  →  migrate-{staging|production}  →  e2e (Playwright, blocking)  →  deploy-{staging|production}
 ```
 
-The `deploy-*` job runs `npx @cloudflare/next-on-pages` then `npx wrangler pages deploy`. End-to-end takes **~8–15 min**. **Pushing to a branch alone does not deploy** — if any prior job fails (build, lint, migration, e2e), the deploy job is skipped and the branch URL keeps serving the previous build. Track with `gh run list --branch <branch> --limit 3` and `gh run watch <run-id>`.
+The `deploy-*` job runs `npx @cloudflare/next-on-pages` then `npx wrangler pages deploy`. End-to-end takes **17–34 min**. **Pushing to a branch alone does not deploy** — if any prior job fails (build, lint, migration, e2e), the deploy job is skipped and the branch URL keeps serving the previous build. Track with `gh run list --branch <branch> --limit 3` and `gh run watch <run-id>`.
 
 D1 migrations are applied by the `migrate-*` jobs before deploy — no manual step needed. `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` GitHub secrets are required.
 

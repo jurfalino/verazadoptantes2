@@ -49,6 +49,11 @@ vi.mock('@/app/actions/notifications', () => ({
     resolveDisplayName: vi.fn(async (email: string) => email.split('@')[0]),
     resolveDisplayNames: vi.fn(async (emails: string[]) => Object.fromEntries(emails.map(e => [e, e.split('@')[0]]))),
 }));
+// Wrapped, not replaced: counts the gift-form reads of the scan (audit A5) and still reads them.
+vi.mock('@/lib/giftRecipients', async (orig) => {
+    const real = await orig<typeof import('./giftRecipients')>();
+    return { ...real, giftPhoneEntriesByGiver: vi.fn(real.giftPhoneEntriesByGiver) };
+});
 vi.mock('@/lib/logger', () => ({
     logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn(() => 'err12345') },
     generateErrorId: () => 'gen12345',
@@ -56,6 +61,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { tokenizeAdopter } from './adopterTokenize';
+import { giftPhoneEntriesByGiver } from './giftRecipients';
 import { addMembership, createHousehold, householdLinesFor, withHouseholdLines, HOUSEHOLD_LINE_CARDS } from './households';
 import { MAX_HOUSEHOLD_LINES } from '@/domain/households';
 import { enrichAdopters } from '@/app/actions/enrichAdopters';
@@ -206,6 +212,26 @@ describe('duplicate detection never pairs two housemates', () => {
         const pairs = sqlite.prepare(`SELECT adopter1_id || '|' || adopter2_id AS k FROM duplicate_candidates WHERE status = 'pending'`).all().map(r => r.k);
         expect(pairs).toEqual(expect.arrayContaining(['pedro|rosa', 'marta|rosa']));
         expect(pairs).not.toContain('marta|pedro');
+    });
+
+    it('«Scan Now» reads the gift forms once per scan, not once per batch (audit A5)', async () => {
+        session.user = ADMIN;
+        sqlite.prepare('UPDATE adopters SET token_hash = NULL').run();
+        const reads = vi.mocked(giftPhoneEntriesByGiver);
+        reads.mockClear();
+        const batch = (scanId?: string) => scan(new Request(`http://localhost/api/admin/duplicates?limit=1${scanId ? `&scan=${scanId}` : ''}`, { method: 'POST' }));
+        const first = await (await batch('scan-0001-aaaa')).json();
+        const second = await (await batch('scan-0001-aaaa')).json();
+        expect(first.tokenized).toBe(1);
+        expect(second.tokenized).toBe(1);
+        expect(second.remaining).toBe(first.remaining - 1);
+        expect(reads).toHaveBeenCalledTimes(1);
+        await batch('scan-0002-bbbb');
+        expect(reads).toHaveBeenCalledTimes(2);
+        // No scan id (an external caller): a fresh read every batch, as before.
+        await batch();
+        await batch();
+        expect(reads).toHaveBeenCalledTimes(4);
     });
 
     it('a gift household does not count: giver and recipient may be one person, so they still pair', async () => {

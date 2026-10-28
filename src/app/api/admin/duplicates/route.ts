@@ -13,7 +13,8 @@ import { giftPhoneEntriesByGiver } from '@/lib/giftRecipients';
 import { housematePairKeys } from '@/lib/households';
 import { sharesPersonalIdentifier } from '@/domain/households';
 import { pairsOnSharedToken, scorePair, confidenceOf } from '@/domain/duplicatePairing';
-import { lockWaitMs } from '@/domain/scanResilience';
+import { lockWaitMs, SCAN_BATCH_MAX, validScanId } from '@/domain/scanResilience';
+import { scanScopedMemo } from '@/lib/scanMemo';
 import { computeAvgRating } from '@/domain/ratings';
 import { getRequestContext } from '@/lib/requestContext';
 
@@ -305,7 +306,9 @@ export async function GET(request: Request) {
  * How many stale records one Scan call re-tokenizes.
  *
  * A Worker has a hard subrequest ceiling (~1000), and a tokenizer-version bump
- * makes EVERY record stale at once — 1,146 in production as of v2.49.
+ * makes EVERY record stale at once — 1,146 in production as of v2.49, ~6,000
+ * for the households release (v2.58: ~239 batches of 25). The admin page asks
+ * for SCAN_PAGE_LIMIT per call (src/domain/scanResilience.ts).
  *
  * Writes go out as one atomic D1 batch per SCAN_WRITE_GROUP records (a batch
  * is one subrequest), so a batch of 25 costs ~3 write subrequests plus a
@@ -321,7 +324,9 @@ export async function GET(request: Request) {
 // connection cancels the batch in flight — a shorter one loses less and lets
 // the page retry sooner (see src/domain/scanResilience.ts).
 const SCAN_BATCH_DEFAULT = 25;
-const SCAN_BATCH_MAX = 200;
+
+/** The gift forms, read once per «Scan Now» (the page's `?scan=` id), not once per batch — src/lib/scanMemo.ts. */
+const giftPhonesForScan = scanScopedMemo<Map<string, TokenEntry[]>>();
 
 /**
  * Rows per multi-row token insert.
@@ -438,7 +443,9 @@ export async function POST(request: Request) {
 
             // Batch size for this call. Clamped so a bad query string can't
             // reinstate the unbounded behaviour this exists to prevent.
-            const requestedLimit = Number(new URL(request.url).searchParams.get('limit'));
+            const params = new URL(request.url).searchParams;
+            const scanId = validScanId(params.get('scan'));
+            const requestedLimit = Number(params.get('limit'));
             const batchLimit = Number.isFinite(requestedLimit) && requestedLimit > 0
                 ? Math.min(Math.floor(requestedLimit), SCAN_BATCH_MAX)
                 : SCAN_BATCH_DEFAULT;
@@ -491,9 +498,10 @@ export async function POST(request: Request) {
             type StaleRow = (typeof staleAdopters)[number];
             const toTokenize: StaleRow[] = staleAdopters.filter((a: StaleRow) => batchIds.has(a.id) && a.tokenHash !== computeTokenHash(a));
             // The gift recipients' phones its gift forms named (src/lib/giftRecipients.ts) — the
-            // same inputs save-time tokenizing reads, in ONE query per batch (like the adoptions
-            // above). A failed read fails the batch (retried), never a token set written without them.
-            const giftPhones: Map<string, TokenEntry[]> = toTokenize.length ? await giftPhoneEntriesByGiver(db) : new Map();
+            // same inputs save-time tokenizing reads, in ONE query per scan when the page sends its
+            // scan id (else one per batch). A failed read fails the batch (retried), never a token
+            // set written without them.
+            const giftPhones: Map<string, TokenEntry[]> = toTokenize.length ? await giftPhonesForScan(scanId, () => giftPhoneEntriesByGiver(db)) : new Map();
             const planned: Planned[] = [];
             for (const adopter of toTokenize) {
                 const newHash = computeTokenHash(adopter);
