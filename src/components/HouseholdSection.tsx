@@ -24,10 +24,11 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
 import { AnchoredMenu } from '@/components/ui/AnchoredMenu';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, Gift, Plus, UserPlus } from 'lucide-react';
+import { ChevronDown, Gift, Plus, User, UserPlus } from 'lucide-react';
+import { ContactRow } from '@/components/ContactRow';
+import { Button } from '@/components/ui/Button';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { AnswerRow } from '@/components/FormAnswersPanel';
 import { MemberCard, useMemberLabel } from '@/components/household/MemberCard';
 import { AddPersonForm, useHouseholdFailure } from '@/components/household/PersonForms';
 import { createGiftRecipientProfile } from '@/app/actions';
@@ -179,7 +180,8 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
                         <button key={v.id} type="button" role="menuitem" data-testid="household-add-which-option" data-household-id={v.id}
                             className="px-4 py-3 min-h-[44px] text-left text-sm font-semibold text-stone-900 hover:bg-stone-50 transition-colors break-words"
                             onClick={() => { setChoosing(false); setAdding(v.id); }}>
-                            {fill(t('adopter.hh_with_names'), { names: peopleOf(v) })}
+                            {/* The divider's own words for this home (audit B16): one phrasing in both places. */}
+                            {dividerOf(v)}
                         </button>
                     ))}
                 </AnchoredMenu>
@@ -219,9 +221,8 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
                 </div>
             ))}
 
-            {addArea()}
-
-            {(gifts.length > 0 || data.giftForms.length > 0) && <div className="mt-2 space-y-3">
+            {/* The gift (audit B14): with the household rows, before «+ Agregar». */}
+            {(gifts.length > 0 || data.giftForms.length > 0) && <div className="mt-2 mb-2 space-y-3">
             {gifts.map(view => {
                 const recipient = view.members.find(m => m.giftRecipient);
                 if (!recipient) return null;
@@ -238,19 +239,26 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
                 <GiftShell key={g.submissionId} testId="household-gift-form" title={t('adopter.hh_gift_form_title')}
                     body={fill(t('adopter.hh_gift_form_body'), { giver: giverFirst })}>
                     {/* Read-only, as the form gave it — the same rows as «Respuestas del formulario». */}
-                    <div className="bg-white rounded-xl border border-stone-200 p-4 shadow-sm space-y-1" data-testid="household-gift-form-data">
-                        <AnswerRow label={t('adopter.hh_name')}>{g.name || <span className="italic text-stone-500">{t('adopter.hh_gift_masked_name')}</span>}</AnswerRow>
-                        {g.phone && <AnswerRow label={t('adopter.ce_type_phone')}>{g.phone}</AnswerRow>}
-                    </div>
+                    {/* Read-only, as the form gave it — in the profile's contact-row look (ContactRow, audit B14). */}
+                    <ul className="space-y-1.5" data-testid="household-gift-form-data">
+                        <li className="flex items-start gap-2 text-sm">
+                            <User className="w-4 h-4 mt-0.5 shrink-0 text-teal-600" aria-hidden="true" />
+                            <span className="sr-only sm:not-sr-only sm:w-24 sm:shrink-0 text-stone-500">{t('adopter.hh_name')}</span>
+                            <span className="min-w-0 flex-1 font-medium text-stone-800 break-words">{g.name || <span className="italic text-stone-500 font-normal">{t('adopter.hh_gift_masked_name')}</span>}</span>
+                        </li>
+                        {g.phone && <ContactRow entry={{ id: `gift-${g.submissionId}-phone`, type: 'phone', value: g.phone }} testId="household-gift-phone" />}
+                    </ul>
                     {!preview && data.canCreateGift && !g.masked && g.name && (
-                        <button type="button" data-testid="household-gift-create" disabled={creating !== null} onClick={() => { void createGift(g.submissionId, g.name); }}
-                            className="inline-flex min-h-[44px] items-center gap-1.5 px-3 py-2 text-sm font-medium text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-md disabled:opacity-50">
-                            <UserPlus className="w-4 h-4" aria-hidden="true" />{creating === g.submissionId ? '…' : fill(t('adopter.hh_gift_create'), { name: g.name })}
-                        </button>
+                        <Button type="button" variant="secondary" size="compact" data-testid="household-gift-create" disabled={creating !== null} loading={creating === g.submissionId}
+                            onClick={() => { void createGift(g.submissionId, g.name); }} icon={<UserPlus className="w-4 h-4" aria-hidden="true" />}>
+                            {fill(t('adopter.hh_gift_create'), { name: g.name })}
+                        </Button>
                     )}
                 </GiftShell>
             ))}
             </div>}
+
+            {addArea()}
         </div>
     );
 }

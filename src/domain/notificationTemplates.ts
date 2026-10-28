@@ -520,9 +520,9 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
     },
     household_linked: {
         required: ['actorName'],
-        es: p => ({ title: `Conviviente vinculado: ${plainName(p.linkedName, 'es')}`, body: `${p.actorName} indicó que ${plainName(p.linkedName, 'es')} vive con ${plainName(p.hostName, 'es')}. Tu perfil ahora lo muestra en «Convive con».` }),
-        en: p => ({ title: `Household link: ${plainName(p.linkedName, 'en')}`, body: `${p.actorName} noted that ${plainName(p.linkedName, 'en')} lives with ${plainName(p.hostName, 'en')}. Your profile now shows it under “Lives with”.` }),
-        pt: p => ({ title: `Convivente vinculado: ${plainName(p.linkedName, 'pt')}`, body: `${p.actorName} indicou que ${plainName(p.linkedName, 'pt')} mora com ${plainName(p.hostName, 'pt')}. Seu perfil agora mostra isso em «Mora com».` }),
+        es: p => ({ title: `${plainName(p.linkedName, 'es')} convive con ${plainName(p.hostName, 'es')}`, body: `${p.actorName} indicó que ${plainName(p.linkedName, 'es')} vive con ${plainName(p.hostName, 'es')}. Tu perfil ahora lo muestra en «Convive con».` }),
+        en: p => ({ title: `${plainName(p.linkedName, 'en')} lives with ${plainName(p.hostName, 'en')}`, body: `${p.actorName} noted that ${plainName(p.linkedName, 'en')} lives with ${plainName(p.hostName, 'en')}. Your profile now shows it under “Lives with”.` }),
+        pt: p => ({ title: `${plainName(p.linkedName, 'pt')} mora com ${plainName(p.hostName, 'pt')}`, body: `${p.actorName} indicou que ${plainName(p.linkedName, 'pt')} mora com ${plainName(p.hostName, 'pt')}. Seu perfil agora mostra isso em «Mora com».` }),
     },
     household_link_removed: {
         required: ['actorName'],
@@ -548,9 +548,9 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
     household_contribution: {
         required: ['actorName', 'what'],
         es: p => p.what === 'member'
-            ? { title: 'Nuevo conviviente', body: `${p.actorName} agregó a ${p.personName?.trim() || 'alguien'} al hogar ${householdOf(p.adopterName, 'es')}.` }
+            ? { title: 'Alguien nuevo en el hogar', body: `${p.actorName} agregó a ${p.personName?.trim() || 'alguien'} al hogar ${householdOf(p.adopterName, 'es')}.` }
             : p.what === 'contact'
-                ? { title: 'Nuevo dato de un conviviente', body: `${p.actorName} agregó ${entryTypeLabel(p.entryType ?? '', 'es')} de alguien del hogar ${householdOf(p.adopterName, 'es')}.` }
+                ? { title: 'Nuevo dato de alguien del hogar', body: `${p.actorName} agregó ${entryTypeLabel(p.entryType ?? '', 'es')} de alguien del hogar ${householdOf(p.adopterName, 'es')}.` }
                 : null,
         en: p => p.what === 'member'
             ? { title: 'New household member', body: `${p.actorName} added ${p.personName?.trim() || 'someone'} to ${householdOf(p.adopterName, 'en')} household.` }
@@ -558,9 +558,9 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
                 ? { title: 'New household contact detail', body: `${p.actorName} added ${entryTypeLabel(p.entryType ?? '', 'en')} for someone in ${householdOf(p.adopterName, 'en')} household.` }
                 : null,
         pt: p => p.what === 'member'
-            ? { title: 'Novo convivente', body: `${p.actorName} adicionou ${p.personName?.trim() || 'alguém'} ao lar ${householdOf(p.adopterName, 'pt')}.` }
+            ? { title: 'Alguém novo no lar', body: `${p.actorName} adicionou ${p.personName?.trim() || 'alguém'} ao lar ${householdOf(p.adopterName, 'pt')}.` }
             : p.what === 'contact'
-                ? { title: 'Novo dado de um convivente', body: `${p.actorName} adicionou ${entryTypeLabel(p.entryType ?? '', 'pt')} de alguém do lar ${householdOf(p.adopterName, 'pt')}.` }
+                ? { title: 'Novo dado de alguém do lar', body: `${p.actorName} adicionou ${entryTypeLabel(p.entryType ?? '', 'pt')} de alguém do lar ${householdOf(p.adopterName, 'pt')}.` }
                 : null,
     },
     household_also_lives_with: {

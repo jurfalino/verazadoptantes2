@@ -109,7 +109,7 @@ describe('renderNotification', () => {
             .toBe('Se unieron dos perfiles: Carla R. → Carla Ruiz');
     });
 
-    it('«Nuevo conviviente» names the person added when known (audit C2); older notices without it still read', () => {
+    it('«Alguien nuevo en el hogar» names the person added when known (audit C2); older notices without it still read', () => {
         expect(renderNotification({ key: 'household_contribution', params: { actorName: 'Ana', adopterName: 'Pedro Paez', what: 'member', personName: 'Marta Paez' } }, 'es')!.body)
             .toBe('Ana agregó a Marta Paez al hogar de Pedro Paez.');
         expect(renderNotification({ key: 'household_contribution', params: { actorName: 'Ana', adopterName: 'Pedro Paez', what: 'member', personName: 'Marta Paez' } }, 'en')!.body)
@@ -145,7 +145,7 @@ describe('renderNotification', () => {
 
     it('household_contribution: a member or a contact on one, per locale (D54)', () => {
         expect(renderNotification({ key: 'household_contribution', params: { actorName: 'Ana', adopterName: 'Pedro Paez', what: 'member' } }, 'es'))
-            .toEqual({ title: 'Nuevo conviviente', body: 'Ana agregó a alguien al hogar de Pedro Paez.' });
+            .toEqual({ title: 'Alguien nuevo en el hogar', body: 'Ana agregó a alguien al hogar de Pedro Paez.' });
         expect(renderNotification({ key: 'household_contribution', params: { actorName: 'Ana', adopterName: 'Pedro Paez', what: 'contact', entryType: 'phone' } }, 'es')!.body)
             .toBe('Ana agregó un teléfono de alguien del hogar de Pedro Paez.');
         expect(renderNotification({ key: 'household_contribution', params: { actorName: 'Ana', what: 'member' } }, 'en')!.body)

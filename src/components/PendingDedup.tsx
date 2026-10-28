@@ -203,7 +203,7 @@ export default function PendingDedup() {
             toast.success(t('myAdopters.pending_d_disputed') || 'Se lo pasamos a un administrador para que decida');
             await load();
         } else if (result.success && result.outcome === 'household') {
-            toast.success(t('myAdopters.pending_d_household_done') || 'Quedaron separados: lo agregamos como conviviente');
+            toast.success(t('myAdopters.pending_d_household_done') || 'Quedaron separados: lo agregamos a su hogar');
             dropRow(pair);
         } else if (result.success) {
             // It went to the other profile's owner (or the admins) as a request:

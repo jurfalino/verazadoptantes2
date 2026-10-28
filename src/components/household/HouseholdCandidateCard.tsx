@@ -8,7 +8,8 @@
  * the candidate's own household line — so a relative of a flagged person is
  * recognised before saving. Answering «Sí» links that profile; «No» moves on.
  */
-import { AlertTriangle, Check, Home, Info } from 'lucide-react';
+import { Check, HelpCircle, Home, Info } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
 import { useLanguage } from '@/context/LanguageContext';
 import { PersonStanding, PersonActivity } from '@/components/PersonStanding';
 import { CardHouseholdLine } from '@/components/CardHouseholdLine';
@@ -17,7 +18,7 @@ import { ContactRow } from '@/components/ContactRow';
 import { deserializeContactEntries, type ContactEntry } from '@/lib/contactEntries';
 import { SUMMARY_CONTACT_TYPES, MAX_SUMMARY_CONTACTS } from '@/domain/householdLinks';
 import { householdLineGroups } from '@/domain/households';
-import { fill, firstName, joinNames } from '@/lib/householdCopy';
+import { fill, firstName } from '@/lib/householdCopy';
 import type { HouseholdMatchCandidate } from '@/app/actions/households';
 
 const digits = (s: string) => s.replace(/\D/g, '');
@@ -55,22 +56,23 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
     // The same count as the household line (final fix P6).
     const alerts = candidate.openAlerts ?? ((candidate.flags.inaccurate ? 1 : 0) + (candidate.flags.duplicate ? 1 : 0));
     const homes = householdLineGroups(candidate.householdLine);
-    const others = homes[0]?.map(l => l.name) ?? [];
     const minor = !!candidate.isMinor;
     return (
-        <div className="rounded-xl border-2 border-amber-300 bg-amber-50 overflow-hidden" data-testid={testId}>
-            <div className="px-4 py-2.5 bg-amber-100 border-b border-amber-300">
+        // A question, not a warning (audit B15): the neutral info look, and the person drawn as every other person
+        // (the household row's teal initial); the alerts, if any, are the person's own AlertPill.
+        <div className="rounded-xl border overflow-hidden bg-white" style={{ borderColor: 'var(--status-info-border)' }} data-testid={testId}>
+            <div className="px-4 py-2.5 border-b" style={{ background: 'var(--status-info-bg)', borderColor: 'var(--status-info-border)' }}>
                 <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 shrink-0 text-amber-800" aria-hidden="true" />
-                    <h3 className="text-sm font-bold text-amber-900">{t('adopter.hh_candidate_title')}</h3>
+                    <HelpCircle className="w-4 h-4 shrink-0" style={{ color: 'var(--status-info-text)' }} aria-hidden="true" />
+                    <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{t('adopter.hh_candidate_title')}</h3>
                 </div>
-                <p className="text-xs text-amber-900 mt-0.5">{t(reasonKey(candidate.matchTypes))}</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>{t(reasonKey(candidate.matchTypes))}</p>
             </div>
-            <div className="px-4 py-3 bg-white/60">
-                <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-full bg-amber-200 flex items-center justify-center text-amber-900 font-semibold text-sm flex-shrink-0" aria-hidden="true">
+            <div className="px-4 py-3">
+                <div className="flex items-start gap-2">
+                    <span className="mt-0.5 w-8 h-8 rounded-full bg-teal-600 text-white font-bold text-xs flex items-center justify-center shrink-0" aria-hidden="true">
                         {(name[0] || '?').toUpperCase()}
-                    </div>
+                    </span>
                     <div className="min-w-0 flex-1">
                         {/* Name, standing and activity exactly as a household row writes them (PersonStanding). */}
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
@@ -94,7 +96,8 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
                         <div className="mt-2 flex items-start gap-2 text-xs px-3 py-2 rounded-lg border" data-testid={`${testId}-elsewhere`}
                             style={{ background: 'var(--status-info-bg)', borderColor: 'var(--status-info-border)', color: 'var(--status-info-text)' }}>
                             <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
-                            <span className="min-w-0 break-words">{fill(t('adopter.hh_candidate_elsewhere'), { name: firstName(name) || name, others: joinNames(t, others) })}</span>
+                            {/* The housemates are named once, in the line above (audit B15). */}
+                            <span className="min-w-0 break-words">{fill(t('adopter.hh_candidate_elsewhere'), { name: firstName(name) || name })}</span>
                         </div>
                     </>
                 ) : (
@@ -104,14 +107,12 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
                     </div>
                 )}
                 <div className="mt-3 flex flex-wrap gap-2">
-                    <button type="button" onClick={onYes} disabled={busy} data-testid={`${testId}-yes`}
-                        className="inline-flex min-h-[44px] items-center gap-1.5 px-3.5 text-sm font-semibold rounded-md bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50">
-                        <Check className="w-4 h-4" aria-hidden="true" />{t('adopter.hh_candidate_yes')}
-                    </button>
-                    <button type="button" onClick={onNo} disabled={busy} data-testid={`${testId}-no`}
-                        className="inline-flex min-h-[44px] items-center px-3.5 text-sm font-semibold rounded-md border border-stone-200 bg-white text-stone-800 hover:bg-teal-50 disabled:opacity-50">
+                    <Button type="button" size="compact" onClick={onYes} disabled={busy} data-testid={`${testId}-yes`} icon={<Check className="w-4 h-4" aria-hidden="true" />}>
+                        {t('adopter.hh_candidate_yes')}
+                    </Button>
+                    <Button type="button" variant="secondary" size="compact" onClick={onNo} disabled={busy} data-testid={`${testId}-no`}>
                         {t('adopter.hh_candidate_no')}
-                    </button>
+                    </Button>
                 </div>
             </div>
         </div>

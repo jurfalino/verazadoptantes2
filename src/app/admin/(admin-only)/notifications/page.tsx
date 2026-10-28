@@ -59,7 +59,7 @@ const KNOWN_TYPES: Record<string, { label: string; description: string }> = {
     'api_record': { label: 'Registro por API', description: 'Al rescatista (y su organización) cuando una herramienta conectada guarda un registro con su clave.' },
     'contract_attached': { label: 'Contrato vinculado', description: 'Cuando un contrato firmado se vincula a un perfil.' },
     'adopter_merged': { label: 'Perfiles unidos', description: 'A quienes cargaron dos perfiles cuando un admin los une y elige avisarles.' },
-    'household_linked': { label: 'Conviviente vinculado', description: 'Al dueño (y su equipo) de un perfil cuando otra persona lo anota como conviviente de otro adoptante.' },
+    'household_linked': { label: 'Convive con (vinculado)', description: 'Al dueño (y su equipo) de un perfil cuando otra persona lo anota como conviviente de otro adoptante.' },
     'household_link_removed': { label: 'No conviven', description: 'Al dueño (y su equipo) del perfil anfitrión cuando el equipo del perfil vinculado indica que esa persona no convive: se quita de los dos perfiles.' },
     'household_contribution': { label: 'Aporte al hogar', description: 'Al dueño (y editores) cuando otra persona agrega un conviviente, o un dato de contacto de un conviviente, a su registro.' },
     'household_link_disputed': { label: 'Convivencia en disputa', description: 'A los administradores cuando alguien vuelve a agregar como conviviente a una persona cuyo equipo ya indicó que no conviven.' },

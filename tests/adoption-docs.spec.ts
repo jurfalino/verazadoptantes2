@@ -100,7 +100,7 @@ test.describe('Custom adoption form + contract — API-level', () => {
             const page = await rescuer.newPage();
             await page.goto(`/form-results/${submissionId}`);
             await expect(page.getByText(name).first()).toBeVisible({ timeout: 30000 });
-            await expect(page.getByText(/Para sí mismo|For themselves|Para si mesmo/).first()).toBeVisible({ timeout: 30000 });
+            await expect(page.getByText(/Para sí|For themselves|Para si/).first()).toBeVisible({ timeout: 30000 });
             await expect(page.getByText(/necesidades especiales|special.needs|necessidades especiais/i)).toHaveCount(0);
         } finally {
             await rescuer.close();
