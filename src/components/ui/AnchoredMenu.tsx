@@ -25,6 +25,7 @@ import { forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState, 
 import type { LucideIcon } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useEscapeToClose } from '@/hooks/useEscapeToClose';
+import { noteMenuAnchor } from '@/lib/dialogFocus';
 import { placeAnchoredPanel, type AnchoredPlacement } from '@/lib/anchoredPlacement';
 import { rovingTarget } from '@/lib/menuRovingFocus';
 
@@ -119,6 +120,8 @@ export function AnchoredMenu({ open, anchorRef, onClose, align = 'right', role =
                 data-testid={testId}
                 data-placement={place?.placement}
                 onKeyDown={onKeyDown}
+                // An item chosen here may open a dialog: when it closes, the focus goes back to this ⋯ (lib/dialogFocus).
+                onClickCapture={e => { if ((e.target as HTMLElement).closest('[role="menuitem"]')) noteMenuAnchor(anchorRef.current); }}
                 className={`fixed z-50 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-xl border border-stone-200 overflow-x-hidden overflow-y-auto animate-in fade-in duration-150 ${above ? 'slide-in-from-bottom-2' : 'slide-in-from-top-2'} ${className}`}
                 style={{
                     top: place?.top ?? 0,

@@ -16,16 +16,23 @@
  *   phone, right-aligned from `sm:`.
  * - Behaviour: rendered on <body> (a portal: no ancestor's stacking context can
  *   trap it — tests/one-reality.authed.spec.ts), `role="dialog"` +
- *   `aria-modal`, Escape and a tap on the backdrop close it unless `busy`.
- *   Focus lands on `[data-autofocus]`, else a text field, else «Cancelar»
- *   (`data-modal-cancel`): an accidental Enter never confirms anything.
+ *   `aria-modal` + `aria-labelledby` (the title), Escape and a tap on the
+ *   backdrop close it unless `busy`. Focus lands on `[data-autofocus]`, else a
+ *   text field, else «Cancelar» (`data-modal-cancel`): an accidental Enter never
+ *   confirms anything. Tab stays inside it, and closing gives the focus back to
+ *   what opened it — the ⋯ button when a menu item opened it (lib/dialogFocus;
+ *   fix round 2, item 8). Only the topmost dialog answers Escape and Tab.
  *   The portal waits for the client, so the server renders nothing.
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { Button } from '@/components/ui/Button';
+import { dialogOpener, openDialogs, returnFocusTarget, tabTrapTarget } from '@/lib/dialogFocus';
+
+/** What Tab can land on inside the dialog. */
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 const WIDTH = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg' } as const;
 
@@ -41,29 +48,59 @@ export function Modal({ title, onClose, busy = false, testId, size = 'md', child
     const [mounted, setMounted] = useState(false);
     useEffect(() => { setMounted(true); }, []);
     const panelRef = useRef<HTMLDivElement>(null);
+    const titleId = useId();
     const latest = useRef({ busy, onClose });
     useEffect(() => { latest.current = { busy, onClose }; });
+    // What had the focus when the dialog opened (read at the first render, before the dialog takes it).
+    const opener = useRef<Element | null>(null);
+    const alive = useRef(false);
+    const openedBy = useRef<HTMLElement | null | undefined>(undefined);
+    if (opener.current === null && typeof document !== 'undefined') opener.current = document.activeElement;
 
     useEffect(() => {
         if (!mounted) return;
+        const id = Symbol('modal');
+        alive.current = true;
+        // Decided once per dialog (the dev double effect must not lose the noted ⋯).
+        if (openedBy.current === undefined) openedBy.current = dialogOpener(opener.current);
+        const returnTo = openedBy.current;
+        openDialogs.push(id);
         const panel = panelRef.current;
         const first = (sel: string) => panel?.querySelector<HTMLElement>(sel);
         (first('[data-autofocus]') ?? first('textarea, input[type="text"], input[type="email"], input[type="search"], input:not([type])') ?? first('[data-modal-cancel]') ?? first('button'))?.focus();
-        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !latest.current.busy) latest.current.onClose(); };
+        const onKey = (e: KeyboardEvent) => {
+            if (!openDialogs.isTop(id)) return;
+            if (e.key === 'Escape' && !latest.current.busy) { latest.current.onClose(); return; }
+            if (e.key !== 'Tab' || !panel) return;
+            const focusables = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(el => el.getClientRects().length > 0);
+            const active = document.activeElement instanceof HTMLElement && panel.contains(document.activeElement) ? document.activeElement : null;
+            const next = tabTrapTarget(focusables, active, e.shiftKey);
+            if (next) { e.preventDefault(); next.focus(); }
+        };
         document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('keydown', onKey);
+            openDialogs.remove(id);
+            alive.current = false;
+            // After the dialog is gone (and whatever closed it has re-rendered): back to its opener —
+            // unless it was only re-mounted (React's dev double effect, which leaves it alive), or
+            // another dialog opened in its place and already holds the focus.
+            requestAnimationFrame(() => {
+                if (alive.current || document.activeElement?.closest('[aria-modal="true"]')) return;
+                returnFocusTarget(returnTo)?.focus({ preventScroll: true });
+            });
+        };
     }, [mounted]);
 
     if (!mounted) return null;
-    const label = typeof title === 'string' ? title : undefined;
     return createPortal(
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: 'var(--overlay-bg)' }} role="presentation"
             onClick={e => { if (e.target === e.currentTarget && !latest.current.busy) onClose(); }}>
-            <div ref={panelRef} role="dialog" aria-modal="true" aria-label={label} data-testid={testId}
+            <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid={testId}
                 className={`w-full ${WIDTH[size]} max-h-[90svh] overflow-y-auto rounded-2xl border p-6 shadow-xl space-y-4`}
                 style={{ background: 'var(--surface-card)', borderColor: 'var(--border-default)' }}>
                 <div className="flex items-start justify-between gap-3">
-                    <h3 className="min-w-0 text-base font-bold leading-snug [overflow-wrap:anywhere]" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+                    <h3 id={titleId} className="min-w-0 text-base font-bold leading-snug [overflow-wrap:anywhere]" style={{ color: 'var(--text-primary)' }}>{title}</h3>
                     <button type="button" onClick={onClose} disabled={busy} aria-label={t('common.close') || 'Cerrar'} data-testid={testId ? `${testId}-close` : undefined}
                         className="-mr-3 -mt-3 shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-stone-500 hover:bg-stone-100 transition-colors disabled:opacity-40">
                         <X className="w-5 h-5" aria-hidden="true" />
