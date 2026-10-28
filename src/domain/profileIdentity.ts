@@ -24,6 +24,15 @@ import { MINOR_AGE_LIMIT, currentAge, isMinor } from '@/domain/households';
 /** Error-message prefix for a record, alert or rating refused on a minor's profile. */
 export const PROFILE_IS_MINOR = 'PROFILE_IS_MINOR';
 
+/** The HTTP answer's code for that refusal (422): the public API and the import's add-record route. */
+export const PROFILE_IS_MINOR_CODE = 'profile_is_minor';
+
+/**
+ * The spreadsheet import's row message for that refusal (its row messages are
+ * Spanish server text, like «Omitido»): the same words as `adopter.minor_note`.
+ */
+export const IMPORT_ROW_MINOR_MESSAGE = 'Es menor de edad: los pedidos y las adopciones se registran en los adultos de su hogar.';
+
 export function isProfileIsMinorError(e: unknown): boolean {
     return e instanceof Error && e.message.startsWith(PROFILE_IS_MINOR);
 }

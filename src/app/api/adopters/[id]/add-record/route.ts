@@ -8,6 +8,7 @@ import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
 import { processImageForStorage, uploadToR2 } from '@/lib/r2';
 import { resolveMergedAdopterId } from '@/lib/mergedAdopterRedirect';
+import { PROFILE_IS_MINOR_CODE, isProfileIsMinorError } from '@/domain/profileIdentity';
 
 export async function POST(
     request: Request,
@@ -179,6 +180,13 @@ export async function POST(
         });
 
     } catch (error) {
+        // A minor's profile gets no records (insertRecord refuses): an expected rule,
+        // not a failure — 422 with no Error ID, like the public API (audit A3); the
+        // import shows it as a validation message.
+        if (isProfileIsMinorError(error)) {
+            logger.info('Add record: refused — the profile is a minor', { adopterId, recordType: adoption.recordType ?? null, user: session.user.email });
+            return NextResponse.json({ error: PROFILE_IS_MINOR_CODE, code: PROFILE_IS_MINOR_CODE }, { status: 422 });
+        }
         const loggedErrorId = logger.error('Add record: failed', error, {
             originalErrorId: errorId,
             adopterId,

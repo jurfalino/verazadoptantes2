@@ -14,6 +14,7 @@
 import { and, count, eq, gte, isNotNull, isNull, ne, notLike, or } from 'drizzle-orm';
 import { activityForms, adopterEvents, adopterHistory, adopterImages, adopters, adoptions, apiRequests, formSubmissions, placements } from '@/db/schema';
 import { logger } from '@/lib/logger';
+import { PROFILE_IS_MINOR_CODE } from '@/domain/profileIdentity';
 import { runAfterResponse } from '@/lib/background';
 import { closeRequestsForDeletedAdopter } from '@/lib/mergeRequestClose';
 import { socialUrl, type SocialPlatform } from '@/lib/contactEntries';
@@ -110,7 +111,7 @@ export async function saveApiActivity(
     if (!profileCreated) {
         const { isMinorProfile } = await import('@/lib/minors');
         if (await isMinorProfile(db, profileId)) {
-            throw new ApiError(422, 'profile_is_minor', 'the matched profile belongs to a minor: records go on the adults of their household', {}, { profileId });
+            throw new ApiError(422, PROFILE_IS_MINOR_CODE, 'the matched profile belongs to a minor: records go on the adults of their household', {}, { profileId });
         }
     }
 

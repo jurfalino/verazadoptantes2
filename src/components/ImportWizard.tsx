@@ -42,7 +42,8 @@ const BTN_PRIMARY =
     'focus-visible:ring-teal-500 disabled:opacity-40 disabled:cursor-not-allowed';
 import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
-import { handledAsStale } from '@/lib/errorMessage';
+import { handledAsStale, minorRefusalMessage } from '@/lib/errorMessage';
+import { PROFILE_IS_MINOR, PROFILE_IS_MINOR_CODE } from '@/domain/profileIdentity';
 import { resolveErrorId, reportClientError } from '@/lib/clientErrorReporter';
 import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, recordDateFrom, aliasForMerge, cleanOtherPeople, extractionQuality, type PostPerson, type ExtractionIssue } from '@/domain/importInput';
 import { needsIdentityChoice as needsIdentityChoiceFor } from '@/domain/identityChoice';
@@ -1371,8 +1372,10 @@ export default function ImportWizard() {
                 body: JSON.stringify(payload),
             });
 
-            const result = await response.json() as { adoptionId?: string; adopterId?: string; adopterName?: string; error?: string; errorId?: string };
+            const result = await response.json() as { adoptionId?: string; adopterId?: string; adopterName?: string; error?: string; code?: string; errorId?: string };
 
+            // A minor's profile gets no records: the rule (422, no Error ID), shown below as a validation message.
+            if (response.status === 422 && result.code === PROFILE_IS_MINOR_CODE) throw new Error(PROFILE_IS_MINOR);
             if (!response.ok) {
                 throw new Error(result.errorId ? `${result.error || 'Failed to add record'} (Error ID: ${result.errorId})` : (result.error || 'Failed to add record'));
             }
@@ -1466,7 +1469,10 @@ export default function ImportWizard() {
 
             router.push(`/adopter/${adopterId}`);
         } catch (err) {
-            showFailure(err, t('import.save_failed'), null, 'ImportWizard.merge');
+            // The minor rule, not a failure (audit A3): a warning with no Error ID, the rescuer picks an adult.
+            const minor = minorRefusalMessage(err, t, 'record');
+            if (minor) toast.warning(minor);
+            else showFailure(err, t('import.save_failed'), null, 'ImportWizard.merge');
             setShowConfirmModal(false);
             // Reset only on failure (see handleConfirmSave).
             setIsSaving(false);

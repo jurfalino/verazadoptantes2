@@ -287,6 +287,37 @@ describe('changeProfileAge and minors', () => {
         expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adoptions WHERE adopter_id = 'lucas'").get()!.n).toBe(0);
     });
 
+    it('the spreadsheet import matched to a minor: the row is refused as the rule (no server-error id), logged at info, nothing written', async () => {
+        await changeProfileAge({ adopterId: 'lucas', age: 12, isMinor: true });
+        const { logger } = await import('@/lib/logger');
+        vi.mocked(logger.error).mockClear();
+        const out = await as(OWNER, () => importAdoptersBatch([{
+            index: 0, action: 'upsert', matchedAdopterId: 'lucas', name: 'Lucas Paez',
+            contactEntries: JSON.stringify([{ type: 'phone', value: '+54 11 4200 0999' }]),
+            adoption: { recordType: 'adoption_request', species: 'cat' } as never,
+        }], 'run-minor'));
+        expect(out[0]).toMatchObject({ index: 0, status: 'failed' });
+        expect(out[0].message).toMatch(/menor de edad/i);
+        expect(out[0].message).not.toMatch(/Error del servidor|ID:/);
+        expect(vi.mocked(logger.error)).not.toHaveBeenCalled();
+        expect(vi.mocked(logger.info)).toHaveBeenCalledWith(expect.stringContaining('minor'), expect.objectContaining({ adopterId: 'lucas' }));
+        expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adoptions WHERE adopter_id = 'lucas'").get()!.n).toBe(0);
+        // Refused before anything is written: the phone isn't added either.
+        expect(entriesOf('lucas').map(e => e.value)).not.toContain('+54 11 4200 0999');
+    });
+
+    it('a form linked to a minor: the request record is refused at info, not as a failure', async () => {
+        await changeProfileAge({ adopterId: 'lucas', age: 12, isMinor: true });
+        const { logger } = await import('@/lib/logger');
+        vi.mocked(logger.warn).mockClear();
+        sqlite.prepare(`INSERT INTO form_submissions (id, user_id, name, species, created_at) VALUES ('sub-minor', 'u1', 'Lucas Paez', 'cat', 1000)`).run();
+        const { addFormRequestRecord } = await import('@/lib/formRequest');
+        await addFormRequestRecord(state.db, 'sub-minor', 'lucas', OWNER);
+        expect(vi.mocked(logger.warn)).not.toHaveBeenCalledWith(expect.stringContaining('addFormRequestRecord'), expect.anything());
+        expect(vi.mocked(logger.info)).toHaveBeenCalledWith(expect.stringContaining('addFormRequestRecord'), expect.objectContaining({ submissionId: 'sub-minor', adopterId: 'lucas' }));
+        expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adoptions WHERE adopter_id = 'lucas'").get()!.n).toBe(0);
+    });
+
     it('a rating cannot land on a minor by moving an existing record onto them', async () => {
         const recordId = await as(OWNER, () => saveAdoption({ adopterId: 'pedro', recordType: 'observation', species: 'cat', status: 'completed', rating: 1, details: 'x' } as never));
         await changeProfileAge({ adopterId: 'lucas', age: 12, isMinor: true });

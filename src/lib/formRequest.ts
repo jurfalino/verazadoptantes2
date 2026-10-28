@@ -9,6 +9,7 @@ import { eq, and } from 'drizzle-orm';
 import { insertRecord } from '@/app/actions/_recordWrite';
 import { RECORD_TYPES } from '@/domain/constants';
 import { logger } from '@/lib/logger';
+import { isProfileIsMinorError } from '@/domain/profileIdentity';
 
 // ── Human-readable label helpers ──────────────────────────────────
 
@@ -97,6 +98,12 @@ export async function addFormRequestRecord(
             date: formRow.createdAt,
         }, actorEmail);
     } catch (e) {
+        // A minor's profile gets no records: the rule, not a failure (the form stays
+        // linked; the request is not recorded on the minor).
+        if (isProfileIsMinorError(e)) {
+            logger.info('addFormRequestRecord: no request record — the profile is a minor', { submissionId, adopterId, actorEmail });
+            return;
+        }
         logger.warn('addFormRequestRecord: adoption_request creation failed', {
             submissionId,
             adopterId,
