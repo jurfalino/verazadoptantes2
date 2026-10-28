@@ -1,6 +1,6 @@
 'use server';
 import { and, eq, isNull } from 'drizzle-orm';
-import { getDb, getUser } from './_db';
+import { checkIsAdminAsync, getDb, getUser } from './_db';
 import { adopters } from '@/db/schema';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { deserializeContactEntries } from '@/lib/contactEntries';
@@ -19,7 +19,7 @@ export interface MatchContext {
      * PII: the same a search card shows any signed-in rescuer. Absent when it
      * could not be read (logged). Exactly the fields the duplicate search's result
      * carries for this caller (matchContext.test pins it); for a merged-away
-     * profile the call returns nothing at all.
+     * profile the call returns nothing at all, whoever asks.
      */
     standing?: { rating: number | null; openAlerts: OpenAlertKind[]; isMinor: boolean; households: HouseholdLine[] };
 }
@@ -35,14 +35,16 @@ export async function getMatchContext(adopterId: string, opts?: { standing?: boo
     try {
         const db = await getDb();
         if (!db) return empty;
-        // With `standing`, never more than the duplicate search tells the same caller (fix round 2, item 23):
-        // it skips merged-away / soft-deleted profiles (hydrateDuplicateMatches), so this says nothing about
-        // them either. Without it (MatchCompare's presence hints) a merged-away profile still answers: the
-        // admin «Combinaciones cuestionadas» rows compare exactly that absorbed profile.
+        // A merged-away / soft-deleted profile says nothing to a rescuer — never more than the duplicate
+        // search tells the same caller (it skips them: hydrateDuplicateMatches; fix round 2, item 23). This
+        // action is browser-callable with any id. Only an ADMIN asking for presence hints (no `standing`)
+        // reads it: the admin «Combinaciones cuestionadas» / merge-request rows (AdminPairCompare) compare
+        // exactly that absorbed profile. With `standing` it is skipped whoever asks.
+        const includeDeleted = opts?.standing !== true && await checkIsAdminAsync(actor);
         const row = await db.select({
             name: adopters.name, contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo,
             age: adopters.age, ageAsOf: adopters.ageAsOf, isMinor: adopters.isMinor,
-        }).from(adopters).where(opts?.standing === true ? and(eq(adopters.id, adopterId), isNull(adopters.deletedAt)) : eq(adopters.id, adopterId)).get();
+        }).from(adopters).where(includeDeleted ? eq(adopters.id, adopterId) : and(eq(adopters.id, adopterId), isNull(adopters.deletedAt))).get();
         if (!row) return empty;
         const has = { phone: false, email: false, id: false, social: false, address: false };
         for (const e of deserializeContactEntries(row.contactEntries)) {
