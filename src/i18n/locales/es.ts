@@ -814,6 +814,8 @@ export const es = {
         dup_chip_source_url: 'mismo enlace de origen',
         dup_peek_pill_one: '1 posible coincidencia — Revisar',
         dup_peek_pill_many: '{n} posibles coincidencias — Revisar',
+        dup_peek_count_one: '1 perfil',
+        dup_peek_count_many: '{n} perfiles',
         dup_peek_pill_searching: 'Buscando coincidencias...',
         dup_peek_panel_title: 'Posibles coincidencias',
         dup_strong_strip_title: 'Posible coincidencia exacta',

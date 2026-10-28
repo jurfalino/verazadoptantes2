@@ -815,6 +815,8 @@ export const en = {
         dup_chip_source_url: 'same source link',
         dup_peek_pill_one: '1 possible match — Review',
         dup_peek_pill_many: '{n} possible matches — Review',
+        dup_peek_count_one: '1 profile',
+        dup_peek_count_many: '{n} profiles',
         dup_peek_pill_searching: 'Searching for matches...',
         dup_peek_panel_title: 'Possible matches',
         dup_strong_strip_title: 'Likely exact match',

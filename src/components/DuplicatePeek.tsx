@@ -3,7 +3,7 @@
 /**
  * Peripheral duplicate-match surface for AdopterForm (create mode).
  *
- * - A sticky filled bar across the top of the form ("⚠️ N posibles
+ * - A sticky filled bar across the top of the form (AlertTriangle "N posibles
  *   coincidencias — Revisar") so the user is never unaware that matches exist.
  * - Click → slide-in side panel (right on desktop, bottom sheet on mobile) with
  *   the same per-row content the legacy inline amber card had — names, contact
@@ -28,6 +28,7 @@ import { isNamelessAdopter } from '@/lib/adopterDisplay';
 import MatchCompare, { entriesAsShown, type MatchSourceKind } from '@/components/MatchCompare';
 import { MatchCard } from '@/components/MatchCardParts';
 import { openAlertKinds } from '@/domain/flags';
+import { AlertTriangle } from 'lucide-react';
 
 const NAME_HL_TYPES = ['name_full', 'name_word'];
 
@@ -113,7 +114,7 @@ export default function DuplicatePeek({ results: allResults, searching, onContin
                         </>
                     ) : (
                         <>
-                            <span aria-hidden>⚠️</span>
+                            <AlertTriangle className="w-5 h-5 shrink-0 text-amber-700" strokeWidth={1.75} aria-hidden="true" />
                             <span className="truncate">
                                 {count === 1
                                     ? (t('adopter.dup_peek_pill_one') || '1 possible match — Review')
@@ -157,7 +158,7 @@ export default function DuplicatePeek({ results: allResults, searching, onContin
                                     {t('adopter.dup_peek_panel_title') || 'Possible matches'}
                                 </h3>
                                 <p className="text-xs text-stone-500 mt-0.5">
-                                    {count} {count === 1 ? 'perfil' : 'perfiles'}
+                                    {count === 1 ? t('adopter.dup_peek_count_one') : t('adopter.dup_peek_count_many').replace('{n}', String(count))}
                                 </p>
                             </div>
                             <button

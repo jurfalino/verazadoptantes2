@@ -814,6 +814,8 @@ export const pt = {
         dup_chip_source_url: 'mesmo link de origem',
         dup_peek_pill_one: '1 possível correspondência — Revisar',
         dup_peek_pill_many: '{n} possíveis correspondências — Revisar',
+        dup_peek_count_one: '1 perfil',
+        dup_peek_count_many: '{n} perfis',
         dup_peek_pill_searching: 'Buscando correspondências...',
         dup_peek_panel_title: 'Possíveis correspondências',
         dup_strong_strip_title: 'Possível correspondência exata',
