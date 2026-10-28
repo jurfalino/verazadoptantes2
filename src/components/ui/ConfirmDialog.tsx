@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useLanguage } from '@/context/LanguageContext';
+import { Modal, ModalActions, ModalText } from '@/components/ui/Modal';
 
 interface Props {
     open: boolean;
@@ -37,19 +36,11 @@ interface Props {
  * ("Eliminar") is also better error prevention than a generic OK, because
  * people read the button rather than the prose above it.
  *
- * Shell markup follows the house modal pattern (see `VisibilityBadgeModal`):
- * `fixed inset-0 z-50`, `--overlay-bg` backdrop, `--surface-card` panel,
- * backdrop click closes, `role="dialog"` + `aria-modal`.
- *
- * Focus lands on **Cancel**, not Confirm: an accidental Enter or Space on a
- * destructive dialog should do nothing.
- *
- * Rendered on `<body>` (a portal), never in place: an ancestor that makes a
- * stacking context (the profile form's read-only `opacity-90` grid, a
- * transform) traps even a `fixed z-50` panel under later siblings — the «No
- * convive» confirm could not be clicked (tests/one-reality.authed.spec.ts).
- * The portal waits for the client (`mounted`), so server rendering and the
- * first hydration pass render nothing.
+ * The shell, header, × and buttons are the shared `Modal` / `ModalActions`
+ * (audit B8): on <body> (a portal — an ancestor's stacking context once
+ * trapped the «No convive» confirm, tests/one-reality.authed.spec.ts), focus
+ * on **Cancel** (an accidental Enter does nothing), Escape and the backdrop
+ * close it unless busy, and nothing renders on the server.
  */
 export default function ConfirmDialog({
     open,
@@ -64,82 +55,17 @@ export default function ConfirmDialog({
     testId,
 }: Props) {
     const { t } = useLanguage();
-    const cancelRef = useRef<HTMLButtonElement>(null);
-    const [mounted, setMounted] = useState(false);
-    useEffect(() => { setMounted(true); }, []);
-
-    useEffect(() => {
-        if (!open || !mounted) return;
-        cancelRef.current?.focus();
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && !busy) onCancel();
-        };
-        document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
-    }, [open, mounted, busy, onCancel]);
-
-    if (!open || !mounted) return null;
-
-    return createPortal(
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ background: 'var(--overlay-bg)' }}
-            onClick={() => { if (!busy) onCancel(); }}
-            role="presentation"
-        >
-            <div
-                className="rounded-2xl p-6 max-w-sm w-full shadow-xl space-y-4"
-                style={{ background: 'var(--surface-card)' }}
-                onClick={e => e.stopPropagation()}
-                role="dialog"
-                aria-modal="true"
-                aria-label={title}
-                data-testid={testId}
-            >
-                <div className="space-y-1.5">
-                    <h3 className="text-base font-bold leading-tight" style={{ color: 'var(--text-primary)' }}>
-                        {title}
-                    </h3>
-                    {message && (
-                        <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{message}</p>
-                    )}
-                </div>
-                <div className="flex flex-wrap gap-2 justify-end pt-1">
-                    <button
-                        ref={cancelRef}
-                        type="button"
-                        onClick={onCancel}
-                        disabled={busy}
-                        data-testid={testId ? `${testId}-cancel` : undefined}
-                        className="px-4 py-2 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
-                        style={{ background: 'var(--surface-muted)', color: 'var(--text-secondary)' }}
-                    >
-                        {t('common.cancel')}
-                    </button>
-                    {secondary && (
-                        <button
-                            type="button"
-                            onClick={secondary.onClick}
-                            disabled={busy}
-                            className="px-4 py-2 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
-                            style={{ background: 'var(--surface-muted)', color: 'var(--text-primary)' }}
-                        >
-                            {secondary.label}
-                        </button>
-                    )}
-                    <button
-                        type="button"
-                        onClick={onConfirm}
-                        disabled={busy}
-                        data-testid={testId ? `${testId}-confirm` : undefined}
-                        className={`px-4 py-2 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-50 ${destructive ? 'bg-red-600 hover:bg-red-700' : 'bg-teal-600 hover:bg-teal-700'
-                            }`}
-                    >
-                        {confirmLabel || t('common.delete')}
-                    </button>
-                </div>
-            </div>
-        </div>,
-        document.body,
+    if (!open) return null;
+    return (
+        <Modal title={title} onClose={onCancel} busy={busy} testId={testId} size="sm">
+            {message && <ModalText>{message}</ModalText>}
+            <ModalActions
+                onCancel={onCancel}
+                cancelTestId={testId ? `${testId}-cancel` : undefined}
+                busy={busy}
+                secondary={secondary}
+                confirm={{ label: confirmLabel || t('common.delete'), onClick: onConfirm, tone: destructive ? 'destructive' : 'primary', testId: testId ? `${testId}-confirm` : undefined }}
+            />
+        </Modal>
     );
 }

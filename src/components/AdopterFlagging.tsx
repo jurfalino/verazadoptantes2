@@ -15,6 +15,9 @@ import { zarazTrack } from '@/lib/zaraz';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
 import { isOpenDuplicateFlag } from '@/domain/dedupPair';
+import { CheckCircle2 } from 'lucide-react';
+import { Modal, ModalActions } from '@/components/ui/Modal';
+import { Button } from '@/components/ui/Button';
 
 export interface AdopterFlaggingHandle {
     openAction: (action: string) => void;
@@ -451,35 +454,22 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
 
             {/* Modal */}
             {isOpen && (
-                <div className="fixed inset-0 bg-teal-950/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-8 max-h-[90svh] overflow-y-auto transform transition-all scale-100 border border-teal-100">
-                        <div className="flex justify-between items-start mb-6">
-                            <h3 className="text-2xl font-semibold text-teal-900 tracking-tight">
-                                {reason === 'duplicate' && (t('flagging.title_duplicate') || 'Report Duplicate')}
-                                {reason === 'inaccuracy' && (t('flagging.title_inaccuracy') || 'Report Inaccuracy')}
-                                {reason === 'deletion' && (t('flagging.title_deletion') || 'Request Removal')}
-                            </h3>
-                            <button onClick={resetAndClose} className="text-stone-500 hover:text-teal-700 transition-colors">
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                            </button>
-                        </div>
-
+                // The shared dialog shell (audit B8): 16px title, ×, matrix buttons.
+                <Modal size="lg" testId="flag-dialog" onClose={resetAndClose} busy={submitLoading}
+                    title={reason === 'duplicate' ? (t('flagging.title_duplicate') || 'Report Duplicate')
+                        : reason === 'inaccuracy' ? (t('flagging.title_inaccuracy') || 'Report Inaccuracy')
+                        : (t('flagging.title_deletion') || 'Request Removal')}>
                         {/* Success state for data requests */}
                         {dataRequestSubmitted ? (
                             <div className="text-center py-6">
-                                <div className="text-4xl mb-3">✅</div>
+                                <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-teal-600" aria-hidden="true" />
                                 <p className="text-lg font-semibold text-teal-800 mb-2">
                                     {t('flagging.request_received') || 'Request received'}
                                 </p>
                                 <p className="text-sm text-stone-500 mb-6">
                                     {t('flagging.request_review_time') || 'We will review your request within 10 business days.'}
                                 </p>
-                                <button
-                                    onClick={resetAndClose}
-                                    className="px-6 py-2.5 bg-teal-600 text-white font-semibold rounded-xl hover:bg-teal-700 transition-colors"
-                                >
-                                    {t('common.close') || 'Close'}
-                                </button>
+                                <Button type="button" onClick={resetAndClose}>{t('common.close') || 'Close'}</Button>
                             </div>
                         ) : (
                             <div className="space-y-6">
@@ -605,14 +595,14 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                                 placeholder={t('flagging.your_name') || 'Your name *'}
                                                 value={requesterName}
                                                 onChange={e => setRequesterName(e.target.value)}
-                                                className="px-3 py-2.5 text-sm border border-teal-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400 outline-none"
+                                                className="min-h-[44px] px-3 py-2.5 text-sm border border-teal-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400 outline-none"
                                             />
                                             <input
                                                 type="email"
                                                 placeholder={t('flagging.your_email') || 'Your email (optional)'}
                                                 value={requesterEmail}
                                                 onChange={e => setRequesterEmail(e.target.value)}
-                                                className="px-3 py-2.5 text-sm border border-teal-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400 outline-none"
+                                                className="min-h-[44px] px-3 py-2.5 text-sm border border-teal-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400 outline-none"
                                             />
                                         </div>
                                     </div>
@@ -640,32 +630,16 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                     />
                                 </div>
 
-                                <div className="flex justify-end gap-3 pt-4 border-t border-teal-100">
-                                    <button
-                                        onClick={resetAndClose}
-                                        className="px-5 py-2.5 text-teal-700 font-semibold hover:bg-teal-50 rounded-xl transition-colors"
-                                    >
-                                        {t('common.cancel')}
-                                    </button>
-                                    <button
-                                        onClick={handleSubmit}
-                                        disabled={submitLoading || (reason === 'duplicate' && !targetAdopter) || ((reason === 'inaccuracy' || reason === 'deletion') && (!requesterName.trim() || !details.trim()))}
-                                        className={`px-6 py-2.5 font-semibold rounded-xl shadow-lg disabled:opacity-50 disabled:shadow-none transition-all ${reason === 'deletion'
-                                            ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/30'
-                                            : 'bg-rose-500 hover:bg-rose-600 text-white shadow-rose-500/30'
-                                            }`}
-                                    >
-                                        {submitLoading
-                                            ? (t('flagging.submitting') || 'Submitting...')
-                                            : reason === 'deletion'
-                                                ? (t('flagging.submit_deletion') || 'Submit Removal Request')
-                                                : (t('flagging.submit') || 'Submit Report')}
-                                    </button>
-                                </div>
+                                <ModalActions onCancel={resetAndClose} busy={submitLoading}
+                                    confirm={{
+                                        label: reason === 'deletion' ? (t('flagging.submit_deletion') || 'Submit Removal Request') : (t('flagging.submit') || 'Submit Report'),
+                                        onClick: () => { void handleSubmit(); },
+                                        disabled: (reason === 'duplicate' && !targetAdopter) || ((reason === 'inaccuracy' || reason === 'deletion') && (!requesterName.trim() || !details.trim())),
+                                        testId: 'flag-submit',
+                                    }} />
                             </div>
                         )}
-                    </div>
-                </div>
+                </Modal>
             )}
         </>
     );

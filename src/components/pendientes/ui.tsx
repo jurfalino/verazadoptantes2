@@ -8,8 +8,9 @@
  * [data-theme] remap in globals.css (bg-white, bg-teal-700, stone-*, teal-*).
  */
 
-import { useEffect, useRef, type ReactNode } from 'react';
-import { Check, X } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Check } from 'lucide-react';
+import { Modal } from '@/components/ui/Modal';
 import type { PendingDedupPair, PendingDedupSide } from '@/app/actions/duplicates';
 
 export type T = (key: string) => string;
@@ -53,11 +54,8 @@ export function AbsorbedBadge({ t }: { t: T }) {
     );
 }
 
-/**
- * The house modal (fixed inset-0, --overlay-bg backdrop, --surface-card panel,
- * max-w-md): Escape and the backdrop close it unless busy; focus lands inside.
- */
-export function PendientesDialog({ title, onClose, busy = false, testId, t, children }: {
+/** Pendientes' dialogs — the shared `Modal` (focus lands on [data-autofocus] / the text field / «Cancelar»). */
+export function PendientesDialog({ title, onClose, busy = false, testId, children }: {
     title: string;
     t: T;
     onClose: () => void;
@@ -65,33 +63,10 @@ export function PendientesDialog({ title, onClose, busy = false, testId, t, chil
     testId: string;
     children: ReactNode;
 }) {
-    const panelRef = useRef<HTMLDivElement>(null);
-    const latest = useRef({ busy, onClose });
-    useEffect(() => { latest.current = { busy, onClose }; });
-    useEffect(() => {
-        // Once, on open: the text field, else the marked button (Cancel), else
-        // the close button — an accidental Enter never confirms anything.
-        panelRef.current?.querySelector<HTMLElement>('textarea, [data-autofocus], button')?.focus();
-        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !latest.current.busy) latest.current.onClose(); };
-        document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
-    }, []);
-
+    // The shared dialog shell (audit B8): 16px title, ×, focus, Escape, backdrop, portal.
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-[var(--overlay-bg)]"
-            onClick={() => { if (!busy) onClose(); }} role="presentation">
-            <div ref={panelRef} role="dialog" aria-modal="true" aria-label={title} data-testid={testId}
-                className="w-full max-w-md max-h-[calc(100vh-32px)] overflow-y-auto rounded-2xl bg-[var(--surface-card)] border border-[var(--border-default)] shadow-xl p-6"
-                onClick={e => e.stopPropagation()}>
-                <div className="flex items-start justify-between gap-4 mb-4">
-                    <h3 className={`text-[20px] font-bold leading-tight ${T_PRIMARY}`}>{title}</h3>
-                    <button type="button" onClick={onClose} disabled={busy} aria-label={t('common.close') || 'Cerrar'}
-                        className={`-m-2 p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl ${T_MUTED} hover:bg-[var(--accent-subtle-bg)]`}>
-                        <X className="w-5 h-5" aria-hidden="true" />
-                    </button>
-                </div>
-                {children}
-            </div>
-        </div>
+        <Modal title={title} onClose={onClose} busy={busy} testId={testId}>
+            <div>{children}</div>
+        </Modal>
     );
 }

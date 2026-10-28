@@ -10,7 +10,8 @@
 
 import { ArrowUp } from 'lucide-react';
 import type { PendingDedupSide } from '@/app/actions/duplicates';
-import { KeptBadge, PendientesDialog, PRIMARY, SECONDARY, T_MUTED, T_PRIMARY, fill, ownerName, type T } from './ui';
+import { ModalActions } from '@/components/ui/Modal';
+import { KeptBadge, PendientesDialog, T_MUTED, T_PRIMARY, fill, ownerName, type T } from './ui';
 
 export type ConfirmMode =
     /** The viewer's adopter goes to `kept`'s owner. */
@@ -75,13 +76,9 @@ export default function ConfirmCombine({ mode, entriesOnly = false, kept, absorb
                         profile: fill(t('myAdopters.pending_d_confirm_profile_of') || 'el perfil de {name}', { name: ownerName(kept, t) }),
                     })}
             </p>
-            <div className="mt-6 grid grid-cols-2 gap-2">
-                <button type="button" data-autofocus className={SECONDARY} onClick={onCancel} disabled={busy}>
-                    {t('common.cancel') || 'Cancelar'}
-                </button>
-                <button type="button" data-testid="dedup-confirm" className={PRIMARY} onClick={onConfirm} disabled={busy}>
-                    {busy ? (t('common.processing') || 'Procesando...') : (t('myAdopters.pending_d_confirm_action') || 'Combinar')}
-                </button>
+            <div className="mt-6">
+                <ModalActions onCancel={onCancel} busy={busy}
+                    confirm={{ label: t('myAdopters.pending_d_confirm_action') || 'Combinar', onClick: onConfirm, tone: 'primary', testId: 'dedup-confirm' }} />
             </div>
         </PendientesDialog>
     );

@@ -37,7 +37,7 @@ const SIZES: Record<Size, string> = {
 };
 
 const VARIANTS: Record<Variant, string> = {
-    primary: 'bg-teal-600 text-white shadow-sm hover:bg-teal-700 hover:shadow-md active:shadow-sm',
+    primary: 'border border-transparent bg-teal-600 text-white shadow-sm hover:bg-teal-700 hover:shadow-md active:shadow-sm',
     secondary: 'bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 hover:border-teal-400',
     success: 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100',
     destructive: 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100',

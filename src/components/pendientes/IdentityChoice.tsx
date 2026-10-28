@@ -7,7 +7,8 @@
  * hogar» keeps both profiles and adds the other person as a household member.
  */
 
-import { PendientesDialog, PRIMARY, SECONDARY, T_MUTED, T_PRIMARY, fill, type T } from './ui';
+import { Button } from '@/components/ui/Button';
+import { PendientesDialog, T_MUTED, T_PRIMARY, fill, type T } from './ui';
 
 export default function IdentityChoice({ nameA, nameB, busy, onSame, onHousehold, onCancel, t }: {
     nameA: string;
@@ -27,12 +28,12 @@ export default function IdentityChoice({ nameA, nameB, busy, onSame, onHousehold
                 {t('myAdopters.pending_d_identity_household_hint') || 'Si es alguien de su hogar, los perfiles quedan separados y lo agregamos como conviviente.'}
             </p>
             <div className="mt-6 flex flex-col gap-2">
-                <button type="button" data-testid="dedup-identity-same" className={PRIMARY} onClick={onSame} disabled={busy}>
+                <Button type="button" data-testid="dedup-identity-same" onClick={onSame} disabled={busy} fullWidth>
                     {t('myAdopters.pending_d_identity_same') || 'Sí, la misma persona'}
-                </button>
-                <button type="button" data-testid="dedup-identity-household" className={SECONDARY} onClick={onHousehold} disabled={busy}>
+                </Button>
+                <Button type="button" variant="secondary" data-testid="dedup-identity-household" onClick={onHousehold} disabled={busy} fullWidth>
                     {t('myAdopters.pending_d_identity_household') || 'No, es alguien de su hogar'}
-                </button>
+                </Button>
             </div>
         </PendientesDialog>
     );

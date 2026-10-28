@@ -10,7 +10,8 @@
 
 import { useState } from 'react';
 import { Info, Mail } from 'lucide-react';
-import { PendientesDialog, PRIMARY, SECONDARY, T_MUTED, T_PRIMARY, fill, type T } from './ui';
+import { Button } from '@/components/ui/Button';
+import { PendientesDialog, T_MUTED, T_PRIMARY, fill, type T } from './ui';
 
 /** sendPairMessage's limit. */
 const MAX_LENGTH = 1000;
@@ -44,12 +45,12 @@ export default function WriteMessage({ toName, aboutName, busy, onSend, onCancel
                     {fill(t('myAdopters.pending_d_write_warning') || '{name} y su equipo verán tu email para responderte.', { name: toName })}
                 </p>
             </div>
-            <div className="mt-6 grid grid-cols-2 gap-2">
-                <button type="button" className={SECONDARY} onClick={onCancel} disabled={busy}>{t('common.cancel') || 'Cancelar'}</button>
-                <button type="button" data-testid="dedup-write-send" className={PRIMARY} onClick={() => onSend(text.trim())} disabled={!ready}>
-                    <Mail className="w-4 h-4" aria-hidden="true" />
-                    {busy ? (t('common.processing') || 'Procesando...') : (t('myAdopters.pending_d_write_send') || 'Enviar')}
-                </button>
+            <div className="mt-6 flex flex-wrap gap-2 sm:justify-end">
+                <Button type="button" variant="secondary" onClick={onCancel} disabled={busy} data-modal-cancel="" layoutClassName="flex-1 sm:flex-none">{t('common.cancel') || 'Cancelar'}</Button>
+                <Button type="button" data-testid="dedup-write-send" onClick={() => onSend(text.trim())} disabled={!ready} loading={busy}
+                    icon={<Mail className="w-4 h-4" aria-hidden="true" />} layoutClassName="flex-1 sm:flex-none">
+                    {t('myAdopters.pending_d_write_send') || 'Enviar'}
+                </Button>
             </div>
         </PendientesDialog>
     );

@@ -2,8 +2,8 @@
 
 /**
  * The household member card's dialogs (households as profiles, prototype
- * states Q1, D1, D2): the house modal shell (ConfirmDialog / the profile's
- * delete modal), rendered on <body> so no ancestor's stacking context traps it.
+ * states Q1, D1, D2), on the shared dialog shell (components/ui/Modal: one
+ * header, ×, Secondary «Cancelar» and Destructive decision — audit B8).
  *
  * - `RemoveFromHomeDialog` (Q1): «Quitar del hogar» asks why — «Lo cargué por
  *   error» ('mistake': no «No convive» memory) or «No vive acá» ('not_living':
@@ -12,51 +12,21 @@
  * - `RequestDeletionDialog` (D1): the owner, others contributed → admins decide.
  * - `DeleteProfileDialog` (D2): the owner with nobody else's data, or an admin.
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
+import { Modal, ModalActions, ModalText } from '@/components/ui/Modal';
 import { fill, firstName } from '@/lib/householdCopy';
 
 export type RemoveReason = 'mistake' | 'not_living';
 
 export type DeletionCollaborators = { adoptions: number; images: number; edits: number; flags: number; forms: number };
 
-function Modal({ label, onCancel, busy, children, testId }: { label: string; onCancel: () => void; busy: boolean; children: ReactNode; testId: string }) {
-    const [mounted, setMounted] = useState(false);
-    useEffect(() => { setMounted(true); }, []);
-    useEffect(() => {
-        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onCancel(); };
-        document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
-    }, [busy, onCancel]);
-    if (!mounted) return null;
-    return createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'var(--overlay-bg)' }} role="presentation"
-            onClick={e => { if (e.target === e.currentTarget && !busy) onCancel(); }}>
-            <div className="rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 max-h-[90svh] overflow-y-auto" style={{ background: 'var(--surface-card)' }}
-                role="dialog" aria-modal="true" aria-label={label} data-testid={testId}>
-                {children}
-            </div>
-        </div>,
-        document.body,
-    );
-}
-
-const CANCEL_BTN = 'flex-1 min-h-[44px] px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors';
-const DANGER_BTN = 'flex-1 min-h-[44px] px-4 py-2.5 bg-rose-600 text-white rounded-xl text-sm font-semibold hover:bg-rose-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
-
+/** «Cancelar» (testid `hh-dialog-cancel`) + the destructive decision. */
 function Buttons({ busy, onCancel, onConfirm, label, disabled = false, cancelLabel, confirmTestId }: {
     busy: boolean; onCancel: () => void; onConfirm: () => void; label: string; disabled?: boolean; cancelLabel: string; confirmTestId: string;
 }) {
-    const cancelRef = useRef<HTMLButtonElement>(null);
-    // Focus on «Cancelar»: an accidental Enter on a destructive dialog does nothing.
-    useEffect(() => { cancelRef.current?.focus(); }, []);
-    return (
-        <div className="flex gap-3 pt-1">
-            <button ref={cancelRef} type="button" onClick={onCancel} disabled={busy} data-testid="hh-dialog-cancel" className={CANCEL_BTN} style={{ background: 'var(--surface-muted)', color: 'var(--text-primary)' }}>{cancelLabel}</button>
-            <button type="button" onClick={onConfirm} disabled={busy || disabled} data-testid={confirmTestId} className={DANGER_BTN}>{busy ? '…' : label}</button>
-        </div>
-    );
+    return <ModalActions onCancel={onCancel} cancelLabel={cancelLabel} cancelTestId="hh-dialog-cancel" busy={busy}
+        confirm={{ label, onClick: onConfirm, disabled, testId: confirmTestId }} />;
 }
 
 /** Q1 — «¿Por qué quitás a Marta Paez del hogar de Pedro Paez?» */
@@ -69,11 +39,8 @@ export function RemoveFromHomeDialog({ person, host, gift = false, busy, onCance
     const names = { person, host };
     if (gift) {
         return (
-            <Modal label={fill(t('adopter.hh_remove_gift_title'), names)} onCancel={onCancel} busy={busy} testId="hh-remove-dialog">
-                <div className="space-y-1.5">
-                    <h3 className="text-base font-bold leading-tight" style={{ color: 'var(--text-primary)' }}>{fill(t('adopter.hh_remove_gift_title'), names)}</h3>
-                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{fill(t('adopter.hh_remove_gift_body'), names)}</p>
-                </div>
+            <Modal title={fill(t('adopter.hh_remove_gift_title'), names)} onClose={onCancel} busy={busy} testId="hh-remove-dialog">
+                <ModalText>{fill(t('adopter.hh_remove_gift_body'), names)}</ModalText>
                 <Buttons busy={busy} onCancel={onCancel} onConfirm={() => onConfirm('mistake')} label={t('adopter.hh_remove_gift_confirm')} cancelLabel={t('common.cancel')} confirmTestId="hh-remove-confirm" />
             </Modal>
         );
@@ -98,11 +65,8 @@ export function RemoveFromHomeDialog({ person, host, gift = false, busy, onCance
         );
     };
     return (
-        <Modal label={fill(t('adopter.hh_remove_title'), names)} onCancel={onCancel} busy={busy} testId="hh-remove-dialog">
-            <div className="space-y-1.5">
-                <h3 className="text-base font-bold leading-tight" style={{ color: 'var(--text-primary)' }}>{fill(t('adopter.hh_remove_title'), names)}</h3>
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t('adopter.hh_remove_body')}</p>
-            </div>
+        <Modal title={fill(t('adopter.hh_remove_title'), names)} onClose={onCancel} busy={busy} testId="hh-remove-dialog">
+            <ModalText>{t('adopter.hh_remove_body')}</ModalText>
             <div className="space-y-2" role="radiogroup">
                 {opt('mistake', t('adopter.hh_remove_mistake'), t('adopter.hh_remove_mistake_desc'))}
                 {opt('not_living', t('adopter.hh_remove_not_living'), fill(t('adopter.hh_remove_not_living_desc'), short))}
@@ -141,9 +105,8 @@ export function RequestDeletionDialog({ name, collaborators, busy, onCancel, onC
     const { t } = useLanguage();
     const c = collaborators;
     return (
-        <Modal label={fill(t('adopter.hh_request_title'), { name })} onCancel={onCancel} busy={busy} testId="hh-request-dialog">
-            <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{fill(t('adopter.hh_request_title'), { name })}</h3>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t('adopter.hh_request_body')}</p>
+        <Modal title={fill(t('adopter.hh_request_title'), { name })} onClose={onCancel} busy={busy} testId="hh-request-dialog">
+            <ModalText>{t('adopter.hh_request_body')}</ModalText>
             {c && <DeletionCollaboratorList collaborators={c} />}
             <Buttons busy={busy} onCancel={onCancel} onConfirm={onConfirm} label={t('adopter.hh_request_confirm')} cancelLabel={t('adopter.delete_cancel')} confirmTestId="hh-request-confirm" />
         </Modal>
@@ -156,11 +119,10 @@ export function DeleteProfileDialog({ name, host, busy, onCancel, onConfirm }: {
 }) {
     const { t } = useLanguage();
     return (
-        <Modal label={fill(t('adopter.hh_delete_title'), { name })} onCancel={onCancel} busy={busy} testId="hh-delete-dialog">
-            <h3 className="text-lg font-bold text-rose-600">{fill(t('adopter.hh_delete_title'), { name })}</h3>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+        <Modal title={fill(t('adopter.hh_delete_title'), { name })} onClose={onCancel} busy={busy} testId="hh-delete-dialog">
+            <ModalText>
                 {t('adopter.delete_confirm_body')} {fill(t('adopter.hh_delete_body_extra'), { person: firstName(name) || name, host })}
-            </p>
+            </ModalText>
             <Buttons busy={busy} onCancel={onCancel} onConfirm={onConfirm} label={t('adopter.delete_confirm_btn')} cancelLabel={t('adopter.delete_cancel')} confirmTestId="hh-delete-confirm" />
         </Modal>
     );

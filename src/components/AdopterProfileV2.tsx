@@ -36,6 +36,7 @@ import { NO_ACCESS_VISIBILITY, maskAdopterContact, maskContactEntries, renderNam
 import { EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from '@/domain/profileHouseholds';
 import { UNDO_RENAME_PARAM, type ProfileIdentityView } from '@/domain/profileIdentity';
 import RenameUndoPrompt, { RenameUndoButton } from '@/components/RenameUndo';
+import { Modal, ModalActions, ModalText } from '@/components/ui/Modal';
 
 interface AdopterProfileV2Props {
     id: string;
@@ -968,30 +969,21 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
 
                 {/* Delete confirmation modal */}
                 {deleteModalOpen && deleteCheck && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'var(--overlay-bg)' }}>
-                        <div className="rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4" style={{ background: 'var(--surface-card)' }}>
-                            {deleteCheck.canDelete ? (
-                                <>
-                                    <h3 className="text-lg font-bold text-rose-600">{t('adopter.delete_confirm_title')}</h3>
-                                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t('adopter.delete_confirm_body')}</p>
-                                    <div className="flex gap-3 pt-2">
-                                        <button onClick={() => setDeleteModalOpen(false)} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors" style={{ background: 'var(--surface-muted)', color: 'var(--text-primary)' }}>{t('adopter.delete_cancel')}</button>
-                                        <button onClick={handleConfirmDelete} disabled={deleteLoading} className="flex-1 px-4 py-2.5 bg-rose-600 text-white rounded-xl text-sm font-semibold hover:bg-rose-700 transition-colors disabled:opacity-50">{deleteLoading ? '...' : t('adopter.delete_confirm_btn')}</button>
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{t('adopter.delete_collab_title')}</h3>
-                                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t('adopter.delete_collab_body')}</p>
-                                    <DeletionCollaboratorList collaborators={deleteCheck.collaborators} />
-                                    <div className="flex gap-3 pt-2">
-                                        <button onClick={() => setDeleteModalOpen(false)} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors" style={{ background: 'var(--surface-muted)', color: 'var(--text-primary)' }}>{t('adopter.delete_cancel')}</button>
-                                        <button onClick={handleRequestDeletion} disabled={deleteLoading} className="flex-1 px-4 py-2.5 bg-rose-600 text-white rounded-xl text-sm font-semibold hover:bg-rose-700 transition-colors disabled:opacity-50">{deleteLoading ? '...' : t('adopter.delete_request_btn')}</button>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    </div>
+                    // The shared dialog (audit B8), as a household row's «Eliminar perfil» / «Pedir eliminación».
+                    deleteCheck.canDelete ? (
+                        <Modal title={t('adopter.delete_confirm_title')} onClose={() => setDeleteModalOpen(false)} busy={deleteLoading} testId="profile-delete-dialog">
+                            <ModalText>{t('adopter.delete_confirm_body')}</ModalText>
+                            <ModalActions onCancel={() => setDeleteModalOpen(false)} cancelLabel={t('adopter.delete_cancel')} busy={deleteLoading}
+                                confirm={{ label: t('adopter.delete_confirm_btn'), onClick: () => { void handleConfirmDelete(); }, testId: 'profile-delete-confirm' }} />
+                        </Modal>
+                    ) : (
+                        <Modal title={t('adopter.delete_collab_title')} onClose={() => setDeleteModalOpen(false)} busy={deleteLoading} testId="profile-request-dialog">
+                            <ModalText>{t('adopter.delete_collab_body')}</ModalText>
+                            <DeletionCollaboratorList collaborators={deleteCheck.collaborators} />
+                            <ModalActions onCancel={() => setDeleteModalOpen(false)} cancelLabel={t('adopter.delete_cancel')} busy={deleteLoading}
+                                confirm={{ label: t('adopter.delete_request_btn'), onClick: () => { void handleRequestDeletion(); }, testId: 'profile-request-confirm' }} />
+                        </Modal>
+                    )
                 )}
 
                 {/* PII access request modal — masked viewers only */}
