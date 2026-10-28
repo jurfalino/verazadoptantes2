@@ -1837,7 +1837,7 @@ export const pt = {
         pending_d_identity_body: 'Os dados de contato coincidem, mas os nomes são diferentes: {a} e {b}.',
         pending_d_identity_household_hint: 'Se for alguém do lar, os perfis ficam separados e o adicionamos ao lar.',
         pending_d_identity_same: 'Sim, a mesma pessoa',
-        pending_d_identity_household: 'Não, é alguém da casa',
+        pending_d_identity_household: 'Não, é alguém do lar',
         pending_d_household_done: 'Ficaram separados: adicionado ao lar',
         pending_d_write_title: 'Escrever para {name}',
         pending_d_write_about: 'Sobre {name}',
