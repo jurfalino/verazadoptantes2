@@ -109,7 +109,7 @@ La respuesta dice dos cosas por separado:
 | Marca | Qué significa |
 |---|---|
 | \`inaccurate\` | Alguien marcó que los datos de esa persona no son confiables. |
-| \`duplicate\` | Un rescatista marcó el perfil como duplicado de otro. |
+| \`duplicate\` | Un rescatista marcó el perfil como duplicado de otro y todavía no se resolvió. Cuando se combinan los dos perfiles o se decide mantenerlos separados, la marca deja de aparecer: es lo mismo que muestra BuenAdoptante en el perfil. |
 | \`possible_duplicate\` | BuenAdoptante detectó que puede ser la misma persona que otro perfil. |
 
 \`profile.flags\` puede traer además \`verified_identity\` y \`verified_address\` (identidad o domicilio verificados): son buenas señales y por eso no aparecen en \`risk\`.

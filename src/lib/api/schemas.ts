@@ -188,7 +188,7 @@ export const profileSummarySchema = ratingSchema.extend({
     matchedOn: z.array(z.enum(['email', 'phone', 'documentId'])).optional(),
     nameMatchedAs: z.enum(['profile', 'alias', 'household_member']).optional()
         .meta({ description: 'Which of the profile\'s names fits the name you sent: its own name (profile) or one it is also known by (alias). household_member is no longer returned: each person in a household is a profile of their own.' }),
-    flags: z.array(z.enum(PROFILE_FLAGS)).meta({ description: 'Marks on the profile: inaccurate, duplicate, possible_duplicate (bad signs) and verified_identity, verified_address (good signs).' }),
+    flags: z.array(z.enum(PROFILE_FLAGS)).meta({ description: 'Marks on the profile: inaccurate, duplicate, possible_duplicate (bad signs) and verified_identity, verified_address (good signs). duplicate is an open report only: once the two profiles are merged or kept separate it is no longer listed.' }),
     alerts: z.array(alertSchema).meta({ description: 'Activity alerts BuenAdoptante computed for this person: too_many_requests, too_many_adoptions. Empty when none.' }),
     records: z.partialRecord(z.enum(API_CONTEXTS), z.number().int()).meta({ description: 'Number of records per type.' }),
     lastRecordAt: z.string().nullable().meta({ description: 'Date (YYYY-MM-DD, UTC) of the latest record.' }),
@@ -239,7 +239,7 @@ export interface SavedActivity { activityId: string; activityUrl: string; profil
 
 const riskSchema = z.object({
     worstRating: ratingSchema,
-    flags: z.array(z.enum(RISK_FLAGS)).meta({ description: 'Every negative mark on any matched profile: inaccurate, duplicate, possible_duplicate.' }),
+    flags: z.array(z.enum(RISK_FLAGS)).meta({ description: 'Every negative mark on any matched profile: inaccurate, duplicate (an open report only), possible_duplicate.' }),
     alerts: z.array(alertSchema.extend({ profileId: z.string() })).meta({ description: 'Every activity alert of any matched profile (too_many_requests, too_many_adoptions), with the profile it belongs to.' }),
     profilesMatched: z.number().int(),
 }).meta({ description: 'Always present: the worst signal across EVERY profile your email / phone / document matched, whatever the result. Check this before handing over an animal.' });

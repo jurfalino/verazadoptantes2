@@ -16,7 +16,7 @@ import { useDateFormat } from '@/context/TimezoneContext';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
 import { contactBlobForDisplay } from '@/lib/contactEntries';
 import { isOpenDuplicateFlag } from '@/domain/dedupPair';
-import { openAlertKindsOfRows } from '@/domain/flags';
+import { isInaccurateReason, openAlertKindsOfRows } from '@/domain/flags';
 import { CheckCircle2 } from 'lucide-react';
 import { AlertPill } from '@/components/AlertPill';
 import { Modal, ModalActions } from '@/components/ui/Modal';
@@ -119,7 +119,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
     const duplicateFlags = existingFlags.filter(f => isOpenDuplicateFlag({ adopterId, ...f }));
     const isFlaggedAsDuplicate = alertKinds.includes('duplicate');
 
-    const inaccurateFlags = existingFlags.filter(f => f.reason === 'inaccurate_information' || f.reason === 'inaccurate');
+    const inaccurateFlags = existingFlags.filter(f => isInaccurateReason(f.reason));
     const isFlaggedAsInaccurate = alertKinds.includes('inaccurate');
 
     // Verification flags - include adoption-based verification

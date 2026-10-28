@@ -2,8 +2,13 @@ import { FLAG_REASONS } from './constants';
 import { isOpenDuplicateFlag, type DuplicateFlagRow } from './dedupPair';
 import type { AdopterFlags } from '@/types/adopter';
 
-/** An inaccuracy report, under either reason it has been stored with. */
-function isInaccurateReason(reason: string | null | undefined): boolean {
+/**
+ * An inaccuracy report, under either reason it has been stored with: today's
+ * `inaccurate_information` and the legacy `inaccurate` (the profile header has
+ * always counted both). The one test — the header, every list and the public API
+ * (through buildFlags) use it.
+ */
+export function isInaccurateReason(reason: string | null | undefined): boolean {
     return reason === FLAG_REASONS.INACCURATE || reason === 'inaccurate';
 }
 
@@ -16,7 +21,8 @@ function isInaccurateReason(reason: string | null | undefined): boolean {
  * `duplicate` is an OPEN duplicate question only (isOpenDuplicateFlag) — the
  * profile header's rule: a flag closed by a merge or a «mantener separados» is
  * history, so a search card or a list never shows «Duplicado» for it while the
- * profile itself doesn't (audit fix round 2, item 9).
+ * profile itself doesn't (audit fix round 2, item 9). The public API's
+ * `flags: ['duplicate']` follows the same rule (Jon, 2026-10-28).
  *
  * Note: tooManyAdoptions/tooManyRequests are left null — callers
  * fill these from period-based threshold logic after calling this function.
@@ -46,6 +52,8 @@ export type OpenAlertKind = 'inaccurate' | 'duplicate';
  * Every count of a person's alerts — household rows, match cards, «¿Es este
  * perfil?», a card's household line, the applicants list — is the length of
  * this list; a single kind is drawn as that kind's own pill (AlertSummary).
+ * The public API's `inaccurate` / `duplicate` flags are this list too
+ * (lib/api/profiles.ts).
  *
  * The «N adopciones / pedidos en N días» warnings are not counted here: they
  * come from activity over a period, not from a flag, and are shown as their own
