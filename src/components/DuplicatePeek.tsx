@@ -27,7 +27,7 @@ import { AdopterName } from '@/components/AdopterName';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
 import MatchCompare, { entriesAsShown, type MatchSourceKind } from '@/components/MatchCompare';
 import { MatchCard } from '@/components/MatchCardParts';
-import { alertCountOf } from '@/domain/flags';
+import { openAlertKinds } from '@/domain/flags';
 
 const NAME_HL_TYPES = ['name_full', 'name_word'];
 
@@ -179,7 +179,7 @@ export default function DuplicatePeek({ results: allResults, searching, onContin
                                     <li key={result.adopter.id} className={`px-5 py-3 ${strong ? 'bg-amber-50/40' : ''}`}>
                                         {/* The shared match card (audit B6): header → household line → «Qué coincide» → actions. */}
                                         <MatchCard newTab thumbnail={result.thumbnail} headTestId="dup-peek-head"
-                                            person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openAlerts: alertCountOf(result.flags), isMinor: result.isMinor, households: result.households }}
+                                            person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openAlerts: openAlertKinds(result.flags), isMinor: result.isMinor, households: result.households }}
                                             nameNode={isNamelessAdopter(result.adopter)
                                                 ? <AdopterName adopter={result.adopter} className="break-words" />
                                                 : highlightMatches(result.adopter.name, result.matchValues, NAME_HL_TYPES)}

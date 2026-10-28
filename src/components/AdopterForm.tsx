@@ -22,7 +22,7 @@ import { Modal, ModalActions, ModalText } from "@/components/ui/Modal";
 import { MatchCard } from "@/components/MatchCardParts";
 import { AdopterName } from "@/components/AdopterName";
 import { isNamelessAdopter } from "@/lib/adopterDisplay";
-import { alertCountOf } from "@/domain/flags";
+import { openAlertKinds } from "@/domain/flags";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesSection from "@/components/ContactEntriesSection";
@@ -1652,7 +1652,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                         {saveDuplicateModal.matches.map((result) => (
                             <li key={result.adopter.id} className="p-3 rounded-xl bg-stone-50 border border-stone-200">
                                 <MatchCard newTab thumbnail={result.thumbnail} headTestId="save-dup-head"
-                                    person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openAlerts: alertCountOf(result.flags), isMinor: result.isMinor, households: result.households }}
+                                    person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openAlerts: openAlertKinds(result.flags), isMinor: result.isMinor, households: result.households }}
                                     nameNode={isNamelessAdopter(result.adopter) ? <AdopterName adopter={result.adopter} className="break-words" /> : undefined}
                                     compare={(
                                         <MatchCompare

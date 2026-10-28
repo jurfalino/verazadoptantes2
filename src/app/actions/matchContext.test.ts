@@ -31,7 +31,7 @@ describe('getMatchContext — standing', () => {
         expect((await getMatchContext('pedro')).standing).toBeUndefined();
     });
     it('an adult: their rating and open alerts; a minor: «Menor de edad»', async () => {
-        expect((await getMatchContext('pedro', { standing: true })).standing).toMatchObject({ rating: 2, openAlerts: 1, isMinor: false, households: [] });
+        expect((await getMatchContext('pedro', { standing: true })).standing).toMatchObject({ rating: 2, openAlerts: ['inaccurate'], isMinor: false, households: [] });
         expect((await getMatchContext('lucas', { standing: true })).standing).toMatchObject({ isMinor: true });
     });
     it('signed out: nothing', async () => {

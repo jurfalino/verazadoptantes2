@@ -15,6 +15,8 @@
  */
 import type { ReactNode } from 'react';
 import { AlertCircle, AlertTriangle, Files, type LucideIcon } from 'lucide-react';
+import { useLanguage } from '@/context/LanguageContext';
+import type { OpenAlertKind } from '@/domain/flags';
 
 export type AlertKind = 'inaccurate' | 'duplicate' | 'too_many_adoptions' | 'too_many_requests' | 'count';
 
@@ -54,4 +56,23 @@ export function AlertPill({ kind, children, size = 'sm', onClick, pressed, testI
         );
     }
     return <span className={cls} style={style} data-testid={testId} data-alert={kind}>{body}</span>;
+}
+
+/**
+ * A person's open alerts in one pill, where one person is summed up in a line
+ * (household rows, match cards, «¿Es este perfil?», a card's household line,
+ * the applicants list). `kinds` come from openAlertKinds — the profile
+ * header's rule. One kind is that kind's own header pill («Inexacto» in red,
+ * «Duplicado» in amber with its Files icon), exactly as the profile header and
+ * the search card draw it; two or more are the count pill («2 alertas»).
+ * Nothing when there are none.
+ */
+export function AlertSummary({ kinds, testId }: { kinds: readonly OpenAlertKind[]; testId?: string }) {
+    const { t } = useLanguage();
+    if (kinds.length === 0) return null;
+    if (kinds.length === 1) {
+        const kind = kinds[0];
+        return <AlertPill kind={kind} testId={testId}>{t(`flags.${kind}`)}</AlertPill>;
+    }
+    return <AlertPill kind="count" testId={testId}>{t('adopter.hh_link_alerts_many').replace('{n}', String(kinds.length))}</AlertPill>;
 }

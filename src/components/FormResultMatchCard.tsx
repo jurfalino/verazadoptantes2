@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import type { OpenAlertKind } from '@/domain/flags';
 import { useLanguage } from '@/context/LanguageContext';
 import { linkFormToExistingAdopter } from '@/app/actions/formSubmission';
 import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
@@ -28,7 +29,7 @@ export interface FormResultMatchCardProps {
         /** Final fix P2: the same «Menor de edad» tag and household line as every card showing one person. */
         isMinor?: boolean; households?: HouseholdLine[];
         /** Their own standing in the card's header (audit B6). */
-        rating?: number | null; openAlerts?: number;
+        rating?: number | null; openAlerts?: OpenAlertKind[];
     };
     applicantSelfieUrl?: string | null;
     matchTypes: string[];

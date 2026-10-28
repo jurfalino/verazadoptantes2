@@ -82,7 +82,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         // adopter's rows are wholly within one chunk — per-adopter counts and
         // first-seen (thumbnail, last edit) stay correct across the concat.
         type ImageRow = { adopterId: string; url: string; isProfilePicture: number | null; uploadedAt: number | null };
-        type FlagRow = { adopterId: string; reason: string };
+        type FlagRow = { adopterId: string; reason: string | null; targetAdopterId: string | null; details: string | null };
         type CountRow = { adopterId: string; recordType: string | null; count: number };
         type StatRow = { adopterId: string; eventType: string; count: number };
         type RecordRow = { adopterId: string; recordType: string | null; date: number | null; rating: number | null; addedBy: string | null; rescueKey?: string | null };
@@ -119,7 +119,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                     ))
                     .orderBy(sql`${adopterImages.isProfilePicture} DESC, ${adopterImages.uploadedAt} DESC`)
                     .all(),
-                db.select({ adopterId: adopterFlags.adopterId, reason: adopterFlags.reason })
+                db.select({ adopterId: adopterFlags.adopterId, reason: adopterFlags.reason, targetAdopterId: adopterFlags.targetAdopterId, details: adopterFlags.details })
                     .from(adopterFlags)
                     .where(sql`${adopterFlags.adopterId} IN (${inList})`)
                     .all(),
@@ -229,10 +229,10 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             }
         }
 
-        const flagsMap = new Map<string, string[]>();
-        for (const f of allFlags as any[]) {
+        const flagsMap = new Map<string, FlagRow[]>();
+        for (const f of allFlags) {
             if (!flagsMap.has(f.adopterId)) flagsMap.set(f.adopterId, []);
-            flagsMap.get(f.adopterId)!.push(f.reason);
+            flagsMap.get(f.adopterId)!.push(f);
         }
 
         const countsMap = new Map<string, { adoptions: number; requests: number }>();

@@ -19,7 +19,7 @@ import { AdopterName } from '@/components/AdopterName';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
 import MatchCompare, { entriesAsShown, type MatchSourceKind } from '@/components/MatchCompare';
 import { MatchCard } from '@/components/MatchCardParts';
-import { alertCountOf } from '@/domain/flags';
+import { openAlertKinds } from '@/domain/flags';
 
 interface Props {
     /** What the rescuer has typed — their side of «Qué coincide y qué no». */
@@ -56,7 +56,7 @@ export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onC
                             «Posibles coincidencias» panel; «No es esta persona» takes it off the strip
                             (and out of the save check), where a small × used to. */}
                         <MatchCard newTab thumbnail={result.thumbnail} headTestId="strong-match-head"
-                            person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openAlerts: alertCountOf(result.flags), isMinor: result.isMinor, households: result.households }}
+                            person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openAlerts: openAlertKinds(result.flags), isMinor: result.isMinor, households: result.households }}
                             nameNode={isNamelessAdopter(result.adopter) ? <AdopterName adopter={result.adopter} className="break-words" /> : undefined}
                             compare={(
                                 <MatchCompare

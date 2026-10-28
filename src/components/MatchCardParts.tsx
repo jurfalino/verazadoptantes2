@@ -19,6 +19,7 @@
  * (≥44px) with the same three labels wherever the step is the same.
  */
 import Link from 'next/link';
+import type { OpenAlertKind } from '@/domain/flags';
 import type { ReactNode } from 'react';
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -32,7 +33,7 @@ export type MatchCardPerson = {
     name: string;
     /** The person's own average rating; null/undefined: «Sin calificación». */
     rating?: number | null;
-    openAlerts?: number;
+    openAlerts?: OpenAlertKind[];
     isMinor?: boolean;
     households?: HouseholdLine[];
 };
@@ -62,7 +63,7 @@ export function MatchCardHeader({ person, newTab = false, testId = 'match-card-h
                         className="relative min-w-0 font-semibold text-[15px] text-teal-700 hover:underline [overflow-wrap:anywhere] after:absolute after:-inset-y-3 after:inset-x-0 after:content-['']" data-testid={`${testId}-name`}>
                         {nameNode ?? name}
                     </a>
-                    {showStanding && <PersonStanding rating={person.rating ?? null} openAlerts={person.openAlerts ?? 0} isMinor={!!person.isMinor} minorTestId={`${testId}-minor`} alertsTestId={`${testId}-alerts`} />}
+                    {showStanding && <PersonStanding rating={person.rating ?? null} openAlerts={person.openAlerts ?? []} isMinor={!!person.isMinor} minorTestId={`${testId}-minor`} alertsTestId={`${testId}-alerts`} />}
                 </div>
             </div>
             <CardHouseholdLine lines={person.households} className="mt-1 pl-10" />

@@ -1052,7 +1052,6 @@ export const en = {
         hh_age: 'Age',
         hh_years: '{n} years old',
         hh_link_unrated: 'Not rated',
-        hh_link_alerts_one: '1 alert',
         hh_link_alerts_many: '{n} alerts',
         hh_contact_already_there: 'That detail was already there.',
         hh_link_more_contacts: '+{n} more details on their profile',

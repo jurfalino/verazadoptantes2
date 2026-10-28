@@ -257,7 +257,7 @@ describe('getHouseholdsFor', () => {
         expect(view.members.map(m => m.profileId).sort()).toEqual(['marta', 'pedro']);
         const pedro = view.members.find(m => m.profileId === 'pedro')!;
         const marta = view.members.find(m => m.profileId === 'marta')!;
-        expect(pedro).toMatchObject({ name: 'Pedro Paez', rating: 1, openAlerts: 1, activity: { adoption: 1 }, label: null, addedByName: null, isMinor: false });
+        expect(pedro).toMatchObject({ name: 'Pedro Paez', rating: 1, openAlerts: ['inaccurate'], activity: { adoption: 1 }, label: null, addedByName: null, isMinor: false });
         expect(pedro).not.toHaveProperty('ownerName'); // «Perfil cargado por …» is not on household rows (addendum 2026-10-27)
         // ↑ Pedro's own (anchor) row has no adder (Task 2 fix 1): no «según …» on it.
         expect(pedro.linkId).toBe(pedro.membershipId);
@@ -292,8 +292,8 @@ describe('getHouseholdsFor', () => {
         const own = sqlite.prepare(`SELECT record_type AS recordType FROM adoptions WHERE adopter_id = 'marta'`).all() as Array<{ recordType: string }>;
         expect(countActivity(own)).toEqual(marta.activity);
         // Card lines read rating and alerts only: no activity listed, the rating from the same pass.
-        expect(await countsFor(db(), 'pedro', {}, { activity: false })).toEqual({ rating: 1, openAlerts: 1, activity: {} });
-        expect(await countsFor(db(), 'marta', {})).toEqual({ rating: null, openAlerts: 0, activity: marta.activity });
+        expect(await countsFor(db(), 'pedro', {}, { activity: false })).toEqual({ rating: 1, openAlerts: ['inaccurate'], activity: {} });
+        expect(await countsFor(db(), 'marta', {})).toEqual({ rating: null, openAlerts: [], activity: marta.activity });
     });
 
     it("Task 8: the viewed profile's own place («Lucas figura como hijo/a de Pedro · según …»), anchor rows, the viewer's own adds and profiles", async () => {
@@ -442,12 +442,12 @@ describe('householdLinesFor', () => {
         const lines = await householdLinesFor(db(), STRANGER, ['lucas', 'marta', 'ana', 'gone', 'nobody']);
         expect(Object.keys(lines).sort()).toEqual(['ana', 'gone', 'lucas', 'marta', 'nobody']);
         expect(lines.lucas).toEqual(expect.arrayContaining([
-            { name: 'Pedro Paez', profileId: 'pedro', rating: 1, openAlerts: 1, isMinor: false, isGift: false, householdId: hh },
-            { name: 'Marta Paez', profileId: 'marta', rating: null, openAlerts: 0, isMinor: false, isGift: false, householdId: hh },
+            { name: 'Pedro Paez', profileId: 'pedro', rating: 1, openAlerts: ['inaccurate'], isMinor: false, isGift: false, householdId: hh },
+            { name: 'Marta Paez', profileId: 'marta', rating: null, openAlerts: [], isMinor: false, isGift: false, householdId: hh },
         ]));
         expect(lines.lucas).toHaveLength(2);
-        expect(lines.marta.find(l => l.profileId === 'lucas')).toEqual({ name: 'Lucas Paez', profileId: 'lucas', rating: null, openAlerts: 0, isMinor: true, isGift: false, householdId: hh });
-        expect(lines.ana).toEqual([{ name: 'Rosa Diaz', profileId: 'rosa', rating: null, openAlerts: 0, isMinor: false, isGift: true, householdId: 'gift1' }]);
+        expect(lines.marta.find(l => l.profileId === 'lucas')).toEqual({ name: 'Lucas Paez', profileId: 'lucas', rating: null, openAlerts: [], isMinor: true, isGift: false, householdId: hh });
+        expect(lines.ana).toEqual([{ name: 'Rosa Diaz', profileId: 'rosa', rating: null, openAlerts: [], isMinor: false, isGift: true, householdId: 'gift1' }]);
         expect(lines.nobody).toEqual([]);
         expect(lines.gone).toEqual([]);
     });

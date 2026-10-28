@@ -6,6 +6,7 @@
  */
 import type { Relationship } from '@/lib/householdMembers';
 import { realOwner } from './dedupPair';
+import type { OpenAlertKind } from './flags';
 
 /** Households read per profile (bounded reads; a person in more is logged). */
 export const MAX_HOUSEHOLDS_PER_PROFILE = 10;
@@ -196,7 +197,8 @@ export type HouseholdLine = {
     name: string;
     profileId: string;
     rating: number | null;
-    openAlerts: number;
+    /** Open alerts, one per kind (openAlertKinds). */
+    openAlerts: OpenAlertKind[];
     isMinor: boolean;
     /** Every household the two share is a gift household (never «Convive con»). */
     isGift: boolean;

@@ -72,7 +72,7 @@ async function _enrichAdoptersImpl(
     // list twice, so chunk*2 must stay within budget).
     const CHUNK = 40;
     type AdoptionRow = { adopterId: string; rating: number | null; recordType: string | null; date: number | null; addedBy: string | null };
-    type FlagRow = { adopterId: string; reason: string };
+    type FlagRow = { adopterId: string; reason: string | null; targetAdopterId: string | null; details: string | null };
     type StatRow = { adopterId: string; eventType: string };
     type ImageRow = { adopterId: string; url: string; isProfilePicture: number | null };
     type DupRow = { adopter1Id: string; adopter2Id: string };
@@ -94,7 +94,7 @@ async function _enrichAdoptersImpl(
         const [a, f, s, im, d] = await Promise.all([
             db.select({ adopterId: adoptions.adopterId, rating: adoptions.rating, recordType: adoptions.recordType, date: adoptions.date, addedBy: adoptions.addedBy })
                 .from(adoptions).where(sql`${adoptions.adopterId} IN (${inList})`).catch(riskRead('adoptions', chunk.length)),
-            db.select({ adopterId: adopterFlags.adopterId, reason: adopterFlags.reason })
+            db.select({ adopterId: adopterFlags.adopterId, reason: adopterFlags.reason, targetAdopterId: adopterFlags.targetAdopterId, details: adopterFlags.details })
                 .from(adopterFlags).where(sql`${adopterFlags.adopterId} IN (${inList})`).catch(riskRead('flags', chunk.length)),
             db.select({ adopterId: adopterStats.adopterId, eventType: adopterStats.eventType })
                 .from(adopterStats).where(and(
@@ -163,7 +163,7 @@ async function _enrichAdoptersImpl(
         const adoptionCount = adopterAdoptions.filter((a) => a.recordType === RECORD_TYPES.ADOPTION).length;
         const requestCount = adopterAdoptions.filter((a) => a.recordType === RECORD_TYPES.REQUEST).length;
 
-        const flags = buildFlags(adopterFlagRecords.map((fr) => fr.reason), systemDupCount);
+        const flags = buildFlags(adopterFlagRecords, systemDupCount);
         const adoptionsDensity = computeMaxDensityPeriod(adopterAdoptions as any, RECORD_TYPES.ADOPTION, adoptionConfig.periodDays);
         if (adoptionsDensity.count >= adoptionConfig.threshold) {
             flags.tooManyAdoptions = {

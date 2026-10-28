@@ -10,7 +10,7 @@
  */
 import { Check, HelpCircle, Home, Info } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { alertCountOf } from '@/domain/flags';
+import { openAlertKinds } from '@/domain/flags';
 import { useLanguage } from '@/context/LanguageContext';
 import { PersonStanding, PersonActivity } from '@/components/PersonStanding';
 import { CardHouseholdLine } from '@/components/CardHouseholdLine';
@@ -55,7 +55,7 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
     const entries = deserializeContactEntries(a.contactEntries).filter(e => SUMMARY_CONTACT_TYPES.includes(e.type));
     const shown = entries.slice(0, MAX_SUMMARY_CONTACTS);
     // The same count as the household line (final fix P6).
-    const alerts = candidate.openAlerts ?? alertCountOf(candidate.flags);
+    const alerts = candidate.openAlerts ?? openAlertKinds(candidate.flags);
     const homes = householdLineGroups(candidate.householdLine);
     const minor = !!candidate.isMinor;
     return (

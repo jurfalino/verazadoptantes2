@@ -1,6 +1,7 @@
 export const runtime = 'edge';
 
 import { redirect, notFound } from 'next/navigation';
+import type { OpenAlertKind } from '@/domain/flags';
 import { getDb } from '@/lib/db';
 import { notifications, adopters } from '@/db/schema';
 import { eq, or, and, isNull } from 'drizzle-orm';
@@ -79,7 +80,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
     const metadata: NotificationMetadata = notification.metadata ? JSON.parse(notification.metadata) : {};
 
     // Fetch full adopter profiles for matches
-    let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; contactEntries: string | null; status: string | null; isMinor?: boolean; households?: HouseholdLine[]; rating?: number | null; openAlerts?: number }> = [];
+    let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; contactEntries: string | null; status: string | null; isMinor?: boolean; households?: HouseholdLine[]; rating?: number | null; openAlerts?: OpenAlertKind[] }> = [];
     if (metadata.matchedAdopters && metadata.matchedAdopters.length > 0) {
         const adopterIds = metadata.matchedAdopters.map(a => a.id);
         // Filter soft-deleted (merged-duplicate) adopters at read time so even legacy

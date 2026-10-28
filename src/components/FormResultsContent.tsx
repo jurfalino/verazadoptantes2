@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import type { OpenAlertKind } from '@/domain/flags';
 import Link from 'next/link';
 import { useTimezone } from '@/context/TimezoneContext';
 import { useLanguage } from '@/context/LanguageContext';
@@ -79,7 +80,7 @@ interface MatchedProfile {
     isMinor?: boolean;
     households?: HouseholdLine[];
     rating?: number | null;
-    openAlerts?: number;
+    openAlerts?: OpenAlertKind[];
 }
 
 interface FormResultsContentProps {

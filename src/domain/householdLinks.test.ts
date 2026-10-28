@@ -1,21 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { countOpenAlerts, linkNoticeRecipients, personLabel, summaryContacts, MAX_SUMMARY_CONTACTS } from './householdLinks';
-import { KEPT_SEPARATE_FLAG_DETAILS_PREFIX } from './dedupPair';
-
-describe('countOpenAlerts', () => {
-    it('counts inaccuracy reports and open duplicate flags, not verification marks or closed duplicates', () => {
-        expect(countOpenAlerts([
-            { adopterId: 'a', reason: 'inaccurate_information' },
-            { adopterId: 'a', reason: 'inaccurate' },
-            { adopterId: 'a', reason: 'duplicate', targetAdopterId: 'b' },
-            { adopterId: 'a', reason: 'duplicate', targetAdopterId: 'b', details: `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}household` },
-            { adopterId: 'a', reason: 'duplicate', targetAdopterId: null },
-            { adopterId: 'a', reason: 'verified_identity' },
-            { adopterId: 'a', reason: 'verified_address' },
-        ])).toBe(3);
-        expect(countOpenAlerts([])).toBe(0);
-    });
-});
+import { linkNoticeRecipients, personLabel, summaryContacts, MAX_SUMMARY_CONTACTS } from './householdLinks';
 
 describe('linkNoticeRecipients', () => {
     it('owner + team, lowercased, deduped, never the actor', () => {

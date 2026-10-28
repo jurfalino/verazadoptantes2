@@ -6,6 +6,7 @@ import { isRealActorEmail } from '@/lib/piiAccess';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { logger } from '@/lib/logger';
 import { isMinor, type HouseholdLine } from '@/domain/households';
+import type { OpenAlertKind } from '@/domain/flags';
 
 export interface MatchContext {
     ok: boolean;
@@ -18,7 +19,7 @@ export interface MatchContext {
      * PII: the same a search card shows any signed-in rescuer. Absent when it
      * could not be read (logged).
      */
-    standing?: { rating: number | null; openAlerts: number; isMinor: boolean; households: HouseholdLine[] };
+    standing?: { rating: number | null; openAlerts: OpenAlertKind[]; isMinor: boolean; households: HouseholdLine[] };
 }
 
 /** Presence-only summary of an existing adopter's contact types — for the import

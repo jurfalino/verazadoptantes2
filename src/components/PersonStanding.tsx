@@ -7,7 +7,7 @@
  *
  * - `PersonStanding`: «Menor de edad» for a minor (who carries no rating or
  *   alerts), else the rating (★ + its word: colour is never the only signal)
- *   or «Sin calificación», and «N alertas» when there are any.
+ *   or «Sin calificación», and the open alerts (AlertSummary) when there are any.
  * - `PersonActivity`: the person's activity counted as their own «Actividad»
  *   header counts it (ActivityCountsLine), «sin actividad» when none — and
  *   nothing for a minor with none (their records go on the adults).
@@ -18,13 +18,15 @@
 import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { MinorTag } from '@/components/MinorTag';
-import { AlertPill } from '@/components/AlertPill';
+import { AlertSummary } from '@/components/AlertPill';
+import type { OpenAlertKind } from '@/domain/flags';
 import { ActivityCountsLine } from '@/components/ActivityCountsLine';
 import { activityParts, type ActivityCounts } from '@/domain/activityCounts';
 
 export function PersonStanding({ rating, openAlerts, isMinor, minorTestId, alertsTestId = 'person-alerts' }: {
     rating: number | null | undefined;
-    openAlerts: number;
+    /** Open alerts, one per kind (openAlertKinds — the profile header's rule). */
+    openAlerts: readonly OpenAlertKind[];
     isMinor: boolean;
     minorTestId?: string;
     alertsTestId?: string;
@@ -36,12 +38,8 @@ export function PersonStanding({ rating, openAlerts, isMinor, minorTestId, alert
             {rating != null && rating >= 1
                 ? <RatingBadge rating={rating} variant="inline" size="sm" label="short" />
                 : <span className="text-xs text-stone-500 whitespace-nowrap" data-testid="person-unrated">{t('adopter.hh_link_unrated')}</span>}
-            {openAlerts > 0 && (
-                // The profile header's flag pill (AlertPill), with the count (audit B2).
-                <AlertPill kind="count" testId={alertsTestId}>
-                    {openAlerts === 1 ? t('adopter.hh_link_alerts_one') : t('adopter.hh_link_alerts_many').replace('{n}', String(openAlerts))}
-                </AlertPill>
-            )}
+            {/* The profile header's flag pill: one kind as itself, two as «2 alertas» (audit B2, fix round 2 item 9). */}
+            <AlertSummary kinds={openAlerts} testId={alertsTestId} />
         </>
     );
 }

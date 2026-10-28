@@ -16,6 +16,7 @@ import { useDateFormat } from '@/context/TimezoneContext';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
 import { withoutLegacyMergeSeparators } from '@/lib/contactEntries';
 import { isOpenDuplicateFlag } from '@/domain/dedupPair';
+import { openAlertKindsOfRows } from '@/domain/flags';
 import { CheckCircle2 } from 'lucide-react';
 import { AlertPill } from '@/components/AlertPill';
 import { Modal, ModalActions } from '@/components/ui/Modal';
@@ -109,14 +110,17 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
         });
     }, [adopterId]);
 
-    // Only an OPEN duplicate question: a merged flag ("Merged into … by …") or
-    // a declined merge request ("Kept separate: …") is settled, and its
+    // The open alerts, by the one rule every surface counts them with
+    // (openAlertKindsOfRows): «Inexacto» for any inaccuracy report, «Duplicado»
+    // only for an OPEN duplicate question — a merged flag ("Merged into … by …")
+    // or a declined merge request ("Kept separate: …") is settled, and its
     // details are bookkeeping, not something to show every viewer.
-    const duplicateFlags = existingFlags.filter(f => isOpenDuplicateFlag(f));
-    const isFlaggedAsDuplicate = duplicateFlags.length > 0;
+    const alertKinds = openAlertKindsOfRows(existingFlags.map(f => ({ adopterId, ...f })));
+    const duplicateFlags = existingFlags.filter(f => isOpenDuplicateFlag({ adopterId, ...f }));
+    const isFlaggedAsDuplicate = alertKinds.includes('duplicate');
 
     const inaccurateFlags = existingFlags.filter(f => f.reason === 'inaccurate_information' || f.reason === 'inaccurate');
-    const isFlaggedAsInaccurate = inaccurateFlags.length > 0;
+    const isFlaggedAsInaccurate = alertKinds.includes('inaccurate');
 
     // Verification flags - include adoption-based verification
     const identityVerifiedFlag = existingFlags.find(f => f.reason === 'verified_identity');

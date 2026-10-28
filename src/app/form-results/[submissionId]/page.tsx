@@ -1,6 +1,7 @@
 export const runtime = 'edge';
 
 import { selfieUrlColumn } from '@/lib/selfieLink';
+import type { OpenAlertKind } from '@/domain/flags';
 import { photoLinks } from '@/domain/formPhotos';
 import { redirect, notFound } from 'next/navigation';
 import { getDb } from '@/lib/db';
@@ -181,7 +182,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         /** Final fix P2: «Menor de edad» and the household line, as on every card showing one person. */
         isMinor?: boolean; households?: HouseholdLine[];
         /** Their own standing on the match card (audit B6). */
-        rating?: number | null; openAlerts?: number;
+        rating?: number | null; openAlerts?: OpenAlertKind[];
     };
     let matchedProfiles: ProfileRow[] = [];
     let linkedProfile: { id: string; name: string; profileImageUrl: string | null; avgRating: number | null } | null = null;

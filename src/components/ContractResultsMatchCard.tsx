@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import type { OpenAlertKind } from '@/domain/flags';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { attachContractToExistingAdopter } from '@/app/actions/duplicates';
@@ -27,7 +28,7 @@ interface ContractResultsMatchCardProps {
         households?: HouseholdLine[];
         /** Their own standing in the card's header (audit B6). */
         rating?: number | null;
-        openAlerts?: number;
+        openAlerts?: OpenAlertKind[];
     };
     matchTypes: string[];
     score?: number;
