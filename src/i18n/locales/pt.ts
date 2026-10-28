@@ -112,7 +112,7 @@ export const pt = {
         add_photo: '+ Adicionar Foto',
         add_media: '+ Adicionar Mídia',
         files_attached: 'arquivo(s) anexado(s)',
-        share: 'Compartilhar Perfil',
+        share: 'Compartilhar perfil',
         copy_link: 'Copiar link ou compartilhar',
         show_more: 'ler mais',
         show_less: 'ler menos',
@@ -1313,16 +1313,16 @@ export const pt = {
     flagging: {
         report_actions: 'Relatar',
         // Menu items
-        menu_duplicate: 'Relatar Duplicado',
+        menu_duplicate: 'Relatar duplicado',
         menu_duplicate_desc: 'Marcar como duplicado de outro perfil',
-        menu_inaccuracy: 'Relatar Imprecisão',
+        menu_inaccuracy: 'Relatar imprecisão',
         menu_inaccuracy_desc: 'As informações sobre mim estão incorretas',
-        menu_deletion: 'Solicitar Exclusão',
+        menu_deletion: 'Solicitar exclusão',
         menu_deletion_desc: 'Excluir meus dados desta plataforma',
         // Modal titles
-        title_duplicate: 'Relatar Duplicado',
-        title_inaccuracy: 'Relatar Imprecisão',
-        title_deletion: 'Solicitar Exclusão',
+        title_duplicate: 'Relatar duplicado',
+        title_inaccuracy: 'Relatar imprecisão',
+        title_deletion: 'Solicitar exclusão',
         // Legacy keys (still used)
         report_merge: 'Relatar / Unir',
         report_title: 'Relatar',

@@ -39,6 +39,7 @@ import { useAuthContext } from '@/context/AuthContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import ProfilePhotoChooser from '@/components/ProfilePhotoChooser';
 import { useShowToast } from '@/components/ui/Toast';
+import { Button } from '@/components/ui/Button';
 import { extractErrorId } from '@/lib/errorUtils';
 import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
 
@@ -1379,21 +1380,13 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                         // are hidden so the name input gets the full row width; the
                                         // sticky bottom bar (below, md:hidden) carries the actions there.
                                         <div className="hidden md:flex items-center gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={handleCancel}
-                                                className="px-3 py-1.5 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors"
-                                            >
+                                            {/* The button matrix (Secondary «Cancelar» + Primary «Guardar»), as in every dialog and inline editor. */}
+                                            <Button type="button" variant="secondary" size="compact" onClick={handleCancel}>
                                                 {t('common.cancel')}
-                                            </button>
-                                            <button
-                                                type="submit"
-                                                disabled={loading}
-                                                data-testid="adopter-form-submit"
-                                                className="px-4 py-1.5 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 focus:ring-4 focus:ring-teal-200 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-lg shadow-teal-700/30 transform active:scale-95"
-                                            >
+                                            </Button>
+                                            <Button type="submit" variant="primary" size="compact" disabled={loading} data-testid="adopter-form-submit">
                                                 {loading ? t('common.loading') : t('common.save')}
-                                            </button>
+                                            </Button>
                                         </div>
                                     ) : (
                                         <>
@@ -1429,7 +1422,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                                                 }
                                                                 setShowReportMenu(false);
                                                             }}
-                                                            title={t('common.share') || 'Share Profile'} desc={t('common.copy_link') || 'Copy link or share'} />
+                                                            title={t('common.share') || 'Share profile'} desc={t('common.copy_link') || 'Copy link or share'} />
                                                         {/* A minor gets no alerts (a duplicate report is one): the server refuses it too. */}
                                                         {!identity?.isMinor && (
                                                             <AnchoredMenuItem icon={GitMerge} testId="profile-report-duplicate"
@@ -1438,14 +1431,14 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                                                     if (!session?.user) { openLogin(); return; }
                                                                     flaggingRef.current?.openAction('duplicate');
                                                                 }}
-                                                                title={t('flagging.menu_duplicate') || 'Report Duplicate'} desc={t('flagging.menu_duplicate_desc') || 'Flag as duplicate of another profile'} />
+                                                                title={t('flagging.menu_duplicate') || 'Report duplicate'} desc={t('flagging.menu_duplicate_desc') || 'Flag as duplicate of another profile'} />
                                                         )}
                                                         <AnchoredMenuItem icon={PencilLine} testId="profile-report-inaccuracy"
                                                             onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('inaccuracy'); }}
-                                                            title={t('flagging.menu_inaccuracy') || 'Report Inaccuracy'} desc={t('flagging.menu_inaccuracy_desc') || 'Information about me is wrong'} />
+                                                            title={t('flagging.menu_inaccuracy') || 'Report inaccuracy'} desc={t('flagging.menu_inaccuracy_desc') || 'Information about me is wrong'} />
                                                         <AnchoredMenuItem icon={Trash2} danger testId="profile-request-removal"
                                                             onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('deletion'); }}
-                                                            title={t('flagging.menu_deletion') || 'Request Removal'} desc={t('flagging.menu_deletion_desc') || 'Remove my data from this platform'} />
+                                                            title={t('flagging.menu_deletion') || 'Request removal'} desc={t('flagging.menu_deletion_desc') || 'Remove my data from this platform'} />
                                                     </AnchoredMenu>
                                                 </div>
                                             )}

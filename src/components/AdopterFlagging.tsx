@@ -409,9 +409,9 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             {isOpen && (
                 // The shared dialog shell (audit B8): 16px title, ×, matrix buttons.
                 <Modal size="lg" testId="flag-dialog" onClose={resetAndClose} busy={submitLoading}
-                    title={reason === 'duplicate' ? (t('flagging.title_duplicate') || 'Report Duplicate')
-                        : reason === 'inaccuracy' ? (t('flagging.title_inaccuracy') || 'Report Inaccuracy')
-                        : (t('flagging.title_deletion') || 'Request Removal')}>
+                    title={reason === 'duplicate' ? (t('flagging.title_duplicate') || 'Report duplicate')
+                        : reason === 'inaccuracy' ? (t('flagging.title_inaccuracy') || 'Report inaccuracy')
+                        : (t('flagging.title_deletion') || 'Request removal')}>
                         {/* Success state for data requests */}
                         {dataRequestSubmitted ? (
                             <div className="text-center py-6">

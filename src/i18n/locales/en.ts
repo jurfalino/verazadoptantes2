@@ -112,7 +112,7 @@ export const en = {
         add_photo: '+ Add Photo',
         add_media: '+ Add Media',
         files_attached: 'file(s) attached',
-        share: 'Share Profile',
+        share: 'Share profile',
         copy_link: 'Copy link or share',
         show_more: 'show more',
         show_less: 'show less',
@@ -1308,16 +1308,16 @@ export const en = {
     flagging: {
         report_actions: 'Report',
         // Menu items
-        menu_duplicate: 'Report Duplicate',
+        menu_duplicate: 'Report duplicate',
         menu_duplicate_desc: 'Flag as duplicate of another profile',
-        menu_inaccuracy: 'Report Inaccuracy',
+        menu_inaccuracy: 'Report inaccuracy',
         menu_inaccuracy_desc: 'Information about me is wrong',
-        menu_deletion: 'Request Removal',
+        menu_deletion: 'Request removal',
         menu_deletion_desc: 'Remove my data from this platform',
         // Modal titles
-        title_duplicate: 'Report Duplicate',
-        title_inaccuracy: 'Report Inaccuracy',
-        title_deletion: 'Request Removal',
+        title_duplicate: 'Report duplicate',
+        title_inaccuracy: 'Report inaccuracy',
+        title_deletion: 'Request removal',
         // Legacy keys (still used)
         report_merge: 'Report / Merge',
         report_title: 'Report',

@@ -112,7 +112,7 @@ export const es = {
         add_photo: '+ Agregar Foto',
         add_media: '+ Agregar Media',
         files_attached: 'archivo(s) adjuntos',
-        share: 'Compartir Perfil',
+        share: 'Compartir perfil',
         copy_link: 'Copiar enlace o compartir',
         show_more: 'leer más',
         show_less: 'leer menos',
@@ -1313,16 +1313,16 @@ export const es = {
     flagging: {
         report_actions: 'Reportar',
         // Menu items
-        menu_duplicate: 'Reportar Duplicado',
+        menu_duplicate: 'Reportar duplicado',
         menu_duplicate_desc: 'Marcar como duplicado de otro perfil',
-        menu_inaccuracy: 'Reportar Inexactitud',
+        menu_inaccuracy: 'Reportar inexactitud',
         menu_inaccuracy_desc: 'La información sobre mí es incorrecta',
-        menu_deletion: 'Solicitar Eliminación',
+        menu_deletion: 'Solicitar eliminación',
         menu_deletion_desc: 'Eliminar mis datos de esta plataforma',
         // Modal titles
-        title_duplicate: 'Reportar Duplicado',
-        title_inaccuracy: 'Reportar Inexactitud',
-        title_deletion: 'Solicitar Eliminación',
+        title_duplicate: 'Reportar duplicado',
+        title_inaccuracy: 'Reportar inexactitud',
+        title_deletion: 'Solicitar eliminación',
         // Legacy keys (still used)
         report_merge: 'Reportar / Unir',
         report_title: 'Reportar',
