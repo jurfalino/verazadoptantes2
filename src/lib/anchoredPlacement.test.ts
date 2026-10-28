@@ -49,4 +49,16 @@ describe('placeAnchoredPanel', () => {
         const p = placeAnchoredPanel({ anchor: rect(100, 300), panel: { width: 500, height: 100 }, viewport: PHONE });
         expect(p.left).toBe(16);
     });
+
+    it('a «below» panel never slides under the sticky nav when its button scrolls up behind it', () => {
+        // The ⋯ has scrolled to y=0 (under the 64px nav): the panel stays at the nav's edge.
+        const p = placeAnchoredPanel({ anchor: rect(0, 300), panel: { width: 200, height: 180 }, viewport: PHONE });
+        expect(p.placement).toBe('below');
+        expect(p.top).toBeGreaterThanOrEqual(64);
+        expect(p.maxHeight).toBeNull();
+        // Scrolled further (the button above the screen): still at the nav's edge, height capped to the room left.
+        const q = placeAnchoredPanel({ anchor: rect(-300, 300), panel: { width: 200, height: 900 }, viewport: PHONE });
+        expect(q.top).toBe(64);
+        expect(q.top + (q.maxHeight ?? 900)).toBeLessThanOrEqual(844 - 16);
+    });
 });
