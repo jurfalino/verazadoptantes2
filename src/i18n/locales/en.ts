@@ -1784,6 +1784,7 @@ export const en = {
         pending_d_group_sent: 'Sent',
         pending_d_group_declined: 'Declined',
         pending_d_group_pair: 'Possible duplicates',
+        pending_d_group_merged: 'Just combined',
         pending_d_line_received: '{name} asks you to merge · {when}',
         pending_d_line_sent: 'Waiting for {name} · {when}',
         pending_d_line_sent_admins: 'Sent to an administrator · {when}',

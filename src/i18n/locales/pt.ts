@@ -1789,6 +1789,7 @@ export const pt = {
         pending_d_group_sent: 'Enviados',
         pending_d_group_declined: 'Recusados',
         pending_d_group_pair: 'Possíveis duplicados',
+        pending_d_group_merged: 'Recém-combinados',
         pending_d_line_received: '{name} pede para combinar · {when}',
         pending_d_line_sent: 'Aguardando {name} · {when}',
         pending_d_line_sent_admins: 'Enviado a um administrador · {when}',
