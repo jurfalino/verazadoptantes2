@@ -27,10 +27,10 @@
  *   (checkAdopterDeletable), as the profile's own delete button does.
  * Rendered as an `<li>`: the caller's `<ul>` divides the rows.
  */
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { AnchoredMenu } from '@/components/ui/AnchoredMenu';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { AnchoredMenu, AnchoredMenuItem, OverflowMenuButton } from '@/components/ui/AnchoredMenu';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, Lock, Pencil, Trash2, UserMinus } from 'lucide-react';
+import { ChevronDown, Lock, Pencil, Trash2, UserMinus, type LucideIcon } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { MemberContacts } from '@/components/LinkedProfileSummary';
@@ -197,22 +197,22 @@ export function MemberCard({ member, hostName, relativeName, signedIn, currentUs
         );
     }
 
-    const items: Array<{ id: 'edit' | 'remove' | 'delete' | 'request'; icon: ReactNode; title: string; desc?: string; danger?: boolean; disabled?: boolean }> = [];
-    if (canEdit) items.push({ id: 'edit', icon: <Pencil className="w-5 h-5 mt-0.5 shrink-0 text-teal-700" aria-hidden="true" />, title: t('adopter.hh_menu_edit') });
+    const items: Array<{ id: 'edit' | 'remove' | 'delete' | 'request'; icon: LucideIcon; title: string; desc?: string; danger?: boolean; disabled?: boolean }> = [];
+    if (canEdit) items.push({ id: 'edit', icon: Pencil, title: t('adopter.hh_menu_edit') });
     if (canRemove) items.push({
-        id: 'remove', icon: <UserMinus className="w-5 h-5 mt-0.5 shrink-0 text-teal-700" aria-hidden="true" />,
+        id: 'remove', icon: UserMinus,
         title: t(gift ? 'adopter.hh_menu_remove_gift' : 'adopter.hh_menu_remove'), desc: t('adopter.hh_menu_remove_desc'),
     });
-    if (mayDelete && deletion === 'loading') items.push({ id: 'delete', icon: <Trash2 className="w-5 h-5 mt-0.5 shrink-0 text-stone-400" aria-hidden="true" />, title: t('adopter.hh_menu_checking'), disabled: true });
+    if (mayDelete && deletion === 'loading') items.push({ id: 'delete', icon: Trash2, title: t('adopter.hh_menu_checking'), disabled: true });
     if (mayDelete && deletion && typeof deletion === 'object') {
         items.push(deletion.kind === 'delete'
             ? {
-                id: 'delete', danger: true, icon: <Trash2 className="w-5 h-5 mt-0.5 shrink-0 text-rose-700" aria-hidden="true" />,
+                id: 'delete', danger: true, icon: Trash2,
                 title: fill(t('adopter.hh_menu_delete'), { name: firstName(name) || name }),
                 desc: t(deletion.others > 0 ? 'adopter.hh_menu_delete_admin_desc' : 'adopter.hh_menu_delete_desc'),
             }
             : {
-                id: 'request', danger: true, icon: <Trash2 className="w-5 h-5 mt-0.5 shrink-0 text-rose-700" aria-hidden="true" />,
+                id: 'request', danger: true, icon: Trash2,
                 title: t('adopter.hh_menu_request'), desc: t('adopter.hh_menu_request_desc'),
             });
     }
@@ -258,28 +258,12 @@ export function MemberCard({ member, hostName, relativeName, signedIn, currentUs
                 </div>
                 {hasMenu && (
                     <div className="relative shrink-0">
-                        <button ref={menuButtonRef} type="button" onClick={() => { void openMenu(); }} aria-label={t('adopter.hh_menu_more')} aria-haspopup="menu" aria-expanded={menuOpen}
-                            data-testid="household-member-menu"
-                            className="group inline-flex min-w-[44px] min-h-[44px] items-center justify-center text-stone-500 hover:text-stone-600">
-                            {/* The profile header's ⋯ (profile-overflow), in a 44px tap area. */}
-                            <span className="flex items-center p-1.5 rounded-lg bg-stone-50 group-hover:bg-stone-100 transition-all duration-150">
-                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
-                            </span>
-                        </button>
+                        <OverflowMenuButton ref={menuButtonRef} open={menuOpen} onClick={() => { void openMenu(); }} label={t('adopter.hh_menu_more')} testId="household-member-menu" />
                         {/* On <body>, next to the button (AnchoredMenu): a later card can't cover it (audit A1). */}
                         <AnchoredMenu open={menuOpen} anchorRef={menuButtonRef} onClose={closeMenu} testId="household-member-menu-panel">
-                            {items.map((i, n) => (
-                                <div key={i.id}>
-                                    {n > 0 && <div className="border-t border-stone-100" />}
-                                    <button type="button" role="menuitem" disabled={i.disabled} onClick={() => pick(i.id)} data-testid={`household-member-menu-${i.id}`}
-                                        className="w-full flex items-start gap-3 px-4 py-3 min-h-[44px] hover:bg-stone-50 transition-colors text-left disabled:cursor-wait">
-                                        {i.icon}
-                                        <div className="min-w-0">
-                                            <div className={`text-sm font-semibold ${i.danger ? 'text-rose-700' : i.disabled ? 'text-stone-500' : 'text-stone-900'}`}>{i.title}</div>
-                                            {i.desc && <div className="text-xs text-stone-500 mt-0.5">{i.desc}</div>}
-                                        </div>
-                                    </button>
-                                </div>
+                            {items.map(i => (
+                                <AnchoredMenuItem key={i.id} icon={i.icon} title={i.title} desc={i.desc} danger={i.danger} disabled={i.disabled}
+                                    onClick={() => pick(i.id)} testId={`household-member-menu-${i.id}`} />
                             ))}
                         </AnchoredMenu>
                     </div>

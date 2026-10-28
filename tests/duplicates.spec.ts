@@ -99,7 +99,7 @@ test.describe('Duplicate Detection UX', () => {
         await reportBtn.click();
 
         // Wait for the dropdown menu to appear, then click "Report Duplicate"
-        const reportDuplicateBtn = page.getByRole('button', { name: /Report Duplicate|Reportar Duplicado/i });
+        const reportDuplicateBtn = page.getByRole('menuitem', { name: /Report Duplicate|Reportar Duplicado/i });
         await expect(reportDuplicateBtn).toBeVisible({ timeout: 30000 });
         await reportDuplicateBtn.click();
 

@@ -20,7 +20,8 @@
  * takes the focus itself: its first enabled item once placed; Tab / Shift+Tab
  * out of it closes it, back on the button.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useEscapeToClose } from '@/hooks/useEscapeToClose';
 import { placeAnchoredPanel, type AnchoredPlacement } from '@/lib/anchoredPlacement';
@@ -115,9 +116,57 @@ export function AnchoredMenu({ open, anchorRef, onClose, align = 'right', role =
                     opacity: place ? undefined : 0,
                 }}
             >
-                <div ref={contentRef} className="flex flex-col">{children}</div>
+                <div ref={contentRef} className="flex flex-col divide-y divide-stone-100">{children}</div>
             </div>
         </>,
         document.body,
     );
 }
+
+/**
+ * One item of an AnchoredMenu (audit B3): a 20px lucide icon (teal; rose on a
+ * destructive item), a 14px/600 title and an optional 12px line under it,
+ * 44px+ tall. The profile header's «⋯» and a household row's «⋯» both use it,
+ * so the same menu reads the same everywhere. `href` renders a link.
+ */
+export function AnchoredMenuItem({ icon: Icon, title, desc, danger = false, disabled = false, onClick, href, testId }: {
+    icon: LucideIcon;
+    title: ReactNode;
+    desc?: ReactNode;
+    danger?: boolean;
+    disabled?: boolean;
+    onClick?: () => void;
+    href?: string;
+    testId?: string;
+}) {
+    const cls = 'w-full flex items-start gap-3 px-4 py-3 min-h-[44px] hover:bg-stone-50 transition-colors text-left disabled:cursor-wait';
+    const body = (
+        <>
+            <Icon className={`w-5 h-5 mt-0.5 shrink-0 ${danger ? 'text-rose-700' : disabled ? 'text-stone-400' : 'text-teal-700'}`} strokeWidth={1.75} aria-hidden="true" />
+            <span className="min-w-0">
+                <span className={`block text-sm font-semibold ${danger ? 'text-rose-700' : disabled ? 'text-stone-500' : 'text-stone-900'}`}>{title}</span>
+                {desc && <span className="block text-xs text-stone-500 mt-0.5">{desc}</span>}
+            </span>
+        </>
+    );
+    return href
+        ? <a href={href} role="menuitem" onClick={onClick} data-testid={testId} className={cls}>{body}</a>
+        : <button type="button" role="menuitem" disabled={disabled} onClick={onClick} data-testid={testId} className={cls}>{body}</button>;
+}
+
+/**
+ * The «⋯» that opens an AnchoredMenu: a 44px tap area around the small chip
+ * (the profile header and every household row — audit B3/B9).
+ */
+export const OverflowMenuButton = forwardRef<HTMLButtonElement, { open: boolean; onClick: () => void; label: string; testId?: string; title?: string }>(
+    function OverflowMenuButton({ open, onClick, label, testId, title }, ref) {
+        return (
+            <button ref={ref} type="button" onClick={onClick} aria-label={label} title={title} aria-haspopup="menu" aria-expanded={open} data-testid={testId}
+                className="group inline-flex min-w-[44px] min-h-[44px] items-center justify-center text-stone-500 hover:text-stone-600">
+                <span className="flex items-center p-1.5 rounded-lg bg-stone-50 group-hover:bg-stone-100 transition-all duration-150">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
+                </span>
+            </button>
+        );
+    },
+);

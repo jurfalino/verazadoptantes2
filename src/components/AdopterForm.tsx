@@ -3,7 +3,6 @@
 import OriginTag from './OriginTag';
 import type { Origin } from '@/domain/recordOrigin';
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
-import { useEscapeToClose } from "@/hooks/useEscapeToClose";
 import { useSetEditActions } from "@/context/EditActionsContext";
 import { InlineEditField } from "@/components/InlineEditField";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -11,6 +10,8 @@ import { saveAdopter, saveImage, findFormDuplicates, appendToExistingAdopter, ch
 import type { ProfileIdentityView } from "@/domain/profileIdentity";
 import ProfileAgeEditor from "@/components/ProfileAgeEditor";
 import { MinorTag } from "@/components/MinorTag";
+import { AnchoredMenu, AnchoredMenuItem, OverflowMenuButton } from "@/components/ui/AnchoredMenu";
+import { CalendarDays, GitMerge, PencilLine, Phone, Share2, Trash2 } from "lucide-react";
 import { CardHouseholdLine } from "@/components/CardHouseholdLine";
 import { hasStrongMatch } from "@/lib/matchChips";
 import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
@@ -135,8 +136,8 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     const id = adopterId || initialData?.id || '';
     const [showReportMenu, setShowReportMenu] = useState(false);
     const overflowButtonRef = useRef<HTMLButtonElement>(null);
+    // Escape / outside tap / focus are AnchoredMenu's (one behaviour for every ⋯).
     const closeReportMenu = useCallback(() => setShowReportMenu(false), []);
-    useEscapeToClose(showReportMenu, closeReportMenu, overflowButtonRef);
     // «Cambiar edad» (households as profiles): anyone signed in; opened from the ⋯ menu.
     const [ageEditorOpen, setAgeEditorOpen] = useState(false);
     const flaggingRef = useRef<AdopterFlaggingHandle>(null);
@@ -1392,123 +1393,52 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                                 profile is directly editable inline (see InlineEditField). */}
                                             {/* Overflow menu */}
                                             {!isNew && initialData && (
-                                                <div className="relative">
-                                                    <button
-                                                        ref={overflowButtonRef}
-                                                        type="button"
-                                                        onClick={() => setShowReportMenu(!showReportMenu)}
-                                                        data-testid="profile-overflow"
-                                                        className="flex items-center gap-1 p-1.5 rounded-lg text-stone-500 bg-stone-50 hover:text-stone-600 hover:bg-stone-100 transition-all duration-150"
-                                                        title={t('flagging.report_actions') || 'Report'}
-                                                    >
-                                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                                                            <circle cx="5" cy="12" r="2" />
-                                                            <circle cx="12" cy="12" r="2" />
-                                                            <circle cx="19" cy="12" r="2" />
-                                                        </svg>
-                                                    </button>
-                                                    {showReportMenu && (
-                                                        <>
-                                                            <div className="fixed inset-0 z-40" onClick={() => setShowReportMenu(false)} />
-                                                            <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-stone-200 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
-                                                                {interviewEnabled && initialData?.id && (
-                                                                    <a href={`/interview?adopterId=${encodeURIComponent(initialData.id)}`} data-testid="profile-interview"
-                                                                        onClick={() => setShowReportMenu(false)}
-                                                                        className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left">
-                                                                        <svg className="w-5 h-5 mt-0.5 text-teal-700" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
-                                                                            <path d="M5.5 3h2l1 4-1.5 1a9 9 0 004.5 4.5l1-1.5 4 1v2a2 2 0 01-2 2A13 13 0 013.5 5a2 2 0 012-2z" strokeLinejoin="round" />
-                                                                        </svg>
-                                                                        <div>
-                                                                            <div className="text-sm font-semibold text-stone-900">{t('interview.start_from_profile')}</div>
-                                                                            <div className="text-xs text-stone-500 mt-0.5">{t('interview.start_from_profile_desc')}</div>
-                                                                        </div>
-                                                                    </a>
-                                                                )}
-                                                                {/* Age / «Es menor de edad» — open to anyone signed in, like the name. */}
-                                                                {identity && isAuthenticated && (
-                                                                    <>
-                                                                        <button type="button" data-testid="profile-age-edit"
-                                                                            onClick={() => { setShowReportMenu(false); setAgeEditorOpen(true); }}
-                                                                            className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left">
-                                                                            <svg className="w-5 h-5 mt-0.5 text-teal-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
-                                                                                <rect x="3.5" y="5" width="17" height="15" rx="2" /><path d="M3.5 10h17M8 3v4M16 3v4" strokeLinecap="round" />
-                                                                            </svg>
-                                                                            <div>
-                                                                                <div className="text-sm font-semibold text-stone-900">{identity.age !== null || identity.minorBox ? t('adopter.age_edit') : t('adopter.age_add')}</div>
-                                                                                <div className="text-xs text-stone-500 mt-0.5">{t('adopter.age_hint')}</div>
-                                                                            </div>
-                                                                        </button>
-                                                                        <div className="border-t border-stone-100" />
-                                                                    </>
-                                                                )}
-                                                                {/* Share Profile */}
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={async () => {
-                                                                        const url = `${window.location.origin}/adopter/${id}`;
-                                                                        if (navigator.share) {
-                                                                            try { await navigator.share({ title: initialData?.name || '', url }); } catch { /* cancelled */ }
-                                                                        } else {
-                                                                            try { await navigator.clipboard.writeText(url); } catch {
-                                                                                const ta = document.createElement('textarea'); ta.value = url; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-                                                                            }
-                                                                        }
-                                                                        setShowReportMenu(false);
-                                                                    }}
-                                                                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
-                                                                >
-                                                                    <span className="text-lg mt-0.5">🔗</span>
-                                                                    <div>
-                                                                        <div className="text-sm font-semibold text-stone-900">{t('common.share') || 'Share Profile'}</div>
-                                                                        <div className="text-xs text-stone-500 mt-0.5">{t('common.copy_link') || 'Copy link or share'}</div>
-                                                                    </div>
-                                                                </button>
-                                                                {/* A minor gets no alerts (a duplicate report is one): the server refuses it too. */}
-                                                                {!identity?.isMinor && (<>
-                                                                <div className="border-t border-stone-100" />
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        if (!session?.user) { openLogin(); setShowReportMenu(false); return; }
-                                                                        setShowReportMenu(false);
-                                                                        flaggingRef.current?.openAction('duplicate');
-                                                                    }}
-                                                                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
-                                                                >
-                                                                    <span className="text-lg mt-0.5">🔀</span>
-                                                                    <div>
-                                                                        <div className="text-sm font-semibold text-stone-900">{t('flagging.menu_duplicate') || 'Report Duplicate'}</div>
-                                                                        <div className="text-xs text-stone-500 mt-0.5">{t('flagging.menu_duplicate_desc') || 'Flag as duplicate of another profile'}</div>
-                                                                    </div>
-                                                                </button>
-                                                                </>)}
-                                                                <div className="border-t border-stone-100" />
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('inaccuracy'); }}
-                                                                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
-                                                                >
-                                                                    <span className="text-lg mt-0.5">✏️</span>
-                                                                    <div>
-                                                                        <div className="text-sm font-semibold text-stone-900">{t('flagging.menu_inaccuracy') || 'Report Inaccuracy'}</div>
-                                                                        <div className="text-xs text-stone-500 mt-0.5">{t('flagging.menu_inaccuracy_desc') || 'Information about me is wrong'}</div>
-                                                                    </div>
-                                                                </button>
-                                                                <div className="border-t border-stone-100" />
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('deletion'); }}
-                                                                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
-                                                                >
-                                                                    <span className="text-lg mt-0.5">🗑️</span>
-                                                                    <div>
-                                                                        <div className="text-sm font-semibold text-rose-700">{t('flagging.menu_deletion') || 'Request Removal'}</div>
-                                                                        <div className="text-xs text-stone-500 mt-0.5">{t('flagging.menu_deletion_desc') || 'Remove my data from this platform'}</div>
-                                                                    </div>
-                                                                </button>
-                                                            </div>
-                                                        </>
-                                                    )}
+                                                <div className="relative -my-2 -mr-2">
+                                                    {/* The same «⋯» and menu as a household row (audit B3): 44px, on <body>, lucide items. */}
+                                                    <OverflowMenuButton ref={overflowButtonRef} open={showReportMenu} onClick={() => setShowReportMenu(o => !o)}
+                                                        label={t('flagging.report_actions') || 'Report'} title={t('flagging.report_actions') || 'Report'} testId="profile-overflow" />
+                                                    <AnchoredMenu open={showReportMenu} anchorRef={overflowButtonRef} onClose={closeReportMenu} testId="profile-overflow-panel">
+                                                        {interviewEnabled && initialData?.id && (
+                                                            <AnchoredMenuItem icon={Phone} href={`/interview?adopterId=${encodeURIComponent(initialData.id)}`} testId="profile-interview"
+                                                                onClick={() => setShowReportMenu(false)}
+                                                                title={t('interview.start_from_profile')} desc={t('interview.start_from_profile_desc')} />
+                                                        )}
+                                                        {/* Age / «Es menor de edad» — open to anyone signed in, like the name. */}
+                                                        {identity && isAuthenticated && (
+                                                            <AnchoredMenuItem icon={CalendarDays} testId="profile-age-edit"
+                                                                onClick={() => { setShowReportMenu(false); setAgeEditorOpen(true); }}
+                                                                title={identity.age !== null || identity.minorBox ? t('adopter.age_edit') : t('adopter.age_add')} desc={t('adopter.age_hint')} />
+                                                        )}
+                                                        <AnchoredMenuItem icon={Share2} testId="profile-share"
+                                                            onClick={async () => {
+                                                                const url = `${window.location.origin}/adopter/${id}`;
+                                                                if (navigator.share) {
+                                                                    try { await navigator.share({ title: initialData?.name || '', url }); } catch { /* cancelled */ }
+                                                                } else {
+                                                                    try { await navigator.clipboard.writeText(url); } catch {
+                                                                        const ta = document.createElement('textarea'); ta.value = url; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+                                                                    }
+                                                                }
+                                                                setShowReportMenu(false);
+                                                            }}
+                                                            title={t('common.share') || 'Share Profile'} desc={t('common.copy_link') || 'Copy link or share'} />
+                                                        {/* A minor gets no alerts (a duplicate report is one): the server refuses it too. */}
+                                                        {!identity?.isMinor && (
+                                                            <AnchoredMenuItem icon={GitMerge} testId="profile-report-duplicate"
+                                                                onClick={() => {
+                                                                    setShowReportMenu(false);
+                                                                    if (!session?.user) { openLogin(); return; }
+                                                                    flaggingRef.current?.openAction('duplicate');
+                                                                }}
+                                                                title={t('flagging.menu_duplicate') || 'Report Duplicate'} desc={t('flagging.menu_duplicate_desc') || 'Flag as duplicate of another profile'} />
+                                                        )}
+                                                        <AnchoredMenuItem icon={PencilLine} testId="profile-report-inaccuracy"
+                                                            onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('inaccuracy'); }}
+                                                            title={t('flagging.menu_inaccuracy') || 'Report Inaccuracy'} desc={t('flagging.menu_inaccuracy_desc') || 'Information about me is wrong'} />
+                                                        <AnchoredMenuItem icon={Trash2} danger testId="profile-request-removal"
+                                                            onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('deletion'); }}
+                                                            title={t('flagging.menu_deletion') || 'Request Removal'} desc={t('flagging.menu_deletion_desc') || 'Remove my data from this platform'} />
+                                                    </AnchoredMenu>
                                                 </div>
                                             )}
                                         </>
