@@ -1378,8 +1378,17 @@ button {
   border-color: var(--accent) !important;
 }
 
-[data-theme="dark"] .focus\:border-teal-400:focus {
+[data-theme="dark"] .focus\:border-teal-400:focus,
+[data-theme="dark"] .focus\:border-teal-500:focus {
   border-color: var(--accent) !important;
+}
+
+/* Input borders (audit B18): stone-300/400 field outlines were raw light grey
+   in Azul Noche — a bright frame round a dark field. --text-faint reads as a
+   field edge on --surface-card without competing with the text. */
+[data-theme="dark"] .border-stone-300,
+[data-theme="dark"] .border-stone-400 {
+  border-color: var(--text-faint) !important;
 }
 
 [data-theme="dark"] .focus\:ring-teal-100:focus {

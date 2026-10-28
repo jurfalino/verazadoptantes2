@@ -9,7 +9,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { CONTACT_ENTRIES_FULL, isRenameAlias, deriveStreet, deriveLocality, detectSocialPlatform, retypeDraft, type ContactEntry, type ContactEntryType, type ContactDraft, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
 import { ContactTypePicker, CONTACT_TYPE_ICON } from '@/components/ContactTypePicker';
 import { ContactLead, ContactValueCell } from '@/components/ContactRow';
-import { INLINE_CANCEL_BTN, INLINE_SAVE_BTN } from '@/components/ui/inlineFormButtons';
+import { INLINE_CANCEL_BTN, INLINE_FIELD, INLINE_SAVE_BTN } from '@/components/ui/inlineFormButtons';
 import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
 import { PhoneAppsToggle } from '@/components/PhoneAppsToggle';
 import { addContactEntry } from '@/app/actions/addContactEntry';
@@ -720,7 +720,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                                 value={editDraft.streetAndNumber}
                                                                 onChange={e => setEditDraft({ ...editDraft, streetAndNumber: e.target.value })}
                                                                 placeholder={t('adopter.ce_input_ph_address')}
-                                                                className="w-full px-2 py-1 border border-stone-300 rounded text-base sm:text-sm min-h-[44px] sm:min-h-0"
+                                                                className={INLINE_FIELD}
                                                                 autoFocus
                                                             />
                                                             <input
@@ -728,7 +728,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                                 value={editDraft.locality}
                                                                 onChange={e => setEditDraft({ ...editDraft, locality: e.target.value })}
                                                                 placeholder={t('adopter.ce_input_ph_locality')}
-                                                                className="w-full px-2 py-1 border border-stone-300 rounded text-base sm:text-sm min-h-[44px] sm:min-h-0"
+                                                                className={INLINE_FIELD}
                                                             />
                                                         </>
                                                     ) : (
@@ -741,7 +741,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                                 if (e.key === 'Enter') { e.preventDefault(); commitEdit(entry); }
                                                                 if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
                                                             }}
-                                                            className="w-full px-2 py-1 border border-stone-300 rounded text-base sm:text-sm min-h-[44px] sm:min-h-0"
+                                                            className={INLINE_FIELD}
                                                             autoFocus
                                                         />
                                                     )}
@@ -975,7 +975,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                             value={composerStreet}
                                             onChange={e => setComposerStreet(e.target.value)}
                                             placeholder={t('adopter.ce_input_ph_address')}
-                                            className="w-full px-2 py-1.5 border border-stone-300 rounded text-base sm:text-sm min-h-[44px] sm:min-h-0"
+                                            className={INLINE_FIELD}
                                             autoFocus
                                         />
                                         <input
@@ -983,7 +983,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                             value={composerLocality}
                                             onChange={e => setComposerLocality(e.target.value)}
                                             placeholder={t('adopter.ce_input_ph_locality')}
-                                            className="w-full px-2 py-1.5 border border-stone-300 rounded text-base sm:text-sm min-h-[44px] sm:min-h-0"
+                                            className={INLINE_FIELD}
                                         />
                                     </>
                                 ) : (
@@ -999,7 +999,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                             if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }
                                             if (e.key === 'Escape') { e.preventDefault(); resetComposer(); }
                                         }}
-                                        className="w-full px-2 py-1.5 border border-stone-300 rounded text-base sm:text-sm min-h-[44px] sm:min-h-0"
+                                        className={INLINE_FIELD}
                                         autoFocus
                                     />
                                 )}

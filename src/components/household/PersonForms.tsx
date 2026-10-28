@@ -25,7 +25,7 @@ import { Check, X } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import ContactEntriesSection from '@/components/ContactEntriesSection';
-import { INLINE_CANCEL_BTN, INLINE_SAVE_BTN } from '@/components/ui/inlineFormButtons';
+import { INLINE_CANCEL_BTN, INLINE_FIELD, INLINE_SAVE_BTN } from '@/components/ui/inlineFormButtons';
 import { HouseholdCandidateCard } from '@/components/household/HouseholdCandidateCard';
 import { RELATIONSHIPS, type Relationship } from '@/lib/householdMembers';
 import type { ContactEntry } from '@/lib/contactEntries';
@@ -42,7 +42,7 @@ import { MinorCheckbox } from '@/components/MinorCheckbox';
  * The inputs of the profile's own inline forms (ContactEntriesSection's composer): these fields sit right
  * above that composer in the same form, so they look like it — 16px on a phone (no iOS zoom), 14px from `sm:`.
  */
-const FIELD = 'w-full min-h-[44px] sm:min-h-0 px-2 py-1.5 border border-stone-300 rounded bg-white text-base sm:text-sm text-stone-900 outline-none focus:border-teal-500';
+const FIELD = INLINE_FIELD;
 /** A field's label: the composer's own small label (ce_phone_apps / ce_social_which). */
 const LABEL = 'block text-xs font-semibold text-stone-500 mb-1';
 

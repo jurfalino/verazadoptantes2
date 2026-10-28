@@ -69,3 +69,13 @@ describe('globals.css — dark remaps for light-tint hovers', () => {
         expect(missing).toEqual([]);
     });
 });
+
+describe('globals.css — dark remaps for form-field borders (audit B18)', () => {
+    it.each([
+        '[data-theme="dark"] .border-stone-300',
+        '[data-theme="dark"] .border-stone-400',
+        '[data-theme="dark"] .focus\\:border-teal-500:focus',
+    ])('%s is remapped', (selector) => {
+        expect(css).toContain(selector);
+    });
+});
