@@ -46,6 +46,7 @@ import ConfirmCombine, { type ConfirmMode } from '@/components/pendientes/Confir
 import IdentityChoice from '@/components/pendientes/IdentityChoice';
 import WriteMessage from '@/components/pendientes/WriteMessage';
 import MergedRow, { keptSentence, mergedInfo, type MergedInfo } from '@/components/pendientes/MergedRow';
+import { pendientesSections } from '@/components/pendientes/sections';
 import { fill, movesToOtherList, otherSide, ownerName, sideById, sideOf, T_MUTED, type KeepSide } from '@/components/pendientes/ui';
 
 /** The section's anchor: request notifications link to /my-adopters#pendientes. */
@@ -398,7 +399,6 @@ export default function PendingDedup() {
     if (pairs === null) return null; // not loaded yet
     // A pair just combined keeps the section on screen (D52), even the last one.
     if (total === 0 && merged.length === 0) return null;
-    const mergedById = new Map(merged.map(m => [m.candidateId, m]));
 
     const confirmShown = confirm ? confirmView(confirm) : null;
 
@@ -427,20 +427,23 @@ export default function PendingDedup() {
                 <>
                     {/* Rows are the list's direct <div> children; group headers are <h3>s between them. */}
                     <div id="pending-dedup-list" className="rounded-2xl bg-white border border-[var(--border-default)] shadow-sm overflow-hidden">
-                        {GROUP_ORDER.flatMap(group => {
-                            const list = pairs.filter(p => p.group === group);
-                            // Combined rows no longer in the list (it reloaded since) stay at the end of their group.
-                            const gone = merged.filter(m => m.group === group && !pairs.some(p => p.candidateId === m.candidateId));
-                            if (!list.length && !gone.length) return [];
-                            const live = list.filter(p => !mergedById.has(p.candidateId)).length;
+                        {pendientesSections(pairs, merged, GROUP_ORDER).flatMap(section => {
+                            // Combined on this visit (D52): their own section at the end, never under
+                            // «Necesitan tu respuesta» — nothing is left to answer (audit C7).
+                            if (section.kind === 'merged') return [
+                                <h3 key="h-merged" data-testid="dedup-merged-heading"
+                                    className={`px-4 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider border-t border-[var(--border-default)] first:border-t-0 ${T_MUTED}`}>
+                                    {t('myAdopters.pending_d_group_merged')}
+                                </h3>,
+                                ...section.items.map(info => <MergedRow key={info.candidateId} info={info} t={t} />),
+                            ];
+                            const { group, pairs: list } = section;
                             return [
                                 <h3 key={`h-${group}`}
                                     className={`px-4 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider border-t border-[var(--border-default)] first:border-t-0 ${group === 'received' ? 'text-[var(--status-warning-text)]' : T_MUTED}`}>
-                                    {groupLabel(group, t)}{live > 0 && ` · ${live}`}
+                                    {groupLabel(group, t)} · {list.length}
                                 </h3>,
-                                ...list.map(pair => mergedById.has(pair.candidateId) ? (
-                                    <MergedRow key={pair.candidateId} info={mergedById.get(pair.candidateId)!} t={t} />
-                                ) : (
+                                ...list.map(pair => (
                                     <PairRow
                                         key={pair.candidateId}
                                         pair={pair}
@@ -458,7 +461,6 @@ export default function PendingDedup() {
                                         onRequestAccess={setAccessTarget}
                                     />
                                 )),
-                                ...gone.map(info => <MergedRow key={info.candidateId} info={info} t={t} />),
                             ];
                         })}
                     </div>
