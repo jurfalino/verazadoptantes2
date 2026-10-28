@@ -71,13 +71,15 @@ describe('getMatchContext — standing', () => {
 describe('getMatchContext — never more than the duplicate search', () => {
     const stub = (adopterId: string) => ({ adopterId, adopterName: '', relevancePercent: 90, matchTypes: [], matchValues: [], source: 'token' as const });
 
-    it('a merged-away (soft-deleted) profile: nothing, with or without standing — as the search, which skips it', async () => {
+    it('a merged-away (soft-deleted) profile: no standing at all — as the search, which skips it', async () => {
         sqlite.prepare(`UPDATE adopters SET deleted_at = 1000 WHERE id = 'pedro'`).run();
         expect(await hydrateDuplicateMatches(state.db, [stub('pedro')], { viewer: state.user, isUnauthenticated: false })).toEqual([]);
         const withStanding = await getMatchContext('pedro', { standing: true });
         expect(withStanding).toMatchObject({ ok: false, name: null });
         expect(withStanding.standing).toBeUndefined();
-        expect(await getMatchContext('pedro')).toMatchObject({ ok: false, name: null });
+        // Without standing (MatchCompare's presence hints) it still answers: the admin
+        // «Combinaciones cuestionadas» rows compare exactly the absorbed, merged-away profile.
+        expect(await getMatchContext('pedro')).toMatchObject({ ok: true, name: 'Pedro' });
     });
 
     it('the standing is exactly what the duplicate search shows this caller about the person — no more fields', async () => {
