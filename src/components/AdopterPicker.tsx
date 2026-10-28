@@ -127,7 +127,7 @@ export default function AdopterPicker({
     if (preview) {
         return (
             <div className="animate-in slide-in-from-right duration-200">
-                <div className="border border-teal-200 rounded-xl overflow-hidden bg-teal-50">
+                <div className="border border-teal-200 rounded-xl overflow-hidden bg-teal-50" data-testid="picker-preview-panel">
                     <div className="p-4 border-b border-teal-100 flex items-center gap-3">
                         {preview.thumbnail ? (
                             <img src={preview.thumbnail} alt="" className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm" />
@@ -154,11 +154,11 @@ export default function AdopterPicker({
                         )}
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
                             {preview.isMinor && <MinorTag testId="picker-minor-tag" />}
-                            {preview.avgRating != null && (
+                            {preview.avgRating != null ? (
                                 <RatingExplainer rating={preview.avgRating}>
-                                    <RatingBadge rating={preview.avgRating} variant="inline" size="sm" label="short" />
+                                    <RatingBadge rating={preview.avgRating} />
                                 </RatingExplainer>
-                            )}
+                            ) : <RatingBadge rating={null} />}
                             {preview.stats?.adoptions != null && (
                                 <div className="text-stone-500">
                                     {preview.stats.adoptions} {t('wizard.adoptions_label') || 'adoptions'}
@@ -268,9 +268,7 @@ export default function AdopterPicker({
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-stone-500">
                                     {/* A minor: «Menor de edad» before the rating (as on every card). */}
                                     {res.isMinor && <MinorTag testId="picker-minor-tag" />}
-                                    {res.avgRating != null && (
-                                        <RatingBadge rating={res.avgRating} variant="inline" size="sm" label="short" />
-                                    )}
+                                    <RatingBadge rating={res.avgRating} />
                                     {res.stats?.adoptions > 0 && (
                                         <span>{res.stats.adoptions} {t('wizard.adoptions_label') || 'adoptions'}</span>
                                     )}
@@ -281,6 +279,7 @@ export default function AdopterPicker({
 
                             <button
                                 onClick={() => setPreview(res)}
+                                data-testid="picker-preview"
                                 className="p-2 text-stone-500 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition-colors flex-shrink-0"
                                 title={t('wizard.preview') || 'Preview'}
                             >

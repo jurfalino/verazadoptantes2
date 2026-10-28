@@ -121,9 +121,9 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
     // mobile = [name/rating] with risk flags + contact promoted full-width below).
     const rating = res.avgRating !== null ? (
         <RatingExplainer rating={res.avgRating}>
-            <RatingBadge rating={res.avgRating} size="sm" label="short" />
+            <RatingBadge rating={res.avgRating} />
         </RatingExplainer>
-    ) : null;
+    ) : <RatingBadge rating={null} />;
     // A minor's «Menor de edad» sits in the rating's slot, before the rating (audit B5): one place, as on the
     // profile header and a household row — an informational marker only (Jon, 2026-10-28).
     const ratingBadge = res.isMinor ? <span className="inline-flex flex-wrap items-center gap-2"><MinorTag />{rating}</span> : rating;

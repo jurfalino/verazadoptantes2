@@ -835,7 +835,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                                 <div className="space-y-1 text-teal-800 break-words">
                                                                     <div><span className="font-semibold">{t('adoption.animal_name')}:</span> <span className="break-all">{changes.animalName}</span> ({changes.species})</div>
                                                                     <div><span className="font-semibold">{t('adoption.status')}:</span> {changes.status}</div>
-                                                                    <div className="flex items-center gap-1"><span className="font-semibold">{t('adoption.rating')}:</span> <RatingBadge rating={changes.rating} variant="inline" size="sm" /></div>
+                                                                    <div className="flex items-center gap-1"><span className="font-semibold">{t('adoption.rating')}:</span> <RatingBadge rating={changes.rating} /></div>
                                                                     {changes.details && <div className="text-xs italic mt-1 line-clamp-3 break-words" title={changes.details}>"{changes.details}"</div>}
                                                                 </div>
                                                             )}

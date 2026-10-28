@@ -1444,25 +1444,23 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                     )}
                                 </div>
                             </div>
-                            {/* Verdict — the rating is the single most important at-a-glance
-                                signal on a vetting tool, so it's promoted (md, with label) to its
-                                own prominent row right under the name, not buried in the meta row. */}
-                            {/* A minor's tag sits in the rating's slot, before the rating (audit B5: the same place as on a row or a
-                                card) — an informational marker only (Jon, 2026-10-28). */}
-                            {!isNew && (identity?.isMinor || (avgRating !== null && avgRating !== undefined)) && (
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                            {/* Verdict — the rating, right under the name: the one rating pill, the same size as on a
+                                household row or a card (Jon, 2026-10-28), «Sin calificación» when unrated. A minor's tag
+                                sits before it (audit B5) — an informational marker only (Jon, 2026-10-28). */}
+                            {!isNew && (
+                                <div className="mt-2 flex flex-wrap items-center gap-2" data-testid="profile-rating-row">
                                     {identity?.isMinor && <MinorTag />}
-                                    {avgRating !== null && avgRating !== undefined && (
-                                        <div
+                                    {avgRating !== null && avgRating !== undefined ? (
+                                        <span
                                             role="button"
                                             tabIndex={0}
                                             data-testid="rating-badge"
                                             onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
-                                            className={`inline-block cursor-pointer hover:shadow-md transition-shadow rounded-full ${TAP_TARGET_44}`}
+                                            className={`inline-flex cursor-pointer hover:opacity-90 transition-opacity rounded-full ${TAP_TARGET_44}`}
                                         >
-                                            <RatingBadge rating={avgRating} size="md" label="short" />
-                                        </div>
-                                    )}
+                                            <RatingBadge rating={avgRating} />
+                                        </span>
+                                    ) : <RatingBadge rating={null} />}
                                 </div>
                             )}
                             {/* Metadata row */}

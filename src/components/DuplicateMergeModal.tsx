@@ -2,11 +2,10 @@
 
 import { useState, type ReactNode } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
-import { StarIcon } from '@/components/StarIcon';
-import { getRatingColors } from '@/lib/ratingColors';
 import { AdopterName } from '@/components/AdopterName';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
+import { RatingBadge } from '@/components/RatingBadge';
 
 /**
  * Render an i18n template that contains a single `{name}` placeholder,
@@ -203,11 +202,7 @@ function ProfileCard({
             {adopter.contact && (
                 <p className="text-xs text-stone-500 mt-2 line-clamp-2 break-words">{adopter.contact}</p>
             )}
-            {adopter.avgRating != null ? (
-                <p className="text-xs text-stone-500 mt-1 inline-flex items-center gap-1"><StarIcon className={`w-3 h-3 ${getRatingColors(adopter.avgRating).text}`} />{adopter.avgRating.toFixed(1)}</p>
-            ) : (
-                <p className="text-xs text-stone-400 italic mt-1">{t('admin.dmm_no_activity')}</p>
-            )}
+            <div className="mt-1"><RatingBadge rating={adopter.avgRating} /></div>
         </button>
     );
 }

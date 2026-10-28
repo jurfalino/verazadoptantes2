@@ -519,13 +519,11 @@ function StatusBanner({
                         <div className="mt-2 flex items-center gap-2">
                             {linkedProfile.avgRating != null ? (
                                 <RatingExplainer rating={linkedProfile.avgRating}>
-                                    <RatingBadge rating={linkedProfile.avgRating} size="sm" label="short" />
+                                    <RatingBadge rating={linkedProfile.avgRating} />
                                 </RatingExplainer>
                             ) : (
-                                <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                                    {/* The same words as every other unrated person (PersonStanding). */}
-                                    {t('adopter.hh_link_unrated')}
-                                </span>
+                                // The same pill as every other unrated person.
+                                <RatingBadge rating={null} />
                             )}
                         </div>
                     )}

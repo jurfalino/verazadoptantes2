@@ -31,13 +31,11 @@ export function PersonStanding({ rating, openAlerts, isMinor, minorTestId, alert
     minorTestId?: string;
     alertsTestId?: string;
 }) {
-    const { t } = useLanguage();
     return (
         <>
             {isMinor && <MinorTag testId={minorTestId} />}
-            {rating != null && rating >= 1
-                ? <RatingBadge rating={rating} variant="inline" size="sm" label="short" />
-                : <span className="text-xs text-stone-500 whitespace-nowrap" data-testid="person-unrated">{t('adopter.hh_link_unrated')}</span>}
+            {/* The one rating pill (or «Sin calificación»), as in the profile header (Jon, 2026-10-28). */}
+            <RatingBadge rating={rating} />
             {/* The profile header's flag pill: one kind as itself, two as «2 alertas» (audit B2, fix round 2 item 9). */}
             <AlertSummary kinds={openAlerts} testId={alertsTestId} />
         </>

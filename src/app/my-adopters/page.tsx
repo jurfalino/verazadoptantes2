@@ -585,10 +585,10 @@ export default function MyAdoptersPage() {
                                         <div className="col-span-2 flex flex-col items-center gap-1 min-h-[2rem]">
                                             {adopter.avgRating !== null ? (
                                                 <span className={ROW_CONTROL}><RatingExplainer rating={adopter.avgRating}>
-                                                    <RatingBadge rating={adopter.avgRating} size="sm" label="short" />
+                                                    <RatingBadge rating={adopter.avgRating} />
                                                 </RatingExplainer></span>
                                             ) : (
-                                                <span className="text-xs text-stone-300" title={t('myAdopters.rating_empty_hint') || 'Sin actividad calificada'}>—</span>
+                                                <RatingBadge rating={null} />
                                             )}
                                             <FlagBadges flags={adopter.flags} t={t} />
                                         </div>
@@ -684,10 +684,10 @@ export default function MyAdoptersPage() {
                                         </div>
                                         {adopter.avgRating !== null ? (
                                             <span className={ROW_CONTROL}><RatingExplainer rating={adopter.avgRating}>
-                                                <RatingBadge rating={adopter.avgRating} size="sm" label="short" />
+                                                <RatingBadge rating={adopter.avgRating} />
                                             </RatingExplainer></span>
                                         ) : (
-                                            <span className="text-xs text-stone-300" title={t('myAdopters.rating_empty_hint') || 'Sin actividad calificada'}>—</span>
+                                            <RatingBadge rating={null} />
                                         )}
                                     </div>
 
