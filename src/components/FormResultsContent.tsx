@@ -440,6 +440,7 @@ function StatusBanner({
     L: (key: string) => string;
     actions: React.ReactNode;
 }) {
+    const { t } = useLanguage();
     const tone = BANNER_TONE[banner];
     const reviewTitle = count === 1 ? L('banner_review_title_one') : L('banner_review_title').replace('{count}', String(count));
     const newProfileName = applicantName || linkedProfile?.name;
@@ -518,7 +519,8 @@ function StatusBanner({
                                 </RatingExplainer>
                             ) : (
                                 <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                                    {L('linked_no_rating')}
+                                    {/* The same words as every other unrated person (PersonStanding). */}
+                                    {t('adopter.hh_link_unrated')}
                                 </span>
                             )}
                         </div>

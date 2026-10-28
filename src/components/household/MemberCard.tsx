@@ -33,11 +33,8 @@ import { useRouter } from 'next/navigation';
 import { ChevronDown, Lock, Pencil, Trash2, UserMinus } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { MinorTag } from '@/components/MinorTag';
 import { MemberContacts } from '@/components/LinkedProfileSummary';
-import { RatingBadge } from '@/components/RatingBadge';
-import { ActivityCountsLine } from '@/components/ActivityCountsLine';
-import { activityParts } from '@/domain/activityCounts';
+import { PersonStanding, PersonActivity } from '@/components/PersonStanding';
 import { EditMemberForm, useHouseholdFailure } from '@/components/household/PersonForms';
 import { RemoveFromHomeDialog, RequestDeletionDialog, DeleteProfileDialog, type DeletionCollaborators, type RemoveReason } from '@/components/household/HouseholdDialogs';
 import { checkAdopterDeletable, deleteOwnAdopter, removeHouseholdMembership, requestAdopterDeletion } from '@/app/actions';
@@ -215,8 +212,6 @@ export function MemberCard({ member, hostName, relativeName, signedIn, currentUs
             });
     }
 
-    const alerts = member.openAlerts;
-    const hasActivity = activityParts(member.activity).length > 0;
     return (
         <li className="py-2" data-testid={testId} data-profile-id={member.profileId}>
             <div className="flex items-start gap-2">
@@ -225,25 +220,9 @@ export function MemberCard({ member, hostName, relativeName, signedIn, currentUs
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                         {/* `relative z-10`: the contacts toggle's padded hit area (below) reaches up into this line; the name always wins. */}
                         <a href={`/adopter/${encodeURIComponent(member.profileId)}`} data-testid="household-member-profile-link" className="relative z-10 font-semibold text-[15px] text-teal-700 hover:underline min-w-0 break-words">{name}</a>
-                        {member.isMinor ? <MinorTag /> : (
-                            <>
-                                {member.rating != null && member.rating >= 1 && <RatingBadge rating={member.rating} variant="inline" size="sm" />}
-                                {alerts > 0 && (
-                                    <span className="text-xs font-semibold text-rose-700 whitespace-nowrap" data-testid="household-member-alerts">
-                                        {alerts === 1 ? t('adopter.hh_link_alerts_one') : fill(t('adopter.hh_link_alerts_many'), { n: alerts })}
-                                    </span>
-                                )}
-                            </>
-                        )}
-                        {/* What their own «Actividad» counts (fosters and returns too). A minor with none says nothing:
-                            their records go on the adults, so «sin actividad» would be noise; any they do have shows, as on their profile. */}
-                        {hasActivity ? (
-                            <span className="inline-flex flex-wrap items-baseline gap-x-1 text-xs text-stone-600" data-testid="household-member-activity">
-                                <ActivityCountsLine counts={member.activity} separated />
-                            </span>
-                        ) : !member.isMinor && (
-                            <span className="text-xs text-stone-500" data-testid="household-member-activity">{t('adopter.hh_no_activity')}</span>
-                        )}
+                        {/* The one «standing + activity» renderer (PersonStanding), as «¿Es este perfil?» and every card's household line. */}
+                        <PersonStanding rating={member.rating} openAlerts={member.openAlerts} isMinor={member.isMinor} alertsTestId="household-member-alerts" />
+                        <PersonActivity activity={member.activity} isMinor={member.isMinor} testId="household-member-activity" />
                     </div>
                     {(sub || attribution || hasContactsToggle) && (
                         <div className="text-xs text-stone-500 mt-1 break-words">

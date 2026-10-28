@@ -173,6 +173,8 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         await form.getByTestId('hh-form-save').click();
         const candidate = form.getByTestId('hh-candidate').filter({ hasText: ROSA_NAME });
         await expect(candidate).toBeVisible({ timeout: 30_000 });
+        // «¿Es este perfil?» counts her activity as her household row will (the foster too), not «0 adopciones».
+        await expect(candidate.locator('[data-activity="foster"]')).toHaveAttribute('data-count', '1');
         await candidate.getByTestId('hh-candidate-yes').click();
         await expect(form).toHaveCount(0, { timeout: 30_000 });
         await expect(card(page, ROSA_NAME)).toHaveCount(1, { timeout: 30_000 });

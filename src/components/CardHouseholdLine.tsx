@@ -5,21 +5,21 @@
  * «¿Es este perfil?» candidate (households as profiles, prototype S1/S2):
  *
  *   ⌂ Convive con
- *     Pedro Paez ★1.0 Peligroso · 1 alerta
+ *     Pedro Paez ★1.0 Peligroso  1 alerta
  *     Marta Paez ★4.0 Bueno
  *     En otro hogar, con
  *     Ana Gómez ★3.0 Regular
  *
  * One block per home, one housemate per line so a name never wraps away from
- * its rating. A minor shows «Menor de edad» instead of a rating. Names are
+ * its rating — written by PersonStanding, as on a household row and «¿Es este
+ * perfil?». A minor shows «Menor de edad» instead of a rating. Names are
  * plain text: the search card is itself a link. Gift-only lines are left out
  * (a gift recipient doesn't live there). Renders nothing with no housemates.
  */
 
 import { Home } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
-import { RatingBadge } from '@/components/RatingBadge';
-import { MinorTag } from '@/components/MinorTag';
+import { PersonStanding } from '@/components/PersonStanding';
 import { householdLineGroups, type HouseholdLine } from '@/domain/households';
 
 export function CardHouseholdLine({ lines, className = 'mt-2' }: { lines: HouseholdLine[] | null | undefined; className?: string }) {
@@ -42,23 +42,7 @@ export function CardHouseholdLine({ lines, className = 'mt-2' }: { lines: Househ
                         {home.map(p => (
                             <div key={p.profileId} className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0">
                                 <span className="font-medium text-stone-800 break-words">{p.name}</span>
-                                {p.isMinor ? <MinorTag testId="card-household-minor" /> : (
-                                    <>
-                                        {p.rating != null
-                                            ? <RatingBadge rating={p.rating} variant="inline" size="sm" label="short" />
-                                            : <span className="text-stone-500">{t('adopter.hh_link_unrated')}</span>}
-                                        {p.openAlerts > 0 && (
-                                            <>
-                                                <span className="text-stone-400" aria-hidden="true">·</span>
-                                                <span className="font-semibold text-rose-700">
-                                                    {p.openAlerts === 1
-                                                        ? t('adopter.hh_link_alerts_one')
-                                                        : t('adopter.hh_link_alerts_many').replace('{n}', String(p.openAlerts))}
-                                                </span>
-                                            </>
-                                        )}
-                                    </>
-                                )}
+                                <PersonStanding rating={p.rating} openAlerts={p.openAlerts} isMinor={p.isMinor} minorTestId="card-household-minor" alertsTestId="card-household-alerts" />
                             </div>
                         ))}
                     </div>

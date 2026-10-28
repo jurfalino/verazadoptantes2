@@ -10,8 +10,7 @@
  */
 import { AlertTriangle, Check, Home, Info } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
-import { RatingBadge } from '@/components/RatingBadge';
-import { MinorTag } from '@/components/MinorTag';
+import { PersonStanding, PersonActivity } from '@/components/PersonStanding';
 import { CardHouseholdLine } from '@/components/CardHouseholdLine';
 import { MatchesPill } from '@/components/LinkedProfileSummary';
 import { ContactRow } from '@/components/ContactRow';
@@ -73,28 +72,12 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
                         {(name[0] || '?').toUpperCase()}
                     </div>
                     <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                        {/* Name, standing and activity exactly as a household row writes them (PersonStanding). */}
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                             <a href={`/adopter/${encodeURIComponent(candidate.adopterId)}`} target="_blank" rel="noopener noreferrer"
                                 data-testid={`${testId}-link`} className="font-semibold text-[15px] text-teal-700 hover:underline break-words">{name}</a>
-                            {minor && <MinorTag />}
-                        </div>
-                        <div className="mt-2 space-y-0.5">
-                            {!minor && (
-                                <>
-                                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
-                                        {candidate.avgRating != null && candidate.avgRating >= 1
-                                            ? <RatingBadge rating={candidate.avgRating} variant="inline" size="md" />
-                                            : <span className="text-stone-500">{t('adopter.hh_link_unrated')}</span>}
-                                        <span className="text-stone-400" aria-hidden="true">·</span>
-                                        {alerts > 0
-                                            ? <span className="font-semibold text-rose-700">{alerts === 1 ? t('adopter.hh_link_alerts_one') : fill(t('adopter.hh_link_alerts_many'), { n: alerts })}</span>
-                                            : <span className="text-stone-500">{t('adopter.hh_link_no_alerts')}</span>}
-                                    </div>
-                                    <div className="text-xs text-stone-600">
-                                        {candidate.stats.adoptions === 1 ? t('adopter.hh_link_adoptions_one') : fill(t('adopter.hh_link_adoptions_many'), { n: candidate.stats.adoptions })}
-                                    </div>
-                                </>
-                            )}
+                            <PersonStanding rating={candidate.rating ?? candidate.avgRating} openAlerts={alerts} isMinor={minor} alertsTestId={`${testId}-alerts`} />
+                            {candidate.activity && <PersonActivity activity={candidate.activity} isMinor={minor} testId={`${testId}-activity`} />}
                         </div>
                         {shown.length > 0 && (
                             <ul className="mt-3 pt-3 border-t border-dashed border-stone-200 space-y-1.5">
