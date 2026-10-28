@@ -37,6 +37,9 @@ import { EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from '@/domain/profi
 import { UNDO_RENAME_PARAM, type ProfileIdentityView } from '@/domain/profileIdentity';
 import RenameUndoPrompt, { RenameUndoButton } from '@/components/RenameUndo';
 import { Modal, ModalActions, ModalText } from '@/components/ui/Modal';
+import { ProfilePromptBanner } from '@/components/ProfilePromptBanner';
+import { buttonClasses } from '@/components/ui/Button';
+import { AlertTriangle, ArrowRight, Search } from 'lucide-react';
 
 interface AdopterProfileV2Props {
     id: string;
@@ -190,6 +193,10 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             canCreateGift: false,
         };
     }, [previewAsStranger, households]);
+    /** profileId → name of everyone in a home shown on this profile (history names who was added, B17). */
+    const householdMemberNames = useMemo(() => new Map(
+        (displayedHouseholds?.views ?? []).flatMap(v => v.members.map(m => [m.profileId, m.name?.trim() || ''] as const)).filter(([, n]) => n),
+    ), [displayedHouseholds]);
 
     // Effective piiContext for preview mode — flips `privileged` off and
     // `masked` on so children that branch on those flags render the
@@ -430,31 +437,19 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     where the merge UI lives. Everyone else sees the same flag
                     informationally — non-owners can't act on someone else's record. */}
                 {!isNew && adopter && reviewableDups.length > 0 && (
+                    // The shared profile banner (audit B7): the owner/admin gets «Revisar» (to Pendientes); everyone
+                    // else the same signal, neutral, since they can't act on someone else's record.
                     (isOwner || isAdmin) ? (
-                        <a
-                            href="/my-adopters#pendientes"
-                            className="block rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 transition-colors p-3 text-sm text-amber-900 flex items-center justify-between gap-3"
-                        >
-                            <span className="flex items-center gap-2 min-w-0">
-                                <span aria-hidden>🔍</span>
-                                <span className="font-semibold">
-                                    {reviewableDups.length === 1
-                                        ? (t('myAdopters.profile_pending_dup_one') || 'Posible duplicado detectado')
-                                        : (t('myAdopters.profile_pending_dup_many') || '{n} posibles duplicados detectados').replace('{n}', String(reviewableDups.length))}
-                                </span>
-                            </span>
-                            <span className="text-xs font-medium text-amber-800 flex-shrink-0">
-                                {t('myAdopters.profile_pending_dup_review') || 'Revisar'} →
-                            </span>
-                        </a>
+                        <ProfilePromptBanner tone="warning" icon={Search} testId="profile-pending-dup"
+                            title={reviewableDups.length === 1
+                                ? (t('myAdopters.profile_pending_dup_one') || 'Posible duplicado detectado')
+                                : (t('myAdopters.profile_pending_dup_many') || '{n} posibles duplicados detectados').replace('{n}', String(reviewableDups.length))}
+                            actions={<a href="/my-adopters#pendientes" className={buttonClasses({ variant: 'secondary', size: 'compact' })}>
+                                {t('myAdopters.profile_pending_dup_review') || 'Revisar'}<ArrowRight className="w-4 h-4" aria-hidden="true" />
+                            </a>} />
                     ) : (
-                        <div
-                            className="rounded-xl border border-stone-200 bg-stone-50 p-3 text-sm text-stone-700 flex items-center gap-2"
-                            title={t('myAdopters.profile_pending_dup_other_tooltip') || 'El sistema detectó otro registro similar. Solo el responsable del registro puede revisarlo.'}
-                        >
-                            <span aria-hidden>🔍</span>
-                            <span>{t('myAdopters.profile_pending_dup_other') || 'Posible duplicado — el responsable del registro puede revisarlo.'}</span>
-                        </div>
+                        <ProfilePromptBanner tone="info" icon={Search} testId="profile-pending-dup"
+                            title={t('myAdopters.profile_pending_dup_other') || 'Posible duplicado — el responsable del registro puede revisarlo.'} />
                     )
                 )}
 
@@ -482,13 +477,10 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     header only to the owner + admins/moderators (gated by the
                     page). No requester identity or date, per product decision. */}
                 {showDeletionRequested && !isNew && (
-                    <div className="mb-4 flex gap-3 items-start rounded-2xl border px-4 py-3" style={{ backgroundColor: 'var(--status-warning-bg)', borderColor: 'var(--status-warning-border)' }}>
-                        <svg className="w-5 h-5 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} style={{ color: 'var(--status-warning-text)' }}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
-                        </svg>
-                        <p className="text-sm" style={{ color: 'var(--status-warning-text)' }}>
-                            <span className="font-semibold">{t('adopter.deletion_requested_title')}</span> {t('adopter.deletion_requested_body')}
-                        </p>
+                    <div className="mb-4">
+                        <ProfilePromptBanner tone="warning" icon={AlertTriangle} testId="deletion-requested" title={t('adopter.deletion_requested_title')}>
+                            {t('adopter.deletion_requested_body')}
+                        </ProfilePromptBanner>
                     </div>
                 )}
 
@@ -621,10 +613,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 {!isNew && adopter && canViewAudit && (
                     <CollapsibleSection title={t('audit.log_title') || 'History'} count={history.length} defaultOpen={false}>
                         <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-5">
-                            <h3 className="text-sm font-semibold text-teal-800 mb-4 uppercase tracking-wider flex items-center gap-2">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                {t('audit.log_title') || 'History Log'} <span className="text-stone-500 font-normal">({history.length} {t('audit.events') || 'events'})</span>
-                            </h3>
+                            {/* No inner heading: the section's own title and count say it (audit B17). */}
                             {history.length > 0 ? (
                                 <div className="space-y-4">
                                     {history.map((h) => {
@@ -671,9 +660,10 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
 
                                         return (
                                             <div key={h.id} className="text-sm border-l-4 border-teal-200 pl-4 py-3 bg-teal-50 rounded-r-lg">
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-teal-700 text-xs font-semibold uppercase tracking-wider">
+                                                {/* Date, kind and «por X» wrap as three pieces at 390, never into one blob (audit B17). */}
+                                                <div className="flex flex-wrap justify-between items-center gap-x-2 gap-y-1 mb-2">
+                                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+                                                        <span className="text-teal-700 text-xs font-semibold uppercase tracking-wider whitespace-nowrap">
                                                             {formatDateTime(new Date(h.changedAt as string | number))}
                                                         </span>
                                                         {eventType === 'adoption_added' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_adoption_added')}</span>}
@@ -704,7 +694,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                         {eventType === 'name_restored' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_name_restored')}</span>}
                                                         {eventType === 'age_changed' && <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_age_changed')}</span>}
                                                     </div>
-                                                    <span className="text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
+                                                    <span className="max-w-full truncate text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
                                                         {t('audit.by')} {(h.changedBy ? actorLabel(h.changedBy, userNameMap?.[h.changedBy], t) : t('common.anonymous'))}
                                                     </span>
                                                 </div>
@@ -737,7 +727,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                                         <p className="text-xs text-teal-800 mt-1.5 break-words">{t('audit.desc_name_alias_kept').replace('{name}', changes.from)}</p>
                                                                     )}
                                                                     {eventType === 'name_changed' && h.id === renameUndoId && !previewAsStranger && (
-                                                                        <RenameUndoButton historyId={h.id} source="AdopterProfileV2.history" variant="link" />
+                                                                        <RenameUndoButton historyId={h.id} source="AdopterProfileV2.history" />
                                                                     )}
                                                                 </div>
                                                             )}
@@ -801,10 +791,15 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                                     text = text.replace('{host}', host);
                                                                     otherId = changes.anchorId;
                                                                 } else if (eventType === 'hh_member_added') {
+                                                                    // Who was added (audit B17): their name while they're still in a home shown here, else «una persona».
+                                                                    const added = typeof changes.profileId === 'string' ? householdMemberNames.get(changes.profileId) : undefined;
+                                                                    const hasRel = changes.relationship && changes.relationship !== 'unknown';
                                                                     text = changes.gift ? t('audit.desc_hh_member_added_gift')
-                                                                        : changes.relationship && changes.relationship !== 'unknown'
-                                                                            ? t('audit.desc_hh_member_added').replace('{rel}', rel(changes.relationship).toLowerCase())
-                                                                            : t('audit.desc_hh_member_added_plain');
+                                                                        : added
+                                                                            ? (hasRel ? t('audit.desc_hh_member_added_named').replace('{rel}', rel(changes.relationship).toLowerCase()) : t('audit.desc_hh_member_added_named_plain')).replace('{name}', added)
+                                                                            : hasRel
+                                                                                ? t('audit.desc_hh_member_added').replace('{rel}', rel(changes.relationship).toLowerCase())
+                                                                                : t('audit.desc_hh_member_added_plain');
                                                                     otherId = changes.profileId;
                                                                 } else if (eventType === 'hh_joined') {
                                                                     text = t('audit.desc_hh_joined').replace('{host}', host);
