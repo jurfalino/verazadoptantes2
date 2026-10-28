@@ -195,7 +195,8 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
                     onClick={onDismiss}
                     aria-label="Cerrar"
                     data-testid="toast-dismiss"
-                    className="hover:opacity-70"
+                    // 44px hit area around the 16px ×, pulled into the toast's padding (no visual change).
+                    className="-m-3.5 shrink-0 min-w-[44px] min-h-[44px] inline-flex items-center justify-center hover:opacity-70"
                     style={{ color: 'var(--text-muted)' }}
                 >
                     <X className="w-4 h-4" />
