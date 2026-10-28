@@ -83,10 +83,12 @@ export function Modal({ title, onClose, busy = false, testId, size = 'md', child
             openDialogs.remove(id);
             alive.current = false;
             // After the dialog is gone (and whatever closed it has re-rendered): back to its opener —
-            // unless it was only re-mounted (React's dev double effect, which leaves it alive), or
-            // another dialog opened in its place and already holds the focus.
+            // only if the focus was left on nothing (it was inside the dialog, now gone). Not when it was
+            // only re-mounted (React's dev double effect leaves it alive), and never taking the focus from
+            // whatever already has it (another dialog, a menu opened from the keyboard right after).
             requestAnimationFrame(() => {
-                if (alive.current || document.activeElement?.closest('[aria-modal="true"]')) return;
+                const active = document.activeElement;
+                if (alive.current || (active && active !== document.body)) return;
                 returnFocusTarget(returnTo)?.focus({ preventScroll: true });
             });
         };
