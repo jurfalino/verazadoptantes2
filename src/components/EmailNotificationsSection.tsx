@@ -20,7 +20,7 @@ const CATEGORY_FALLBACK: Record<EmailCategory, { label: string; desc: string }> 
     forms: { label: 'Formularios y contratos', desc: 'Formularios y contratos recibidos o vinculados a tus perfiles.' },
     merges: { label: 'Duplicados y combinaciones', desc: 'Duplicados detectados y perfiles combinados.' },
     contact_access: { label: 'Acceso a datos de contacto', desc: 'Respuestas a tus pedidos de acceso a datos de contacto.' },
-    profile_changes: { label: 'Cambios en tus perfiles', desc: 'Transferencias de perfiles y contactos agregados.' },
+    profile_changes: { label: 'Cambios en tus perfiles', desc: 'Transferencias de perfiles, contactos agregados, cambios de nombre y de edad, y avisos del hogar (quién se sumó, se quitó o convive con quién).' },
     api: { label: 'API', desc: 'Registros y accesos de tus claves de API.' },
     other: { label: 'Otros avisos', desc: 'Cualquier otro aviso de la campanita.' },
 };
@@ -66,9 +66,11 @@ export default function EmailNotificationsSection() {
 
     return (
         <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-5 mt-6" data-testid="email-prefs-section">
-            <h2 className="text-base font-bold text-stone-900">✉️ {t('settings.email_title') || 'Avisos por email'}</h2>
+            {/* A plain heading like its sibling sections (Seguimientos, Documentos) — no ✉️ (audit B19). */}
+            <h2 className="text-base font-bold text-stone-900">{t('settings.email_title') || 'Avisos por email'}</h2>
             <p className="text-xs text-stone-500 mt-1 mb-2 max-w-prose">{t('settings.email_hint') || 'Elegí qué avisos de la campanita también te llegan por correo.'}</p>
-            <ul className="divide-y divide-stone-100">
+            {/* --border-default dividers: the same visible line in Claro and Azul Noche (stone-100 vanished on the light card) — audit B19. */}
+            <ul className="divide-y divide-[var(--border-default)]">
                 {visibleCategories(state.hasApiKey).map(category => {
                     const alwaysOn = ALWAYS_ON_CATEGORIES.has(category);
                     const on = isEmailEnabled(state.prefs, category);

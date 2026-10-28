@@ -2806,7 +2806,7 @@ export const pt = {
         email_cat_contact_access: 'Acesso a dados de contato',
         email_cat_contact_access_desc: 'Respostas aos seus pedidos de acesso a dados de contato.',
         email_cat_profile_changes: 'Alterações nos seus perfis',
-        email_cat_profile_changes_desc: 'Transferências de perfis e contatos adicionados.',
+        email_cat_profile_changes_desc: 'Transferências de perfis, contatos adicionados, mudanças de nome e de idade, e avisos do lar (quem entrou, saiu ou mora com quem).',
         email_cat_api: 'API',
         email_cat_api_desc: 'Registros e acessos das suas chaves de API.',
         email_cat_other: 'Outros avisos',
