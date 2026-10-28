@@ -17,13 +17,17 @@ export const PILL_BOX = 'inline-flex items-center gap-1 px-2 py-0.5 text-[11px] 
 /**
  * A rating, ONE look everywhere: the pill «★ 4.0 · Bueno» — the star, the
  * number, a «·» and the short word, in the rating's colour (colour is never
- * the only signal). No rating (null, 0, anything outside 1–5): the neutral
- * pill «Sin calificación». No size or variant: a second look is not possible.
+ * the only signal). No size or variant: a second look is not possible.
+ *
+ * A PERSON with no rating (null, 0, anything outside 1–5) shows the neutral
+ * pill «Sin calificación». A RECORD with no rating shows NOTHING: the caller
+ * guards before rendering (`{!!x && <RatingBadge rating={x} />}`), as the
+ * activity timeline, the animal timeline and /my-adoptions do — a record
+ * is never «unrated» the way a person is.
  *
  * Used for a person's rating (profile header, household rows, cards, the
  * picker, lists, applicants, form results, interview cards) and for one
- * record's own rating (the activity timeline, /my-adoptions). Callers that
- * show nothing for an unrated RECORD guard before rendering.
+ * record's own rating (the activity timeline, /my-adoptions).
  */
 export function RatingBadge({ rating }: { rating: number | string | null | undefined }) {
     const { t } = useLanguage();

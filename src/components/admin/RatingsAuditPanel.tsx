@@ -304,7 +304,7 @@ export default function RatingsAuditPanel() {
                                                 <option value={NONE}>Sin calificación</option>
                                             </select>
                                         ) : (
-                                            <RatingBadge rating={r.rating} />
+                                            !!r.rating && <RatingBadge rating={r.rating} />
                                         )}
                                         {/* Same cell as the rating: "change it" and "it's fine" are one decision. */}
                                         {canEdit && (
