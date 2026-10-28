@@ -14,6 +14,7 @@ import MatchCompare, { type MatchSourceKind } from '@/components/MatchCompare';
 import { zarazTrack } from '@/lib/zaraz';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
+import { withoutLegacyMergeSeparators } from '@/lib/contactEntries';
 import { isOpenDuplicateFlag } from '@/domain/dedupPair';
 import { CheckCircle2 } from 'lucide-react';
 import { AlertPill } from '@/components/AlertPill';
@@ -514,7 +515,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                                         onClick={() => setTargetAdopter(res.adopter)}
                                                     >
                                                         <div className="font-semibold text-teal-900 truncate" title={res.adopter.name}>{res.adopter.name}</div>
-                                                        <div className="text-teal-700 truncate" title={res.adopter.contactInfo || undefined}>{res.adopter.contactInfo}</div>
+                                                        <div className="text-teal-700 truncate" title={withoutLegacyMergeSeparators(res.adopter.contactInfo) || undefined}>{withoutLegacyMergeSeparators(res.adopter.contactInfo)}</div>
                                                     </div>
                                                 ))}
                                             </div>

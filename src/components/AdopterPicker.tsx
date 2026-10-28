@@ -11,6 +11,7 @@ import { AdopterName } from '@/components/AdopterName';
 import { MinorTag } from '@/components/MinorTag';
 import { PersonStanding } from '@/components/PersonStanding';
 import type { HouseholdLine } from '@/domain/households';
+import { withoutLegacyMergeSeparators } from '@/lib/contactEntries';
 
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -182,10 +183,11 @@ export default function AdopterPicker({
                     </div>
 
                     <div className="p-4 space-y-3">
-                        {preview.adopter.contactInfo && (
+                        {/* No «--- Merged from X ---» line of an old merge (audit C1). */}
+                        {withoutLegacyMergeSeparators(preview.adopter.contactInfo) && (
                             <div>
                                 <div className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-1">{t('adopter.contact') || 'Contact'}</div>
-                                <div className="text-sm text-stone-700 whitespace-pre-line line-clamp-3">{preview.adopter.contactInfo}</div>
+                                <div className="text-sm text-stone-700 whitespace-pre-line line-clamp-3">{withoutLegacyMergeSeparators(preview.adopter.contactInfo)}</div>
                             </div>
                         )}
                         <div className="flex gap-4 text-sm">
