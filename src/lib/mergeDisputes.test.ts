@@ -104,6 +104,19 @@ describe('the notice leads to the dispute (D50)', () => {
     });
 });
 
+describe('the merged text fields (audit C1)', () => {
+    it('no English «--- Merged from X ---» note: the two blobs are joined, the merge itself is in the history', async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_info = 'Tel: 11 1111-1111', address_info = 'Calle 1' WHERE id = 'mine-old'`).run();
+        sqlite.prepare(`UPDATE adopters SET contact_info = 'Tel: 11 5555 0001', address_info = 'Calle 2' WHERE id = 'theirs-new'`).run();
+        await ownerMergesIntoMine();
+        const row = sqlite.prepare(`SELECT contact_info, address_info FROM adopters WHERE id = 'mine-old'`).get()!;
+        expect(row.contact_info).toBe('Tel: 11 1111-1111\nTel: 11 5555 0001');
+        expect(row.address_info).toBe('Calle 1\nCalle 2');
+        expect(String(row.contact_info) + String(row.address_info)).not.toMatch(/Merged/);
+        expect(sqlite.prepare(`SELECT changes FROM adopter_history WHERE adopter_id = 'mine-old'`).all().map(r => String(r.changes)).join(' ')).toContain('profiles_merged');
+    });
+});
+
 describe('raiseMergeDispute (D50)', () => {
     it('the kept profile\'s owner raises it: one open dispute, the admins hear it; raising again changes nothing', async () => {
         const auditId = await ownerMergesIntoMine();

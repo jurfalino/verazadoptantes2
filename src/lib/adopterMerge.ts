@@ -186,16 +186,18 @@ export async function mergeAdopters(
         const mergedFields = (p: typeof primary) => {
             const updates: Partial<typeof adopters.$inferInsert> = {};
 
+            // Joined, no separator line: the old English «--- Merged from X ---» showed up as a
+            // contact «Nota» (audit C1). The merge itself is the profiles_merged history row.
             if (secondary.contactInfo) {
                 updates.contactInfo = p.contactInfo
-                    ? `${p.contactInfo}\n--- Merged from ${secondary.name} ---\n${secondary.contactInfo}`
+                    ? `${p.contactInfo}\n${secondary.contactInfo}`
                     : secondary.contactInfo;
             }
 
             if (secondary.addressInfo && !p.addressInfo) {
                 updates.addressInfo = secondary.addressInfo;
             } else if (secondary.addressInfo && p.addressInfo) {
-                updates.addressInfo = `${p.addressInfo}\n--- Merged ---\n${secondary.addressInfo}`;
+                updates.addressInfo = `${p.addressInfo}\n${secondary.addressInfo}`;
             }
 
             if (secondary.familyMembers) {

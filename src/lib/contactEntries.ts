@@ -467,6 +467,14 @@ function formattedPhonesIn(text: string): string[] {
  * newlines) before matching digit runs, so feeding it the whole blob would
  * merge two phones on adjacent lines into one number.
  */
+/** «--- Merged from Elena Vidal ---» / «--- Merged ---», written by merges before 2026-10-28. */
+const LEGACY_MERGE_SEPARATOR = /^-{3}\s*Merged(?:\s+from\s.*?)?\s*-{3}$/i;
+
+/** A contact blob shown as text (a list's one-line summary) without those legacy separator lines. */
+export function withoutLegacyMergeSeparators(text: string | null | undefined): string {
+    return (text ?? '').split(/\r?\n/).filter(l => !LEGACY_MERGE_SEPARATOR.test(l.trim())).join('\n');
+}
+
 export function categorizeContactText(text: string | null | undefined): ContactEntry[] {
     if (!text || !text.trim()) return [];
 
@@ -474,6 +482,8 @@ export function categorizeContactText(text: string | null | undefined): ContactE
 
     for (const rawLine of text.split(/\r?\n/)) {
         if (!rawLine.trim()) continue;
+        // A separator old merges wrote between two blobs («--- Merged from X ---»): not a note (audit C1).
+        if (LEGACY_MERGE_SEPARATOR.test(rawLine.trim())) continue;
 
         // Digits inside a link (a Facebook profile id, a post id) are part of
         // the link, never a phone or an id: read numbers from the line with its

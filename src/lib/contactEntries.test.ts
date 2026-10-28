@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+    withoutLegacyMergeSeparators,
     categorizeContactText,
     contactEntriesToBlob,
     parseBlobToContactEntries,
@@ -637,5 +638,20 @@ describe('own: a per-viewer view marker (D54)', () => {
     });
     it('is kept only when reading a view payload', () => {
         expect(deserializeContactEntries(json, { viewMarks: true })[0].own).toBe(true);
+    });
+});
+
+describe('legacy merge separators (audit C1)', () => {
+    it('«--- Merged from X ---» / «--- Merged ---» lines left in old blobs never become a «Nota»', () => {
+        const entries = parseBlobToContactEntries('Tel: 11 5121-1210\n--- Merged from Elena Vidal ---\nTel: 11 5121-1211\n  --- Merged ---  ');
+        expect(entries.map(e => e.type)).toEqual(['phone', 'phone']);
+        expect(entries.some(e => /Merged/.test(e.value))).toBe(false);
+    });
+    it('a list\'s one-line summary drops them too', () => {
+        expect(withoutLegacyMergeSeparators('Tel: 11 5110-110\n--- Merged from Diego Sosa ---\nTel: 11 5110-111')).toBe('Tel: 11 5110-110\nTel: 11 5110-111');
+        expect(withoutLegacyMergeSeparators(null)).toBe('');
+    });
+    it('ordinary prose with dashes is still kept', () => {
+        expect(parseBlobToContactEntries('--- llamar después de las 18 ---').map(e => e.value)).toEqual(['--- llamar después de las 18 ---']);
     });
 });
