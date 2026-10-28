@@ -1,6 +1,6 @@
 export const runtime = 'edge';
 
-import { AlertTriangle, CheckCircle2, FileSignature } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, FileSignature, Search, User } from 'lucide-react';
 import { redirect, notFound } from 'next/navigation';
 import type { OpenAlertKind } from '@/domain/flags';
 import { getDb } from '@/lib/db';
@@ -196,7 +196,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
             {/* Matched Profiles */}
             {hasMatches && metadata.matchedAdopters && (
                 <div className="space-y-3">
-                    <h2 className="text-sm font-semibold text-stone-700">🔍 Perfiles coincidentes</h2>
+                    <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-700"><Search className="w-4 h-4 shrink-0 text-teal-700" strokeWidth={1.75} aria-hidden="true" />Perfiles coincidentes</h2>
                     {metadata.matchedAdopters.map((match) => {
                         const profile = matchedProfiles.find(p => p.id === match.id);
                         if (!profile) return null;
@@ -238,7 +238,8 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                         href={`/adopter/${metadata.adopterId}`}
                         className="inline-flex items-center gap-2 text-xs text-stone-500 hover:text-stone-700 transition-colors"
                     >
-                        👤 Ver el perfil del nuevo adoptante (sin decidir)
+                        <User className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                        Ver el perfil del nuevo adoptante (sin decidir)
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                         </svg>
