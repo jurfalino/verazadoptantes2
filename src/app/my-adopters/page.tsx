@@ -76,8 +76,7 @@ const FORMS_FILTER = 'formularios';
  * The person's newest form as a provenance event: "Formulario para Luna ·
  * hace 2 d". Opens the form's results — only for the viewer's own forms,
  * since form-results refuses everyone else (a teammate would land on "no
- * permission"). The row itself links to the profile, so this stops the
- * click from reaching it, like the "Posible duplicado" pill does.
+ * permission"). A ROW_CONTROL: it sits above the row's stretched name link.
  */
 function FormLine({ form, onOpen, t }: {
     form: NonNullable<Adopter['latestForm']>;
@@ -101,8 +100,8 @@ function FormLine({ form, onOpen, t }: {
     return (
         <a
             href={`/form-results/${form.submissionId}`}
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpen(form.submissionId); }}
-            className="flex items-baseline gap-1.5 min-w-0 text-teal-700 font-medium hover:underline underline-offset-2"
+            onClick={(e) => { e.preventDefault(); onOpen(form.submissionId); }}
+            className={`flex items-baseline gap-1.5 min-w-0 text-teal-700 font-medium hover:underline underline-offset-2 ${ROW_CONTROL}`}
         >
             {content}
         </a>
@@ -111,18 +110,28 @@ function FormLine({ form, onOpen, t }: {
 
 /** Amber "Por revisar" pill beside the name; opens the form to decide. */
 /**
- * A row pill that acts (opens the form, jumps to «Pendientes de revisar»):
- * a <button>, never an <a> — the row itself is a <Link>, and an <a> inside an
- * <a> is invalid HTML and a hydration error (audit C3). One look for both.
+ * A row's one link: the person's name, stretched over the whole row by its
+ * ::after, so the row still opens the profile anywhere you tap it. The row is a
+ * plain container (fix round 2, item 19): an <a> or <button> inside an <a> is
+ * invalid HTML and a hydration error (audit C3).
  */
+const ROW_LINK = "after:absolute after:inset-0 after:content-[''] after:rounded-[inherit] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-teal-500";
+/**
+ * Anything else in the row that acts (pills, the form line, the rating hint): positioned, and after the name
+ * in the DOM, so it paints above the stretched link. No z-index — that would trap the rating hint's popup
+ * under the next row.
+ */
+const ROW_CONTROL = 'relative';
+
+/** A row pill that acts (opens the form, jumps to «Pendientes de revisar»). One look for both. */
 function RowPill({ onClick, title, icon, testId, children }: { onClick: () => void; title: string; icon: ReactNode; testId: string; children: ReactNode }) {
     return (
         <button
             type="button"
             data-testid={testId}
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClick(); }}
+            onClick={onClick}
             title={title}
-            className="inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap hover:bg-amber-100 flex-shrink-0"
+            className={`inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap hover:bg-amber-100 flex-shrink-0 ${ROW_CONTROL}`}
         >
             {icon}
             {children}
@@ -523,16 +532,18 @@ export default function MyAdoptersPage() {
                             {/* Table Rows */}
                             <div className="divide-y divide-stone-100">
                                 {visible.map((adopter, i) => (
-                                    <Link
+                                    <div
                                         key={`adopter-${adopter.id}-${i}`}
-                                        href={`/adopter/${adopter.id}?ref=my-adopters`}
-                                        prefetch={false}
+                                        data-testid="my-adopters-row"
                                         // v2.19.13: pending-duplicate rows get an amber left-border
                                         // so the actionable row jumps out without sacrificing
                                         // any name-cell space. Matches the severity-tint pattern
                                         // OrgActivityFeed (v2.18.14) and /admin/audit (v2.19.5)
                                         // already use across the app.
-                                        className={`grid grid-cols-12 gap-2 px-4 py-3 hover:bg-stone-50 transition-colors group items-center ${adopter.hasPendingDuplicate ? 'border-l-4 border-amber-400' : ''}`}
+                                        // The row is NOT a link (fix round 2, item 19): its one link is the name, stretched
+                                        // over the row (ROW_LINK), and the pills, the form line and the rating hint sit
+                                        // beside it (ROW_CONTROL) — never an <a>/<button> inside an <a>.
+                                        className={`relative grid grid-cols-12 gap-2 px-4 py-3 hover:bg-stone-50 transition-colors group items-center ${adopter.hasPendingDuplicate ? 'border-l-4 border-amber-400' : ''}`}
                                     >
                                         {/* Name + Thumbnail */}
                                         <div className="col-span-4 flex items-center gap-3 min-w-0">
@@ -547,7 +558,9 @@ export default function MyAdoptersPage() {
                                             </div>
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-2 min-w-0">
-                                                    <AdopterName adopter={adopter} className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate text-sm" title />
+                                                    <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} className={`min-w-0 ${ROW_LINK}`}>
+                                                        <AdopterName adopter={adopter} className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate text-sm" title />
+                                                    </Link>
                                                     {/* One decision, one pill: when the person's form is waiting
                                                         on "¿es la misma persona?", that is the pair the duplicate
                                                         pill would point at — and the form path also files the
@@ -569,9 +582,9 @@ export default function MyAdoptersPage() {
                                             separate column). Min-height pins both states to row height. */}
                                         <div className="col-span-2 flex flex-col items-center gap-1 min-h-[2rem]">
                                             {adopter.avgRating !== null ? (
-                                                <RatingExplainer rating={adopter.avgRating}>
+                                                <span className={ROW_CONTROL}><RatingExplainer rating={adopter.avgRating}>
                                                     <RatingBadge rating={adopter.avgRating} size="sm" label="short" />
-                                                </RatingExplainer>
+                                                </RatingExplainer></span>
                                             ) : (
                                                 <span className="text-xs text-stone-300" title={t('myAdopters.rating_empty_hint') || 'Sin actividad calificada'}>—</span>
                                             )}
@@ -626,7 +639,7 @@ export default function MyAdoptersPage() {
                                                 />
                                             )}
                                         </div>
-                                    </Link>
+                                    </div>
                                 ))}
                             </div>
                         </div>
@@ -634,13 +647,12 @@ export default function MyAdoptersPage() {
                         {/* Mobile Cards - Hidden on desktop */}
                         <div className="md:hidden space-y-3">
                             {visible.map((adopter, i) => (
-                                <Link
+                                <div
                                     key={`adopter-${adopter.id}-${i}`}
-                                    href={`/adopter/${adopter.id}?ref=my-adopters`}
-                                    prefetch={false}
+                                    data-testid="my-adopters-row"
                                     // v2.19.13: amber left-border for pending-dup cards,
-                                    // mirrors the desktop row treatment.
-                                    className={`block bg-white rounded-xl p-4 shadow-sm border border-stone-200 hover:border-teal-300 hover:shadow-md transition-all ${adopter.hasPendingDuplicate ? 'border-l-4 border-l-amber-400' : ''}`}
+                                    // mirrors the desktop row treatment. Not a link: see the desktop row (item 19).
+                                    className={`relative block bg-white rounded-xl p-4 shadow-sm border border-stone-200 hover:border-teal-300 hover:shadow-md transition-all ${adopter.hasPendingDuplicate ? 'border-l-4 border-l-amber-400' : ''}`}
                                 >
                                     {/* Top Row: Avatar + Name + Rating */}
                                     <div className="flex items-center gap-3 mb-3">
@@ -655,7 +667,9 @@ export default function MyAdoptersPage() {
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                                                <AdopterName adopter={adopter} className="font-semibold text-stone-900 truncate" title />
+                                                <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} className={`min-w-0 ${ROW_LINK}`}>
+                                                    <AdopterName adopter={adopter} className="font-semibold text-stone-900 truncate" title />
+                                                </Link>
                                                 {adopter.hasPendingDuplicate && !adopter.formNeedsReview && <PendingDupPill t={t} />}
                                                 {adopter.formNeedsReview && <NeedsReviewPill form={adopter.latestForm} onOpen={openForm} t={t} />}
                                             </div>
@@ -667,9 +681,9 @@ export default function MyAdoptersPage() {
                                                 "Creado por" provenance line where it belongs. */}
                                         </div>
                                         {adopter.avgRating !== null ? (
-                                            <RatingExplainer rating={adopter.avgRating}>
+                                            <span className={ROW_CONTROL}><RatingExplainer rating={adopter.avgRating}>
                                                 <RatingBadge rating={adopter.avgRating} size="sm" label="short" />
-                                            </RatingExplainer>
+                                            </RatingExplainer></span>
                                         ) : (
                                             <span className="text-xs text-stone-300" title={t('myAdopters.rating_empty_hint') || 'Sin actividad calificada'}>—</span>
                                         )}
@@ -720,7 +734,7 @@ export default function MyAdoptersPage() {
                                             />
                                         )}
                                     </div>
-                                </Link>
+                                </div>
                             ))}
                         </div>
                     </>
