@@ -207,8 +207,8 @@ function SideHead({ side, badge, t, formatShortDate, onRequestAccess }: {
                     </button>
                 )}
             </div>
-            {/* The same person signs as everywhere (final fix P2): «Menor de edad» and who they live with. */}
-            {side.isMinor && <div><MinorTag /></div>}
+            {/* Who they live with, as everywhere (final fix P2). «Menor de edad» sits under the name, in the
+                rating slot (audit B5/B6) — MatchCompare's nameStanding. */}
             <CardHouseholdLine lines={side.households} className="mt-1" />
         </div>
     );
@@ -342,6 +342,10 @@ export default function PairRow({ pair, open, onToggle, keep, onKeep, busy, lock
                         kept={survivor === 'new' ? 'source' : survivor === 'existing' ? 'target' : null}
                         sourceHead={<SideHead side={pair.newAdopter} badge={badge('new')} t={t} formatShortDate={formatShortDate} onRequestAccess={onRequestAccess} />}
                         targetHead={<SideHead side={pair.existingAdopter} badge={badge('existing')} t={t} formatShortDate={formatShortDate} onRequestAccess={onRequestAccess} />}
+                        nameStanding={{
+                            source: pair.newAdopter.isMinor ? <MinorTag testId="dedup-minor-new" /> : undefined,
+                            target: pair.existingAdopter.isMinor ? <MinorTag testId="dedup-minor-existing" /> : undefined,
+                        }}
                         t={t}
                     />
                     {explain && <p data-testid="dedup-explain" className={`mt-3 text-[13px] ${T_MUTED}`}>{explain}</p>}

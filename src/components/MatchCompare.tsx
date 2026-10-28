@@ -41,7 +41,7 @@ type Mark = 'match' | 'partial' | 'different' | null;
  * (the same value, so nothing new) and otherwise only that the profile has one.
  * Its name is shown: names are not PII-gated.
  */
-export default function MatchCompare({ adopterId, matchTypes, profileName, source, target = 'profile', t, defaultOpen = false, bare = false, profileEntries, fullVisibility = false, sourceHead, targetHead, score, kept = null }: {
+export default function MatchCompare({ adopterId, matchTypes, profileName, source, target = 'profile', t, defaultOpen = false, bare = false, profileEntries, fullVisibility = false, sourceHead, targetHead, nameStanding, score, kept = null }: {
     /** The possibly-duplicate profile. */
     adopterId: string;
     matchTypes: string[];
@@ -63,6 +63,8 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
     /** Replace a block's title — e.g. Pendientes puts each profile's name link, source and date there. */
     sourceHead?: ReactNode;
     targetHead?: ReactNode;
+    /** Under each block's name, in the rating slot (audit B5): e.g. Pendientes' «Menor de edad». */
+    nameStanding?: { source?: ReactNode; target?: ReactNode };
     /** The search engine's score (0–100). Admins only, behind an icon (Jon, 2026-10-25). */
     score?: number | null;
     /** The block whose profile stays after a merge: outlined in teal (Pendientes, D23). */
@@ -149,11 +151,11 @@ export default function MatchCompare({ adopterId, matchTypes, profileName, sourc
                 <div data-testid="match-compare-rows" className="mt-1 space-y-2">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <Block head={sourceHead ?? t(`matchCompare.col_${source.kind}`)} side="source" kept={kept === 'source'}>
-                            {rows.map(r => <Cell key={r.field} label={t(`matchCompare.field_${r.field}`)} {...sourceCell(r)} t={t} />)}
+                            {rows.map(r => <Cell key={r.field} label={t(`matchCompare.field_${r.field}`)} {...sourceCell(r)} t={t} below={r.field === 'name' ? nameStanding?.source : undefined} />)}
                         </Block>
                         <Block head={targetHead ?? t(`matchCompare.col_target_${target}`)} side="target" kept={kept === 'target'}
                             aside={isAdmin && typeof score === 'number' ? <AdminScore score={score} t={t} /> : null}>
-                            {rows.map(r => <Cell key={r.field} label={t(`matchCompare.field_${r.field}`)} {...targetCell(r, !!profileEntries, fullVisibility)} t={t} />)}
+                            {rows.map(r => <Cell key={r.field} label={t(`matchCompare.field_${r.field}`)} {...targetCell(r, !!profileEntries, fullVisibility)} t={t} below={r.field === 'name' ? nameStanding?.target : undefined} />)}
                         </Block>
                     </div>
                     {nameOnly && <p className="rounded-lg px-3 py-2 text-xs font-medium text-amber-800 bg-amber-50">{t('matchCompare.name_only_warning')}</p>}
@@ -216,7 +218,7 @@ function Block({ head, side, aside, kept = false, children }: { head: ReactNode;
     );
 }
 
-function Cell({ label, value, mark, locked, empty, t }: CellData & { label: string; t: (key: string) => string }) {
+function Cell({ label, value, mark, locked, empty, t, below }: CellData & { label: string; t: (key: string) => string; below?: ReactNode }) {
     const shown = empty ? <span className="text-stone-400">—</span>
         : locked ? <span className="inline-flex items-center gap-1 text-stone-500"><LockIcon />{value ?? t('matchCompare.has_one')}</span>
             : value ? <span className="break-words">{value}</span>
@@ -233,6 +235,7 @@ function Cell({ label, value, mark, locked, empty, t }: CellData & { label: stri
                     </span>
                 )}
             </dd>
+            {below && <dd className="mt-1">{below}</dd>}
         </div>
     );
 }
