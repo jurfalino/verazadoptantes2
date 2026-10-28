@@ -103,7 +103,7 @@ function RecordTypeIcon({ type, className }: { type: string; className?: string 
     }
 }
 
-export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, isOrgMate = false, adopterAddress = '', userNameMap = {}, originLabels = false, editFormComponent: EditComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, isOrgMate?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, originLabels?: boolean, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string; adopterAdoptions?: Adoption[] }> }) {
+export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, isOrgMate = false, adopterAddress = '', userNameMap = {}, originLabels = false, avgRating = null, editFormComponent: EditComponent }: { adoptions: Adoption[], avgRating?: number | null, adopterId: string, currentUser: string, isAdmin?: boolean, isOrgMate?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, originLabels?: boolean, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string; adopterAdoptions?: Adoption[] }> }) {
     const { formatShortDate } = useDateFormat();
     const formatRelativeTime = useRelativeTime();
     const { t, locale } = useLanguage();
@@ -127,10 +127,6 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
     // G — Activity summary above the timeline
     // The same rule (and words) as each person in «Familiares / Convivientes».
     const summaryCounts = countActivity(initialAdoptions);
-    const ratedAdoptions = initialAdoptions.filter(a => a.rating != null && Number(a.rating) > 0);
-    const avgRating = ratedAdoptions.length > 0
-        ? (ratedAdoptions.reduce((s, a) => s + Number(a.rating), 0) / ratedAdoptions.length)
-        : null;
 
     // Check for editAdoption query param to auto-expand
     const editAdoptionParam = searchParams.get('editAdoption');

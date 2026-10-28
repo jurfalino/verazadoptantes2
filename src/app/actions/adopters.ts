@@ -647,9 +647,10 @@ export async function getAverageRating(adopterId: string): Promise<number | null
 
         const { adoptions } = await import('@/db/schema');
         const result = await db.select({
+            // rating > 0 — null and 0 mean "not rated" (src/domain/ratings.ts computeAvgRating).
             avgRating: sql<number>`AVG(${adoptions.rating})`
         }).from(adoptions).where(
-            eq(adoptions.adopterId, adopterId)
+            and(eq(adoptions.adopterId, adopterId), sql`${adoptions.rating} > 0`)
         ).get();
 
         return result?.avgRating ?? null;

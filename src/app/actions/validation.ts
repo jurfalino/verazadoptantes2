@@ -111,7 +111,8 @@ export const saveAdoptionSchema = z.object({
     species: z.string().max(100).optional().nullable(),
     details: optionalText,
     status: z.string().max(100).optional().nullable(),
-    rating: z.number().int().min(1).max(5).optional().nullable(),
+    // 0 = not rated: stored as NULL, never 0.
+    rating: z.preprocess(v => (v === 0 ? null : v), z.number().int().min(1).max(5).optional().nullable()),
     comments: optionalText,
     date: z.union([z.coerce.date(), z.string().max(50)]).optional().nullable(),
     onBehalfOf: z.string().max(500).optional().nullable(),

@@ -58,7 +58,7 @@ function placementValues(animalId: string, data: RecordData, recordType: string,
         recordType,
         startedAt: startedAt as any,
         endedAt: null,
-        rating: data.rating ?? null,
+        rating: data.rating || null, // 0 = not rated → NULL
         status: data.status ?? null,
         deliveredToHome: data.deliveredToHome ?? null,
         verifiedAddress: data.verifiedAddress ?? null,
@@ -109,7 +109,7 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
             animalName: data.animalName ?? null,
             species: data.species ?? null,
             status: data.status ?? null,
-            rating: data.rating ?? null,
+            rating: data.rating || null, // 0 = not rated → NULL
             details: data.details ?? null,
             date: date as any,
             onBehalfOf: data.onBehalfOf ?? null,
@@ -235,7 +235,7 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
         if (data.animalName !== undefined) patch.animalName = data.animalName;
         if (data.species !== undefined) patch.species = data.species;
         if (data.status !== undefined) patch.status = data.status;
-        if (data.rating !== undefined) patch.rating = data.rating;
+        if (data.rating !== undefined) patch.rating = data.rating || null;
         if (data.details !== undefined) patch.details = data.details;
         if (data.date !== undefined) patch.date = data.date;
         if (data.onBehalfOf !== undefined) patch.onBehalfOf = data.onBehalfOf;
@@ -345,7 +345,7 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
             } else {
                 // Same holder + type → patch mutable fields on the active placement.
                 const pPatch: RecordData = {};
-                if (data.rating !== undefined) pPatch.rating = data.rating;
+                if (data.rating !== undefined) pPatch.rating = data.rating || null;
                 if (data.status !== undefined) pPatch.status = data.status;
                 if (data.deliveredToHome !== undefined) pPatch.deliveredToHome = data.deliveredToHome;
                 if (data.verifiedAddress !== undefined) pPatch.verifiedAddress = data.verifiedAddress;

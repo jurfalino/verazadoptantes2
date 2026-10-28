@@ -561,6 +561,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             <AdoptionHistory
                                 adoptions={adoptions as any}
                                 originLabels={originLabels}
+                                avgRating={avgRating ?? null}
                                 adopterId={id}
                                 currentUser={currentUser}
                                 isAdmin={isAdmin}

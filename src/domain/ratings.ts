@@ -1,16 +1,18 @@
 /**
  * Compute average rating from activity records.
  * 
- * Business rule: All non-null ratings count toward the average,
+ * Business rule: every real rating (1-5) counts toward the average,
  * regardless of record type. The rating input is shown for every
  * record type (adoption, request, observation, follow-up, returned).
+ * null and 0 both mean "not rated" and are ignored: [4, 0] averages to 4.
+ * Every SQL average of adopter ratings must apply the same `rating > 0` rule.
  */
 export function computeAvgRating(
-    records: { rating: number | null }[]
+    records: { rating: number | null | undefined }[]
 ): number | null {
-    const rated = records.filter(r => r.rating !== null);
+    const rated = records.filter(r => r.rating != null && Number(r.rating) > 0);
     if (rated.length === 0) return null;
-    return rated.reduce((sum, r) => sum + r.rating!, 0) / rated.length;
+    return rated.reduce((sum, r) => sum + Number(r.rating), 0) / rated.length;
 }
 
 export const RATING_LEVELS = [1, 2, 3, 4, 5] as const;

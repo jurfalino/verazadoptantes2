@@ -65,8 +65,8 @@ export async function countsFor(db: Db, id: string, ctx: Record<string, unknown>
         // `await` whether the driver returns a promise (D1) or a value (better-sqlite3 in dev/tests).
         raw = await db.select({
             act: withActivity
-                ? sql<string | null>`(SELECT json_object('avg', AVG(rating), 'kinds', json_group_array(record_type)) FROM adoptions WHERE adopter_id = ${id})`
-                : sql<string | null>`(SELECT json_object('avg', AVG(rating)) FROM adoptions WHERE adopter_id = ${id})`,
+                ? sql<string | null>`(SELECT json_object('avg', AVG(CASE WHEN rating > 0 THEN rating END), 'kinds', json_group_array(record_type)) FROM adoptions WHERE adopter_id = ${id})`
+                : sql<string | null>`(SELECT json_object('avg', AVG(CASE WHEN rating > 0 THEN rating END)) FROM adoptions WHERE adopter_id = ${id})`,
             flags: sql<string | null>`(SELECT json_group_array(json_object('reason', reason, 'targetAdopterId', target_adopter_id, 'details', details)) FROM adopter_flags WHERE adopter_id = ${id})`,
         }).from(adopters).where(eq(adopters.id, id)).get() as Raw | undefined;
     } catch (e) {
