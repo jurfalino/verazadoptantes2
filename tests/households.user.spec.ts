@@ -131,6 +131,40 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         await expect(line).toContainText('1.0');
     });
 
+    test('2b. while a contact is being written, «Sí» / «No» and the form\'s «Guardar» can\'t save the person without it', async ({ page }) => {
+        test.setTimeout(150_000);
+        await page.goto(`/adopter/${PEDRO}`);
+        await dismissCountryBanner(page);
+        const form = await fillAddForm(page, { name: `Rosa ${stamp}`, phone: ROSA_PHONE });
+        await form.getByTestId('hh-form-save').click();
+        const candidate = form.getByTestId('hh-candidate').filter({ hasText: ROSA_NAME });
+        await expect(candidate).toBeVisible({ timeout: 30_000 });
+        await expect(candidate.getByTestId('hh-candidate-yes')).toBeEnabled();
+
+        // A second phone typed but not added yet: no «Sí», no «No», no form «Guardar».
+        await form.getByTestId('hh-add-contact-add-trigger').click();
+        await form.getByTestId('hh-add-contact-type-phone').click();
+        await form.getByTestId('hh-add-contact-composer-input').fill('11 4999-0000');
+        await expect(candidate.getByTestId('hh-candidate-yes')).toBeDisabled();
+        await expect(candidate.getByTestId('hh-candidate-no')).toBeDisabled();
+        await expect(form.getByTestId('hh-form-save')).toHaveCount(0);
+        await form.getByTestId('hh-add-contact-composer-cancel').click();
+        await expect(candidate.getByTestId('hh-candidate-yes')).toBeEnabled();
+
+        // Editing the added phone in place counts as writing too.
+        await form.getByTestId('hh-add-contact-edit-btn').click();
+        await expect(candidate.getByTestId('hh-candidate-yes')).toBeDisabled();
+        await expect(form.getByTestId('hh-form-save')).toHaveCount(0);
+        await form.getByTestId('hh-add-contact-chip').getByRole('textbox').press('Escape');
+        await expect(candidate.getByTestId('hh-candidate-yes')).toBeEnabled();
+
+        // Nothing was saved.
+        await form.getByTestId('hh-form-cancel').click();
+        await expect(form).toHaveCount(0);
+        expect(housemates(PEDRO).map(h => h.profileId)).not.toContain(ROSA);
+        expect(profileNamed(`Rosa ${stamp}`)).toBeUndefined();
+    });
+
     test('3. a phone that matches an existing profile offers «¿Es este perfil?»; «Sí» links that profile', async ({ page }) => {
         test.setTimeout(150_000);
         await page.goto(`/adopter/${PEDRO}`);
@@ -311,12 +345,14 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
             await dismissCountryBanner(page);
             await expect(page.getByTestId('household-member')).toHaveCount(2, { timeout: 30_000 });
             await expect(page.getByTestId('household-home-divider')).toHaveCount(2);
-            // Ana has no contacts: «0 datos ▾» opens her (empty) list with the one «Agregar dato de contacto».
+            // Ana has no contacts: no «N datos ▾» to open — the standard «Agregar dato de contacto» right there.
             const mom = page.locator(`[data-testid="household-member"][data-profile-id="${MOM}"]`);
-            await mom.getByTestId('household-member-contacts-toggle').click();
+            await expect(mom.getByTestId('household-member-contacts-toggle')).toHaveCount(0);
             await expect(mom.getByTestId('linked-contact-add-trigger')).toBeVisible();
-            await mom.getByTestId('household-member-contacts-toggle').click();
-            await expect(mom.getByTestId('linked-contact-add-trigger')).toHaveCount(0);
+            await mom.getByTestId('linked-contact-add-trigger').click();
+            await expect(mom.getByTestId('linked-contact-type-phone')).toBeVisible();
+            await mom.getByTestId('linked-contact-pick-type-cancel').click();
+            await expect(mom.getByTestId('linked-contact-add-trigger')).toBeVisible();
             // The chooser lists both homes, each by its people.
             await page.getByTestId('household-add-member').click();
             const which = page.getByTestId('household-add-which');

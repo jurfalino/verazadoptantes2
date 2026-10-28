@@ -51,6 +51,8 @@ export function MemberContacts({ summary, testId = 'linked-summary', canAddConta
                 canEditAll={canEditAll}
                 currentUser={currentUser}
                 canAdd={canAddContact}
+                // An empty list under a row is just its «Agregar dato de contacto»: no «Aún no hay datos…» line.
+                emptyMessage={null}
                 // The household has its own «protected» note below; the profile-level line is the profile's.
                 hideVisibilityMicrocopy
                 // Capped and without aliases: an add that changed nothing must say so.

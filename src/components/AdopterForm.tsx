@@ -3,6 +3,7 @@
 import OriginTag from './OriginTag';
 import type { Origin } from '@/domain/recordOrigin';
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
+import { useEscapeToClose } from "@/hooks/useEscapeToClose";
 import { useSetEditActions } from "@/context/EditActionsContext";
 import { InlineEditField } from "@/components/InlineEditField";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -133,6 +134,9 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     const isNew = !initialData?.id;
     const id = adopterId || initialData?.id || '';
     const [showReportMenu, setShowReportMenu] = useState(false);
+    const overflowButtonRef = useRef<HTMLButtonElement>(null);
+    const closeReportMenu = useCallback(() => setShowReportMenu(false), []);
+    useEscapeToClose(showReportMenu, closeReportMenu, overflowButtonRef);
     // «Cambiar edad» (households as profiles): anyone signed in; opened from the ⋯ menu.
     const [ageEditorOpen, setAgeEditorOpen] = useState(false);
     const flaggingRef = useRef<AdopterFlaggingHandle>(null);
@@ -1390,6 +1394,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                             {!isNew && initialData && (
                                                 <div className="relative">
                                                     <button
+                                                        ref={overflowButtonRef}
                                                         type="button"
                                                         onClick={() => setShowReportMenu(!showReportMenu)}
                                                         data-testid="profile-overflow"

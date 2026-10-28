@@ -115,6 +115,20 @@ test.describe('household contributions by a non-owner (D54, D55)', () => {
         await expect(brunoCard.getByTestId('linked-summary')).toContainText(BRUNO_PHONE, { timeout: 30_000 });
         expect(contactsOf(HOST)).toEqual(hostContactsBefore);
 
+        // Edit/delete as on Bruno's own profile: on the phone this viewer added, not on the owner's entry.
+        const brunoChips = brunoCard.getByTestId('linked-contact-chip');
+        const minePhone = brunoChips.filter({ hasText: BRUNO_PHONE });
+        await expect(minePhone.getByTestId('linked-contact-edit-btn')).toHaveCount(1);
+        await expect(minePhone.getByTestId('linked-contact-delete-btn')).toHaveCount(1);
+        await expect(brunoChips).toHaveCount(2);
+        await expect(brunoCard.getByTestId('linked-contact-edit-btn')).toHaveCount(1);
+        await expect(brunoCard.getByTestId('linked-contact-delete-btn')).toHaveCount(1);
+        // Marta's list (all the owner's): none.
+        await martaCard.getByTestId('household-member-contacts-toggle').click();
+        await expect(martaCard.getByTestId('linked-contact-chip')).toHaveCount(1);
+        await expect(martaCard.getByTestId('linked-contact-edit-btn')).toHaveCount(0);
+        await expect(martaCard.getByTestId('linked-contact-delete-btn')).toHaveCount(0);
+
         // It fits a phone: no sideways scroll with the composer open; the ⋯ target is ≥ 44px.
         await page.setViewportSize({ width: 390, height: 844 });
         await brunoCard.getByTestId('linked-contact-add-trigger').click();

@@ -12,8 +12,10 @@
  * counts it (ActivityCountsLine — for a minor only when they have any); then one line with the relationship, the
  * age, ONE attribution («agregado por vos» / «según {quien lo agregó}») and
  * the contacts collapsed behind «N datos ▾» (a padlock when some are
- * protected; «0 datos ▾» when there are none), which open to that person's
- * contact list — the profile's own (MemberContacts → ContactEntriesSection). The «⋯» menu holds what this viewer may do:
+ * protected), which open to that person's contact list — the profile's own
+ * (MemberContacts → ContactEntriesSection). With no contacts there is nothing
+ * to open: a signed-in viewer sees that list's «Agregar dato de contacto»
+ * straight away, the one add-contact control of the whole app. The «⋯» menu holds what this viewer may do:
  * - «Editar»: everyone signed in, on every row (the same form for all — the
  *   anchor's row too, without a relationship field: its row has none);
  * - «Quitar del hogar» («Quitar como destinatario» on a gift recipient):
@@ -25,7 +27,8 @@
  *   (checkAdopterDeletable), as the profile's own delete button does.
  * Rendered as an `<li>`: the caller's `<ul>` divides the rows.
  */
-import { useId, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEscapeToClose } from '@/hooks/useEscapeToClose';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, Lock, Pencil, Trash2, UserMinus } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -79,6 +82,9 @@ export function MemberCard({ member, hostName, relativeName, signedIn, currentUs
     const fail = useHouseholdFailure('MemberCard');
     const labelOf = useMemberLabel();
     const [menuOpen, setMenuOpen] = useState(false);
+    const menuButtonRef = useRef<HTMLButtonElement>(null);
+    const closeMenu = useCallback(() => setMenuOpen(false), []);
+    useEscapeToClose(menuOpen, closeMenu, menuButtonRef);
     const [editing, setEditing] = useState(false);
     const [dialog, setDialog] = useState<'remove' | 'delete' | 'request' | null>(null);
     const [busy, setBusy] = useState(false);
@@ -101,8 +107,16 @@ export function MemberCard({ member, hostName, relativeName, signedIn, currentUs
     const attribution = own ? t('adopter.hh_added_by_you') : member.addedByName ? fill(t('adopter.hh_lives_with_by'), { name: member.addedByName }) : null;
     const dataCount = member.contacts.length + member.moreContacts;
     const locked = member.contacts.some(c => c.masked);
-    // No contacts yet: a signed-in viewer still opens the list — empty, with «Agregar dato de contacto» (D55).
-    const hasContactsToggle = dataCount > 0 || signedIn;
+    // «N datos ▾» only when there is something to open.
+    const hasContactsToggle = dataCount > 0;
+    // No contacts yet: a signed-in viewer gets «Agregar dato de contacto» right under the row (D55).
+    const showAddContact = dataCount === 0 && signedIn;
+    // The first contact was just added from there: keep the list open on it instead of folding it into «1 dato ▾».
+    const prevCount = useRef(dataCount);
+    useEffect(() => {
+        if (prevCount.current === 0 && dataCount > 0 && signedIn) setContactsOpen(true);
+        prevCount.current = dataCount;
+    }, [dataCount, signedIn]);
     // As on that person's own profile: its owner or an admin edits every contact, anyone their own.
     const canEditContacts = !preview && (member.ownerIsViewer || isAdmin);
 
@@ -249,8 +263,6 @@ export function MemberCard({ member, hostName, relativeName, signedIn, currentUs
                                     <button type="button" onClick={() => setContactsOpen(o => !o)} aria-expanded={contactsOpen} aria-controls={contactsId}
                                         data-testid="household-member-contacts-toggle"
                                         className="relative inline-flex items-center gap-1 leading-5 font-semibold text-teal-700 hover:underline whitespace-nowrap after:absolute after:-inset-x-2 after:-inset-y-3 after:content-['']">
-                                        {/* Always the same disclosure, «0 datos» included: adding is the list's own
-                                            «Agregar dato de contacto», as on the profile — never a second, inline control. */}
                                         {locked && <Lock className="w-3 h-3 opacity-70" aria-label={t('adopter.ce_masked')} data-testid="household-member-contacts-locked" />}
                                         {dataCount === 1 ? t('adopter.hh_data_one') : fill(t('adopter.hh_data_many'), { n: dataCount })}
                                         <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${contactsOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
@@ -262,7 +274,7 @@ export function MemberCard({ member, hostName, relativeName, signedIn, currentUs
                 </div>
                 {hasMenu && (
                     <div className="relative shrink-0">
-                        <button type="button" onClick={() => { void openMenu(); }} aria-label={t('adopter.hh_menu_more')} aria-haspopup="menu" aria-expanded={menuOpen}
+                        <button ref={menuButtonRef} type="button" onClick={() => { void openMenu(); }} aria-label={t('adopter.hh_menu_more')} aria-haspopup="menu" aria-expanded={menuOpen}
                             data-testid="household-member-menu"
                             className="group inline-flex min-w-[44px] min-h-[44px] items-center justify-center text-stone-500 hover:text-stone-600">
                             {/* The profile header's ⋯ (profile-overflow), in a 44px tap area. */}
@@ -293,7 +305,9 @@ export function MemberCard({ member, hostName, relativeName, signedIn, currentUs
                     </div>
                 )}
             </div>
-            {contactsOpen && (
+            {(contactsOpen || showAddContact) && (
+                // With no contacts this is the list's own «Agregar dato de contacto» (no empty line): the same
+                // control, copy and composer as on the profile.
                 <div className="pl-10 pr-2 pt-1" id={contactsId}>
                     <MemberContacts summary={member} canAddContact={signedIn} canEditAll={canEditContacts} currentUser={preview ? undefined : currentUser} />
                 </div>

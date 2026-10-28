@@ -42,7 +42,7 @@ import { MinorCheckbox } from '@/components/MinorCheckbox';
  * The inputs of the profile's own inline forms (ContactEntriesSection's composer): these fields sit right
  * above that composer in the same form, so they look like it — 16px on a phone (no iOS zoom), 14px from `sm:`.
  */
-const FIELD = 'w-full px-2 py-1.5 border border-stone-300 rounded bg-white text-base sm:text-sm text-stone-900 outline-none focus:border-teal-500';
+const FIELD = 'w-full min-h-[44px] sm:min-h-0 px-2 py-1.5 border border-stone-300 rounded bg-white text-base sm:text-sm text-stone-900 outline-none focus:border-teal-500';
 /** A field's label: the composer's own small label (ce_phone_apps / ce_social_which). */
 const LABEL = 'block text-xs font-semibold text-stone-500 mb-1';
 
@@ -247,7 +247,10 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
     const [age, setAge] = useState('');
     const [minor, setMinor] = useState(false);
     const [drafts, setDrafts] = useState<ContactEntry[]>([]);
-    /** A contact is being written: its own «Cancelar / Guardar» are the only pair on screen. */
+    /**
+     * A contact is being written (added, or edited in place): its own «Cancelar / Guardar» are the only
+     * buttons that act — the form's pair is hidden and «Sí / No» / «Agregar como persona nueva» disabled.
+     */
     const [composing, setComposing] = useState(false);
     const [busy, setBusy] = useState(false);
     const [checking, setChecking] = useState(false);
@@ -362,14 +365,15 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
                     <div role="alert" data-testid="hh-add-check-failed" className="rounded-lg border px-3 py-2 text-xs space-y-2"
                         style={{ background: 'var(--status-warning-bg)', borderColor: 'var(--status-warning-border)', color: 'var(--status-warning-text)' }}>
                         <p className="break-words">{t('adopter.hh_add_check_failed')} {t('adopter.hh_add_check_failed_hint')} (ID: {checkFailed})</p>
-                        <button type="button" disabled={busy} onClick={() => { setCheckFailed(null); void add(); }} data-testid="hh-add-anyway"
+                        <button type="button" disabled={busy || composing} onClick={() => { setCheckFailed(null); void add(); }} data-testid="hh-add-anyway"
                             className="inline-flex min-h-[44px] items-center px-3 text-sm font-semibold rounded-md border border-stone-200 bg-white text-stone-800 hover:bg-teal-50 disabled:opacity-50">
                             {t('adopter.hh_add_anyway')}
                         </button>
                     </div>
                 )}
                 {current && (
-                    <HouseholdCandidateCard candidate={current} busy={busy} onYes={() => { void add(current.adopterId); }} onNo={() => { void no(); }} />
+                    // Disabled while a contact is being written: «Sí»/«No» would save without it.
+                    <HouseholdCandidateCard candidate={current} busy={busy || composing} onYes={() => { void add(current.adopterId); }} onNo={() => { void no(); }} />
                 )}
                 {/* One «Cancelar / Guardar» pair at a time: while a contact is being written its own pair
                     is the one that acts, so a typed phone can't be dropped by saving the person. */}

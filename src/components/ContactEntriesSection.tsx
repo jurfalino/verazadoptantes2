@@ -116,7 +116,8 @@ interface Props {
      */
     reportNoChange?: boolean;
     /**
-     * The composer opened (true) or closed (false). A form that holds this
+     * Something is being written (true: the composer is open, or an entry is
+     * being edited in place) or not (false). A form that holds this
      * section hides its own «Cancelar / Guardar» meanwhile, so only one pair is
      * on screen and a contact still being typed can't be lost to the outer save.
      */
@@ -202,6 +203,15 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
     const [editDraft, setEditDraft] = useState<EditDraft>({ type: 'other', value: '', streetAndNumber: '', locality: '', platform: null, apps: [] });
     const [editBusy, setEditBusy] = useState(false);
 
+    // Something is being written here — a new contact or an existing one edited in place: tell the holder
+    // (see `onComposerOpenChange`), so its own buttons can't act on a half-typed list.
+    const writing = composerStage !== 'closed' || editingId !== null;
+    const wasWritingRef = useRef(false);
+    useEffect(() => {
+        if (wasWritingRef.current !== writing) onComposerOpenChange?.(writing);
+        wasWritingRef.current = writing;
+    }, [writing, onComposerOpenChange]);
+
     // Deletion is gated by a confirmation dialog. `deletingId` hides the row
     // from the moment the user confirms and is released ONLY when the refreshed
     // server data no longer contains it (see the effect below) or the delete
@@ -225,9 +235,8 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         if (wasComposerOpenRef.current && !isOpenNow) {
             triggerRef.current?.focus();
         }
-        if (wasComposerOpenRef.current !== isOpenNow) onComposerOpenChange?.(isOpenNow);
         wasComposerOpenRef.current = isOpenNow;
-    }, [composerStage, onComposerOpenChange]);
+    }, [composerStage]);
 
     // A previous name kept by a rename is a name token, not a contact: the header shows it («Conocido/a como»).
     const visibleEntries = entries.filter(e => e.id !== deletingId && !isRenameAlias(e));
@@ -711,7 +720,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                                 value={editDraft.streetAndNumber}
                                                                 onChange={e => setEditDraft({ ...editDraft, streetAndNumber: e.target.value })}
                                                                 placeholder={t('adopter.ce_input_ph_address')}
-                                                                className="w-full px-2 py-1 border border-stone-300 rounded text-base sm:text-sm"
+                                                                className="w-full px-2 py-1 border border-stone-300 rounded text-base sm:text-sm min-h-[44px] sm:min-h-0"
                                                                 autoFocus
                                                             />
                                                             <input
@@ -719,7 +728,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                                 value={editDraft.locality}
                                                                 onChange={e => setEditDraft({ ...editDraft, locality: e.target.value })}
                                                                 placeholder={t('adopter.ce_input_ph_locality')}
-                                                                className="w-full px-2 py-1 border border-stone-300 rounded text-base sm:text-sm"
+                                                                className="w-full px-2 py-1 border border-stone-300 rounded text-base sm:text-sm min-h-[44px] sm:min-h-0"
                                                             />
                                                         </>
                                                     ) : (
@@ -732,7 +741,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                                 if (e.key === 'Enter') { e.preventDefault(); commitEdit(entry); }
                                                                 if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
                                                             }}
-                                                            className="w-full px-2 py-1 border border-stone-300 rounded text-base sm:text-sm"
+                                                            className="w-full px-2 py-1 border border-stone-300 rounded text-base sm:text-sm min-h-[44px] sm:min-h-0"
                                                             autoFocus
                                                         />
                                                     )}
@@ -799,7 +808,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                         onClick={() => startEdit(entry)}
                                                         aria-label={t('adopter.ce_edit_label')}
                                                         title={t('adopter.ce_edit_label')}
-                                                        className="p-1 text-stone-500 hover:text-teal-700 hover:bg-teal-50 rounded transition-colors"
+                                                        className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 p-1 text-stone-500 hover:text-teal-700 hover:bg-teal-50 rounded transition-colors"
                                                         data-testid={`${testIdPrefix}-edit-btn`}
                                                     >
                                                         <Pencil className="w-3.5 h-3.5" />
@@ -809,7 +818,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                                         onClick={() => startDelete(entry)}
                                                         aria-label={t('adopter.ce_delete_label')}
                                                         title={t('adopter.ce_delete_label')}
-                                                        className="p-1 text-stone-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                                                        className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 p-1 text-stone-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
                                                         data-testid={`${testIdPrefix}-delete-btn`}
                                                     >
                                                         <Trash2 className="w-3.5 h-3.5" />
@@ -894,7 +903,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                         // difference. Per user pick on the
                                         // v2.18.4 plan.
                                         autoFocus={idx === 0}
-                                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-white border border-stone-300 text-stone-700 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-800 focus:bg-teal-50 focus:border-teal-300 focus:text-teal-800 focus:outline-none transition-colors"
+                                        className="inline-flex items-center gap-1 min-h-[44px] sm:min-h-0 px-2 py-1 text-xs font-medium rounded-md bg-white border border-stone-300 text-stone-700 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-800 focus:bg-teal-50 focus:border-teal-300 focus:text-teal-800 focus:outline-none transition-colors"
                                         data-testid={`${testIdPrefix}-type-${typ}`}
                                     >
                                         <Icon className="w-3 h-3" />
@@ -966,7 +975,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                             value={composerStreet}
                                             onChange={e => setComposerStreet(e.target.value)}
                                             placeholder={t('adopter.ce_input_ph_address')}
-                                            className="w-full px-2 py-1.5 border border-stone-300 rounded text-base sm:text-sm"
+                                            className="w-full px-2 py-1.5 border border-stone-300 rounded text-base sm:text-sm min-h-[44px] sm:min-h-0"
                                             autoFocus
                                         />
                                         <input
@@ -974,7 +983,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                             value={composerLocality}
                                             onChange={e => setComposerLocality(e.target.value)}
                                             placeholder={t('adopter.ce_input_ph_locality')}
-                                            className="w-full px-2 py-1.5 border border-stone-300 rounded text-base sm:text-sm"
+                                            className="w-full px-2 py-1.5 border border-stone-300 rounded text-base sm:text-sm min-h-[44px] sm:min-h-0"
                                         />
                                     </>
                                 ) : (
@@ -990,7 +999,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                             if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }
                                             if (e.key === 'Escape') { e.preventDefault(); resetComposer(); }
                                         }}
-                                        className="w-full px-2 py-1.5 border border-stone-300 rounded text-base sm:text-sm"
+                                        className="w-full px-2 py-1.5 border border-stone-300 rounded text-base sm:text-sm min-h-[44px] sm:min-h-0"
                                         autoFocus
                                     />
                                 )}

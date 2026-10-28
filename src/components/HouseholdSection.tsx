@@ -21,7 +21,8 @@
  * Nothing here reads or writes the old `household_members` JSON: the data is
  * `getHouseholdsFor` (src/lib/households.ts) via the page.
  */
-import { useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
+import { useEscapeToClose } from '@/hooks/useEscapeToClose';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, Gift, Plus, UserPlus } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -98,6 +99,7 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
     const [adding, setAdding] = useState<string | null>(null);
     /** «¿En qué hogar?» is open (2+ homes). */
     const [choosing, setChoosing] = useState(false);
+    const closeChooser = useCallback(() => setChoosing(false), []);
     const [creating, setCreating] = useState<string | null>(null);
     /** Focus goes back to «+ Agregar» when the form closes (cancelled or saved), as the contact list does. */
     const addButtonRef = useRef<HTMLButtonElement>(null);
@@ -107,12 +109,7 @@ export default function HouseholdSection({ adopterId, hostName, data, signedIn, 
         wasAdding.current = adding !== null;
     }, [adding]);
     /** «¿En qué hogar?» closes on Escape, back on its button. */
-    useEffect(() => {
-        if (!choosing) return;
-        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setChoosing(false); addButtonRef.current?.focus(); } };
-        document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
-    }, [choosing]);
+    useEscapeToClose(choosing, closeChooser, addButtonRef);
 
     const homes = data.views.filter(v => !v.isGift);
     const gifts = data.views.filter(v => v.isGift);
