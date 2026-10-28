@@ -92,8 +92,8 @@ export function AdminPairCompare({ kept, absorbed, keptLabel, absorbedLabel, mat
             profileEntries={absorbed.entries}
             target="other"
             kept="source"
-            sourceHead={<AdminSideHead testId={`${testIdPrefix}-keep`} side={kept} label={keptLabel} kept t={t} formatShortDate={formatShortDate} />}
-            targetHead={<AdminSideHead testId={`${testIdPrefix}-absorb`} side={absorbed} label={absorbedLabel} kept={false} t={t} formatShortDate={formatShortDate} />}
+            sourceHead={<AdminSideHead testId={`${testIdPrefix}-side-keep`} side={kept} label={keptLabel} kept t={t} formatShortDate={formatShortDate} />}
+            targetHead={<AdminSideHead testId={`${testIdPrefix}-side-absorb`} side={absorbed} label={absorbedLabel} kept={false} t={t} formatShortDate={formatShortDate} />}
             t={t}
         />
     );

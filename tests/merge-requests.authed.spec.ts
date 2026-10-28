@@ -196,7 +196,7 @@ test('a rescuer\'s request goes to the other owner, can be cancelled, and an adm
         await expect(row).toHaveCount(1, { timeout: 30_000 });
         // «Qué coincide y qué no» on the row; approving asks first, saying what it does (audit A4).
         await expect(row.getByTestId('match-compare')).toBeVisible();
-        await expect(row.getByTestId('merge-request-keep')).toBeVisible();
+        await expect(row.getByTestId('merge-request-side-keep')).toBeVisible();
         await row.getByTestId('merge-request-approve').click();
         const confirm = page.getByTestId('merge-request-confirm');
         await expect(confirm).toBeVisible();

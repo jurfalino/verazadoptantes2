@@ -139,10 +139,10 @@ export default function AdopterPicker({
     };
 
     /** Under a minor's row: why it can't be picked, and their household's adults to pick instead. */
-    const minorNote = (res: DiscoveryMatch) => {
+    const minorNote = (res: DiscoveryMatch, inPreview = false) => {
         const adults = adultsToOffer(res.households);
         return (
-            <div className="px-3 pb-3 pl-[60px] text-xs text-stone-600 space-y-1.5" data-testid="picker-minor-note">
+            <div className={`text-xs text-stone-600 space-y-1.5 ${inPreview ? 'px-4 pb-4' : 'px-3 pb-3 pl-[60px]'}`} data-testid="picker-minor-note">
                 <p>{t('adopter.minor_note')}</p>
                 {adults.length > 0 && (
                     <div className="space-y-1">
@@ -208,7 +208,7 @@ export default function AdopterPicker({
                         )}
                     </div>
 
-                    {preview.isMinor && minorNote(preview)}
+                    {preview.isMinor && minorNote(preview, true)}
                     <div className="p-4 border-t border-teal-100 flex justify-between">
                         <button
                             onClick={() => setPreview(null)}
