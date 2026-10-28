@@ -16,8 +16,11 @@
  *
  * Closes on a tap outside (a transparent backdrop) and on Escape, giving the
  * focus back to the button (useEscapeToClose) — one behaviour for every menu.
+ * On <body> the panel is no longer next to its button in the tab order, so it
+ * takes the focus itself: its first enabled item once placed; Tab / Shift+Tab
+ * out of it closes it, back on the button.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { useEscapeToClose } from '@/hooks/useEscapeToClose';
 import { placeAnchoredPanel, type AnchoredPlacement } from '@/lib/anchoredPlacement';
@@ -75,6 +78,22 @@ export function AnchoredMenu({ open, anchorRef, onClose, align = 'right', role =
         };
     }, [open, mounted, measure]);
 
+    // Keyboard: the first enabled item takes the focus once the panel is placed (once per opening).
+    const focused = useRef(false);
+    useEffect(() => {
+        if (!open) { focused.current = false; return; }
+        if (!place || focused.current) return;
+        focused.current = true;
+        contentRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
+    }, [open, place]);
+
+    const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+        if (e.key !== 'Tab') return;
+        e.preventDefault();
+        onClose();
+        anchorRef.current?.focus();
+    };
+
     if (!open || !mounted) return null;
     const above = place?.placement === 'above';
     return createPortal(
@@ -85,13 +104,15 @@ export function AnchoredMenu({ open, anchorRef, onClose, align = 'right', role =
                 aria-label={ariaLabel}
                 data-testid={testId}
                 data-placement={place?.placement}
+                onKeyDown={onKeyDown}
                 className={`fixed z-50 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-xl border border-stone-200 overflow-x-hidden overflow-y-auto animate-in fade-in duration-150 ${above ? 'slide-in-from-bottom-2' : 'slide-in-from-top-2'} ${className}`}
                 style={{
                     top: place?.top ?? 0,
                     left: place?.left ?? 0,
                     maxHeight: place?.maxHeight ?? undefined,
-                    // Hidden for the one frame before it is measured (no flash in the corner).
-                    visibility: place ? 'visible' : 'hidden',
+                    // Transparent (not visibility:hidden, which keeps its items unfocusable for the
+                    // keyboard) for the one frame before it is measured: no flash in the corner.
+                    opacity: place ? undefined : 0,
                 }}
             >
                 <div ref={contentRef} className="flex flex-col">{children}</div>

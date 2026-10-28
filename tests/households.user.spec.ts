@@ -425,6 +425,14 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
                 await dialog.getByTestId('hh-dialog-cancel').click();
                 await expect(dialog).toHaveCount(0);
 
+                // Keyboard: the panel lives on <body>, so it takes the focus itself; Tab leaves it, back on ⋯.
+                await button.focus();
+                await page.keyboard.press('Enter');
+                await expect(memberMenuPanel(last).getByTestId('household-member-menu-edit')).toBeFocused();
+                await page.keyboard.press('Tab');
+                await expect(memberMenuPanel(last)).toHaveCount(0);
+                await expect(button).toBeFocused();
+
                 // «¿En qué hogar?» right above the same card: its last home takes the tap too.
                 const add = page.getByTestId('household-add-member');
                 await add.scrollIntoViewIfNeeded();
