@@ -13,7 +13,7 @@ import { buttonClasses } from '@/components/ui/Button';
 import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
 import { en } from '@/i18n/locales/en';
-import { ChevronDown, ChevronRight, CheckCircle2, Users, UserPlus, UserCheck, ArrowRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, CheckCircle2, ClipboardList, Users, UserPlus, UserCheck, ArrowRight } from 'lucide-react';
 import { formResultsView, type FormLinkKind, type FormResultsAction, type FormResultsBanner } from '@/domain/formLink';
 import type { HouseholdLine } from '@/domain/households';
 
@@ -215,8 +215,9 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                 <Link href="/my-animals" className="text-sm text-stone-500 hover:text-stone-600 transition-colors">
                     ← {L('back_to_animals')}
                 </Link>
-                <h1 className="text-xl font-semibold text-stone-800 mt-2">
-                    📋 {L('title')}
+                <h1 className="flex items-center gap-2 text-xl font-semibold text-stone-800 mt-2">
+                    <ClipboardList className="w-5 h-5 shrink-0 text-teal-700" strokeWidth={1.75} aria-hidden="true" />
+                    {L('title')}
                 </h1>
                 <div className="text-sm text-stone-500 mt-1 space-y-0.5">
                     {submitted?.name && (

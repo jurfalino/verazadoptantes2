@@ -1,5 +1,6 @@
 export const runtime = 'edge';
 
+import { AlertTriangle, CheckCircle2, FileSignature } from 'lucide-react';
 import { redirect, notFound } from 'next/navigation';
 import type { OpenAlertKind } from '@/domain/flags';
 import { getDb } from '@/lib/db';
@@ -150,8 +151,11 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                 <Link href="/" className="text-sm text-stone-500 hover:text-stone-600 transition-colors">
                     ← Volver
                 </Link>
-                <h1 className="text-xl font-semibold text-stone-800 mt-2">
-                    {hasMatches ? '⚠️' : '✅'} Resultados del contrato
+                <h1 className="flex items-center gap-2 text-xl font-semibold text-stone-800 mt-2">
+                    {hasMatches
+                        ? <AlertTriangle className="w-5 h-5 shrink-0 text-amber-700" strokeWidth={1.75} aria-hidden="true" />
+                        : <CheckCircle2 className="w-5 h-5 shrink-0 text-teal-700" strokeWidth={1.75} aria-hidden="true" />}
+                    Resultados del contrato
                 </h1>
                 <p className="text-sm text-stone-500 mt-1">
                     {metadata.animalName} — adoptado por {adopterDisplayName({ name: metadata.adopterName }, 'Sin nombre')}
@@ -177,7 +181,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
             {/* Submitted Data */}
             {submitted && (
                 <div className="bg-white rounded-xl border border-stone-200 p-4 mb-6 shadow-sm">
-                    <h2 className="text-sm font-semibold text-stone-700 mb-3">📋 Datos del contrato</h2>
+                    <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-700 mb-3"><FileSignature className="w-4 h-4 shrink-0 text-teal-700" strokeWidth={1.75} aria-hidden="true" />Datos del contrato</h2>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {submitted.name && <DataPill label="Nombre" value={submitted.name} />}
                         {submitted.phone && <DataPill label="Teléfono" value={submitted.phone} />}
