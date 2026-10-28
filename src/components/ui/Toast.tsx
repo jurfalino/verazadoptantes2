@@ -1,5 +1,6 @@
 'use client';
 
+import { buttonClasses } from '@/components/ui/Button';
 import { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react';
 import { X, CheckCircle, AlertCircle, AlertTriangle, Info, Copy, Check } from 'lucide-react';
 import { STALE_DEPLOY_ERROR_ID } from '@/lib/staleDeploy';
@@ -27,6 +28,12 @@ interface ToastContextType {
 }
 
 const ToastContext = createContext<ToastContextType | null>(null);
+
+/**
+ * A toast's action («Ver perfil», «Deshacer»): the matrix Secondary button, the same in every toast type and
+ * theme (audit B13). It used to be white text on the toast's accent colour — 1.9:1 on Azul Noche's light green.
+ */
+const TOAST_ACTION = buttonClasses({ variant: 'secondary', size: 'compact' });
 
 export function useToast() {
     const context = useContext(ToastContext);
@@ -166,8 +173,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
                         toast.action.href ? (
                             <a
                                 href={toast.action.href}
-                                className="mt-3 inline-block text-sm font-semibold px-4 py-2 rounded-lg transition-opacity hover:opacity-80 no-underline"
-                                style={{ background: accentColors[toast.type], color: 'var(--btn-primary-text)' }}
+                                className={`mt-3 no-underline ${TOAST_ACTION}`}
                                 onClick={() => onDismiss()}
                             >
                                 {toast.action.label}
@@ -178,8 +184,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
                                     toast.action?.onClick?.();
                                     onDismiss();
                                 }}
-                                className="mt-3 text-sm font-semibold px-4 py-2 rounded-lg transition-opacity hover:opacity-80"
-                                style={{ background: accentColors[toast.type], color: 'var(--btn-primary-text)' }}
+                                className={`mt-3 ${TOAST_ACTION}`}
                             >
                                 {toast.action.label}
                             </button>
