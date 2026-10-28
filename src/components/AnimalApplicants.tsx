@@ -22,6 +22,8 @@ import { createContractInvitation } from '@/app/actions/contract';
 import { zarazTrack } from '@/lib/zaraz';
 import ApplicantDetailPanel from '@/components/ApplicantDetailPanel';
 import { AdopterName } from '@/components/AdopterName';
+import { AlertSummary } from '@/components/AlertPill';
+import { openAlertKinds } from '@/domain/flags';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 
 // Sentinel: tracking the busy row by submissionId (always present) avoids the
@@ -84,16 +86,6 @@ function summaryLine(a: ApplicantRow, t: (k: string) => string): string {
     return parts.join(' · ');
 }
 
-/** Count of negative flags + whether identity is verified, for the row badge. */
-function flagSummary(flags: ApplicantRow['flags']): { warnCount: number; verified: boolean } {
-    if (!flags) return { warnCount: 0, verified: false };
-    let warnCount = 0;
-    if (flags.inaccurate) warnCount++;
-    if (flags.duplicate) warnCount++;
-    if (flags.tooManyAdoptions) warnCount++;
-    if (flags.tooManyRequests) warnCount++;
-    return { warnCount, verified: !!flags.verified_identity };
-}
 
 function MiniShareModal({
     url,
@@ -266,7 +258,9 @@ export default function AnimalApplicants({
                     <ul className="divide-y divide-teal-100 border-t border-teal-100">
                         {applicants.map((a, idx) => {
                             const summary = summaryLine(a, t);
-                            const { warnCount, verified } = flagSummary(a.flags);
+                            // The person's open alerts by the one rule (openAlertKinds — the profile header's).
+                            const alertKinds = openAlertKinds(a.flags);
+                            const verified = !!a.flags?.verified_identity;
                             return (
                                 <li
                                     key={a.submissionId}
@@ -276,12 +270,9 @@ export default function AnimalApplicants({
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2 min-w-0">
                                             <AdopterName adopter={{ name: a.adopterName }} className="font-medium text-sm text-stone-900 truncate" />
-                                            {warnCount > 0 && (
-                                                <span
-                                                    className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 flex-shrink-0"
-                                                    title={t('myAnimals.applicants_row_flags_tooltip') || 'Alertas en el perfil'}
-                                                >
-                                                    ⚠ {warnCount}
+                                            {alertKinds.length > 0 && (
+                                                <span className="flex-shrink-0" title={t('myAnimals.applicants_row_flags_tooltip') || 'Alertas en el perfil'}>
+                                                    <AlertSummary kinds={alertKinds} testId="applicant-row-alerts" />
                                                 </span>
                                             )}
                                             {verified && (
