@@ -115,6 +115,8 @@ function FormLine({ form, onOpen, t }: {
  * plain container (fix round 2, item 19): an <a> or <button> inside an <a> is
  * invalid HTML and a hydration error (audit C3).
  */
+// `truncate` on the link: it is the flex item now, so it is what clips a long name (its ::after is positioned
+// against the row, so the clip doesn't cut the stretched hit area).
 const ROW_LINK = "after:absolute after:inset-0 after:content-[''] after:rounded-[inherit] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-teal-500";
 /**
  * Anything else in the row that acts (pills, the form line, the rating hint): positioned, and after the name
@@ -558,7 +560,7 @@ export default function MyAdoptersPage() {
                                             </div>
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-2 min-w-0">
-                                                    <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} className={`min-w-0 ${ROW_LINK}`}>
+                                                    <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} className={`min-w-0 truncate ${ROW_LINK}`}>
                                                         <AdopterName adopter={adopter} className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate text-sm" title />
                                                     </Link>
                                                     {/* One decision, one pill: when the person's form is waiting
@@ -667,7 +669,7 @@ export default function MyAdoptersPage() {
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                                                <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} className={`min-w-0 ${ROW_LINK}`}>
+                                                <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} className={`min-w-0 truncate ${ROW_LINK}`}>
                                                     <AdopterName adopter={adopter} className="font-semibold text-stone-900 truncate" title />
                                                 </Link>
                                                 {adopter.hasPendingDuplicate && !adopter.formNeedsReview && <PendingDupPill t={t} />}
