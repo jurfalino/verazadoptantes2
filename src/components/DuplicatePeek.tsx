@@ -26,8 +26,8 @@ import { useLanguage } from '@/context/LanguageContext';
 import { AdopterName } from '@/components/AdopterName';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
 import MatchCompare, { entriesAsShown, type MatchSourceKind } from '@/components/MatchCompare';
-import { MinorTag } from '@/components/MinorTag';
-import { CardHouseholdLine } from '@/components/CardHouseholdLine';
+import { MatchCardActions, MatchCardHeader } from '@/components/MatchCardParts';
+import { alertCountOf } from '@/domain/flags';
 
 const NAME_HL_TYPES = ['name_full', 'name_word'];
 
@@ -158,7 +158,7 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
                             <button
                                 type="button"
                                 onClick={() => setExpanded(false)}
-                                className="w-8 h-8 rounded-full flex items-center justify-center text-stone-500 hover:bg-stone-100"
+                                className="w-11 h-11 -mr-2 rounded-full flex items-center justify-center text-stone-500 hover:bg-stone-100"
                                 aria-label={t('common.close') || 'Close'}
                             >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -172,56 +172,27 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
                                 const strong = hasStrongMatch(result.matchValues);
                                 return (
                                     <li key={result.adopter.id} className={`px-5 py-3 ${strong ? 'bg-amber-50/40' : ''}`}>
-                                        <div className="flex items-start gap-3">
-                                            {result.thumbnail ? (
-                                                <img src={result.thumbnail} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
-                                            ) : (
-                                                <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-semibold text-sm flex-shrink-0">
-                                                    {result.adopter.name?.charAt(0)?.toUpperCase() || '?'}
-                                                </div>
-                                            )}
-                                            <div className="min-w-0 flex-1">
-                                                {isNamelessAdopter(result.adopter)
-                                                    ? <AdopterName adopter={result.adopter} className="font-semibold text-stone-900 text-sm break-words block" />
-                                                    : (
-                                                        <p className="font-semibold text-stone-900 text-sm break-words">
-                                                            {highlightMatches(result.adopter.name, result.matchValues, NAME_HL_TYPES)}
-                                                        </p>
-                                                    )}
-                                                {result.isMinor && <div className="mt-1"><MinorTag /></div>}
-                                                <CardHouseholdLine lines={result.households} />
-                                                <MatchCompare
-                                                    adopterId={result.adopter.id}
-                                                    matchTypes={result.matchTypes}
-                                                    profileName={result.adopter.name ?? ''}
-                                                    source={compareSource}
-                                                    profileEntries={entriesAsShown(result.adopter)}
-                                                    score={result.relevancePercent}
-                                                    defaultOpen={(results ?? []).length === 1}
-                                                    t={t}
-                                                />
-                                                <div className="flex gap-2 mt-2.5">
-                                                    <a
-                                                        href={`/adopter/${result.adopter.id}`}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="px-2.5 py-1 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors"
-                                                    >
-                                                        {t('adopter.dup_action_view') || 'View profile'}
-                                                    </a>
-                                                    {onContinueWith && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => onContinueWith(result.adopter.id)}
-                                                            disabled={busyAdopterId === result.adopter.id}
-                                                            className="px-2.5 py-1 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-600 disabled:opacity-50 rounded-lg transition-colors"
-                                                        >
-                                                            {busyAdopterId === result.adopter.id
-                                                                ? (t('common.processing') || '...')
-                                                                : (t('adopter.dup_action_continue_with_existing') || 'Continue with this profile')}
-                                                        </button>
-                                                    )}
-                                                </div>
+                                        {/* The shared match card (audit B6): header → household line → «Qué coincide» → actions. */}
+                                        <MatchCardHeader newTab thumbnail={result.thumbnail}
+                                            person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openAlerts: alertCountOf(result.flags), isMinor: result.isMinor, households: result.households }}
+                                            nameNode={isNamelessAdopter(result.adopter)
+                                                ? <AdopterName adopter={result.adopter} className="break-words" />
+                                                : highlightMatches(result.adopter.name, result.matchValues, NAME_HL_TYPES)} />
+                                        <div className="pl-10">
+                                            <MatchCompare
+                                                adopterId={result.adopter.id}
+                                                matchTypes={result.matchTypes}
+                                                profileName={result.adopter.name ?? ''}
+                                                source={compareSource}
+                                                profileEntries={entriesAsShown(result.adopter)}
+                                                score={result.relevancePercent}
+                                                defaultOpen={(results ?? []).length === 1}
+                                                t={t}
+                                            />
+                                            <div className="mt-2.5">
+                                                <MatchCardActions profileId={result.adopter.id} newTab busy={busyAdopterId === result.adopter.id}
+                                                    onSame={onContinueWith ? () => onContinueWith(result.adopter.id) : undefined}
+                                                    sameLabel={t('adopter.dup_action_continue_with_existing') || 'Continue with this profile'} />
                                             </div>
                                         </div>
                                     </li>

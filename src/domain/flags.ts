@@ -24,3 +24,11 @@ export function buildFlags(
         tooManyRequests: null,
     };
 }
+
+/**
+ * The open alerts a card counts from a result's flags (an «Inexacto» and a reported «Duplicado»): the
+ * number «¿Es este perfil?» and every match card show in PersonStanding (audit B6).
+ */
+export function alertCountOf(flags: { inaccurate?: boolean; duplicate?: boolean } | null | undefined): number {
+    return (flags?.inaccurate ? 1 : 0) + (flags?.duplicate ? 1 : 0);
+}

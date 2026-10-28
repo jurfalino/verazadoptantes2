@@ -124,7 +124,7 @@ test.describe('Contract-results merge — "Es la misma persona"', () => {
         await sameButton.click();
 
         // 6. Confirm in modal.
-        const confirmButton = pageA.getByRole('button', { name: /Confirmar atribución|Confirm attachment/i });
+        const confirmButton = pageA.getByTestId('contract-link-confirm-confirm');
         await expect(confirmButton).toBeVisible({ timeout: 10000 });
         await confirmButton.click();
 

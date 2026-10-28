@@ -78,6 +78,8 @@ interface MatchedProfile {
     profileImageUrl?: string | null;
     isMinor?: boolean;
     households?: HouseholdLine[];
+    rating?: number | null;
+    openAlerts?: number;
 }
 
 interface FormResultsContentProps {

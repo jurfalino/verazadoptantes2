@@ -1,20 +1,17 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { linkFormToExistingAdopter } from '@/app/actions/formSubmission';
 import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
 import { useShowToast } from '@/components/ui/Toast';
-import { buttonClasses } from '@/components/ui/Button';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { useState } from 'react';
-import { CheckCircle2, ArrowRight } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import { en } from '@/i18n/locales/en';
 import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
-import { MinorTag } from '@/components/MinorTag';
-import { CardHouseholdLine } from '@/components/CardHouseholdLine';
+import { MatchCardActions, MatchCardHeader } from '@/components/MatchCardParts';
 import type { HouseholdLine } from '@/domain/households';
 
 // Single source of truth: fallbacks from English locale
@@ -30,6 +27,8 @@ export interface FormResultMatchCardProps {
         id: string; name: string; contactInfo: string | null; contactEntries?: string | null; addressInfo: string | null; status: string | null; profileImageUrl?: string | null;
         /** Final fix P2: the same «Menor de edad» tag and household line as every card showing one person. */
         isMinor?: boolean; households?: HouseholdLine[];
+        /** Their own standing in the card's header (audit B6). */
+        rating?: number | null; openAlerts?: number;
     };
     applicantSelfieUrl?: string | null;
     matchTypes: string[];
@@ -169,6 +168,10 @@ export default function FormResultMatchCard({
             {/* The applicant and the existing profile in two blocks, each value marked
                 by whether it matches (Jon, 2026-10-25). The profile's values as this
                 viewer may see them — masked stays masked. */}
+            {/* The shared match-card header (audit B6): name + their own standing, then their household line. */}
+            <div className="px-4 pt-3">
+                <MatchCardHeader person={profile} />
+            </div>
             <div id={`comparison-${profile.id}`} className="px-4 pb-2 border-b border-stone-200">
                 <MatchCompare
                     adopterId={profile.id}
@@ -180,41 +183,14 @@ export default function FormResultMatchCard({
                     bare
                     t={t}
                 />
-                {profile.isMinor && <div className="mt-2"><MinorTag /></div>}
-                <CardHouseholdLine lines={profile.households} />
             </div>
 
             {/* Actions. The decision pair sits together — "Es la misma persona"
                 first, "No es esta persona" last — with navigation between. */}
-            <div className="px-4 py-3 border-t border-stone-200 flex flex-wrap items-center gap-2">
-                {canLink && (
-                    <button
-                        type="button"
-                        onClick={() => setConfirmOpen(true)}
-                        disabled={linking}
-                        className={`${buttonClasses({ variant: 'primary', size: 'compact' })} w-full sm:w-auto`}
-                    >
-                        <CheckCircle2 className="w-4 h-4" strokeWidth={2} aria-hidden="true" />
-                        {L('same_person')}
-                    </button>
-                )}
-                <Link
-                    href={`/adopter/${profile.id}`}
-                    className={`${buttonClasses({ variant: 'secondary', size: 'compact' })} w-full sm:w-auto`}
-                >
-                    {L('view_full_profile')}
-                    <ArrowRight className="w-4 h-4" strokeWidth={2} aria-hidden="true" />
-                </Link>
-                {canLink && onDismiss && (
-                    <button
-                        type="button"
-                        onClick={onDismiss}
-                        disabled={linking}
-                        className="w-full sm:w-auto sm:ml-auto min-h-[44px] px-2 text-[13px] font-semibold text-stone-500 hover:text-stone-700 transition-colors"
-                    >
-                        {L('not_this_person')}
-                    </button>
-                )}
+            <div className="px-4 py-3 border-t border-stone-200">
+                <MatchCardActions profileId={profile.id} busy={linking}
+                    onSame={canLink ? () => setConfirmOpen(true) : undefined} sameLabel={L('same_person')}
+                    onNotThis={canLink && onDismiss ? onDismiss : undefined} />
             </div>
 
             <ConfirmDialog

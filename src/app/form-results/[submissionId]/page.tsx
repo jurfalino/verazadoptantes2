@@ -17,6 +17,7 @@ import { formLinkKind } from '@/domain/formLink';
 import { computeAvgRating } from '@/domain/ratings';
 import { maskMatchCardsForViewer } from '@/lib/piiAccessServer';
 import { householdLinesFor, HOUSEHOLD_LINE_CARDS } from '@/lib/households';
+import { countsFor } from '@/lib/profileSummary';
 import { isMinor, type HouseholdLine } from '@/domain/households';
 
 interface MatchedAdopter {
@@ -179,6 +180,8 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         id: string; name: string; contactInfo: string | null; contactEntries: string | null; addressInfo: string | null; status: string | null; profileImageUrl: string | null;
         /** Final fix P2: «Menor de edad» and the household line, as on every card showing one person. */
         isMinor?: boolean; households?: HouseholdLine[];
+        /** Their own standing on the match card (audit B6). */
+        rating?: number | null; openAlerts?: number;
     };
     let matchedProfiles: ProfileRow[] = [];
     let linkedProfile: { id: string; name: string; profileImageUrl: string | null; avgRating: number | null } | null = null;
@@ -270,6 +273,10 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         if (matchedProfiles.length) {
             const lines = await householdLinesFor(db, currentUser, matchedProfiles.slice(0, HOUSEHOLD_LINE_CARDS).map(p => p.id));
             matchedProfiles = matchedProfiles.map(p => (lines[p.id]?.length ? { ...p, households: lines[p.id] } : p));
+            // Each card's own rating and alerts (audit B6), the same counts a household line shows; countsFor
+            // never throws (a failure logs and shows «Sin calificación»). One query per card, capped like the lines.
+            const standing = await Promise.all(matchedProfiles.slice(0, HOUSEHOLD_LINE_CARDS).map(p => countsFor(db, p.id, { submissionId, user: currentUser }, { activity: false })));
+            matchedProfiles = matchedProfiles.map((p, i) => (standing[i] ? { ...p, rating: standing[i].rating, openAlerts: standing[i].openAlerts } : p));
         }
 
         // A form linked to a profile that was later merged away (before merges
