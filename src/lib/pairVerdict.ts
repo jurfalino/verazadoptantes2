@@ -100,36 +100,35 @@ const HOUSEHOLD_MARKER = `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}household`;
  *   households don't count), unless they share a personal identifier (an
  *   email or ID number, sameContact): «Pendientes» hides housemates only then
  *   (hiddenAsHousematesSql / sharesPersonalIdentifier, final fix S3).
- * - 'kept_separate': a RESCUER set the pair aside — a detected candidate
- *   dismissed («Mantener separados») by someone who isn't an admin — or a
- *   duplicate flag on it carries the «Viven juntos» marker
- *   (`Kept separate: household`, keepAsHousehold).
- * An ADMIN's ruling (a declined request, an undone merge — keepSeparate with
- * the request / dispute marker, candidates dismissed by the admin) is NOT
- * settled (round 5): «Pendientes» lets it be disputed (D49/D50), so the window
- * keeps «Pedir revisión a un administrador» (case 4). The rows already tell
- * them apart: the candidate's `resolved_by` (an admin or not) and the flag's
- * marker (`household` vs a request / dispute id).
+ * - 'kept_separate': a detected candidate on the pair was dismissed
+ *   («Mantener separados», by a rescuer OR an admin — «Pendientes» hides that
+ *   pair from everyone and offers nothing, round 6), or a duplicate flag on it
+ *   carries the «Viven juntos» marker (`Kept separate: household`).
+ * A ruling pairVerdict records — an admin declining a request, an admin undoing
+ * a disputed merge — is NOT settled: «Pendientes» lets it be disputed (D49/D50),
+ * so the window keeps «Pedir revisión a un administrador» (case 4). Those
+ * rulings also dismiss the pair's candidates (keepSeparate), so a dismissal on
+ * a pair with such a ruling is read as the ruling, not as «Mantener separados».
  * Bounded queries, either orientation, never `IN (…)`. Throws on a DB error.
  */
 export async function pairSettledSeparate(db: Db, a: string, b: string): Promise<SettledSeparate | null> {
     const [home, dismissed, flags] = await Promise.all([
         db.select({ one: sql<number>`1` }).from(adopters).where(and(eq(adopters.id, a), sharesHomeSql(sql`${a}`, sql`${b}`))).get() as Promise<{ one: number } | undefined>,
-        db.select({ resolvedBy: duplicateCandidates.resolvedBy }).from(duplicateCandidates).where(and(
+        db.select({ id: duplicateCandidates.id }).from(duplicateCandidates).where(and(
             eq(duplicateCandidates.status, 'dismissed'),
             or(
                 and(eq(duplicateCandidates.adopter1Id, a), eq(duplicateCandidates.adopter2Id, b)),
                 and(eq(duplicateCandidates.adopter1Id, b), eq(duplicateCandidates.adopter2Id, a)),
             ),
-        )).all() as Promise<Array<{ resolvedBy: string | null }>>,
+        )).get() as Promise<{ id: string } | undefined>,
         db.select({ details: adopterFlags.details }).from(adopterFlags).where(and(eq(adopterFlags.reason, 'duplicate'), or(
             and(eq(adopterFlags.adopterId, a), eq(adopterFlags.targetAdopterId, b)),
             and(eq(adopterFlags.adopterId, b), eq(adopterFlags.targetAdopterId, a)),
         ))).all() as Promise<Array<{ details: string | null }>>,
     ]);
     if (flags.some(f => (f.details ?? '') === HOUSEHOLD_MARKER)) return 'kept_separate';
-    // «Mantener separados» by a rescuer; a dismissal by an admin is their ruling (disputable).
-    for (const c of dismissed) if (!(await isAdminAsync(c.resolvedBy ?? ''))) return 'kept_separate';
+    // «Mantener separados» — unless the dismissal came from a recorded admin ruling (disputable, case 4).
+    if (dismissed && !(await loadPairVerdict(db, a, b, [])).adminRuledSeparate) return 'kept_separate';
     if (home && !(await sharePersonalIdentifier(db, a, b))) return 'household';
     return null;
 }

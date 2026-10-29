@@ -434,9 +434,19 @@ describe('already recorded as two people (F3 option a): «Ya figuran como person
         expect(await askAdminsToReviewPair({ currentId: 'maria', matchId: 'jonatan' })).toEqual({ ok: true, already: false });
     });
 
-    it('an admin pressing «Mantener separados» with no ruling recorded: not settled either (the pair is open as before)', async () => {
+    it('an admin pressing «Mantener separados» with no ruling recorded: settled, as «Pendientes» hides it from everyone (round 6)', async () => {
         sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at, resolved_by) VALUES ('c1', 'maria', 'jonatan', '["phone"]', 60, 'medium', 'dismissed', 1, ?)`).run(ADMIN);
-        expect(await windowFor('jonatan')).toMatchObject({ action: 'continue' });
+        expect(await windowFor('jonatan')).toMatchObject({ action: 'settled' });
+        expect(await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan' })).toMatchObject({ ok: false, error: 'settled_separate' });
+        expect(await as(STRANGER, () => flagAdopter('maria', 'duplicate', 'x', 'jonatan'))).toMatchObject({ success: false, error: 'settled_separate' });
+    });
+
+    it('an admin undoing a disputed merge (a ruling pairVerdict records, with its marker and dismissal): case 4, askable (round 6)', async () => {
+        sqlite.prepare(`INSERT INTO merge_disputes (id, audit_id, survivor_id, absorbed_id, raised_by, status, created_at) VALUES ('d1', 'a1', 'jonatan', 'maria', ?, 'undone', 1)`).run(OTHER);
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at, resolved_by) VALUES ('c1', 'maria', 'jonatan', '["phone"]', 60, 'medium', 'dismissed', 1, ?)`).run(ADMIN);
+        sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at) VALUES ('f1', 'jonatan', ?, 'duplicate', 'maria', 'Kept separate: dispute-d1', 1)`).run(STRANGER);
+        expect(await windowFor('jonatan')).toMatchObject({ action: 'review_admins' });
+        expect(await askAdminsToReviewPair({ currentId: 'maria', matchId: 'jonatan' })).toEqual({ ok: true, already: false });
     });
 
     it('a gift household does not count', async () => {
