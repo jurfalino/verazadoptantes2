@@ -892,6 +892,7 @@ export const en = {
         ce_compose_prompt: 'What do you want to add?',
         dup_hint_shared_handle: 'This contact appears on {n} records — it may be a shared contact (yours or a shelter\'s), not the adopter\'s. Verify before marking it as a duplicate.',
         dup_hint_checking: 'Checking for matches…',
+        dup_hint_failed: 'We could not check whether this detail is already on another profile (error {id}).',
         dup_hint_flagged: 'Flagged',
         dup_hint_header_one: 'Already on another profile',
         dup_hint_header_many: 'Already on {n} profiles',

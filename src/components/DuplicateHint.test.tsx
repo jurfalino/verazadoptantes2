@@ -22,7 +22,7 @@ vi.mock('@/app/actions', () => ({
 vi.mock('@/lib/clientErrorReporter', () => ({ resolveErrorId: vi.fn(() => 'e1'), reportClientError: vi.fn() }));
 vi.mock('@/components/ui/Toast', () => ({ useShowToast: () => ({ success: vi.fn(), error: vi.fn() }) }));
 
-import { DupHintBox, DupHintProfile } from './DuplicateHint';
+import { DupHintBox, DupHintFailed, DupHintProfile } from './DuplicateHint';
 import { dismissDupHintMatch, NO_DISMISSED, visibleDupHintMatches } from '@/domain/dupHint';
 import type { DupHintMatch } from '@/app/actions/households';
 import { NO_PERIOD_ALERTS } from '@/domain/periodAlerts';
@@ -118,5 +118,14 @@ describe('DupHintProfile — the window', () => {
         expect(html).not.toContain('data-testid="dup-hint-same"');
         expect(html).toContain('data-testid="dup-hint-not-this"');
         expect(html).toContain('data-testid="dup-hint-open-full"');
+    });
+});
+
+describe('DupHintFailed — a failed check is said, never shown as «no matches»', () => {
+    it('one line with the error id', () => {
+        const html = renderToStaticMarkup(<DupHintFailed errorId="ab12cd34" />);
+        expect(html).toContain('data-testid="dup-hint-failed"');
+        expect(html).toContain('role="status"');
+        expect(text(html)).toBe('No pudimos revisar si este dato ya está en otro perfil (error ab12cd34).');
     });
 });

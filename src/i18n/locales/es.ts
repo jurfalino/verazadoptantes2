@@ -899,6 +899,7 @@ export const es = {
         ce_compose_prompt: '¿Qué dato querés agregar?',
         dup_hint_shared_handle: 'Este contacto figura en {n} registros — puede ser un contacto compartido (tuyo o de un refugio), no del adoptante. Verificá antes de marcarlo como duplicado.',
         dup_hint_checking: 'Buscando coincidencias…',
+        dup_hint_failed: 'No pudimos revisar si este dato ya está en otro perfil (error {id}).',
         dup_hint_flagged: 'Marcado',
         dup_hint_header_one: 'Ya está en otro perfil',
         dup_hint_header_many: 'Ya está en {n} perfiles',

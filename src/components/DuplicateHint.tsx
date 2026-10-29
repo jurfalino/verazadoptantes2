@@ -45,6 +45,7 @@ import { PersonActivity } from '@/components/PersonStanding';
 import { MatchesPill } from '@/components/LinkedProfileSummary';
 import { ContactRow } from '@/components/ContactRow';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { handledAsStale } from '@/lib/errorMessage';
 import { deserializeContactEntries, type ContactEntryType } from '@/lib/contactEntries';
 import { SUMMARY_CONTACT_TYPES, MAX_SUMMARY_CONTACTS } from '@/domain/householdLinks';
 import { openAlertKinds } from '@/domain/flags';
@@ -181,6 +182,8 @@ export default function DuplicateHint({ type, value, excludeAdopterId, className
     const [matches, setMatches] = useState<DupHintMatch[]>([]);
     const [handleCount, setHandleCount] = useState(0);
     const [loading, setLoading] = useState(false);
+    // The check itself failed: said on the spot with its id, never shown as «no matches».
+    const [failedId, setFailedId] = useState<string | null>(null);
     // «No es esta persona», for the value it was answered on.
     const [dismissed, setDismissed] = useState<DupHintDismissed>(NO_DISMISSED);
     const [openId, setOpenId] = useState<string | null>(null);
@@ -198,6 +201,7 @@ export default function DuplicateHint({ type, value, excludeAdopterId, className
         }
 
         const v = value.trim();
+        setFailedId(null);
         if (!v || !isDupHintType(type)) {
             setMatches([]);
             setHandleCount(0);
@@ -214,7 +218,10 @@ export default function DuplicateHint({ type, value, excludeAdopterId, className
                 const res = await getDuplicateHintMatches({ type, value: v, excludeAdopterId });
                 if (ctl.signal.aborted) return;
                 // A failed check is logged on the server (errorId); the hint is advisory, so the composer carries on.
-                if (res.failed) console.warn('[DuplicateHint] getDuplicateHintMatches failed', { type, excludeAdopterId, errorId: res.errorId });
+                if (res.failed) {
+                    console.warn('[DuplicateHint] getDuplicateHintMatches failed', { type, excludeAdopterId, errorId: res.errorId });
+                    setFailedId(res.errorId ?? resolveErrorId(new Error('getDuplicateHintMatches failed'), 'DuplicateHint.lookup'));
+                }
                 setMatches(res.results ?? []);
                 // For socials, also learn how many records share this handle so a
                 // shared/rescuer contact can be surfaced differently (see below).
@@ -226,8 +233,9 @@ export default function DuplicateHint({ type, value, excludeAdopterId, className
                 }
             } catch (e) {
                 if (ctl.signal.aborted) return;
-                resolveErrorId(e, 'DuplicateHint.lookup');
                 setMatches([]);
+                // An old tab: the «nueva versión» notice says it; no second message here.
+                if (!handledAsStale(e)) setFailedId(resolveErrorId(e, 'DuplicateHint.lookup'));
             } finally {
                 if (!ctl.signal.aborted) setLoading(false);
             }
@@ -246,6 +254,8 @@ export default function DuplicateHint({ type, value, excludeAdopterId, className
             </div>
         );
     }
+
+    if (failedId) return <DupHintFailed errorId={failedId} className={className} />;
 
     // Shared/rescuer contact: a handle on many records is a data-quality signal,
     // not a merge suggestion — warn instead of offering to flag them as duplicates.
@@ -325,5 +335,16 @@ export default function DuplicateHint({ type, value, excludeAdopterId, className
                 </Modal>
             )}
         </>
+    );
+}
+
+/** The check failed: one quiet line with its id, so it never reads as «no matches». */
+export function DupHintFailed({ errorId, className }: { errorId: string; className?: string }) {
+    const { t } = useLanguage();
+    return (
+        <p className={`flex items-start gap-2 text-xs ${className ?? ''}`} style={{ color: 'var(--text-muted)' }} role="status" data-testid="dup-hint-failed">
+            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: 'var(--status-warning-text)' }} aria-hidden="true" />
+            <span>{t('adopter.dup_hint_failed').replace('{id}', errorId)}</span>
+        </p>
     );
 }
