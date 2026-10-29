@@ -115,9 +115,7 @@ export async function continueWithMatchedProfile(input: {
 
         const merged = await mergeChosenPair(db, {
             primaryId: match.id, secondaryId: current.id, actor,
-            // Full contact only after an ADMIN merge; an admin folding their own team's
-            // profile into another rescuer's is a rescuer merge (review F4).
-            fullAccess: plan.viaAdmin, viaAdmin: plan.viaAdmin, notifyOwner: plan.notifyOwner,
+            isAdmin: viewer.isAdmin, viaAdmin: plan.viaAdmin, notifyOwner: plan.notifyOwner,
             absorbedAddedBy: current.addedBy,
             label: 'continueWithMatchedProfile', ctx,
         });

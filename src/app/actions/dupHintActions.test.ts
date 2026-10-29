@@ -223,16 +223,14 @@ describe('continueWithMatchedProfile — «Sí, continuar»', () => {
         expect(notify.create.filter(n => n.type === 'contact_entry_added').map(n => n.userId)).toEqual([OTHER]);
     });
 
-    it('an admin folding their own team\'s profile into another rescuer\'s: a rescuer merge — only what theirs brought, never all_contact (F4)', async () => {
+    it('an admin folding their own profile into another rescuer\'s: an admin\'s merge is a consented fold (D40) — all_contact, as in «Pendientes»', async () => {
         sqlite.prepare(`UPDATE adopters SET added_by = ? WHERE id = 'maria'`).run(ADMIN);
         expect(await as(ADMIN, () => continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan' }))).toMatchObject({ ok: true, told: ['other-rescuer'] });
-        const grants = sqlite.prepare(`SELECT grantee_email AS email, scope FROM pii_access_grants WHERE adopter_id = 'jonatan' AND origin = 'merge' AND revoked_at IS NULL`).all();
-        expect(grants.length).toBeGreaterThan(0);
-        expect(grants.every(g => g.scope === 'entry')).toBe(true);
-        // An admin deciding a pair of two other rescuers (viaAdmin) is a consented fold: full contact.
+        expect(sqlite.prepare(`SELECT grantee_email AS email, scope FROM pii_access_grants WHERE adopter_id = 'jonatan' AND origin = 'merge' AND revoked_at IS NULL`).all())
+            .toEqual([{ email: ADMIN, scope: 'all_contact' }]);
     });
 
-    it('an admin merging two other rescuers\' profiles (an admin decision): the absorbed owner gets all_contact', async () => {
+    it('an admin merging two other rescuers\' profiles: the absorbed owner gets all_contact', async () => {
         sqlite.prepare(`UPDATE adopters SET added_by = 'gatitos@example.com' WHERE id = 'maria'`).run();
         expect(await as(ADMIN, () => continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan' }))).toMatchObject({ ok: true });
         expect(sqlite.prepare(`SELECT grantee_email AS email, scope FROM pii_access_grants WHERE adopter_id = 'jonatan' AND origin = 'merge' AND revoked_at IS NULL`).all())

@@ -42,8 +42,8 @@ export async function mergeChosenPair(db: Db, input: {
     primaryId: string;
     secondaryId: string;
     actor: string;
-    /** The absorbed owner team gets full contact on the survivor (a consented fold), else only what their profile brought. */
-    fullAccess: boolean;
+    /** The actor is an admin: an admin's merge is a consented fold (D40) — the absorbed owner team gets full contact. */
+    isAdmin: boolean;
     /** An admin merging what a rescuer couldn't: every owner hears it (notifyMergeOwners). */
     viaAdmin: boolean;
     /** A rescuer's merge into someone else's profile: that owner hears it. */
@@ -53,7 +53,7 @@ export async function mergeChosenPair(db: Db, input: {
     label: string;
     ctx: Record<string, unknown>;
 }): Promise<PairMergeOutcome> {
-    const { primaryId, secondaryId, actor, viaAdmin, notifyOwner, label, ctx } = input;
+    const { primaryId, secondaryId, actor, isAdmin, viaAdmin, notifyOwner, label, ctx } = input;
     const result = await mergeAdopters(primaryId, secondaryId, actor);
     if (!result.success && result.error === HOUSEHOLD_NOT_CONVERTED) return { ok: false, error: HOUSEHOLD_NOT_CONVERTED };
     if (!result.success) {
@@ -64,16 +64,14 @@ export async function mergeChosenPair(db: Db, input: {
     }
     logger.info(`${label}: merged`, { ...ctx, primaryId, secondaryId, viaAdmin, notifyOwner: !!notifyOwner });
     // D40: the absorbed profile's owner team keeps seeing what it had. Best-effort.
-    // `fullAccess` (a consented fold) → full contact; otherwise a rescuer
-    // merging without asking either kept a profile of their own team (nothing
-    // to grant) or kept the OTHER rescuer's, who never agreed: then only the
-    // contact values the absorbed profile brought (final review C1). The
-    // caller says which: «Continuar» passes `viaAdmin` (an admin folding their
-    // own team's profile into another rescuer's is a rescuer merge, review F4);
-    // «Pendientes» still passes `isAdmin`, its tested behaviour (see the report).
+    // An admin's merge is a consented fold (D40, any admin actor — the same rule
+    // in «Pendientes» and «Continuar»): full contact. A rescuer merging without
+    // asking either kept a profile of their own team (nothing to grant) or kept
+    // the OTHER rescuer's, who never agreed: then only the contact values the
+    // absorbed profile brought (final review C1).
     await grantAccessAfterFold(db, {
         survivorId: primaryId, absorbedOwnerEmail: realOwner(input.absorbedAddedBy), actor, mergeAuditId: result.auditId ?? null,
-        access: input.fullAccess ? { scope: 'all_contact' } : { scope: 'absorbed_entries', absorbedId: secondaryId },
+        access: isAdmin ? { scope: 'all_contact' } : { scope: 'absorbed_entries', absorbedId: secondaryId },
     });
     if (viaAdmin) {
         // Whoever registered either profile hears that an admin joined them.
