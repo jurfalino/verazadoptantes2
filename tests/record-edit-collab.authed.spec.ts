@@ -220,7 +220,8 @@ test("household: saving a name fix never reverts a teammate's newer age", async 
         await expect(page.getByTestId('household-member')).toHaveCount(1, { timeout: 30_000 });
         await page.getByTestId('household-member-menu').click();
         await page.getByTestId('household-member-menu-edit').click();
-        await expect(page.getByTestId('hh-person-age')).toHaveValue('7');
+        // The form enters no age (Jon, 2026-10-29): only the name and relationship.
+        await expect(page.getByTestId('hh-edit-form').getByRole('checkbox')).toHaveCount(0);
         // Meanwhile a teammate corrects the age to 8 (on his profile).
         execD1(`UPDATE adopters SET age = 8, age_as_of = '${today}', updated_at = strftime('%s','now') WHERE id = '${tomas}'`);
         await page.getByTestId('hh-person-name').fill('Tomás Lopez');
