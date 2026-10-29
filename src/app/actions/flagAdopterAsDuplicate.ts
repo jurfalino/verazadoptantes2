@@ -6,8 +6,8 @@ import { FLAG_REASONS } from '@/domain/constants';
 import { logger } from '@/lib/logger';
 
 /**
- * Public server action invoked from <DuplicateHint>'s "Marcar como
- * duplicados" button. Open to any authenticated user (matches the
+ * Public server action invoked from <DuplicateHint>'s «Es la misma persona»
+ * (in its «Ver perfil» window). Open to any authenticated user (matches the
  * "adds are open" collaborative model — flagging is contribution, not
  * mutation). The flag lands in `/admin/duplicates` under the
  * `userFlagged` feed for admin triage; admin can then dismiss or
